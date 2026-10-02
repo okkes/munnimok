@@ -259,6 +259,9 @@ namespace Connector.Kit.Hosting.Data.Migrations
                     b.Property<bool>("FleetOnly")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("Found")
+                        .HasColumnType("integer");
+
                     b.Property<string>("InputsJson")
                         .HasColumnType("text");
 

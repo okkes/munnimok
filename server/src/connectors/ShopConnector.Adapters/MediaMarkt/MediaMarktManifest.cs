@@ -163,16 +163,17 @@ internal static class MediaMarktManifest
                 [
                     new ParamSpec { Key = "since", Type = ParamType.Date, Required = true },
                     new ParamSpec { Key = "until", Type = ParamType.Date },
-                    // No 'invoice'. The payload carries an `invoiceNumber` field
-                    // and it was empty on every fulfilment in the capture, with
-                    // no document link anywhere - so there is nothing to fetch,
-                    // and declaring the option would offer a consumer something
-                    // that always comes back empty.
+                    // 'invoice' is the PDF MediaMarkt issues on an order's own
+                    // page ("Factuur aanvragen", then "Download de factuur" -
+                    // the user's walk-through, 2026-10-02). The list payload
+                    // carries no document link, so each one costs a page of
+                    // its own; MediaMarktOptions.MaxDocumentOrdersPerFetch
+                    // bounds that.
                     new ParamSpec
                     {
                         Key = "include",
                         Type = ParamType.Enum,
-                        Values = ["items", ResourceRequest.RawInclude],
+                        Values = ["items", ResourceRequest.RawInclude, ResourceRequest.InvoiceInclude],
                         Multi = true,
                     },
                 ],
@@ -185,10 +186,12 @@ internal static class MediaMarktManifest
                 // order does not exist". Nothing rides on it - the page count
                 // and the record cap below bound the work.
                 MaxHistoryDays = 7_300,
-                // Ten orders a call, one call a page, and every figure included.
-                // A first connect of two hundred orders is twenty calls.
-                TypicalDurationSeconds = 45,
-                MaxRecordsPerFetch = 200,
+                // Ten orders a call, one call a page, a second apart, and every
+                // figure included. A first connect walks the whole history (user
+                // request 2026-10-02): two thousand orders is two hundred calls,
+                // and the invoices, when asked for, a page each on top.
+                TypicalDurationSeconds = 180,
+                MaxRecordsPerFetch = 2_000,
             },
         ],
         Limits = new ProviderLimits

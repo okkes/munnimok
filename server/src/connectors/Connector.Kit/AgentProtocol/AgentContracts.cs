@@ -245,6 +245,13 @@ public sealed record ProgressReport
     /// </summary>
     [JsonPropertyName("credential_submitted")]
     public bool CredentialSubmitted { get; init; }
+
+    /// <summary>
+    /// Records gathered so far. Null when the report carries no count, which
+    /// leaves the last one standing rather than resetting it.
+    /// </summary>
+    [JsonPropertyName("found")]
+    public int? Found { get; init; }
 }
 
 public sealed record RaiseChallengeRequest

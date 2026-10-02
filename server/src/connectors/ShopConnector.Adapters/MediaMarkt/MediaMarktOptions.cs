@@ -73,9 +73,11 @@ public sealed record MediaMarktOptions
 
     /// <summary>
     /// How many pages one fetch will walk before stopping and reporting itself
-    /// incomplete. Twenty pages is two hundred orders.
+    /// incomplete. Two hundred pages is two thousand orders - the whole history
+    /// of any account seen, with the record cap behind it (user request
+    /// 2026-10-02: a first sync reaches as far back as the party allows).
     /// </summary>
-    public int MaxPages { get; init; } = 20;
+    public int MaxPages { get; init; } = 200;
 
     /// <summary>
     /// The variables template. <c>{0}</c> is the limit and <c>{1}</c> the
@@ -184,6 +186,53 @@ public sealed record MediaMarktOptions
 
     /// <summary>How long one selector is waited for.</summary>
     public int StepProbeMs { get; init; } = 8_000;
+
+    // ---- invoices ----------------------------------------------------------
+
+    /// <summary>
+    /// An order's own page, where MediaMarkt offers its invoice: "Factuur
+    /// aanvragen" asks for one and "Download de factuur" hands it over (the
+    /// user's walk-through, 2026-10-02). <c>{id}</c> is the order's id as the
+    /// list states it.
+    /// </summary>
+    public string OrderDetailsUrlTemplate { get; init; } = "https://www.mediamarkt.nl/nl/myaccount/orders/{id}";
+
+    /// <summary>
+    /// The control that asks MediaMarkt to issue the invoice. Absent on an
+    /// order that has one already, which is fine: the download is looked for
+    /// either way.
+    /// </summary>
+    public IReadOnlyList<string> RequestInvoiceSelectors { get; init; } =
+    [
+        """button:has-text("Factuur aanvragen")""",
+        """a:has-text("Factuur aanvragen")""",
+        """button:has-text("Request invoice")""",
+    ];
+
+    /// <summary>The link or button that hands the invoice over once it exists.</summary>
+    public IReadOnlyList<string> DownloadInvoiceSelectors { get; init; } =
+    [
+        """a:has-text("Download de factuur")""",
+        """button:has-text("Download de factuur")""",
+        """a:has-text("Download invoice")""",
+        """a[href*="invoice"]""",
+    ];
+
+    /// <summary>How long the download is waited for after asking - MediaMarkt renders the invoice on request.</summary>
+    public int InvoiceProbeMs { get; init; } = 15_000;
+
+    /// <summary>
+    /// What an invoice may be. A sign-in page answered to a document link is
+    /// text/html with a name ending in .pdf, and is not attached.
+    /// </summary>
+    public IReadOnlyList<string> DocumentMediaTypes { get; init; } = ["application/pdf"];
+
+    /// <summary>
+    /// How many orders one fetch opens for their invoice, newest first - each
+    /// is a page of its own, so a first connect of a long history asks for
+    /// the newest hundred and the next sync asks for more.
+    /// </summary>
+    public int MaxDocumentOrdersPerFetch { get; init; } = 100;
 
     /// <summary>
     /// How long to wait for the SPA to fire the orders call after landing on

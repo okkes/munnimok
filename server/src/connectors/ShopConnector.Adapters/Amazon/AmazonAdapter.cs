@@ -898,7 +898,9 @@ public sealed class AmazonAdapter : IProviderAdapter
 
                 ctx.Progress(JobStep.Parsing);
 
-                if (!ReadListPage(walk, fetched, dom)) break;
+                var more = ReadListPage(walk, fetched, dom);
+                ctx.Found(walk.Collected.Count);
+                if (!more) break;
             }
         }
     }

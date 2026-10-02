@@ -347,6 +347,8 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
             AccountType = AccountType.Current,
         });
 
+        ctx.Found(statements.Sum(statement => statement.Transactions.Count));
+
         // AS MANY STATEMENTS AS THERE WERE ACCOUNTS, or this is not the export
         // that was asked for.
         //

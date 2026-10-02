@@ -312,6 +312,14 @@ public sealed record BolOptions
         "sha256:d195253b815a6082cdee63bef6234513d5c0520c9f064e96fc1a9037d689add2";
 
     /// <summary>
+    /// How long the sign-in waits, after the session lands, for bol's own
+    /// page to fire the orders operation whose hash it learns (see
+    /// <see cref="BolPersistedQuery"/>). A page that never fires it costs
+    /// this wait and falls back to the hash above.
+    /// </summary>
+    public int HashProbeMs { get; init; } = 4_000;
+
+    /// <summary>
     /// CONFIRMED. The cursor variable, and it really is a string: bol sends
     /// <c>"5"</c>, then <c>"10"</c> - an offset, not an opaque token.
     /// </summary>
@@ -635,7 +643,7 @@ public sealed record BolOptions
 
     // ---- patience -----------------------------------------------------------
 
-    public int MaxPages { get; init; } = 20;
+    public int MaxPages { get; init; } = 400;
 
     public int SelectorTimeoutMs { get; init; } = 15_000;
 
@@ -809,7 +817,7 @@ public sealed record BolOptions
     /// still become receipts - they simply carry no documents, and the run says
     /// so rather than truncating silently.
     /// </summary>
-    public int MaxDocumentOrdersPerFetch { get; init; } = 50;
+    public int MaxDocumentOrdersPerFetch { get; init; } = 200;
 
     /// <summary>
     /// The unambiguous login-form markers, for pages that legitimately mention

@@ -173,13 +173,14 @@ internal static class BolManifest
                 // documents costs a details page and a download per invoice,
                 // all paced. A plain fetch is still the quick one; this number
                 // has to cover the slow shape or every full run looks overrun.
-                TypicalDurationSeconds = 300,
-                // Left at 200 while Amazon's is 50, and the divergence is
-                // deliberate: bol's ordinary fetch is a handful of API calls,
-                // so capping it low would penalise the common case for the sake
-                // of the rare one. BolOptions.MaxDocumentOrdersPerFetch bounds
-                // the expensive path on its own.
-                MaxRecordsPerFetch = 200,
+                TypicalDurationSeconds = 600,
+                // Two thousand, where Amazon's is three hundred, and the
+                // divergence is deliberate: bol's ordinary fetch is a handful of
+                // API calls a page, so the whole history is affordable (user
+                // request 2026-10-02: a first sync reaches as far back as the
+                // party allows). BolOptions.MaxDocumentOrdersPerFetch bounds the
+                // expensive invoice path on its own.
+                MaxRecordsPerFetch = 2_000,
             },
         ],
         Limits = new ProviderLimits

@@ -18,6 +18,32 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.5.0',
+    date: '2026-10-02',
+    items: [
+      {
+        en: 'Signing in on a party’s page works the way it should: your taps land where you put them, the page no longer freezes, and closing the sheet keeps the sign-in going — the Connections list shows where it stands and takes you back in. A pause the party asked for says until when.',
+        nl: 'Inloggen op de pagina van een partij werkt zoals het hoort: je tikken komen aan waar je ze zet, de pagina bevriest niet meer en het sluiten van het venster laat het inloggen doorlopen — de lijst Koppelingen laat zien hoe het ervoor staat en brengt je terug. Een pauze die de partij vroeg zegt tot wanneer.',
+        tr: 'Bir tarafın sayfasında giriş yapmak olması gerektiği gibi çalışıyor: dokunuşların koyduğun yere ulaşıyor, sayfa artık donmuyor ve pencereyi kapatmak girişi sürdürüyor — Bağlantılar listesi nerede olduğunu gösterir ve seni geri alır. Tarafın istediği bir mola, ne zamana kadar olduğunu söyler.',
+      },
+      {
+        en: 'A connection is yours, not a space’s: after naming a shop you pick the spaces its receipts may reach — or none for now. Fetched receipts under Connections lists everything your shops handed over, per connection, with the dates covered; a receipt opens full screen with its items and invoice.',
+        nl: 'Een koppeling is van jou, niet van een space: na het benoemen van een winkel kies je de spaces die de bonnen mogen zien — of nog geen. Opgehaalde bonnen onder Koppelingen toont alles wat je winkels hebben aangeleverd, per koppeling, met de gedekte datums; een bon opent op het hele scherm met artikelen en factuur.',
+        tr: 'Bir bağlantı senindir, bir alanın değil: bir mağazayı adlandırdıktan sonra fişlerinin ulaşabileceği alanları seçersin — ya da şimdilik hiçbirini. Bağlantılar altındaki Alınan fişler, mağazalarının verdiği her şeyi bağlantı başına, kapsanan tarihlerle listeler; bir fiş kalemleri ve faturasıyla tüm ekranda açılır.',
+      },
+      {
+        en: 'A first sync fetches as far back as the party allows, a counter climbs while it runs, and MediaMarkt orders bring their invoice along.',
+        nl: 'Een eerste synchronisatie haalt zo ver terug op als de partij toestaat, een teller loopt op zolang het bezig is, en MediaMarkt-bestellingen brengen hun factuur mee.',
+        tr: 'İlk eşitleme tarafın izin verdiği kadar geriye gider, sürerken bir sayaç artar ve MediaMarkt siparişleri faturalarını da getirir.',
+      },
+      {
+        en: 'Planning gained an Unplanned segment for what you spent outside the plan, grouped by main category and empty every new period, with a Plan it door; the arrow walks into the periods ahead; Take all back asks first; a weekly cost targets every week of the month. Home keeps Coming up and gained a Recurring block of its own.',
+        nl: 'Plannen kreeg een segment Ongepland voor wat je buiten het plan uitgaf, gegroepeerd per hoofdcategorie en elke nieuwe periode leeg, met een deur Plan het; de pijl loopt de periodes vooruit in; Alles terugnemen vraagt eerst; een wekelijkse last mikt op elke week van de maand. Thuis houdt Binnenkort en kreeg een eigen blok Terugkerend.',
+        tr: 'Planlama, plan dışında harcadıkların için ana kategoriye göre gruplanan, her yeni dönemde boşalan ve Planla kapısı olan bir Plansız bölümü kazandı; ok ilerideki dönemlere yürür; Hepsini geri al önce sorar; haftalık bir gider ayın her haftasını hedefler. Ana sayfa Yaklaşanlar’ı korur ve kendi Düzenli bloğunu kazandı.',
+      },
+    ],
+  },
+  {
     version: '5.4.0',
     date: '2026-10-01',
     items: [

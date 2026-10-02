@@ -52,6 +52,8 @@ public sealed class AlbertHeijnAdapterTests
     private static AlbertHeijnAdapter Adapter(bool liveLogin = false) =>
         new(new AlbertHeijnOptions { LiveLogin = liveLogin }, new FixedTimeProvider(Now));
 
+    private static AlbertHeijnAdapter Adapter(AlbertHeijnOptions options) => new(options, new FixedTimeProvider(Now));
+
     // ---- the three corrections --------------------------------------------
 
     [Fact]
@@ -434,10 +436,13 @@ public sealed class AlbertHeijnAdapterTests
             Material = new SessionMaterial { AccessToken = "live" },
         };
 
-        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
+        // The seam rather than the manifest's number: the manifest now allows
+        // two thousand, and proving the cap with two thousand invented
+        // receipts would be a fixture nobody can read.
+        const int cap = 200;
+        var result = await Adapter(new AlbertHeijnOptions { RecordCap = cap })
+            .FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
 
-        // The resource's own cap, not a number this test invented.
-        var cap = Adapter().Describe().Resource("receipts")!.MaxRecordsPerFetch;
         Assert.Equal(cap, result.Receipts.Count);
 
         // False is the whole point: the caller comes back for the rest rather

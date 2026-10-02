@@ -44,8 +44,8 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     private readonly TimeSpan _answerPollInterval;
     private readonly JobBudget? _budget;
 
-    private readonly Channel<JobStep> _steps =
-        Channel.CreateUnbounded<JobStep>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<ProgressTick> _steps =
+        Channel.CreateUnbounded<ProgressTick>(new UnboundedChannelOptions { SingleReader = true });
 
     private readonly List<JobStep> _reported = [];
     private readonly Task _pump;
@@ -65,6 +65,9 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
 
     private int _credentialSubmitted;
     private JobStep _lastStep = JobStep.AgentAssigned;
+
+    /// <summary>The last count the adapter reported; -1 until it reported one.</summary>
+    private int _found = -1;
     private int _disposed;
 
     public AgentJobContext(
@@ -242,8 +245,29 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     public void Progress(JobStep step)
     {
         _lastStep = step;
-        _steps.Writer.TryWrite(step);
+        _steps.Writer.TryWrite(new ProgressTick(step, Counted()));
     }
+
+    /// <summary>
+    /// The count rides the next progress post with the step it was reported
+    /// under, so the control plane sees "downloading, 120 so far" rather
+    /// than a number without a step.
+    /// </summary>
+    public void Found(int records)
+    {
+        var count = Math.Max(0, records);
+        Volatile.Write(ref _found, count);
+        _steps.Writer.TryWrite(new ProgressTick(_lastStep, count));
+    }
+
+    private int? Counted()
+    {
+        var found = Volatile.Read(ref _found);
+        return found < 0 ? null : found;
+    }
+
+    /// <summary>One progress post: the step, and the count known when it was written.</summary>
+    private readonly record struct ProgressTick(JobStep Step, int? Found);
 
     /// <summary>
     /// Latches the credential flag and pushes it upstream immediately.
@@ -259,7 +283,7 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         if (Interlocked.Exchange(ref _credentialSubmitted, 1) == 1) return;
 
         _logger.LogInformation("job {JobId}: a credential has been submitted upstream", JobId);
-        _steps.Writer.TryWrite(_lastStep);
+        _steps.Writer.TryWrite(new ProgressTick(_lastStep, Counted()));
     }
 
     /// <summary>
@@ -633,16 +657,17 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
 
     private async Task PumpProgressAsync()
     {
-        await foreach (var step in _steps.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
+        await foreach (var tick in _steps.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
         {
             var report = new ProgressReport
             {
-                Step = step,
+                Step = tick.Step,
                 StepsDone = [.. _reported],
                 CredentialSubmitted = Volatile.Read(ref _credentialSubmitted) == 1,
+                Found = tick.Found,
             };
 
-            if (!_reported.Contains(step)) _reported.Add(step);
+            if (!_reported.Contains(tick.Step)) _reported.Add(tick.Step);
 
             await PostProgressAsync(report).ConfigureAwait(false);
         }

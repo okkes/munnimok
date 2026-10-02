@@ -330,4 +330,12 @@ public sealed record AlbertHeijnOptions
     /// the agent.
     /// </summary>
     public bool RedirectFallbackEnabled { get; init; } = true;
+
+    /// <summary>
+    /// Overrides the manifest's <c>MaxRecordsPerFetch</c>. Null in production,
+    /// where the manifest is the single published answer; a SEAM for the
+    /// tests, so the cap's behaviour is proved without two thousand invented
+    /// receipts (the ING precedent).
+    /// </summary>
+    public int? RecordCap { get; init; }
 }

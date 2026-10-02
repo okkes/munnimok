@@ -34,8 +34,9 @@ import {
   recurringRealizedCents,
   subjectFamily,
   subjectView,
+  unplannedByCategory,
 } from '@/domain/planning';
-import type { Reservation, SubjectContext, SubjectStatus, SubjectView, TargetEstimate } from '@/domain/planning';
+import type { Reservation, SubjectContext, SubjectStatus, SubjectView, TargetEstimate, UnplannedMain } from '@/domain/planning';
 import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 
 /**
@@ -148,6 +149,8 @@ export interface PlanningModel {
   segmentsOf: (plan: PlanRow) => PlanSegmentConfig[];
   toAllocateOf: (plan: PlanRow) => number;
   reservationsOf: (plan: PlanRow) => Map<string, Reservation>;
+  /** the period's spending outside every subject, by main category */
+  unplannedOf: (plan: PlanRow) => UnplannedMain[];
   estimate: (family: ReadonlySet<string>) => TargetEstimate;
   contextFor: (period: Period) => SubjectContext;
   /** the current actual plan's subjects in the red */
@@ -332,7 +335,11 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     segmentsOf: (p) => segmentsOf(p),
     toAllocateOf: (p) => pool - fundedOf(p) - aheadFundedCents,
     reservationsOf: (p) => categoryReservations(subjectsOf(p), budgetsById, data.catalog),
-    estimate: (family) => estimateTarget(family, data.txs, pastPeriods),
+    unplannedOf: (p) => {
+      const covered = new Set<string>();
+      for (const subject of subjectsOf(p)) for (const id of familyOf(subject, data, budgetsById)) covered.add(id);
+      return unplannedByCategory(data.txs, periodOf(p), covered, data.catalog);
+    },    estimate: (family) => estimateTarget(family, data.txs, pastPeriods),
     contextFor,
     attention: currentViews.filter((v) => v.status === 'overspent'),
   };
@@ -363,11 +370,11 @@ export interface CategoryAvailability {
 }
 
 /** the categories a subject answers for: its own (expenses) or its budget's (budgets); none for the rest */
-function familyOf(subject: PlanSubjectRow, model: PlanningModel): ReadonlySet<string> {
-  if (subject.segment === 'expenses') return subjectFamily(subject, model.data.catalog);
+function familyOf(subject: PlanSubjectRow, data: PlanningData, budgetsById: ReadonlyMap<string, BudgetRow>): ReadonlySet<string> {
+  if (subject.segment === 'expenses') return subjectFamily(subject, data.catalog);
   if (subject.segment === 'budgets') {
-    const budget = model.data.budgets.find((b) => b.id === subject.sourceId);
-    return subjectFamily({ catIds: budget?.catIds ?? [] }, model.data.catalog);
+    const budget = subject.sourceId ? budgetsById.get(subject.sourceId) : undefined;
+    return subjectFamily({ catIds: budget?.catIds ?? [] }, data.catalog);
   }
   return new Set<string>();
 }
@@ -379,7 +386,7 @@ export function availabilityByCat(model: PlanningModel): Map<string, CategoryAva
   const currency = model.data.space?.currency ?? 'EUR';
   for (const view of model.viewsOf(model.plan)) {
     const { subject } = view;
-    for (const catId of familyOf(subject, model)) {
+    for (const catId of familyOf(subject, model.data, new Map(model.data.budgets.map((b) => [b.id, b])))) {
       if (out.has(catId)) continue; // a budget's claim never overrides an expense subject's (expenses come first)
       out.set(catId, { subjectName: subject.name, color: subject.color, cents: view.fundedCents - view.realizedCents, currency, status: view.status });
     }

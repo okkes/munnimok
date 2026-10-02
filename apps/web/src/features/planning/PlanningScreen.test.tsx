@@ -120,7 +120,7 @@ describe('Planning (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tab-home'));
     await screen.findByTestId('screen-home');
     await screen.findByTestId('home-planning');
-    fireEvent.click(screen.getByTestId('home-recurring-door'));
+    fireEvent.click(screen.getByTestId('home-recurring-all'));
     await screen.findByTestId('screen-recurring');
     expect(screen.getByTestId('recurring-back')).toBeTruthy();
     fireEvent.click(screen.getByTestId('tab-settings'));

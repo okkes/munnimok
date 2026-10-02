@@ -281,6 +281,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.conn.4t', bodyKey: 'tour.conn.4b', illustration: '🧲' },
       { titleKey: 'tour.conn.5t', bodyKey: 'tour.conn.5b', illustration: '🔁', anchor: 'conn-sync-card' },
       { titleKey: 'tour.conn.6t', bodyKey: 'tour.conn.6b', illustration: '🖥️', anchor: 'conn-agents' },
+      { titleKey: 'tour.conn.7t', bodyKey: 'tour.conn.7b', illustration: '🧾', anchor: 'conn-view-receipts' },
     ],
   },
   {

@@ -852,6 +852,7 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             if (fresh.Count == 0) { spent = false; break; }
 
             collected.AddRange(fresh.Where(r => ReceiptFactory.InWindow(r.PurchasedAt, request)));
+            ctx.Found(collected.Count);
 
             // The list runs newest first, so a page entirely older than the
             // window means every later page is too. Stopping here is what

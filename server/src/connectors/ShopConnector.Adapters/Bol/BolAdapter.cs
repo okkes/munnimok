@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Playwright;
 using Connector.Kit.Adapters;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
@@ -85,8 +86,41 @@ public sealed class BolAdapter : IProviderAdapter
         var browserPage = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
         var page = new PlaywrightLoginPage(browserPage, Manifest);
 
-        return await LoginAsync(ctx, page, new BolSessionWatcher(ctx, page, _options, _time), ct)
-            .ConfigureAwait(false);
+        // The hash bol pins its orders operation to, read off the request
+        // bol's own page makes once the sign-in lands on the orders overview
+        // (see BolPersistedQuery). Listened for from before the first
+        // navigation, so a page that fires early is not missed.
+        var learned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnRequest(object? _, IRequest request)
+        {
+            if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase)) return;
+            if (!request.Url.Contains(_options.GraphQlUrl, StringComparison.OrdinalIgnoreCase)) return;
+            if (BolPersistedQuery.TryReadHash(request.PostData, _options.OrdersOperationName, out var hash)) learned.TrySetResult(hash);
+        }
+
+        browserPage.Request += OnRequest;
+        try
+        {
+            var result = await LoginAsync(ctx, page, new BolSessionWatcher(ctx, page, _options, _time), ct)
+                .ConfigureAwait(false);
+
+            // The overview fires the operation a moment after the session lands;
+            // a short wait catches it, and a page that never fires it costs the
+            // wait and nothing else - the option's hash still stands.
+            var caught = await Task.WhenAny(learned.Task, Task.Delay(_options.HashProbeMs, ct)).ConfigureAwait(false) == learned.Task;
+            if (caught)
+            {
+                ctx.Note($"{ProviderId}: the orders operation's persisted-query hash was learned from the page and sealed into the session");
+                return result with { Material = BolPersistedQuery.WithHash(result.Material, learned.Task.Result) };
+            }
+
+            ctx.Note($"{ProviderId}: the orders page fired no persisted operation within {_options.HashProbeMs} ms; the configured hash stands");
+            return result;
+        }
+        finally
+        {
+            browserPage.Request -= OnRequest;
+        }
     }
 
     /// <summary>
@@ -211,9 +245,16 @@ public sealed class BolAdapter : IProviderAdapter
         var shape = BolShapes.For(_options.OrdersShape);
         var cap = Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
 
+        // The hash the sign-in learned from bol's own page beats the
+        // configured one: bol moves it with every front-end release, and the
+        // one its page sent that day is the one it knows.
+        var learnedHash = BolPersistedQuery.Learned(ctx.Material);
+        var options = learnedHash is null ? _options : _options with { OrdersPersistedQueryHash = learnedHash };
+        if (learnedHash is not null) ctx.Note($"{ProviderId}: fetching with the persisted-query hash the sign-in learned");
+
         ctx.Progress(JobStep.Downloading);
 
-        var (collected, walkWasComplete) = await WalkAsync(ctx, shape, cookies, xsrf, request, cap, ct)
+        var (collected, walkWasComplete) = await WalkAsync(ctx, new BolCall(shape, options, cookies, xsrf), request, cap, ct)
             .ConfigureAwait(false);
 
         var ordered = collected.OrderByDescending(o => o.PlacedAt).ToList();
@@ -237,10 +278,13 @@ public sealed class BolAdapter : IProviderAdapter
     /// because it had seen everything rather than because its page budget
     /// ran out.
     /// </summary>
+    /// <summary>What one orders request needs beyond its page number: the shape, the options it reads (the learned hash included), the jar and the token.</summary>
+    private sealed record BolCall(IBolOrdersShape Shape, BolOptions Options, string Cookies, string? Xsrf);
+
     private async Task<(List<BolOrder> Orders, bool Complete)> WalkAsync(
-        IJobContext ctx, IBolOrdersShape shape, string cookies, string? xsrf, ResourceRequest request, int cap,
-        CancellationToken ct)
+        IJobContext ctx, BolCall call, ResourceRequest request, int cap, CancellationToken ct)
     {
+        var shape = call.Shape;
         var zone = RetailZones.Dutch;
         var collected = new List<BolOrder>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -255,7 +299,7 @@ public sealed class BolAdapter : IProviderAdapter
         {
             ct.ThrowIfCancellationRequested();
 
-            var body = await ReadPageAsync(ctx, shape, cookies, xsrf, page, ct).ConfigureAwait(false);
+            var body = await ReadPageAsync(ctx, call.Shape, call.Options, call.Cookies, call.Xsrf, page, ct).ConfigureAwait(false);
 
             ctx.Progress(JobStep.Parsing);
 
@@ -267,6 +311,7 @@ public sealed class BolAdapter : IProviderAdapter
             }
 
             var (fresh, older) = Tally(orders, seen, request, collected);
+            ctx.Found(collected.Count);
 
             // A page that repeats the previous one means the pagination
             // parameter is not the one bol takes - which is entirely possible,
@@ -426,12 +471,12 @@ public sealed class BolAdapter : IProviderAdapter
     // ---- transport -----------------------------------------------------------
 
     private async Task<string> ReadPageAsync(
-        IJobContext ctx, IBolOrdersShape shape, string cookies, string? xsrf, int page, CancellationToken ct)
+        IJobContext ctx, IBolOrdersShape shape, BolOptions options, string cookies, string? xsrf, int page, CancellationToken ct)
     {
-        var url = shape.Url(_options, page);
+        var url = shape.Url(options, page);
         var what = $"orders page {page} ({shape.Name} shape)";
 
-        var payload = shape.Body(_options, page);
+        var payload = shape.Body(options, page);
 
         using var request = new HttpRequestMessage(payload is null ? HttpMethod.Get : HttpMethod.Post, url);
 
@@ -448,7 +493,7 @@ public sealed class BolAdapter : IProviderAdapter
         // What this shape needs beyond the above - for the API shape, the
         // operation named in a header, without which bol's edge refuses the
         // request before GraphQL ever sees it.
-        foreach (var (name, value) in shape.Headers(_options))
+        foreach (var (name, value) in shape.Headers(options))
         {
             request.Headers.TryAddWithoutValidation(name, value);
         }

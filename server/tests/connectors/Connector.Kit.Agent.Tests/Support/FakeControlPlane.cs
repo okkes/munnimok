@@ -70,6 +70,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     public JobState FailState { get; set; } = JobState.Failed;
     private readonly List<JobResultRequest> _results = [];
     private readonly List<PostedFrame> _frames = [];
+    private readonly List<ProgressReport> _progress = [];
     private readonly Queue<LiveInputBatch> _pendingInput = new();
 
     private int _challengesRaised;
@@ -233,6 +234,9 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
 
     /// <summary>Every live frame this agent posted, in order.</summary>
     public IReadOnlyList<PostedFrame> Frames { get { lock (_gate) return [.. _frames]; } }
+
+    /// <summary>Every progress report the agent posted, in order.</summary>
+    public IReadOnlyList<ProgressReport> Progress { get { lock (_gate) return [.. _progress]; } }
 
     /// <summary>
     /// Frames that arrived numbered no higher than one already held, and were
@@ -468,7 +472,12 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
             return Empty(RenewRefused ? HttpStatusCode.Conflict : HttpStatusCode.NoContent);
         }
 
-        if (path.EndsWith("/progress", StringComparison.Ordinal)) return Empty(HttpStatusCode.NoContent);
+        if (path.EndsWith("/progress", StringComparison.Ordinal))
+        {
+            var posted = await ReadAsync<ProgressReport>(request, ct);
+            lock (_gate) _progress.Add(posted);
+            return Empty(HttpStatusCode.NoContent);
+        }
 
         if (path.EndsWith("/challenge", StringComparison.Ordinal))
         {

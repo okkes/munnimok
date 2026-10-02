@@ -5,7 +5,11 @@ import { useData } from '@/app/data';
 import { usePlanning, usePlanningOps } from '@/application/planning';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import type { PlanRow, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
-import type { SubjectView } from '@/domain/planning';
+import { periodsAhead } from '@/domain/planning';
+import type { SubjectView, UnplannedMain } from '@/domain/planning';
+import type { Period } from '@/domain/periods';
+import { parseLocalDate } from '@/application/planningModel';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
@@ -14,7 +18,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Pill, Row } from '@/ui/primitives';
+import { Pill, Row, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { AddSourceSheet } from './AddSourceSheet';
 import { AheadSheet, aheadDiffers, periodLabel } from './AheadSheet';
@@ -27,6 +31,7 @@ import { SegmentSection } from './SegmentSection';
 import { SegmentsSheet } from './SegmentsSheet';
 import { StartPlanCard } from './StartPlanCard';
 import { SubjectEditor } from './SubjectEditor';
+import type { EditorPreset } from './SubjectEditor';
 import { SubjectSheet } from './SubjectSheet';
 import { SEGMENT_META } from './planningUi';
 
@@ -40,11 +45,86 @@ const MENU: { id: MenuItem; icon: string; key: 'plan.menu.blueprints' | 'plan.me
   { id: 'insights', icon: 'chart-line', key: 'plan.menu.insights' },
 ];
 
+/** how far the pager walks into the future (the funded periods ahead and the empty ones after them) */
+const MAX_AHEAD = 12;
+
+/** the n-th period after the current one */
+const aheadPeriodAt = (model: PlanningModel, n: number): Period =>
+  periodsAhead(model.data.space ?? { periodType: 'month', periodDay: 1 }, n, parseLocalDate(model.today))[n - 1];
+
+/** the period the pager shows: the current one, one of the past, or one ahead (negative) */
+const viewedPeriod = (model: PlanningModel, viewBack: number): Period => {
+  if (viewBack === 0) return model.period;
+  if (viewBack > 0) return model.pastPeriods.at(-viewBack) ?? model.period;
+  return aheadPeriodAt(model, -viewBack);
+};
+
 /** the actual plan of the viewed period, or the sandbox beside the current one */
 function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean): PlanRow | null {
   if (viewBack === 0) return sandboxMode && model.sandbox ? model.sandbox : model.plan;
-  const period = model.pastPeriods.at(-viewBack);
-  return period ? (model.pastPlans.find((p) => p.periodStart === period.start) ?? null) : null;
+  const period = viewedPeriod(model, viewBack);
+  if (viewBack > 0) return model.pastPlans.find((p) => p.periodStart === period.start) ?? null;
+  return model.ahead.find((a) => a.period.start === period.start)?.plan ?? null;
+}
+
+/** the spending no subject answers for, by main, with the door to plan it */
+function UnplannedSection({
+  rows,
+  editable,
+  fmt,
+  currency,
+  onPlan,
+}: Readonly<{ rows: UnplannedMain[]; editable: boolean; fmt: (cents: number, currency: string) => string; currency: string; onPlan: (preset: EditorPreset) => void }>) {
+  const { t } = useLang();
+  const cats = useCategories();
+  if (rows.length === 0) return null;
+  const total = rows.reduce((sum, r) => sum + r.cents, 0);
+  return (
+    <section data-testid="plan-segment-unplanned" className="mt-5">
+      <div className="m-cap mb-1 flex items-center justify-between gap-2 px-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Icon name="help-circle-outline" size={14} />
+          <span className="truncate">{t('plan.segment.unplanned')}</span>
+          <span className="m-num font-normal normal-case text-negative" data-testid="plan-segment-total-unplanned">
+            {fmt(total, currency)}
+          </span>
+        </span>
+      </div>
+      <p className="mb-1 px-1 text-[11px] text-ink-4">{t('plan.unplannedHint')}</p>
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {rows.map((row) => {
+          const main = cats.byId(row.mainId);
+          const subs = row.subs.filter((s) => s.catId !== row.mainId);
+          return (
+            <div key={row.mainId} className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0" data-testid={`plan-unplanned-${row.mainId}`}>
+              <Tile icon={main.icon} bg={`color-mix(in srgb, ${main.color} 14%, transparent)`} color={main.color} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{catName(main, t)}</span>
+                  <Pill tone="negative">{t('plan.unplannedSpent', { amount: fmt(row.cents, currency) })}</Pill>
+                </span>
+                {subs.length > 0 && (
+                  <span className="mt-0.5 block truncate text-[11px] text-ink-4">
+                    {subs.map((s) => `${catName(cats.byId(s.catId), t)} ${fmt(s.cents, currency)}`).join(' · ')}
+                  </span>
+                )}
+              </span>
+              {editable && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid={`plan-unplanned-plan-${row.mainId}`}
+                  onClick={() => onPlan({ name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: row.cents })}
+                >
+                  {t('plan.unplannedPlan')}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 /** the sandbox strip: actual ↔ sandbox, and the sandbox's three verbs */
@@ -108,10 +188,10 @@ function SandboxStrip({
   );
 }
 
-/** the period pager: the current period, the previous one (money moves), older ones (reading) */
+/** the period pager: the past (reading, the previous one moving money), the current period, the periods ahead */
 function PeriodPager({ model, viewBack, onViewBack }: Readonly<{ model: PlanningModel; viewBack: number; onViewBack: (next: number) => void }>) {
   const { lang } = useLang();
-  const period = viewBack === 0 ? model.period : model.pastPeriods.at(-viewBack)!;
+  const period = viewedPeriod(model, viewBack);
   return (
     <div className="flex items-center justify-between">
       <IconButton label="‹" testId="plan-prev" onClick={() => onViewBack(Math.min(viewBack + 1, model.pastPeriods.length))}>
@@ -120,7 +200,7 @@ function PeriodPager({ model, viewBack, onViewBack }: Readonly<{ model: Planning
       <span className="text-[13px] font-medium text-ink-2" data-testid="plan-period">
         {periodLabel(period, lang)}
       </span>
-      <IconButton label="›" testId="plan-next" onClick={() => onViewBack(Math.max(viewBack - 1, 0))}>
+      <IconButton label="›" testId="plan-next" onClick={() => onViewBack(Math.max(viewBack - 1, -MAX_AHEAD))}>
         <Icon name="chevron-right" size={20} />
       </IconButton>
     </div>
@@ -150,7 +230,7 @@ export function PlanningScreen() {
   const [sheet, setSheet] = useState<MenuItem | 'ahead' | null>(null);
   const [reorderSegment, setReorderSegment] = useState<PlanSegmentKind | null>(null);
   const [openSubjectId, setOpenSubjectId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<PlanSubjectRow | 'new' | null>(null);
+  const [editing, setEditing] = useState<{ subject: PlanSubjectRow | null; preset?: EditorPreset } | null>(null);
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
 
   const plan = useMemo(() => (model ? viewedPlan(model, viewBack, sandboxMode) : null), [model, viewBack, sandboxMode]);
@@ -185,7 +265,7 @@ export function PlanningScreen() {
           fmt={fmt}
           currency={currency}
           onFill={() => void ops.fillSegment(plan, s.kind)}
-          onAdd={() => (s.kind === 'expenses' ? setEditing('new') : setAdding(s.kind))}
+          onAdd={() => (s.kind === 'expenses' ? setEditing({ subject: null }) : setAdding(s.kind))}
           onOpen={(view) => setOpenSubjectId(view.subject.id)}
         />
       ));
@@ -194,12 +274,26 @@ export function PlanningScreen() {
   const body = () => {
     if (!model) return null;
     if (!plan) {
-      return viewBack === 0 ? (
-        <StartPlanCard model={model} ops={ops} currency={currency} />
-      ) : (
-        <p className="py-8 text-center text-[13px] text-ink-4" data-testid="plan-nopast">
-          {t('plan.noPlanPast')}
-        </p>
+      if (viewBack === 0) return <StartPlanCard model={model} ops={ops} currency={currency} />;
+      if (viewBack > 0) {
+        return (
+          <p className="py-8 text-center text-[13px] text-ink-4" data-testid="plan-nopast">
+            {t('plan.noPlanPast')}
+          </p>
+        );
+      }
+      // a period ahead without a plan yet: it takes the current shape and what is left (user request 2026-10-02)
+      return (
+        <div className="rounded-card border border-line bg-surface p-4 text-center" data-testid="plan-ahead-empty">
+          <p className="text-[13px] text-ink-3">{t('plan.aheadEmpty')}</p>
+          {model.plan ? (
+            <Button size="sm" className="mt-3" data-testid="plan-ahead-start" onClick={() => void ops.fundAhead(viewedPeriod(model, viewBack))}>
+              {t('plan.aheadStart')}
+            </Button>
+          ) : (
+            <p className="mt-2 text-[11px] text-ink-4">{t('plan.aheadNeedsCurrent')}</p>
+          )}
+        </div>
       );
     }
     return (
@@ -242,6 +336,9 @@ export function PlanningScreen() {
           </div>
         )}
         {segmentBlocks()}
+        {plan.kind !== 'blueprint' && viewBack >= 0 && (
+          <UnplannedSection rows={model.unplannedOf(plan)} editable={editable} fmt={fmt} currency={currency} onPlan={(preset) => setEditing({ subject: null, preset })} />
+        )}
       </>
     );
   };
@@ -317,7 +414,7 @@ export function PlanningScreen() {
               onClose={() => setOpenSubjectId(null)}
               onEdit={(subject) => {
                 setOpenSubjectId(null);
-                setEditing(subject);
+                setEditing({ subject });
               }}
             />
           )}
@@ -325,7 +422,8 @@ export function PlanningScreen() {
             <SubjectEditor
               open
               onOpenChange={(next) => !next && setEditing(null)}
-              subject={editing === 'new' ? null : editing}
+              subject={editing.subject}
+              preset={editing.preset ?? null}
               plan={plan}
               model={model}
               ops={ops}

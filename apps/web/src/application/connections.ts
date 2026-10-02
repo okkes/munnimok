@@ -140,6 +140,88 @@ export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
   );
 }
 
+/** every receipt the shops handed over, newest first — the hub's own list, no space in between */
+export function useGlobalReceipts(): ReceiptRow[] | undefined {
+  const { store } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const feedId = myStoreFeedId();
+      if (!feedId) return [];
+      const rows = (await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0 && r.instanceId != null);
+      rows.sort((a, b) => b.date.localeCompare(a.date));
+      return rows;
+    },
+    [],
+  );
+}
+
+/** the dates a connection's fetches cover, with how many rows they brought */
+export interface FetchedRange {
+  count: number;
+  /** yyyy-mm-dd, the oldest row */
+  from: string;
+  /** yyyy-mm-dd, the newest row */
+  to: string;
+}
+
+const widen = (ranges: Record<string, FetchedRange>, connectionId: string, date: string) => {
+  const day = date.slice(0, 10);
+  const current = ranges[connectionId];
+  if (!current) {
+    ranges[connectionId] = { count: 1, from: day, to: day };
+    return;
+  }
+  current.count += 1;
+  if (day < current.from) current.from = day;
+  if (day > current.to) current.to = day;
+};
+
+/**
+ * What every connection fetched so far — a shop's receipts by the
+ * connection that pulled them, a bank's transactions through the accounts
+ * it handed over — so a card can say "from … to …" (user request
+ * 2026-10-02). Derived from the rows themselves: always true, never a
+ * claim.
+ */
+/** a shop's receipts, by the connection that pulled them */
+async function receiptRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
+  const feedId = myStoreFeedId();
+  if (!feedId) return;
+  for (const receipt of await store.bySpace('receipt', feedId)) {
+    if (receipt.deleted === 0 && receipt.instanceId) widen(ranges, receipt.instanceId, receipt.date);
+  }
+}
+
+/** a bank's transactions through the accounts it handed over, credited to every connection of that party */
+async function bankRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
+  const banks = (await store.allRows('storeConn')).filter((c) => c.deleted === 0 && c.kind === 'bank');
+  if (banks.length === 0) return;
+  const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector' && a.provider);
+  for (const feed of new Set(accounts.map((a) => a.spaceId))) {
+    const byAccount = new Map(accounts.filter((a) => a.spaceId === feed).map((a) => [a.id, a.provider]));
+    for (const tx of await store.bySpace('transaction', feed)) {
+      const provider = tx.deleted === 0 ? byAccount.get(tx.accountId) : undefined;
+      if (!provider) continue;
+      for (const bank of banks.filter((b) => b.store === provider)) widen(ranges, bank.id, tx.date);
+    }
+  }
+}
+
+export function useFetchedRanges(): Record<string, FetchedRange> | undefined {
+  const { store } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const ranges: Record<string, FetchedRange> = {};
+      await receiptRanges(store, ranges);
+      await bankRanges(store, ranges);
+      return ranges;
+    },
+    [],
+  );
+}
+
 export interface AdoptArgs {
   manifest: ProviderManifest;
   /** the settled session view — its bundle is kept, its account tells duplicates */
@@ -157,7 +239,7 @@ export interface AdoptResult {
 }
 
 export interface ConnectionOps {
-  /** a settled login becomes a connection: rows, custody, inclusion, the first sync */
+  /** a settled login becomes a connection: rows, custody, the first sync — no space inclusion, that is picked afterwards */
   adopt: (args: AdoptArgs) => Promise<AdoptResult>;
   rename: (connectionId: string, displayName: string) => Promise<void>;
   setIcon: (connectionId: string, icon: string | null) => Promise<void>;
@@ -238,16 +320,10 @@ export function useConnectionOps(): ConnectionOps {
         connectedAt: new Date().toISOString().slice(0, 10),
         status: 'ok',
       });
-      // a shop's receipts start included in the connecting space (v2
-      // behavior, user ruling); a bank's accounts are attached one by one
-      // on the space's accounts screen, like every other feed account
-      if (manifest.kind === 'store') {
-        await repo.upsert('storeConnLink', spaceId, storeConnLinkId(spaceId, connectionId), {
-          instanceId: connectionId,
-          store: manifest.id,
-          displayName,
-        });
-      }
+      // a connection is the person's, not a space's (user ruling 2026-10-02):
+      // nothing joins a space by itself — a shop's spaces are picked on the
+      // step after naming or from its card, a bank's accounts are attached
+      // one by one on the space's accounts screen, like every other feed account
       void logActivity(storage, repo, spaceId, 'storeConnect', displayName);
       firstSync(connectionId);
       return { connectionId, duplicateOf };

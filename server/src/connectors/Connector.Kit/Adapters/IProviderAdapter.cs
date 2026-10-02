@@ -137,6 +137,16 @@ public interface IJobContext
     void Progress(JobStep step);
 
     /// <summary>
+    /// How many records the fetch has gathered so far - called as the walk
+    /// grows, so a consumer can show a counter climbing instead of a spinner
+    /// (user request 2026-10-02). A courtesy like Progress: a lost count never
+    /// fails a run, and a context with nowhere to write ignores it.
+    /// </summary>
+    void Found(int records)
+    {
+    }
+
+    /// <summary>
     /// A line for the agent's own log. For an operator, never a user.
     ///
     /// The gap this closes was found the hard way. Amazon's invoice fetch

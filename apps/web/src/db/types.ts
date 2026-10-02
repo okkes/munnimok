@@ -559,6 +559,8 @@ export interface ConnectorLastError {
   messageKey: string;
   userAction: string;
   retryAfterSeconds?: number;
+  /** ISO: when the relay said so — with retryAfterSeconds, the moment a pause is over */
+  at?: string;
 }
 
 /**

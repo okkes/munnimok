@@ -180,8 +180,11 @@ internal static class JumboManifest
                 // Longer than it was: an in-store receipt costs a second round
                 // trip before it can state a total at all, which the previous
                 // design did not budget for.
-                TypicalDurationSeconds = 90,
-                MaxRecordsPerFetch = 200,
+                // A first connect walks the whole history (user request
+                // 2026-10-02): two thousand rows over two hundred pages, and
+                // the in-store detail round trips on top.
+                TypicalDurationSeconds = 300,
+                MaxRecordsPerFetch = 2_000,
             },
         ],
         Limits = new ProviderLimits

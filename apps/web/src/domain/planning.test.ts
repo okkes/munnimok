@@ -22,6 +22,7 @@ import {
   poolCents,
   recommendSubjects,
   recurringTargetCents,
+  unplannedByCategory,
   reservationConflicts,
   sameSubjects,
   spreadTargetCents,
@@ -165,6 +166,27 @@ describe('targets', () => {
     expect(recurringTargetCents(rent, space, period, 0)).toBe(900_00);
     expect(debtTargetCents({ paymentCents: 250_00, paymentEvery: 'month', paymentDay: 10 }, space, period, 0)).toBe(250_00);
     expect(debtTargetCents({ paymentCents: 0 }, space, period, 0)).toBe(0);
+    // a weekly cost falls due four Mondays in October: every one of them is the target (user ss 2026-10-02)
+    const weekly = { active: 1 as const, amountCents: 15_00, every: 'week' as const, dueDay: 1, since: '2026-09-07' };
+    expect(recurringTargetCents(weekly, space, period, 0)).toBe(60_00);
+    expect(recurringTargetCents(weekly, space, period, 20_00)).toBe(40_00);
+  });
+
+  it('spending outside every subject gathers under its main, subs broken out, locked families left alone', () => {
+    const catalog = {
+      byId: (id: string | undefined) => ({ id: id ?? 'uncategorized', parentId: id === 'groceries' || id === 'coffee' ? 'consumption' : id === 'movie' ? 'entertainment' : undefined }),
+      childrenOf: () => [],
+    };
+    const txs = [
+      tx({ id: 'u1', date: '2026-10-03', amountCents: -40_00, catId: 'groceries' }),
+      tx({ id: 'u2', date: '2026-10-04', amountCents: -10_00, catId: 'coffee' }),
+      tx({ id: 'u3', date: '2026-10-05', amountCents: -25_00, catId: 'movie' }),
+      tx({ id: 'u4', date: '2026-10-06', amountCents: -99_00, catId: 'groceries', recurringId: 'rec1' }),
+      tx({ id: 'u5', date: '2026-09-30', amountCents: -5_00, catId: 'coffee' }),
+    ];
+    const rows = unplannedByCategory(txs, period, new Set(['movie']), catalog);
+    expect(rows.map((r) => [r.mainId, r.cents])).toEqual([['consumption', 50_00]]);
+    expect(rows[0].subs).toEqual([{ catId: 'groceries', cents: 40_00 }, { catId: 'coffee', cents: 10_00 }]);
   });
 
   it('a goal spreads what is left over the periods before its date; an undated goal has no target', () => {

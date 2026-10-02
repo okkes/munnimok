@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 import { NO_INGEST, catalogueOf, manifestOf } from '@/test/connectorFixtures';
 import { storeConnLinkId } from '@/domain/feedIds';
+import { usePendingLogins } from './pendingLogins';
+import { useSyncActivity } from './syncActivity';
 
 const PROVIDER = 'mock-store-simple';
 const json = (payload: unknown, status = 200) =>
@@ -39,14 +41,32 @@ async function seedConnection(id: string, extra: Record<string, unknown> = {}) {
   db.close();
 }
 
+/** two receipts the relay filed for a connection, the way its ingest leaves them in the store feed */
+async function seedReceipts(connectionId: string) {
+  const { Repo } = await import('@/db/repo');
+  const { DexieBackend } = await import('@/db/backend');
+  const { HlcClock } = await import('@/sync/hlc');
+  const { storeFeedId } = await import('@/domain/feedIds');
+  const { USER_TEST_SUB } = await import('@/test/harness');
+  const db = await userDb();
+  const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+  const feed = storeFeedId(USER_TEST_SUB);
+  await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:1`, { source: PROVIDER, date: '2026-09-01', totalCents: 1250, merchant: 'Mock Store', instanceId: connectionId, items: [{ name: 'Melk', totalCents: 125 }] });
+  await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:2`, { source: PROVIDER, date: '2026-09-20', totalCents: 4999, merchant: 'Mock Store', instanceId: connectionId, documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-2.pdf', dataUrl: 'data:application/pdf;base64,JVBERi0=' }] });
+  db.close();
+}
+
 describe('Connections hub (signed-in user)', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
+    // sign-ins in flight are a module store: one test's leftover must not be the next test's row
+    usePendingLogins.setState({ logins: {} });
+    useSyncActivity.setState({ activity: {} });
   });
 
-  it('connects a shop through the catalogue, names it, includes a second space — the bundle stays in the tab', async () => {
+  it('connects a shop through the catalogue, names it, picks its spaces afterwards — the bundle stays in the tab', async () => {
     renderAppAsUser('/connections', {
       spaces: [
         { id: 's-user', name: 'Personal' },
@@ -84,24 +104,32 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(nameInput, { target: { value: 'Mock thuis' } });
     fireEvent.click(screen.getByTestId('conn-name-save'));
 
+    // the step after naming: no space has the connection until picked (user ruling 2026-10-02)
+    await screen.findByTestId('conn-spaces-step', {}, { timeout: 5000 });
+    const db = await userDb();
+    expect((await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0)).toHaveLength(0);
+    fireEvent.click(screen.getByTestId('conn-space-s-two'));
+    fireEvent.click(screen.getByTestId('conn-spaces-save'));
+    await waitFor(() => expect(screen.queryByTestId('conn-spaces-step')).toBeNull());
+
     const card = await waitFor(() => {
       const el = document.querySelector('[data-testid^="conn-card-"]');
       expect(el?.textContent).toContain('Mock thuis');
       return el!;
     });
     const id = card.getAttribute('data-testid')!.slice('conn-card-'.length);
-    // the first sync ran against the relay: the card reads synced
-    await waitFor(() => expect(screen.getByTestId(`conn-state-${id}`).textContent).toMatch(/Synced/), { timeout: 5000 });
+    // the first sync ran by itself against the relay: the row says what it brought, and how far the fetches reach
+    await waitFor(() => expect(screen.getByTestId(`conn-result-${id}`).textContent).toMatch(/Up to date/), { timeout: 5000 });
+    expect(screen.getByTestId(`conn-range-${id}`).textContent).toMatch(/Nothing fetched yet/);
+    await waitFor(() => expect(screen.getByTestId(`conn-usedin-${id}`).textContent).toContain('Second'));
 
-    // include the OTHER space via the manage sheet — the connect already
-    // included the active one; afterwards both spaces see the connection
+    // the active space joins from the manage sheet; afterwards both spaces see the connection
     fireEvent.click(screen.getByTestId(`conn-manage-${id}`));
     const rows = [await screen.findByTestId('conn-space-s-user'), await screen.findByTestId('conn-space-s-two')];
     await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(1));
     fireEvent.click(rows.find((row) => !row.querySelector('.mdi-checkbox-marked'))!);
     await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(2));
 
-    const db = await userDb();
     await waitFor(async () => {
       const links = (await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0);
       expect(links.map((l) => l.spaceId).sort((a, b) => a.localeCompare(b))).toEqual(['s-two', 's-user']);
@@ -163,6 +191,76 @@ describe('Connections hub (signed-in user)', () => {
     const body = screen.getByTestId('connect-live').closest('[data-sheet-body]') as HTMLElement;
     expect(body.hasAttribute('data-full')).toBe(true);
   }, 20_000);
+
+  it('a streamed page the platform ends moves the sheet on by itself (the DUO sign-in that went nowhere, user ss 2026-10-01)', async () => {
+    let polls = 0;
+    const live = {
+      sessionId: 'ses_l',
+      state: 'awaiting_input',
+      challenge: { id: 'ch_live', type: 'live_view', answerKind: 'text', expiresAt: new Date(Date.now() + 900_000).toISOString() },
+      progress: { step: 'awaiting_human', stepsDone: [] },
+      notes: [],
+    };
+    const settled = { sessionId: 'ses_l', state: 'active', bundle: 'sb_v1.live', providerAccount: { displayName: 'Mock' } };
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: () => live,
+        [`GET /connectors/${PROVIDER}/login/ses_l`]: () => {
+          polls += 1;
+          return polls < 2 ? live : settled;
+        },
+        // the platform refuses further pixels: the sign-in landed
+        [`GET /connectors/${PROVIDER}/login/ses_l/challenges/ch_live/live/frame`]: () => envelope(410, 'challenge_expired'),
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-field-username');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-live', {}, { timeout: 5000 });
+    // the ended stream re-reads the session, which has settled: the connection is named
+    expect(await screen.findByTestId('conn-name-input', {}, { timeout: 8000 })).toBeTruthy();
+    expect(screen.queryByTestId('connect-live')).toBeNull();
+  }, 20_000);
+
+  it('closing the sheet mid-sign-in keeps it going: the hub lists it, continues it, and adopts it when it settles', async () => {
+    let polls = 0;
+    const waiting = { sessionId: 'ses_w', state: 'queued', progress: { step: 'queued', stepsDone: [], ahead: 1 }, notes: [] };
+    const settled = { sessionId: 'ses_w', state: 'active', bundle: 'sb_v1.w', providerAccount: { displayName: 'Mock' } };
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: () => waiting,
+        [`GET /connectors/${PROVIDER}/login/ses_w`]: () => {
+          polls += 1;
+          return polls < 3 ? waiting : settled;
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-field-username');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-progress', {}, { timeout: 5000 });
+    // closing detaches: the hub lists the sign-in with a way back in
+    fireEvent.click(screen.getByTestId('connect-running-close'));
+    const row = await screen.findByTestId(/^conn-pending-(?!state|continue|cancel)/);
+    expect(row.textContent).toMatch(/Signing in/);
+    expect(screen.getByTestId(/^conn-pending-continue-/)).toBeTruthy();
+    // the follower reads the session while the sheet is closed and adopts it once it settles
+    await screen.findByTestId('conn-name-input', {}, { timeout: 10000 });
+  }, 25_000);
 
   it('a party that asks a code mid-login gets it answered; the bundle is read once it settles', async () => {
     let answered = false;
@@ -276,6 +374,51 @@ describe('Connections hub (signed-in user)', () => {
     expect(sessionStorage.getItem('munni_connector_bundle:c-seeded')).toBeNull();
     expect(await screen.findByTestId('conn-signin-c-seeded')).toBeTruthy();
     db.close();
+  }, 20_000);
+
+  it('a sync that became a job counts up on the row while it runs and ends with what it brought (user request 2026-10-02)', async () => {
+    await seedConnection('c-count', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    let polls = 0;
+    const running = (found: number) => ({ jobId: 'job_c', sessionId: 'ses_1', state: 'running', resource: 'receipts', progress: { step: 'downloading', stepsDone: [], found }, complete: false });
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        [`POST /connectors/${PROVIDER}/sync`]: () => json({ ...running(7), ingested: NO_INGEST }, 202),
+        [`GET /connectors/${PROVIDER}/jobs/job_c`]: () => {
+          polls += 1;
+          return polls < 2 ? running(7) : { ...running(12), state: 'succeeded', complete: true };
+        },
+        [`POST /connectors/${PROVIDER}/jobs/job_c/collect`]: () => ({ ...running(12), state: 'succeeded', complete: true, ingested: { ...NO_INGEST, records: 12, receipts: 12 } }),
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-sync-c-count', {}, { timeout: 5000 }));
+    await waitFor(() => expect(screen.getByTestId('conn-syncing-c-count').textContent).toContain('7'), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('conn-result-c-count').textContent).toContain('12 new receipts'), { timeout: 10_000 });
+  }, 20_000);
+
+  it('Fetched receipts lists what each shop handed over with the dates covered, and opens one without a space’s linking (user ruling 2026-10-02)', async () => {
+    await seedConnection('c-seeded', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    await seedReceipts('c-seeded');
+    renderAppAsUser('/connections', { api: { ...catalogue } });
+    await screen.findByTestId('screen-connections');
+    await waitFor(() => expect(screen.getByTestId('conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('conn-view-receipts'));
+    await screen.findByTestId('screen-connection-receipts');
+    const group = await screen.findByTestId('receipts-conn-c-seeded', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('receipts-conn-count-c-seeded').textContent).toBe('2'));
+    expect(screen.getByTestId('receipts-conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/);
+    // the hub's list carries no space's labels
+    expect(group.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
+    expect(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2').textContent).toContain('Invoice');
+    fireEvent.click(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2'));
+    await screen.findByTestId('screen-receipt');
+    expect((await screen.findByTestId('receipt-view-total')).textContent).toMatch(/€[1-9]/);
+    expect(screen.getByTestId('receipt-connection').textContent).toContain('Mock thuis');
+    expect(screen.getByTestId('receipt-documents')).toBeTruthy();
+    expect(screen.queryByTestId('receipt-link-tx')).toBeNull();
+    expect(screen.getByTestId('receipt-space-hint')).toBeTruthy();
+    expect(screen.getByTestId('receipt-delete')).toBeTruthy();
   }, 20_000);
 
   it('a connection whose session died reads "reconnect", and removing it signs the party out', async () => {

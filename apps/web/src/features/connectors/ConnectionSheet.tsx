@@ -8,6 +8,7 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { kindIcon } from './logos';
+import { SpacePicker } from './SpacePicker';
 import type { ProviderKind } from './types';
 
 /** rename / icon / included spaces / remove for one connection */
@@ -84,27 +85,7 @@ export function ConnectionSheet({
         {/* which spaces this connection's receipts flow into */}
         <div className="m-cap px-1">{t('conn.sharedSpaces')}</div>
         <p className="px-1 text-[11px] leading-snug text-ink-4">{t('conn.sharedSpacesSub')}</p>
-        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-manage-spaces">
-          {allSpaces.map((entry) => {
-            const included = includedSpaceIds.includes(entry.id);
-            return (
-              <button
-                key={entry.id}
-                data-testid={`conn-space-${entry.id}`}
-                disabled={busy}
-                onClick={() => void toggleSpace(entry.id)}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
-              >
-                <Icon
-                  name={included ? 'checkbox-marked' : 'checkbox-blank-outline'}
-                  size={20}
-                  color={included ? 'var(--m-accent)' : 'var(--m-ink-4)'}
-                />
-                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{entry.name}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SpacePicker spaces={allSpaces} selected={includedSpaceIds} disabled={busy} onToggle={(id) => void toggleSpace(id)} testId="conn-manage-spaces" />
 
         <Button variant="danger" data-testid="conn-remove" disabled={busy} onClick={() => setConfirmRemove(true)}>
           {t('conn.remove')}

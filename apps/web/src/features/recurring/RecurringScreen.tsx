@@ -265,7 +265,6 @@ export function RecurringScreen() {
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-recurring">
       <AppBar
-        large
         title={t('screen.recurring')}
         leading={
           <IconButton label={t('action.back')} testId="recurring-back" onClick={() => window.history.back()}>

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import type { Lang, TranslationKey } from '@/i18n';
+import type { ConnectorConnRow } from '@/db/types';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts } from '@/application/connections';
+import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges } from '@/application/connections';
 import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
 import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { fmtTimeAgo } from '@/lib/text';
@@ -18,7 +19,14 @@ import { CatalogueSheet } from './CatalogueSheet';
 import { takeCatalogueIntent } from './catalogueIntent';
 import { ChallengeCard } from './ChallengeCard';
 import { ConnectFlowSheet } from './ConnectFlowSheet';
+import type { ResumeLogin } from './ConnectFlowSheet';
+import { connectorApi } from './api';
+import { usePendingLoginFollower, usePendingLogins } from './pendingLogins';
+import type { PendingLogin } from './pendingLogins';
 import { ConnectionSheet } from './ConnectionSheet';
+import { rangeLine } from './ConnectionReceiptsScreen';
+import { SpacePicker } from './SpacePicker';
+import { RESULT_TTL_MS, resultStillFresh, useSyncActivity } from './syncActivity';
 import { ConnectionSyncCard } from './ConnectionSyncCard';
 import type { SyncReport } from './connectorSync';
 import { kindIcon, partyLogo } from './logos';
@@ -46,6 +54,7 @@ function okLine(state: SyncReport, t: Translate): string {
   }
   if (state.linked > 0) text += ` · ${t('conn.syncLinked', { n: state.linked })}`;
   if (state.proposed > 0) text += ` · ${t('conn.syncProposed', { n: state.proposed })}`;
+  if (state.partial) text += ` · ${t('conn.syncPartial')}`;
   return text;
 }
 
@@ -57,12 +66,12 @@ const REFUSAL_KEYS: Partial<Record<SyncReport['status'], TranslationKey>> = {
 };
 
 /** a sync attempt's outcome, spoken out loud */
-function SyncResultLine({ id, state }: Readonly<{ id: string; state: 'busy' | SyncReport }>) {
+function SyncResultLine({ id, state, found }: Readonly<{ id: string; state: 'busy' | SyncReport; found?: number | null }>) {
   const { t } = useLang();
   if (state === 'busy') {
     return (
-      <span className="block text-[11px] text-ink-4" data-testid={`conn-syncing-${id}`}>
-        {t('conn.syncBusy')}
+      <span className="block text-[11px] text-accent-deep" data-testid={`conn-syncing-${id}`}>
+        {found == null ? t('conn.syncBusy') : t('conn.syncFound', { n: found })}
       </span>
     );
   }
@@ -92,6 +101,21 @@ function relayLine(binding: BindingView | undefined, t: Translate, lang: Lang): 
   return { text, warn: false };
 }
 
+/** the party asked for a pause — with the moment it is over when the relay said how long (user question 2026-10-01: "what does the pause mean?") */
+function pauseLine(error: NonNullable<ConnectorConnRow['lastError']>, t: Translate, lang: Lang): string {
+  if (!error.at || !error.retryAfterSeconds) return t('conn.state.wait');
+  const until = new Date(Date.parse(error.at) + error.retryAfterSeconds * 1000);
+  if (until.getTime() <= Date.now()) return t('conn.state.wait');
+  return t('conn.state.waitUntil', { time: until.toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) });
+}
+
+/** a sign-in in flight: where it stands, in one line */
+function pendingLine(login: PendingLogin, t: Translate): StateLine {
+  if (login.error) return { text: t('conn.pending.failed'), warn: true };
+  if (login.asking) return { text: t('conn.pending.asking'), warn: true };
+  return { text: t('conn.pending.signingIn'), warn: false };
+}
+
 /** what this device knows about the connection */
 function deviceLine(view: ConnectionView, t: Translate, lang: Lang): StateLine {
   const { device, meta, hasBundle } = view;
@@ -100,7 +124,7 @@ function deviceLine(view: ConnectionView, t: Translate, lang: Lang): StateLine {
   if (device.state === 'awaiting_input') return { text: t('conn.state.asking'), warn: true };
   if (device.state !== 'active' || meta.status === 'expired') return { text: t('conn.state.reconnect'), warn: true };
   if (!hasBundle) return { text: t('conn.state.signIn'), warn: true };
-  if (device.lastError?.code === 'rate_limited') return { text: t('conn.state.wait'), warn: false };
+  if (device.lastError?.code === 'rate_limited') return { text: pauseLine(device.lastError, t, lang), warn: false };
   const text = device.lastSyncAt ? t('conn.state.synced', { when: fmtTimeAgo(device.lastSyncAt, lang) }) : t('conn.state.neverSynced');
   return { text, warn: false };
 }
@@ -136,13 +160,32 @@ export function ConnectionsScreen() {
 
   // an accounts screen's Connect door arrives with the catalogue already open (#414)
   const [catalogueOpen, setCatalogueOpen] = useState(() => takeCatalogueIntent());
-  const [flow, setFlow] = useState<{ manifest: ProviderManifest; reconnectId: string | null } | null>(null);
+  const [flow, setFlow] = useState<{ manifest: ProviderManifest; reconnectId: string | null; resume?: ResumeLogin } | null>(null);
+  // sign-ins in flight (closed sheets included): followed here and adopted when they settle
+  const pendingLogins = usePendingLogins((s) => s.logins);
+  const forgetPending = usePendingLogins((s) => s.remove);
   const [naming, setNaming] = useState<{ connectionId: string; duplicateOf?: string } | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [manageId, setManageId] = useState<string | null>(null);
-  const [syncStates, setSyncStates] = useState<Record<string, 'busy' | SyncReport>>({});
+  // the step after naming a shop: which spaces its receipts reach (none until picked, user ruling 2026-10-02)
+  const [spacesStep, setSpacesStep] = useState<{ connectionId: string; picked: string[] } | null>(null);
   const [ask, setAsk] = useState<JobAsk | null>(null);
+  // every sync in flight or just finished, whoever started it; the rows read it
+  const activity = useSyncActivity((s) => s.activity);
+  const ranges = useFetchedRanges();
+
+  // a finished sync's result leaves the row after a while: re-render when the soonest one expires
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const waits = Object.values(activity)
+      .filter((a) => a.phase === 'done')
+      .map((a) => (a.finishedAt ?? 0) + RESULT_TTL_MS - Date.now())
+      .filter((ms) => ms > 0);
+    if (waits.length === 0) return undefined;
+    const handle = setTimeout(tick, Math.min(...waits) + 50);
+    return () => clearTimeout(handle);
+  }, [activity]);
 
   const signedIn = connectorsAvailable();
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
@@ -150,13 +193,12 @@ export function ConnectionsScreen() {
   const kindOf = (view: ConnectionView): ProviderKind => view.meta.kind ?? catalogue.byId.get(view.meta.store)?.kind ?? 'store';
 
   const runSync = async (view: ConnectionView) => {
-    setSyncStates((s) => ({ ...s, [view.meta.id]: 'busy' }));
-    const result = await ops.syncNow(view.meta.id, {
+    // the row follows the sync through the activity store, wherever it was started
+    await ops.syncNow(view.meta.id, {
       // a question mid-fetch is asked right here — a human is present
       onChallenge: (job) => new Promise<string | null>((resolve) => setAsk({ job, provider: view.meta.store, resolve })),
     });
     setAsk(null);
-    setSyncStates((s) => ({ ...s, [view.meta.id]: result }));
   };
 
   const afterConnect = async (result: AdoptResult, reconnect: boolean) => {
@@ -171,14 +213,52 @@ export function ConnectionsScreen() {
 
   const saveName = async () => {
     if (!naming) return;
-    await ops.rename(naming.connectionId, nameDraft);
+    const named = naming.connectionId;
+    await ops.rename(named, nameDraft);
     setNaming(null);
+    // a shop's receipts reach no space until picked (user ruling 2026-10-02): the step follows the name
+    const meta = (await store.allRows('storeConn')).find((c) => c.id === named && c.deleted === 0);
+    const kind = meta?.kind ?? (meta ? catalogue.byId.get(meta.store)?.kind : undefined) ?? 'store';
+    if (meta && kind === 'store' && (allSpaces ?? []).length > 0) setSpacesStep({ connectionId: named, picked: [] });
   };
+
+  const saveSpaces = async () => {
+    if (!spacesStep) return;
+    if (spacesStep.picked.length > 0) await ops.setIncludedSpaces(spacesStep.connectionId, spacesStep.picked);
+    setSpacesStep(null);
+  };
+
+  const togglePicked = (spaceId: string) =>
+    setSpacesStep((step) => step && { ...step, picked: step.picked.includes(spaceId) ? step.picked.filter((id) => id !== spaceId) : [...step.picked, spaceId] });
 
   const openFlow = (manifest: ProviderManifest, reconnectId: string | null) => {
     setCatalogueOpen(false);
     setFlow({ manifest, reconnectId });
   };
+
+  /** back into a sign-in that was closed mid-way */
+  const continueLogin = (login: PendingLogin) => {
+    const manifest = catalogue.byId.get(login.provider);
+    if (!manifest) return;
+    setFlow({ manifest, reconnectId: login.reconnect ? login.connectionId : null, resume: { connectionId: login.connectionId, sessionId: login.sessionId, reconnect: login.reconnect } });
+  };
+
+  const cancelLogin = (login: PendingLogin) => {
+    if (!login.error) void connectorApi.cancel(login.provider, login.sessionId).catch(() => undefined);
+    forgetPending(login.connectionId);
+  };
+
+  // a sign-in that settles while its sheet is closed is adopted right here
+  usePendingLoginFollower({
+    exclude: flow?.resume?.connectionId ?? null,
+    onActive: async (login, view) => {
+      const manifest = catalogue.byId.get(login.provider);
+      if (!manifest) return;
+      const full = view.bundle ? view : await connectorApi.login(login.provider, view.sessionId);
+      const result = await ops.adopt({ manifest, view: full, connectionId: login.connectionId, reconnect: login.reconnect });
+      await afterConnect(result, login.reconnect);
+    },
+  });
 
   /** the attach step on the active space's accounts screen, the account already picked (#310) */
   const attach = (accountId: string) => {
@@ -187,8 +267,19 @@ export function ConnectionsScreen() {
   };
 
   const stateLine = (view: ConnectionView) => {
-    const syncState = syncStates[view.meta.id];
-    if (syncState) return <SyncResultLine id={view.meta.id} state={syncState} />;
+    const running = activity[view.meta.id];
+    if (running?.phase === 'fetching') return <SyncResultLine id={view.meta.id} state="busy" found={running.found} />;
+    if (resultStillFresh(running)) return <SyncResultLine id={view.meta.id} state={running.report} />;
+    // a sign-in in flight for this connection outranks every other word
+    const inFlight = pendingLogins[view.meta.id];
+    if (inFlight) {
+      const line = pendingLine(inFlight, t);
+      return (
+        <span className={`block text-[11px] ${line.warn ? 'text-warning' : 'text-ink-4'}`} data-testid={`conn-state-${view.meta.id}`}>
+          {line.text}
+        </span>
+      );
+    }
     // what the relay heard last wins where it knows more than this device: a
     // question the scheduler left, a session it found dead, a sync it ran itself
     const line = relayLine(bindings.get(view.meta.id), t, lang) ?? deviceLine(view, t, lang);
@@ -198,6 +289,14 @@ export function ConnectionsScreen() {
       </span>
     );
   };
+
+  /** how far the fetches reach — the dates covered and the count — under the state (user request 2026-10-02) */
+  const rangeOf = (view: ConnectionView) =>
+    kindOf(view) === 'registry' ? null : (
+      <span className="block text-[11px] text-ink-4" data-testid={`conn-range-${view.meta.id}`}>
+        {rangeLine(ranges?.[view.meta.id], t, lang)}
+      </span>
+    );
 
   /** the one action a state asks for */
   const primaryAction = (view: ConnectionView) => {
@@ -209,6 +308,14 @@ export function ConnectionsScreen() {
           {label}
         </Button>
       ) : null;
+    const inFlight = pendingLogins[view.meta.id];
+    if (inFlight) {
+      return (
+        <Button size="sm" variant="outline" data-testid={`conn-continue-${view.meta.id}`} onClick={() => continueLogin(inFlight)}>
+          {t('conn.pending.continue')}
+        </Button>
+      );
+    }
     if (view.device?.state === 'blocked') return null;
     if (view.device?.state !== 'active' || view.meta.status === 'expired') return reconnect(t('conn.reconnect'));
     if (!view.hasBundle) return reconnect(t('conn.signIn'));
@@ -279,6 +386,39 @@ export function ConnectionsScreen() {
     );
   };
 
+  /** a sign-in in flight for a connection that does not exist yet: where it stands, the way back in, the way out */
+  const renderPending = (login: PendingLogin) => {
+    const manifest = catalogue.byId.get(login.provider);
+    const line = pendingLine(login, t);
+    const logo = partyLogo(manifest?.logoRef);
+    return (
+      <div key={login.connectionId} className="border-b border-line-2 px-4 py-3.5 last:border-0" data-testid={`conn-pending-${login.connectionId}`}>
+        <div className="flex items-center gap-3">
+          {logo ? <img src={logo} alt="" className="h-6 w-6 rounded object-contain" /> : <Icon name="progress-clock" size={20} color="var(--m-ink-3)" />}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] text-ink">{manifest?.name ?? login.provider}</span>
+            <span className={`block text-[11px] ${line.warn ? 'text-warning' : 'text-ink-4'}`} data-testid={`conn-pending-state-${login.connectionId}`}>
+              {line.text}
+            </span>
+          </span>
+          {!login.error && (
+            <Button size="sm" variant="outline" data-testid={`conn-pending-continue-${login.connectionId}`} onClick={() => continueLogin(login)}>
+              {t('conn.pending.continue')}
+            </Button>
+          )}
+          <button
+            data-testid={`conn-pending-cancel-${login.connectionId}`}
+            aria-label={login.error ? t('conn.pending.dismiss') : t('conn.pending.cancel')}
+            onClick={() => cancelLogin(login)}
+            className="m-tap border-none bg-transparent text-ink-4"
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderCard = (view: ConnectionView) => {
     const manifest = catalogue.byId.get(view.meta.store);
     const kind = kindOf(view);
@@ -308,6 +448,7 @@ export function ConnectionsScreen() {
               )}
             </span>
             {stateLine(view)}
+            {rangeOf(view)}
           </span>
           {primaryAction(view)}
           <button
@@ -349,11 +490,17 @@ export function ConnectionsScreen() {
 
         {SECTIONS.map(({ kind, captionKey }) => {
           const rows = (connections ?? []).filter((c) => kindOf(c) === kind);
-          if (rows.length === 0) return null;
+          // sign-ins in flight for connections that are not rows yet sit at the top of their section
+          const known = new Set(rows.map((c) => c.meta.id));
+          const starting = Object.values(pendingLogins).filter(
+            (l) => !known.has(l.connectionId) && (catalogue.byId.get(l.provider)?.kind ?? 'store') === kind,
+          );
+          if (rows.length === 0 && starting.length === 0) return null;
           return (
             <div key={kind}>
               <div className="m-cap mt-4 mb-1 px-1">{t(captionKey)}</div>
               <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`conn-list-${kind}`}>
+                {starting.map(renderPending)}
                 {rows.map(renderCard)}
               </div>
             </div>
@@ -394,14 +541,17 @@ export function ConnectionsScreen() {
           </button>
         )}
 
-        {/* the browsing door: every receipt, photos included */}
+        {/* the hub's own receipts: everything the shops handed over, per connection (a space's Receipts carry the matching) */}
         <button
           data-testid="conn-view-receipts"
-          onClick={() => void navigate({ to: '/receipts' })}
+          onClick={() => void navigate({ to: '/connections/receipts' })}
           className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
         >
           <Icon name="receipt-text-outline" size={20} color="var(--m-ink-2)" />
-          <span className="min-w-0 flex-1 text-[15px] text-ink">{t('receipts.title')}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] text-ink">{t('receipts.globalTitle')}</span>
+            <span className="block text-[12px] text-ink-4">{t('receipts.globalSub')}</span>
+          </span>
           <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
         </button>
 
@@ -425,6 +575,7 @@ export function ConnectionsScreen() {
         open={flow !== null}
         manifest={flow?.manifest ?? null}
         reconnectId={flow?.reconnectId ?? null}
+        resume={flow?.resume ?? null}
         onOpenChange={(open) => !open && setFlow(null)}
         onDone={(result, reconnect) => void afterConnect(result, reconnect)}
       />
@@ -468,6 +619,22 @@ export function ConnectionsScreen() {
             {t('action.save')}
           </Button>
         </div>
+      </Sheet>
+
+      {/* the step after naming: which spaces a shop's receipts reach — none until picked (user ruling 2026-10-02) */}
+      <Sheet open={spacesStep !== null} onOpenChange={(open) => !open && setSpacesStep(null)} title={t('conn.spacesTitle')} size="tall">
+        {spacesStep && (
+          <div className="flex flex-col gap-3 pt-1" data-testid="conn-spaces-step">
+            <p className="text-[13px] leading-relaxed text-ink-2">{t('conn.spacesHint')}</p>
+            <SpacePicker spaces={allSpaces ?? []} selected={spacesStep.picked} onToggle={togglePicked} testId="conn-spaces-list" />
+            <Button data-testid="conn-spaces-save" onClick={() => void saveSpaces()}>
+              {t('action.save')}
+            </Button>
+            <Button variant="outline" data-testid="conn-spaces-skip" onClick={() => setSpacesStep(null)}>
+              {t('conn.spacesSkip')}
+            </Button>
+          </div>
+        )}
       </Sheet>
 
       {/* a party's question while a sync runs from here */}

@@ -699,6 +699,32 @@ public sealed class BolAdapterTests
     /// orders, so the operation reaching the wire as a POST body is the whole
     /// claim.
     /// </summary>
+    /// <summary>
+    /// bol moves the hash with every front-end release and refused the
+    /// configured one on 2026-10-01 (provider_changed on every fetch). The
+    /// sign-in learns the hash from bol's own page and seals it into the
+    /// session; a fetch holding one sends it instead of the option's.
+    /// </summary>
+    [Fact]
+    public async Task A_hash_the_sign_in_learned_is_the_one_the_fetch_sends()
+    {
+        var handler = new StubHttpHandler((_, _) => Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = BolPersistedQuery.WithHash(
+                new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") },
+                "0123abcd-learned"),
+        };
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        using var sent = JsonDocument.Parse(handler.Requests[0].Body!);
+        Assert.Equal(
+            "0123abcd-learned",
+            sent.RootElement.GetProperty("extensions").GetProperty("persistedQuery").GetProperty("sha256Hash").GetString());
+        Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task The_default_shape_posts_bol_s_own_persisted_operation()
     {

@@ -117,7 +117,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         var session = new BearerSession(ctx.Material, ProviderId, _time);
         ctx.Progress(JobStep.Downloading);
 
-        var cap = Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
+        var cap = _options.RecordCap ?? Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
         var (summaries, complete) = await ListAsync(ctx, session, request, cap, ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.Parsing);
@@ -585,7 +585,9 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
             }, "receipt list", ct).ConfigureAwait(false);
 
             var rows = AlbertHeijnReceiptParser.ParseList(document.RootElement, _options, request.WantsRaw);
-            if (!CollectPage(rows, request, seen, collected, pageSize, cap)) break;
+            var more = CollectPage(rows, request, seen, collected, pageSize, cap);
+            ctx.Found(collected.Count);
+            if (!more) break;
 
             offset += pageSize;
         }

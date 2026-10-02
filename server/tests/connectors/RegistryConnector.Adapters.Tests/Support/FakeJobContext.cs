@@ -18,6 +18,7 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
     private readonly List<Challenge> _asked = [];
     private readonly List<string> _notes = [];
     private readonly List<JobStep> _steps = [];
+    private readonly List<int> _counted = [];
 
     public string SessionId { get; init; } = "ses_registry_fixture";
 
@@ -90,6 +91,11 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
     public bool CredentialWasSubmitted { get; private set; }
 
     public void Progress(JobStep step) => _steps.Add(step);
+
+    /// <summary>Every count the adapter reported, in order.</summary>
+    public IReadOnlyList<int> Counted => _counted;
+
+    public void Found(int records) => _counted.Add(records);
 
     public void Note(string message) => _notes.Add(message);
 

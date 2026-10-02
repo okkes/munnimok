@@ -264,7 +264,7 @@ public sealed record JumboOptions
     public string OrdersSortBy { get; init; } = "deliveryDate";
 
     /// <summary>A ceiling on the walk, so a wrong cursor cannot loop forever.</summary>
-    public int MaxPages { get; init; } = 40;
+    public int MaxPages { get; init; } = 200;
 
     // ---- response paths: CONFIRMED ----------------------------------------
 
@@ -396,7 +396,7 @@ public sealed record JumboOptions
     /// the pass reports itself incomplete rather than hammering a defended
     /// endpoint.
     /// </summary>
-    public int StoreReceiptDetailBudget { get; init; } = 40;
+    public int StoreReceiptDetailBudget { get; init; } = 400;
 
     /// <summary>
     /// Whether an in-store receipt whose detail cannot be read is skipped

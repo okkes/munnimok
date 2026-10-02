@@ -187,8 +187,10 @@ internal static class LidlPlusManifest
                     new ParamSpec { Key = "include", Type = ParamType.Enum, Values = ["items", "raw"], Multi = true },
                 ],
                 MaxHistoryDays = 730,
-                TypicalDurationSeconds = 30,
-                MaxRecordsPerFetch = 200,
+                // A first connect walks the whole history (user request
+                // 2026-10-02): a hundred pages, two thousand tickets.
+                TypicalDurationSeconds = 120,
+                MaxRecordsPerFetch = 2_000,
             },
         ],
         Limits = new ProviderLimits { MinIntervalSeconds = 21_600, Concurrency = 1, MaxHistoryDays = 730 },

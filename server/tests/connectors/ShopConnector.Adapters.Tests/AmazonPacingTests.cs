@@ -203,7 +203,7 @@ public sealed class AmazonPacingTests
         var pacing = TimeSpan.FromMilliseconds(
             (double)AmazonManifest.Build().Limits.MinRequestGapMs * receipts.MaxRecordsPerFetch);
 
-        Assert.Equal(300, receipts.TypicalDurationSeconds);
+        Assert.Equal(1_200, receipts.TypicalDurationSeconds);
         Assert.True(
             receipts.TypicalDurationSeconds > pacing.TotalSeconds,
             $"a full fetch waits {pacing.TotalSeconds}s on pacing alone, before a single page is loaded");

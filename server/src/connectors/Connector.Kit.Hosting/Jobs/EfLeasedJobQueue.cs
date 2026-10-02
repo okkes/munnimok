@@ -601,6 +601,8 @@ public sealed class EfLeasedJobQueue(
                         && j.State != JobState.Expired)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Step, report.Step)
+                // a report without a count leaves the last count standing
+                .SetProperty(j => j.Found, j => report.Found ?? j.Found)
                 .SetProperty(j => j.StepsDoneJson,
                     report.StepsDone.Count > 0 ? ConnectorJson.Serialize(report.StepsDone) : job.StepsDoneJson)
                 .SetProperty(j => j.UpdatedAt, time.GetUtcNow()), ct);

@@ -49,6 +49,8 @@ import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
 import { ConnectionsScreen } from '@/features/connectors/ConnectionsScreen';
 import { AgentsScreen } from '@/features/connectors/AgentsScreen';
 import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
+import { ReceiptScreen } from '@/features/shopping/ReceiptScreen';
+import { ConnectionReceiptsScreen } from '@/features/connectors/ConnectionReceiptsScreen';
 import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
 import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
 import { InsightsScreen } from '@/features/insights/InsightsScreen';
@@ -230,6 +232,27 @@ const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', c
 const connectionsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections', component: ConnectionsScreen });
 const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
+/** one receipt full screen, from a space: `from` is the transaction it was opened on (its own row is noise there) */
+function SpaceReceipt() {
+  const { receiptId } = receiptDetailRoute.useParams();
+  const { from } = receiptDetailRoute.useSearch();
+  return <ReceiptScreen scope="space" receiptId={receiptId} contextTxId={from} />;
+}
+const receiptDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/receipts/$receiptId',
+  component: SpaceReceipt,
+  validateSearch: (search: Record<string, unknown>): { from?: string } => ({
+    from: typeof search.from === 'string' ? search.from : undefined,
+  }),
+});
+// the hub's own receipts: global, no space in between
+const connectionReceiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/receipts', component: ConnectionReceiptsScreen });
+function ConnectionReceipt() {
+  const { receiptId } = connectionReceiptDetailRoute.useParams();
+  return <ReceiptScreen scope="global" receiptId={receiptId} />;
+}
+const connectionReceiptDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/receipts/$receiptId', component: ConnectionReceipt });
 const portfolioRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/portfolio',
@@ -312,6 +335,9 @@ export const routeTree = rootRoute.addChildren([
     connectionsRoute,
     agentsRoute,
     receiptsRoute,
+    receiptDetailRoute,
+    connectionReceiptsRoute,
+    connectionReceiptDetailRoute,
     portfolioRoute.addChildren([holdingDetailRoute]),
     insightsRoute,
     trendsRoute,

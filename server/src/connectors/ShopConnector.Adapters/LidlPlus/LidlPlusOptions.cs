@@ -99,7 +99,7 @@ public sealed record LidlPlusOptions
 
     public string Currency { get; init; } = "EUR";
 
-    public int MaxPages { get; init; } = 20;
+    public int MaxPages { get; init; } = 100;
 
     /// <summary>
     /// How long the human has to fetch the one-time code and type it back.

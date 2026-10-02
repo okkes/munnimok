@@ -171,6 +171,8 @@ export interface ProgressView {
   stepsDone: JobStep[];
   /** while queued: how many jobs wait ahead of this one (any party’s — the fleet takes the oldest first) */
   ahead?: number | null;
+  /** records the run gathered so far, as the agent counted them page by page; absent until it counted anything */
+  found?: number | null;
 }
 
 /** `{ error: { … } }` — the connector's envelope, kept by the relay */
@@ -237,6 +239,8 @@ export interface SyncOutcome {
   state: ConnectorSessionState;
   ingested: IngestedCounts;
   session?: RotatedSession;
+  /** false when the party holds more history than one pass fetches (newest first) */
+  complete?: boolean;
 }
 
 /** `GET /connectors/sessions` — one row per binding the relay holds for the caller */
@@ -252,6 +256,8 @@ export interface BindingView {
   scheduled: boolean;
   lastScheduledSyncAt?: string | null;
   lastScheduleError?: string | null;
+  /** the party asked for a pause: the relay holds its own syncs until then */
+  scheduleNotBefore?: string | null;
 }
 
 /** a household agent the caller enrolled, as the relay lists it */

@@ -12,11 +12,13 @@ import type {
 } from '@/db/types';
 import { budgetFamily, budgetPeriodAt, cycleIndex } from './budgets';
 import type { BudgetPeriodOpts } from './budgets';
+import { LOCKED_MAIN_IDS } from './categories';
 import { isDebtTracked, nextDebtPaymentDate } from './debts';
-import { nextDueDate } from './recurring';
+import { nextDueDate, occurrencesBetween } from './recurring';
 import { nextPeriod, periodHistory } from './periods';
 import type { Period } from './periods';
 import { txSliceViews } from './txSlices';
+import type { TxSliceView } from './txSlices';
 
 /**
  * Planning (#128, the allocation redesign) — all pure. Money that is
@@ -227,26 +229,82 @@ const inPeriod = (date: string, period: Period): boolean => date >= period.start
  */
 export function expenseRealizedCents(family: ReadonlySet<string>, txs: readonly TxView[], period: Period): number {
   let total = 0;
+  for (const { slice, spent } of periodSpending(txs, period)) {
+    if (slice.recurringId || slice.linkedAccountId) continue;
+    if (!family.has(slice.catId ?? '')) continue;
+    total += spent;
+  }
+  return total;
+}
+
+/** every expense slice of the period's live rows, with what it took */
+function* periodSpending(txs: readonly TxView[], period: Period): Generator<{ slice: TxSliceView; spent: number }> {
   for (const tx of txs) {
     if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
     for (const slice of txSliceViews(tx)) {
-      if (slice.effType !== 'expense' || slice.recurringId || slice.linkedAccountId) continue;
-      if (!family.has(slice.catId ?? '')) continue;
-      total += slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents;
+      if (slice.effType !== 'expense') continue;
+      yield { slice, spent: slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents };
     }
   }
-  return total;
+}
+
+/** where a slice's spending lands when no subject answers for it: its main and its own category; null when a segment or a locked family has it */
+function unplannedKeyOf(
+  slice: TxSliceView,
+  covered: ReadonlySet<string>,
+  catalog: CatalogLookup,
+): { mainId: string; catId: string } | null {
+  if (slice.recurringId || slice.linkedAccountId) return null;
+  const catId = slice.catId ?? '';
+  if (!catId || covered.has(catId)) return null;
+  const cat = catalog.byId(catId);
+  const mainId = cat.parentId ?? cat.id;
+  return LOCKED_MAIN_IDS.has(mainId) ? null : { mainId, catId };
+}
+
+/** one main category spent on without a subject answering for it, its subs broken out */
+export interface UnplannedMain {
+  mainId: string;
+  cents: number;
+  subs: { catId: string; cents: number }[];
+}
+
+/**
+ * What the period spent outside every subject (user request 2026-10-02):
+ * expense slices whose category no expense or budget subject answers for,
+ * grouped under their main — the "unplanned" segment, derived afresh each
+ * period. Recurring-linked and transfer slices answer to their own
+ * segments; munni's locked families are not spending.
+ */
+export function unplannedByCategory(
+  txs: readonly TxView[],
+  period: Period,
+  covered: ReadonlySet<string>,
+  catalog: CatalogLookup,
+): UnplannedMain[] {
+  const byMain = new Map<string, Map<string, number>>();
+  for (const { slice, spent } of periodSpending(txs, period)) {
+    const key = unplannedKeyOf(slice, covered, catalog);
+    if (!key) continue;
+    const subs = byMain.get(key.mainId) ?? new Map<string, number>();
+    subs.set(key.catId, (subs.get(key.catId) ?? 0) + spent);
+    byMain.set(key.mainId, subs);
+  }
+  return [...byMain]
+    .map(([mainId, subs]) => ({
+      mainId,
+      cents: [...subs.values()].reduce((sum, v) => sum + v, 0),
+      subs: [...subs].map(([catId, cents]) => ({ catId, cents })).sort((a, b) => b.cents - a.cents),
+    }))
+    .filter((main) => main.cents > 0)
+    .sort((a, b) => b.cents - a.cents);
 }
 
 /** a budget's own rule: everything its family spent, recurring-linked rows included */
 export function budgetRealizedCents(family: ReadonlySet<string>, txs: readonly TxView[], period: Period): number {
   let total = 0;
-  for (const tx of txs) {
-    if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
-    for (const slice of txSliceViews(tx)) {
-      if (slice.effType !== 'expense' || !family.has(slice.catId ?? '')) continue;
-      total += slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents;
-    }
+  for (const { slice, spent } of periodSpending(txs, period)) {
+    if (family.has(slice.catId ?? '')) total += spent;
   }
   return total;
 }
@@ -329,6 +387,10 @@ export function recurringTargetCents(
   period: Period,
   carriedCents: number,
 ): number {
+  // a cost that falls due more than once inside the period (a weekly cost
+  // in a monthly plan) wants every occurrence, not one (user ss 2026-10-02)
+  const occurrences = rec.active === 1 ? occurrencesBetween(rec, period.start, period.end).length : 0;
+  if (occurrences > 1) return Math.max(0, occurrences * Math.abs(rec.amountCents) - carriedCents);
   const due = recurringDueFrom(rec, period);
   const left = due ? periodsUntil(space, period, due) : 1;
   return spreadTargetCents(Math.abs(rec.amountCents), carriedCents, left);

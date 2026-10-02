@@ -36,14 +36,26 @@ interface Draft {
   target: string;
 }
 
-const draftOf = (subject: PlanSubjectRow | null): Draft => ({
-  name: subject?.name ?? '',
-  icon: subject?.icon ?? SUBJECT_ICONS[0],
-  color: subject?.color ?? SUBJECT_COLORS[0],
-  catIds: new Set(subject?.catIds ?? []),
-  excludeIds: new Set(subject?.excludeCatIds ?? []),
-  target: subject?.targetCents ? (subject.targetCents / 100).toFixed(2) : '',
-});
+/** a subject suggested by the plan itself (an unplanned main, its spending as the target) */
+export interface EditorPreset {
+  name: string;
+  icon?: string;
+  color?: string;
+  catIds: string[];
+  targetCents: number;
+}
+
+const draftOf = (subject: PlanSubjectRow | null, preset: EditorPreset | null): Draft => {
+  const seed = subject ?? preset;
+  return {
+    name: seed?.name ?? '',
+    icon: seed?.icon ?? SUBJECT_ICONS[0],
+    color: seed?.color ?? SUBJECT_COLORS[0],
+    catIds: new Set(seed?.catIds ?? []),
+    excludeIds: new Set(subject?.excludeCatIds ?? []),
+    target: seed?.targetCents ? (seed.targetCents / 100).toFixed(2) : '',
+  };
+};
 
 /** the icon grid: a first pick, or the whole font by search */
 function IconGrid({ icon, query, onQuery, onPick }: Readonly<{ icon: string; query: string; onQuery: (q: string) => void; onPick: (name: string) => void }>) {
@@ -217,6 +229,7 @@ export function SubjectEditor({
   open,
   onOpenChange,
   subject,
+  preset = null,
   plan,
   model,
   ops,
@@ -227,6 +240,8 @@ export function SubjectEditor({
   onOpenChange: (open: boolean) => void;
   /** null = a new subject */
   subject: PlanSubjectRow | null;
+  /** a new subject that starts filled in */
+  preset?: EditorPreset | null;
   plan: PlanRow;
   model: PlanningModel;
   ops: PlanningOps;
@@ -234,7 +249,7 @@ export function SubjectEditor({
   currency: string;
 }>) {
   const { t } = useLang();
-  const [draft, setDraft] = useState<Draft>(() => draftOf(subject));
+  const [draft, setDraft] = useState<Draft>(() => draftOf(subject, preset));
   const [iconQuery, setIconQuery] = useState('');
   const [attempted, setAttempted] = useState(false);
   const patch = (fields: Partial<Draft>) => setDraft((prev) => ({ ...prev, ...fields }));

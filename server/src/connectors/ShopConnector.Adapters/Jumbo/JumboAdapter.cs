@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Connector.Kit.Adapters;
+using Connector.Kit.Browsing;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
@@ -133,38 +134,54 @@ public sealed class JumboAdapter : IProviderAdapter
         var username = OptionalInput(ctx, "username");
         var password = OptionalInput(ctx, "password");
 
-        // CONFIRMED-live: this 302s to /api/auth/login and on to Auth0. The
-        // address this adapter used to open, /inloggen, is a 404.
-        await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
-        await DismissConsentAsync(page, ct).ConfigureAwait(false);
+        bool filled;
+        try
+        {
+            // CONFIRMED-live: this 302s to /api/auth/login and on to Auth0. The
+            // address this adapter used to open, /inloggen, is a 404.
+            await page.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
+            await DismissConsentAsync(page, ct).ConfigureAwait(false);
 
-        // The username first, on its own. It is not a secret, so it may sit in
-        // the box while the page is photographed - and it is the half a human
-        // would otherwise have to go and look up.
-        ctx.Progress(JobStep.Authenticating);
+            // The username first, on its own. It is not a secret, so it may sit in
+            // the box while the page is photographed - and it is the half a human
+            // would otherwise have to go and look up.
+            ctx.Progress(JobStep.Authenticating);
 
-        var identified = username is not null
-                         && await page.FillAsync(
-                                _options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
-                            .ConfigureAwait(false);
+            var identified = username is not null
+                             && await page.FillAsync(
+                                    _options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
+                                .ConfigureAwait(false);
 
-        // Checked BEFORE the password goes anywhere near the DOM, and before
-        // any click. Two things follow from that: a walled day never spends one
-        // of the account's attempts, and the password is never typed into a
-        // page this run is about to hand to a shutter.
-        //
-        // Interactive alone. A picture captcha is relayable - photographed out,
-        // typed back - and the gate below already does that well; streaming a
-        // whole page to answer one small picture would be the worse experience
-        // for a wall we can already carry. What cannot be carried is a widget:
-        // Turnstile mints its token in the browser that rendered it.
-        var walled = (await _captcha.DetectAsync(page, ct).ConfigureAwait(false)).Kind
-            is CaptchaKind.Interactive;
+            // Checked BEFORE the password goes anywhere near the DOM, and before
+            // any click. Two things follow from that: a walled day never spends one
+            // of the account's attempts, and the password is never typed into a
+            // page this run is about to hand to a shutter.
+            //
+            // Interactive alone. A picture captcha is relayable - photographed out,
+            // typed back - and the gate below already does that well; streaming a
+            // whole page to answer one small picture would be the worse experience
+            // for a wall we can already carry. What cannot be carried is a widget:
+            // Turnstile mints its token in the browser that rendered it.
+            var walled = (await _captcha.DetectAsync(page, ct).ConfigureAwait(false)).Kind
+                is CaptchaKind.Interactive;
 
-        var filled = identified
+            filled = identified
                      && !walled
                      && password is not null
                      && await FillPasswordAsync(ctx, page, password, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            // A page that would not settle inside the typed attempt's budget - a
+            // slow Auth0, a consent layer that moved, a navigation that hung - is
+            // not something munni did wrong, and it surfaced as exactly that
+            // ("something went wrong on munni's side", user ss 2026-10-01). The
+            // person can see what this could not: the run is handed over.
+            ctx.Note(
+                $"jumbo: the typed sign-in did not complete ({ex.GetType().Name}: {ex.Message}); " +
+                "the page is being handed over instead");
+            filled = false;
+        }
 
         if (!filled)
         {
@@ -665,6 +682,8 @@ public sealed class JumboAdapter : IProviderAdapter
                 receiptsDone = CollectReceiptsPage(root, request, zone, cap, receipts, seenReceipts);
                 receiptsPage++;
             }
+
+            ctx.Found(orders.Count + receipts.Count);
         }
 
         // Ran out of passes with one side still going: there is more upstream

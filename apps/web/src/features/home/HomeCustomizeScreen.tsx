@@ -10,7 +10,7 @@ import { BlockListEditor } from '@/features/customize/BlockListEditor';
 /** every block the landing zone can show, in default order (user ruling:
  *  review → this period → transactions → budgets → coming up → goals →
  *  debts → events → insights; portfolio left Home for its own tab) */
-export const HOME_BLOCK_IDS = ['review', 'cashflow', 'overview', 'transactions', 'explore', 'budgets', 'planning', 'upcoming', 'goals', 'debts', 'events', 'splits', 'insights', 'networth'] as const;
+export const HOME_BLOCK_IDS = ['review', 'cashflow', 'overview', 'transactions', 'explore', 'budgets', 'planning', 'upcoming', 'recurring', 'goals', 'debts', 'events', 'splits', 'insights', 'networth'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
 /** blocks that arrive switched OFF (opt-in via Customize Home) */
@@ -24,7 +24,8 @@ export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   explore: 'home.exploreTitle',
   budgets: 'budgets.title',
   planning: 'plan.title',
-  upcoming: 'screen.recurring',
+  upcoming: 'recurring.upcoming',
+  recurring: 'screen.recurring',
   goals: 'goals.title',
   debts: 'debts.title',
   events: 'events.title',
@@ -44,6 +45,7 @@ export const HOME_BLOCK_ICONS: Record<HomeBlockId, string> = {
   budgets: 'wallet-outline',
   planning: 'clipboard-text-outline',
   upcoming: 'calendar-clock',
+  recurring: 'autorenew',
   goals: 'flag-outline',
   debts: 'scale-balance',
   events: 'calendar-star',
