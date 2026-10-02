@@ -2691,4 +2691,14 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.plan.4b': 'Een onderwerp in het rood leent van een met ruimte — de keuzes van munni eerst. Wat een vaste last of schuld vasthoudt en niet besteedt gaat mee naar de volgende periode.',
   'tour.plan.5t': 'Blauwdrukken en de zandbak',
   'tour.plan.5b': 'Bewaar de vorm van een plan als blauwdruk en pas die later toe; de zandbak is een kopie om in te proberen — maak het het plan als het klopt.',
+  // ── connectors round 19 (2026-10-01): sign-ins in flight, the pause ───
+  'conn.pending.signingIn': 'Bezig met inloggen… — sluiten laat het doorgaan',
+  'conn.pending.asking': 'De partij wacht op jou — ga verder met inloggen',
+  'conn.pending.failed': 'Het inloggen is niet afgerond',
+  'conn.pending.continue': 'Verder',
+  'conn.pending.cancel': 'Inloggen annuleren',
+  'conn.pending.dismiss': 'Sluiten',
+  'conn.state.waitUntil': 'De partij vroeg munni te wachten — probeer het na {time} opnieuw',
+  'connect.progress.closeNote': 'Je kunt dit sluiten: het inloggen gaat door en de lijst Koppelingen laat zien hoe het ervoor staat.',
+  'connect.progress.close': 'Voorlopig sluiten',
 };

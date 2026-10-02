@@ -2691,4 +2691,14 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.plan.4b': 'Eksiye düşen bir konu yeri olandan ödünç alır — önce munni’nin seçimleri. Bir düzenli giderin ya da borcun tutup harcamadığı, sonraki döneme devreder.',
   'tour.plan.5t': 'Şablonlar ve deneme',
   'tour.plan.5b': 'Bir planın biçimini şablon olarak kaydet ve sonra uygula; deneme, içinde bir şeyler denemek için bir kopyadır — doğru okunduğunda plan yap.',
+  // ── connectors round 19 (2026-10-01): sign-ins in flight, the pause ───
+  'conn.pending.signingIn': 'Giriş yapılıyor… — kapatsan da devam eder',
+  'conn.pending.asking': 'Taraf seni bekliyor — girişe devam et',
+  'conn.pending.failed': 'Giriş tamamlanmadı',
+  'conn.pending.continue': 'Devam et',
+  'conn.pending.cancel': 'Girişi iptal et',
+  'conn.pending.dismiss': 'Kapat',
+  'conn.state.waitUntil': 'Taraf munni’den beklemesini istedi — {time} sonrasında yeniden dene',
+  'connect.progress.closeNote': 'Bunu kapatabilirsin: giriş sürer ve Bağlantılar listesi nerede olduğunu gösterir.',
+  'connect.progress.close': 'Şimdilik kapat',
 };

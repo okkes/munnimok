@@ -2689,6 +2689,16 @@ export const en = {
   'tour.plan.4b': 'A subject in the red borrows from one with room — munni’s picks first. What a recurring cost or debt holds and does not spend carries into the next period.',
   'tour.plan.5t': 'Blueprints and the sandbox',
   'tour.plan.5b': 'Save a plan’s shape as a blueprint and apply it later; the sandbox is a copy to try things in — make it the plan when it reads right.',
+  // ── connectors round 19 (2026-10-01): sign-ins in flight, the pause ───
+  'conn.pending.signingIn': 'Signing in… — closing the sheet keeps it going',
+  'conn.pending.asking': 'The party is waiting for you — continue the sign-in',
+  'conn.pending.failed': 'The sign-in did not finish',
+  'conn.pending.continue': 'Continue',
+  'conn.pending.cancel': 'Cancel sign-in',
+  'conn.pending.dismiss': 'Dismiss',
+  'conn.state.waitUntil': 'The party asked munni to wait — try again after {time}',
+  'connect.progress.closeNote': 'You can close this: the sign-in carries on, and the Connections list shows where it stands.',
+  'connect.progress.close': 'Close for now',
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -52,7 +52,9 @@ public sealed record ConnectorSessionDto(
     DateTimeOffset LastSeenAt,
     bool Scheduled,
     DateTimeOffset? LastScheduledSyncAt,
-    string? LastScheduleError);
+    string? LastScheduleError,
+    /// <summary>The party asked for a pause: the scheduler holds off until then (the hub says so instead of a bare "try again later").</summary>
+    DateTimeOffset? ScheduleNotBefore = null);
 
 /// <summary>What an enrollment hands the user: the code, and the line that starts their agent.</summary>
 public sealed record ConnectorEnrollmentDto(string Code, DateTimeOffset ExpiresAt, string? ControlPlaneUrl, string? ComposeCommand);
@@ -166,7 +168,7 @@ public static partial class ConnectorRelayEndpoints
             .OrderBy(s => s.CreatedAt)
             .Select(s => new ConnectorSessionDto(
                 s.Id, s.Provider, s.ConnectionId, s.State, s.Label, s.CreatedAt, s.LastSeenAt,
-                s.KeptBundle != null, s.LastScheduledSyncAt, s.LastScheduleError))
+                s.KeptBundle != null, s.LastScheduledSyncAt, s.LastScheduleError, s.ScheduleNotBefore))
             .ToListAsync();
         return Results.Ok(rows);
     }

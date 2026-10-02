@@ -252,6 +252,8 @@ export interface BindingView {
   scheduled: boolean;
   lastScheduledSyncAt?: string | null;
   lastScheduleError?: string | null;
+  /** the party asked for a pause: the relay holds its own syncs until then */
+  scheduleNotBefore?: string | null;
 }
 
 /** a household agent the caller enrolled, as the relay lists it */

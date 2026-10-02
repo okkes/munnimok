@@ -125,6 +125,26 @@ public sealed class JumboLoginTests
     /// drive is handed over rather than failed - and nothing was typed or
     /// clicked on the way, so nothing has counted against the account.
     /// </summary>
+    /// <summary>
+    /// A page that hangs inside the typed attempt is handed over like a page
+    /// that lacks a box - it reached the person as "something went wrong on
+    /// munni's side" instead (user ss 2026-10-01), which it never was.
+    /// </summary>
+    [Fact]
+    public async Task A_page_that_will_not_settle_is_handed_over_rather_than_blamed_on_munni()
+    {
+        var page = FormPage();
+        page.FillThrows = new TimeoutException("Timeout 15000ms exceeded.");
+        using var ctx = Context(page, answersNothing: true);
+
+        var result = await Adapter().LoginAsync(ctx, page, new StubRedirectWaiter(Signed, 0), CancellationToken.None);
+
+        Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
+        Assert.False(ctx.CredentialWasSubmitted);
+        Assert.Contains(ctx.Notes, n => n.Contains("handed over", StringComparison.Ordinal));
+        Assert.NotNull(result.Material.StorageState);
+    }
+
     [Fact]
     public async Task A_missing_username_box_hands_the_page_over_rather_than_failing()
     {

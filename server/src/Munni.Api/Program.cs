@@ -159,8 +159,14 @@ builder.Services.AddAuthorizationBuilder()
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     // x-jumbo-token: Jumbo hands its session token back in a response
-    // header, which the store proxy relays and the browser must see
-    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("x-jumbo-token")));
+    // header, which the store proxy relays and the browser must see.
+    // X-Live-*: the streamed login's frame carries its sequence and size in
+    // headers — unexposed, the browser read neither, so the app never
+    // advanced its poll (a request storm into 429s that dropped the taps)
+    // and sized the picture by a guess (taps landed above the field; user
+    // ss 2026-10-01). Retry-After rides along for the pause copy.
+    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()
+        .WithExposedHeaders("x-jumbo-token", "X-Live-Sequence", "X-Live-Size", "X-Live-Origin", "Retry-After")));
 
 // abuse guard, partitioned per user (per IP before auth). The global
 // bucket is sized for the sync engine polling every ten seconds across
@@ -170,10 +176,21 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
 // defaults unless a test sets RateLimits keys explicitly (RateLimitTests).
 static string RateLimitKey(HttpContext http) =>
     http.User.FindFirst("sub")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anon";
+
+// the streamed login: one long-poll per frame and a POST per batch of
+// taps — a minute of signing in is more requests than the global bucket
+// allows a person, and a 429 there drops keystrokes on the floor (the
+// Amazon puzzle and the DUO page "froze", user ss 2026-10-01). Its own
+// bucket, sized for the agent's shutter (12.5 frames/s in a burst) plus
+// the input batches, and still bounded.
+static bool IsLiveViewRoute(PathString path) =>
+    path.StartsWithSegments("/connectors") && (path.Value ?? string.Empty).Contains("/live/", StringComparison.Ordinal);
 var unlimitedForTests = builder.Configuration.GetValue<bool>("Auth:TestMode") ? int.MaxValue : (int?)null;
 var globalTokens = builder.Configuration.GetValue<int?>("RateLimits:GlobalTokens") ?? unlimitedForTests ?? 600;
 var globalRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:GlobalRefillPer10s") ?? unlimitedForTests ?? 60;
 var socialPerMinute = builder.Configuration.GetValue<int?>("RateLimits:SocialPerMinute") ?? unlimitedForTests ?? 30;
+var liveTokens = builder.Configuration.GetValue<int?>("RateLimits:LiveTokens") ?? unlimitedForTests ?? 1500;
+var liveRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:LiveRefillPer10s") ?? unlimitedForTests ?? 400;
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -183,14 +200,23 @@ builder.Services.AddRateLimiter(options =>
         return ValueTask.CompletedTask;
     };
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
-        RateLimitPartition.GetTokenBucketLimiter(RateLimitKey(http), _ => new TokenBucketRateLimiterOptions
-        {
-            TokenLimit = globalTokens, // burst headroom (bootstrap pulls, imports)
-            TokensPerPeriod = globalRefillPer10S,
-            ReplenishmentPeriod = TimeSpan.FromSeconds(10), // 60/10s = 360 requests/min sustained
-            QueueLimit = 0,
-            AutoReplenishment = true,
-        }));
+        IsLiveViewRoute(http.Request.Path)
+            ? RateLimitPartition.GetTokenBucketLimiter("live:" + RateLimitKey(http), _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = liveTokens,
+                TokensPerPeriod = liveRefillPer10S,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(10), // 400/10s = 40 requests/s sustained
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            })
+            : RateLimitPartition.GetTokenBucketLimiter(RateLimitKey(http), _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = globalTokens, // burst headroom (bootstrap pulls, imports)
+                TokensPerPeriod = globalRefillPer10S,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(10), // 60/10s = 360 requests/min sustained
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
     options.AddPolicy(Munni.Api.Social.SocialEndpoints.MutationsPolicy, http =>
         RateLimitPartition.GetFixedWindowLimiter(RateLimitKey(http), _ => new FixedWindowRateLimiterOptions
         {

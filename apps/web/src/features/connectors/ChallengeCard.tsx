@@ -23,6 +23,10 @@ export interface ChallengeCardProps {
   onAnswer: (value: string) => void;
   /** the streamed page offers its own close: a full-height sheet leaves no backdrop to tap */
   onClose?: () => void;
+  /** the platform ended the streamed page — the host reads the session again */
+  onEnded?: () => void;
+  /** the streamed page's own size (a desktop party's page is landscape) */
+  onFrame?: (size: { width: number; height: number }) => void;
 }
 
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
@@ -165,7 +169,7 @@ function RedirectAnswer({ challenge, busy, onAnswer }: Readonly<{ challenge: Cha
   );
 }
 
-export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer, onClose }: Readonly<ChallengeCardProps>) {
+export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer, onClose, onEnded, onFrame }: Readonly<ChallengeCardProps>) {
   const { t } = useLang();
   const image = useChallengeImage(provider, sessionId, challenge);
   const left = useCountdown(challenge.expiresAt);
@@ -180,6 +184,8 @@ export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer, 
         challengeId={challenge.id}
         prompt={t(challengeKey(challenge.type, challenge.promptKey))}
         onClose={onClose}
+        onEnded={onEnded}
+        onFrame={onFrame}
       />
     );
   }

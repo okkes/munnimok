@@ -20,9 +20,16 @@ import type { LiveInputEvent } from './types';
  * below it, and an open keyboard takes its height off the frame instead
  * of pushing the frame off the screen — so the bar stays reachable and a
  * tap lands where the finger is. See liveLayout.ts.
+ *
+ * The stream ENDS on the platform's say-so: a poll answered "this live
+ * view is over" (the adapter's success signal, or the challenge's expiry)
+ * tells the host, which reads the session afresh — nobody is left watching
+ * a finished page (the DUO sign-in that went nowhere, user ss 2026-10-01).
  */
 const FRAME_IDLE_MS = 400;
 const FRAME_RETRY_MS = 1_500;
+/** the floor between two polls that both came straight back with a picture */
+const MIN_POLL_GAP_MS = 60;
 const FLUSH_MS = 80;
 const MOVE_GAP_MS = 40;
 const BATCH_MAX = 64;
@@ -31,12 +38,21 @@ const CHROME_PX = 8 + 8 + 24;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** the platform refusing further pixels: the challenge was answered or expired, or the session moved on */
+export const liveViewOver = (err: unknown): boolean => {
+  const e = err as { status?: number; envelope?: { code?: string } } | null;
+  if (!e || typeof e !== 'object') return false;
+  return e.status === 410 || e.status === 404 || e.envelope?.code === 'challenge_expired' || e.envelope?.code === 'unsupported_resource';
+};
+
 export function LiveView({
   provider,
   sessionId,
   challengeId,
   prompt,
   onClose,
+  onEnded,
+  onFrame,
 }: Readonly<{
   provider: string;
   sessionId: string;
@@ -45,6 +61,10 @@ export function LiveView({
   prompt?: string;
   /** the close affordance: a full-height sheet leaves no backdrop to tap and no handle to drag */
   onClose?: () => void;
+  /** the platform ended the stream — the host reads the session again */
+  onEnded?: () => void;
+  /** the page's own size, so the host can give a landscape page a wider dialog */
+  onFrame?: (size: { width: number; height: number }) => void;
 }>) {
   const { t } = useLang();
   const desktop = useLgViewport();
@@ -62,13 +82,25 @@ export function LiveView({
   const queue = useRef<LiveInputEvent[]>([]);
   const lastMove = useRef(0);
   const downAt = useRef<{ x: number; y: number } | null>(null);
+  const over = useRef(false);
+  const ended = useRef(onEnded);
+  ended.current = onEnded;
+  const framed = useRef(onFrame);
+  framed.current = onFrame;
+
+  const finish = () => {
+    if (over.current) return;
+    over.current = true;
+    ended.current?.();
+  };
 
   // frames: one long-poll after another, each asking past the last sequence
   useEffect(() => {
     let alive = true;
     let current: string | null = null;
     void (async () => {
-      while (alive) {
+      while (alive && !over.current) {
+        const startedAt = Date.now();
         try {
           const frame = await connectorApi.liveFrame(provider, sessionId, challengeId, sequence.current);
           if (!alive) break;
@@ -76,14 +108,30 @@ export function LiveView({
             await sleep(FRAME_IDLE_MS);
             continue;
           }
-          sequence.current = frame.sequence;
+          // a picture already shown (a relay that lost the sequence header)
+          // is kept at the idle pace: re-asking at once is the storm that
+          // drained the whole API into 429s (user ss 2026-10-01)
+          const advanced = frame.sequence > sequence.current;
+          sequence.current = Math.max(sequence.current, frame.sequence);
           setSize({ width: frame.width, height: frame.height });
+          framed.current?.({ width: frame.width, height: frame.height });
           setOrigin(frame.origin);
           const url = URL.createObjectURL(frame.blob);
           if (current) URL.revokeObjectURL(current);
           current = url;
           setFrameUrl(url);
-        } catch {
+          if (!advanced) {
+            await sleep(FRAME_IDLE_MS);
+          } else {
+            const gap = Date.now() - startedAt;
+            if (gap < MIN_POLL_GAP_MS) await sleep(MIN_POLL_GAP_MS - gap);
+          }
+        } catch (err) {
+          if (!alive) break;
+          if (liveViewOver(err)) {
+            finish();
+            break;
+          }
           await sleep(FRAME_RETRY_MS);
         }
       }
@@ -92,16 +140,20 @@ export function LiveView({
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, sessionId, challengeId]);
 
   // input: whatever gathered since the last flush goes as one batch
   useEffect(() => {
     const timer = setInterval(() => {
-      if (queue.current.length === 0) return;
+      if (queue.current.length === 0 || over.current) return;
       const batch = queue.current.splice(0, BATCH_MAX);
-      void connectorApi.liveInput(provider, sessionId, challengeId, batch).catch(() => undefined);
+      void connectorApi.liveInput(provider, sessionId, challengeId, batch).catch((err: unknown) => {
+        if (liveViewOver(err)) finish();
+      });
     }, FLUSH_MS);
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, sessionId, challengeId]);
 
   // the frame's box: the room the scroller has, minus the head, the bar,

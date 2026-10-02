@@ -111,9 +111,22 @@ internal sealed class StubLoginPage : ILoginPage
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// The page refusing to settle: what Playwright raises when a navigation or
+    /// a wait outlives its budget. Thrown by the next fill, so a test can show
+    /// what an adapter does with a page that hung rather than one that lacks a box.
+    /// </summary>
+    public Exception? FillThrows { get; set; }
+
     public Task<bool> FillAsync(
         IReadOnlyList<string> selectors, string value, int timeoutMs, CancellationToken ct)
     {
+        if (FillThrows is { } thrown)
+        {
+            FillThrows = null;
+            return Task.FromException<bool>(thrown);
+        }
+
         if (Match(selectors) is not { } hit) return Task.FromResult(false);
 
         Record("fill");

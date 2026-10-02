@@ -62,6 +62,28 @@ public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
         Assert.NotEqual(HttpStatusCode.TooManyRequests, (await quiet.GetAsync("/me")).StatusCode);
     }
 
+    /// <summary>
+    /// The streamed login polls a frame per request and posts every batch
+    /// of taps: counted against the global bucket, a minute of signing in
+    /// starved the sync pulls and dropped keystrokes (user ss 2026-10-01).
+    /// </summary>
+    [Fact]
+    public async Task Live_view_polls_ride_their_own_bucket_and_leave_the_global_one_alone()
+    {
+        var client = ClientFor($"live_{Guid.NewGuid():N}");
+
+        // far past the 8-token global bucket: none of these is a 429 (the
+        // relay answers for the unknown session instead)
+        for (var i = 0; i < 20; i++)
+        {
+            var frame = await client.GetAsync("/connectors/mock-store-simple/login/ses_x/challenges/chl_x/live/frame?after=0");
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, frame.StatusCode);
+        }
+
+        // and the global bucket is untouched by them
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync("/me")).StatusCode);
+    }
+
     [Theory]
     [InlineData("/sync/%20/pull?since=0")]
     [InlineData("/sync/sp%3Cscript%3E/pull?since=0")]

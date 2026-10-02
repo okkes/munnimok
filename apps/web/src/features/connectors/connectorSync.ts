@@ -60,6 +60,7 @@ const lastErrorOf = (envelope: ErrorEnvelope): ConnectorLastError => ({
   messageKey: envelope.messageKey,
   userAction: envelope.userAction,
   retryAfterSeconds: envelope.retryAfterSeconds ?? undefined,
+  at: new Date().toISOString(),
 });
 
 const empty = (): SyncReport => ({ status: 'error', added: 0, accounts: 0, transactions: 0, linked: 0, proposed: 0 });

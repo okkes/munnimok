@@ -165,8 +165,12 @@ export const connectorApi = {
     if (response.status === 204) return null;
     if (!response.ok) throw new ConnectorError(response.status, envelopeOf(response.status, await response.json().catch(() => null)));
     const [width, height] = (response.headers.get('X-Live-Size') ?? '390x844').split('x').map(Number);
+    // a relay that lost the sequence header hands back the caller's own
+    // mark: the view shows the picture and polls at its idle pace instead
+    // of asking again at once (the storm of 2026-10-01)
+    const sequenceHeader = response.headers.get('X-Live-Sequence');
     return {
-      sequence: Number(response.headers.get('X-Live-Sequence') ?? after),
+      sequence: sequenceHeader ? Number(sequenceHeader) : after,
       width: width || 390,
       height: height || 844,
       origin: response.headers.get('X-Live-Origin') ?? undefined,

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 import { NO_INGEST, catalogueOf, manifestOf } from '@/test/connectorFixtures';
 import { storeConnLinkId } from '@/domain/feedIds';
+import { usePendingLogins } from './pendingLogins';
 
 const PROVIDER = 'mock-store-simple';
 const json = (payload: unknown, status = 200) =>
@@ -44,6 +45,8 @@ describe('Connections hub (signed-in user)', () => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
+    // sign-ins in flight are a module store: one test's leftover must not be the next test's row
+    usePendingLogins.setState({ logins: {} });
   });
 
   it('connects a shop through the catalogue, names it, includes a second space — the bundle stays in the tab', async () => {
@@ -163,6 +166,75 @@ describe('Connections hub (signed-in user)', () => {
     const body = screen.getByTestId('connect-live').closest('[data-sheet-body]') as HTMLElement;
     expect(body.hasAttribute('data-full')).toBe(true);
   }, 20_000);
+
+  it('a streamed page the platform ends moves the sheet on by itself (the DUO sign-in that went nowhere, user ss 2026-10-01)', async () => {
+    let polls = 0;
+    const live = {
+      sessionId: 'ses_l',
+      state: 'awaiting_input',
+      challenge: { id: 'ch_live', type: 'live_view', answerKind: 'text', expiresAt: new Date(Date.now() + 900_000).toISOString() },
+      progress: { step: 'awaiting_human', stepsDone: [] },
+      notes: [],
+    };
+    const settled = { sessionId: 'ses_l', state: 'active', bundle: 'sb_v1.live', providerAccount: { displayName: 'Mock' } };
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: () => live,
+        [`GET /connectors/${PROVIDER}/login/ses_l`]: () => {
+          polls += 1;
+          return polls < 2 ? live : settled;
+        },
+        // the platform refuses further pixels: the sign-in landed
+        [`GET /connectors/${PROVIDER}/login/ses_l/challenges/ch_live/live/frame`]: () => envelope(410, 'challenge_expired'),
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-field-username');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-live', {}, { timeout: 5000 });
+    // the ended stream re-reads the session, which has settled: the connection is named
+    await screen.findByTestId('conn-name-input', {}, { timeout: 8000 });
+  }, 20_000);
+
+  it('closing the sheet mid-sign-in keeps it going: the hub lists it, continues it, and adopts it when it settles', async () => {
+    let polls = 0;
+    const waiting = { sessionId: 'ses_w', state: 'queued', progress: { step: 'queued', stepsDone: [], ahead: 1 }, notes: [] };
+    const settled = { sessionId: 'ses_w', state: 'active', bundle: 'sb_v1.w', providerAccount: { displayName: 'Mock' } };
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: () => waiting,
+        [`GET /connectors/${PROVIDER}/login/ses_w`]: () => {
+          polls += 1;
+          return polls < 3 ? waiting : settled;
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-field-username');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-progress', {}, { timeout: 5000 });
+    // closing detaches: the hub lists the sign-in with a way back in
+    fireEvent.click(screen.getByTestId('connect-running-close'));
+    const row = await screen.findByTestId(/^conn-pending-(?!state|continue|cancel)/);
+    expect(row.textContent).toMatch(/Signing in/);
+    expect(screen.getByTestId(/^conn-pending-continue-/)).toBeTruthy();
+    // the follower reads the session while the sheet is closed and adopts it once it settles
+    await screen.findByTestId('conn-name-input', {}, { timeout: 10000 });
+  }, 25_000);
 
   it('a party that asks a code mid-login gets it answered; the bundle is read once it settles', async () => {
     let answered = false;
