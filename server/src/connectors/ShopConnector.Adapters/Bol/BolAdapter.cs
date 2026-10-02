@@ -254,7 +254,7 @@ public sealed class BolAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Downloading);
 
-        var (collected, walkWasComplete) = await WalkAsync(ctx, shape, options, cookies, xsrf, request, cap, ct)
+        var (collected, walkWasComplete) = await WalkAsync(ctx, new BolCall(shape, options, cookies, xsrf), request, cap, ct)
             .ConfigureAwait(false);
 
         var ordered = collected.OrderByDescending(o => o.PlacedAt).ToList();
@@ -278,10 +278,13 @@ public sealed class BolAdapter : IProviderAdapter
     /// because it had seen everything rather than because its page budget
     /// ran out.
     /// </summary>
+    /// <summary>What one orders request needs beyond its page number: the shape, the options it reads (the learned hash included), the jar and the token.</summary>
+    private sealed record BolCall(IBolOrdersShape Shape, BolOptions Options, string Cookies, string? Xsrf);
+
     private async Task<(List<BolOrder> Orders, bool Complete)> WalkAsync(
-        IJobContext ctx, IBolOrdersShape shape, BolOptions options, string cookies, string? xsrf, ResourceRequest request, int cap,
-        CancellationToken ct)
+        IJobContext ctx, BolCall call, ResourceRequest request, int cap, CancellationToken ct)
     {
+        var shape = call.Shape;
         var zone = RetailZones.Dutch;
         var collected = new List<BolOrder>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -296,7 +299,7 @@ public sealed class BolAdapter : IProviderAdapter
         {
             ct.ThrowIfCancellationRequested();
 
-            var body = await ReadPageAsync(ctx, shape, options, cookies, xsrf, page, ct).ConfigureAwait(false);
+            var body = await ReadPageAsync(ctx, call.Shape, call.Options, call.Cookies, call.Xsrf, page, ct).ConfigureAwait(false);
 
             ctx.Progress(JobStep.Parsing);
 
