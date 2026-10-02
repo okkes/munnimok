@@ -72,5 +72,7 @@ export const useSyncActivity = create<SyncActivityStore>((set) => ({
 }));
 
 /** a finished sync whose result is still worth showing */
-export const resultStillFresh = (activity: SyncActivity | undefined, now = Date.now()): activity is SyncActivity & { report: SyncReport } =>
-  activity?.phase === 'done' && !!activity.report && now - (activity.finishedAt ?? 0) < RESULT_TTL_MS;
+export const resultStillFresh = (activity: SyncActivity | undefined, now = Date.now()): activity is SyncActivity & { report: SyncReport } => {
+  if (!activity || activity.phase !== 'done' || !activity.report) return false;
+  return now - (activity.finishedAt ?? 0) < RESULT_TTL_MS;
+};

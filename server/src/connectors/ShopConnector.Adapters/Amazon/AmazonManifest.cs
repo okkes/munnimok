@@ -234,9 +234,9 @@ internal static class AmazonManifest
                 // Still lower than the other stores'. Every order is a
                 // navigation of its own (its invoice page) against a site that
                 // challenges when it is bored, so three hundred - years of a
-                // busy household - is where a first connect stops and says so
-                // (user request 2026-10-02: as far back as the party allows);
-                // the newest come first.
+                // busy household - is where a first connect stops and says so,
+                // the newest first. The user asked for as far back as the party
+                // allows (2026-10-02); this is where that meets the pacing.
                 MaxRecordsPerFetch = 300,
             },
         ],

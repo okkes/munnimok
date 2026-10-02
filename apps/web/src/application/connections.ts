@@ -184,31 +184,38 @@ const widen = (ranges: Record<string, FetchedRange>, connectionId: string, date:
  * 2026-10-02). Derived from the rows themselves: always true, never a
  * claim.
  */
+/** a shop's receipts, by the connection that pulled them */
+async function receiptRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
+  const feedId = myStoreFeedId();
+  if (!feedId) return;
+  for (const receipt of await store.bySpace('receipt', feedId)) {
+    if (receipt.deleted === 0 && receipt.instanceId) widen(ranges, receipt.instanceId, receipt.date);
+  }
+}
+
+/** a bank's transactions through the accounts it handed over, credited to every connection of that party */
+async function bankRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
+  const banks = (await store.allRows('storeConn')).filter((c) => c.deleted === 0 && c.kind === 'bank');
+  if (banks.length === 0) return;
+  const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector' && a.provider);
+  for (const feed of new Set(accounts.map((a) => a.spaceId))) {
+    const byAccount = new Map(accounts.filter((a) => a.spaceId === feed).map((a) => [a.id, a.provider]));
+    for (const tx of await store.bySpace('transaction', feed)) {
+      const provider = tx.deleted === 0 ? byAccount.get(tx.accountId) : undefined;
+      if (!provider) continue;
+      for (const bank of banks.filter((b) => b.store === provider)) widen(ranges, bank.id, tx.date);
+    }
+  }
+}
+
 export function useFetchedRanges(): Record<string, FetchedRange> | undefined {
   const { store } = useData();
   return useQuery(
     store,
     async () => {
       const ranges: Record<string, FetchedRange> = {};
-      const feedId = myStoreFeedId();
-      if (feedId) {
-        for (const receipt of await store.bySpace('receipt', feedId)) {
-          if (receipt.deleted === 0 && receipt.instanceId) widen(ranges, receipt.instanceId, receipt.date);
-        }
-      }
-      const banks = (await store.allRows('storeConn')).filter((c) => c.deleted === 0 && c.kind === 'bank');
-      if (banks.length === 0) return ranges;
-      const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector' && a.provider);
-      const feeds = new Set(accounts.map((a) => a.spaceId));
-      for (const feed of feeds) {
-        const byAccount = new Map(accounts.filter((a) => a.spaceId === feed).map((a) => [a.id, a.provider]));
-        for (const tx of await store.bySpace('transaction', feed)) {
-          if (tx.deleted !== 0) continue;
-          const provider = byAccount.get(tx.accountId);
-          if (!provider) continue;
-          for (const bank of banks.filter((b) => b.store === provider)) widen(ranges, bank.id, tx.date);
-        }
-      }
+      await receiptRanges(store, ranges);
+      await bankRanges(store, ranges);
       return ranges;
     },
     [],

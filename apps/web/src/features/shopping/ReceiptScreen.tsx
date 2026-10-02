@@ -24,6 +24,15 @@ import type { StorageBackend } from '@/db/backend';
 /** where a receipt is looked at from: a space (links, matching) or the connections hub (the party's own list) */
 export type ReceiptScope = 'space' | 'global';
 
+type Translate = ReturnType<typeof useLang>['t'];
+
+/** what the screen is called after: the merchant or the party, Photo for a snapped one */
+const titleOf = (receipt: ReceiptRow | null, t: Translate): string => {
+  if (!receipt) return t('receipt.title');
+  if (receipt.source === 'photo') return t('receipt.sourcePhoto');
+  return receipt.merchant ?? partyName(receipt.source);
+};
+
 /** an invoice the party issued, shown in place — a PDF or a picture, from its data URL */
 function InvoiceSheet({ document, onClose }: Readonly<{ document: ReceiptDocument | null; onClose: () => void }>) {
   const { t } = useLang();
@@ -163,7 +172,7 @@ export function ReceiptScreen({
     leave();
   };
 
-  const title = receipt ? (receipt.source === 'photo' ? t('receipt.sourcePhoto') : (receipt.merchant ?? partyName(receipt.source))) : t('receipt.title');
+  const title = titleOf(receipt, t);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-receipt">
