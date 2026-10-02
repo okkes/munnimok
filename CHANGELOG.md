@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.2](https://github.com/okkes/munnimok/compare/v5.5.1...v5.5.2) (2026-10-02)
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** the open-banking return comes back into the phone app ([c80301c](https://github.com/okkes/munnimok/commit/c80301cb2504936f643b3daf00aa95dee39d25f6))
+
 ## [5.5.1](https://github.com/okkes/munnimok/compare/v5.5.0...v5.5.1) (2026-10-02)
 
 
