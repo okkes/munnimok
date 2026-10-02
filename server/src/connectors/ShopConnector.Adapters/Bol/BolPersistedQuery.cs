@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Bol;
 
@@ -37,18 +38,18 @@ internal static class BolPersistedQuery
         {
             using var document = JsonDocument.Parse(postData);
             var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object) return false;
-            if (root.TryGetProperty("operationName", out var name) && name.ValueKind == JsonValueKind.String
-                && !string.Equals(name.GetString(), operationName, StringComparison.Ordinal))
-            {
-                return false;
-            }
 
-            if (!root.TryGetProperty("extensions", out var extensions) || extensions.ValueKind != JsonValueKind.Object) return false;
-            if (!extensions.TryGetProperty("persistedQuery", out var persisted) || persisted.ValueKind != JsonValueKind.Object) return false;
-            if (!persisted.TryGetProperty("sha256Hash", out var value) || value.ValueKind != JsonValueKind.String) return false;
+            // Through JsonAccess, never the runtime's throwing accessors: a
+            // request body is the party's own payload, and a null where an
+            // object was expected must answer "no hash", not escape as an
+            // InvalidOperationException (the JSON read rule).
+            var name = JsonAccess.StrOf(root, "operationName");
+            if (name is not null && !string.Equals(name, operationName, StringComparison.Ordinal)) return false;
 
-            var read = value.GetString();
+            if (!JsonAccess.TryPath(root, "extensions.persistedQuery.sha256Hash", out var value)) return false;
+            if (value.ValueKind != JsonValueKind.String) return false;
+
+            var read = JsonAccess.Str(value);
             if (string.IsNullOrWhiteSpace(read) || read.Length > 128) return false;
             hash = read;
             return true;
