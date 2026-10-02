@@ -2489,6 +2489,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'connect.return.lost': 'munni bu dönüşün hangi bağlantıya ait olduğunu bilmiyor.',
   'connect.return.lostNote': 'Bağlantıyı munni uygulamasında mı başlattın? Orada devam et. Değilse Bağlantılar’dan yeniden başlat.',
   'connect.return.openApp': 'munni uygulamasını aç',
+  'connect.return.handoff': 'munni uygulamasına dönülüyor…',
+  'connect.return.handoffNote': 'Banka seni geri getirdi. Bağlantıyı munni uygulaması tamamlar — kendiliğinden açılmadıysa düğmeye dokun.',
   'connect.return.back': 'munni’ye dön',
   'connect.return.continue': 'Devam et',
   'connect.return.signedOut': 'Önce munni’ye giriş yap, sonra bağlantıyı Bağlantılar’dan yeniden başlat.',

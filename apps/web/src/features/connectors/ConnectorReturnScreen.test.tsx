@@ -11,6 +11,16 @@ import { USER_TEST_DB, mockUserServer } from '@/test/harness';
 import { ConnectorReturnScreen } from './ConnectorReturnScreen';
 import { rememberReturn } from './connectorReturn';
 
+// a phone's browser, and where it sends the person: the shell's scheme (user ss 2026-10-03)
+const phone = vi.hoisted(() => ({ mobile: false, opened: [] as string[] }));
+vi.mock('@/lib/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/platform')>()),
+  isMobileWeb: () => phone.mobile,
+  openApp: (url: string) => {
+    phone.opened.push(url);
+  },
+}));
+
 const PROVIDER = 'gocardless';
 const json = (payload: unknown, status = 200) =>
   new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
@@ -42,6 +52,8 @@ describe('ConnectorReturnScreen — the page a party brings the person back to (
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
+    phone.mobile = false;
+    phone.opened.length = 0;
   });
   afterEach(() => {
     window.history.replaceState({}, '', '/');
@@ -125,6 +137,26 @@ describe('ConnectorReturnScreen — the page a party brings the person back to (
     expect(screen.getByTestId('connector-return-open-app').getAttribute('href')).toBe('munni://gc-callback?ref=REF-9&code=c-1');
     expect(screen.getByTestId('connector-return-back')).toBeTruthy();
   }, 15_000);
+
+  it('a phone’s browser that did not start the connection hands the return to the app, query and all (user ss 2026-10-03)', async () => {
+    phone.mobile = true;
+    mockUserServer({ api: { 'GET /connectors/providers': () => catalogueOf(bank()) } });
+    mountAt('?state=ST-7');
+    await waitFor(() => expect(stateOf()).toBe('handoff'));
+    expect(phone.opened).toEqual(['munni://gc-callback?state=ST-7']);
+    expect(screen.getByTestId('connector-return-open-app').getAttribute('href')).toBe('munni://gc-callback?state=ST-7');
+    expect(screen.getByTestId('connector-return-back')).toBeTruthy();
+  });
+
+  it('a phone’s browser that started the connection itself keeps it', async () => {
+    phone.mobile = true;
+    rememberReturn(pending);
+    mockUserServer({ api: { 'GET /connectors/providers': () => catalogueOf(bank()) } });
+    mountAt('?ref=REF-1');
+    await screen.findByTestId('screen-connector-return');
+    expect(stateOf()).not.toBe('handoff');
+    expect(phone.opened).toEqual([]);
+  });
 
   it('signed out, it says so instead of answering for nobody', async () => {
     useSession.setState({ identity: null });

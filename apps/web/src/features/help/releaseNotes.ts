@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.5.2',
+    date: '2026-10-03',
+    items: [
+      {
+        en: 'Connecting a bank through Enable Banking or GoCardless from the phone app comes back into the app again: on iPhone the bank’s page closes by itself when you are done, on Android the return page opens the app.',
+        nl: 'Een bank koppelen via Enable Banking of GoCardless vanuit de telefoon-app komt weer terug in de app: op iPhone sluit de pagina van de bank vanzelf als je klaar bent, op Android opent de terugkeerpagina de app.',
+        tr: 'Telefon uygulamasından Enable Banking veya GoCardless ile banka bağlamak yeniden uygulamaya dönüyor: iPhone’da bankanın sayfası işin bitince kendiliğinden kapanır, Android’de dönüş sayfası uygulamayı açar.',
+      },
+    ],
+  },
+  {
     version: '5.5.1',
     date: '2026-10-02',
     items: [

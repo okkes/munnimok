@@ -5,7 +5,7 @@ import { DataProvider, useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
-import { isNativeApp } from '@/lib/platform';
+import { isMobileWeb, isNativeApp, openApp } from '@/lib/platform';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
@@ -34,7 +34,8 @@ type ReturnState =
   | { kind: 'failed'; error: ErrorEnvelope }
   | { kind: 'cancelled' }
   | { kind: 'lost' }
-  | { kind: 'signedOut' };
+  | { kind: 'signedOut' }
+  | { kind: 'handoff'; appUrl: string };
 
 const POLL_MS = 2_000;
 const POLL_LIMIT = 45;
@@ -48,6 +49,7 @@ const ICONS: Record<ReturnState['kind'], string> = {
   cancelled: 'close-circle-outline',
   lost: 'help-circle-outline',
   signedOut: 'lock-outline',
+  handoff: 'open-in-new',
 };
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -64,8 +66,31 @@ async function settledView(provider: string, first: SessionView): Promise<Sessio
   return view;
 }
 
+/** the app's own address for this return: the scheme the shell registered, the bank's query as it came */
+const appReturnUrl = (search: string): string => `${config.nativeScheme}://${RETURN_PATH.slice(1)}${search}`;
+
+/**
+ * A phone's browser that did not start this connection: the bank came
+ * back here, but the munni app holds the pending return — so hand it over
+ * (user ss 2026-10-03: Enable Banking sat on "returning to the
+ * authentication initiator", GoCardless landed in the browser). Inside the
+ * iOS auth session the scheme ends the session and the app reads the
+ * address; in a Custom Tab or in Safari it opens the app. A browser that
+ * started the connection itself keeps it; a computer has no app to hand
+ * to. Decided before the identity: the session's browser is signed in to
+ * nothing.
+ */
+function phoneHandoff(): string | null {
+  if (isNativeApp() || !isMobileWeb()) return null;
+  const params = new URLSearchParams(globalThis.location.search);
+  if (pendingReturnFor(returnCodeOf(params))) return null;
+  return appReturnUrl(globalThis.location.search);
+}
+
 export function ConnectorReturnScreen() {
   const identity = useSession((s) => s.identity);
+  const [handoff] = useState(() => phoneHandoff());
+  if (handoff) return <ReturnShell state={{ kind: 'handoff', appUrl: handoff }} />;
   if (identity?.kind !== 'user') return <ReturnShell state={{ kind: 'signedOut' }} />;
   return (
     <DataProvider>
@@ -167,6 +192,8 @@ const headlineOf = (state: ReturnState): TranslationKey => {
       return 'connect.return.cancelled';
     case 'lost':
       return 'connect.return.lost';
+    case 'handoff':
+      return 'connect.return.handoff';
     default:
       return 'conn.signInShort';
   }
@@ -181,6 +208,11 @@ function ReturnShell({
 }: Readonly<{ state: ReturnState; name?: string; onName?: (value: string) => void; attempted?: boolean; onContinue?: () => void }>) {
   const { t } = useLang();
   const naming = state.kind === 'done' && !state.reconnect;
+  // the hand-off happens by itself; the button stays for a browser that refuses the scheme
+  const appUrl = state.kind === 'handoff' ? state.appUrl : null;
+  useEffect(() => {
+    if (appUrl) openApp(appUrl);
+  }, [appUrl]);
   const nameMissing = attempted && !name.trim();
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center" data-testid="screen-connector-return" data-state={state.kind}>
@@ -220,10 +252,20 @@ function ReturnShell({
             {t('connect.return.lostNote')}
           </p>
           {!isNativeApp() && (
-            <a href={`${config.nativeScheme}://${RETURN_PATH.slice(1)}${globalThis.location.search}`} data-testid="connector-return-open-app" className={BUTTON_LINK}>
+            <a href={appReturnUrl(globalThis.location.search)} data-testid="connector-return-open-app" className={BUTTON_LINK}>
               {t('connect.return.openApp')}
             </a>
           )}
+        </>
+      )}
+      {state.kind === 'handoff' && (
+        <>
+          <p className="max-w-[300px] text-[13px] leading-relaxed text-ink-3" data-testid="connector-return-handoff-note">
+            {t('connect.return.handoffNote')}
+          </p>
+          <a href={state.appUrl} data-testid="connector-return-open-app" className={BUTTON_LINK}>
+            {t('connect.return.openApp')}
+          </a>
         </>
       )}
       {state.kind === 'signedOut' && (
@@ -232,7 +274,7 @@ function ReturnShell({
         </p>
       )}
       {state.kind !== 'working' && !naming && (
-        <a href="/#/connections" data-testid="connector-return-back" className={state.kind === 'lost' && !isNativeApp() ? 'text-[13px] text-accent-deep' : BUTTON_LINK}>
+        <a href="/#/connections" data-testid="connector-return-back" className={(state.kind === 'lost' || state.kind === 'handoff') && !isNativeApp() ? 'text-[13px] text-accent-deep' : BUTTON_LINK}>
           {t('connect.return.back')}
         </a>
       )}

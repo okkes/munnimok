@@ -2489,6 +2489,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'connect.return.lost': 'munni weet niet bij welke koppeling deze terugkeer hoort.',
   'connect.return.lostNote': 'Ben je de koppeling in de munni-app begonnen? Ga daar verder. Begin haar anders opnieuw vanuit Koppelingen.',
   'connect.return.openApp': 'Open de munni-app',
+  'connect.return.handoff': 'Terug naar de munni-app…',
+  'connect.return.handoffNote': 'De bank heeft je teruggebracht. De munni-app maakt de koppeling af — ging hij niet vanzelf open, tik dan op de knop.',
   'connect.return.back': 'Terug naar munni',
   'connect.return.continue': 'Doorgaan',
   'connect.return.signedOut': 'Log eerst in bij munni en begin de koppeling dan opnieuw vanuit Koppelingen.',

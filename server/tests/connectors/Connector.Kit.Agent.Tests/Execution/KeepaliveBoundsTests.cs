@@ -164,12 +164,16 @@ public sealed class KeepaliveBoundsTests
                 "liveness window, so every login and fetch naming it was refused");
 
             // And the number it is: thirty seconds of interval, then twice a
-            // ten-second bound and a five-second retry - give or take a step of
-            // the clock for the moment each beat is stamped in.
+            // ten-second bound and a five-second retry - give or take a few
+            // steps of the clock for the moment each beat is stamped in. Eight
+            // rather than four: a loaded runner let the continuations lag one
+            // step behind the clock (CI, 2026-10-02: 65s against a 64s ceiling),
+            // and the claim is the window, not the step - the old behaviour
+            // answered 230s.
             Assert.InRange(
                 gap,
                 TimeSpan.FromSeconds(60),
-                TimeSpan.FromSeconds(60) + (4 * TestClock.Step));
+                TimeSpan.FromSeconds(60) + (8 * TestClock.Step));
 
             // The bound itself, read the same way as the renewal's: both beats
             // went out on the keepalive client and cost its ten seconds.
