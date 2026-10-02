@@ -384,12 +384,19 @@ export function ConnectFlowSheet({
     const problem = attempted ? problems[field.key] : undefined;
     const value = values[field.key] ?? '';
     const set = (v: string) => setValues((all) => ({ ...all, [field.key]: v }));
+    // A lookup is a search box AND a list of buttons, and it must not sit in a
+    // <label>: Safari runs the label's activation for a tap on any descendant,
+    // so a bank tapped from the list was re-dispatched to the first labelable
+    // element — by then the just-picked button — and unpicked itself (user ss
+    // 2026-10-02: "the bank item is not selectable"). A plain field keeps the
+    // label, which is what gives its input a name.
+    const Wrapper = field.type === 'lookup' ? 'div' : 'label';
     return (
-      <label key={field.key} className="flex flex-col gap-1 text-[12px] text-ink-3">
+      <Wrapper key={field.key} className="flex flex-col gap-1 text-[12px] text-ink-3" data-testid={`connect-fieldset-${field.key}`}>
         {t(field.labelKey)}
         {controlFor(field, value, !!problem, set)}
         <FormBlockerNote show={!!problem} text={t(problem === 'pattern' ? 'connect.field.pattern' : 'connect.field.required')} testId={`connect-field-${field.key}-blocker`} />
-      </label>
+      </Wrapper>
     );
   };
 
