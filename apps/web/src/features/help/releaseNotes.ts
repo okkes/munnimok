@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.5.1',
+    date: '2026-10-02',
+    items: [
+      {
+        en: 'Connecting a bank through Enable Banking or GoCardless on the phone works again: the bank you tap from the list stays picked, and the list scrolls.',
+        nl: 'Een bank koppelen via Enable Banking of GoCardless op de telefoon werkt weer: de bank die je in de lijst aantikt blijft gekozen, en de lijst scrolt.',
+        tr: 'Telefonda Enable Banking veya GoCardless üzerinden banka bağlamak yeniden çalışıyor: listeden dokunduğun banka seçili kalır ve liste kayar.',
+      },
+    ],
+  },
+  {
     version: '5.5.0',
     date: '2026-10-02',
     items: [
