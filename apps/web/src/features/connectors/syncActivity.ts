@@ -43,7 +43,7 @@ export const useSyncActivity = create<SyncActivityStore>((set) => ({
   found: (connectionId, records) =>
     set((s) => {
       const current = s.activity[connectionId];
-      if (!current || current.phase !== 'fetching') return s;
+      if (current?.phase !== 'fetching') return s;
       return { activity: { ...s.activity, [connectionId]: { ...current, found: records } } };
     }),
   end: (connectionId, report) =>
@@ -73,6 +73,6 @@ export const useSyncActivity = create<SyncActivityStore>((set) => ({
 
 /** a finished sync whose result is still worth showing */
 export const resultStillFresh = (activity: SyncActivity | undefined, now = Date.now()): activity is SyncActivity & { report: SyncReport } => {
-  if (!activity || activity.phase !== 'done' || !activity.report) return false;
+  if (activity?.phase !== 'done' || !activity.report) return false;
   return now - (activity.finishedAt ?? 0) < RESULT_TTL_MS;
 };
