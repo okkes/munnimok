@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.3](https://github.com/okkes/munnimok/compare/v5.5.2...v5.5.3) (2026-10-03)
+
+
+### 🐞 Bug Fixes
+
+* **native:** the consent sheet closes by itself when the bank returns through Safari ([3d843a4](https://github.com/okkes/munnimok/commit/3d843a451f0229eb135411a25b75eef76d734453))
+
 ## [5.5.2](https://github.com/okkes/munnimok/compare/v5.5.1...v5.5.2) (2026-10-02)
 
 
