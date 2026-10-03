@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.4](https://github.com/okkes/munnimok/compare/v5.5.3...v5.5.4) (2026-10-03)
+
+
+### 🐞 Bug Fixes
+
+* **web:** a space's accounts screen survives an account source this build no longer lists ([a63775b](https://github.com/okkes/munnimok/commit/a63775b4d94f6672a07edbbf7dc1562d11c77c60))
+
 ## [5.5.3](https://github.com/okkes/munnimok/compare/v5.5.2...v5.5.3) (2026-10-03)
 
 
