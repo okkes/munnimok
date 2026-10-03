@@ -18,6 +18,14 @@ interface CapacitorGlobal {
     App?: CapacitorPluginListener & {
       getInfo?: () => Promise<{ build?: string; version?: string }>;
     };
+    /** the platform auth session (AppDelegate.swift): a sheet the app can end itself */
+    AuthSession?: {
+      cancel?: () => Promise<void>;
+    };
+    /** the in-app browser (Capacitor Browser): closes on iOS, a no-op on Android */
+    Browser?: {
+      close?: () => Promise<void>;
+    };
     PushNotifications?: CapacitorPluginListener & {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
@@ -134,6 +142,21 @@ export function deepLinkToPath(url: string): string | null {
 export const NATIVE_CALLBACK_KEY = 'munni_native_callback';
 
 /**
+ * Ends the web surface the shell opened on top of itself — the auth
+ * session or the in-app browser. A bank's app hands its https return to
+ * Safari, never to the sheet it left, so by the time the return reaches
+ * the app the sheet is sitting on a page that can never finish (Enable
+ * Banking's "returning to the authentication initiator", user ss
+ * 2026-10-03). Best effort: an older shell without the method, or Android
+ * where the Custom Tab has no close, simply keeps what it shows.
+ */
+export function closeInAppBrowser(): void {
+  const plugins = capacitor()?.Plugins;
+  void plugins?.AuthSession?.cancel?.()?.catch(() => undefined);
+  void plugins?.Browser?.close?.()?.catch(() => undefined);
+}
+
+/**
  * Native deep links (N3): bank-consent and auth callbacks arrive as
  * munni:// urls while the app runs. Both callback screens live OUTSIDE
  * the hash router on real paths, so a full navigation is the correct
@@ -165,6 +188,10 @@ export function initDeepLinks(): void {
       globalThis.location.assign('/#/login');
       return;
     }
+    // the bank's return came through Safari: the sheet the app opened for
+    // the consent is still up, on a page that will not finish — close it
+    // before the return page takes over
+    if (path.startsWith('/gc-callback')) closeInAppBrowser();
     // callbacks live on real paths outside the hash router; everything
     // else (app shortcuts like munni://review, §5) is a hash route
     const realPath = path.startsWith('/auth-callback') || path.startsWith('/gc-callback');

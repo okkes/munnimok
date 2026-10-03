@@ -106,7 +106,8 @@ public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "AuthSessionPlugin"
     public let jsName = "AuthSession"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise)
     ]
     private var session: ASWebAuthenticationSession?
     private var presenter: AuthSessionPresenter?
@@ -141,6 +142,20 @@ public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.session = nil
                 call.reject("the auth session could not start")
             }
+        }
+    }
+
+    // Ends a session whose page can no longer finish. A bank app hands its
+    // https return to Safari, never to the sheet it left, so the consent
+    // completes there and reaches the app on its scheme while this sheet
+    // sits on "returning…" for ever (user ss 2026-10-03). Cancelling runs
+    // the completion handler above with canceledLogin, which resolves the
+    // pending start as cancelled.
+    @objc func cancel(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.session?.cancel()
+            self.session = nil
+            call.resolve()
         }
     }
 }

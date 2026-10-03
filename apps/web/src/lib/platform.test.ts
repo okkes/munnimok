@@ -54,9 +54,15 @@ describe('platform seam', () => {
     const listeners: Record<string, (data: never) => void> = {};
     const assign = vi.fn();
     Object.defineProperty(globalThis, 'location', { value: { assign }, configurable: true });
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
     setCapacitor({
       isNativePlatform: () => true,
-      Plugins: { App: { addListener: (event: string, cb: (data: never) => void) => (listeners[event] = cb) } },
+      Plugins: {
+        App: { addListener: (event: string, cb: (data: never) => void) => (listeners[event] = cb) },
+        AuthSession: { cancel },
+        Browser: { close },
+      },
     });
     initDeepLinks();
 
@@ -66,9 +72,16 @@ describe('platform seam', () => {
     // …but the original url is kept so the SDK sees the real redirect_uri
     expect(sessionStorage.getItem(NATIVE_CALLBACK_KEY)).toBe('munni://auth-callback?code=abc&state=xyz');
 
-    // a bank callback navigates but never stashes
+    // an auth callback leaves the session alone: it ended itself on the scheme
+    expect(cancel).not.toHaveBeenCalled();
+
+    // a bank callback navigates but never stashes — and closes the sheet the
+    // consent was opened in, which the bank's app left behind on a page that
+    // will not finish (user ss 2026-10-03)
     listeners.appUrlOpen({ url: 'munni://gc-callback?ref=r1' } as never);
     expect(assign).toHaveBeenLastCalledWith('/gc-callback?ref=r1');
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
 
     // §5 shortcuts: any other target is a hash route, not a real path
     listeners.appUrlOpen({ url: 'munni://review' } as never);
