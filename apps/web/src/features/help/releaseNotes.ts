@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.5.3',
+    date: '2026-10-03',
+    items: [
+      {
+        en: 'When your bank’s app brings you back to munni, the page munni had opened for the consent closes by itself instead of waiting on a spinner.',
+        nl: 'Als de app van je bank je terugbrengt naar munni, sluit de pagina die munni voor de toestemming had geopend vanzelf in plaats van op een draaiend wieltje te wachten.',
+        tr: 'Bankanın uygulaması seni munni’ye geri getirdiğinde, munni’nin izin için açtığı sayfa bir dönen simgede beklemek yerine kendiliğinden kapanır.',
+      },
+    ],
+  },
+  {
     version: '5.5.2',
     date: '2026-10-03',
     items: [
