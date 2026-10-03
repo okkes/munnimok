@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.5.4',
+    date: '2026-10-04',
+    items: [
+      {
+        en: 'A space’s accounts screen opens again when it holds an account from the older GoCardless connection; the row names GoCardless as its source.',
+        nl: 'Het rekeningenscherm van een space opent weer als er een rekening van de oudere GoCardless-koppeling in staat; de rij noemt GoCardless als bron.',
+        tr: 'Bir alanın hesaplar ekranı, eski GoCardless bağlantısından bir hesap içerdiğinde yeniden açılıyor; satır kaynak olarak GoCardless’ı gösterir.',
+      },
+    ],
+  },
+  {
     version: '5.5.3',
     date: '2026-10-03',
     items: [

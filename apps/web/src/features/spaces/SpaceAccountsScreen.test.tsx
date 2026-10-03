@@ -175,6 +175,41 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     expect(await screen.findByTestId('space-attach-share-warn', {}, { timeout: 10_000 })).toBeTruthy();
   }, 20_000);
 
+  it('an account whose source this build no longer lists still renders, named after that party (prod ss 2026-10-04)', async () => {
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t3'), { trackOutbox: false });
+    // the retired integration's rows (#414 O4) carry its name as their source, and no provider
+    await repo.upsert('account', 'feed-1', 'feedacct-old', {
+      name: 'Oude rekening',
+      type: 'checking',
+      source: 'gocardless' as never,
+      currency: 'EUR',
+      balanceCents: 1200,
+      iban: 'NL02ABNA0123456789',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-old', { feedSpaceId: 'feed-1', accountId: 'feedacct-old', type: 'checking' });
+    db.close();
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/members': () => [member(ME, 'Me', 'owner')],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-old', feedSpaceId: 'feed-1', accountId: 'feedacct-old' }],
+      },
+    });
+    const row = await screen.findByTestId('space-account-link-old', {}, { timeout: 5000 });
+    expect(row.textContent).toContain('Oude rekening');
+    expect(row.textContent).toContain('GoCardless');
+    expect(screen.queryByText(/Something went wrong/)).toBeNull();
+  }, 15_000);
+
   it('#305: an attachment on someone ELSE\'s feed wears the shared badge; space-owned rows do not', async () => {
     await seedRows();
     renderAppAsUser('/spaces/s-user/accounts', {
