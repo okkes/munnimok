@@ -59,6 +59,16 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal("image/png", image.Content.Headers.ContentType?.MediaType);
         Assert.True((await image.Content.ReadAsByteArrayAsync()).Length > 0);
 
+        // the app hears the question through its own stream BEFORE it answers:
+        // the bridge speaks when it observes the session, and on a loaded runner
+        // an answer sent at once left it nothing but the settled states to
+        // report (CI, 2026-10-03) - so the question's frame is waited for first
+        var asked = await DrainFramesAsync(
+            reader, TimeSpan.FromSeconds(10),
+            f => f["sessionId"]?.GetValue<string>() == sessionId,
+            until: f => f["state"]?.GetValue<string>() == "awaiting_input" && f["challenge"] is not null);
+        Assert.Contains(asked, f => f["state"]!.GetValue<string>() == "awaiting_input" && f["challenge"] is not null);
+
         // the answer, and the session settles with its bundle
         using var answered = await client.PostAsJsonAsync($"/connectors/{Captcha}/login/{sessionId}/answer", new { challengeId, value = "MOCK1" });
         Assert.True(answered.IsSuccessStatusCode, await answered.Content.ReadAsStringAsync());
@@ -66,8 +76,9 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         Assert.StartsWith("sb_v1.", settled, StringComparison.Ordinal);
         Assert.Equal("active", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
 
-        // and the app heard the run through its own stream, without a bundle
+        // and the rest of the run through the same stream, without a bundle
         var frames = await DrainFramesAsync(reader, TimeSpan.FromSeconds(10), f => f["sessionId"]?.GetValue<string>() == sessionId);
+        frames.InsertRange(0, asked);
         Assert.NotEmpty(frames);
         Assert.All(frames, frame =>
         {
@@ -173,8 +184,11 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         throw new TimeoutException($"no bundle: {view?.ToJsonString()}");
     }
 
-    private static async Task<List<JsonObject>> DrainFramesAsync(StreamReader reader, TimeSpan patience, Func<JsonObject, bool> wanted)
+    /// <summary>The wanted frames until one satisfies <paramref name="until"/> (a settled session by default) or patience runs out.</summary>
+    private static async Task<List<JsonObject>> DrainFramesAsync(
+        StreamReader reader, TimeSpan patience, Func<JsonObject, bool> wanted, Func<JsonObject, bool>? until = null)
     {
+        var done = until ?? (f => f["state"]?.GetValue<string>() == "active");
         var frames = new List<JsonObject>();
         using var cts = new CancellationTokenSource(patience);
         try
@@ -185,7 +199,7 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
                 var frame = JsonNode.Parse(line[5..].Trim()) as JsonObject;
                 if (frame is null || frame["kind"]?.GetValue<string>() != ConnectorEventBridge.Kind || !wanted(frame)) continue;
                 frames.Add(frame);
-                if (frame["state"]?.GetValue<string>() == "active") break;
+                if (done(frame)) break;
             }
         }
         catch (OperationCanceledException)

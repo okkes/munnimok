@@ -35,12 +35,24 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
   connector: 'acct.sourceConnector',
 };
 
-/** the label of a row's source; a connector-fed row names its party through {@link sourceParamsFor} */
-export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey => SOURCE_KEYS[account.source];
+/** the table read with a source as stored — a row written by an earlier build may carry one this build no longer lists */
+const sourceKeyOf = (source: string): TranslationKey | undefined => (SOURCE_KEYS as Record<string, TranslationKey | undefined>)[source];
 
-/** #367: a connector-fed row names its party in the label (GoCardless, Enable Banking, ASN …) */
-export const sourceParamsFor = (account: Pick<AccountRow, 'source' | 'provider'>): Record<string, string> =>
-  account.source === 'connector' ? { party: partyName(account.provider ?? '') } : {};
+/**
+ * The label of a row's source; a connector-fed row names its party through
+ * {@link sourceParamsFor}. A source this build no longer lists (`gocardless`,
+ * once a kind of its own, retired in #414) reads as fetched by that party
+ * rather than taking the screen down (prod, user ss 2026-10-04).
+ */
+export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
+  sourceKeyOf(account.source) ?? 'acct.sourceConnector';
+
+/** #367: a connector-fed row names its party in the label (GoCardless, Enable Banking, ASN …); a row whose source is a party of its own names that party */
+export const sourceParamsFor = (account: Pick<AccountRow, 'source' | 'provider'>): Record<string, string> => {
+  const listed = sourceKeyOf(account.source);
+  if (listed && account.source !== 'connector') return {};
+  return { party: partyName(account.provider ?? account.source) };
+};
 
 /** rows a party keeps current by itself (the connector platform, open banking included) — as
  *  opposed to statements a human uploads */

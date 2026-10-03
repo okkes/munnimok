@@ -64,7 +64,14 @@ export function getCurrentLang(): Lang {
   return currentLang ?? readStoredLang();
 }
 
-function interpolate(template: string, vars?: Record<string, string | number>): string {
+/**
+ * The template with its `{name}` slots filled. A template that is not a
+ * string — a key a lookup table produced from a value this build no longer
+ * lists — yields nothing rather than a TypeError that takes the whole
+ * screen down (a space's accounts screen on prod, user ss 2026-10-04).
+ */
+export function interpolate(template: string, vars?: Record<string, string | number>): string {
+  if (typeof template !== 'string') return '';
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (m, name: string) => (name in vars ? String(vars[name]) : m));
 }
