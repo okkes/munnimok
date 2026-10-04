@@ -1,11 +1,13 @@
 import { useEffect, useReducer, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang, TranslationKey } from '@/i18n';
 import type { ConnectorConnRow } from '@/db/types';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges } from '@/application/connections';
+import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges, useLiveConnectionIds } from '@/application/connections';
+import { uncoveredSince } from '@/domain/accountCoverage';
+import { uncoveredDateText } from '@/features/accounts/coverage';
 import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
 import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { fmtTimeAgo } from '@/lib/text';
@@ -29,7 +31,7 @@ import { SpacePicker } from './SpacePicker';
 import { RESULT_TTL_MS, resultStillFresh, useSyncActivity } from './syncActivity';
 import { ConnectionSyncCard } from './ConnectionSyncCard';
 import type { SyncReport } from './connectorSync';
-import { kindIcon, partyLogo } from './logos';
+import { kindIcon, partyLogo, partyName } from './logos';
 import { errorKey } from './manifestForm';
 import type { BindingView, JobView, ProviderKind, ProviderManifest } from './types';
 import { useCatalogue, useRelayBindings } from './useCatalogue';
@@ -155,6 +157,9 @@ export function ConnectionsScreen() {
   const ops = useConnectionOps();
   const catalogue = useCatalogue();
   const bindings = useRelayBindings();
+  // #445: which connections still exist - an account stamped with a gone one is not fetched any more
+  const liveIds = useLiveConnectionIds();
+  const { connect: connectParam } = useSearch({ strict: false }) as { connect?: string };
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
 
@@ -188,6 +193,11 @@ export function ConnectionsScreen() {
   }, [activity]);
 
   const signedIn = connectorsAvailable();
+  // #445: party-fed accounts no live connection fetches, whose party has no card to sit under
+  const orphaned = (bankAccounts ?? [])
+    .map(({ account }) => ({ account, since: liveIds ? uncoveredSince(account, liveIds) : null }))
+    .filter((entry): entry is { account: typeof entry.account; since: string } => entry.since !== null)
+    .filter(({ account }) => !(connections ?? []).some((view) => view.meta.store === (account.provider ?? account.source)));
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
   const spaceNames = new Map((allSpaces ?? []).map((s) => [s.id, s.name]));
   const kindOf = (view: ConnectionView): ProviderKind => view.meta.kind ?? catalogue.byId.get(view.meta.store)?.kind ?? 'store';
@@ -235,6 +245,17 @@ export function ConnectionsScreen() {
     setCatalogueOpen(false);
     setFlow({ manifest, reconnectId });
   };
+
+  // #445: an accounts sheet's "Reconnect <party>" door arrives with the party
+  // named in the URL - the flow opens for it at once, and the name leaves the URL
+  useEffect(() => {
+    if (!connectParam || !signedIn) return;
+    const manifest = catalogue.byId.get(connectParam);
+    if (!manifest) return;
+    openFlow(manifest, null);
+    void navigate({ to: '/connections', replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the manifest map is the only input that changes
+  }, [connectParam, catalogue.byId]);
 
   /** back into a sign-in that was closed mid-way */
   const continueLogin = (login: PendingLogin) => {
@@ -356,6 +377,7 @@ export function ConnectionsScreen() {
         ) : (
           mine.map(({ account, attachedTo }) => {
             const here = attachedTo.some((s) => s.spaceId === spaceId);
+            const since = liveIds ? uncoveredSince(account, liveIds) : null;
             return (
               <div key={account.id} className="flex items-center gap-2 py-1" data-testid={`conn-account-${account.id}`}>
                 <Icon name="bank-outline" size={14} color="var(--m-ink-4)" />
@@ -363,6 +385,12 @@ export function ConnectionsScreen() {
                   <span className="block truncate text-[12px] text-ink">
                     {account.name} <span className="text-ink-4">{accountTail(account)}</span>
                   </span>
+                  {/* #445: the connection that fetched this row is gone - a new consent that reaches it lands on the same row */}
+                  {since !== null && (
+                    <span className="block text-[11px] text-warning" data-testid={`conn-account-uncovered-${account.id}`}>
+                      {t('acct.uncovered', { date: uncoveredDateText(since, lang), party: partyName(view.meta.store) })}
+                    </span>
+                  )}
                   {attachedTo.length > 0 && (
                     <span className="flex flex-wrap gap-1" data-testid={`conn-account-usedin-${account.id}`}>
                       {attachedTo.map((s) => (
@@ -506,6 +534,37 @@ export function ConnectionsScreen() {
             </div>
           );
         })}
+
+        {/* #445: accounts whose party has no card left - the connection that fetched
+            them is gone - still belong to the person: say so, and offer the way back */}
+        {orphaned.length > 0 && (
+          <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-uncovered">
+            <div className="px-4 pt-3.5 pb-1">
+              <span className="block text-[15px] text-ink">{t('conn.uncoveredTitle')}</span>
+              <span className="block text-[12px] text-ink-4">{t('conn.uncoveredBody')}</span>
+            </div>
+            {orphaned.map(({ account, since }) => {
+              const party = account.provider ?? account.source;
+              const manifest = catalogue.byId.get(party);
+              return (
+                <div key={account.id} className="flex items-center gap-3 border-t border-line-2 px-4 py-3" data-testid={`conn-uncovered-${account.id}`}>
+                  <Icon name="bank-off-outline" size={18} color="var(--m-ink-4)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] text-ink">
+                      {account.name} <span className="text-ink-4">{accountTail(account)}</span>
+                    </span>
+                    <span className="block text-[11px] text-ink-4">{t('acct.uncovered', { date: uncoveredDateText(since, lang), party: partyName(party) })}</span>
+                  </span>
+                  {manifest && signedIn && (
+                    <Button size="sm" data-testid={`conn-uncovered-reconnect-${account.id}`} onClick={() => openFlow(manifest, null)}>
+                      {t('conn.reconnect')}
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* the catalogue door — always visible, honest about sign-in */}
         <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">

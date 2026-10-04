@@ -312,6 +312,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             // every device shows when this account last heard from its party
             ["lastSyncedAt"] = Json(reference.SeenAt.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)),
         };
+        // #445: and which connection fetched it - when that connection is gone
+        // (reconnected with a consent that reaches other accounts, removed),
+        // nothing fetches the row any more, and the app can say so
+        if (reference.ConnectionId is { } connectionId) fields["connectionId"] = Json(connectionId);
         if (isIban) fields["iban"] = Json(reference.AccountRef);
         if (account.Text("masked_number") is { } masked) fields["maskedNumber"] = Json(masked);
         // the institution as the party lists it (§15): the app fetches the same logo the lookup showed

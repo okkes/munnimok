@@ -1,9 +1,14 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
 import { newestTxDate } from '@/application/accounts';
+import { useLiveConnectionIds } from '@/application/connections';
+import { uncoveredSince } from '@/domain/accountCoverage';
+import { partyName } from '@/features/connectors/logos';
+import { uncoveredDateText } from './coverage';
 import { isDebtTracked } from '@/domain/debts';
 import { fmtCents, parseCents } from '@/lib/money';
 import type { AccountRow, RecurringEvery } from '@/db/types';
@@ -93,6 +98,35 @@ const stressLabel = (t: (key: 'debtplan.stress1' | 'debtplan.stress5') => string
 
 const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
   manual && (!defaultFor || defaultFor === 'cash');
+
+/** #445 (prod 2026-10-04): the connection that fetched this row is gone - say
+ *  so, and offer the way back: a new consent that reaches it lands on this
+ *  same row, history included. Nothing while a live connection covers it. */
+function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onClose: () => void }>) {
+  const { t, lang } = useLang();
+  const navigate = useNavigate();
+  const liveIds = useLiveConnectionIds();
+  const uncovered = liveIds ? uncoveredSince(account, liveIds) : null;
+  if (uncovered === null) return null;
+  const party = partyName(account.provider ?? account.source);
+  return (
+    <div className="border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-uncovered">
+      <span className="block text-ink-2">{t('acct.uncovered', { date: uncoveredDateText(uncovered, lang), party })}</span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-2"
+        data-testid="acctedit-reconnect"
+        onClick={() => {
+          onClose();
+          void navigate({ to: '/connections', search: { connect: account.provider ?? account.source } });
+        }}
+      >
+        {t('acct.reconnect', { party })}
+      </Button>
+    </div>
+  );
+}
 
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
   const { t, lang } = useLang();
@@ -413,6 +447,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   <span className="text-ink-3">{t('acct.newestTx')}</span>
                   <span className="font-mono text-[12px] text-ink">{newest ?? '—'}</span>
                 </div>
+                <UncoveredRow account={account} onClose={onClose} />
               </div>
             </>
           )}

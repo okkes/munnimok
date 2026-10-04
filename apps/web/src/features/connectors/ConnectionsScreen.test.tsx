@@ -66,6 +66,42 @@ describe('Connections hub (signed-in user)', () => {
     useSyncActivity.setState({ activity: {} });
   });
 
+  it('#445: the hub arrives with a party named in the URL and opens the flow for it at once', async () => {
+    renderAppAsUser(`/connections?connect=${PROVIDER}`, { api: { ...catalogue } });
+    await screen.findByTestId('screen-connections');
+    expect((await screen.findByTestId('connect-notes', {}, { timeout: 5000 })).textContent).toContain('stand-in');
+  }, 15_000);
+
+  it('#445: an account whose connection is gone is listed as not fetched any more, with the way back', async () => {
+    renderAppAsUser('/connections', { api: { ...catalogue } });
+    await screen.findByTestId('screen-connections');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('uncovered-hub'), { trackOutbox: false });
+    await repo.upsert('account', 's-user', 'gone-acc', {
+      name: 'Current account',
+      type: 'checking',
+      source: 'connector',
+      provider: PROVIDER,
+      connectionId: 'conn-gone',
+      lastSyncedAt: '2026-09-30T08:00:00Z',
+      currency: 'EUR',
+      balanceCents: 0,
+      iban: 'NL18MOCK0123456789',
+    });
+    db.close();
+
+    // no card carries the party any more: the account sits in its own list
+    const row = await screen.findByTestId('conn-uncovered-gone-acc', {}, { timeout: 5000 });
+    expect(row.textContent).toContain('Not fetched any more');
+    // the way back is the party’s own flow
+    fireEvent.click(await screen.findByTestId('conn-uncovered-reconnect-gone-acc', {}, { timeout: 5000 }));
+    expect((await screen.findByTestId('connect-notes')).textContent).toContain('stand-in');
+  }, 20_000);
+
   it('connects a shop through the catalogue, names it, picks its spaces afterwards — the bundle stays in the tab', async () => {
     renderAppAsUser('/connections', {
       spaces: [
