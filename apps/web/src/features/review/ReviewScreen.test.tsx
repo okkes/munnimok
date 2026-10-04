@@ -95,8 +95,9 @@ describe('ReviewScreen (demo identity)', () => {
       accountId: 'demo_main', date: '2026-01-03', amountCents: -500, currency: 'EUR',
       merchant: 'Coffee Corner', needsReview: 1,
     });
+    // the pot's twin in another currency: the card's row wears the LEG's currency (user ss 2026-10-05)
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rvc', {
-      accountId: 'demo_save', date: '2026-01-02', amountCents: 500, currency: 'EUR',
+      accountId: 'demo_save', date: '2026-01-02', amountCents: 500, currency: 'USD',
       merchant: 'Pot side', catId: 'uncategorized', needsReview: 0,
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rvc2', {
@@ -121,6 +122,8 @@ describe('ReviewScreen (demo identity)', () => {
     // the bulk — the siblings will queue for their own counters
     fireEvent.click((await screen.findByTestId('counter-dup-rvc')).querySelector('button')!);
     await waitFor(() => expect(screen.getByTestId('review-countertx-row').textContent).toContain('Pot side'));
+    expect(screen.getByTestId('review-countertx-row').textContent).toContain('$');
+    expect(screen.getByTestId('review-countertx-row').textContent).not.toContain('€5');
     expect(screen.queryByTestId('review-pick-warn')).toBeNull();
     expect(screen.getByTestId('review-bulk')).toBeTruthy();
 
