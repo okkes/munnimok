@@ -28,6 +28,7 @@ import { Sheet, hasOpenSheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, partNetCents, reimbursedInCats, totalReimbursedCents } from '@/domain/reimbursement';
 import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType, stampMovementSub } from '@/domain/categories';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
+import { isEventMoney } from '@/domain/events';
 import { primaryCatId } from '@/domain/splits';
 import { scaleCatsTo, scaleSplitsTo } from '@/domain/txSlices';
 import { ReviewPartDeck, partRecurringPrefill } from '@/features/review/ReviewScreen';
@@ -595,8 +596,10 @@ function splitDoorModeFor(multiPart: boolean, categoryLocked: boolean): 'row' | 
 }
 
 /** #213/#232: the Actions card — split door first, recurring + event
- *  links after (expense, non-container rows only — r7: parts own their
- *  links). Module-level for S3776; null when no row applies. */
+ *  links after (non-container rows only — r7: parts own their links;
+ *  the recurring door for expense/funding rows, the event door for every
+ *  kind of event money, #448). Module-level for S3776; null when no row
+ *  applies. */
 function DetailActionsCard({
   tx,
   multiPart,
@@ -618,9 +621,13 @@ function DetailActionsCard({
 }>) {
   const { t } = useLang();
   // #264 (user): funding is recurring-shaped money too — its rows keep
-  // the recurring/event doors
-  const linkRows = (tx.txType === 'expense' || tx.txType === 'funding') && !multiPart;
-  if (splitDoorMode === 'none' && !linkRows) return null;
+  // the recurring door
+  const recurringRow = (tx.txType === 'expense' || tx.txType === 'funding') && !multiPart;
+  // #448 (user): received money joins an event too — a reimbursement, an
+  // uncategorized credit; only a movement between own accounts has no
+  // event to be part of (the expense-only gate read as "missing" here)
+  const eventRow = isEventMoney(tx.txType) && !multiPart;
+  if (splitDoorMode === 'none' && !recurringRow && !eventRow) return null;
   return (
     <>
       <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
@@ -638,7 +645,7 @@ function DetailActionsCard({
             <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         )}
-        {linkRows && (
+        {recurringRow && (
           <>
             {splitDoorMode !== 'none' && <div className="mx-4 h-px bg-line-2" />}
             <button
@@ -655,7 +662,11 @@ function DetailActionsCard({
               {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
               <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
             </button>
-            <div className="mx-4 h-px bg-line-2" />
+          </>
+        )}
+        {eventRow && (
+          <>
+            {(splitDoorMode !== 'none' || recurringRow) && <div className="mx-4 h-px bg-line-2" />}
             <button
               data-testid="tx-detail-event-row"
               onClick={onOpenEvent}

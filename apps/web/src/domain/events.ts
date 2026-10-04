@@ -25,20 +25,47 @@ export type MoneyFormat = (cents: number, currency: string, opts?: { sign?: bool
 export const eventNetText = (netCents: number, currency: string, fmt: MoneyFormat): string =>
   netCents < 0 ? fmt(-netCents, currency, { sign: true }) : fmt(netCents, currency);
 
-/** the row's parts that belong to this event as EXPENSES */
+/** the row's parts that belong to this event, in any kind of event money */
 function eventViews(tx: TxView, eventId: string): TxSliceView[] {
   if (tx.deleted !== 0) return [];
-  return txSliceViews(tx).filter((view) => view.eventId === eventId && view.effType === 'expense');
+  return txSliceViews(tx).filter((view) => view.eventId === eventId && isEventMoney(view.effType));
 }
+
+/** the event's EXPENSE parts - where the money went */
+const expenseViews = (tx: TxView, eventId: string): TxSliceView[] => eventViews(tx, eventId).filter((view) => view.effType === 'expense');
 
 const viewSpent = (view: TxSliceView): number => (view.fromParts ? Math.abs(view.amountCents) : -view.amountCents);
 
-/** positive cents spent inside the event (expenses; refunds reduce) */
-export function eventSpentCents(txs: readonly TxView[], eventId: string): number {
-  let total = 0;
-  for (const tx of txs) for (const view of eventViews(tx, eventId)) total += viewSpent(view);
-  return total;
+export interface EventTotals {
+  /** positive cents spent inside the event (expenses; refunds reduce) */
+  spentCents: number;
+  /** positive cents that came in for the event: reimbursements, contributions, any other credit */
+  receivedCents: number;
+  /** spent minus received - what the event cost; negative while it is in surplus */
+  netCents: number;
 }
+
+/**
+ * #448 (user): an event holds what came in as well as what went out -
+ * "start at 0, receive 200, see +200, buy the gift, end at 0". Expense
+ * parts are spending (a refund reduces it, as ever); every other kind of
+ * event money is received when it is a credit and spent when it is not.
+ */
+export function eventTotals(txs: readonly TxView[], eventId: string): EventTotals {
+  let spentCents = 0;
+  let receivedCents = 0;
+  for (const tx of txs) {
+    for (const view of eventViews(tx, eventId)) {
+      if (view.effType === 'expense') spentCents += viewSpent(view);
+      else if (view.amountCents > 0) receivedCents += view.amountCents;
+      else spentCents += -view.amountCents;
+    }
+  }
+  return { spentCents, receivedCents, netCents: spentCents - receivedCents };
+}
+
+/** positive cents spent inside the event (expenses; refunds reduce) */
+export const eventSpentCents = (txs: readonly TxView[], eventId: string): number => eventTotals(txs, eventId).spentCents;
 
 interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
@@ -52,7 +79,7 @@ export function eventCategoryBreakdown(
 ): { catId: string; totalCents: number }[] {
   const totals = new Map<string, number>();
   for (const tx of txs) {
-    for (const view of eventViews(tx, eventId)) {
+    for (const view of expenseViews(tx, eventId)) {
       const cat = catalog.byId(view.catId);
       const mainId = cat.parentId ?? cat.id;
       totals.set(mainId, (totals.get(mainId) ?? 0) + viewSpent(view));
@@ -72,7 +99,7 @@ export function eventSubcategoryBreakdown(
 ): { catId: string; totalCents: number }[] {
   const totals = new Map<string, number>();
   for (const tx of txs) {
-    for (const view of eventViews(tx, eventId)) {
+    for (const view of expenseViews(tx, eventId)) {
       const cat = catalog.byId(view.catId);
       if ((cat.parentId ?? cat.id) !== mainCatId) continue;
       totals.set(cat.id, (totals.get(cat.id) ?? 0) + viewSpent(view));

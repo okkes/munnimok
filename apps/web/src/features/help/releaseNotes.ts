@@ -22,6 +22,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-10-04',
     items: [
       {
+        en: 'Events can receive money now. Attach a reimbursement or a contribution and the event’s figure becomes the net: what it cost you, or — while more came in than went out — the surplus with a plus. The event link is on every transaction’s detail, received money included.',
+        nl: 'Evenementen kunnen nu geld ontvangen. Koppel een terugbetaling of een bijdrage en het bedrag van het evenement wordt het netto: wat het je kostte, of — zolang er meer binnenkwam dan uitging — het overschot met een plus. De evenementkoppeling staat op het detail van elke transactie, ontvangen geld inbegrepen.',
+        tr: 'Etkinlikler artık para alabilir. Bir geri ödeme veya katkı bağla; etkinliğin rakamı net olur: sana maliyeti ya da — gelen gidenden fazlayken — artı işaretli fazlalık. Etkinlik bağlantısı artık her işlemin detayında, alınan para dahil.',
+      },
+      {
         en: 'An event now offers the money you received in its date range too (a reimbursement, a contribution), not only what you spent. Transfers between your own accounts stay out.',
         nl: 'Een evenement biedt nu ook het geld aan dat je in de periode ontving (een terugbetaling, een bijdrage), niet alleen wat je uitgaf. Overboekingen tussen je eigen rekeningen blijven erbuiten.',
         tr: 'Bir etkinlik artık tarih aralığında aldığın parayı da (bir geri ödeme, bir katkı) öneriyor; yalnızca harcadıklarını değil. Kendi hesapların arasındaki aktarımlar dışarıda kalır.',

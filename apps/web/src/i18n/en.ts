@@ -1619,6 +1619,7 @@ export const en = {
   'events.emptyTitle': 'No events yet',
   'events.emptyBody': 'Group transactions around a trip, party or project and see what it really cost.',
   'events.perDay': '{amount} / day',
+  'events.spentReceived': 'Spent {spent} · Received {received}',
   'events.suggestAttach': '{n} transactions in this date range aren’t attached yet.',
   'events.reviewSuggested': 'Review',
   'events.pickTitle': 'Attach transactions',

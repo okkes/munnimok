@@ -7,7 +7,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEventOps, useEvents } from '@/application/events';
 import { useSpaceTransactions } from '@/application/transactions';
-import { eventSpentCents } from '@/domain/events';
+import { eventNetText, eventTotals } from '@/domain/events';
 import type { EventRow } from '@/db/types';
 import { downscaleImage } from '@/lib/image';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
@@ -292,8 +292,10 @@ export function EventsScreen() {
   };
 
   const renderCard = (event: EventRow) => {
-    const spent = eventSpentCents(txs ?? [], event.id);
-    const overBudget = !!event.budgetCents && spent > event.budgetCents;
+    // #448: the headline is the net - what it cost, or the surplus with a plus
+    const totals = eventTotals(txs ?? [], event.id);
+    const cost = Math.max(totals.netCents, 0);
+    const overBudget = !!event.budgetCents && totals.netCents > event.budgetCents;
     return (
       <button
         key={event.id}
@@ -305,7 +307,7 @@ export function EventsScreen() {
           <img src={eventPicture(event)} alt="" loading="lazy" className="h-full w-full object-cover" />
           <span className="absolute right-3 bottom-2 rounded-lg bg-black/45 px-2 py-0.5 backdrop-blur-sm">
             <span className="m-num text-[14px] font-semibold text-white" data-testid={`event-total-${event.id}`}>
-              {fmt(spent, currency)}
+              {eventNetText(totals.netCents, currency, fmt)}
             </span>
           </span>
         </div>
@@ -318,7 +320,7 @@ export function EventsScreen() {
           </span>
           <span className="block text-[11px] text-ink-4">{fmtRange(event) ?? t('events.undated')}</span>
           {!!event.budgetCents && (
-            <ProgressBar className="mt-2" value={spent / event.budgetCents} tone={overBudget ? 'negative' : 'accent'} />
+            <ProgressBar className="mt-2" value={cost / event.budgetCents} tone={overBudget ? 'negative' : 'accent'} />
           )}
         </div>
       </button>

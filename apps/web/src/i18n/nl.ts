@@ -1621,6 +1621,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'events.emptyTitle': 'Nog geen evenementen',
   'events.emptyBody': 'Groepeer transacties rond een reis, feest of project en zie wat het echt kostte.',
   'events.perDay': '{amount} / dag',
+  'events.spentReceived': 'Uitgegeven {spent} · Ontvangen {received}',
   'events.suggestAttach': '{n} transacties in deze periode zijn nog niet gekoppeld.',
   'events.reviewSuggested': 'Bekijken',
   'events.pickTitle': 'Transacties koppelen',

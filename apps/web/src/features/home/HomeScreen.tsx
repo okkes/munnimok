@@ -45,7 +45,7 @@ import { useLoanStatuses } from '@/application/debts';
 import { usePlanning } from '@/application/planning';
 import { useInsights } from '@/application/insights';
 import { useNewTransactions } from '@/application/newTxs';
-import { eventSpentCents } from '@/domain/events';
+import { eventNetText, eventTotals } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
 import { AheadCircle } from '@/features/planning/AheadCircle';
@@ -1130,7 +1130,7 @@ export function HomeScreen() {
   function renderEventsBlock() {
     if (!featuredEvent) return null; // Explore carries the door (#121 v2)
     const today = localToday();
-    const spent = eventSpentCents(allTxs ?? [], featuredEvent.id);
+    const netCents = eventTotals(allTxs ?? [], featuredEvent.id).netCents; // #448: cost, or the surplus with a plus
     const from = featuredEvent.from;
     const running = !!from && from <= today && (!featuredEvent.to || featuredEvent.to >= today);
     let statusLine = t('events.latest');
@@ -1157,7 +1157,7 @@ export function HomeScreen() {
             <img src={eventPicture(featuredEvent)} alt="" loading="lazy" className="h-full w-full object-cover" />
             <span className="absolute inset-x-0 bottom-0 flex items-baseline justify-between bg-gradient-to-t from-black/60 to-transparent px-3 pt-4 pb-1.5">
               <span className="truncate text-[14px] font-semibold text-white">{featuredEvent.name}</span>
-              <span className="m-num shrink-0 pl-2 text-[13px] font-semibold text-white">{fmt(spent, currency)}</span>
+              <span className="m-num shrink-0 pl-2 text-[13px] font-semibold text-white">{eventNetText(netCents, currency, fmt)}</span>
             </span>
           </span>
           <span className="block px-3 py-1.5 text-[11px] text-ink-4">{statusLine}</span>

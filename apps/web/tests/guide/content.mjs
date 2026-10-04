@@ -67,7 +67,7 @@ export const GUIDE = [
   {
     id: 'events',
     title: 'Events: what a trip, a party or a project really cost',
-    body: `An event groups transactions around one occasion and totals them live. Give it a picture, a name, a date range, an optional estimation and a note. Inside it, everything that moved in the date range — money received included (a reimbursement, a contribution), never a movement between your own accounts — lines up for review, and one tap attaches your picks; single transactions link from their own detail screen, and a split's parts join one by one.`,
+    body: `An event groups transactions around one occasion and totals them live. Give it a picture, a name, a date range, an optional estimation and a note. Inside it, everything that moved in the date range — money received included (a reimbursement, a contribution), never a movement between your own accounts — lines up for review, and one tap attaches your picks; single transactions link from their own detail screen (the event link is there for every transaction except a movement between your own accounts), and a split's parts join one by one. Money received for the event counts too: the headline is what the event cost you — or, when more came in than went out, the surplus with a plus — and a line under the dates says what was spent and what came in.`,
     tips: ['The category list under the total drills down: tap a main category to see its subcategories and narrow the payments to it.', 'Dated events show the average per day; an estimation adds a progress bar that turns red when the event costs more than planned.'],
     shots: [],
   },

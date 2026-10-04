@@ -1621,6 +1621,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'events.emptyTitle': 'Henüz etkinlik yok',
   'events.emptyBody': 'İşlemleri bir gezi, düğün veya proje etrafında toplayıp gerçek maliyeti görün.',
   'events.perDay': 'günde {amount}',
+  'events.spentReceived': 'Harcanan {spent} · Alınan {received}',
   'events.suggestAttach': 'Bu tarih aralığında bağlanmamış {n} işlem var.',
   'events.reviewSuggested': 'İncele',
   'events.pickTitle': 'İşlemleri bağla',

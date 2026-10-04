@@ -195,6 +195,33 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('eventpick-attach').textContent).toMatch(/[+]€2[.,]200/));
   }, 20_000);
 
+  it('#448 (user): money received shows as a surplus with a plus, and a credit’s detail offers the event row', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Graduation gift', isoDaysAgo(180), isoDaysAgo(160), '100');
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
+    fireEvent.click(screen.getByTestId('eventpick-all')); // a full pick clears
+    fireEvent.click(screen.getByTestId('eventpick-dm1')); // the salary: +€2,200
+    fireEvent.click(screen.getByTestId('eventpick-dm9')); // a coffee: −€4.50
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
+    // the hero: in surplus, so a plus — and the flows line says what went
+    // out and what came in
+    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/[+]€2[.,]195/), { timeout: 15_000 });
+    const flows = screen.getByTestId('eventdetail-flows').textContent ?? '';
+    expect(flows).toMatch(/4[.,]50/);
+    expect(flows).toMatch(/2[.,]200/);
+    // the breakdown stays about spending: the coffee, never the salary
+    expect(screen.getByTestId('eventdetail-cats').textContent).toMatch(/4[.,]50/);
+    expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/2[.,]200/);
+    // the credit’s own detail offers the event row (it was gated to expenses)
+    fireEvent.click(await screen.findByTestId('tx-row-dm1'));
+    const row = await screen.findByTestId('tx-detail-event-row');
+    expect(row.textContent).toContain('Graduation gift');
+  }, 30_000);
+
   it('#144: select/deselect-all sweep the whole pick list in one tap', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, GoalRow, TxView } from '@/db/types';
-import { eventCategoryBreakdown, eventNetText, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, isEventMoney, suggestableTxs } from './events';
+import { eventCategoryBreakdown, eventNetText, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, eventTotals, isEventMoney, suggestableTxs } from './events';
 import { goalOverview, goalProgress, paceCentsPerMonth, savingsTotalCents } from './goals';
 
 const tx = (partial: Partial<TxView>): TxView =>
@@ -36,7 +36,7 @@ const account = (partial: Partial<AccountRow>): AccountRow =>
 describe('events math', () => {
   const catalog = { byId: (id: string | undefined) => ({ id: id ?? '', parentId: id === 'restaurants' ? 'food' : undefined }) };
 
-  it('sums expenses (refunds reduce), ignores other events and income', () => {
+  it('spent sums expenses (refunds reduce) and ignores other events and money received', () => {
     const txs = [
       tx({ eventId: 'e1', amountCents: -4000 }),
       tx({ eventId: 'e1', amountCents: 500 }), // refund
@@ -44,6 +44,21 @@ describe('events math', () => {
       tx({ eventId: 'e1', amountCents: 2000, txType: 'income' }),
     ];
     expect(eventSpentCents(txs, 'e1')).toBe(3500);
+  });
+
+  it('#448 (user): money received counts — the net is what the event cost, negative while it is in surplus', () => {
+    const txs = [
+      tx({ eventId: 'e1', catId: 'restaurants', amountCents: -4000 }),
+      tx({ eventId: 'e1', catId: 'restaurants', amountCents: 500 }), // refund
+      tx({ eventId: 'e1', amountCents: 20_000, txType: 'income' }), // a contribution
+      tx({ eventId: 'e1', amountCents: -1500, txType: 'transfer' }), // own money moving: never the event's
+      tx({ eventId: 'e1', amountCents: -1000, txType: 'funding' }), // a credit kind paid OUT is money gone
+    ];
+    expect(eventTotals(txs, 'e1')).toEqual({ spentCents: 4500, receivedCents: 20_000, netCents: -15_500 });
+    expect(eventSpentCents(txs, 'e1')).toBe(4500);
+    // the category breakdown stays about spending
+    expect(eventCategoryBreakdown(txs, 'e1', catalog)).toEqual([{ catId: 'food', totalCents: 3500 }]);
+    expect(eventTotals(txs, 'e2')).toEqual({ spentCents: 0, receivedCents: 0, netCents: 0 });
   });
 
   it('breaks down by main category and averages per day', () => {
