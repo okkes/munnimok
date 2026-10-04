@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.7.1](https://github.com/okkes/munnimok/compare/v5.7.0...v5.7.1) (2026-10-04)
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** one follower per sign-in, custody that says when it cannot keep, a budget for a day's syncing ([ddaa909](https://github.com/okkes/munnimok/commit/ddaa909e76bff9c018cf6139ae759ed52da09c18))
+* **review:** the counter transaction row wears the picked leg's own currency ([e78fa33](https://github.com/okkes/munnimok/commit/e78fa333adb04829bba06d4355c63c39c7054101))
+
 ## [5.7.0](https://github.com/okkes/munnimok/compare/v5.6.1...v5.7.0) (2026-10-04)
 
 
