@@ -278,7 +278,9 @@ export function ColorPicker({ colors, value, onChange, disabled, testIdPrefix, c
           data-testid={`${testIdPrefix}-${c.slice(1)}`}
           disabled={disabled}
           onClick={() => onChange(c)}
-          className={`m-tap h-8 w-8 rounded-full border-2 ${value === c ? 'border-ink' : 'border-transparent'}`}
+          // #444 (user): a swatch that refuses taps looks refused — faded, no
+          // hand cursor — instead of wearing the live palette face
+          className={`m-tap h-8 w-8 rounded-full border-2 disabled:cursor-not-allowed disabled:opacity-45 ${value === c ? 'border-ink' : 'border-transparent'}`}
           style={{ background: c }}
         />
       ))}
@@ -288,7 +290,7 @@ export function ColorPicker({ colors, value, onChange, disabled, testIdPrefix, c
         data-testid={`${testIdPrefix}-custom`}
         disabled={disabled}
         onClick={() => setWheelOpen(true)}
-        className={`m-tap h-8 w-8 rounded-full border-2 ${customActive ? 'border-ink' : 'border-transparent'}`}
+        className={`m-tap h-8 w-8 rounded-full border-2 disabled:cursor-not-allowed disabled:opacity-45 ${customActive ? 'border-ink' : 'border-transparent'}`}
         style={
           customActive
             ? { background: value }

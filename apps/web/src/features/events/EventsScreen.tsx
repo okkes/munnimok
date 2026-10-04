@@ -7,8 +7,11 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEventOps, useEvents } from '@/application/events';
 import { useSpaceTransactions } from '@/application/transactions';
-import { eventSpentCents } from '@/domain/events';
+import { eventNetText, eventTotals } from '@/domain/events';
 import type { EventRow } from '@/db/types';
+import { focusPosition } from '@/lib/imageFocus';
+import type { ImageFocus } from '@/lib/imageFocus';
+import { ImageFocusFrame } from '@/ui/ImageFocusFrame';
 import { downscaleImage } from '@/lib/image';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { parseCents } from '@/lib/money';
@@ -40,6 +43,12 @@ export const EVENT_PICTURES = [
 /** cover for a card/hero: picked or uploaded picture, first bundle as fallback */
 export const eventPicture = (event: Pick<EventRow, 'picture'>): string => event.picture || EVENT_PICTURES[0];
 
+/** #446: where a cover-fitted rendering crops the picture - the card, the
+ *  hero and the Home tile each apply the ONE stored focus to their own frame */
+export const eventPictureStyle = (event: Pick<EventRow, 'pictureFocus'>): { objectPosition: string } => ({
+  objectPosition: focusPosition(event.pictureFocus),
+});
+
 /** create/edit: the picture carries the character; icons retired */
 export function EventFormSheet({
   initial,
@@ -57,6 +66,8 @@ export function EventFormSheet({
   const editing = initial !== 'new' && initial !== null ? initial : null;
   const [name, setName] = useState('');
   const [picture, setPicture] = useState<string>(EVENT_PICTURES[0]);
+  // #446: the part of an uploaded picture that shows; null = the centre
+  const [focus, setFocus] = useState<ImageFocus | null>(null);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [estimate, setEstimate] = useState('');
@@ -75,6 +86,7 @@ export function EventFormSheet({
   useEffect(() => {
     setName(editing?.name ?? '');
     setPicture(editing?.picture ?? EVENT_PICTURES[0]);
+    setFocus(editing?.pictureFocus ?? null);
     setFrom(editing?.from ?? '');
     setTo(editing?.to ?? '');
     setEstimate(editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '');
@@ -88,6 +100,8 @@ export function EventFormSheet({
     if (!file) return;
     // wide enough for the hero, small enough to sync as a field
     setPicture(await downscaleImage(file, 1080, 0.72));
+    // a fresh picture starts at the centre - the frame below moves it
+    setFocus(null);
   };
 
   const pickPhoto = () => {
@@ -107,6 +121,9 @@ export function EventFormSheet({
     const savedId = await ops.save(editing?.id ?? null, {
       name: name.trim(),
       picture,
+      // #446: a focus belongs to an uploaded picture only; null (not an
+      // absent key) so a cleared focus travels to the other devices too
+      pictureFocus: picture.startsWith('data:') ? (focus ?? null) : null,
       from: from || undefined,
       to: to || undefined,
       budgetCents: budgetCents && budgetCents > 0 ? budgetCents : undefined,
@@ -166,7 +183,10 @@ export function EventFormSheet({
             <button
               key={candidate}
               data-testid={`eventform-pic-${candidate.split('/').pop()?.replace('.jpg', '')}`}
-              onClick={() => setPicture(candidate)}
+              onClick={() => {
+                setPicture(candidate);
+                setFocus(null); // the bundled pictures were composed for the centre
+              }}
               className={`m-tap h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 p-0 ${
                 picture === candidate ? 'border-accent' : 'border-transparent'
               }`}
@@ -175,10 +195,11 @@ export function EventFormSheet({
             </button>
           ))}
         </ScrollRow>
+        {/* #446 (user): an own picture is framed here - drag it to choose the
+            part that stays visible on the card and the hero; the bundled
+            ones were composed for the centre and need no frame */}
         {picture.startsWith('data:') && (
-          <div className="flex items-center gap-2 overflow-hidden rounded-xl border-2 border-accent" data-testid="eventform-uploaded">
-            <img src={picture} alt="" className="h-16 w-full object-cover" />
-          </div>
+          <ImageFocusFrame src={picture} focus={focus} onFocus={setFocus} hint={t('events.dragToFrame')} testId="eventform-focus" />
         )}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="eventform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
@@ -292,8 +313,10 @@ export function EventsScreen() {
   };
 
   const renderCard = (event: EventRow) => {
-    const spent = eventSpentCents(txs ?? [], event.id);
-    const overBudget = !!event.budgetCents && spent > event.budgetCents;
+    // #448: the headline is the net - what it cost, or the surplus with a plus
+    const totals = eventTotals(txs ?? [], event.id);
+    const cost = Math.max(totals.netCents, 0);
+    const overBudget = !!event.budgetCents && totals.netCents > event.budgetCents;
     return (
       <button
         key={event.id}
@@ -302,10 +325,10 @@ export function EventsScreen() {
         className={`m-tap w-full overflow-hidden rounded-card border border-line bg-surface p-0 text-left ${event.archived === 1 ? 'opacity-60' : ''}`}
       >
         <div className="relative h-24 w-full">
-          <img src={eventPicture(event)} alt="" loading="lazy" className="h-full w-full object-cover" />
+          <img src={eventPicture(event)} alt="" loading="lazy" className="h-full w-full object-cover" style={eventPictureStyle(event)} />
           <span className="absolute right-3 bottom-2 rounded-lg bg-black/45 px-2 py-0.5 backdrop-blur-sm">
             <span className="m-num text-[14px] font-semibold text-white" data-testid={`event-total-${event.id}`}>
-              {fmt(spent, currency)}
+              {eventNetText(totals.netCents, currency, fmt)}
             </span>
           </span>
         </div>
@@ -318,7 +341,7 @@ export function EventsScreen() {
           </span>
           <span className="block text-[11px] text-ink-4">{fmtRange(event) ?? t('events.undated')}</span>
           {!!event.budgetCents && (
-            <ProgressBar className="mt-2" value={spent / event.budgetCents} tone={overBudget ? 'negative' : 'accent'} />
+            <ProgressBar className="mt-2" value={cost / event.budgetCents} tone={overBudget ? 'negative' : 'accent'} />
           )}
         </div>
       </button>

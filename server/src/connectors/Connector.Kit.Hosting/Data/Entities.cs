@@ -159,6 +159,17 @@ public sealed class JobRow
     /// <summary>Records the agent reported gathering so far; null until it counted anything.</summary>
     public int? Found { get; set; }
 
+    public const string UserTrigger = "user";
+
+    public const string ScheduleTrigger = "schedule";
+
+    /// <summary>
+    /// Who asked for the job: a person (<see cref="UserTrigger"/>), the relay's scheduler
+    /// (<see cref="ScheduleTrigger"/>), or nobody in particular (null: the platform's own
+    /// work). The provider's interval between syncs is enforced between scheduled jobs only.
+    /// </summary>
+    public string? Trigger { get; set; }
+
     /// <summary>
     /// False when the adapter stopped short of the end of the window. A first
     /// connect on a heavy account paginates rather than running for ten

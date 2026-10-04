@@ -1,13 +1,21 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID, isoDaysAgo } from '@/db/seed';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
+
+// happy-dom has no canvas — the downscaler is covered by lib/image.test.ts,
+// here we care about the flow around it (#446)
+const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
+vi.mock('@/lib/image', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/image')>()),
+  downscaleImage: vi.fn(async () => FAKE_PHOTO),
+}));
 
 async function createEvent(name: string, from?: string, to?: string, budget?: string) {
   fireEvent.click(await screen.findByTestId('events-add'));
@@ -79,6 +87,50 @@ describe('Events (demo identity)', () => {
     // nothing attached yet
     expect(card.textContent).toMatch(/€0[.,]00/);
   }, 15_000);
+
+  it('#446 (user): an uploaded picture is dragged into frame; the focus is saved and every rendering crops at it', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    fireEvent.click(await screen.findByTestId('events-add'));
+    await screen.findByTestId('eventform-name');
+    fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: 'Framed' } });
+    // a bundled picture has no frame — it was composed for the centre
+    expect(screen.queryByTestId('eventform-focus')).toBeNull();
+    const file = new File(['x'], 'photo.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('eventform-upload-input'), { target: { files: [file] } });
+    const frame = await screen.findByTestId('eventform-focus');
+    // a loaded 1200×400 picture in a 300×112 frame overhangs 36px sideways
+    frame.getBoundingClientRect = () => ({ width: 300, height: 112, x: 0, y: 0, top: 0, left: 0, right: 300, bottom: 112, toJSON: () => ({}) });
+    const img = screen.getByTestId('eventform-focus-img') as HTMLImageElement;
+    Object.defineProperty(img, 'naturalWidth', { value: 1200, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 400, configurable: true });
+    fireEvent.load(img);
+    // dragging the picture 18px left (half the overhang) reveals its right edge
+    fireEvent.pointerDown(frame, { pointerId: 1, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(frame, { pointerId: 1, clientX: 82, clientY: 50 });
+    fireEvent.pointerUp(frame, { pointerId: 1 });
+    await waitFor(() => expect(img.style.objectPosition).toBe('100% 50%'));
+
+    fireEvent.click(screen.getByTestId('eventform-save'));
+    const card = await waitFor(() => {
+      const found = document.querySelector('[data-testid^="event-card-"]');
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    // the card crops at the chosen focus…
+    expect((card.querySelector('img') as HTMLElement).style.objectPosition).toBe('100% 50%');
+    // …and so does the hero
+    fireEvent.click(card);
+    const hero = await screen.findByTestId('eventdetail-hero');
+    expect((hero.querySelector('img') as HTMLElement).style.objectPosition).toBe('100% 50%');
+    // stored on the row as two percentages
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const rows = await db.events.toArray();
+      expect(rows.find((r) => r.name === 'Framed')?.pictureFocus).toEqual({ x: 100, y: 50 });
+    });
+    db.close();
+  }, 20_000);
 
   it('#195: a nameless save is refused with the blocker; typing clears it', async () => {
     renderApp('/events');
@@ -175,6 +227,52 @@ describe('Events (demo identity)', () => {
     await screen.findByTestId('tx-part-solo-evsplit-0', {}, { timeout: 8000 });
     db.close();
   }, 45_000);
+
+  it('#447 (user): money received inside the range is offered too — only the person’s own movements stay out', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Graduation', isoDaysAgo(180), isoDaysAgo(160));
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    // the demo salary (dm1, +€2,200) falls in the range: it is a pick now
+    await screen.findByTestId('eventpick-dm1');
+    // the savings transfer (dm12) is the person’s own money moving — never event money
+    expect(screen.queryByTestId('eventpick-dm12')).toBeNull();
+    // the button sums the picks the way the event will show them: the
+    // salary alone is a surplus, so it wears a plus
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
+    fireEvent.click(screen.getByTestId('eventpick-all')); // a full pick clears
+    fireEvent.click(screen.getByTestId('eventpick-dm1'));
+    await waitFor(() => expect(screen.getByTestId('eventpick-attach').textContent).toMatch(/[+]€2[.,]200/));
+  }, 20_000);
+
+  it('#448 (user): money received shows as a surplus with a plus, and a credit’s detail offers the event row', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Graduation gift', isoDaysAgo(180), isoDaysAgo(160), '100');
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
+    fireEvent.click(screen.getByTestId('eventpick-all')); // a full pick clears
+    fireEvent.click(screen.getByTestId('eventpick-dm1')); // the salary: +€2,200
+    fireEvent.click(screen.getByTestId('eventpick-dm9')); // a coffee: −€4.50
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
+    // the hero: in surplus, so a plus — and the flows line says what went
+    // out and what came in
+    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/[+]€2[.,]195/), { timeout: 15_000 });
+    const flows = screen.getByTestId('eventdetail-flows').textContent ?? '';
+    expect(flows).toMatch(/4[.,]50/);
+    expect(flows).toMatch(/2[.,]200/);
+    // the breakdown stays about spending: the coffee, never the salary
+    expect(screen.getByTestId('eventdetail-cats').textContent).toMatch(/4[.,]50/);
+    expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/2[.,]200/);
+    // the credit’s own detail offers the event row (it was gated to expenses)
+    fireEvent.click(await screen.findByTestId('tx-row-dm1'));
+    const row = await screen.findByTestId('tx-detail-event-row');
+    expect(row.textContent).toContain('Graduation gift');
+  }, 30_000);
 
   it('#144: select/deselect-all sweep the whole pick list in one tap', async () => {
     renderApp('/events');

@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.6.0',
+    date: '2026-10-04',
+    items: [
+      {
+        en: 'When you upload your own picture for an event, you can now drag it to choose which part shows on the card and the event page, instead of always getting the centre.',
+        nl: 'Als je een eigen foto voor een evenement uploadt, kun je die nu slepen om te kiezen welk deel op de kaart en de evenementpagina te zien is, in plaats van altijd het midden.',
+        tr: 'Bir etkinlik için kendi fotoğrafını yüklediğinde artık kartta ve etkinlik sayfasında hangi kısmın görüneceğini seçmek için sürükleyebilirsin; her zaman ortası yerine.',
+      },
+      {
+        en: 'Events can receive money now. Attach a reimbursement or a contribution and the event’s figure becomes the net: what it cost you, or — while more came in than went out — the surplus with a plus. The event link is on every transaction’s detail, received money included.',
+        nl: 'Evenementen kunnen nu geld ontvangen. Koppel een terugbetaling of een bijdrage en het bedrag van het evenement wordt het netto: wat het je kostte, of — zolang er meer binnenkwam dan uitging — het overschot met een plus. De evenementkoppeling staat op het detail van elke transactie, ontvangen geld inbegrepen.',
+        tr: 'Etkinlikler artık para alabilir. Bir geri ödeme veya katkı bağla; etkinliğin rakamı net olur: sana maliyeti ya da — gelen gidenden fazlayken — artı işaretli fazlalık. Etkinlik bağlantısı artık her işlemin detayında, alınan para dahil.',
+      },
+      {
+        en: 'An event now offers the money you received in its date range too (a reimbursement, a contribution), not only what you spent. Transfers between your own accounts stay out.',
+        nl: 'Een evenement biedt nu ook het geld aan dat je in de periode ontving (een terugbetaling, een bijdrage), niet alleen wat je uitgaf. Overboekingen tussen je eigen rekeningen blijven erbuiten.',
+        tr: 'Bir etkinlik artık tarih aralığında aldığın parayı da (bir geri ödeme, bir katkı) öneriyor; yalnızca harcadıklarını değil. Kendi hesapların arasındaki aktarımlar dışarıda kalır.',
+      },
+      {
+        en: 'Creating or editing a space: once a picture is set, the symbol and color pickers now look asleep (faded, grey) instead of only refusing taps.',
+        nl: 'Een ruimte maken of bewerken: zodra er een foto is ingesteld, zien de symbool- en kleurkiezers er nu uit alsof ze slapen (vervaagd, grijs) in plaats van alleen tikken te weigeren.',
+        tr: 'Alan oluştururken veya düzenlerken: bir fotoğraf ayarlandığında simge ve renk seçiciler artık yalnızca dokunmayı reddetmek yerine uykuda görünür (soluk, gri).',
+      },
+      {
+        en: 'When a munni version is too old for the server, the app now asks you to update before going on, instead of quietly working on data the server would refuse.',
+        nl: 'Als een munni-versie te oud is voor de server, vraagt de app je nu om bij te werken voordat je verdergaat, in plaats van stilletjes door te werken aan gegevens die de server zou weigeren.',
+        tr: 'Bir munni sürümü sunucu için çok eskiyse uygulama artık devam etmeden önce güncellemeni ister; sunucunun reddedeceği verilerle sessizce çalışmaya devam etmek yerine.',
+      },
+      {
+        en: 'Syncing a bank yourself no longer makes munni skip the nightly sync for it. The hub no longer reads “the party asked for a pause” after your own sync.',
+        nl: 'Zelf een bank synchroniseren zorgt er niet meer voor dat munni de nachtelijke synchronisatie ervan overslaat. De hub meldt na je eigen synchronisatie niet meer “de partij vroeg om een pauze”.',
+        tr: 'Bir bankayı kendin eşitlemek artık munni’nin o banka için gece eşitlemesini atlamasına yol açmıyor. Kendi eşitlemenden sonra merkez artık “taraf mola istedi” demiyor.',
+      },
+    ],
+  },
+  {
     version: '5.5.4',
     date: '2026-10-04',
     items: [

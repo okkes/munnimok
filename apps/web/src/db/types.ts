@@ -435,6 +435,9 @@ export interface EventRow extends SyncEnvelope {
   icon?: string;
   /** bundled asset path ('/events/beach.jpg') or a downscaled data URL */
   picture?: string;
+  /** #446: where a cover-fitted frame crops an UPLOADED picture - CSS
+   *  object-position percentages (0..100 each); absent or null = the centre */
+  pictureFocus?: { x: number; y: number } | null;
   note?: string;
   color?: string;
   /** optional date range (yyyy-mm-dd) */

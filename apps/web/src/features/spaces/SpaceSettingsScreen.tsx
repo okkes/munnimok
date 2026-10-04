@@ -17,11 +17,10 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
-import { SearchField } from '@/ui/SearchField';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
-import { MDI_NAMES } from '@/generated/mdiNames';
 
 import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
+import { SpaceIconGrid } from './SpaceIconGrid';
 
 /** one downscale path for all three photo doors (input, native, webcam) */
 export const applySpacePhoto = (file: File, onPicture: (dataUrl: string) => void): void => {
@@ -86,7 +85,7 @@ export function SpacePhotoStrip({
             disabled={disabled}
             onClick={() => onPicture('')}
             title={t('action.delete')}
-            className="m-tap relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-accent"
+            className="m-tap relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-accent disabled:cursor-not-allowed disabled:opacity-45"
           >
             <img src={picture} alt="" className="h-full w-full object-cover" />
             <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
@@ -99,7 +98,7 @@ export function SpacePhotoStrip({
             disabled={disabled}
             onClick={pickPhoto}
             title={t('profile.photoUpload')}
-            className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
+            className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3 disabled:cursor-not-allowed disabled:opacity-45"
           >
             {/* #146 r2: upload ≠ webcam — two camera icons read as one */}
             <Icon name="upload-outline" size={17} />
@@ -112,7 +111,7 @@ export function SpacePhotoStrip({
             disabled={disabled}
             onClick={onWebcam}
             title={t('webcam.use')}
-            className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
+            className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Icon name="camera-outline" size={17} />
           </button>
@@ -294,45 +293,20 @@ export function SpaceSettingsScreen() {
               onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
               testIdPrefix="space-photo"
             />
-            {/* #285 (user): search opens the WHOLE self-hosted font (the
-                categories pattern), and every glyph below renders in the
-                picked color so a swatch tap previews its real impact */}
-            <SearchField
-              testId="space-icon-search"
-              value={iconQuery}
-              onChange={setIconQuery}
-              placeholder={t('space.iconSearch')}
-              height="h-10"
-              textSize="text-[13px]"
+            {/* #285: the shared grid — the whole font behind the search, glyphs
+                in the picked color. #146 (user): a picture wins over symbol+color
+                everywhere, so while one is set the grid sleeps (r2: nothing is
+                "selected" then) — and #444: it LOOKS asleep */}
+            <SpaceIconGrid
+              icon={icon}
+              onIcon={setIcon}
+              color={color}
+              query={iconQuery}
+              onQuery={setIconQuery}
+              disabled={readOnly || picture !== ''}
+              sleeping={picture !== ''}
+              testIdPrefix="space-icon"
             />
-            <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
-              {(iconQuery.trim()
-                ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 60)
-                : SPACE_ICONS
-              ).map((name_) => (
-                <button
-                  key={name_}
-                  data-testid={`space-icon-${name_}`}
-                  title={name_}
-                  // #146 (user): a picture wins over symbol+color everywhere —
-                  // while one is set, picking them would change nothing visible
-                  disabled={readOnly || picture !== ''}
-                  onClick={() => setIcon(name_)}
-                  // #146 r2: with a picture set nothing is "selected" —
-                  // the stale accent ring on the old symbol read as active
-                  className={`m-tap flex h-10 items-center justify-center rounded-xl border ${
-                    icon === name_ && picture === '' ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
-                  }`}
-                >
-                  <Icon name={name_} size={19} color={color} />
-                </button>
-              ))}
-              {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
-                <p className="col-span-6 py-2 text-center text-[12px] text-ink-4" data-testid="space-icon-none">
-                  {t('space.iconNone')}
-                </p>
-              )}
-            </div>
             {/* #146: say WHY the pickers sleep, not just gray them out */}
             {picture !== '' && (
               <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="space-icon-picture-note">

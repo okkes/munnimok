@@ -25,13 +25,17 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
     private static string Receipts => $"/v1/{Provider}/{RotatingStoreAdapter.ReceiptsResource}?since=2026-06-01";
 
     [Fact]
-    public async Task A_schedule_inside_the_interval_is_held_off_and_told_how_long_while_a_person_is_not()
+    public async Task A_schedule_inside_the_interval_of_the_last_schedule_is_held_off_and_told_how_long_while_a_person_is_not()
     {
         using var http = factory.CreateAuthorizedClient();
         var connection = await Flows.ConnectAsync(http, Provider, Flows.NewSubject("interval"), Credentials);
         var ticket = await Flows.ResumeAsync(http, Provider, connection);
 
-        await Flows.FetchPageAsync(http, Provider, Receipts, ticket);
+        // the clock starts at a SCHEDULED fetch, nothing else
+        using (var first = await FetchAsync(http, ticket, "schedule"))
+        {
+            Assert.True(first.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, first.StatusCode.ToString());
+        }
 
         using (var scheduled = await FetchAsync(http, ticket, "schedule"))
         {
@@ -46,6 +50,25 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         }
 
         await Flows.FetchPageAsync(http, Provider, Receipts, ticket);
+    }
+
+    /// <summary>
+    /// A person's own fetch is attended traffic: it never holds the schedule
+    /// off. Counting it did, and on prod the app's syncs on open refused the
+    /// nightly scheduled one day after day as rate_limited (2026-10-04).
+    /// </summary>
+    [Fact]
+    public async Task A_persons_fetch_inside_the_interval_does_not_hold_the_schedule_off()
+    {
+        using var http = factory.CreateAuthorizedClient();
+        var connection = await Flows.ConnectAsync(http, Provider, Flows.NewSubject("attended"), Credentials);
+        var ticket = await Flows.ResumeAsync(http, Provider, connection);
+
+        await Flows.FetchPageAsync(http, Provider, Receipts, ticket);
+
+        using var scheduled = await FetchAsync(http, ticket, "schedule");
+
+        Assert.True(scheduled.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, scheduled.StatusCode.ToString());
     }
 
     [Fact]
@@ -66,6 +89,14 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         using var http = factory.CreateAuthorizedClient();
         var subject = Flows.NewSubject("login-interval");
         await Flows.ConnectAsync(http, Provider, subject, Credentials);
+
+        // the clock starts at a scheduled login; the person's own sign-in above does not count
+        using (var first = Wire.Post($"/v1/{Provider}/login", new { subject, inputs = Credentials }))
+        {
+            first.AddHeader(RequestContext.TriggerHeader, "schedule");
+            using var started = await http.SendAsync(first);
+            Assert.True(started.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, started.StatusCode.ToString());
+        }
 
         using var request = Wire.Post($"/v1/{Provider}/login", new { subject, inputs = Credentials });
         request.AddHeader(RequestContext.TriggerHeader, "schedule");

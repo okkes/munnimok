@@ -110,4 +110,12 @@ public sealed record NewJob
     /// work, the other names the only ones that may not.
     /// </summary>
     public bool FleetOnly { get; init; }
+
+    /// <summary>
+    /// Who asked: <see cref="JobRow.UserTrigger"/> for a person, <see cref="JobRow.ScheduleTrigger"/>
+    /// for the relay's scheduler, null for the platform's own work. The provider's interval
+    /// between syncs is measured between SCHEDULED jobs only (prod 2026-10-04: a person's own
+    /// syncs kept refusing the nightly one as rate_limited).
+    /// </summary>
+    public string? Trigger { get; init; }
 }

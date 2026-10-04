@@ -5,7 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEvents } from '@/application/events';
 import { useSpaceTransactions } from '@/application/transactions';
-import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from '@/domain/events';
+import { eventCategoryBreakdown, eventNetText, eventPerDayCents, eventSubcategoryBreakdown, eventTotals, suggestableTxs } from '@/domain/events';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -14,7 +14,7 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
-import { EventFormSheet, eventPicture } from './EventsScreen';
+import { EventFormSheet, eventPicture, eventPictureStyle } from './EventsScreen';
 import { SplitEventSummary } from '@/features/splits/SplitEventSummary';
 import { REIMBURSED_ID } from '@/domain/categories';
 import type { EventRow, TransactionRow, TxSplit } from '@/db/types';
@@ -76,11 +76,12 @@ export function EventDetailScreen() {
           (tx.eventId === event.id || (tx.splits ?? []).some((s) => s.catId !== REIMBURSED_ID && s.eventId === event.id)),
       )
       .sort((a, b) => b.date.localeCompare(a.date));
-    const spent = eventSpentCents(txs, event.id);
+    // #448: what went out AND what came in - the headline is the net
+    const totals = eventTotals(txs, event.id);
     return {
       list,
-      spent,
-      perDay: eventPerDayCents(spent, event.from, event.to),
+      totals,
+      perDay: eventPerDayCents(totals.spentCents, event.from, event.to),
       breakdown: eventCategoryBreakdown(txs, event.id, cats),
       suggestions: suggestableTxs(txs, event.id, event.from, event.to),
     };
@@ -116,10 +117,10 @@ export function EventDetailScreen() {
         {/* the picture-first hero */}
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="eventdetail-hero">
           <div className="relative h-36 w-full">
-            <img src={eventPicture(event)} alt="" className="h-full w-full object-cover" />
+            <img src={eventPicture(event)} alt="" className="h-full w-full object-cover" style={eventPictureStyle(event)} />
             <span className="absolute right-3 bottom-2 rounded-lg bg-black/45 px-2.5 py-1 backdrop-blur-sm">
               <span className="m-num text-[20px] font-semibold text-white" data-testid="eventdetail-total">
-                {money(view.spent)}
+                {eventNetText(view.totals.netCents, currency, fmt)}
               </span>
             </span>
           </div>
@@ -128,6 +129,13 @@ export function EventDetailScreen() {
               {event.from && event.to && `${fmtDate(event.from)} – ${fmtDate(event.to)}`}
               {view.perDay !== null && ` · ${t('events.perDay', { amount: money(view.perDay) })}`}
             </span>
+            {/* #448 (user): once money came in, the headline is a net - say
+                what went out and what came in, so a plus reads as a surplus */}
+            {view.totals.receivedCents > 0 && (
+              <span className="mt-0.5 block text-[12px] text-ink-3" data-testid="eventdetail-flows">
+                {t('events.spentReceived', { spent: money(view.totals.spentCents), received: money(view.totals.receivedCents) })}
+              </span>
+            )}
             {event.note && (
               <p className="mt-1 text-[13px] text-ink-2" data-testid="eventdetail-note">
                 {event.note}
@@ -137,8 +145,8 @@ export function EventDetailScreen() {
               <>
                 <ProgressBar
                   className="mt-2"
-                  value={view.spent / event.budgetCents}
-                  tone={view.spent > event.budgetCents ? 'negative' : 'accent'}
+                  value={Math.max(view.totals.netCents, 0) / event.budgetCents}
+                  tone={view.totals.netCents > event.budgetCents ? 'negative' : 'accent'}
                 />
                 <div className="mt-1.5 text-[11px] text-ink-3">{t('events.estimateOf', { amount: money(event.budgetCents) })}</div>
               </>

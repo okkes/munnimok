@@ -35,6 +35,17 @@ describe('#364: which gestures the sheet drag leaves to the content', () => {
     }
   });
 
+  it('#446: an element that handles its own pointer is left alone even inside a scrolled list — a stop at the root would kill its listeners', () => {
+    const [body, target] = bodyWith(
+      '<div style="overflow-y: auto"><div data-sheet-own-gesture><img data-probe alt="" /></div></div>',
+    );
+    const list = body.firstElementChild as HTMLElement;
+    Object.defineProperty(list, 'scrollHeight', { value: 400, configurable: true });
+    Object.defineProperty(list, 'clientHeight', { value: 100, configurable: true });
+    Object.defineProperty(list, 'scrollTop', { value: 40, configurable: true });
+    expect(gestureBelongsToContent(target, body)).toBe(false);
+  });
+
   it('a list scrolled away from its top scrolls; at the top it drags', () => {
     const [body, target] = bodyWith('<div data-probe style="overflow-y: auto"><p>row</p></div>');
     Object.defineProperty(target, 'scrollHeight', { value: 400, configurable: true });

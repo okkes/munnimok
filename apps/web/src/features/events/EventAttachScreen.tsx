@@ -6,7 +6,7 @@ import { useData } from '@/app/data';
 import { useEvents } from '@/application/events';
 import { logActivity } from '@/application/activity';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
-import { suggestableTxs } from '@/domain/events';
+import { eventNetText, suggestableTxs } from '@/domain/events';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -22,6 +22,11 @@ import { partEntries, partPickKey, suggestionKeysOf } from './EventDetailScreen'
  * (hairline dividers, the same rows) with one difference: a checkbox on
  * the left. Everything starts selected (excluding is the review), and
  * select/deselect-all does the whole list in one tap.
+ *
+ * #447 (user): the list offers money RECEIVED in the range too (a
+ * reimbursement, a contribution) - only a movement between the person's
+ * own accounts stays out. The button sums the picks as the event would:
+ * what they cost, or the surplus with a plus.
  */
 export function EventAttachScreen() {
   const { t } = useLang();
@@ -193,7 +198,7 @@ export function EventAttachScreen() {
       </div>
       <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]">
         <Button className="w-full" data-testid="eventpick-attach" disabled={attaching || pickedSet.size === 0} onClick={() => void attachPicked()}>
-          {t('events.attachPicked', { n: pickedSet.size, amount: money(pickedTotal) })}
+          {t('events.attachPicked', { n: pickedSet.size, amount: eventNetText(pickedTotal, currency, fmt) })}
         </Button>
       </div>
     </div>
