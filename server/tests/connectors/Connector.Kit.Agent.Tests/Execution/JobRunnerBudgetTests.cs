@@ -164,9 +164,14 @@ public class JobRunnerBudgetTests
     /// nothing here can lower it, so a fixed wait long enough to be safe would
     /// cost every run the slack, and a short one would flake under load.
     /// </summary>
+    // Wall clock, not the test clock: the renewer runs on real timers here.
+    // Forty-five seconds rather than twenty: the renew this waits for comes
+    // in five-second steps, and on a loaded runner a healthy renew can
+    // itself outrun the quarter-second bound and count as given up, pushing
+    // the first landed one a step or two further (CI, 2026-10-04).
     private static async Task UntilAsync(Func<bool> done, string what)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(45);
 
         while (!done())
         {
