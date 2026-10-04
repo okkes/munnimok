@@ -89,6 +89,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"dating","parentId":"entertainment","nameKey":"cat.dating","icon":"heart-multiple-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"subs","parentId":"entertainment","nameKey":"cat.subs","icon":"television-play","txTypes":["expense"],"direction":"debit"},
   {"id":"outdoor","parentId":"entertainment","nameKey":"cat.outdoor","icon":"hiking","txTypes":["expense"],"direction":"debit"},
+  {"id":"activities","parentId":"entertainment","nameKey":"cat.activities","icon":"ferris-wheel","txTypes":["expense"],"direction":"debit"},
   {"id":"entertainmentOther","parentId":"entertainment","nameKey":"cat.entertainmentOther","icon":"drama-masks","txTypes":["expense"],"direction":"debit"},
   {"id":"sport","nameKey":"cat.sport","icon":"tennis","color":"#1ABC9C","isParent":true,"txTypes":["expense"],"direction":"debit"},
   {"id":"gym","parentId":"sport","nameKey":"cat.gym","icon":"dumbbell","txTypes":["expense"],"direction":"debit"},

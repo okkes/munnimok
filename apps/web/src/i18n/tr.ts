@@ -164,6 +164,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'cat.dating': 'Flört & buluşma',
   'cat.subs': 'Yayın (streaming)',
   'cat.outdoor': 'Doğa & açık hava',
+  'cat.activities': 'Aktiviteler',
   'cat.entertainmentOther': 'Diğer',
   'cat.gym': 'Spor salonu',
   'cat.sportsEquipment': 'Spor ekipmanı',

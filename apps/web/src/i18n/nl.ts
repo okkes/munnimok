@@ -164,6 +164,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cat.dating': 'Dating',
   'cat.subs': 'Streaming',
   'cat.outdoor': 'Buiten & natuur',
+  'cat.activities': 'Activiteiten',
   'cat.entertainmentOther': 'Overig',
   'cat.gym': 'Sportschool',
   'cat.sportsEquipment': 'Sportuitrusting',

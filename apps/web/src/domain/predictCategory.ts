@@ -1,5 +1,5 @@
 import { CATEGORY_BY_ID } from './categories';
-import { KEYWORD_RULES } from './keyword-categories';
+import { ALL_KEYWORD_RULES } from './keyword-extras';
 import type { KeywordRule } from './keyword-categories';
 import { predictFromMemory } from './merchantMemory';
 import type { MerchantMemory } from './merchantMemory';
@@ -22,13 +22,13 @@ import type { MerchantMemory } from './merchantMemory';
 const COUNTRY_KEYWORD_LANG: Record<string, string> = { NL: 'nl', BE: 'nl' };
 const FALLBACK_KEYWORD_LANG = 'nl';
 
-let activeRules: readonly KeywordRule[] = KEYWORD_RULES;
+let activeRules: readonly KeywordRule[] = ALL_KEYWORD_RULES;
 
 /** hydrate from the stored profile at app open + when onboarding saves */
 export function setPredictionCountry(country?: string): void {
   const keywordLang = COUNTRY_KEYWORD_LANG[country?.toUpperCase() ?? ''] ?? FALLBACK_KEYWORD_LANG;
-  const filtered = KEYWORD_RULES.filter((r) => r.lang === keywordLang);
-  activeRules = filtered.length ? filtered : KEYWORD_RULES.filter((r) => r.lang === FALLBACK_KEYWORD_LANG);
+  const filtered = ALL_KEYWORD_RULES.filter((r) => r.lang === keywordLang);
+  activeRules = filtered.length ? filtered : ALL_KEYWORD_RULES.filter((r) => r.lang === FALLBACK_KEYWORD_LANG);
 }
 
 export function predictCategory(

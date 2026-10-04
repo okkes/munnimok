@@ -162,6 +162,7 @@ export const en = {
   'cat.dating': 'Dating',
   'cat.subs': 'Streaming',
   'cat.outdoor': 'Outdoor & nature',
+  'cat.activities': 'Activities',
   'cat.entertainmentOther': 'Other',
   'cat.gym': 'Gym Membership',
   'cat.sportsEquipment': 'Sports Equipment',

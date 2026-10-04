@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { predictCategory, predictTx } from './predictCategory';
-import { KEYWORD_RULES } from './keyword-categories';
+import { ALL_KEYWORD_RULES } from './keyword-extras';
 import { CATEGORY_BY_ID } from './categories';
 import { buildMerchantMemory } from './merchantMemory';
 import type { MemoryInput } from './merchantMemory';
@@ -28,13 +28,18 @@ describe('predictCategory', () => {
     expect(withLong).toBe('groceries');
   });
 
+  it('#451: an outing is an activity — the hand-written rules read with the generated ones', () => {
+    expect(predictCategory('ESCAPE ROOM DELFT', 'debit')).toBe('activities');
+    expect(predictCategory('Bowling Scheveningen', 'debit')).toBe('activities');
+  });
+
   it('returns null when nothing matches', () => {
     expect(predictCategory('xqzzy unmatched merchant', 'debit')).toBeNull();
     expect(predictCategory('', 'credit')).toBeNull();
   });
 
   it('every rule points at an existing catalog category (generated data integrity)', () => {
-    for (const rule of KEYWORD_RULES) {
+    for (const rule of ALL_KEYWORD_RULES) {
       expect(CATEGORY_BY_ID.get(rule.catId), rule.catId).toBeTruthy();
       expect(rule.keywords.length).toBeGreaterThan(0);
     }
