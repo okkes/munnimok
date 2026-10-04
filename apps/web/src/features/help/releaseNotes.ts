@@ -18,6 +18,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.7.0',
+    date: '2026-10-05',
+    items: [
+      {
+        en: 'A bank account that no connection fetches any more now says so — on the account, and in the Connections hub — with a Reconnect door. Reconnecting keeps the account and its history.',
+        nl: 'Een bankrekening die geen enkele verbinding nog ophaalt zegt dat nu — op de rekening en in de Verbindingen-hub — met een knop om opnieuw te verbinden. Opnieuw verbinden behoudt de rekening en haar geschiedenis.',
+        tr: 'Artık hiçbir bağlantının almadığı bir banka hesabı bunu şimdi söylüyor — hesapta ve Bağlantılar merkezinde — yeniden bağlanma kapısıyla. Yeniden bağlanmak hesabı ve geçmişini korur.',
+      },
+      {
+        en: 'The Spent, Income, Savings and Invested overviews start at the current period again once you have been back Home or on another tab. Stepping into a category or a transaction and back still keeps the period you chose.',
+        nl: 'De overzichten Uitgegeven, Inkomen, Sparen en Belegd beginnen weer bij de huidige periode zodra je terug op Home of op een ander tabblad bent geweest. Een categorie of transactie openen en terug houdt de gekozen periode nog steeds vast.',
+        tr: 'Harcanan, Gelir, Birikim ve Yatırım görünümleri, Ana sayfaya ya da başka bir sekmeye dönüp geldiğinde yeniden mevcut dönemden başlıyor. Bir kategoriye ya da işleme girip çıkmak seçtiğin dönemi hâlâ koruyor.',
+      },
+      {
+        en: 'A new Activities category under Entertainment, for the escape room, the bowling night and the zoo — suggested automatically on matching names.',
+        nl: 'Een nieuwe categorie Activiteiten onder Entertainment, voor de escape room, het bowlingavondje en de dierentuin — automatisch voorgesteld bij passende namen.',
+        tr: 'Eğlence altında yeni bir Aktiviteler kategorisi: kaçış odası, bowling gecesi ve hayvanat bahçesi için — eşleşen adlarda otomatik önerilir.',
+      },
+      {
+        en: '“Apply to similar” now recognises the same shop when the bank glues a date or a time to its name, so one category reaches every visit.',
+        nl: '“Toepassen op vergelijkbare” herkent nu dezelfde winkel als de bank een datum of tijd aan de naam plakt, zodat één categorie elk bezoek bereikt.',
+        tr: '“Benzerlerine uygula” artık banka adın yanına tarih ya da saat yapıştırsa da aynı mağazayı tanıyor; böylece tek bir kategori her ziyarete ulaşıyor.',
+      },
+      {
+        en: 'Goals say how much is still to add, and the pace follows your space’s own period: a goal due next period asks for two halves, this period and the next, instead of the whole amount at once.',
+        nl: 'Doelen laten zien hoeveel er nog bij moet, en het tempo volgt de periode van je ruimte: een doel voor volgende periode vraagt twee helften, deze periode en de volgende, in plaats van het hele bedrag ineens.',
+        tr: 'Hedefler daha ne kadar eklenmesi gerektiğini söylüyor ve tempo alanının kendi dönemini izliyor: gelecek döneme kadar olan bir hedef, tutarın tamamını bir anda değil, bu dönem ve sonraki için iki yarım istiyor.',
+      },
+    ],
+  },
+  {
     version: '5.6.1',
     date: '2026-10-04',
     items: [

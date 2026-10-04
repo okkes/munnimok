@@ -76,7 +76,14 @@ function stripLegalForms(value: string): string {
 
 export function merchantKey(merchant: string): string {
   const base = stripProcessorPrefix(merchant.toLowerCase().trim())
-    .replaceAll(/\b\d{2,}[\d./:-]*/g, ' ') // store nrs, dates, terminal ids
+    // #450 (user): the date and the clock time of the charge are the one
+    // thing that differs between two visits to the same till ("8.08.2026
+    // 10U53", "11.09.2026 18U57"), and they come glued to the name as often
+    // as not - a word boundary never caught "GRAVEN11.09.2026"
+    .replaceAll(/\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/g, ' ') // 8.08.2026, 11-09-26
+    .replaceAll(/\d{4}-\d{2}-\d{2}/g, ' ') // 2026-09-11
+    .replaceAll(/\d{1,2}[:uh.]\d{2}(?!\d)/g, ' ') // 10u53, 18:57, 9.05
+    .replaceAll(/\d{2,}[\d./:-]*/g, ' ') // store nrs, terminal ids - glued to a word or not
     .replaceAll(/[^\p{L}\p{N}&' ]+/gu, ' ')
     .replaceAll(/\s+/g, ' ')
     .trim();

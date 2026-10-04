@@ -9,6 +9,10 @@ import { newestTxDate } from '@/application/accounts';
 import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { fetchesItself, sourceKeyFor, sourceParamsFor } from '@/features/accounts/AttachSheet';
+import { uncoveredDateText } from '@/features/accounts/coverage';
+import { useLiveConnectionIds } from '@/application/connections';
+import { uncoveredSince } from '@/domain/accountCoverage';
+import { partyName } from '@/features/connectors/logos';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
@@ -118,6 +122,8 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
  */
 export function SpaceAccountsScreen() {
   const { t, lang } = useLang();
+  // #445: a row no live connection fetches any more says so in its info sheet
+  const liveIds = useLiveConnectionIds();
   const { store, repo } = useData();
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
@@ -403,6 +409,20 @@ export function SpaceAccountsScreen() {
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
               {info.account ? t(sourceKeyFor(info.account), sourceParamsFor(info.account)) : t('acct.bank')}
             </div>
+            {info.account && liveIds && uncoveredSince(info.account, liveIds) !== null && (
+              <div className="rounded-card border border-line bg-bg-2 px-4 py-3 text-[13px] text-ink-2" data-testid="space-account-uncovered">
+                {t('acct.uncovered', { date: uncoveredDateText(uncoveredSince(info.account, liveIds) ?? '', lang), party: partyName(info.account.provider ?? info.account.source) })}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  data-testid="space-account-reconnect"
+                  onClick={() => void navigate({ to: '/connections', search: { connect: info.account!.provider ?? info.account!.source } })}
+                >
+                  {t('acct.reconnect', { party: partyName(info.account.provider ?? info.account.source) })}
+                </Button>
+              </div>
+            )}
             {/* #239 (user): this SPACE's own name for the account — the
                 global name stays untouched; clearing falls back to it */}
             {info.link && (

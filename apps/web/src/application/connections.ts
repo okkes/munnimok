@@ -50,6 +50,16 @@ export function useStoreConnMetas(): StoreConnRow[] | undefined {
   return useQuery(store, async () => (await store.allRows('storeConn')).filter((c) => c.deleted === 0), []);
 }
 
+/** #445: the ids of the connections that still exist — what an account's `connectionId` is read against */
+export function useLiveConnectionIds(): ReadonlySet<string> | undefined {
+  const { store } = useData();
+  return useQuery(
+    store,
+    async () => new Set((await store.allRows('storeConn')).filter((c) => c.deleted === 0).map((c) => c.id)),
+    [],
+  );
+}
+
 /** connections included in the ACTIVE space (members see these) */
 export function useSpaceStoreConnLinks(): StoreConnLinkRow[] | undefined {
   const { store, spaceId } = useData();

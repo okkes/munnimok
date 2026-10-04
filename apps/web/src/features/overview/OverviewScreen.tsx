@@ -7,6 +7,7 @@ import { categoryBreakdown, contributionCents, txsForKind } from '@/domain/overv
 import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { recallPeriod, rememberPeriod } from './periodMemory';
 import { LOCALES, useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -33,8 +34,6 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
  * per-period bar chart, composition bar, and main-category cards that
  * unfold into their sub categories (legacy ScreenExpenses parity).
  */
-/** #355: per-kind period memory — survives navigation, dies with the tab */
-const PERIOD_MEMO = new Map<string, number>();
 
 export function OverviewScreen() {
   const { t, lang } = useLang();
@@ -55,9 +54,9 @@ export function OverviewScreen() {
   // #355: the chosen period survives the category/transaction detour —
   // a module-level memo per kind (session-scoped, like the tx filters);
   // detours change OTHER screens' periods without touching this one
-  const [periodIndex, setPeriodIndex] = useState(() => PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
+  const [periodIndex, setPeriodIndex] = useState(() => recallPeriod(kind) ?? PERIOD_COUNT - 1);
   const selectPeriod = (i: number) => {
-    PERIOD_MEMO.set(kind, i);
+    rememberPeriod(kind, i);
     setPeriodIndex(i);
   };
   // kind switches keep the component mounted — adopt that kind's memory
@@ -65,7 +64,7 @@ export function OverviewScreen() {
   useEffect(() => {
     if (lastKind.current === kind) return;
     lastKind.current = kind;
-    setPeriodIndex(PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
+    setPeriodIndex(recallPeriod(kind) ?? PERIOD_COUNT - 1);
   }, [kind]);
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);

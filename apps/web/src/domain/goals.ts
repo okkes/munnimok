@@ -1,4 +1,5 @@
-import type { AccountRow, GoalRow, SpaceRow } from '@/db/types';
+import type { AccountRow, GoalRow, SpacePeriodType, SpaceRow } from '@/db/types';
+import { nextPeriod, periodHistory } from './periods';
 
 /**
  * Goal math (approved goals design) — the savings BALANCE is the only
@@ -43,11 +44,55 @@ export function monthsLeft(goal: Pick<GoalRow, 'targetDate'>, today: string): nu
   return Math.max(1, (ty - ny) * 12 + (tm - nm));
 }
 
-/** €/month needed to reach the target by its date; 0 when reached */
-export function paceCentsPerMonth(goal: GoalRow, today: string): number | null {
-  const months = monthsLeft(goal, today);
-  if (months === null) return null;
-  return Math.max(0, Math.ceil((goal.targetCents - goal.allocatedCents) / months));
+/** the rhythm a pace is counted in: the space's own period; monthly from the 1st while the space is not known yet */
+export type PaceSpace = Pick<SpaceRow, 'periodType' | 'periodDay'> | null | undefined;
+
+const parseLocal = (iso: string): Date => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+};
+
+/**
+ * The space's periods from today's until the one holding the deadline,
+ * both counted (user 2026-10-04): a goal due next period is two chances
+ * to put money aside - this period and the next - however the calendar
+ * months fall around them. A whole-month count said one, and asked for
+ * the lot at once. null undated.
+ */
+export function periodsLeft(space: PaceSpace, targetDate: string | undefined, today: string): number | null {
+  if (!targetDate) return null;
+  const type = space?.periodType ?? 'month';
+  const day = space?.periodDay ?? 1;
+  let period = periodHistory(type, day, 1, parseLocal(today))[0];
+  let count = 1;
+  while (period.end < targetDate && count < 1200) {
+    period = nextPeriod(type, day, parseLocal(period.end));
+    count += 1;
+  }
+  return count;
+}
+
+/** cents per period needed to reach the target by its date; 0 when reached; null undated */
+export function paceCentsPerPeriod(goal: GoalRow, space: PaceSpace, today: string): number | null {
+  const periods = periodsLeft(space, goal.targetDate, today);
+  if (periods === null) return null;
+  return Math.max(0, Math.ceil((goal.targetCents - goal.allocatedCents) / periods));
+}
+
+/** the word for one of the space's periods, as a copy key */
+export function periodUnitKey(
+  periodType: SpacePeriodType | undefined,
+): 'goals.unitMonth' | 'goals.unitWeek' | 'goals.unitBiweekly' | 'goals.unitPeriod' {
+  switch (periodType) {
+    case 'week':
+      return 'goals.unitWeek';
+    case 'biweekly':
+      return 'goals.unitBiweekly';
+    case 'custom':
+      return 'goals.unitPeriod';
+    default:
+      return 'goals.unitMonth';
+  }
 }
 
 export const goalProgress = (goal: GoalRow): number =>

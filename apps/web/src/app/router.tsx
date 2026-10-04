@@ -239,7 +239,14 @@ const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/de
 const debtPlanRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/plan', component: DebtPlanScreen });
 const planningRoute = createRoute({ getParentRoute: () => appRoute, path: '/planning', component: PlanningScreen });
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
-const connectionsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections', component: ConnectionsScreen });
+const connectionsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/connections',
+  component: ConnectionsScreen,
+  // #445: an accounts sheet's Reconnect door names the party; the hub opens the flow for it
+  validateSearch: (search: Record<string, unknown>): { connect?: string } =>
+    typeof search.connect === 'string' && search.connect ? { connect: search.connect } : {},
+});
 const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
 /** one receipt full screen, from a space: `from` is the transaction it was opened on (its own row is noise there) */

@@ -13,6 +13,7 @@ import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
 import { clearTxFilters } from '@/features/transactions/txFilters';
+import { clearOverviewPeriods } from '@/features/overview/periodMemory';
 import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
 import { wheelToHorizontal } from '@/lib/wheelScroll';
 import { SHEET_OWNS_KEYBOARD, Sheet } from '@/ui/Sheet';
@@ -322,6 +323,8 @@ export function AppLayout() {
                 onClick={() => {
                   // #140: choosing another TAB resets the tx lens
                   if (tab.to !== '/transactions') clearTxFilters();
+                  // #454 (user): and the overviews forget their period
+                  clearOverviewPeriods();
                 }}
                 // #271: hover tints in the accent language — bg-surface
                 // (white on light bg-2 / gray on dark) read as stale gray
@@ -380,6 +383,8 @@ export function AppLayout() {
                 onClick={() => {
                   // #140: choosing another TAB resets the tx lens
                   if (tab.to !== '/transactions') clearTxFilters();
+                  // #454 (user): and the overviews forget their period
+                  clearOverviewPeriods();
                 }}
                 className={`m-tap flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10px] font-medium ${
                   active ? 'text-brand' : 'text-ink-4'

@@ -76,6 +76,10 @@ export interface AccountRow extends SyncEnvelope {
    *  …) — stamped by the server ingest on EVERY fetched row; manual and
    *  statement-import rows carry none */
   provider?: string;
+  /** #445: the connection that fetched the row last (the relay's connection
+   *  id, the hub's `storeConn` row id) — stamped by the ingest; when that
+   *  connection is gone, nothing fetches the row any more and the app says so */
+  connectionId?: string;
   /** #133/#221: this account is the space's DEFAULT for a counterparty
    *  family — minted at space creation (undeletable, ledger system-
    *  managed), so "Set aside" or an ATM withdrawal without naming an

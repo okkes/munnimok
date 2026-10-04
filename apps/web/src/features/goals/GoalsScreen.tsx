@@ -10,7 +10,7 @@ import { useData } from '@/app/data';
 import { useGoalOps, useGoals } from '@/application/goals';
 import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { goalOverview, goalProgress, monthsLeft, paceCentsPerMonth, poolAccounts } from '@/domain/goals';
+import { goalOverview, goalProgress, monthsLeft, paceCentsPerPeriod, periodUnitKey, poolAccounts } from '@/domain/goals';
 import type { GoalRow, SpaceRow } from '@/db/types';
 import type { SpaceAccount } from '@/db/joined';
 import { parseCents } from '@/lib/money';
@@ -409,11 +409,14 @@ export function GoalsScreen() {
         <div className="flex flex-col gap-2.5 pt-3">
           {(goals ?? []).map((goal) => {
             const progress = goalProgress(goal);
-            const pace = paceCentsPerMonth(goal, today);
+            // the pace counts the space's own periods (user 2026-10-04)
+            const pace = paceCentsPerPeriod(goal, space, today);
             const reached = goal.allocatedCents >= goal.targetCents;
-            let subtitle = t('goals.toGo', { amount: money(goal.targetCents - goal.allocatedCents) });
+            // #449 (user): what is still to add sits on the card itself, pace or no pace
+            const toGo = t('goals.toGo', { amount: money(goal.targetCents - goal.allocatedCents) });
+            let subtitle = toGo;
             if (reached) subtitle = t('goals.reached');
-            else if (pace !== null) subtitle = t('goals.pace', { amount: money(pace) });
+            else if (pace !== null) subtitle = `${toGo} · ${t('goals.pace', { amount: money(pace), unit: t(periodUnitKey(space?.periodType)) })}`;
             return (
               <button
                 key={goal.id}

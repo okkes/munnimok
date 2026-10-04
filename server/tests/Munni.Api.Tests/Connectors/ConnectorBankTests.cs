@@ -71,6 +71,8 @@ public class ConnectorBankTests(ConnectorApiFactory factory) : IClassFixture<Con
         Assert.Equal(ConnectorIngest.Source, data.GetProperty("source").GetString());
         Assert.Equal(MockBank, data.GetProperty("provider").GetString());
         Assert.Equal(CurrentIban, data.GetProperty("iban").GetString());
+        // #445: the connection that fetched the row, for the app to read against the ones that still exist
+        Assert.Equal("conn-bank-fork", data.GetProperty("connectionId").GetString());
 
         // the transactions behind it name the bank's row, never the import's
         var transactions = factory.Read(db => db.EntityRows.Where(r => r.SpaceId == feedId && r.Entity == "transaction").ToList());

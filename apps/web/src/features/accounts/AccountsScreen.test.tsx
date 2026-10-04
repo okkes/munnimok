@@ -987,6 +987,38 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('acctedit-source').textContent).not.toContain('GoCardless');
   }, 15_000);
 
+  it('#445: an account whose connection is gone says so and offers the way back to the party', async () => {
+    renderApp('/accounts');
+    await openDemoCluster();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('uncovered'), { trackOutbox: false });
+    // the ingest stamped the connection that fetched the row; that connection is gone
+    await repo.upsert('account', 'demo_space', 'gone-acc', {
+      name: 'ING via EB',
+      type: 'checking',
+      source: 'connector',
+      provider: 'enablebanking',
+      connectionId: 'conn-gone',
+      lastSyncedAt: '2026-09-30T08:00:00Z',
+      currency: 'EUR',
+      balanceCents: 0,
+      iban: 'NL74INGB0001029507',
+    });
+    db.close();
+
+    fireEvent.click(await screen.findByTestId('account-row-gone-acc'));
+    const note = await screen.findByTestId('acctedit-uncovered');
+    expect(note.textContent).toContain('Not fetched any more');
+    expect(note.textContent).toContain('Enable Banking');
+    // the door leads to the hub, with the party named
+    fireEvent.click(screen.getByTestId('acctedit-reconnect'));
+    await screen.findByTestId('screen-connections');
+  }, 15_000);
+
   it('#221: a DEFAULT account offers no delete — and its balance edit leaves an adjustment row', async () => {
     renderApp('/accounts');
     await openDemoCluster();

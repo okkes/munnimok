@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEMO_TXS } from '@/db/demo-data';
 import { isoDaysAgo } from '@/db/seed';
@@ -79,6 +79,38 @@ describe('Overview (demo identity)', () => {
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
     expect(screen.queryByTestId('tx-peek')).toBeNull();
   });
+
+  it('#454 (user): the chosen period is forgotten on the way back Home or to another tab; a detour keeps it', async () => {
+    renderApp('/overview/expense');
+    await screen.findByTestId('screen-overview');
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
+    const current = screen.getByTestId('overview-total').textContent;
+    fireEvent.click(screen.getByTestId('overview-bar-0')); // oldest period
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).not.toBe(current));
+    const older = screen.getByTestId('overview-total').textContent;
+
+    // a detour (a category, a transaction) and back: the period stays (#355)
+    cleanup();
+    renderApp('/overview/expense');
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(older));
+
+    // another main tab, then the overview again: the current period
+    fireEvent.click(screen.getByTestId('tab-settings'));
+    await screen.findByTestId('screen-settings');
+    cleanup();
+    renderApp('/overview/expense');
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(current));
+
+    // and Home itself forgets it too
+    fireEvent.click(screen.getByTestId('overview-bar-0'));
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(older));
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    cleanup();
+    renderApp('/overview/expense');
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(current));
+  }, 25_000);
 
   it('the drill period selector swaps the list to the chosen period', async () => {
     renderApp('/overview/expense/groceries');
