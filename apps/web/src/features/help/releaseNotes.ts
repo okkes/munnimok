@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.7.1',
+    date: '2026-10-05',
+    items: [
+      {
+        en: 'The review card shows a picked counter transaction in its own currency — a $35.88 PayPal leg no longer reads as euros.',
+        nl: 'De beoordelingskaart toont een gekozen tegentransactie in haar eigen valuta — een PayPal-zijde van $35,88 leest niet meer als euro’s.',
+        tr: 'İnceleme kartı seçilen karşı işlemi kendi para biriminde gösteriyor — 35,88 $’lık bir PayPal bacağı artık avro olarak okunmuyor.',
+      },
+      {
+        en: 'Signing in to a shop on the web is sturdier: one follower per sign-in, and a browser that keeps no site data now says so instead of nothing happening. The hourly limit on syncs is wide enough for a day of use.',
+        nl: 'Aanmelden bij een winkel op het web is robuuster: één volger per aanmelding, en een browser die geen sitegegevens bewaart zegt dat nu in plaats van dat er niets gebeurt. De uurlimiet op synchronisaties is ruim genoeg voor een dag gebruik.',
+        tr: 'Web’de bir mağazaya oturum açmak daha sağlam: oturum başına tek izleyici ve site verisi saklamayan bir tarayıcı artık hiçbir şey olmamak yerine bunu söylüyor. Eşitlemelerdeki saatlik sınır bir günlük kullanıma yetecek kadar geniş.',
+      },
+    ],
+  },
+  {
     version: '5.7.0',
     date: '2026-10-05',
     items: [
