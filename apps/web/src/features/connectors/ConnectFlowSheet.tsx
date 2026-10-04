@@ -159,7 +159,11 @@ export function ConnectFlowSheet({
       connectionId.current = reconnectId ?? crypto.randomUUID();
       setPhase({ kind: 'form' });
     }
-    return () => stopFollowing.current();
+    return () => {
+      stopFollowing.current();
+      // the sheet is gone (unmounted with the hub, or closed): whatever is still pending is the hub's to follow
+      usePendingLogins.getState().patch(connectionId.current, { attached: false });
+    };
   }, [open, reconnectId, resume]);
 
   useEffect(() => {
@@ -194,7 +198,9 @@ export function ConnectFlowSheet({
   };
 
   const notePending = (view: SessionView) => {
-    pending.put(pendingFromView({ connectionId: connectionId.current, provider, reconnect, startedAt: startedAt.current }, view));
+    // attached: this sheet follows the session; the hub's follower takes
+    // over only once the sheet lets go (close), never alongside it
+    pending.put({ ...pendingFromView({ connectionId: connectionId.current, provider, reconnect, startedAt: startedAt.current }, view), attached: true });
   };
 
   const handleView = async (view: SessionView): Promise<void> => {
@@ -318,9 +324,10 @@ export function ConnectFlowSheet({
   // height and the content owns every pointer (see Sheet.dragLock)
   const live = phase.kind === 'challenge' && phase.view.challenge?.type === 'live_view';
 
-  /** closing keeps the sign-in going: it is listed in the hub until it settles */
+  /** closing keeps the sign-in going: it is listed in the hub until it settles, and the hub follows it from here */
   const close = () => {
     stopFollowing.current();
+    pending.patch(connectionId.current, { attached: false });
     onOpenChange(false);
   };
 

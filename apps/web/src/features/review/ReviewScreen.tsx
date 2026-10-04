@@ -145,7 +145,9 @@ async function pairReviewPicks(
 }
 
 /** #237 r3: the Counter-transaction row's face — the picked leg's
- *  story, or the default (created on confirm / arrives with the feed) */
+ *  story, or the default (created on confirm / arrives with the feed).
+ *  The leg's amount wears the LEG's currency (user ss 2026-10-05: a
+ *  $35.88 PayPal leg read as €35.88 next to its €32.63 debit) */
 function counterTxFaceFor(
   peer: SpaceTx | undefined,
   bankFed: boolean,
@@ -153,7 +155,7 @@ function counterTxFaceFor(
   lang: ReturnType<typeof useLang>['lang'],
   t: ReturnType<typeof useLang>['t'],
 ): string {
-  if (peer) return `${txTitle(peer)} · ${fmtCents(peer.amountCents, currency, lang)}`;
+  if (peer) return `${txTitle(peer)} · ${fmtCents(peer.amountCents, peer.currency || currency, lang)}`;
   return t(bankFed ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
 }
 

@@ -56,10 +56,18 @@ public sealed class ConnectorOptions
     public string? AgentPublicUrl { get; set; }
 
     /// <summary>Per-user budget on <c>login</c>, on top of the connector's per-provider interval.</summary>
-    public int LoginsPerHour { get; set; } = 10;
+    /// <remarks>Twenty: a person reconnecting three banks and two shops in one sitting, with a retry each, is not an attack.</remarks>
+    public int LoginsPerHour { get; set; } = 20;
 
     /// <summary>Per-user budget on <c>sync</c>.</summary>
-    public int SyncsPerHour { get; set; } = 12;
+    /// <remarks>
+    /// Sixty, not twelve (prod 2026-10-05): the app syncs every connection
+    /// on open and after a sign-in, so four connections and a handful of
+    /// "Sync now"s spent twelve within the hour and the hub read "too many
+    /// attempts" on a healthy bank. The connector's own per-provider
+    /// interval guards the parties; this one guards the relay.
+    /// </remarks>
+    public int SyncsPerHour { get; set; } = 60;
 
     /// <summary>
     /// One call's ceiling. A fetch waits up to the control plane's own window

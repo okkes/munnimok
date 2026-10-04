@@ -28,6 +28,10 @@ export interface PendingLogin {
   asking: boolean;
   /** the run ended without a session — shown until dismissed */
   error?: ErrorEnvelope;
+  /** a sheet is following this one right now: the hub's follower stands
+   *  back (prod 2026-10-05: two pollers on one session raced for the
+   *  bundle, which the relay hands over exactly once) */
+  attached?: boolean;
 }
 
 interface PendingState {
@@ -84,7 +88,7 @@ export function usePendingLoginFollower({
 
   // one poller per pending login not shown in a sheet, alive while it is pending
   const ids = Object.values(logins)
-    .filter((l) => l.connectionId !== exclude && !l.error)
+    .filter((l) => l.connectionId !== exclude && !l.error && !l.attached)
     .map((l) => `${l.connectionId}|${l.provider}|${l.sessionId}`)
     .sort((a, b) => a.localeCompare(b))
     .join(',');

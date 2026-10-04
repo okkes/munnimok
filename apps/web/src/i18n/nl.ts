@@ -2315,6 +2315,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'connect.error.provider_changed': 'De partij heeft zijn site veranderd — munni heeft een update nodig voordat dit weer werkt.',
   'connect.error.provider_unavailable': 'De partij is nu niet bereikbaar — probeer het later opnieuw.',
   'connect.error.rate_limited': 'Te veel pogingen — wacht even en probeer het opnieuw.',
+  'connect.error.custody_unavailable': 'Deze browser bewaart geen aanmelding: sitegegevens zijn geblokkeerd (een privévenster?). Gebruik de munni-app, of sta sitegegevens voor deze site toe en meld je opnieuw aan.',
   'connect.error.agent_unavailable': 'Je eigen computer is niet online — start eerst de thuis-agent.',
   'connect.error.fleet_unavailable': 'De browser-agents van munni zijn offline of bezet voor deze partij — probeer het zo nog eens.',
   'connect.error.agent_revoked': 'Je thuis-agent is verwijderd — koppel opnieuw om hem weer in te stellen.',

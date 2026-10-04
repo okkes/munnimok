@@ -2313,6 +2313,7 @@ export const en = {
   'connect.error.provider_changed': 'The party changed its site — munni needs an update before this works again.',
   'connect.error.provider_unavailable': 'The party cannot be reached right now — try again later.',
   'connect.error.rate_limited': 'Too many attempts — wait a little and try again.',
+  'connect.error.custody_unavailable': 'This browser keeps no sign-in: site data is blocked (a private window?). Use the munni app, or allow site data for this site and sign in again.',
   'connect.error.agent_unavailable': 'Your own computer is not online — start the household agent first.',
   'connect.error.fleet_unavailable': 'munni’s browser agents are offline or busy for this party — try again in a moment.',
   'connect.error.agent_revoked': 'Your household agent was removed — reconnect to set it up again.',
