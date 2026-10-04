@@ -18,7 +18,7 @@ where it departs).
 | `DevKey` | Development transport: the shared secret sent as `X-Connector-Key`. |
 | `M2mAppId`, `M2mAppSecret`, `Audience` | Production transport: a Logto machine-to-machine application minting a client-credentials token for the connector's audience (`Auth:Authority` names the issuer). Required when `DevKey` is empty. The token is minted once and reused until a minute before it expires. |
 | `AgentPublicUrl` | Where a household agent dials in from the outside, as the platform publishes it. Absent, enrollment answers a code with no address and the app says household agents are not offered here. |
-| `LoginsPerHour`, `SyncsPerHour` | Per-user budgets on the two calls that reach a party (defaults 10 and 12), on top of the connector's own per-provider interval. |
+| `LoginsPerHour`, `SyncsPerHour` | Per-user budgets on the two calls that reach a party (defaults 20 and 60 since 5.7.1: four connections syncing on every app open spent twelve within the hour), on top of the connector's own per-provider interval. |
 | `TimeoutSeconds` | One call's ceiling (default 60; a fetch waits at most 25 s at the control plane before it answers 202). |
 
 A configured relay with a setting that cannot be right (a base URL that is

@@ -1,5 +1,6 @@
 import type { StorageBackend } from '@/db/backend';
 import { isNativeApp } from '@/lib/platform';
+import { ConnectorError } from './api';
 
 /**
  * Custody of a connection's credential bundle (docs/connector-integration-plan.md
@@ -23,14 +24,23 @@ function sessionRead(connectionId: string): string | undefined {
   }
 }
 
-function sessionWrite(connectionId: string, bundle: string | null): void {
+/** true when the tab holds the bundle afterwards; false when the browser keeps no site data (a private window, storage blocked) */
+function sessionWrite(connectionId: string, bundle: string | null): boolean {
   try {
-    if (bundle === null) sessionStorage.removeItem(key(connectionId));
-    else sessionStorage.setItem(key(connectionId), bundle);
+    if (bundle === null) {
+      sessionStorage.removeItem(key(connectionId));
+      return true;
+    }
+    sessionStorage.setItem(key(connectionId), bundle);
+    return sessionStorage.getItem(key(connectionId)) === bundle;
   } catch {
-    // nothing to do: the next sync asks for a sign-in
+    return false;
   }
 }
+
+/** prod 2026-10-05: a sign-in that landed and was kept nowhere read as "nothing happened" - now it says why */
+const custodyUnavailable = (): ConnectorError =>
+  new ConnectorError(0, { code: 'custody_unavailable', retriable: false, userAction: 'none', messageKey: 'connect.error.custody_unavailable' });
 
 /** a bundle in the row means device custody, wherever the row was written; the tab's copy otherwise */
 export async function readBundle(store: StorageBackend, connectionId: string): Promise<string | undefined> {
@@ -44,7 +54,7 @@ export async function keepBundle(store: StorageBackend, connectionId: string, bu
   if (!row) return;
   const refreshedAt = new Date().toISOString();
   if (custodyHere() === 'ephemeral') {
-    sessionWrite(connectionId, bundle);
+    if (!sessionWrite(connectionId, bundle)) throw custodyUnavailable();
     await store.connectorConnPut({ ...row, bundle: undefined, refreshedAt });
     return;
   }
