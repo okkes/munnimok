@@ -28,7 +28,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { InstallHint } from '@/features/help/InstallHint';
 import { UpdateCard } from './UpdateCard';
 import { NotificationsBell } from './NotificationsBell';
-import { eventPicture } from '@/features/events/EventsScreen';
+import { eventPicture, eventPictureStyle } from '@/features/events/EventsScreen';
 import { resolveHomeBlocks } from './HomeCustomizeScreen';
 import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
@@ -1154,7 +1154,7 @@ export function HomeScreen() {
           className="m-tap w-full overflow-hidden rounded-card border border-line bg-surface p-0 text-left"
         >
           <span className="relative block h-20 w-full" data-testid="home-events">
-            <img src={eventPicture(featuredEvent)} alt="" loading="lazy" className="h-full w-full object-cover" />
+            <img src={eventPicture(featuredEvent)} alt="" loading="lazy" className="h-full w-full object-cover" style={eventPictureStyle(featuredEvent)} />
             <span className="absolute inset-x-0 bottom-0 flex items-baseline justify-between bg-gradient-to-t from-black/60 to-transparent px-3 pt-4 pb-1.5">
               <span className="truncate text-[14px] font-semibold text-white">{featuredEvent.name}</span>
               <span className="m-num shrink-0 pl-2 text-[13px] font-semibold text-white">{eventNetText(netCents, currency, fmt)}</span>

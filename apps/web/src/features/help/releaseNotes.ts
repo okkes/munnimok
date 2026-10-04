@@ -22,6 +22,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-10-04',
     items: [
       {
+        en: 'When you upload your own picture for an event, you can now drag it to choose which part shows on the card and the event page, instead of always getting the centre.',
+        nl: 'Als je een eigen foto voor een evenement uploadt, kun je die nu slepen om te kiezen welk deel op de kaart en de evenementpagina te zien is, in plaats van altijd het midden.',
+        tr: 'Bir etkinlik için kendi fotoğrafını yüklediğinde artık kartta ve etkinlik sayfasında hangi kısmın görüneceğini seçmek için sürükleyebilirsin; her zaman ortası yerine.',
+      },
+      {
         en: 'Events can receive money now. Attach a reimbursement or a contribution and the event’s figure becomes the net: what it cost you, or — while more came in than went out — the surplus with a plus. The event link is on every transaction’s detail, received money included.',
         nl: 'Evenementen kunnen nu geld ontvangen. Koppel een terugbetaling of een bijdrage en het bedrag van het evenement wordt het netto: wat het je kostte, of — zolang er meer binnenkwam dan uitging — het overschot met een plus. De evenementkoppeling staat op het detail van elke transactie, ontvangen geld inbegrepen.',
         tr: 'Etkinlikler artık para alabilir. Bir geri ödeme veya katkı bağla; etkinliğin rakamı net olur: sana maliyeti ya da — gelen gidenden fazlayken — artı işaretli fazlalık. Etkinlik bağlantısı artık her işlemin detayında, alınan para dahil.',

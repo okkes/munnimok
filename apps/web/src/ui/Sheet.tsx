@@ -351,8 +351,17 @@ interface SheetProps {
  * on the amount input and pulls down still closes the sheet (the library
  * blurs the field when the drag really starts; a plain tap still focuses
  * it). Only the sliders and pickers keep their gesture.
+ *
+ * #446: `data-sheet-own-gesture` is the OTHER answer — "neither of you":
+ * the element binds native pointer listeners and stops the event itself,
+ * so the guard must not stop it first. A stop here happens in the capture
+ * phase at React's root, which never lets the pointer reach the target at
+ * all - the element's own listeners would be dead (the picture frame in
+ * the event form). The color wheel lives the same way, unmarked, because
+ * it never sits inside a scrolled list; the frame can.
  */
 export function gestureBelongsToContent(target: HTMLElement, stopAt: HTMLElement): boolean {
+  if (target.closest('[data-sheet-own-gesture]')) return false;
   if (target.closest('select, input[type="range"], input[type="color"], [contenteditable="true"], [data-sheet-no-drag]')) return true;
   for (let el: HTMLElement | null = target; el && el !== stopAt; el = el.parentElement) {
     if (el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) {

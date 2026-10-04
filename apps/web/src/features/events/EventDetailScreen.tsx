@@ -14,7 +14,7 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
-import { EventFormSheet, eventPicture } from './EventsScreen';
+import { EventFormSheet, eventPicture, eventPictureStyle } from './EventsScreen';
 import { SplitEventSummary } from '@/features/splits/SplitEventSummary';
 import { REIMBURSED_ID } from '@/domain/categories';
 import type { EventRow, TransactionRow, TxSplit } from '@/db/types';
@@ -117,7 +117,7 @@ export function EventDetailScreen() {
         {/* the picture-first hero */}
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="eventdetail-hero">
           <div className="relative h-36 w-full">
-            <img src={eventPicture(event)} alt="" className="h-full w-full object-cover" />
+            <img src={eventPicture(event)} alt="" className="h-full w-full object-cover" style={eventPictureStyle(event)} />
             <span className="absolute right-3 bottom-2 rounded-lg bg-black/45 px-2.5 py-1 backdrop-blur-sm">
               <span className="m-num text-[20px] font-semibold text-white" data-testid="eventdetail-total">
                 {eventNetText(view.totals.netCents, currency, fmt)}
