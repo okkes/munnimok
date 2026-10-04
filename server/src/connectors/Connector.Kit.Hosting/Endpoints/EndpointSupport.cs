@@ -120,6 +120,10 @@ public static class RequestContext
     /// Absent means a person - the historical default, and the one that is
     /// never throttled by a provider's sync interval.
     /// </summary>
+    /// <summary>The trigger as a job row records it: <see cref="JobRow.ScheduleTrigger"/> or <see cref="JobRow.UserTrigger"/>.</summary>
+    public static string TriggerNameOf(HttpContext http) =>
+        TriggerOf(http) == FetchTrigger.Schedule ? JobRow.ScheduleTrigger : JobRow.UserTrigger;
+
     public static FetchTrigger TriggerOf(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);

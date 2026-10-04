@@ -42,8 +42,15 @@ public sealed class SyncInterval(ConnectorDbContext db, TimeProvider time)
         var now = time.GetUtcNow();
         var since = now.AddSeconds(-interval);
 
+        // Between SCHEDULED jobs only. A person pressing Sync now, or the app
+        // syncing on open, is attended traffic the party's unattended quota
+        // (four a day under PSD2) does not count - and counting it here made the
+        // app's own syncs refuse the nightly scheduled one as rate_limited,
+        // which the hub then read as "the party asked for a pause" (prod,
+        // 2026-10-04).
         var last = await db.Jobs
             .Where(j => j.ProviderId == manifest.Id && j.Kind == kind && j.State == JobState.Succeeded && j.UpdatedAt > since)
+            .Where(j => j.Trigger == JobRow.ScheduleTrigger)
             .Where(j => resourceId == null || j.ResourceId == resourceId)
             .Join(db.Sessions.Where(s => s.Subject == subject), j => j.SessionId, s => s.Id, (j, _) => (DateTimeOffset?)j.UpdatedAt)
             .MaxAsync(ct);

@@ -228,7 +228,8 @@ internal static class LoginEndpoints
         if (idempotencyKey is not null) idempotency.Remember(idempotencyScope, idempotencyKey, session.Id);
 
         await StartLoginJobAsync(
-            sessions, queue, inline, session, manifest, inputs, request.Config, profileId, fleetRequested, ct);
+            sessions, queue, inline, session, manifest, inputs, request.Config, profileId, fleetRequested,
+            RequestContext.TriggerNameOf(http), ct);
 
         // A short wait, not a long one. An HTTP-tier provider usually
         // finishes inside it and the caller gets its bundle in one round
@@ -292,6 +293,7 @@ internal static class LoginEndpoints
         IReadOnlyDictionary<string, string> config,
         string? profileId,
         bool fleetRequested,
+        string trigger,
         CancellationToken ct)
     {
         // RUNNING BEFORE THE JOB EXISTS, and the order is the whole point.
@@ -319,6 +321,7 @@ internal static class LoginEndpoints
             Config = config,
             ProfileId = profileId,
             FleetOnly = fleetRequested,
+            Trigger = trigger,
         }, ct);
 
         if (inline.CanRun(manifest)) inline.Dispatch();

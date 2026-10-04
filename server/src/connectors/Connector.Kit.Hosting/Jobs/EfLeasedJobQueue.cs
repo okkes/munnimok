@@ -82,6 +82,7 @@ public sealed class EfLeasedJobQueue(
             MaterialJson = job.Material is null ? null : ConnectorJson.Serialize(job.Material),
             ProfileId = job.ProfileId,
             FleetOnly = job.FleetOnly,
+            Trigger = job.Trigger,
             CreatedAt = now,
             UpdatedAt = now,
         };

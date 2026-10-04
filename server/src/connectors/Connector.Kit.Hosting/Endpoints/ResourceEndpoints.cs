@@ -227,6 +227,7 @@ public sealed class FetchRunner(
             // A fetch that forgot the second would land back on the NAS the
             // login was deliberately kept off.
             FleetOnly = session.FleetOnly,
+            Trigger = RequestContext.TriggerNameOf(http),
         }, ct);
 
         if (inline.CanRun(manifest)) inline.Dispatch();

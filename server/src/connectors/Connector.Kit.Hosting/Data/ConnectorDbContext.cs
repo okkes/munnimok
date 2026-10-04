@@ -311,6 +311,7 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.State).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.Step).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.Trigger).HasMaxLength(16);
             e.Property(x => x.ErrorCode).HasConversion<string>().HasMaxLength(32);
             // The leasing query filters on exactly this pair, and a lease
             // that scans the table is a lease that loses races.
