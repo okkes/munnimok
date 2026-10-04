@@ -44,7 +44,7 @@ describe('ImageFocusFrame (#446: drag the picture to choose what shows)', () => 
     fireEvent.pointerMove(frame, { pointerId: 2, clientX: 150, clientY: 50 });
     fireEvent.pointerUp(frame, { pointerId: 1 });
     fireEvent.pointerMove(frame, { pointerId: 1, clientX: 150, clientY: 50 });
-    expect(onFocus.mock.calls.length).toBe(calls);
+    expect(onFocus.mock.calls).toHaveLength(calls);
   });
 
   it('before the picture has loaded there is nothing to measure, so a drag changes nothing', () => {

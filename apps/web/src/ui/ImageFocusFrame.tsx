@@ -65,7 +65,7 @@ export function ImageFocusFrame({
     };
     const move = (e: PointerEvent) => {
       const natural = naturalRef.current;
-      if (!drag || drag.pointerId !== e.pointerId || !natural) return;
+      if (drag?.pointerId !== e.pointerId || !natural) return;
       e.stopPropagation();
       const rect = el.getBoundingClientRect();
       const next = panFocus(drag.start, e.clientX - drag.x, e.clientY - drag.y, coverOverflow(natural, { width: rect.width, height: rect.height }));
