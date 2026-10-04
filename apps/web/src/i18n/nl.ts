@@ -2035,7 +2035,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.events.2t': 'Maak er een',
   'tour.events.2b': 'Kies een passende foto, geef het een naam, een periode, optioneel een inschatting en een notitie.',
   'tour.events.3t': 'Koppel je keuze',
-  'tour.events.3b': 'In een evenement staat alles uit de periode klaar ter beoordeling — vink aan wat erbij hoort en koppel in één keer. Losse transacties koppel je vanuit hun eigen detail.',
+  'tour.events.3b': 'In een evenement staat alles wat in de periode bewoog — ontvangen geld inbegrepen — klaar ter beoordeling: vink aan wat erbij hoort en koppel in één keer. Losse transacties koppel je vanuit hun eigen detail.',
   'tour.goals.1t': 'Geef je spaargeld een doel',
   'tour.goals.1b': 'Doelen verdelen je spaarsaldo in taken. Onverdeeld is wat overblijft — dat kan negatief worden, en dan is herverdelen aan jou.',
   'tour.goals.2t': 'Maak er een',

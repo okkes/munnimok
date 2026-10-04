@@ -22,6 +22,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-10-04',
     items: [
       {
+        en: 'An event now offers the money you received in its date range too (a reimbursement, a contribution), not only what you spent. Transfers between your own accounts stay out.',
+        nl: 'Een evenement biedt nu ook het geld aan dat je in de periode ontving (een terugbetaling, een bijdrage), niet alleen wat je uitgaf. Overboekingen tussen je eigen rekeningen blijven erbuiten.',
+        tr: 'Bir etkinlik artık tarih aralığında aldığın parayı da (bir geri ödeme, bir katkı) öneriyor; yalnızca harcadıklarını değil. Kendi hesapların arasındaki aktarımlar dışarıda kalır.',
+      },
+      {
         en: 'Creating or editing a space: once a picture is set, the symbol and color pickers now look asleep (faded, grey) instead of only refusing taps.',
         nl: 'Een ruimte maken of bewerken: zodra er een foto is ingesteld, zien de symbool- en kleurkiezers er nu uit alsof ze slapen (vervaagd, grijs) in plaats van alleen tikken te weigeren.',
         tr: 'Alan oluştururken veya düzenlerken: bir fotoğraf ayarlandığında simge ve renk seçiciler artık yalnızca dokunmayı reddetmek yerine uykuda görünür (soluk, gri).',

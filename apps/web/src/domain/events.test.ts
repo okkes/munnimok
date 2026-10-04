@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, GoalRow, TxView } from '@/db/types';
-import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from './events';
+import { eventCategoryBreakdown, eventNetText, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, isEventMoney, suggestableTxs } from './events';
 import { goalOverview, goalProgress, paceCentsPerMonth, savingsTotalCents } from './goals';
 
 const tx = (partial: Partial<TxView>): TxView =>
@@ -78,6 +78,24 @@ describe('events math', () => {
     const attached = tx({ date: '2026-07-03', eventId: 'other' });
     const outside = tx({ date: '2026-08-01' });
     expect(suggestableTxs([inside, attached, outside], 'e1', '2026-07-01', '2026-07-07')).toEqual([inside]);
+  });
+
+  it('#447 (user): money received in the range is offered too; own-account movements never are', () => {
+    const received = tx({ date: '2026-07-03', amountCents: 20_000, txType: 'income' });
+    const funded = tx({ date: '2026-07-04', amountCents: 5_000, txType: 'funding' });
+    const toSavings = tx({ date: '2026-07-04', amountCents: -40_000, txType: 'saving' });
+    const transfer = tx({ date: '2026-07-05', amountCents: -10_000, txType: 'transfer' });
+    const correction = tx({ date: '2026-07-05', amountCents: 300, txType: 'adjustment' });
+    expect(suggestableTxs([received, funded, toSavings, transfer, correction], 'e1', '2026-07-01', '2026-07-07')).toEqual([received, funded]);
+    expect(['expense', 'income', 'funding'].every((type) => isEventMoney(type as never))).toBe(true);
+    expect(['transfer', 'saving', 'investment', 'debtPayment', 'adjustment'].some((type) => isEventMoney(type as never))).toBe(false);
+  });
+
+  it('#448: the headline is the cost, or the surplus with a plus', () => {
+    const fmt = (cents: number, _currency: string, opts?: { sign?: boolean }) => `${opts?.sign && cents > 0 ? '+' : ''}${(cents / 100).toFixed(2)}`;
+    expect(eventNetText(12_345, 'EUR', fmt)).toBe('123.45');
+    expect(eventNetText(0, 'EUR', fmt)).toBe('0.00');
+    expect(eventNetText(-20_000, 'EUR', fmt)).toBe('+200.00');
   });
 });
 

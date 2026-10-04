@@ -2033,7 +2033,7 @@ export const en = {
   'tour.events.2t': 'Create one',
   'tour.events.2b': 'Pick a picture that fits, name it, give it a date range, an optional estimation and a note.',
   'tour.events.3t': 'Attach your picks',
-  'tour.events.3b': 'Inside an event, everything spent in its date range lines up for review — tick what belongs and attach in one go. Single transactions link from their own detail.',
+  'tour.events.3b': 'Inside an event, everything that moved in its date range — money received included — lines up for review: tick what belongs and attach in one go. Single transactions link from their own detail.',
   'tour.goals.1t': 'Give your savings a purpose',
   'tour.goals.1b': 'Goals split your savings balance into jobs. Unallocated is what’s left — it can go negative, and that’s your signal to rebalance.',
   'tour.goals.2t': 'Create one',

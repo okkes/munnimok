@@ -176,6 +176,25 @@ describe('Events (demo identity)', () => {
     db.close();
   }, 45_000);
 
+  it('#447 (user): money received inside the range is offered too — only the person’s own movements stay out', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Graduation', isoDaysAgo(180), isoDaysAgo(160));
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    // the demo salary (dm1, +€2,200) falls in the range: it is a pick now
+    await screen.findByTestId('eventpick-dm1');
+    // the savings transfer (dm12) is the person’s own money moving — never event money
+    expect(screen.queryByTestId('eventpick-dm12')).toBeNull();
+    // the button sums the picks the way the event will show them: the
+    // salary alone is a surplus, so it wears a plus
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
+    fireEvent.click(screen.getByTestId('eventpick-all')); // a full pick clears
+    fireEvent.click(screen.getByTestId('eventpick-dm1'));
+    await waitFor(() => expect(screen.getByTestId('eventpick-attach').textContent).toMatch(/[+]€2[.,]200/));
+  }, 20_000);
+
   it('#144: select/deselect-all sweep the whole pick list in one tap', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');

@@ -2035,7 +2035,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.events.2t': 'Bir tane oluştur',
   'tour.events.2b': 'Uyan bir fotoğraf seç, ad ver, tarih aralığı belirle; istersen bir tahmin ve not ekle.',
   'tour.events.3t': 'Seçtiklerini bağla',
-  'tour.events.3b': 'Etkinliğin içinde, aralıktaki her harcama incelemen için sıralanır — ait olanları işaretle ve tek seferde bağla. Tek işlemler kendi detayından bağlanır.',
+  'tour.events.3b': 'Etkinliğin içinde, aralıkta hareket eden her şey — alınan para dahil — incelemen için sıralanır: ait olanları işaretle ve tek seferde bağla. Tek işlemler kendi detayından bağlanır.',
   'tour.goals.1t': 'Birikimine bir amaç ver',
   'tour.goals.1b': 'Hedefler birikim bakiyeni görevlere böler. Boşta kalan negatife düşebilir — o zaman dengeyi sen kurarsın.',
   'tour.goals.2t': 'Bir tane oluştur',
