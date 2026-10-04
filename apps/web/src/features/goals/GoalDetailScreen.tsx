@@ -5,7 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useGoalOps, useGoals } from '@/application/goals';
 import { localToday } from '@/application/recurring';
-import { goalOverview, goalProgress, paceCentsPerMonth } from '@/domain/goals';
+import { goalOverview, goalProgress, paceCentsPerPeriod, periodUnitKey, periodsLeft } from '@/domain/goals';
 import { useSpaceAccounts } from '@/application/transactions';
 import type { GoalRow } from '@/db/types';
 import { parseCents } from '@/lib/money';
@@ -54,7 +54,9 @@ export function GoalDetailScreen() {
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmt(cents, currency);
   const progress = goalProgress(goal);
-  const pace = paceCentsPerMonth(goal, localToday());
+  // the pace counts the space's own periods, and says how many (user 2026-10-04)
+  const pace = paceCentsPerPeriod(goal, space, localToday());
+  const periods = periodsLeft(space, goal.targetDate, localToday());
   const reached = goal.allocatedCents >= goal.targetCents;
 
   const fundCents = parseCents(amount);
@@ -77,14 +79,18 @@ export function GoalDetailScreen() {
 
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
-  let paceLine = t('goals.toGo', { amount: money(goal.targetCents - goal.allocatedCents) });
+  // #449 (user): the amount still to add, on the page itself - the bar alone said nothing
+  const toGoLine = t('goals.toGo', { amount: money(goal.targetCents - goal.allocatedCents) });
+  let paceLine: string | null = null;
   if (reached) {
     paceLine = t('goals.reached');
-  } else if (pace !== null && goal.targetDate) {
-    paceLine = t('goals.paceLong', {
-      amount: money(pace),
-      date: new Date(goal.targetDate).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' }),
-    });
+  } else if (pace !== null && periods !== null && goal.targetDate) {
+    const unit = t(periodUnitKey(space?.periodType));
+    const date = new Date(goal.targetDate).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' });
+    paceLine =
+      periods > 1
+        ? t('goals.paceLong', { amount: money(pace), unit, n: periods, date })
+        : t('goals.paceLongOnce', { amount: money(pace), unit, date });
   }
 
   return (
@@ -116,7 +122,12 @@ export function GoalDetailScreen() {
           sub={t('budgets.of', { amount: money(goal.targetCents) })}
           right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
           progress={<ProgressBar value={progress} />}
-          meta={<span data-testid="goaldetail-pace">{paceLine}</span>}
+          meta={
+            <span className="flex flex-col">
+              {!reached && <span data-testid="goaldetail-togo">{toGoLine}</span>}
+              {paceLine && <span data-testid="goaldetail-pace">{paceLine}</span>}
+            </span>
+          }
         />
 
         <div className="mt-3 flex gap-2">

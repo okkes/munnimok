@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, GoalRow, TxView } from '@/db/types';
 import { eventCategoryBreakdown, eventNetText, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, eventTotals, isEventMoney, suggestableTxs } from './events';
-import { goalOverview, goalProgress, paceCentsPerMonth, savingsTotalCents } from './goals';
+import { goalOverview, goalProgress, paceCentsPerPeriod, savingsTotalCents } from './goals';
 
 const tx = (partial: Partial<TxView>): TxView =>
   ({
@@ -132,11 +132,12 @@ describe('goals math', () => {
     expect(overview.unallocatedCents).toBe(-20_000);
   });
 
-  it('pace divides the gap over the months left', () => {
+  it('pace divides the gap over the periods left, this one included (user 2026-10-04)', () => {
+    const monthly = { periodType: 'month' as const, periodDay: 1 };
     const g = goal({ allocatedCents: 40_000, targetDate: '2027-01-15' });
-    expect(paceCentsPerMonth(g, '2026-07-09')).toBe(10_000); // 60k over 6 months
-    expect(paceCentsPerMonth(goal({ allocatedCents: 100_000, targetDate: '2027-01-15' }), '2026-07-09')).toBe(0);
-    expect(paceCentsPerMonth(goal({}), '2026-07-09')).toBeNull();
+    expect(paceCentsPerPeriod(g, monthly, '2026-07-09')).toBe(8572); // 60k over seven months, July's included
+    expect(paceCentsPerPeriod(goal({ allocatedCents: 100_000, targetDate: '2027-01-15' }), monthly, '2026-07-09')).toBe(0);
+    expect(paceCentsPerPeriod(goal({}), monthly, '2026-07-09')).toBeNull();
     expect(goalProgress(goal({ allocatedCents: 25_000 }))).toBeCloseTo(0.25);
   });
 });

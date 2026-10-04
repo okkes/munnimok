@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AccountRow } from '@/db/types';
-import { goalOverview, monthsLeft, poolAccounts, savingsTotalCents } from './goals';
+import type { AccountRow, GoalRow } from '@/db/types';
+import { goalOverview, monthsLeft, paceCentsPerPeriod, periodUnitKey, periodsLeft, poolAccounts, savingsTotalCents } from './goals';
 
 const account = (partial: Partial<AccountRow>): AccountRow =>
   ({
@@ -43,6 +43,32 @@ describe('#368: the savings pool behind the goals', () => {
 
   it('months left only needs the target date', () => {
     expect(monthsLeft({ targetDate: '2026-12-01' }, '2026-09-29')).toBe(3);
+  });
+
+  it('user 2026-10-04: the pace counts the space’s periods, this one and the one holding the deadline both', () => {
+    const monthly = { periodType: 'month' as const, periodDay: 1 };
+    // a deadline next month: this month and the next - two halves, not the lot at once
+    expect(periodsLeft(monthly, '2026-11-15', '2026-10-04')).toBe(2);
+    expect(periodsLeft(monthly, '2026-10-20', '2026-10-04')).toBe(1);
+    expect(periodsLeft(monthly, '2027-01-02', '2026-10-04')).toBe(4);
+    // a space that counts from the 25th: 4 October sits in the period that started 25 September
+    const fromThe25th = { periodType: 'month' as const, periodDay: 25 };
+    expect(periodsLeft(fromThe25th, '2026-11-01', '2026-10-04')).toBe(2);
+    expect(periodsLeft(fromThe25th, '2026-10-20', '2026-10-04')).toBe(1);
+    // weekly from Monday: 4 October is a Sunday, the deadline three Mondays on
+    expect(periodsLeft({ periodType: 'week', periodDay: 1 }, '2026-10-20', '2026-10-04')).toBe(4);
+    // the space not loaded yet reads as monthly from the 1st; undated is undated
+    expect(periodsLeft(undefined, '2026-11-15', '2026-10-04')).toBe(2);
+    expect(periodsLeft(monthly, undefined, '2026-10-04')).toBeNull();
+
+    const goal = (over: Partial<GoalRow>): GoalRow => ({ id: 'g', spaceId: 's1', name: 'g', targetCents: 100_000, allocatedCents: 0, deleted: 0, fieldVersions: {}, ...over }) as GoalRow;
+    expect(paceCentsPerPeriod(goal({ targetDate: '2026-11-15' }), monthly, '2026-10-04')).toBe(50_000);
+    expect(paceCentsPerPeriod(goal({ targetDate: '2026-11-15', allocatedCents: 100_000 }), monthly, '2026-10-04')).toBe(0);
+    expect(paceCentsPerPeriod(goal({}), monthly, '2026-10-04')).toBeNull();
+    expect(periodUnitKey('week')).toBe('goals.unitWeek');
+    expect(periodUnitKey('biweekly')).toBe('goals.unitBiweekly');
+    expect(periodUnitKey('custom')).toBe('goals.unitPeriod');
+    expect(periodUnitKey(undefined)).toBe('goals.unitMonth');
     expect(monthsLeft({}, '2026-09-29')).toBeNull();
   });
 });

@@ -54,6 +54,32 @@ describe('Goals (demo identity)', () => {
     expect(screen.queryByTestId('goals-negative-note')).toBeNull();
   }, 15_000);
 
+  it('#449 + user 2026-10-04: the card says what is left and the pace per period; the page says how many times', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    fireEvent.click(await screen.findByTestId('goals-add'));
+    await screen.findByTestId('goalform-name');
+    fireEvent.change(screen.getByTestId('goalform-name'), { target: { value: 'England' } });
+    fireEvent.change(screen.getByTestId('goalform-target'), { target: { value: '1000' } });
+    // the demo space counts monthly from the 1st: a date next month is two
+    // periods away - this one and the next - so the thousand splits in two
+    const next = new Date();
+    next.setMonth(next.getMonth() + 1, 15);
+    fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: next.toISOString().slice(0, 10) } });
+    fireEvent.click(screen.getByTestId('goalform-save'));
+    const card = await waitFor(() => {
+      const found = document.querySelector('[data-testid^="goal-card-"]');
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
+    });
+    expect(card.textContent).toMatch(/€1,000[.,]00 to go/);
+    expect(card.textContent).toMatch(/€500[.,]00 \u002f month/);
+
+    fireEvent.click(card);
+    expect((await screen.findByTestId('goaldetail-togo')).textContent).toMatch(/€1,000[.,]00 to go/);
+    expect(screen.getByTestId('goaldetail-pace').textContent).toMatch(/€500[.,]00 per month, 2 more times/);
+  }, 15_000);
+
   it('funding and withdrawing move the allocation and write history', async () => {
     renderApp('/goals');
     await screen.findByTestId('screen-goals');
