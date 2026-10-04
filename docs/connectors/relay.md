@@ -81,7 +81,7 @@ An unconfigured one is simply absent — never a stand-in.
 | `POST /connectors/{provider}/sync` | `{ connectionId, bundle, since? }` → resume, fetch every resource the manifest declares, ingest, acknowledge; 200 `{ sessionId, state, ingested, complete, session? }` — `complete` is false when the party holds more history than one pass fetches (the adapters walk newest first and cap themselves; the relay runs a resource once per sync) — `session.bundle` only when the provider rotated it, and then the app persists it; 202 `{ jobId, … }` when a fetch outran its window or stopped for a question |
 | `GET …/jobs/{jobId}` | the job's view, without its page of records |
 | `POST …/jobs/{jobId}/answer` | `{ challengeId, value }` |
-| `POST …/jobs/{jobId}/collect` | `{ bundle }` once the job succeeded: ingests its page, acknowledges it, hands back the rotated bundle; 202 with the view while it runs |
+| `POST …/jobs/{jobId}/collect` | `{ bundle, since? }` once the job succeeded: ingests its page, acknowledges it, then walks on to the resources after the job's — each pass may become a job of its own, answered as 202 with THAT job's view, to follow and collect in turn; 200 with the view, `ingested` (the walk's total) and `complete` once the walk is done; 202 with the job's own view while it still runs. The walk used to end at the collect (2026-10-04: a bank's accounts pass outran its window and the transactions were never asked for) |
 | `DELETE /connectors/{provider}/sessions/{sessionId}` | `{ bundle? }` → `{ loggedOut, jobId?, reason? }`; the binding row is removed. Reaches the control plane row or no row: a caller must always be able to remove a connection |
 | `GET /connectors/private-agents/mine`, `POST /connectors/private-agents/requests`, `DELETE …/requests/{requestId}`, `DELETE /connectors/private-agents/mine` | hosted private agents (#420 A2): the caller's standing `{ offered, free, request?, agent? }` — whether the environment hosts any slot, how many are free, their latest request (`pending`, `approved`, `denied`, `withdrawn`, `released`), the slot bound to them; a request (asking twice is one request; refused where no slot exists or one is already theirs); withdrawing a pending request; giving the slot back (it wipes its profiles before the next person). `DELETE /connectors/agents/{agentId}` on a hosted agent gives it back too — munni's container is never revoked by a user |
 | `GET /connectors/agents`, `POST /connectors/agents/enrollment`, `DELETE /connectors/agents/{agentId}`, `GET …/{agentId}/profiles` | the caller's household agents; enrollment answers `{ code, expiresAt, controlPlaneUrl, composeCommand }` — the one line beside `deploy/connectors/household-agent.yml` |
@@ -110,7 +110,8 @@ them the way the api's own open-banking service once did:
   phones of the spaces the accounts are attached to (push), a person's own
   sync needs no push;
 - a fetch that became a job is followed for ten minutes and collected
-  with the kept bundle; a job that asks a question leaves the session
+  with the kept bundle (and the next job the collect answers with, and
+  the next, until the walk is done); a job that asks a question leaves the session
   `awaiting_input` — the app's card says so and *Sync now* answers it;
 - a refusal the person must act on (`session_expired`,
   `invalid_credentials`, `mfa_failed`, `consent_expired`,

@@ -9,8 +9,15 @@ namespace Munni.Api.Connectors;
 /// <summary>One sync of a connection (docs/connector-integration-plan.md §5.2): the bundle the client holds, and how far back to look.</summary>
 public sealed record ConnectorSyncRequest(string ConnectionId, string Bundle, string? Since = null);
 
-/// <summary>Following a fetch that did not finish inside the connector's window: the newest bundle the client holds.</summary>
-public sealed record ConnectorCollectRequest(string Bundle);
+/// <summary>
+/// Following a fetch that did not finish inside the connector's window: the
+/// newest bundle the client holds, and the <c>since</c> the sync asked with,
+/// for the resources the walk goes on to after the job's.
+/// </summary>
+public sealed record ConnectorCollectRequest(string Bundle, string? Since = null);
+
+/// <summary>What a collect runs as: the app's request, who asked (<c>user</c> or <c>schedule</c>) and the device class the walk's fetches ride on.</summary>
+public sealed record ConnectorCollectCall(ConnectorCollectRequest Request, string Trigger = "user", string DeviceClass = "native");
 
 /// <summary>What a relay operation answers: a status and the body the app reads.</summary>
 public sealed record ConnectorOutcome(int Status, JsonObject Body);
@@ -44,6 +51,8 @@ public sealed class ConnectorSyncService(
 
     private const string SessionField = "session";
     private const string ResourceField = "resource";
+    private const string CompleteField = "complete";
+    private const string NoTicket = "resume answered without a ticket";
 
     private static readonly HashSet<string> SettledJobStates = new(StringComparer.Ordinal) { "succeeded", "failed", "expired" };
 
@@ -58,7 +67,7 @@ public sealed class ConnectorSyncService(
         var run = new SyncRun(userId, subject, provider, request, deviceClass, manifest)
         {
             SessionId = resumed.Text(ConnectorRelayEndpoints.SessionIdField) ?? throw new InvalidOperationException("resume answered without a session id"),
-            Ticket = resumed.Text("ticket") ?? throw new InvalidOperationException("resume answered without a ticket"),
+            Ticket = resumed.Text("ticket") ?? throw new InvalidOperationException(NoTicket),
             Trigger = trigger,
         };
         var row = await ConnectorRelayEndpoints.BindAsync(relay.Db, userId, provider, request.ConnectionId, resumed, relay.Time, ct);
@@ -85,7 +94,7 @@ public sealed class ConnectorSyncService(
             ["ingested"] = Counts(run.Landed),
             // false when a party holds more history than one pass fetches: the
             // app says so instead of presenting the newest rows as the lot
-            ["complete"] = !run.Partial,
+            [CompleteField] = !run.Partial,
         };
         if (run.Rotated) body[SessionField] = Session(run.Bundle);
         return new ConnectorOutcome(StatusCodes.Status200OK, body);
@@ -119,7 +128,7 @@ public sealed class ConnectorSyncService(
 
         var page = fetch.Object;
         await LandPageAsync(run, resourceId, shape, page, ct);
-        if (page["complete"]?.GetValue<bool>() == false)
+        if (page[CompleteField]?.GetValue<bool>() == false)
         {
             run.Partial = true;
             return null;
@@ -196,12 +205,15 @@ public sealed class ConnectorSyncService(
 
     /// <summary>
     /// Finishes a job the app followed to its end: ingests its page, resumes
-    /// with the bundle the app holds to acknowledge it, and hands back the
-    /// bundle the connector rotated, if it did. A job that is not finished
-    /// yet answers 202 with its view; a job that failed answers with its error.
+    /// with the bundle the app holds to acknowledge it, walks on to the
+    /// resources after the one the job fetched, and hands back the bundle
+    /// the connector rotated, if it did. A job that is not finished yet
+    /// answers 202 with its view; a job that failed answers with its error;
+    /// a pass further down the walk that became a job of its own answers
+    /// 202 with THAT job's view, for the caller to follow and collect in turn.
     /// </summary>
     public async Task<ConnectorOutcome> CollectAsync(
-        Guid userId, string subject, string provider, string jobId, ConnectorCollectRequest request, CancellationToken ct, string trigger = "user")
+        Guid userId, string subject, string provider, string jobId, ConnectorCollectCall call, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync($"v1/{provider}/jobs/{jobId}", new ConnectorCall { Subject = subject }, ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
@@ -221,34 +233,95 @@ public sealed class ConnectorSyncService(
         var sessionId = job.Text(ConnectorRelayEndpoints.SessionIdField) ?? throw new InvalidOperationException("a job without a session");
         var row = await relay.Db.ConnectorSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId, ct);
         var manifest = await catalogue.ProviderAsync(relay.Client, provider, ct);
+        var landed = await LandJobAsync(userId, provider, manifest, row, job, sessionId, ct);
+
+        // the bundle the job itself rotated wins over the one the app sent
+        var rotated = job[SessionField] is JsonObject;
+        var bundle = (job[SessionField] as JsonObject)?.Text("bundle") ?? call.Request.Bundle;
+        var ticket = await AckJobAsync(subject, provider, job, bundle, ct);
+
+        // The job was ONE resource's pass; the walk goes on from the resource
+        // after it. Prod, 2026-10-04: a bank's accounts pass took a second
+        // longer than its window and became a job, the app collected it, and
+        // the transactions were never asked for - the balance moved, the list
+        // did not, sync after sync. Each pass after it may become a job of its
+        // own: the app (or the scheduler) follows that one and collects again,
+        // and the walk goes on from there.
+        var run = new SyncRun(
+            userId, subject, provider, new ConnectorSyncRequest(row?.ConnectionId ?? sessionId, bundle, call.Request.Since), call.DeviceClass, manifest ?? new JsonObject())
+        {
+            SessionId = sessionId,
+            Ticket = ticket,
+            Trigger = call.Trigger,
+            Landed = landed?.Counts ?? ConnectorIngestCounts.None,
+            Partial = job[CompleteField]?.GetValue<bool>() == false,
+            Rotated = rotated,
+        };
+        if (landed is not null) run.Attached.UnionWith(landed.Attached);
+
+        var pending = await WalkOnAsync(run, row, job.Text(ResourceField), ct);
+        return pending ?? await FinishAsync(run, row, view, ct);
+    }
+
+    /// <summary>The job's page landed, and the pending mirror settled when the page was a complete pass over the transactions (§15).</summary>
+    private async Task<ConnectorIngestResult?> LandJobAsync(
+        Guid userId, string provider, JsonObject? manifest, ConnectorSession? row, JsonObject job, string sessionId, CancellationToken ct)
+    {
         var landed = await LandJobPageAsync(userId, provider, manifest, row, job, sessionId, ct);
-        var counts = landed?.Counts ?? ConnectorIngestCounts.None;
         if (landed is not null && job.Text("cursor") is null && ShapeOf(manifest, job) == "transaction")
         {
             await ingest.SettlePendingAsync(userId, provider, row?.ConnectionId ?? sessionId, landed.PendingRows, ct);
         }
-        await NotifyAsync(trigger, landed?.Attached ?? Enumerable.Empty<string>(), counts.Transactions, ct);
+        return landed;
+    }
 
-        // the bundle the job itself rotated wins over the one the app sent
-        var rotated = job[SessionField] is JsonObject;
-        var bundle = (job[SessionField] as JsonObject)?.Text("bundle") ?? request.Bundle;
+    /// <summary>Resumes with the bundle in hand and acknowledges the job's page; the ticket the walk goes on with.</summary>
+    private async Task<string> AckJobAsync(string subject, string provider, JsonObject job, string bundle, CancellationToken ct)
+    {
+        var resumed = await ResumeAsync(subject, provider, bundle, ct);
+        var ticket = resumed.Text("ticket") ?? throw new InvalidOperationException(NoTicket);
         if (job.Text(ResourceField) is { } resourceId && job.Text("cursor") is { } cursor)
         {
-            var resumed = await ResumeAsync(subject, provider, bundle, ct);
-            var ticket = resumed.Text("ticket") ?? throw new InvalidOperationException("resume answered without a ticket");
             await AckAsync(subject, provider, resourceId, ticket, cursor, ct);
         }
+        return ticket;
+    }
 
+    /// <summary>The walk, on from the resource the job fetched: null once every pass after it landed; the 202 of the first pass that became a job of its own.</summary>
+    private async Task<ConnectorOutcome?> WalkOnAsync(SyncRun run, ConnectorSession? row, string? resourceId, CancellationToken ct)
+    {
+        if (resourceId is null) return null;
+        foreach (var resource in Resources(run.Manifest).SkipWhile(r => r.Text("id") != resourceId).Skip(1))
+        {
+            var pending = await FetchResourceAsync(run, resource, ct);
+            if (pending is null) continue;
+            // a kept bundle follows a rotation even while the walk is still out
+            if (row?.KeptBundle is not null && run.Rotated)
+            {
+                row.KeptBundle = run.Bundle;
+                await relay.Db.SaveChangesAsync(ct);
+            }
+            return pending;
+        }
+        return null;
+    }
+
+    /// <summary>The walk is done: the session active again, the spaces woken, a scheduled run's push sent, the view carrying the walk's totals.</summary>
+    private async Task<ConnectorOutcome> FinishAsync(SyncRun run, ConnectorSession? row, JsonObject view, CancellationToken ct)
+    {
         if (row is not null)
         {
             row.State = "active";
             row.LastSeenAt = relay.Time.GetUtcNow();
-            if (row.KeptBundle is not null) row.KeptBundle = bundle;
+            if (row.KeptBundle is not null) row.KeptBundle = run.Bundle;
             await relay.Db.SaveChangesAsync(ct);
         }
+        Wake(run.Touched);
+        await NotifyAsync(run.Trigger, run.Attached, run.Landed.Transactions, ct);
 
-        view["ingested"] = Counts(counts);
-        if (rotated) view[SessionField] = Session(bundle);
+        view["ingested"] = Counts(run.Landed);
+        view[CompleteField] = !run.Partial;
+        if (run.Rotated) view[SessionField] = Session(run.Bundle);
         return new ConnectorOutcome(StatusCodes.Status200OK, view);
     }
 

@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.6.1',
+    date: '2026-10-04',
+    items: [
+      {
+        en: 'Bank syncs bring your transactions again. Since 5.5.0 a sync whose account check took a few seconds longer than usual stopped right after it, so the balance moved but the list did not.',
+        nl: 'Banksynchronisaties halen je transacties weer op. Sinds 5.5.0 stopte een synchronisatie waarvan de rekeningcontrole een paar seconden langer duurde dan gebruikelijk direct daarna, zodat het saldo wel bewoog maar de lijst niet.',
+        tr: 'Banka eşitlemeleri işlemlerini yeniden getiriyor. 5.5.0’dan beri hesap kontrolü her zamankinden birkaç saniye uzun süren bir eşitleme hemen ardından duruyordu; bakiye değişiyor ama liste değişmiyordu.',
+      },
+    ],
+  },
+  {
     version: '5.6.0',
     date: '2026-10-04',
     items: [
