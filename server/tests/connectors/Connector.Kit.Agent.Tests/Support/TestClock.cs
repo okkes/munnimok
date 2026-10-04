@@ -37,6 +37,12 @@ internal sealed class TestClock : TimeProvider
     /// </summary>
     public static readonly TimeSpan Step = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// The real time <see cref="RunUntilAsync"/> waits after each step, for
+    /// the code under test to reach its next wait. See the remarks.
+    /// </summary>
+    private static readonly TimeSpan StepPause = TimeSpan.FromMilliseconds(5);
+
     private readonly Lock _gate = new();
     private readonly List<Waiter> _waiting = [];
 
@@ -109,8 +115,16 @@ internal sealed class TestClock : TimeProvider
     /// wait only after the last one fired, and on a thread of its own: a single
     /// jump to the end would fire one timer and leave the rest unarmed. The
     /// short REAL pause between steps is what lets that thread get as far as
-    /// its next wait; a whole test of these costs a few hundred milliseconds of
-    /// wall clock for minutes of agent time.
+    /// its next wait; a whole test of these costs about a second of wall clock
+    /// for minutes of agent time.
+    /// <para>
+    /// Five milliseconds a step, not two: every real millisecond a continuation
+    /// lags is a fraction of a virtual second here, and at two the keepalive
+    /// bound - ten virtual seconds - was twenty real milliseconds, which a
+    /// loaded runner spends in a single pause. The client then gave up on a
+    /// beat the fake went on to answer (CI, 2026-10-04: a 44s gap where sixty
+    /// was due). At five the same bound is fifty, and still fast.
+    /// </para>
     /// </remarks>
     public async Task<bool> RunUntilAsync(Func<bool> done, TimeSpan budget)
     {
@@ -121,7 +135,7 @@ internal sealed class TestClock : TimeProvider
             if (spent >= budget) return false;
 
             Advance(Step);
-            await Task.Delay(2).ConfigureAwait(false);
+            await Task.Delay(StepPause).ConfigureAwait(false);
         }
 
         return true;
