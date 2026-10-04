@@ -1,6 +1,6 @@
 {
   "name": "munni-monorepo",
-  "version": "5.6.0",
+  "version": "5.6.1",
   "private": true,
   "workspaces": [
     "apps/web",
