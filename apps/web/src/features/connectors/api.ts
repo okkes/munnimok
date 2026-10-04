@@ -196,9 +196,10 @@ export const connectorApi = {
     return (await call<JobView>(`/${provider}/jobs/${jobId}/answer`, json({ challengeId, value }))).body;
   },
 
-  /** ingests the job's page once it succeeded; `running` while it has not */
-  async collect(provider: string, jobId: string, bundle: string): Promise<{ running: boolean; job: JobView }> {
-    const { status, body: job } = await call<JobView>(`/${provider}/jobs/${jobId}/collect`, json({ bundle }));
+  /** ingests the job's page once it succeeded and walks on to the resources after it; `running` while the
+   *  job has not finished — or when the next pass became a job of its own, and the view is then THAT job's */
+  async collect(provider: string, jobId: string, bundle: string, since?: string): Promise<{ running: boolean; job: JobView }> {
+    const { status, body: job } = await call<JobView>(`/${provider}/jobs/${jobId}/collect`, json({ bundle, since }));
     return { running: status === 202, job };
   },
 

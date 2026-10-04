@@ -118,7 +118,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             var outcome = await sync.SyncAsync(row.UserId, subject, row.Provider, new ConnectorSyncRequest(row.ConnectionId, row.KeptBundle!, since), "native", ct, trigger: ScheduleTrigger);
             if (outcome.Status == StatusCodes.Status202Accepted)
             {
-                await FollowJobAsync(sync, row, subject, outcome.Body, ct);
+                await FollowJobAsync(sync, row, subject, outcome.Body, since, ct);
             }
             else if (outcome.Status >= 400)
             {
@@ -141,7 +141,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         await relay.Db.SaveChangesAsync(ct);
     }
 
-    private async Task FollowJobAsync(ConnectorSyncService sync, ConnectorSession row, string subject, JsonObject accepted, CancellationToken ct)
+    private async Task FollowJobAsync(ConnectorSyncService sync, ConnectorSession row, string subject, JsonObject accepted, string? since, CancellationToken ct)
     {
         var jobId = accepted["jobId"]?.GetValue<string>();
         if (jobId is null) return;
@@ -154,7 +154,13 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             {
                 case "succeeded":
                 {
-                    var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, new ConnectorCollectRequest(row.KeptBundle!), ct, trigger: ScheduleTrigger);
+                    var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, new ConnectorCollectRequest(row.KeptBundle!, since), ct, trigger: ScheduleTrigger);
+                    if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next)
+                    {
+                        // the walk went on and the next pass became a job of its own: follow that one
+                        jobId = next;
+                        break;
+                    }
                     if (collected.Status >= 400) Refused(row, CodeOf(collected.Body) ?? InternalCode, RetryAfterOf(collected.Body));
                     else row.LastScheduleError = null;
                     return;

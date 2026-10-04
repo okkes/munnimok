@@ -46,7 +46,7 @@ public static partial class ConnectorRelayEndpoints
     private static async Task<IResult> CollectJob(
         string provider, string jobId, ConnectorCollectRequest request, HttpContext http, ConnectorRelay relay, ConnectorSyncService sync, CancellationToken ct)
     {
-        var outcome = await sync.CollectAsync(http.GetUserId(), relay.SubjectOf(http), provider, jobId, request, ct);
+        var outcome = await sync.CollectAsync(http.GetUserId(), relay.SubjectOf(http), provider, jobId, request, ct, deviceClass: DeviceClassOf(http));
         return Results.Json(outcome.Body, statusCode: outcome.Status);
     }
 }

@@ -9,8 +9,12 @@ namespace Munni.Api.Connectors;
 /// <summary>One sync of a connection (docs/connector-integration-plan.md §5.2): the bundle the client holds, and how far back to look.</summary>
 public sealed record ConnectorSyncRequest(string ConnectionId, string Bundle, string? Since = null);
 
-/// <summary>Following a fetch that did not finish inside the connector's window: the newest bundle the client holds.</summary>
-public sealed record ConnectorCollectRequest(string Bundle);
+/// <summary>
+/// Following a fetch that did not finish inside the connector's window: the
+/// newest bundle the client holds, and the <c>since</c> the sync asked with,
+/// for the resources the walk goes on to after the job's.
+/// </summary>
+public sealed record ConnectorCollectRequest(string Bundle, string? Since = null);
 
 /// <summary>What a relay operation answers: a status and the body the app reads.</summary>
 public sealed record ConnectorOutcome(int Status, JsonObject Body);
@@ -196,12 +200,16 @@ public sealed class ConnectorSyncService(
 
     /// <summary>
     /// Finishes a job the app followed to its end: ingests its page, resumes
-    /// with the bundle the app holds to acknowledge it, and hands back the
-    /// bundle the connector rotated, if it did. A job that is not finished
-    /// yet answers 202 with its view; a job that failed answers with its error.
+    /// with the bundle the app holds to acknowledge it, walks on to the
+    /// resources after the one the job fetched, and hands back the bundle
+    /// the connector rotated, if it did. A job that is not finished yet
+    /// answers 202 with its view; a job that failed answers with its error;
+    /// a pass further down the walk that became a job of its own answers
+    /// 202 with THAT job's view, for the caller to follow and collect in turn.
     /// </summary>
     public async Task<ConnectorOutcome> CollectAsync(
-        Guid userId, string subject, string provider, string jobId, ConnectorCollectRequest request, CancellationToken ct, string trigger = "user")
+        Guid userId, string subject, string provider, string jobId, ConnectorCollectRequest request, CancellationToken ct, string trigger = "user",
+        string deviceClass = "native")
     {
         var reply = await relay.Client.GetAsync($"v1/{provider}/jobs/{jobId}", new ConnectorCall { Subject = subject }, ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
@@ -227,28 +235,64 @@ public sealed class ConnectorSyncService(
         {
             await ingest.SettlePendingAsync(userId, provider, row?.ConnectionId ?? sessionId, landed.PendingRows, ct);
         }
-        await NotifyAsync(trigger, landed?.Attached ?? Enumerable.Empty<string>(), counts.Transactions, ct);
 
         // the bundle the job itself rotated wins over the one the app sent
         var rotated = job[SessionField] is JsonObject;
         var bundle = (job[SessionField] as JsonObject)?.Text("bundle") ?? request.Bundle;
-        if (job.Text(ResourceField) is { } resourceId && job.Text("cursor") is { } cursor)
+        var resumed = await ResumeAsync(subject, provider, bundle, ct);
+        var ticket = resumed.Text("ticket") ?? throw new InvalidOperationException("resume answered without a ticket");
+        var resourceId = job.Text(ResourceField);
+        if (resourceId is not null && job.Text("cursor") is { } cursor)
         {
-            var resumed = await ResumeAsync(subject, provider, bundle, ct);
-            var ticket = resumed.Text("ticket") ?? throw new InvalidOperationException("resume answered without a ticket");
             await AckAsync(subject, provider, resourceId, ticket, cursor, ct);
+        }
+
+        // The job was ONE resource's pass; the walk goes on from the resource
+        // after it. Prod, 2026-10-04: a bank's accounts pass took a second
+        // longer than its window and became a job, the app collected it, and
+        // the transactions were never asked for - the balance moved, the list
+        // did not, sync after sync. Each pass after it may become a job of its
+        // own: the app (or the scheduler) follows that one and collects again,
+        // and the walk goes on from there.
+        var run = new SyncRun(userId, subject, provider, new ConnectorSyncRequest(row?.ConnectionId ?? sessionId, bundle, request.Since), deviceClass, manifest ?? new JsonObject())
+        {
+            SessionId = sessionId,
+            Ticket = ticket,
+            Trigger = trigger,
+            Landed = counts,
+            Partial = job["complete"]?.GetValue<bool>() == false,
+            Rotated = rotated,
+        };
+        if (landed is not null) run.Attached.UnionWith(landed.Attached);
+        if (manifest is not null && resourceId is not null)
+        {
+            foreach (var resource in Resources(manifest).SkipWhile(r => r.Text("id") != resourceId).Skip(1))
+            {
+                var pending = await FetchResourceAsync(run, resource, ct);
+                if (pending is null) continue;
+                // a kept bundle follows a rotation even while the walk is still out
+                if (row?.KeptBundle is not null && run.Rotated)
+                {
+                    row.KeptBundle = run.Bundle;
+                    await relay.Db.SaveChangesAsync(ct);
+                }
+                return pending;
+            }
         }
 
         if (row is not null)
         {
             row.State = "active";
             row.LastSeenAt = relay.Time.GetUtcNow();
-            if (row.KeptBundle is not null) row.KeptBundle = bundle;
+            if (row.KeptBundle is not null) row.KeptBundle = run.Bundle;
             await relay.Db.SaveChangesAsync(ct);
         }
+        Wake(run.Touched);
+        await NotifyAsync(trigger, run.Attached, run.Landed.Transactions, ct);
 
-        view["ingested"] = Counts(counts);
-        if (rotated) view[SessionField] = Session(bundle);
+        view["ingested"] = Counts(run.Landed);
+        view["complete"] = !run.Partial;
+        if (run.Rotated) view[SessionField] = Session(run.Bundle);
         return new ConnectorOutcome(StatusCodes.Status200OK, view);
     }
 

@@ -65,7 +65,7 @@ public sealed class ControlPlaneHost : IAsyncDisposable
         return body!["agent_id"]!.GetValue<string>();
     }
 
-    public static async Task<ControlPlaneHost> StartAsync()
+    public static async Task<ControlPlaneHost> StartAsync(int fetchWaitSeconds = 1)
     {
         var root = Path.Combine(Path.GetTempPath(), "munni-relay-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -80,8 +80,9 @@ public sealed class ControlPlaneHost : IAsyncDisposable
             // a loaded CI agent: the wait only makes a 202 deterministic
             ["Connector:Timeouts:LoginWaitSeconds"] = "15",
             // one second, so the slow mock's fetch outruns the window and
-            // the job path — poll, answer, collect — is exercised for real
-            ["Connector:Timeouts:FetchWaitSeconds"] = "1",
+            // the job path — poll, answer, collect — is exercised for real;
+            // zero for the walk suite, where EVERY fetch becomes a job
+            ["Connector:Timeouts:FetchWaitSeconds"] = fetchWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
         });
         builder.WebHost.UseTestServer();
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -124,7 +125,7 @@ public sealed class ControlPlaneHost : IAsyncDisposable
 /// plane: test auth, an in-memory database of its own, the development key
 /// as the transport, a public agent address so enrollment renders a command.
 /// </summary>
-public sealed class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string SubjectSalt = "relay-test-salt";
     public const string AgentPublicUrl = "https://api.munni.test/connector/";
@@ -133,7 +134,10 @@ public sealed class ConnectorApiFactory : WebApplicationFactory<Program>, IAsync
 
     public ControlPlaneHost ControlPlane { get; private set; } = null!;
 
-    public async Task InitializeAsync() => ControlPlane = await ControlPlaneHost.StartAsync();
+    /// <summary>How long the control plane waits for a fetch before it answers 202; a suite overrides it to force the job path.</summary>
+    protected virtual int FetchWaitSeconds => 1;
+
+    public async Task InitializeAsync() => ControlPlane = await ControlPlaneHost.StartAsync(FetchWaitSeconds);
 
     async Task IAsyncLifetime.DisposeAsync()
     {

@@ -143,14 +143,26 @@ function jobFailure(job: JobView): ConnectorError {
 
 type Landed = { ingested: IngestedCounts | undefined; partial: boolean } | { asked: JobView };
 
-/** the accepted-job path: follow, then collect the page with the latest bundle */
+/**
+ * The accepted-job path: follow, then collect the page with the latest
+ * bundle. A collect may answer 202 again: the relay walks on to the
+ * resources after the job's, and the next pass became a job of its own
+ * (prod 2026-10-04: a bank's accounts pass outran its window and the
+ * transactions were never asked for) — follow that one and collect
+ * again, until the relay says the walk is done.
+ */
 async function collectJob(storage: StorageBackend, row: ConnectorConnRow, first: JobView, bundle: string, options: SyncOptions): Promise<Landed> {
-  const followed = await followJob(storage, row.id, row.provider, first, bundle, options);
-  if ('asked' in followed) return followed;
-  if (followed.job.state !== 'succeeded') throw jobFailure(followed.job);
-  const collected = await connectorApi.collect(row.provider, followed.job.jobId, followed.bundle);
-  await keepRotated(storage, row.id, collected.job, followed.bundle);
-  return { ingested: collected.job.ingested, partial: collected.job.complete === false };
+  let job = first;
+  let current = bundle;
+  for (;;) {
+    const followed = await followJob(storage, row.id, row.provider, job, current, options);
+    if ('asked' in followed) return followed;
+    if (followed.job.state !== 'succeeded') throw jobFailure(followed.job);
+    const collected = await connectorApi.collect(row.provider, followed.job.jobId, followed.bundle, sinceFor(row));
+    current = await keepRotated(storage, row.id, collected.job, followed.bundle);
+    if (!collected.running) return { ingested: collected.job.ingested, partial: collected.job.complete === false };
+    job = collected.job;
+  }
 }
 
 async function refused(storage: StorageBackend, connectionId: string, err: ConnectorError): Promise<SyncReport> {

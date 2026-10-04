@@ -93,8 +93,31 @@ describe('syncConnection — one pass through the relay', () => {
     } finally {
       clearInterval(publishSoon);
     }
-    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.rotated');
+    // the collect carries the sync's `since` too (none here: the row was never synced)
+    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.rotated', undefined);
     expect(await readBundle(backend, CONN)).toBe('sb_v1.rotated');
+  });
+
+  it('a collect that answers 202 is the next resource’s job: followed and collected in turn, until the walk is done', async () => {
+    vi.spyOn(connectorApi, 'sync').mockResolvedValue({ accepted: true, job: job({ state: 'running' }) });
+    vi.spyOn(connectorApi, 'job')
+      .mockResolvedValueOnce(job({ state: 'succeeded', complete: true }))
+      .mockResolvedValue(job({ jobId: 'job_2', state: 'succeeded', complete: true }));
+    const collect = vi.spyOn(connectorApi, 'collect')
+      // the accounts landed; the transactions pass became the next job
+      .mockResolvedValueOnce({ running: true, job: job({ jobId: 'job_2', state: 'running', ingested: { ...NO_INGEST, accounts: 1 } }) })
+      .mockResolvedValue({ running: false, job: job({ jobId: 'job_2', state: 'succeeded', complete: true, ingested: { ...NO_INGEST, accounts: 1, transactions: 3 } }) });
+    const publishSoon = setInterval(() => {
+      publishConnectorFrame({ kind: 'connector', provider: PROVIDER, sessionId: 'ses_1', jobId: 'job_1', state: 'succeeded' });
+      publishConnectorFrame({ kind: 'connector', provider: PROVIDER, sessionId: 'ses_1', jobId: 'job_2', state: 'succeeded' });
+    }, 20);
+    try {
+      const report = await syncConnection(backend, repo, CONN);
+      expect(report).toMatchObject({ status: 'ok', accounts: 1, transactions: 3 });
+    } finally {
+      clearInterval(publishSoon);
+    }
+    expect(collect.mock.calls.map((c) => c[1])).toEqual(['job_1', 'job_2']);
   });
 
   it('a question mid-fetch is answered through the caller, or left for the hub when nobody is there', async () => {
