@@ -49,6 +49,7 @@ import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
 import { ConnectionsScreen } from '@/features/connectors/ConnectionsScreen';
 import { AgentsScreen } from '@/features/connectors/AgentsScreen';
 import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
+import { UpdateGate } from '@/app/UpdateGate';
 import { ReceiptScreen } from '@/features/shopping/ReceiptScreen';
 import { ConnectionReceiptsScreen } from '@/features/connectors/ConnectionReceiptsScreen';
 import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
@@ -62,7 +63,16 @@ import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
 import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
 
-const rootRoute = createRootRoute({ component: Outlet });
+/** every route, with the forced update above it all: a server that no longer speaks this build gates even a device stuck on its first sync */
+function RootShell() {
+  return (
+    <>
+      <Outlet />
+      <UpdateGate />
+    </>
+  );
+}
+const rootRoute = createRootRoute({ component: RootShell });
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,

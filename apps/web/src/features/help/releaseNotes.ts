@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.6.0',
+    date: '2026-10-04',
+    items: [
+      {
+        en: 'When a munni version is too old for the server, the app now asks you to update before going on, instead of quietly working on data the server would refuse.',
+        nl: 'Als een munni-versie te oud is voor de server, vraagt de app je nu om bij te werken voordat je verdergaat, in plaats van stilletjes door te werken aan gegevens die de server zou weigeren.',
+        tr: 'Bir munni sürümü sunucu için çok eskiyse uygulama artık devam etmeden önce güncellemeni ister; sunucunun reddedeceği verilerle sessizce çalışmaya devam etmek yerine.',
+      },
+      {
+        en: 'Syncing a bank yourself no longer makes munni skip the nightly sync for it. The hub no longer reads “the party asked for a pause” after your own sync.',
+        nl: 'Zelf een bank synchroniseren zorgt er niet meer voor dat munni de nachtelijke synchronisatie ervan overslaat. De hub meldt na je eigen synchronisatie niet meer “de partij vroeg om een pauze”.',
+        tr: 'Bir bankayı kendin eşitlemek artık munni’nin o banka için gece eşitlemesini atlamasına yol açmıyor. Kendi eşitlemenden sonra merkez artık “taraf mola istedi” demiyor.',
+      },
+    ],
+  },
+  {
     version: '5.5.4',
     date: '2026-10-04',
     items: [
