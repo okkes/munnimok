@@ -299,10 +299,18 @@ describe('SpacesScreen (demo identity)', () => {
     expect(await screen.findByTestId('space-icon-picture-note')).toBeTruthy();
     expect((screen.getByTestId('space-icon-briefcase-outline') as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByTestId('space-color-3498DB') as HTMLButtonElement).disabled).toBe(true);
+    // #444 (user): and they LOOK refused — the glyph drops to the muted ink,
+    // the tile fades, the selection ring is off — not just unresponsive
+    const sleepingTile = screen.getByTestId('space-icon-briefcase-outline');
+    expect((sleepingTile.querySelector('i') as HTMLElement).style.color).toBe('var(--m-ink-4)');
+    expect(sleepingTile.className).toContain('disabled:opacity-45');
+    expect(sleepingTile.className).not.toContain('border-accent');
+    expect(screen.getByTestId('space-color-3498DB').className).toContain('disabled:opacity-45');
     // clearing the picture wakes them up again
     fireEvent.click(screen.getByTestId('space-photo-clear'));
     await waitFor(() => expect(screen.queryByTestId('space-icon-picture-note')).toBeNull());
     expect((screen.getByTestId('space-icon-briefcase-outline') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('space-icon-briefcase-outline').querySelector('i') as HTMLElement).style.color).not.toBe('var(--m-ink-4)');
   }, 15_000);
 
   it('refuses deleting the active or only space, allows deleting another', async () => {
@@ -490,6 +498,11 @@ describe('SpacesScreen (demo identity)', () => {
     expect(await screen.findByTestId('space-create-photo-clear')).toBeTruthy();
     expect(await screen.findByTestId('space-create-icon-picture-note')).toBeTruthy();
     expect((screen.getByTestId('space-create-icon-leaf') as HTMLButtonElement).disabled).toBe(true);
+    // #444 (user): the create form is where the ticket saw live-looking
+    // tiles that took no tap — the glyphs are muted and the tiles faded now
+    expect((screen.getByTestId('space-create-icon-leaf').querySelector('i') as HTMLElement).style.color).toBe('var(--m-ink-4)');
+    expect(screen.getByTestId('space-create-icon-leaf').className).toContain('disabled:opacity-45');
+    expect(screen.getByTestId('space-create-color-custom').className).toContain('disabled:opacity-45');
 
     fireEvent.change(screen.getByTestId('space-create-name'), { target: { value: 'Pictured' } });
     fireEvent.click(screen.getByTestId('space-create-save'));

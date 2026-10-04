@@ -7,6 +7,7 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
 import { SpacePhotoStrip, applySpacePhoto } from './SpaceSettingsScreen';
+import { SpaceIconGrid } from './SpaceIconGrid';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpacesCreateIntent } from './spacesHandoff';
 import { useAttentionMap } from '@/application/spaceAttention';
@@ -20,11 +21,9 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
-import { SearchField } from '@/ui/SearchField';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
-import { MDI_NAMES } from '@/generated/mdiNames';
 import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
 /**
@@ -286,43 +285,20 @@ export function SpacesScreen() {
             onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
             testIdPrefix="space-create-photo"
           />
-          {/* #285 (user): search opens the WHOLE self-hosted font (the
-              categories pattern); glyphs render in the picked color so a
-              swatch tap previews its real impact live */}
-          <SearchField
-            testId="space-create-icon-search"
-            value={iconQuery}
-            onChange={setIconQuery}
-            placeholder={t('space.iconSearch')}
-            height="h-10"
-            textSize="text-[13px]"
+          {/* #285: the shared grid — the whole font behind the search, glyphs in
+              the picked color. #146 (user): a picture wins over symbol+color
+              everywhere, so while one is set the grid sleeps — and #444: it
+              LOOKS asleep */}
+          <SpaceIconGrid
+            icon={icon}
+            onIcon={setIcon}
+            color={color}
+            query={iconQuery}
+            onQuery={setIconQuery}
+            disabled={picture !== ''}
+            sleeping={picture !== ''}
+            testIdPrefix="space-create-icon"
           />
-          <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
-            {(iconQuery.trim()
-              ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 60)
-              : SPACE_ICONS
-            ).map((candidate) => (
-              <button
-                key={candidate}
-                data-testid={`space-create-icon-${candidate}`}
-                title={candidate}
-                // #146 (user): a picture wins over symbol+color everywhere —
-                // while one is set, picking them would change nothing visible
-                disabled={picture !== ''}
-                onClick={() => setIcon(candidate)}
-                className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
-                  icon === candidate && picture === '' ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
-                }`}
-              >
-                <Icon name={candidate} size={19} color={color} />
-              </button>
-            ))}
-            {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
-              <p className="col-span-6 py-2 text-center text-[12px] text-ink-4" data-testid="space-create-icon-none">
-                {t('space.iconNone')}
-              </p>
-            )}
-          </div>
           {/* #146: say WHY the pickers sleep, not just gray them out */}
           {picture !== '' && (
             <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="space-create-icon-picture-note">

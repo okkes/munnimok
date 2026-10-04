@@ -22,6 +22,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-10-04',
     items: [
       {
+        en: 'Creating or editing a space: once a picture is set, the symbol and color pickers now look asleep (faded, grey) instead of only refusing taps.',
+        nl: 'Een ruimte maken of bewerken: zodra er een foto is ingesteld, zien de symbool- en kleurkiezers er nu uit alsof ze slapen (vervaagd, grijs) in plaats van alleen tikken te weigeren.',
+        tr: 'Alan oluştururken veya düzenlerken: bir fotoğraf ayarlandığında simge ve renk seçiciler artık yalnızca dokunmayı reddetmek yerine uykuda görünür (soluk, gri).',
+      },
+      {
         en: 'When a munni version is too old for the server, the app now asks you to update before going on, instead of quietly working on data the server would refuse.',
         nl: 'Als een munni-versie te oud is voor de server, vraagt de app je nu om bij te werken voordat je verdergaat, in plaats van stilletjes door te werken aan gegevens die de server zou weigeren.',
         tr: 'Bir munni sürümü sunucu için çok eskiyse uygulama artık devam etmeden önce güncellemeni ister; sunucunun reddedeceği verilerle sessizce çalışmaya devam etmek yerine.',
