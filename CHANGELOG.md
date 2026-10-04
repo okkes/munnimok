@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.6.0](https://github.com/okkes/munnimok/compare/v5.5.4...v5.6.0) (2026-10-04)
+
+
+### ✨ Features
+
+* **events:** an event holds money received, and every credit's detail offers the event row ([#448](https://github.com/okkes/munnimok/issues/448)) ([020e1eb](https://github.com/okkes/munnimok/commit/020e1ebcf2a477028453fc46deec9a7defa9f208))
+* **events:** an uploaded picture is dragged into frame to choose what shows ([#446](https://github.com/okkes/munnimok/issues/446)) ([ecb3f29](https://github.com/okkes/munnimok/commit/ecb3f29cdedb4a3026351cd205923ee42012dd91))
+* **events:** the attach list offers money received in the range too ([#447](https://github.com/okkes/munnimok/issues/447)) ([d84d765](https://github.com/okkes/munnimok/commit/d84d765f590b33ab633fc7f65f4bd5c0ce13e5bb))
+* **spaces:** the symbol and color pickers look asleep while a picture rules ([#444](https://github.com/okkes/munnimok/issues/444)) ([25973a2](https://github.com/okkes/munnimok/commit/25973a2310e979d66fc3361056c1949b1fb6f051))
+* **web:** the update gate takes the screen when the server no longer speaks this build ([c3078c9](https://github.com/okkes/munnimok/commit/c3078c903c105093b92083e6a9d34566af076d69))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** the provider's interval between syncs counts scheduled jobs only ([a362cc2](https://github.com/okkes/munnimok/commit/a362cc23b37055eeedbf6760f110fba93821a84c))
+
 ## [5.5.4](https://github.com/okkes/munnimok/compare/v5.5.3...v5.5.4) (2026-10-03)
 
 
