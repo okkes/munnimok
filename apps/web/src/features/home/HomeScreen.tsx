@@ -29,6 +29,7 @@ import { InstallHint } from '@/features/help/InstallHint';
 import { UpdateCard } from './UpdateCard';
 import { NotificationsBell } from './NotificationsBell';
 import { eventPicture, eventPictureStyle } from '@/features/events/EventsScreen';
+import { clearOverviewPeriods } from '@/features/overview/periodMemory';
 import { resolveHomeBlocks } from './HomeCustomizeScreen';
 import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
@@ -212,6 +213,11 @@ function homeFadeClass(): string {
 export function HomeScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
+  // #454 (user): back on Home, the overviews start at the current period
+  // again - a detour into a category or a transaction never comes here
+  useEffect(() => {
+    clearOverviewPeriods();
+  }, []);
   const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
   const topSplit = useTopSplit();

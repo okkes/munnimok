@@ -7,6 +7,7 @@ import { categoryContributionCents, txsForCategory } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { recallDrillPeriod, rememberDrillPeriod } from './periodMemory';
 import { LOCALES, useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -46,7 +47,6 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
  */
 /** #351/#355: the drill's session period memory — the back door from a
  *  transaction page carries no ?from */
-const DRILL_PERIOD_MEMO = new Map<string, number>();
 
 export function CategoryDrillScreen() {
   const { t, lang } = useLang();
@@ -75,11 +75,11 @@ export function CategoryDrillScreen() {
   const memoKey = `${kind}:${catId}`;
   const initialIndex = useMemo(() => {
     const found = from ? periods.findIndex((p) => p.start === from) : -1;
-    return found >= 0 ? found : (DRILL_PERIOD_MEMO.get(memoKey) ?? PERIOD_COUNT - 1);
+    return found >= 0 ? found : (recallDrillPeriod(memoKey) ?? PERIOD_COUNT - 1);
   }, [periods, from, memoKey]);
   const [periodIndex, setPeriodIndex] = useState(initialIndex);
   useEffect(() => {
-    DRILL_PERIOD_MEMO.set(memoKey, periodIndex);
+    rememberDrillPeriod(memoKey, periodIndex);
   }, [memoKey, periodIndex]);
   // the space row loads async: the first render computes periods with
   // default month boundaries, so a custom period start makes `from`
