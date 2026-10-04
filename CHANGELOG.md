@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.1](https://github.com/okkes/munnimok/compare/v5.6.0...v5.6.1) (2026-10-04)
+
+
+### 🐞 Bug Fixes
+
+* **api:** collecting a job walks on to the resources after it ([f4ac0c6](https://github.com/okkes/munnimok/commit/f4ac0c6e75918eb5dadc9daf38e7a6e034402bb6))
+
 ## [5.6.0](https://github.com/okkes/munnimok/compare/v5.5.4...v5.6.0) (2026-10-04)
 
 
