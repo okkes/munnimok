@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.7.0](https://github.com/okkes/munnimok/compare/v5.6.1...v5.7.0) (2026-10-04)
+
+
+### ✨ Features
+
+* **categories:** an Activities sub category under Entertainment ([#451](https://github.com/okkes/munnimok/issues/451)) ([4a599eb](https://github.com/okkes/munnimok/commit/4a599eb7cb8d9e727ce9fa033dc3e790639bbf5f))
+* **connectors:** an account no live connection fetches any more says so, with a Reconnect door ([#445](https://github.com/okkes/munnimok/issues/445)) ([dcabec6](https://github.com/okkes/munnimok/commit/dcabec68281783d1c7c0dcf74ea987949bed4922))
+* **goals:** the card and the page say what is left, and the pace counts the space's periods ([#449](https://github.com/okkes/munnimok/issues/449)) ([5034a30](https://github.com/okkes/munnimok/commit/5034a301e04aeccc6f86d38acf7f48b00e4c1cd3))
+* **overview:** the chosen period is forgotten on the way back Home or to another tab ([#454](https://github.com/okkes/munnimok/issues/454)) ([48ee47b](https://github.com/okkes/munnimok/commit/48ee47b25d77cb772e0360df83e491bf3527b3eb))
+* **transactions:** a merchant key ignores the date and the clock time of a charge ([#450](https://github.com/okkes/munnimok/issues/450)) ([9651c94](https://github.com/okkes/munnimok/commit/9651c94286a43a408732a64489c4d3cf8294d509))
+
 ## [5.6.1](https://github.com/okkes/munnimok/compare/v5.6.0...v5.6.1) (2026-10-04)
 
 
