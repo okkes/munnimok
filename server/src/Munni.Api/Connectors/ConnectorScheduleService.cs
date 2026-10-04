@@ -154,16 +154,11 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             {
                 case "succeeded":
                 {
-                    var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, new ConnectorCollectRequest(row.KeptBundle!, since), ct, trigger: ScheduleTrigger);
-                    if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next)
-                    {
-                        // the walk went on and the next pass became a job of its own: follow that one
-                        jobId = next;
-                        break;
-                    }
-                    if (collected.Status >= 400) Refused(row, CodeOf(collected.Body) ?? InternalCode, RetryAfterOf(collected.Body));
-                    else row.LastScheduleError = null;
-                    return;
+                    var next = await CollectAsync(sync, row, subject, jobId, since, ct);
+                    if (next is null) return;
+                    // the walk went on and the next pass became a job of its own: follow that one
+                    jobId = next;
+                    break;
                 }
                 case "awaiting_input":
                     // the person will find the question in the hub
@@ -180,6 +175,17 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         }
         // the person will find it in the hub; the connector expires it by itself
         row.LastScheduleError = "mfa_timeout";
+    }
+
+    /// <summary>Collects a finished job: the id of the next job when the walk went on and its next pass became one; null once the walk is done, or refused.</summary>
+    private async Task<string?> CollectAsync(ConnectorSyncService sync, ConnectorSession row, string subject, string jobId, string? since, CancellationToken ct)
+    {
+        var call = new ConnectorCollectCall(new ConnectorCollectRequest(row.KeptBundle!, since), ScheduleTrigger);
+        var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, call, ct);
+        if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next) return next;
+        if (collected.Status >= 400) Refused(row, CodeOf(collected.Body) ?? InternalCode, RetryAfterOf(collected.Body));
+        else row.LastScheduleError = null;
+        return null;
     }
 
     private static string? CodeOf(JsonObject body) => body["error"]?["code"]?.GetValue<string>();
