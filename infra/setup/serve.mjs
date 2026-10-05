@@ -1719,6 +1719,7 @@ const VAULT_PURPOSE = {
   VITE_GLITCHTIP_DSN: 'Crash-report DSN for the munni web app. Public by design.',
   VITE_GLITCHTIP_DSN_ADMIN: 'Crash-report DSN for the admin portal. Public by design.',
   API_SENTRY_DSN: 'Crash-report DSN for the api (container-network form).',
+  CONNECTOR_SENTRY_DSN: 'Crash-report DSN for the connector control plane and its agents (container-network form).',
   VITE_LOGTO_APP_ID: 'Logto application id (public client id) the munni web app signs in with.',
   VITE_LOGTO_APP_ID_ADMIN: 'Logto application id the admin portal signs in with.',
   VITE_LOGTO_APP_ID_CONTROL: 'Logto application id the control cockpit signs in with.',

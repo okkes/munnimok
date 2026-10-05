@@ -173,7 +173,11 @@ api's own app.
 
 **Secrets** (`infra/secrets.manifest.json`): per environment, generated —
 `CONNECTOR_SEAL_KEY_K1` (32 bytes, standard base64), `CONNECTOR_ENROLLMENT_HMAC`,
-`CONNECTOR_SUBJECT_SALT`; module-owned — `CONNECTOR_M2M_APP_ID/SECRET`;
+`CONNECTOR_SUBJECT_SALT`; module-owned — `CONNECTOR_M2M_APP_ID/SECRET` and
+`CONNECTOR_SENTRY_DSN` (the environment's sixth GlitchTip project, shared by
+the control plane and its agents and tagged by role; only an adapter that
+threw, a party whose site changed or a reconciliation that failed is an
+event — a refusal the person can act on never is);
 per platform, generated — `CONNECTOR_FLEET_CODE` (`AGNT-XXXX-XXXX`),
 mirrored into every environment. `deploy-nas.yml` passes each by name.
 

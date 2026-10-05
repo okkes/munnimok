@@ -275,7 +275,7 @@ async function localApply() {
     const write = {
       logto: (apps) => { Object.assign(values, { LOGTO_M2M_APP_ID: apps.m2m.id, LOGTO_M2M_APP_SECRET: apps.m2m.secret, VITE_LOGTO_APP_ID: apps.web.id, VITE_LOGTO_APP_ID_ADMIN: apps.admin.id, NATIVE_LOGTO_APP_ID: apps.native.id, ...(apps.control ? { VITE_LOGTO_APP_ID_CONTROL: apps.control.id, CONTROL_LOGTO_APP_ID: apps.control.id } : {}) }); saveLocalValues(stack, values); },
       console: (c) => { values.LOGTO_CONSOLE_USERNAME = c.username; values.LOGTO_CONSOLE_PASSWORD = c.password; saveLocalValues(stack, values); },
-      glitchtip: (dsns) => { Object.assign(values, { API_SENTRY_DSN: dsns.api.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), VITE_GLITCHTIP_DSN: dsns.web, VITE_GLITCHTIP_DSN_ADMIN: dsns.admin, NATIVE_GLITCHTIP_DSN_ANDROID: dsns.android, NATIVE_GLITCHTIP_DSN_IOS: dsns.ios }); saveLocalValues(stack, values); }, // NOSONAR S5332 — container-to-container on the private docker network
+      glitchtip: (dsns) => { Object.assign(values, { API_SENTRY_DSN: dsns.api.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), CONNECTOR_SENTRY_DSN: dsns.connector.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), VITE_GLITCHTIP_DSN: dsns.web, VITE_GLITCHTIP_DSN_ADMIN: dsns.admin, NATIVE_GLITCHTIP_DSN_ANDROID: dsns.android, NATIVE_GLITCHTIP_DSN_IOS: dsns.ios }); saveLocalValues(stack, values); }, // NOSONAR S5332 — container-to-container on the private docker network
       connector: (access) => { Object.assign(values, { CONNECTOR_M2M_APP_ID: access.appId, CONNECTOR_M2M_APP_SECRET: access.secret }); saveLocalValues(stack, values); },
     };
     await applyLogto(values, write, fresh);

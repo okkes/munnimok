@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Sentry.AspNetCore" />
     <ProjectReference Include="..\Connector.Kit.Hosting\Connector.Kit.Hosting.csproj" />
     <ProjectReference Include="..\BankConnector.Adapters\BankConnector.Adapters.csproj" />
     <ProjectReference Include="..\ShopConnector.Adapters\ShopConnector.Adapters.csproj" />

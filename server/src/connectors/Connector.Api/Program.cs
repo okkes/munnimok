@@ -1,9 +1,25 @@
 using BankConnector.Adapters;
 using Connector.Kit.Hosting;
+using Sentry.AspNetCore;
 using RegistryConnector.Adapters;
 using ShopConnector.Adapters;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Crash reports to GlitchTip (2026-10-05): every unhandled failure and every
+// LogError — an adapter that threw, a party whose site changed, a
+// reconciliation that failed. Typed refusals a person can act on (sign in
+// again, wait, start your agent) stay Information/Warning and never report.
+// An empty DSN (local, tests) disables the SDK entirely.
+builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
+{
+    options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
+    options.TracesSampleRate = 0;
+    options.SendDefaultPii = false;
+    options.CaptureFailedRequests = false;
+    options.Release = builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } tag ? $"munni-connector@{tag}" : null;
+    options.SetBeforeSend((e, _) => { e.SetTag("role", "control-plane"); return e; });
+});
 
 // The one control plane of a munni environment hosts every provider pack —
 // banks, shops and registries — under one catalogue, one database and one

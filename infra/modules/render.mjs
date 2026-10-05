@@ -216,6 +216,7 @@ function pooledAgents(s) {
       ConnectorAgent__Connections__0__Name: ${e}
       ConnectorAgent__Connections__0__ControlPlaneBaseUrl: http://connector:8080/
       ConnectorAgent__Connections__0__EnrollmentCode: \${CONNECTOR_FLEET_CODE}
+      Sentry__Dsn: \${CONNECTOR_SENTRY_DSN:-}
     depends_on:
       connector-${e}:
         condition: service_healthy
@@ -265,6 +266,7 @@ function privateAgents(s) {
       ConnectorAgent__Connections__0__Name: ${e}
       ConnectorAgent__Connections__0__ControlPlaneBaseUrl: http://connector:8080/
       ConnectorAgent__Connections__0__EnrollmentCode: \${CONNECTOR_PRIVATE_CODE}
+      Sentry__Dsn: \${CONNECTOR_SENTRY_DSN:-}
     depends_on:
       connector-${e}:
         condition: service_healthy
@@ -552,6 +554,8 @@ function connectorService(s) {
       BankAdapters__GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY:-}
       BankAdapters__EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
       BankAdapters__EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
+      # crash reports (2026-10-05): the connector project of this environment, shared with its agents
+      Sentry__Dsn: \${CONNECTOR_SENTRY_DSN:-}
       BUILD_NUMBER: \${TAG}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/v1/health >/dev/null || exit 1"]
@@ -602,6 +606,7 @@ ADMIN_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID_ADMIN}
 WEB_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN}
 ADMIN_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN_ADMIN}
 API_SENTRY_DSN=\${API_SENTRY_DSN}
+CONNECTOR_SENTRY_DSN=\${CONNECTOR_SENTRY_DSN}
 
 GOCARDLESS_SECRET_ID=\${GOCARDLESS_SECRET_ID}
 GOCARDLESS_SECRET_KEY=\${GOCARDLESS_SECRET_KEY}
