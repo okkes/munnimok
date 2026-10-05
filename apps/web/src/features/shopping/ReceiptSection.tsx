@@ -18,7 +18,7 @@ import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
 /** best receipt candidates for THIS transaction: amount first, then date */
-function rankForTx(tx: Pick<SpaceTx, 'date' | 'amountCents'>, receipts: readonly ReceiptRow[]): ReceiptRow[] {
+export function rankForTx(tx: Pick<SpaceTx, 'date' | 'amountCents'>, receipts: readonly ReceiptRow[]): ReceiptRow[] {
   const target = Math.abs(tx.amountCents);
   return [...receipts].sort((a, b) => {
     const amountGap = Math.abs(a.totalCents - target) - Math.abs(b.totalCents - target);

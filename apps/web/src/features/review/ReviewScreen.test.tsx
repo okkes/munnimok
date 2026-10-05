@@ -296,6 +296,39 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 20_000);
 
+  it('a receipt that fits the card asks on the card — yes attaches it, and the Receipts screen has nothing left to check (user ss 2026-10-05)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revrcpt'), { trackOutbox: false });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rr1', {
+      accountId: 'demo_main', date: '2026-01-01', amountCents: -1316, currency: 'EUR', merchant: 'Albert Heijn 1842', needsReview: 1,
+    });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'rlink-review', {
+      receiptId: 'rcpt:ah:demo_conn_ah:rv', source: 'ah', instanceId: 'demo_conn_ah', date: '2026-01-01', totalCents: 1316, merchant: 'Albert Heijn', auto: 0, proposedTxId: 'rr1',
+    });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const row = await screen.findByTestId('review-receipt-row');
+    expect(row.textContent).toContain('Receipt to check');
+    fireEvent.click(row);
+    await screen.findByTestId('review-receipt-proposal');
+    fireEvent.click(screen.getByTestId('review-receipt-accept'));
+    // the row now reads the attached receipt; the deck is otherwise untouched (the card is still to confirm)
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).not.toContain('Receipt to check'));
+    expect(screen.getByTestId('review-receipt-row').textContent).toContain('Albert Heijn');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const link = await db.receiptLinks.get('rlink-review');
+      expect(link?.txId).toBe('rr1');
+      expect(link?.proposedTxId ?? null).toBeNull();
+    });
+    db.close();
+  }, 20_000);
+
   it('#228 feedback: counter-FIRST from the card row — the pick fills the special category by itself', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

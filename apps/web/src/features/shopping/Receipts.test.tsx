@@ -228,4 +228,33 @@ describe('Receipts (demo identity)', () => {
     await waitFor(() => expect(document.querySelector('[data-testid^="receipt-row-"]')).toBeTruthy());
     expect(screen.queryByTestId('receipts-to-check')).toBeNull();
   }, 20_000);
+
+  it('a match to check opens the receipt and the transaction it fits, so the answer is not a guess (user ss 2026-10-05)', async () => {
+    const txId = await openFirstTx();
+    const { db, repo } = await demoRepo();
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-compare', {
+      receiptId: 'rcpt:ah:demo_conn_ah:p2',
+      source: 'ah',
+      instanceId: 'demo_conn_ah',
+      date: '2026-07-03',
+      totalCents: 1250,
+      merchant: 'Albert Heijn',
+      items: [{ name: 'Melk', qty: 1, priceCents: 1250 }],
+      auto: 0,
+      proposedTxId: txId,
+    });
+    db.close();
+    cleanup();
+    renderApp('/receipts');
+    await screen.findByTestId('receipts-to-check', {}, { timeout: 5000 });
+    const txDoor = await screen.findByTestId('receipt-proposal-tx-rlink-compare', {}, { timeout: 5000 });
+    expect(txDoor.textContent).toContain('Looks like it belongs to');
+    expect(txDoor.textContent).toMatch(/€/);
+    fireEvent.click(txDoor);
+    await screen.findByTestId('tx-detail-amount', {}, { timeout: 5000 });
+    cleanup();
+    renderApp('/receipts');
+    fireEvent.click(await screen.findByTestId('receipt-proposal-open-rlink-compare', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
+  }, 20_000);
 });

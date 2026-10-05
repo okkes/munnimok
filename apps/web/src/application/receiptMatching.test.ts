@@ -50,13 +50,14 @@ beforeEach(async () => {
 });
 
 describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
-  it('a clear match on a transaction still to review attaches itself', async () => {
+  it('a clear match on a transaction still to review is PROPOSED, never attached by itself (user rule 2026-10-05) — the review card asks', async () => {
     await seedTx('tx-ah', 'Albert Heijn', 1);
     await seedReceipt('t-100');
     const outcome = await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts());
-    expect(outcome).toEqual({ linked: 1, proposed: 0 });
+    expect(outcome).toEqual({ linked: 0, proposed: 1 });
     const link = await backend.get('receiptLink', receiptLinkId(SPACE, `rcpt:ah:${CONN}:t-100`));
-    expect(link).toMatchObject({ txId: 'tx-ah', auto: 1, receiptId: `rcpt:ah:${CONN}:t-100` });
+    expect(link).toMatchObject({ proposedTxId: 'tx-ah', auto: 0, receiptId: `rcpt:ah:${CONN}:t-100` });
+    expect(link?.txId).toBeFalsy();
     // a second pass changes nothing
     expect(await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts())).toEqual({ linked: 0, proposed: 0 });
   });
@@ -86,13 +87,13 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     expect((await backend.get('receiptLink', id))!.proposedTxId).toBeFalsy();
   });
 
-  it('never double-books a transaction that already carries a receipt', async () => {
+  it('never asks twice about one transaction: a second receipt that fits the same row waits', async () => {
     await seedTx('tx-one', 'Albert Heijn', 1);
     await seedReceipt('t-300');
     await seedReceipt('t-301');
     const outcome = await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts());
-    expect(outcome.linked).toBe(1);
-    const links = (await backend.bySpace('receiptLink', SPACE)).filter((l) => l.txId === 'tx-one');
+    expect(outcome.proposed).toBe(1);
+    const links = (await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId === 'tx-one');
     expect(links).toHaveLength(1);
   });
 
@@ -100,9 +101,9 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     await seedTx('tx-a', 'Albert Heijn', 1);
     await seedReceipt('t-400');
     await seedReceipt('t-401', 'conn-other');
-    expect(await reevaluateSpace(backend, repo, SPACE, 'conn-other')).toEqual({ linked: 1, proposed: 0 });
-    const linked = (await backend.bySpace('receiptLink', SPACE)).filter((l) => l.txId);
-    expect(linked.map((l) => l.instanceId)).toEqual(['conn-other']);
+    expect(await reevaluateSpace(backend, repo, SPACE, 'conn-other')).toEqual({ linked: 0, proposed: 1 });
+    const proposed = (await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId);
+    expect(proposed.map((l) => l.instanceId)).toEqual(['conn-other']);
     expect(await includedSpaces(backend, CONN)).toEqual([SPACE]);
   });
 });

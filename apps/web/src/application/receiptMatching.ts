@@ -5,7 +5,7 @@ import { bestMatch } from '@/domain/storeReceipts';
 import type { AccountTailOf } from '@/domain/storeReceipts';
 import { receiptLinkId } from '@/domain/feedIds';
 import { visibleTransactions } from '@/db/joined';
-import { writeProposedLink, writeReceiptLink } from './receiptLinks';
+import { writeProposedLink } from './receiptLinks';
 
 /**
  * Receipts v3 matching, per space: fetched receipts live ONCE in the
@@ -38,11 +38,14 @@ async function accountTailResolver(store: StorageBackend): Promise<AccountTailOf
 }
 
 /**
- * Match the given global receipts into ONE space: rung-1 singles get an
- * auto snapshot link; a single whose transaction is already reviewed
- * becomes a proposal; receipts already attached in the space are
- * skipped, as are transactions that already carry a receipt and the
- * transactions a human rejected for a receipt.
+ * Match the given global receipts into ONE space: a rung-1 single becomes
+ * a PROPOSAL — never an attachment (user rule 2026-10-05: a receipt the
+ * matcher attached behind the person's back read as "it just linked
+ * itself"). A transaction still to review carries the proposal into its
+ * review card; a reviewed one lists it under Matches to check and on
+ * Home. Receipts already attached in the space are skipped, as are
+ * transactions that already carry or are already proposed a receipt and
+ * the transactions a human rejected for a receipt.
  */
 export async function matchReceiptsIntoSpace(
   storage: StorageBackend,
@@ -54,28 +57,21 @@ export async function matchReceiptsIntoSpace(
   // types telling expenses from movements
   const [txs, links] = await Promise.all([visibleTransactions(storage, spaceId), storage.bySpace('receiptLink', spaceId)]);
   const linkById = new Map(links.filter((l) => l.deleted === 0).map((l) => [l.id, l]));
-  const taken = new Set([...linkById.values()].filter((l) => l.txId).map((l) => l.txId!));
-  const reviewed = new Set(txs.filter((tx) => tx.needsReview === 0).map((tx) => tx.id));
+  // a transaction that carries a receipt, or is already asked about one, is spoken for
+  const taken = new Set([...linkById.values()].flatMap((l) => [l.txId, l.proposedTxId]).filter((id): id is string => !!id));
   const tailOf = await accountTailResolver(storage);
 
   const outcome: MatchOutcome = { linked: 0, proposed: 0 };
   for (const receipt of receipts) {
     if (receipt.deleted !== 0) continue;
     const link = linkById.get(receiptLinkId(spaceId, receipt.id));
-    if (link?.txId) continue;
+    if (link?.txId || link?.proposedTxId) continue;
     const rejected = new Set(link?.rejectedTxIds ?? []);
     const txId = bestMatch(receipt, rejected.size ? txs.filter((tx) => !rejected.has(tx.id)) : txs, taken, tailOf);
     if (!txId) continue;
-    if (reviewed.has(txId)) {
-      if (link?.proposedTxId !== txId) {
-        await writeProposedLink(repo, spaceId, receipt, txId);
-        outcome.proposed += 1;
-      }
-      continue;
-    }
     taken.add(txId);
-    await writeReceiptLink(repo, spaceId, receipt, txId, true);
-    outcome.linked += 1;
+    await writeProposedLink(repo, spaceId, receipt, txId);
+    outcome.proposed += 1;
   }
   return outcome;
 }

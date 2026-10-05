@@ -5,6 +5,11 @@ import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
+import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
+import { useUnmatchedReceipts } from '@/application/connections';
+import { useReceiptOps } from '@/application/receipts';
+import { rankForTx } from '@/features/shopping/ReceiptSection';
+import { partyName } from '@/features/connectors/logos';
 import { releasePeerLeg } from '@/application/counterPair';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
@@ -1779,6 +1784,19 @@ export function ReviewScreen() {
     [resolvedDraft, prediction, tx?.id],
   );
   const draft = stagedDraft ?? spreadDraft;
+  // user ss 2026-10-05: the receipt is part of the review — a fetched
+  // receipt that fits this card asks HERE (yes / no / pick another); what
+  // the person decides here is decided on the Receipts screen as well
+  const receiptEntry = useTxReceiptEntry(tx?.id);
+  const receiptProposals = useProposedMatches();
+  const unmatchedReceipts = useUnmatchedReceipts();
+  const receiptOps = useReceiptOps();
+  const [receiptPickOpen, setReceiptPickOpen] = useState(false);
+  const receiptProposal = useMemo(() => (receiptProposals ?? []).find((l) => l.proposedTxId === tx?.id), [receiptProposals, tx?.id]);
+  const receiptCandidates = useMemo(
+    () => (tx ? rankForTx(tx, (unmatchedReceipts ?? []).filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
+    [tx, unmatchedReceipts, receiptProposal?.receiptId],
+  );
   const draftCounter = useQuery(
     store,
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
@@ -2359,6 +2377,30 @@ export function ReviewScreen() {
                   </button>
                 )}
 
+                {/* user ss 2026-10-05: the receipt row — a proposal asks here,
+                    an attached receipt opens, candidates offer a pick */}
+                {!multiPart && (receiptProposal || receiptEntry?.data || receiptCandidates.length > 0) && (
+                  <button
+                    data-testid="review-receipt-row"
+                    onClick={() => {
+                      if (receiptEntry?.data) void navigate({ to: '/receipts/$receiptId', params: { receiptId: receiptEntry.data.id }, search: { from: tx.id } });
+                      else setReceiptPickOpen(true);
+                    }}
+                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                  >
+                    <Icon name="receipt-text-outline" size={18} color={receiptProposal ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+                    <span className={`min-w-0 flex-1 truncate ${receiptEntry?.data || receiptProposal ? '' : 'text-ink-4'}`}>
+                      {receiptEntry?.data
+                        ? `${receiptEntry.data.merchant ?? partyName(receiptEntry.data.source)} · ${fmtCents(receiptEntry.data.totalCents, tx.currency, lang)}`
+                        : receiptProposal
+                          ? `${receiptProposal.merchant ?? partyName(receiptProposal.source)} · ${fmtCents(receiptProposal.totalCents, tx.currency, lang)} · ${t('receipts.proposedBadge')}`
+                          : t('review.receiptNone')}
+                    </span>
+                    <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
+                    <Icon name={receiptEntry?.data ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
+                  </button>
+                )}
+
                 {/* #324 (user): the note joins the review card — staged
                     like every other field, written on Confirm, and the
                     bulk update carries it to the selected siblings */}
@@ -2615,6 +2657,55 @@ export function ReviewScreen() {
           // and the category are one fact, so removal resets the pick
           onDetach={counterRowDoors.onDetach}
         />
+      )}
+      {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one */}
+      {tx && (
+        <Sheet open={receiptPickOpen} onOpenChange={setReceiptPickOpen} title={t('receipt.title')} size="tall">
+          <div className="flex flex-col gap-3 pt-1" data-testid="review-receipt-sheet">
+            {receiptProposal && (
+              <div className="rounded-card border border-line bg-surface px-4 py-3" data-testid="review-receipt-proposal">
+                <div className="flex items-center gap-3">
+                  <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink">{receiptProposal.merchant ?? partyName(receiptProposal.source)}</span>
+                    <span className="block text-[11px] text-ink-4">{t('receipts.proposedBadge')} · {receiptProposal.date}</span>
+                  </span>
+                  <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receiptProposal.totalCents, tx.currency, lang)}</span>
+                </div>
+                <div className="mt-2 flex gap-2 pl-8">
+                  <Button size="sm" data-testid="review-receipt-accept" onClick={() => { void receiptOps.acceptMatch(receiptProposal); setReceiptPickOpen(false); }}>
+                    {t('receipts.accept')}
+                  </Button>
+                  <Button size="sm" variant="outline" data-testid="review-receipt-reject" onClick={() => { void receiptOps.rejectMatch(receiptProposal); setReceiptPickOpen(false); }}>
+                    {t('receipts.reject')}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {receiptCandidates.length > 0 && (
+              <>
+                <div className="m-cap px-1">{receiptProposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
+                <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-pick-list">
+                  {receiptCandidates.map((row) => (
+                    <button
+                      key={row.id}
+                      data-testid={`review-receipt-pick-${row.id}`}
+                      onClick={() => { void receiptOps.linkReceipt(row, tx.id); setReceiptPickOpen(false); }}
+                      className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
+                    >
+                      <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-ink">{row.merchant ?? partyName(row.source)}</span>
+                        <span className="block text-[11px] text-ink-4">{row.date}</span>
+                      </span>
+                      <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(row.totalCents, tx.currency, lang)}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </Sheet>
       )}
       {/* #237 r3: the card row's counter-transaction match sheet —
           suggestions first, the rest scrollable; create/await resets

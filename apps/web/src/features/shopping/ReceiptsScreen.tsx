@@ -169,16 +169,32 @@ export function ReceiptsScreen() {
                 const proposed = txs?.find((tx) => tx.id === link.proposedTxId);
                 return (
                   <div key={link.id} className="border-b border-line-2 px-4 py-3 last:border-0" data-testid={`receipt-proposal-${link.id}`}>
-                    <div className="flex items-center gap-3">
+                    {/* user ss 2026-10-05: a match was a guess with nothing to open — the receipt and the transaction are both doors now */}
+                    <button
+                      data-testid={`receipt-proposal-open-${link.id}`}
+                      onClick={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
+                      className="m-tap flex w-full items-center gap-3 border-none bg-transparent p-0 text-left"
+                    >
                       <Icon name="storefront-outline" size={18} color="var(--m-ink-3)" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-medium text-ink">{link.merchant ?? partyName(link.source)}</span>
-                        <span className="block truncate text-[11px] text-ink-4">
-                          {t('receipts.proposedFor')} {proposed?.merchant ?? proposed?.description ?? '…'} · {fmtDate(link.date)}
-                        </span>
+                        <span className="block truncate text-[11px] text-ink-4">{fmtDate(link.date)}{link.items?.length ? ` · ${link.items.length} ${t('receipt.items')}` : ''}</span>
                       </span>
                       <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(link.totalCents, currency, lang)}</span>
-                    </div>
+                      <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+                    </button>
+                    {proposed && (
+                      <button
+                        data-testid={`receipt-proposal-tx-${link.id}`}
+                        onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: proposed.id } })}
+                        className="m-tap mt-1.5 flex w-full items-center gap-2 border-none bg-transparent py-1 pl-8 text-left"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-4">
+                          {t('receipts.proposedFor')} {proposed.merchant ?? proposed.description ?? '…'} · {fmtCents(proposed.amountCents, proposed.currency || currency, lang)} · {fmtDate(proposed.date)}
+                        </span>
+                        <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+                      </button>
+                    )}
                     <div className="mt-2 flex gap-2 pl-8">
                       <Button size="sm" data-testid={`receipt-proposal-accept-${link.id}`} onClick={() => void receiptOps.acceptMatch(link)}>
                         {t('receipts.accept')}

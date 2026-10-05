@@ -10,7 +10,7 @@ import { BlockListEditor } from '@/features/customize/BlockListEditor';
 /** every block the landing zone can show, in default order (user ruling:
  *  review → this period → transactions → budgets → coming up → goals →
  *  debts → events → insights; portfolio left Home for its own tab) */
-export const HOME_BLOCK_IDS = ['review', 'cashflow', 'overview', 'transactions', 'explore', 'budgets', 'planning', 'upcoming', 'recurring', 'goals', 'debts', 'events', 'splits', 'insights', 'networth'] as const;
+export const HOME_BLOCK_IDS = ['review', 'receipts', 'cashflow', 'overview', 'transactions', 'explore', 'budgets', 'planning', 'upcoming', 'recurring', 'goals', 'debts', 'events', 'splits', 'insights', 'networth'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
 /** blocks that arrive switched OFF (opt-in via Customize Home) */
@@ -18,6 +18,7 @@ const DEFAULT_HIDDEN: ReadonlySet<HomeBlockId> = new Set(['networth']);
 
 export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   review: 'review.title',
+  receipts: 'receipts.toCheckTitle',
   cashflow: 'cashflow.title',
   overview: 'overview.thisPeriod',
   transactions: 'tab.transactions',
@@ -38,6 +39,7 @@ export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
  *  instead of a preview of Home (user feedback 2026-07-24) */
 export const HOME_BLOCK_ICONS: Record<HomeBlockId, string> = {
   review: 'check-decagram-outline',
+  receipts: 'receipt-text-outline',
   cashflow: 'swap-vertical',
   overview: 'chart-donut',
   transactions: 'format-list-bulleted',
