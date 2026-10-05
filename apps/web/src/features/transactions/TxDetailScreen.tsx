@@ -2226,8 +2226,12 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   // #348: the cash wallet takes hand entries, so its rows stay editable
   const onDefaultLedger = !!account?.defaultFor && account.defaultFor !== 'cash';
   // a credit that self-filed as Reimbursed keeps that category as long
-  // as any link lives (user rule) — unlink first, then recategorize
-  const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0) || onDefaultLedger;
+  // as any link lives (user rule) — unlink first, then recategorize. The
+  // part a PARTIAL link left open is the user's to file (user ss
+  // 2026-10-05: +250 settled 163, the uncategorized 87 was stuck): the
+  // settled slice stays pinned inside the editor, the remainder is editable
+  const openRemainder = (tx.cats ?? []).some((c) => c.catId !== REIMBURSED_ID && c.amountCents !== 0);
+  const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0 && !openRemainder) || onDefaultLedger;
   // the recurring OWNS the category (user rule 2026-07-28): a linked row
   // only picks between the recurring's category and expected
   // reimbursement — the editor's picker enforces it

@@ -1111,6 +1111,22 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('tx-detail-amount').textContent).not.toContain('+€2,200.00');
     // …and the uncategorized credit filed itself as Reimbursed (redesign)
     await waitFor(() => expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Reimbursed'));
+    // a PARTIAL settlement leaves an open remainder: that part is the user's
+    // to file (user ss 2026-10-05) — no lock, the editor opens with the
+    // settled slice pinned and ONE editable entry for the rest
+    expect(screen.queryByTestId('tx-detail-cats-locked')).toBeNull();
+    expect(screen.getByTestId('tx-detail-cat-uncategorized')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('tx-detail-cats-edit'));
+    await screen.findByTestId('part-cats-editor');
+    expect(screen.getByTestId('part-cat-settled-0').textContent).toContain('Reimbursed');
+    expect(screen.getByTestId('part-cat-0').textContent).toContain('Uncategorized');
+    expect(screen.queryByTestId('part-cat-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-salary'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toContain('Salary'), { timeout: 8000 });
+    expect(screen.getByTestId('tx-detail-categories').textContent).toContain('Reimbursed');
+    expect(screen.queryByTestId('tx-detail-cats-locked')).toBeNull();
 
     // unlinking from this side restores the full amount
     await waitFor(() =>

@@ -33,7 +33,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Add/edit a manual transaction end to end (amount math, account, category, counterparty — required for movement categories, date guard)
 - [ ] Detail: recategorize, rename, counterparty set/remove, recurring/event links, notes, receipt, customize sections, delete
 - [ ] Split a transaction into parts; edit parts; un-split; split categories (€ and %) on rows and parts
-- [ ] Reimbursements: link both directions (with clamping errors), parts included; unlink restores
+- [ ] Reimbursements: link both directions (with clamping errors), parts included; unlink restores; a credit settled only in PART keeps its open remainder editable (2026-10-05): the lock applies to a fully settled self-filed credit, otherwise the editor opens with the settled slice pinned read-only and the rest to file
 
 ## Review
 - [ ] Review card, 2026-09-29: Confirm stays tappable — a tap without a category names it under the category row (a transfer with one names its missing counterparty), the deck badges incomplete parts as before (#410); a split part’s recurring and event rows appear once the part has a real category, like the card (#339); every transaction list — the review bulk sheet, the detail’s bulk sheet, an event’s attach picker, the loan and recurring match sheets, the reconcile matches — selects and deselects all with the one SelectAllRow (square check, half-filled while partial, the count on the right) (#378)
