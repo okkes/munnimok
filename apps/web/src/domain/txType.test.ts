@@ -109,6 +109,12 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
       expect([...allowedSpecialCats('loan', 'credit')]).toEqual(['loanRepayment']);
       expect([...allowedSpecialCats('loan', 'debit')].sort()).toEqual(['debtBorrowed', 'debtFees', 'debtInterest']);
     });
+    it('the credit card (user 2026-10-06): the debt story AND the regular cell — a card is a regular account too', () => {
+      const incoming = allowedSpecialCats('credit', 'credit');
+      for (const id of ['loanRepayment', 'transferIn', 'savingWithdraw']) expect(incoming.has(id)).toBe(true);
+      const outgoing = allowedSpecialCats('credit', 'debit');
+      for (const id of ['debtBorrowed', 'debtInterest', 'debtFees', 'transferOut', 'savingDeposit', 'cashWithdraw']) expect(outgoing.has(id)).toBe(true);
+    });
     it('the brokerage ledger (#252): Invested/Sold/Dividends land, Withdrawn/Bought/Fees drain', () => {
       expect([...allowedSpecialCats('brokerage', 'credit')].sort()).toEqual(['investContribution', 'investDividend', 'investSell']);
       expect([...allowedSpecialCats('brokerage', 'debit')].sort()).toEqual(['investBuy', 'investFees', 'investWithdraw']);
