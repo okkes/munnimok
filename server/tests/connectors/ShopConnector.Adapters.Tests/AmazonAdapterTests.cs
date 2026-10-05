@@ -496,6 +496,34 @@ public sealed class AmazonAdapterTests
     /// total", unreadable means "the number we are about to use has changed
     /// meaning", and only the second one is a reason to stop.
     /// </summary>
+    /// <summary>
+    /// Prod 2026-10-05: a digital order's card (D01-…) carries no order date
+    /// the parser knows, and one such card among two dozen ordinary ones
+    /// ended the whole fetch as provider_changed — nothing landed. A card the
+    /// list cannot place is left out and named; the rest of the list stands.
+    /// </summary>
+    [Fact]
+    public void A_card_without_a_readable_date_is_left_out_and_named_while_the_rest_of_the_list_stands()
+    {
+        var html = AmazonFixture.Page("orders-2026-p1").Html;
+        // the recorded layout labels the date "Bestelling geplaatst" in a caps span; a digital order's card wears another word
+        const string label = ">Bestelling geplaatst<";
+        var first = html.IndexOf(label, StringComparison.Ordinal);
+        Assert.True(first >= 0);
+        var page = html[..first] + ">Digitale bestelling<" + html[(first + label.Length)..];
+        var all = AmazonOrderParser.ParseList(Dom("orders-2026-p1"), Options, RetailZones.Dutch);
+
+        var skipped = new List<string>();
+        var rows = AmazonOrderParser.ParseList(HtmlParser.Parse(page), Options, RetailZones.Dutch, skipped);
+
+        Assert.Equal(all.Count - 1, rows.Count);
+        var left = Assert.Single(skipped);
+        Assert.Equal(all[0].Id, left);
+        Assert.DoesNotContain(rows, row => row.Id == left);
+        // without a collector the card is still only left out
+        Assert.Equal(all.Count - 1, AmazonOrderParser.ParseList(HtmlParser.Parse(page), Options, RetailZones.Dutch).Count);
+    }
+
     [Fact]
     public void A_total_that_is_stated_and_unreadable_still_stops_everything()
     {

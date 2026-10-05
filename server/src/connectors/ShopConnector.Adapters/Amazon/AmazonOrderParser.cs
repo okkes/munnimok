@@ -114,8 +114,10 @@ internal static partial class AmazonOrderParser
 
     // ---- order list --------------------------------------------------------
 
+    /// <param name="skipped">Receives the id of every card the list could not place: no readable date (prod 2026-10-05, a digital
+    /// order among two dozen ordinary ones). Such a card is one order this walk leaves out, not a site that changed shape.</param>
     public static IReadOnlyList<AmazonOrderSummary> ParseList(
-        HtmlNode dom, AmazonOptions options, TimeZoneInfo zone)
+        HtmlNode dom, AmazonOptions options, TimeZoneInfo zone, ICollection<string>? skipped = null)
     {
         ArgumentNullException.ThrowIfNull(dom);
         ArgumentNullException.ThrowIfNull(options);
@@ -129,8 +131,16 @@ internal static partial class AmazonOrderParser
                      ?? throw Missing("order id", options.OrderIdSelectors);
 
             var dateText = Labelled(card, options.OrderDateLabels, options)
-                           ?? HtmlQuery.TextOf(card, options.OrderDateSelectors)
-                           ?? throw Missing($"order date on '{id}'", options.OrderDateSelectors);
+                           ?? HtmlQuery.TextOf(card, options.OrderDateSelectors);
+            if (dateText is null)
+            {
+                // One card this walk cannot place is not a shape change. Stopping
+                // here ended a fetch of two dozen good orders as provider_changed
+                // over a digital order's card (D01-…, prod 2026-10-05); the card
+                // is left out and named, and the rest of the list stands.
+                skipped?.Add(id);
+                continue;
+            }
 
             // Absent and unreadable are different answers.
             //
