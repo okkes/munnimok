@@ -30,7 +30,10 @@ public static class TxMetaOverlayRepair
         var repaired = await RepairAsync(db, ct);
         db.AppSettings.Add(new AppSetting { Key = SettingKey, Value = $"{repaired} rows at {DateTimeOffset.UtcNow:O}" });
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("txMeta overlay repair: {Rows} row(s) put back to the device's value", repaired);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("txMeta overlay repair: {Rows} row(s) put back to the device's value", repaired);
+        }
         return repaired;
     }
 
@@ -48,28 +51,36 @@ public static class TxMetaOverlayRepair
         {
             var space = await db.Spaces.FindAsync([spaceId], ct);
             if (space is null) continue;
-            var rows = await db.EntityRows.Where(r => r.SpaceId == spaceId && r.Entity == Entity && !r.Deleted).ToListAsync(ct);
-            var ops = await db.SyncOps.Where(o => o.SpaceId == spaceId && o.Entity == Entity).OrderBy(o => o.Seq).ToListAsync(ct);
-            var history = ops
-                .Where(o => !o.Hlc.EndsWith(ServerSuffix, StringComparison.Ordinal))
-                .Select(o => new Recorded(o.EntityId, JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(o.PayloadJson) ?? new()))
-                .GroupBy(r => r.EntityId)
-                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
-            var repairs = new List<SyncOpDto>();
-            foreach (var row in rows)
-            {
-                if (!history.TryGetValue(row.EntityId, out var devices)) continue;
-                var restore = Restore(row, devices);
-                if (restore.Count == 0) continue;
-                repairs.Add(new SyncOpDto(
-                    ImportIds.OpId($"repair:txmeta-overlay:{spaceId}:{row.EntityId}"), spaceId, Entity, row.EntityId, restore, ServerHlc.Now(counter++)));
-            }
+            var repairs = await RepairsForAsync(db, spaceId, counter, ct);
+            counter += repairs.Count;
             if (repairs.Count == 0) continue;
             var (_, accepted) = await new SyncWriter(db).ApplyAsync(space, null, repairs);
             await db.SaveChangesAsync(ct);
             repaired += accepted;
         }
         return repaired;
+    }
+
+    /// <summary>One space's repair ops: every txMeta row whose overlay field buried a device value, stamped from <paramref name="counter"/> on.</summary>
+    private static async Task<List<SyncOpDto>> RepairsForAsync(AppDbContext db, string spaceId, int counter, CancellationToken ct)
+    {
+        var rows = await db.EntityRows.Where(r => r.SpaceId == spaceId && r.Entity == Entity && !r.Deleted).ToListAsync(ct);
+        var ops = await db.SyncOps.Where(o => o.SpaceId == spaceId && o.Entity == Entity).OrderBy(o => o.Seq).ToListAsync(ct);
+        var history = ops
+            .Where(o => !o.Hlc.EndsWith(ServerSuffix, StringComparison.Ordinal))
+            .Select(o => new Recorded(o.EntityId, JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(o.PayloadJson) ?? new()))
+            .GroupBy(r => r.EntityId)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        var repairs = new List<SyncOpDto>();
+        foreach (var row in rows)
+        {
+            if (!history.TryGetValue(row.EntityId, out var devices)) continue;
+            var restore = Restore(row, devices);
+            if (restore.Count == 0) continue;
+            repairs.Add(new SyncOpDto(
+                ImportIds.OpId($"repair:txmeta-overlay:{spaceId}:{row.EntityId}"), spaceId, Entity, row.EntityId, restore, ServerHlc.Now(counter + repairs.Count)));
+        }
+        return repairs;
     }
 
     /// <summary>One device op's payload, in arrival order.</summary>
