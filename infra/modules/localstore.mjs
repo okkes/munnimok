@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MANIFEST, entriesFor, featureOn, generateValue, vapidPair } from './secrets.mjs';
+import { MANIFEST, entriesFor, featureOn, generateValue, satisfiedBy, vapidPair } from './secrets.mjs';
 import { loadStack } from './stack.mjs';
 
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
@@ -155,7 +155,7 @@ export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
       if (entry.scope === 'stack' || stack.role === 'env') own[entry.name] = value;
       else own[entry.name] = value; // the shared stack's platform-scoped values live in its own store
       minted.push(entry.name);
-    } else if (entry.owner === 'operator' && !entry.optional && featureOn(stack, entry.feature)) {
+    } else if (entry.owner === 'operator' && !entry.optional && featureOn(stack, entry.feature) && !satisfiedBy(entry, (n) => Boolean(values[n]))) {
       missingOperator.push(entry.name);
     }
   }

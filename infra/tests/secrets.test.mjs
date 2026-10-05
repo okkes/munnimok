@@ -8,7 +8,7 @@ import { scratchPlatforms, fakeGh } from './fixture.mjs';
 const fx = scratchPlatforms();
 const gh = fakeGh();
 const {
-  MANIFEST, generateValue, vapidPair, featureOn, platformEntries, entriesFor, mirroredEntries, ensureSecrets, verifySecrets,
+  MANIFEST, generateValue, vapidPair, featureOn, platformEntries, entriesFor, mirroredEntries, ensureSecrets, verifySecrets, satisfiedBy, foldFallbacks,
   ensureEnvironment, deleteEnvironment, existingEnvSecrets, existingEnvVariables, platformEnvironments, setPlatformSecret, setPlatformVariable,
 } = await import('../modules/secrets.mjs');
 const { loadStack } = await import('../modules/stack.mjs');
@@ -46,6 +46,24 @@ test('featureOn: banking and sign-in providers are lists, the app features flags
   assert.equal(featureOn(stack, 'email'), true);
   assert.equal(featureOn(stack, undefined), true, 'an entry without a feature is always needed');
   assert.equal(featureOn({}, 'gocardless'), false);
+});
+
+test('manifest fallback: one Apple membership — LOGTO_APPLE_TEAM_ID is satisfied by APPLE_TEAM_ID (same scope, both the operator\'s) and folded from it; nothing else stands in for anything', () => {
+  const withFallback = MANIFEST.secrets.filter((s) => s.fallback);
+  assert.deepEqual(withFallback.map((s) => `${s.name}←${s.fallback}`), ['LOGTO_APPLE_TEAM_ID←APPLE_TEAM_ID']);
+  for (const s of withFallback) {
+    const f = entry(s.fallback);
+    assert.ok(f, `${s.fallback} is an entry`);
+    assert.equal(f.scope, s.scope, 'the same environment carries both');
+    assert.equal(f.owner, 'operator');
+  }
+  assert.equal(satisfiedBy(entry('LOGTO_APPLE_TEAM_ID'), (n) => n === 'APPLE_TEAM_ID'), true);
+  assert.equal(satisfiedBy(entry('LOGTO_APPLE_TEAM_ID'), () => false), false);
+  assert.equal(satisfiedBy(entry('LOGTO_APPLE_KEY_ID'), (n) => n === 'APPLE_TEAM_ID'), false, 'no fallback, no stand-in');
+  assert.deepEqual(foldFallbacks({ LOGTO_APPLE_CLIENT_ID: 'svc' }, { APPLE_TEAM_ID: 'TEAM123456' }), { LOGTO_APPLE_CLIENT_ID: 'svc', LOGTO_APPLE_TEAM_ID: 'TEAM123456' }, 'the source fills the target');
+  assert.deepEqual(foldFallbacks({ LOGTO_APPLE_TEAM_ID: 'OWN', APPLE_TEAM_ID: 'OTHER' }), { LOGTO_APPLE_TEAM_ID: 'OWN', APPLE_TEAM_ID: 'OTHER' }, 'an own value is never overwritten');
+  assert.deepEqual(foldFallbacks({ APPLE_TEAM_ID: 'SELF' }), { APPLE_TEAM_ID: 'SELF', LOGTO_APPLE_TEAM_ID: 'SELF' }, 'without a source the target folds itself');
+  assert.equal(entry('APPLE_DEV_CERT_SERIAL').optional, true, 'the certificate serial travels with the .p12, never asked');
 });
 
 test('entriesFor: the shared stack owns the platform-scoped values (+ its own postgres), an environment the env-scoped ones its features enable (+ its own postgres); mirroredEntries = the platform values an environment must also see', () => {
@@ -183,7 +201,14 @@ test('verifySecrets: names what the manifest requires and is not there, and what
   assert.deepEqual([...v.missing].sort(), required([...entriesFor(prod), ...mirroredEntries(prod)]).filter((n) => !(n in gh.secrets('nas-prod'))));
   assert.ok(v.missing.includes('GOCARDLESS_SECRET_ID') && v.missing.includes('VAULT_ADMIN_EMAIL'));
   assert.deepEqual(v.unmanaged, []);
-  gh.seed('nas-prod', { secrets: Object.fromEntries(v.missing.map((n) => [n, `value-of-${n}`])) });
+  // one Apple membership (2026-10-05, the prod verify went red on exactly this): the App Store Connect tile's Team ID satisfies the sign-in tile's, and the certificate's serial is a manifest entry
+  assert.ok(v.missing.includes('LOGTO_APPLE_TEAM_ID') && v.missing.includes('APPLE_TEAM_ID'), 'nothing of Apple stored yet');
+  gh.seed('nas-prod', { secrets: { APPLE_TEAM_ID: 'TEAM123456', APPLE_DEV_CERT_SERIAL: '1A2B3C' } });
+  const oneTeam = verifySecrets(prod);
+  assert.ok(!oneTeam.missing.includes('LOGTO_APPLE_TEAM_ID') && !oneTeam.missing.includes('APPLE_TEAM_ID'), 'the ios tile\'s Team ID stands in for the sign-in tile\'s');
+  assert.deepEqual(oneTeam.unmanaged, [], 'the serial has its manifest entry');
+  assert.ok(!ensureSecrets(prod).missingOperator.includes('LOGTO_APPLE_TEAM_ID'), 'the apply agrees with the verify');
+  gh.seed('nas-prod', { secrets: Object.fromEntries(oneTeam.missing.map((n) => [n, `value-of-${n}`])) });
   gh.seed('nas-prod', { secrets: { NAS_LEGACY_THING: 'old' } });
   const filled = verifySecrets(prod);
   assert.deepEqual(filled.missing, []);

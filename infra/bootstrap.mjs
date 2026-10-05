@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from './modules/stack.mjs';
 import { publishPlatform, writeApplied } from './modules/config.mjs';
-import { deleteEnvironment, ensureSecrets, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
+import { deleteEnvironment, ensureSecrets, foldFallbacks, satisfiedBy, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, logtoAnswers, removeApps, writeBack, writeBackConnector } from './modules/logto.mjs';
 import { vaultPlatformValues, vaultReplaceFolder } from './modules/vault.mjs';
@@ -203,7 +203,7 @@ async function applyLogto(values, write, fresh) {
   for (const name of ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET', 'LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']) {
     if (!process.env[name] && values[name]) process.env[name] = values[name];
   }
-  if (!process.env.LOGTO_APPLE_TEAM_ID && values.APPLE_TEAM_ID) process.env.LOGTO_APPLE_TEAM_ID = values.APPLE_TEAM_ID;
+  foldFallbacks(process.env, values); // the manifest's fallbacks: LOGTO_APPLE_TEAM_ID ← APPLE_TEAM_ID (one Apple membership)
   const social = await applySocialConnectors(stack, creds).catch((e) => ({ applied: [], error: e.message }));
   console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]${social.renamed?.length ? ` — moved under their fixed ids (${social.renamed.join(', ')})` : ''}` : `  logto: no social connector credentials — skipped${social.error ? ` (${social.error})` : ''}`);
   const brand = await applyBranding(stack, creds).catch((e) => ({ error: e.message }));
@@ -252,7 +252,7 @@ async function applyGlitchtipFor(values, write) {
 async function localVerify() {
   console.log(`verify ${stack.stack} (${stack.platformLabel})`);
   const values = stackValues(stack);
-  const missing = stackManifestEntries(stack).filter((s) => !s.optional && s.owner !== 'module' && !values[s.name]).map((s) => s.name);
+  const missing = stackManifestEntries(stack).filter((s) => !s.optional && s.owner !== 'module' && !satisfiedBy(s, (n) => Boolean(values[n]))).map((s) => s.name);
   if (missing.length) console.log(`  ✗ values missing from the local stores: ${missing.join(', ')}`);
   else console.log('  ✓ local stores satisfy the manifest');
   const allUp = await probeAll();
@@ -394,8 +394,7 @@ async function ciApply() {
     waitingForShared = waitingForShared.filter((n) => !pulled.includes(n));
   }
   if (waitingForShared.length) console.log(`  ⏳ platform values the shared stack's bootstrap mirrors, not in this environment yet: ${waitingForShared.join(', ')}`);
-  const stillMissing = missingOperator.filter((n) => n !== 'LOGTO_APPLE_TEAM_ID' || !(process.env.LOGTO_APPLE_TEAM_ID || process.env.APPLE_TEAM_ID));
-  if (stillMissing.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${stillMissing.join(', ')}`);
+  if (missingOperator.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${missingOperator.join(', ')}`);
   const dir = renderStack(stack);
   console.log(`  rendered compose + env template → ${dir}`);
   const values = process.env;

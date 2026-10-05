@@ -78,6 +78,19 @@ export function entriesFor(stack) {
 /** platform-scoped entries an ENVIRONMENT stack must also see (mirrored into its GitHub environment) — a sharedOnly value (GlitchTip's own keys, pgAdmin's login) stays with the shared stack */
 export const mirroredEntries = (stack) => (stack.role === 'env' ? platformEntries(stack.platform).filter((s) => s.scope === 'platform' && !s.sharedOnly) : []);
 
+/** is a manifest entry satisfied by what is present? one that names a `fallback` (LOGTO_APPLE_TEAM_ID ← APPLE_TEAM_ID: one Apple membership) is, when the fallback is */
+export const satisfiedBy = (entry, has) => has(entry.name) || Boolean(entry.fallback && has(entry.fallback));
+
+/** fill every entry that names a fallback from the fallback's value (the source first, then the target itself) — the modules then read the entry's own name */
+export function foldFallbacks(target, source = target) {
+  for (const entry of MANIFEST.secrets) {
+    if (!entry.fallback || target[entry.name]) continue;
+    const value = source[entry.fallback] || target[entry.fallback];
+    if (value) target[entry.name] = value;
+  }
+  return target;
+}
+
 /* ── GitHub (the nas platform) ───────────────────────────────────────── */
 
 export function ensureEnvironment(env) {
@@ -184,7 +197,7 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
         setOwn(entry.name, generateValue(entry.name));
         minted.push(entry.name);
       }
-    } else if (entry.owner === 'operator' && !entry.optional) {
+    } else if (entry.owner === 'operator' && !entry.optional && !satisfiedBy(entry, (n) => present.has(n))) {
       missingOperator.push(entry.name);
     }
     // module-owned: written back later — never minted
@@ -196,7 +209,7 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
 export function verifySecrets(stack) {
   const present = existingEnvSecrets(stack.githubEnvironment);
   const expected = [...entriesFor(stack), ...mirroredEntries(stack)];
-  const missing = expected.filter((s) => !s.optional && s.owner !== 'module' && !present.has(s.name)).map((s) => s.name);
+  const missing = expected.filter((s) => !s.optional && s.owner !== 'module' && !satisfiedBy(s, (n) => present.has(n))).map((s) => s.name);
   const unmanaged = [...present].filter((name) => !MANIFEST.secrets.some((s) => s.name === name));
   return { missing, unmanaged };
 }
