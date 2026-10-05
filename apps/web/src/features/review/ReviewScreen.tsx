@@ -5,6 +5,7 @@ import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
+import { releasePeerLeg } from '@/application/counterPair';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
@@ -309,8 +310,10 @@ const splitWouldReset = (args: {
 
 /** #237 r3: the card's Counter-transaction row descriptor — undefined
  *  hides the row (no counterparty, or a funding pot: nothing ever
- *  shows there); a STORED pair renders tap-less (S3776: out of the
- *  component) */
+ *  shows there). A STORED pair is the person's to change too (user ss
+ *  2026-10-05: a remembered pair sat on the card with no way to touch
+ *  it) — the tap re-points or releases it on confirm (S3776: out of
+ *  the component) */
 function counterTxDescriptor(
   tx: SpaceTx | undefined,
   counterAcct: { type: AccountType } | undefined,
@@ -322,7 +325,7 @@ function counterTxDescriptor(
 ): { face: string; onEdit?: () => void } | undefined {
   if (!tx || !counterAcct || counterAcct.type === 'funding') return undefined;
   const face = counterTxFaceFor(peer, bankFed, tx.currency, lang, t);
-  return tx.transferPeerId ? { face } : { face, onEdit };
+  return { face, onEdit };
 }
 
 /** #161: the remembered pct SPREAD applied onto an untouched draft —
@@ -360,6 +363,8 @@ async function writeConfirmation(args: {
   transform: ReturnType<typeof useTxTransform>;
   /** #237 r2: the EXISTING row the user pointed at (pick-existing) */
   pairPeerId?: string;
+  /** 2026-10-05: a STORED pair the person released on the card — the row forgets its peer (the peer leg was released beforehand) */
+  releasePeer?: boolean;
 }): Promise<void> {
   const { draft } = args;
   // draft-cleared fields on a tx that HAD them need an explicit null —
@@ -381,7 +386,7 @@ async function writeConfirmation(args: {
     ...linkField,
     // #237 r2: a pick-existing peer rides the SAME write — the choke
     // sees the incoming peer and mints nothing
-    ...(args.pairPeerId ? { transferPeerId: args.pairPeerId } : {}),
+    ...(args.pairPeerId ? { transferPeerId: args.pairPeerId } : args.releasePeer ? { transferPeerId: null as never } : {}),
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
     // #324 (user): the staged note lands with the same write ('' clears)
@@ -1182,6 +1187,25 @@ export function ReviewPartDeck({
   );
 }
 
+/** 2026-10-05 (user ss): a row that REMEMBERS its counterparty (the
+ * memory, an earlier device, a repaired overlay) but wears no category
+ * files the movement its counter's kind means — the bijection the pick
+ * itself applies — instead of sitting on "Pick a category" next to a
+ * labelled counter transaction. A deliberate category is never touched. */
+function fileRememberedCounter(
+  draft: ReviewDraft | null,
+  accounts: readonly { id: string; type: AccountType }[] | undefined,
+  cats: ReturnType<typeof useCategories>,
+  amountCents: number,
+  ownStamp?: TxType,
+): ReviewDraft | null {
+  if (!draft?.linkedAccountId || draft.splits?.length || draft.cats?.length) return draft;
+  if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
+  const account = accounts?.find((a) => a.id === draft.linkedAccountId);
+  if (!account) return draft;
+  return withLinkedAccount(draft, { id: account.id, type: account.type }, cats, amountCents, ownStamp);
+}
+
 /** own-account counterparty pre-applies the link + suggested type; the
  * hidden 'uncategorized' builtin keeps the confirm armed for transfers */
 function applyOwnCounterDefault(
@@ -1608,6 +1632,8 @@ export function ReviewScreen() {
   // so the bulk offer stands down while it does. The warning asks first
   // when similar transactions were about to ride along.
   const [pickedPeer, setPickedPeer] = useState<{ txId: string; linkedId: string } | null>(null);
+  // 2026-10-05: the create/wait door on a STORED pair means "release it" — the card shows the default again until confirm
+  const [releaseStored, setReleaseStored] = useState(false);
   const [pickWarn, setPickWarn] = useState<{ n: number; stage: () => void } | null>(null);
   // #268 (user): the per-sibling counter-match queue a confirmed
   // row-level pick leaves behind (draft snapshot at confirm time)
@@ -1741,7 +1767,7 @@ export function ReviewScreen() {
   // — clue-matched counterparty, or Uncategorized when nothing matches
   const spaceAccounts = useSpaceAccounts();
   const resolvedDraft = useMemo(
-    () => resolveTransferPrediction(ownTransferDraft, tx, spaceAccounts, cats, ownStamp),
+    () => fileRememberedCounter(resolveTransferPrediction(ownTransferDraft, tx, spaceAccounts, cats, ownStamp), spaceAccounts, cats, tx?.amountCents ?? 0, ownStamp),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [ownTransferDraft, tx?.id, spaceAccounts, cats, ownStamp],
   );
@@ -1771,10 +1797,10 @@ export function ReviewScreen() {
   const counterBankFed = (counterAcct?.source ?? 'manual') !== 'manual';
   const peerFaceRow = useMemo(
     () => {
-      const standingPeerId = tx?.transferPeerId ?? pickedPeer?.txId;
+      const standingPeerId = pickedPeer?.txId ?? (releaseStored ? undefined : tx?.transferPeerId);
       return standingPeerId ? allTxs?.find((r) => r.id === standingPeerId) : undefined;
     },
-    [tx?.transferPeerId, pickedPeer, allTxs],
+    [tx?.transferPeerId, pickedPeer, releaseStored, allTxs],
   );
   const counterTxRow = counterTxDescriptor(tx, counterAcct, peerFaceRow, counterBankFed, lang, t, () => setCounterTxOpen(true));
   const events = useEvents();
@@ -1875,6 +1901,7 @@ export function ReviewScreen() {
     setSplitResetOpen(false);
     splitResetArmed.current = false;
     setPickedPeer(null);
+    setReleaseStored(false);
     setPickWarn(null);
     setCounterTxOpen(false);
     eventTouched.current = false;
@@ -2104,6 +2131,12 @@ export function ReviewScreen() {
     // #221→#309: the bare-movement default fallback is GONE — the gate
     // above guarantees every movement confirm carries its picked link
     // (which may well BE the family default, chosen in the ask).
+    // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
+    // whose counterparty was dropped lets its peer leg go first — a stale
+    // peer would keep collapsing the pair in the list
+    const repointed = !!pickedPeer && pickedPeer.txId !== tx.transferPeerId;
+    const releasePeer = !!tx.transferPeerId && (releaseStored || repointed || !draft.linkedAccountId);
+    if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
     await writeConfirmation({
       tx,
       draft,
@@ -2113,8 +2146,9 @@ export function ReviewScreen() {
       bulk: pickedPeer ? [] : bulk,
       transform,
       pairPeerId: pickedPeer?.txId,
+      releasePeer: releasePeer && !pickedPeer,
     });
-    await pairReviewPicks({ store, repo, spaceId }, tx, pickedPeer?.txId, partPeers);
+    await pairReviewPicks({ store, repo, spaceId }, tx, repointed || (pickedPeer && !tx.transferPeerId) ? pickedPeer?.txId : undefined, partPeers);
     if (queued) setCounterBulk(queued);
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
@@ -2595,11 +2629,12 @@ export function ReviewScreen() {
           target={{ id: counterAcct.id, name: counterAcct.name }}
           anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
           rows={allTxs ?? []}
-          onCreate={resetPickDoor(counterBankFed, false, () => setPickedPeer(null))}
-          onWait={resetPickDoor(counterBankFed, true, () => setPickedPeer(null))}
+          onCreate={resetPickDoor(counterBankFed, false, () => { setPickedPeer(null); setReleaseStored(!!tx.transferPeerId); })}
+          onWait={resetPickDoor(counterBankFed, true, () => { setPickedPeer(null); setReleaseStored(!!tx.transferPeerId); })}
           onPick={(pickedId) => {
             // #268 (user): a row-level pick no longer stands bulk down —
             // confirm walks the siblings through their own match queue
+            setReleaseStored(false);
             setPickedPeer({ txId: pickedId, linkedId: counterAcct.id });
           }}
         />

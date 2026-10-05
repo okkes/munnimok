@@ -27,6 +27,43 @@ import { autoSubFor, stampMovementSub } from '@/domain/categories';
  * the source pointed at the purchase, the purchase knew nothing, and
  * the match sheet kept offering it (user screenshots, 2026-08-16).
  */
+/**
+ * The inverse of a pair: the peer leg forgets this row. A minted part-leg's
+ * back-pointer is the part-mirror SOURCE key ("rowId:partId", #255 r4), so
+ * releasing from the leg's side reaches the PART's own pointer. The row's
+ * own `transferPeerId` is the caller's write (it rides the same transform
+ * as the rest of the change).
+ */
+export async function releasePeerLeg(
+  store: StorageBackend,
+  repo: Repo,
+  spaceId: string,
+  tx: SpaceTx,
+  allTxs: SpaceTx[] | undefined,
+): Promise<void> {
+  const peerId = tx.transferPeerId;
+  if (!peerId) return;
+  const peer =
+    (allTxs ?? []).find((item) => item.id === peerId) ??
+    (await visibleTransactions(store, spaceId)).find((item) => item.id === peerId);
+  if (peer) {
+    await writeTxTransform(repo, peer, { transferPeerId: null as never });
+    return;
+  }
+  const colon = peerId.indexOf(':');
+  if (colon <= 0) return;
+  const ownerId = peerId.slice(0, colon);
+  const partId = peerId.slice(colon + 1);
+  const owner =
+    (allTxs ?? []).find((item) => item.id === ownerId) ??
+    (await visibleTransactions(store, spaceId)).find((item) => item.id === ownerId);
+  if (owner?.splits?.some((s) => s.id === partId && s.transferPeerId === tx.id)) {
+    await writeTxTransform(repo, owner, {
+      splits: owner.splits.map((s) => (s.id === partId ? { ...s, transferPeerId: undefined } : s)),
+    });
+  }
+}
+
 export async function pairWithExistingRow(
   store: StorageBackend,
   repo: Repo,
