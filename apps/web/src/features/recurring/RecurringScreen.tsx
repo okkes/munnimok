@@ -45,6 +45,14 @@ interface ChartTx {
 const isEstimateMonth = (seriesIndex: number, monthIdx: number, chartYear: number, today: string): boolean =>
   seriesIndex === 0 && `${chartYear}-${String(monthIdx + 1).padStart(2, '0')}` > today.slice(0, 7);
 
+/** whole calendar days from today to a yyyy-mm-dd date (negative = in the past), free of clock and zone drift */
+export function daysFromToday(iso: string, now: Date = new Date()): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  const target = Date.UTC(y, m - 1, d);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target - today) / 86_400_000);
+}
+
 export function RecurringScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -142,12 +150,25 @@ export function RecurringScreen() {
 
   const subtitleFor = (c: RecurringComputed): string => {
     if (view === 'period' && c.paid) return t('recurring.paidThisPeriod');
-    // custom cadences say their rhythm; plain monthly/yearly say the due day
+    // custom cadences say their rhythm; plain monthly/yearly say how many
+    // days are left (user ss 2026-10-05: "Due day 4 · next 4 Nov" said the
+    // day twice and never the distance) — the day number only when there
+    // is no next date to count to
     const custom = c.rec.every === 'week' || (c.rec.everyN ?? 1) > 1;
-    const parts = [custom ? cadenceLabel(c.rec, t) : t('recurring.dueDay2', { day: c.rec.dueDay })];
+    const lead = custom ? cadenceLabel(c.rec, t) : (c.nextDue ? dueInText(c.nextDue) : t('recurring.dueDay2', { day: c.rec.dueDay }));
+    const parts = [lead];
     if (c.nextDue) parts.push(t('recurring.next', { date: fmtDate(c.nextDue) }));
     if (c.rec.until) parts.push(t('recurring.ends', { date: fmtDate(c.rec.until) }));
     return parts.join(' · ');
+  };
+
+  /** "Due in 12 days" / today / tomorrow / overdue, from a yyyy-mm-dd next date against today's calendar day */
+  const dueInText = (nextDue: string): string => {
+    const days = daysFromToday(nextDue);
+    if (days === 0) return t('recurring.dueToday');
+    if (days === 1) return t('recurring.dueTomorrow');
+    if (days < 0) return t('recurring.overdue', { n: -days });
+    return t('recurring.dueIn', { n: days });
   };
 
   // the toggle filters by date range — label it with the actual dates,
