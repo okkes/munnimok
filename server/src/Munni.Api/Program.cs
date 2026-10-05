@@ -205,7 +205,10 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
     // real migrations: schema evolves in place across releases
-    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+    var migrated = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await migrated.Database.MigrateAsync();
+    // the 2026-10-05 overlay repair: once per database, remembered in AppSettings
+    await TxMetaOverlayRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
 }
 
 // handled errors keep their CORS headers — unhandled exceptions wipe the

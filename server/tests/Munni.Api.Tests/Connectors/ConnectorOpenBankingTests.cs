@@ -87,6 +87,51 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
     }
 
     [Fact]
+    public async Task The_overlay_fills_only_what_nobody_said_a_device_s_category_outranks_it_before_and_after()
+    {
+        const string sub = "overlay-floor";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        const string iban = "NL91MOCK0000000778";
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-floor", "account",
+            [new JsonObject { ["id"] = "acc_floor", ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current" }], ct);
+        var reference = factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_floor"));
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("Floor") }, ServerHlc.Now(0))]));
+        Assert.True((await client.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(reference.FeedSpaceId, reference.AccountEntityId, "2026-01-01"))).IsSuccessStatusCode);
+
+        // the person filed the row BEFORE the party's facts landed (a device that
+        // attached the account itself, or the 2026-10-05 re-overlay of a whole history)
+        var bookedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-F1");
+        var metaId = ImportIds.TxMetaId(spaceId, bookedId);
+        var filed = new Dictionary<string, JsonElement> { ["txId"] = JsonSerializer.SerializeToElement(bookedId), ["catId"] = JsonSerializer.SerializeToElement("tuition"), ["needsReview"] = JsonSerializer.SerializeToElement(0) };
+        await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "txMeta", metaId, filed, "000000200-0000-dev1")]));
+        var tx = Tx("txn_f1", "REF-F1", "2026-09-28", -1250, "Albert Heijn", "Albert Heijn 1350 AMSTERDAM");
+        tx["account_id"] = "acc_floor";
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-floor", "transaction", [tx], ct);
+        var meta = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == metaId));
+        Assert.Contains("\"catId\":\"tuition\"", meta.DataJson);   // the overlay filled nothing the person had said
+        Assert.Contains("\"needsReview\":0", meta.DataJson);
+        Assert.Contains("\"txType\":\"expense\"", meta.DataJson);   // ...and only what nobody had
+        Assert.Contains($"\"txType\":\"{ServerHlc.Floor}\"", meta.FieldVersionsJson);
+
+        // a row the party filed first: the prediction stands until a device speaks, and any device stamp wins
+        var later = Tx("txn_f2", "REF-F2", "2026-09-29", -300, "NS", "NS Reizigers");
+        later["account_id"] = "acc_floor";
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-floor", "transaction", [later], ct);
+        var laterMetaId = ImportIds.TxMetaId(spaceId, ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-F2"));
+        Assert.Contains($"\"catId\":\"{ServerHlc.Floor}\"", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.EntityId == laterMetaId).FieldVersionsJson));
+        var chosen = new Dictionary<string, JsonElement> { ["catId"] = JsonSerializer.SerializeToElement("transport"), ["needsReview"] = JsonSerializer.SerializeToElement(0) };
+        await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "txMeta", laterMetaId, chosen, "000000001-0000-dev1")]));
+        Assert.Contains("\"catId\":\"transport\"", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.EntityId == laterMetaId).DataJson));
+    }
+
+    [Fact]
     public async Task The_pending_mirror_follows_the_bank_and_the_overlay_predicts_where_the_account_is_attached()
     {
         const string sub = "pending-mirror";

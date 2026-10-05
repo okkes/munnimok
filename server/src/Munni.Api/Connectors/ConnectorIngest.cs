@@ -476,10 +476,13 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     /// <summary>
     /// The predicted category and type for one booked row in one space, as
     /// the api's own bank ingest wrote it: written once per row and space
-    /// (the op id is the pair), so a person's later choice is never clobbered
-    /// by a re-fetch.
+    /// (the op id is the pair) and stamped with the FLOOR clock, so it only
+    /// fills what nobody said yet — a person's choice, made before or after,
+    /// always outranks it. (2026-10-05: with the server's live clock the first
+    /// overlay the new op-id scheme wrote buried a whole evening's
+    /// categorisations; <see cref="TxMetaOverlayRepair"/> put them back.)
     /// </summary>
-    private SyncOpDto OverlayOp(string spaceId, TransactionRow row)
+    private static SyncOpDto OverlayOp(string spaceId, TransactionRow row)
     {
         var predicted = KeywordPredictor.Predict(row.Text, row.Direction);
         var fields = new Dictionary<string, JsonElement>
@@ -489,7 +492,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             ["txType"] = Json(predicted?.TxType ?? (row.Direction == CreditDirection ? "income" : "expense")),
             ["needsReview"] = Json(predicted is null ? 1 : 0),
         };
-        return Op(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, $"connmeta:{spaceId}:{row.EntityId}");
+        return new SyncOpDto(ImportIds.OpId($"connmeta:{spaceId}:{row.EntityId}"), spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, ServerHlc.Floor);
     }
 
     private Task<List<string>> AttachedSpacesAsync(ConnectorAccountRef account, CancellationToken ct) =>

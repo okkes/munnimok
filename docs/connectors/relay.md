@@ -132,10 +132,16 @@ things the api's own bank ingest kept:
   the transactions resource is complete — every remembered row the party
   no longer reports is tombstoned: booked under a new reference, or
   withdrawn. An incomplete pass settles nothing.
-- **The prediction overlay follows the attachment.** A booked row gets a
-  `txMeta` (category, type, `needsReview`) from `KeywordPredictor` in every
-  space the account is attached to, written once per row and space (the
-  op id is the pair), so a person's later choice is never clobbered.
+- **The prediction overlay follows the attachment, and it is a floor.** A
+  booked row gets a `txMeta` (category, type, `needsReview`) from
+  `KeywordPredictor` in every space the account is attached to, written
+  once per row and space (the op id is the pair) and stamped with the
+  floor clock (`ServerHlc.Floor`): it only fills what nobody said yet, so a
+  person's choice — made before the overlay or after it — always outranks
+  it. (2026-10-05: stamped with the server's live clock, the first overlay
+  the renamed op id wrote re-filed a whole account's history over an
+  evening of categorisations; `TxMetaOverlayRepair` runs once per
+  database at startup and puts the devices' values back.)
 - **The account row names its institution.** An account record's
   `institution` — the value of the party's lookup, an aggregator's
   institution id — lands as the row's `bankId`, so the app shows the
