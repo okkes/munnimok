@@ -1160,6 +1160,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'import.done': '{n} işlem içe aktarıldı, {s} kopya atlandı',
   'import.notAttachedTitle': 'Henüz bir alana bağlı değil',
   'import.notAttachedBody': 'Aktarılan hesap geneldir. Alana kendiniz bağlayın — hesap türünü ve geçmişin ne kadar geriye gideceğini siz seçersiniz.',
+  'import.fedBy': 'Bu hesabı zaten {party} besliyor — bu ekstrenin satırlarını eklemek için işaretleyin. Canlı bağlantı yönetimde kalır, asla değiştirilmez.',
+  'import.fedByParty': 'bir banka bağlantısı',
   'import.gotoAttach': 'Bu alana bağla…',
   'import.longHistoryTip': 'Bankanızın izin verdiği kadar geriye giden bir dışa aktarım yükleyin — uzun geçmiş desen algılamayı besler, alanın başlangıç tarihi görünümü temiz tutar.',
   'acct.historyFromAll': 'Tüm geçmiş',

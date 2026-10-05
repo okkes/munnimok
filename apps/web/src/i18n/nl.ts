@@ -1160,6 +1160,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'import.done': '{n} transacties geïmporteerd, {s} duplicaten overgeslagen',
   'import.notAttachedTitle': 'Nog niet aan een space gekoppeld',
   'import.notAttachedBody': 'De geïmporteerde rekening is globaal. Koppel hem zelf aan een space — jij kiest het rekeningtype en hoe ver de historie teruggaat.',
+  'import.fedBy': 'Wordt al gevuld door {party} — vink aan om de regels van dit afschrift toe te voegen. De live koppeling blijft leidend en wordt nooit vervangen.',
+  'import.fedByParty': 'een bankkoppeling',
   'import.gotoAttach': 'Aan deze space koppelen…',
   'import.longHistoryTip': 'Exporteer zo ver terug als je bank toestaat — de lange historie voedt patroonherkenning, en de startdatum van je space houdt het beeld schoon.',
   'acct.historyFromAll': 'Volledige historie',

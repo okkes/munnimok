@@ -1159,6 +1159,8 @@ export const en = {
   'import.notAttachedTitle': 'Not attached to a space yet',
   'import.notAttachedBody': 'The imported account is global. Attach it to a space yourself — you choose the account type and how far back its history shows.',
   'import.gotoAttach': 'Attach to this space…',
+  'import.fedBy': 'Already fed by {party} — tick to add this statement\'s rows to it. The live feed stays in charge and is never replaced.',
+  'import.fedByParty': 'a bank connection',
   'import.longHistoryTip': 'Export as far back as your bank allows — the long history powers pattern detection, and your space start date keeps the view clean.',
   'acct.historyFromAll': 'Full history',
   'import.preStart': '{n} transactions are older than this space’s start date — they stay stored but hidden.',

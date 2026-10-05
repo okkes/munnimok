@@ -24,6 +24,7 @@ import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
+import { partyName } from '@/features/connectors/logos';
 
 const daysSince = (iso: string): number => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 
@@ -132,6 +133,12 @@ export function StatementImportFlow({
   // #299 (user): pick which previewed accounts import — excluded INDEXES
   // into importPreview (monthly exports repeat IBANs); empty set = all
   const [excluded, setExcluded] = useState<ReadonlySet<number>>(new Set());
+  /** user rule 2026-10-05: a statement for an account a PARTY feeds asks first — it starts unticked, the person opts in */
+  const fedBy = (stmt: ParsedStatement): string | null => {
+    const match = byIban.get(stmt.iban.replace(/\s/g, '').toUpperCase());
+    if (!match || match.source !== 'connector') return null;
+    return match.provider ? partyName(match.provider) : t('import.fedByParty');
+  };
   const [noneBlocked, setNoneBlocked] = useState(false);
   // #300: "about X left" while the rows land — null until honest
   const etaRef = useRef<EtaState | null>(null);
@@ -168,6 +175,8 @@ export function StatementImportFlow({
         statements.push(...parseStatement(file.content, file.name));
       }
       setImportPreview(statements);
+      // the statements for party-fed accounts wait for a tick
+      setExcluded(new Set(statements.map((s, i) => (fedBy(s) ? i : -1)).filter((i) => i >= 0)));
     } catch {
       setImportError(true);
       setImportPreview([]); // open the sheet to show the error
@@ -409,7 +418,7 @@ export function StatementImportFlow({
                   {/* #299 (user): several accounts in the pick (one CAMT
                       with many, or several files) import à la carte —
                       all checked by default, unchecking skips one */}
-                  {(importPreview?.length ?? 0) > 1 && (
+                  {((importPreview?.length ?? 0) > 1 || fedBy(stmt)) && (
                     <input
                       type="checkbox"
                       data-testid={`import-select-${i}`}
@@ -424,6 +433,11 @@ export function StatementImportFlow({
                       {match?.name ?? t('import.newAccount')}
                     </span>
                     <span className="block truncate font-mono text-[11px] text-ink-4">{stmt.iban}</span>
+                    {fedBy(stmt) && (
+                      <span className="block text-[11px] leading-snug text-warning" data-testid={`import-fed-${i}`}>
+                        {t('import.fedBy', { party: fedBy(stmt) ?? '' })}
+                      </span>
+                    )}
                     {/* export-vs-upload insight: an old export imports
                         fine and silently misses everything after it —
                         warn BEFORE the import, when a fresh export is
