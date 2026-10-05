@@ -10,7 +10,6 @@ import { useUnmatchedReceipts } from '@/application/connections';
 import { useReceiptOps } from '@/application/receipts';
 import { rankForTx } from '@/features/shopping/ReceiptSection';
 import { partyName } from '@/features/connectors/logos';
-import { releasePeerLeg } from '@/application/counterPair';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
@@ -43,7 +42,7 @@ import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
-import { pairWithExistingRow } from '@/application/counterPair';
+import { pairWithExistingRow, releasePeerLeg } from '@/application/counterPair';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, orDefaultLabel, txTitle } from '@/lib/text';
@@ -391,7 +390,7 @@ async function writeConfirmation(args: {
     ...linkField,
     // #237 r2: a pick-existing peer rides the SAME write — the choke
     // sees the incoming peer and mints nothing
-    ...(args.pairPeerId ? { transferPeerId: args.pairPeerId } : args.releasePeer ? { transferPeerId: null as never } : {}),
+    ...peerWriteFor(args.pairPeerId, args.releasePeer),
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
     // #324 (user): the staged note lands with the same write ('' clears)
@@ -400,6 +399,47 @@ async function writeConfirmation(args: {
   for (const item of args.bulk) {
     await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId, args.note), null);
   }
+}
+
+/** the row's own peer pointer in the confirm write: a pick-existing peer, a released stored pair, or nothing */
+function peerWriteFor(pairPeerId: string | undefined, releasePeer: boolean | undefined): { transferPeerId?: string } {
+  if (pairPeerId) return { transferPeerId: pairPeerId };
+  // an explicit null clears the stored pointer (the transform's write shape, as the detail screen does it)
+  return releasePeer ? { transferPeerId: null as never } : {};
+}
+
+/**
+ * 2026-10-05 (user ss): what a confirm does with a STORED pair — re-pointed
+ * by a pick, released through the create/wait door, or orphaned by a dropped
+ * counterparty, the old peer leg is let go first (S3776: out of the handler)
+ */
+function pairReleasePlan(
+  tx: Pick<SpaceTx, 'transferPeerId'>,
+  draft: Pick<ReviewDraft, 'linkedAccountId'>,
+  pickedPeer: { txId: string } | null,
+  releaseStored: boolean,
+): { repointed: boolean; releasePeer: boolean } {
+  const repointed = !!pickedPeer && pickedPeer.txId !== tx.transferPeerId;
+  const releasePeer = !!tx.transferPeerId && (releaseStored || repointed || !draft.linkedAccountId);
+  return { repointed, releasePeer };
+}
+
+/** the card's Receipt row: the attached receipt (a door to it), the proposal (a question), or the suggestions (a pick) — null hides the row */
+function receiptRowFor(
+  attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined,
+  proposal: { merchant?: string; source: string; totalCents: number } | undefined,
+  candidates: number,
+  currency: string,
+  lang: ReturnType<typeof useLang>['lang'],
+  t: ReturnType<typeof useLang>['t'],
+): { face: string; attachedId?: string; asks: boolean } | null {
+  if (attached) {
+    return { face: `${attached.merchant ?? partyName(attached.source)} · ${fmtCents(attached.totalCents, currency, lang)}`, attachedId: attached.id, asks: false };
+  }
+  if (proposal) {
+    return { face: `${proposal.merchant ?? partyName(proposal.source)} · ${fmtCents(proposal.totalCents, currency, lang)} · ${t('receipts.proposedBadge')}`, asks: true };
+  }
+  return candidates > 0 ? { face: t('review.receiptNone'), asks: false } : null;
 }
 
 /** #211: the sibling's copy of a category spread — % entries rescale to
@@ -1797,6 +1837,7 @@ export function ReviewScreen() {
     () => (tx ? rankForTx(tx, (unmatchedReceipts ?? []).filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
     [tx, unmatchedReceipts, receiptProposal?.receiptId],
   );
+  const receiptRow = tx ? receiptRowFor(receiptEntry?.data, receiptProposal, receiptCandidates.length, tx.currency, lang, t) : null;
   const draftCounter = useQuery(
     store,
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
@@ -2152,8 +2193,7 @@ export function ReviewScreen() {
     // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
     // whose counterparty was dropped lets its peer leg go first — a stale
     // peer would keep collapsing the pair in the list
-    const repointed = !!pickedPeer && pickedPeer.txId !== tx.transferPeerId;
-    const releasePeer = !!tx.transferPeerId && (releaseStored || repointed || !draft.linkedAccountId);
+    const { repointed, releasePeer } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
     if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
     await writeConfirmation({
       tx,
@@ -2379,25 +2419,19 @@ export function ReviewScreen() {
 
                 {/* user ss 2026-10-05: the receipt row — a proposal asks here,
                     an attached receipt opens, candidates offer a pick */}
-                {!multiPart && (receiptProposal || receiptEntry?.data || receiptCandidates.length > 0) && (
+                {!multiPart && receiptRow && (
                   <button
                     data-testid="review-receipt-row"
                     onClick={() => {
-                      if (receiptEntry?.data) void navigate({ to: '/receipts/$receiptId', params: { receiptId: receiptEntry.data.id }, search: { from: tx.id } });
+                      if (receiptRow.attachedId) void navigate({ to: '/receipts/$receiptId', params: { receiptId: receiptRow.attachedId }, search: { from: tx.id } });
                       else setReceiptPickOpen(true);
                     }}
                     className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
                   >
-                    <Icon name="receipt-text-outline" size={18} color={receiptProposal ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
-                    <span className={`min-w-0 flex-1 truncate ${receiptEntry?.data || receiptProposal ? '' : 'text-ink-4'}`}>
-                      {receiptEntry?.data
-                        ? `${receiptEntry.data.merchant ?? partyName(receiptEntry.data.source)} · ${fmtCents(receiptEntry.data.totalCents, tx.currency, lang)}`
-                        : receiptProposal
-                          ? `${receiptProposal.merchant ?? partyName(receiptProposal.source)} · ${fmtCents(receiptProposal.totalCents, tx.currency, lang)} · ${t('receipts.proposedBadge')}`
-                          : t('review.receiptNone')}
-                    </span>
+                    <Icon name="receipt-text-outline" size={18} color={receiptRow.asks ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+                    <span className={`min-w-0 flex-1 truncate ${receiptRow.attachedId || receiptRow.asks ? '' : 'text-ink-4'}`}>{receiptRow.face}</span>
                     <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
-                    <Icon name={receiptEntry?.data ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
+                    <Icon name={receiptRow.attachedId ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
                   </button>
                 )}
 

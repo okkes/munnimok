@@ -136,7 +136,7 @@ export function StatementImportFlow({
   /** user rule 2026-10-05: a statement for an account a PARTY feeds asks first — it starts unticked, the person opts in */
   const fedBy = (stmt: ParsedStatement): string | null => {
     const match = byIban.get(stmt.iban.replace(/\s/g, '').toUpperCase());
-    if (!match || match.source !== 'connector') return null;
+    if (match?.source !== 'connector') return null;
     return match.provider ? partyName(match.provider) : t('import.fedByParty');
   };
   const [noneBlocked, setNoneBlocked] = useState(false);

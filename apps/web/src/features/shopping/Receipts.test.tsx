@@ -239,7 +239,6 @@ describe('Receipts (demo identity)', () => {
       date: '2026-07-03',
       totalCents: 1250,
       merchant: 'Albert Heijn',
-      items: [{ name: 'Melk', qty: 1, priceCents: 1250 }],
       auto: 0,
       proposedTxId: txId,
     });

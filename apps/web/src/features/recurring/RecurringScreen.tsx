@@ -155,7 +155,8 @@ export function RecurringScreen() {
     // day twice and never the distance) — the day number only when there
     // is no next date to count to
     const custom = c.rec.every === 'week' || (c.rec.everyN ?? 1) > 1;
-    const lead = custom ? cadenceLabel(c.rec, t) : (c.nextDue ? dueInText(c.nextDue) : t('recurring.dueDay2', { day: c.rec.dueDay }));
+    const plainLead = c.nextDue ? dueInText(c.nextDue) : t('recurring.dueDay2', { day: c.rec.dueDay });
+    const lead = custom ? cadenceLabel(c.rec, t) : plainLead;
     const parts = [lead];
     if (c.nextDue) parts.push(t('recurring.next', { date: fmtDate(c.nextDue) }));
     if (c.rec.until) parts.push(t('recurring.ends', { date: fmtDate(c.rec.until) }));
