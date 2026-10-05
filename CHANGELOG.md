@@ -1,5 +1,29 @@
 # Changelog
 
+## [5.8.0](https://github.com/okkes/munnimok/compare/v5.7.1...v5.8.0) (2026-10-05)
+
+
+### ✨ Features
+
+* an open-banking feed is never overruled, and a statement for a fed account asks first ([8573099](https://github.com/okkes/munnimok/commit/8573099afde8c996c8ae2884cedad64f36e9c2bd))
+* **connectors:** the control plane and its agents report to GlitchTip ([b549315](https://github.com/okkes/munnimok/commit/b549315626bad94e07693921d635b1792aa04232))
+* **web:** receipts ask first — on the review card, under Matches to check and on Home ([74f1dd7](https://github.com/okkes/munnimok/commit/74f1dd7ad9712d9dccb24d36c31aecdff4118b26))
+
+
+### 🐞 Bug Fixes
+
+* **agent:** typed text reaches the live view one character at a time ([b6ae1fd](https://github.com/okkes/munnimok/commit/b6ae1fd5147c9f040d2536cf6db9c43cde37a98e))
+* **api:** the prediction overlay never outranks a device's category, and a one-off repair puts the buried ones back ([a6c879a](https://github.com/okkes/munnimok/commit/a6c879a407a5370c01889a7b20fe2b8e0c540b78))
+* **connectors:** an Amazon order card without a readable date is left out, not the end of the fetch ([73e5b53](https://github.com/okkes/munnimok/commit/73e5b53796fb740f5543d10cc7aa3a32b0136e64))
+* handled states are breadcrumbs, not GlitchTip events; an unreachable Logto is a 503 ([e0b990c](https://github.com/okkes/munnimok/commit/e0b990c88144e2e733f8e20d456faa2c7dbb3ac6))
+* **infra:** the connector's crash DSN placeholder renders only with the control plane ([4a02b87](https://github.com/okkes/munnimok/commit/4a02b8763ebfd3e5fd65c1e239742e66b6c06ed5))
+* **infra:** the verify honours the Apple Team ID fallback the apply already used ([9274f2f](https://github.com/okkes/munnimok/commit/9274f2f46e4eab4c537559d96fb8e902758460d1))
+* **native:** the auth session anchors on the key window of the moment ([43e4675](https://github.com/okkes/munnimok/commit/43e4675b82e8fb829688efe9b34700b3ead41753))
+* **web:** a credit settled only in part keeps its open remainder editable ([a41c998](https://github.com/okkes/munnimok/commit/a41c9989f1c64f04821497a3220fe46e353f54e4))
+* **web:** the recurring list says how many days are left, not the day number twice ([f3d4acf](https://github.com/okkes/munnimok/commit/f3d4acfb86bf2e344b5ec15cac82c03e49359136))
+* **web:** the review card's counter transaction is the person's to change, and a remembered counterparty files its category ([0375950](https://github.com/okkes/munnimok/commit/0375950952543d7bb31ddf56b03c063bcf90b3fc))
+* **web:** the row face ignores the settled Reimbursed slice ([c05674b](https://github.com/okkes/munnimok/commit/c05674be419a3d24bcfdcd3eeac612315d7ea928))
+
 ## [5.7.1](https://github.com/okkes/munnimok/compare/v5.7.0...v5.7.1) (2026-10-04)
 
 
