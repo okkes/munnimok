@@ -1,5 +1,5 @@
 import type { AccountRow, TxView } from '@/db/types';
-import { REIMBURSEMENT_MAIN_ID, mainCatOf } from './categories';
+import { REIMBURSED_ID, mainCatOf } from './categories';
 import { inPeriod } from './periods';
 import { txSliceViews } from './txSlices';
 import type { TxSliceView } from './txSlices';
@@ -20,6 +20,14 @@ import type { Period } from './periods';
  * expense stay type-driven, minus the funding family (those rows are
  * standard-typed since the funding type retired, but the pot is not
  * income or spending).
+ *
+ * User ss 2026-10-06 (Earned €4,392 above an Income group of €3,861): the
+ * total and its breakdown read the SAME slices. The settled `reimbursed`
+ * value is bookkeeping on both sides of a link — the expense side counts
+ * NET of it and the credit that settled it is not income (it already
+ * reduced the spending) — while expected and received reimbursement are
+ * money that moved and list under their own family, in the total and in
+ * the groups alike.
  */
 
 export type OverviewKind = 'income' | 'expense' | 'saving' | 'investment' | 'funding' | 'debt';
@@ -51,6 +59,9 @@ const SPECIAL_CONTRIB: Record<string, 1 | -1> = {
   fundingOut: 1, // -500 into the family pot = +500 funded (user rule)
   fundingIn: -1,
 };
+
+/** the slices a bucket may count: everything but the settled value */
+const countableViews = (tx: TxView): TxSliceView[] => txSliceViews(tx).filter((view) => view.catId !== REIMBURSED_ID);
 
 /** does one PART belong to this bucket? (typed-splits v2: a split row
  *  answers per part — the container itself has no bucket) */
@@ -85,7 +96,7 @@ function viewContribution(kind: OverviewKind, view: TxSliceView, tx: TxView, acc
  *  contract (membership is the caller's txsForKind filter); only a
  *  split row's parts answer per kind themselves. */
 export function contributionCents(kind: OverviewKind, tx: TxView, accountsById?: Map<string, AccountRow>): number {
-  return txSliceViews(tx)
+  return countableViews(tx)
     .filter((view) => !view.fromParts || viewInKind(kind, view))
     .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
 }
@@ -97,7 +108,7 @@ export function txsForKind(
   period: Period,
 ): TxView[] {
   return txs.filter(
-    (tx) => tx.deleted === 0 && inPeriod(tx.date, period) && txSliceViews(tx).some((view) => viewInKind(kind, view)),
+    (tx) => tx.deleted === 0 && inPeriod(tx.date, period) && countableViews(tx).some((view) => viewInKind(kind, view)),
   );
 }
 
@@ -162,10 +173,10 @@ export function categoryContributionCents(
   accountsById?: Map<string, AccountRow>,
 ): number {
   let cents = 0;
-  for (const view of txSliceViews(tx)) {
+  // the settled value is bookkeeping (countableViews); expected/received
+  // reimbursement count under their own family (user ss 2026-10-06)
+  for (const view of countableViews(tx)) {
     const cat = catalog.byId(view.catId);
-    // settled/expected/received value is not spending (redesign rule c)
-    if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) continue;
     if (cat.id !== catId && cat.parentId !== catId) continue;
     // typed parts answer to their OWN kind (a loan part never lands in
     // the expense breakdown); whole rows — category spreads included
@@ -208,8 +219,6 @@ export function categoryBreakdown(
   const add = (catId: string | undefined, cents: number) => {
     const cat = catalog.byId(catId);
     const mainId = cat.parentId ?? cat.id;
-    // the reimbursement tree never shows in the breakdown (redesign rule c)
-    if (mainId === REIMBURSEMENT_MAIN_ID) return;
     let group = groups.get(mainId);
     if (!group) {
       group = { catId: mainId, totalCents: 0, subs: [], subMap: new Map() };
@@ -225,7 +234,7 @@ export function categoryBreakdown(
     sub.count += 1;
   };
   for (const tx of txsForKind(kind, txs, accountsById, period)) {
-    for (const view of txSliceViews(tx)) {
+    for (const view of countableViews(tx)) {
       if (view.fromParts && !viewInKind(kind, view)) continue; // parts answer per kind (v2)
       add(view.catId, view.fromParts ? Math.abs(view.amountCents) : viewContribution(kind, view, tx, accountsById));
     }
