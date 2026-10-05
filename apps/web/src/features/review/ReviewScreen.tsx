@@ -33,7 +33,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, ReceiptLinkRow, ReceiptRow, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
@@ -418,10 +418,102 @@ function pairReleasePlan(
   draft: Pick<ReviewDraft, 'linkedAccountId'>,
   pickedPeer: { txId: string } | null,
   releaseStored: boolean,
-): { repointed: boolean; releasePeer: boolean } {
+): { releasePeer: boolean; pairNew: string | undefined } {
   const repointed = !!pickedPeer && pickedPeer.txId !== tx.transferPeerId;
   const releasePeer = !!tx.transferPeerId && (releaseStored || repointed || !draft.linkedAccountId);
-  return { repointed, releasePeer };
+  // a pick that is new to the row pairs on confirm; a pick that IS the stored pair needs no second write
+  const pairNew = pickedPeer && (repointed || !tx.transferPeerId) ? pickedPeer.txId : undefined;
+  return { releasePeer, pairNew };
+}
+
+/** user ss 2026-10-05: the card's Receipt row — an attached receipt opens, a proposal or the suggestions open the sheet */
+function ReviewReceiptRow({ row, onOpen, onAsk }: Readonly<{ row: ReturnType<typeof receiptRowFor>; onOpen: (receiptId: string) => void; onAsk: () => void }>) {
+  const { t } = useLang();
+  if (!row) return null;
+  const attachedId = row.attachedId;
+  return (
+    <button
+      data-testid="review-receipt-row"
+      onClick={attachedId ? () => onOpen(attachedId) : onAsk}
+      className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+    >
+      <Icon name="receipt-text-outline" size={18} color={row.asks ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+      <span className={`min-w-0 flex-1 truncate ${attachedId || row.asks ? '' : 'text-ink-4'}`}>{row.face}</span>
+      <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
+      <Icon name={attachedId ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
+/** the receipt sheet: the proposal's yes / no, then the other receipts that could be this one */
+function ReviewReceiptSheet({
+  open,
+  onOpenChange,
+  proposal,
+  candidates,
+  currency,
+  onAccept,
+  onReject,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  proposal: ReceiptLinkRow | undefined;
+  candidates: readonly ReceiptRow[];
+  currency: string;
+  onAccept: (link: ReceiptLinkRow) => void;
+  onReject: (link: ReceiptLinkRow) => void;
+  onPick: (row: ReceiptRow) => void;
+}>) {
+  const { t, lang } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('receipt.title')} size="tall">
+      <div className="flex flex-col gap-3 pt-1" data-testid="review-receipt-sheet">
+        {proposal && (
+          <div className="rounded-card border border-line bg-surface px-4 py-3" data-testid="review-receipt-proposal">
+            <div className="flex items-center gap-3">
+              <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{proposal.merchant ?? partyName(proposal.source)}</span>
+                <span className="block text-[11px] text-ink-4">{t('receipts.proposedBadge')} · {proposal.date}</span>
+              </span>
+              <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(proposal.totalCents, currency, lang)}</span>
+            </div>
+            <div className="mt-2 flex gap-2 pl-8">
+              <Button size="sm" data-testid="review-receipt-accept" onClick={() => onAccept(proposal)}>
+                {t('receipts.accept')}
+              </Button>
+              <Button size="sm" variant="outline" data-testid="review-receipt-reject" onClick={() => onReject(proposal)}>
+                {t('receipts.reject')}
+              </Button>
+            </div>
+          </div>
+        )}
+        {candidates.length > 0 && (
+          <>
+            <div className="m-cap px-1">{proposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-pick-list">
+              {candidates.map((row) => (
+                <button
+                  key={row.id}
+                  data-testid={`review-receipt-pick-${row.id}`}
+                  onClick={() => onPick(row)}
+                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
+                >
+                  <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink">{row.merchant ?? partyName(row.source)}</span>
+                    <span className="block text-[11px] text-ink-4">{row.date}</span>
+                  </span>
+                  <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(row.totalCents, currency, lang)}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
 }
 
 /** the card's Receipt row: the attached receipt (a door to it), the proposal (a question), or the suggestions (a pick) — null hides the row */
@@ -2193,7 +2285,7 @@ export function ReviewScreen() {
     // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
     // whose counterparty was dropped lets its peer leg go first — a stale
     // peer would keep collapsing the pair in the list
-    const { repointed, releasePeer } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
+    const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
     if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
     await writeConfirmation({
       tx,
@@ -2206,7 +2298,7 @@ export function ReviewScreen() {
       pairPeerId: pickedPeer?.txId,
       releasePeer: releasePeer && !pickedPeer,
     });
-    await pairReviewPicks({ store, repo, spaceId }, tx, repointed || (pickedPeer && !tx.transferPeerId) ? pickedPeer?.txId : undefined, partPeers);
+    await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
     if (queued) setCounterBulk(queued);
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
@@ -2419,20 +2511,12 @@ export function ReviewScreen() {
 
                 {/* user ss 2026-10-05: the receipt row — a proposal asks here,
                     an attached receipt opens, candidates offer a pick */}
-                {!multiPart && receiptRow && (
-                  <button
-                    data-testid="review-receipt-row"
-                    onClick={() => {
-                      if (receiptRow.attachedId) void navigate({ to: '/receipts/$receiptId', params: { receiptId: receiptRow.attachedId }, search: { from: tx.id } });
-                      else setReceiptPickOpen(true);
-                    }}
-                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                  >
-                    <Icon name="receipt-text-outline" size={18} color={receiptRow.asks ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
-                    <span className={`min-w-0 flex-1 truncate ${receiptRow.attachedId || receiptRow.asks ? '' : 'text-ink-4'}`}>{receiptRow.face}</span>
-                    <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
-                    <Icon name={receiptRow.attachedId ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
-                  </button>
+                {!multiPart && (
+                  <ReviewReceiptRow
+                    row={receiptRow}
+                    onOpen={(receiptId) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } })}
+                    onAsk={() => setReceiptPickOpen(true)}
+                  />
                 )}
 
                 {/* #324 (user): the note joins the review card — staged
@@ -2694,52 +2778,16 @@ export function ReviewScreen() {
       )}
       {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one */}
       {tx && (
-        <Sheet open={receiptPickOpen} onOpenChange={setReceiptPickOpen} title={t('receipt.title')} size="tall">
-          <div className="flex flex-col gap-3 pt-1" data-testid="review-receipt-sheet">
-            {receiptProposal && (
-              <div className="rounded-card border border-line bg-surface px-4 py-3" data-testid="review-receipt-proposal">
-                <div className="flex items-center gap-3">
-                  <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-ink">{receiptProposal.merchant ?? partyName(receiptProposal.source)}</span>
-                    <span className="block text-[11px] text-ink-4">{t('receipts.proposedBadge')} · {receiptProposal.date}</span>
-                  </span>
-                  <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receiptProposal.totalCents, tx.currency, lang)}</span>
-                </div>
-                <div className="mt-2 flex gap-2 pl-8">
-                  <Button size="sm" data-testid="review-receipt-accept" onClick={() => { void receiptOps.acceptMatch(receiptProposal); setReceiptPickOpen(false); }}>
-                    {t('receipts.accept')}
-                  </Button>
-                  <Button size="sm" variant="outline" data-testid="review-receipt-reject" onClick={() => { void receiptOps.rejectMatch(receiptProposal); setReceiptPickOpen(false); }}>
-                    {t('receipts.reject')}
-                  </Button>
-                </div>
-              </div>
-            )}
-            {receiptCandidates.length > 0 && (
-              <>
-                <div className="m-cap px-1">{receiptProposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
-                <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-pick-list">
-                  {receiptCandidates.map((row) => (
-                    <button
-                      key={row.id}
-                      data-testid={`review-receipt-pick-${row.id}`}
-                      onClick={() => { void receiptOps.linkReceipt(row, tx.id); setReceiptPickOpen(false); }}
-                      className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
-                    >
-                      <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-ink">{row.merchant ?? partyName(row.source)}</span>
-                        <span className="block text-[11px] text-ink-4">{row.date}</span>
-                      </span>
-                      <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(row.totalCents, tx.currency, lang)}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        </Sheet>
+        <ReviewReceiptSheet
+          open={receiptPickOpen}
+          onOpenChange={setReceiptPickOpen}
+          proposal={receiptProposal}
+          candidates={receiptCandidates}
+          currency={tx.currency}
+          onAccept={(link) => { void receiptOps.acceptMatch(link); setReceiptPickOpen(false); }}
+          onReject={(link) => { void receiptOps.rejectMatch(link); setReceiptPickOpen(false); }}
+          onPick={(row) => { void receiptOps.linkReceipt(row, tx.id); setReceiptPickOpen(false); }}
+        />
       )}
       {/* #237 r3: the card row's counter-transaction match sheet —
           suggestions first, the rest scrollable; create/await resets
