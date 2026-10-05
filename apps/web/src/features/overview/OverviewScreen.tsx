@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -7,7 +7,7 @@ import { categoryBreakdown, contributionCents, txsForKind } from '@/domain/overv
 import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { recallPeriod, rememberPeriod } from './periodMemory';
+import { recallExpanded, recallPeriod, recallScroll, rememberExpanded, rememberPeriod, rememberScroll } from './periodMemory';
 import { LOCALES, useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -41,7 +41,16 @@ export function OverviewScreen() {
   const { kind } = useParams({ strict: false }) as { kind: OverviewKind };
   const navigate = useNavigate();
   const cats = useCategories();
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // user ss 2026-10-06: the folds and the scroll offset survive a category
+  // detour like the period does (#355) — and forget like it does (#454)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => recallExpanded(kind) ?? {});
+  const toggleGroup = (catId: string, isOpen: boolean) => {
+    const next = { ...expanded, [catId]: !isOpen };
+    rememberExpanded(kind, next);
+    setExpanded(next);
+  };
+  const listRef = useRef<HTMLDivElement>(null);
+  const scrollRestored = useRef(false);
 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
@@ -65,6 +74,8 @@ export function OverviewScreen() {
     if (lastKind.current === kind) return;
     lastKind.current = kind;
     setPeriodIndex(recallPeriod(kind) ?? PERIOD_COUNT - 1);
+    setExpanded(recallExpanded(kind) ?? {});
+    scrollRestored.current = false;
   }, [kind]);
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
@@ -96,6 +107,14 @@ export function OverviewScreen() {
     () => categoryBreakdown(kind, txs ?? [], accountsById, period, cats),
     [kind, txs, accountsById, period, cats],
   );
+  // the remembered offset lands once the groups have rendered (the list's
+  // height exists only then); a later scroll is the person's own
+  useLayoutEffect(() => {
+    if (scrollRestored.current || groups.length === 0 || !listRef.current) return;
+    scrollRestored.current = true;
+    const top = recallScroll(kind);
+    if (top) listRef.current.scrollTop = top;
+  }, [groups.length, kind]);
   const grandTotal = barValues[periodIndex] ?? 0;
   const positiveTotal = groups.reduce((sum, g) => sum + Math.max(g.totalCents, 0), 0);
   const currency = space?.currency ?? 'EUR';
@@ -115,7 +134,12 @@ export function OverviewScreen() {
         }
         trailing={<HelpButton tourId="overview" />}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div
+        ref={listRef}
+        className="min-h-0 flex-1 overflow-y-auto px-5 pb-6"
+        data-testid="overview-list"
+        onScroll={(e) => rememberScroll(kind, e.currentTarget.scrollTop)}
+      >
         <div className="py-2 text-center">
           <div className="m-num text-4xl text-ink" data-testid="overview-total">
             {fmt(grandTotal, currency)}
@@ -155,10 +179,14 @@ export function OverviewScreen() {
             const isOpen = expanded[group.catId] ?? groups.length === 1;
             const pct = positiveTotal > 0 ? (Math.max(group.totalCents, 0) / positiveTotal) * 100 : 0;
             return (
-              <div key={group.catId} className="overflow-hidden rounded-card border border-line bg-surface">
+              // user ss 2026-10-06: keyboard focus on the header rings the CARD
+              // (m-focus-card) — the header's own inset ring was a rectangle
+              // inside the rounded, overflow-hidden card, its corners chipped off
+              <div key={group.catId} className="m-focus-card overflow-hidden rounded-card border border-line bg-surface">
                 <button
                   data-testid={`overview-group-${group.catId}`}
-                  onClick={() => setExpanded((prev) => ({ ...prev, [group.catId]: !isOpen }))}
+                  data-quiet-focus
+                  onClick={() => toggleGroup(group.catId, isOpen)}
                   className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
                 >
                   <Tile icon={main.icon} bg={`${colorOf(group.catId, i)}22`} color={colorOf(group.catId, i)} />
