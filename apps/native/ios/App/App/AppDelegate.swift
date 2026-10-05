@@ -163,8 +163,16 @@ public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
 private class AuthSessionPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
     private let window: UIWindow?
     init(window: UIWindow?) { self.window = window }
+    // GlitchTip 15 (2026-10-05): the view's window is nil for a moment after the
+    // app comes back, and a fresh unattached anchor made the session refuse to
+    // start (error 3). The key window of the moment the session asks is the
+    // anchor; the captured window is the fallback, an empty anchor the last.
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        return window ?? ASPresentationAnchor()
+        let key = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        return key ?? window ?? ASPresentationAnchor()
     }
 }
 
