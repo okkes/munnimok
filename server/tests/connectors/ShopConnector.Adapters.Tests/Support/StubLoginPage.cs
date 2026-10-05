@@ -53,6 +53,9 @@ internal sealed class StubLoginPage : ILoginPage
     /// </summary>
     public Action<StubLoginPage, string>? WhenClicked { get; set; }
 
+    /// <summary>The page reacting to a navigation - what bol's overview does when it is opened: it fires its operation.</summary>
+    public Action<StubLoginPage, string>? WhenVisited { get; set; }
+
     /// <summary>
     /// True until the fields are cleared: the form was filled and submitted,
     /// so the password is still sitting in the DOM.
@@ -86,6 +89,7 @@ internal sealed class StubLoginPage : ILoginPage
     public Task GotoAsync(string url, CancellationToken ct)
     {
         _visited.Add(url);
+        WhenVisited?.Invoke(this, url);
         return Task.CompletedTask;
     }
 

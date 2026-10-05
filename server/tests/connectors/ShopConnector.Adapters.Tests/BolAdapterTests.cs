@@ -725,6 +725,44 @@ public sealed class BolAdapterTests
         Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 2026-10-05 (user ss): bol refused the configured hash on every sync
+    /// and the person read "The party changed its site". A session that
+    /// learned no hash of its own is one sign-in away from working - the
+    /// probe learns today's hash there - so the refusal asks for the sign-in.
+    /// </summary>
+    [Fact]
+    public async Task A_refused_configured_hash_asks_for_a_new_sign_in()
+    {
+        // a hash bol no longer knows: an errors array under a 200
+        var handler = new StubHttpHandler((_, _) => Stub.Json("""{"errors":[{"message":"Error(s) redacted."}]}"""));
+        using var ctx = FetchContext(handler);
+
+        var ex = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.SessionExpired, ex.Code);
+        Assert.Contains("learned no hash", ex.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_refused_learned_hash_is_a_change_bol_made_since_the_sign_in()
+    {
+        var handler = new StubHttpHandler((_, _) => Stub.Json("""{"errors":[{"message":"Error(s) redacted."}]}"""));
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = BolPersistedQuery.WithHash(
+                new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") },
+                "0123abcd-learned"),
+        };
+
+        var ex = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        // the page said this hash today and bol refuses it: a real change, an operator's job
+        Assert.Equal(ErrorCode.ProviderChanged, ex.Code);
+    }
+
     [Fact]
     public async Task The_default_shape_posts_bol_s_own_persisted_operation()
     {

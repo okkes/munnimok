@@ -320,6 +320,22 @@ public sealed record BolOptions
     public int HashProbeMs { get; init; } = 4_000;
 
     /// <summary>
+    /// What the sign-in presses when the overview stays silent: bol's
+    /// "Toon meer" fetches the next page through the very operation the
+    /// adapter needs, so one press makes the page fire it. 2026-10-05: the
+    /// page the sign-in landed on fired nothing within the probe, the
+    /// configured hash was refused, and every fetch failed as
+    /// <c>provider_changed</c> (user ss) - see <see cref="BolHashProbe"/>.
+    /// </summary>
+    public IReadOnlyList<string> LoadMoreSelectors { get; init; } =
+    [
+        "button:has-text(\"Toon meer\")",
+        "button:has-text(\"Meer laden\")",
+        "[data-test='load-more']",
+        "button[data-testid*='load-more']",
+    ];
+
+    /// <summary>
     /// CONFIRMED. The cursor variable, and it really is a string: bol sends
     /// <c>"5"</c>, then <c>"10"</c> - an offset, not an opaque token.
     /// </summary>
