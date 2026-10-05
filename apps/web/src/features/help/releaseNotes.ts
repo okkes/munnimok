@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.9.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Totals add up again: Earned and Spent now read exactly the groups they list — expected and received reimbursements show under their own Reimbursement group, and the settled part of a reimbursed cost stays out on both sides.',
+        nl: 'De totalen kloppen weer: Verdiend en Uitgegeven tellen precies de groepen die ze tonen — verwachte en ontvangen terugbetalingen staan onder hun eigen groep Terugbetaling, en het verrekende deel van een terugbetaalde uitgave blijft aan beide kanten buiten beeld.',
+        tr: 'Toplamlar yeniden tutuyor: Kazanılan ve Harcanan artık tam olarak listeledikleri grupları okuyor — beklenen ve alınan geri ödemeler kendi Geri ödeme grubunun altında görünüyor ve geri ödenen bir harcamanın kapatılan kısmı iki tarafta da dışarıda kalıyor.',
+      },
+      {
+        en: '“Reimbursed” is never suggested anymore — it only ever comes from an actual reimbursement link — and a card whose categories already stand no longer asks you to pick one first.',
+        nl: '“Terugbetaald” wordt nooit meer voorgesteld — die categorie komt alleen nog via een echte terugbetalingskoppeling — en een kaart waarvan de categorieën al staan vraagt je niet meer eerst een categorie te kiezen.',
+        tr: '“Geri ödendi” artık asla önerilmiyor — yalnızca gerçek bir geri ödeme bağlantısından geliyor — ve kategorileri zaten duran bir kart artık önce bir kategori seçmeni istemiyor.',
+      },
+      {
+        en: 'A credit card is a regular account too: its rows can take transfers and ordinary categories next to the debt story.',
+        nl: 'Een creditcard is ook een gewone rekening: haar regels kunnen naast het schuldverhaal ook overboekingen en gewone categorieën krijgen.',
+        tr: 'Kredi kartı da sıradan bir hesaptır: satırları borç hikâyesinin yanında transferleri ve sıradan kategorileri de alabilir.',
+      },
+      {
+        en: 'Nobody gets kicked out anymore: when the server refuses your session, munni keeps working on this device and the banner offers a sign-in.',
+        nl: 'Niemand wordt er meer uitgegooid: als de server je sessie weigert, blijft munni op dit apparaat werken en biedt de balk een aanmelding aan.',
+        tr: 'Artık kimse dışarı atılmıyor: sunucu oturumunu reddettiğinde munni bu cihazda çalışmaya devam ediyor ve şerit bir giriş sunuyor.',
+      },
+      {
+        en: 'The overview keeps your place: coming back from a category leaves the group open and the list where it was, and the focus ring hugs the card.',
+        nl: 'Het overzicht onthoudt je plek: terug uit een categorie blijft de groep open en staat de lijst waar hij stond, en de focusrand volgt de kaart.',
+        tr: 'Genel bakış yerini koruyor: bir kategoriden dönünce grup açık, liste olduğu yerde kalıyor ve odak halkası kartı sarıyor.',
+      },
+      {
+        en: 'bol.com works again: the sign-in makes bol’s own page reveal its current order query, and a stale one asks for a sign-in instead of claiming the site changed. A transaction linked to a recurring cost takes that cost’s category back.',
+        nl: 'bol.com werkt weer: de aanmelding laat bol’s eigen pagina de huidige bestelquery prijsgeven, en een verouderde vraagt om een aanmelding in plaats van te beweren dat de site veranderd is. Een transactie gekoppeld aan terugkerende kosten neemt de categorie van die kosten terug.',
+        tr: 'bol.com yeniden çalışıyor: giriş, bol’un kendi sayfasına güncel sipariş sorgusunu söyletiyor ve eskimiş bir sorgu sitenin değiştiğini iddia etmek yerine giriş istiyor. Yinelenen bir gidere bağlı işlem o giderin kategorisini geri alıyor.',
+      },
+    ],
+  },
+  {
     version: '5.8.0',
     date: '2026-10-06',
     items: [

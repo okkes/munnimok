@@ -49,6 +49,16 @@ describe('reviewDraft', () => {
     expect(draftReady(withUncatSlice)).toBe(false);
   });
 
+  it('user ss 2026-10-06: a standing spread names the card even when the compat shadow is the placeholder', () => {
+    const spread = { ...expenseTx, catId: 'uncategorized', cats: [{ catId: 'groceries', amountCents: 300 }, { catId: 'entertainment', amountCents: 700 }] };
+    const draft = initDraft(spread, undefined, catalog);
+    expect(draft.catId).toBe('entertainment'); // the largest entry
+    expect(draftReady(draft)).toBe(true);
+    // the settled slice is bookkeeping, never the face — and no prediction outranks the partition
+    const settled = { ...expenseTx, catId: 'uncategorized', cats: [{ catId: 'groceries', amountCents: 300 }, { catId: 'reimbursed', amountCents: 700 }] };
+    expect(initDraft(settled, 'entertainment', catalog).catId).toBe('groceries');
+  });
+
   it('a category that does not speak the current type pulls the type along', () => {
     const draft = withCategory(initDraft(expenseTx, undefined, catalog), 'savingDeposit', catalog);
     expect(draft).toMatchObject({ catId: 'savingDeposit', txType: 'saving' });

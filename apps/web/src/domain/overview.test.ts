@@ -150,6 +150,10 @@ describe('categoryBreakdown', () => {
         groceries: { id: 'groceries', parentId: 'consumption' },
         restaurants: { id: 'restaurants', parentId: 'consumption' },
         gym: { id: 'gym', parentId: 'sport' },
+        salary: { id: 'salary', parentId: 'income' },
+        reimbursed: { id: 'reimbursed', parentId: 'reimbursement' },
+        expenseReimburse: { id: 'expenseReimburse', parentId: 'reimbursement' },
+        reimburse: { id: 'reimburse', parentId: 'reimbursement' },
         uncategorized: { id: 'uncategorized' },
       };
       return known[id ?? 'uncategorized'] ?? known.uncategorized;
@@ -174,5 +178,30 @@ describe('categoryBreakdown', () => {
     const txs = [tx({ txType: 'income', catId: 'groceries', amountCents: 5_000 })];
     expect(categoryBreakdown('expense', txs, accounts, PERIOD, catalog)).toEqual([]);
     expect(txsForKind('income', txs, accounts, PERIOD)).toHaveLength(1);
+  });
+
+  it('user ss 2026-10-06: the total and its breakdown read the same slices — settled value out, expected/received listed under Reimbursement', () => {
+    const txs = [
+      // a dinner partly paid back: 11.38 dining, 23.12 settled by a link — spent counts the dining alone
+      tx({ catId: 'restaurants', amountCents: -3_450, cats: [{ catId: 'restaurants', amountCents: 1_138 }, { catId: 'reimbursed', amountCents: 2_312 }] }),
+      // a dinner still waiting for its share: the expected part is money out until it settles
+      tx({ catId: 'restaurants', amountCents: -3_450, cats: [{ catId: 'restaurants', amountCents: 1_138 }, { catId: 'expenseReimburse', amountCents: 2_312 }] }),
+      // the credit that settled the first dinner is not income — it already reduced the spending
+      tx({ txType: 'income', catId: 'reimbursed', amountCents: 2_312 }),
+      // money that came back without a link IS income, under its own family
+      tx({ txType: 'income', catId: 'reimburse', amountCents: 5_000 }),
+      tx({ txType: 'income', catId: 'salary', amountCents: 100_000 }),
+    ];
+    const spent = categoryBreakdown('expense', txs, accounts, PERIOD, catalog);
+    const spentTotal = txsForKind('expense', txs, accounts, PERIOD).reduce((sum, t) => sum + contributionCents('expense', t), 0);
+    expect(spentTotal).toBe(1_138 + 1_138 + 2_312);
+    expect(spent.reduce((sum, g) => sum + g.totalCents, 0)).toBe(spentTotal);
+    expect(spent.find((g) => g.catId === 'reimbursement')?.subs).toEqual([{ catId: 'expenseReimburse', totalCents: 2_312, count: 1 }]);
+    const earned = categoryBreakdown('income', txs, accounts, PERIOD, catalog);
+    const earnedTotal = txsForKind('income', txs, accounts, PERIOD).reduce((sum, t) => sum + contributionCents('income', t), 0);
+    expect(earnedTotal).toBe(105_000);
+    expect(earned.reduce((sum, g) => sum + g.totalCents, 0)).toBe(earnedTotal);
+    expect(earned.map((g) => g.catId)).toEqual(['income', 'reimbursement']);
+    expect(overviewSummary(txs, accounts, PERIOD)).toMatchObject({ incomeCents: 105_000, expenseCents: 4_588 });
   });
 });

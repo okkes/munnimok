@@ -70,6 +70,14 @@ export function movementCatFor(accountType: AccountType, amountCents: number): s
  * category (reimbursement included) is not this matrix's business.
  */
 export function allowedSpecialCats(sourceType: AccountType | undefined, direction: 'debit' | 'credit'): ReadonlySet<string> {
+  // 2026-10-06 (user): a credit card is BOTH a regular account and a debt —
+  // its own ledger takes the debt story (the repayment arriving, interest
+  // and fees) AND everything a regular account's row may pick, transfers
+  // included: the two families' cells unite here (the card is unstamped,
+  // so its purchases stay ordinary expenses)
+  if (sourceType === 'credit') {
+    return new Set([...allowedSpecialCats('loan', direction), ...allowedSpecialCats(undefined, direction)]);
+  }
   const out = direction === 'debit';
   switch (sourceType === undefined ? undefined : accountStamp(sourceType)) {
     case 'saving':

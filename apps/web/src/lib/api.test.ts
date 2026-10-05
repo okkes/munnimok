@@ -91,17 +91,19 @@ describe('getApiCapabilities', () => {
   });
 });
 
-describe('dead-session handling (401 → retry → re-login)', () => {
-  it('retries once with a fresh token, then clears the session and returns to login', async () => {
+describe('dead-session handling (401 → retry → the sign-in banner)', () => {
+  it('retries once with a fresh token, then marks the session expired — nobody is logged out (local-first, user 2026-10-06)', async () => {
     const { resetAuthExpiryGuard } = await import('./api');
     resetAuthExpiryGuard();
+    const { isSessionExpired, resetSessionExpiryForTests } = await import('@/app/sessionExpiry');
+    resetSessionExpiryForTests();
     const { setAccessTokenGetter, signalAuthReady } = await import('@/app/authToken');
     signalAuthReady(); // the restore finished — apiFetch may proceed
     setAccessTokenGetter(async () => 'stale-but-real-token'); // a REAL bearer gets rejected
     const { useSession } = await import('@/app/session');
     // apiFetch reads the persisted identity, not the store snapshot
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'stale-user' }));
-    localStorage.setItem('logto:app-id:idToken', 'stale'); // dead SDK state must be shed too
+    localStorage.setItem('logto:app-id:idToken', 'stale');
     useSession.setState({ identity: { kind: 'user', sub: 'stale-user' } });
     const calls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async () => {
@@ -111,19 +113,25 @@ describe('dead-session handling (401 → retry → re-login)', () => {
     const assignSpy = vi.fn();
     const original = globalThis.location;
     vi.stubGlobal('location', { ...original, assign: assignSpy });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     const { apiFetch } = await import('./api');
     const res = await apiFetch('/me/spaces');
     expect(res.status).toBe(401);
     expect(calls.length).toBe(2); // original + fresh-token retry
-    expect(useSession.getState().identity).toBeNull(); // session cleared
-    expect(localStorage.getItem('logto:app-id:idToken')).toBeNull(); // fresh sign-in guaranteed
-    expect(assignSpy).toHaveBeenCalledWith('/#/login');
+    // the app keeps working on this device: the offline banner asks for a
+    // sign-in, the session and the SDK's state stay, nothing navigates away
+    expect(useSession.getState().identity).not.toBeNull();
+    expect(localStorage.getItem('logto:app-id:idToken')).toBe('stale');
+    expect(assignSpy).not.toHaveBeenCalled();
+    expect(isSessionExpired()).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('double 401'));
 
-    // a second 401 in the same page load must not loop the navigation
+    // a second 401 in the same page load names the state once, not twice
     await apiFetch('/me/spaces');
-    expect(assignSpy).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
     setAccessTokenGetter(null);
+    resetSessionExpiryForTests();
   });
 
   it('a 401 without a bearer never forces a logout (cold-start boot race)', async () => {

@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_ID } from './categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from './categories';
 import { merchantKey } from './merchantKey';
 import type { TxSplitCat } from '@/db/types';
 
@@ -87,6 +87,11 @@ export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string
   const memory: MerchantMemory = new Map();
   for (const row of rows) {
     if (row.needsReview === 1 || !row.catId || row.catId === UNCATEGORIZED_ID) continue;
+    // a credit filed as Reimbursed is settlement bookkeeping a link wrote,
+    // never a habit: the next credit from the same person must not be
+    // predicted as Reimbursed (user ss 2026-10-06 — the category only ever
+    // arrives through an actual reimbursement link)
+    if (row.catId === REIMBURSED_ID) continue;
     const key = merchantKey(row.merchant);
     if (!key) continue;
     const sign: 1 | -1 = row.amountCents >= 0 ? 1 : -1;

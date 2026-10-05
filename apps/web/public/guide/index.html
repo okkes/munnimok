@@ -118,7 +118,8 @@
 <li>Naming a counterparty is ONE tap — and the card (and each split part) then carries its own Counter-transaction row: by default the leg is created on confirm (manual counterparties) or arrives with the bank feed. Tap the row to point at an existing transaction instead — one to three suggested matches first, every other open row scrollable below, searchable by title or amount; and when the real counter has not arrived yet, "link and wait" holds the link open for the feed. Creating keeps the "apply to similar" offer armed, and so does picking an existing row now: Confirm walks each selected sibling through its own match sheet, named per transaction, to pick its own counter or link and wait.</li>
 <li>The card remembers more than categories now: a percentage spread you keep confirming for a merchant arrives pre-staged, and the event its recent charges joined is offered on the event row — until you touch it yourself.</li>
 <li>A loan counterparty needs no extra line: the Counterparty row IS the debt (they are one and the same account).</li>
-<li>Split parts carry the full linking mechanism too: a part’s counterparty ask offers pick-existing, and its own Counter-transaction row wears the picked leg’s face or the honest waiting state.</li></ul>
+<li>Split parts carry the full linking mechanism too: a part’s counterparty ask offers pick-existing, and its own Counter-transaction row wears the picked leg’s face or the honest waiting state.</li>
+<li>Suggested categories confirm right away: a card whose split or spread already stands never asks you to "pick a category first". And "Reimbursed" is never a suggestion — that category only ever comes from an actual reimbursement link.</li></ul>
     <div class="shots"><figure><img src="shots/13-review-banner--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/14-review-flow--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/15-review-done--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure></div>
@@ -175,12 +176,13 @@
 
   <section id="categories">
     <h2>Categories &amp; budgets</h2>
-    <p>The built-in catalog covers most spending; create your own main or sub categories when it doesn't. Budgets track a limit per category per period, and the overview drills from totals into categories into transactions.</p>
+    <p>The built-in catalog covers most spending; create your own main or sub categories when it doesn't. Budgets track a limit per category per period, and the overview drills from totals into categories into transactions. Earned and Spent add up: each total is exactly the sum of the groups it lists — expected and received reimbursements sit under their own Reimbursement group, the settled part of a reimbursed cost stays out on both sides — and coming back from a category leaves the group open and the list where you left it.</p>
     <ul class="tips"><li>The category search rides along, moving 1:1 with your finger — a little downward scroll hides a little of it, upward travel reveals it again, as if it were list content; the ◆ chip filters to the special categories.</li>
 <li>munni learns from you: confirm a merchant twice and it skips review next time. Every confirmation votes with a recency-weighted say — one dinner out never beats years of groceries, while a habit that truly shifts takes the lead after a few repeats — and the space\u2019s OWN history always answers before your other spaces do.</li>
 <li>Can’t find a category while reviewing? The picker offers "create your own" right there.</li>
 <li>Direction is no longer a question: a subcategory simply follows its parent\u2019s nature. A NEW parent category always tracks spending — income lives under the special ◆ Income category, the one special parent open to your own subcategories.</li>
-<li>Investment tells five stories now: Invested and Withdrawn move money between your accounts and the brokerage, while Bought, Sold and Fees (plus Dividends) live on the brokerage\u2019s own ledger. Debt on a regular account is just Repaid or Borrowed — Interest charged and Fees exist only on the loan\u2019s own ledger.</li></ul>
+<li>Investment tells five stories now: Invested and Withdrawn move money between your accounts and the brokerage, while Bought, Sold and Fees (plus Dividends) live on the brokerage\u2019s own ledger. Debt on a regular account is just Repaid or Borrowed — Interest charged and Fees exist only on the loan\u2019s own ledger.</li>
+<li>A credit card is a regular account too: its rows can take the debt story (Repaid, Borrowed, Interest, Fees) AND transfers or any ordinary category. An account attached as a loan keeps the loan ledger’s narrowed list — change its type in the space’s accounts sheet to read it as a card.</li></ul>
     <div class="shots"><figure><img src="shots/29-cats-manage--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure>
 <figure><img src="shots/30-cats-create--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure>
 <figure><img src="shots/60-overview-expense--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure></div>
@@ -212,7 +214,8 @@
     <ul class="tips"><li>Push notifications tell you when new bank transactions arrive — tapping one opens that space\u2019s review directly.</li>
 <li>The row under the notifications switch sends a test notification — proof that push reaches this very device.</li>
 <li>The sync card at the top of Settings shows the last successful sync.</li>
-<li>Global settings → Devices lists every device signed in to your account — web devices name their browser and same-name twins number themselves (2), (3); rename them, and disconnect one remotely: it erases its munni data the next time it connects.</li></ul>
+<li>Global settings → Devices lists every device signed in to your account — web devices name their browser and same-name twins number themselves (2), (3); rename them, and disconnect one remotely: it erases its munni data the next time it connects.</li>
+<li>If the server ever refuses your session, nothing is lost and nobody is signed out: munni keeps working on this device and the banner offers a sign-in — one tap, and when the browser still remembers you nothing needs retyping.</li></ul>
     <div class="shots"><figure><img src="shots/25-sync-devices--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>

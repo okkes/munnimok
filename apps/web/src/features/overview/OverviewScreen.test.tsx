@@ -112,6 +112,39 @@ describe('Overview (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toBe(current));
   }, 25_000);
 
+  it('user ss 2026-10-06: a category detour keeps the unfolded group and the scroll offset; Home forgets them', async () => {
+    renderApp('/overview/expense');
+    await screen.findByTestId('screen-overview');
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
+    const group = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="overview-group-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    const catId = group.getAttribute('data-testid')!.replace('overview-group-', '');
+    fireEvent.click(group);
+    await screen.findByTestId(`overview-subs-${catId}`);
+    fireEvent.scroll(screen.getByTestId('overview-list'), { target: { scrollTop: 140 } });
+    fireEvent.click(screen.getByTestId(`overview-all-${catId}`));
+    await screen.findByTestId('screen-category-drill');
+
+    // back from the drill: the group is still open and the list where it was — no tap needed
+    cleanup();
+    renderApp('/overview/expense');
+    expect(await screen.findByTestId(`overview-subs-${catId}`)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('overview-list').scrollTop).toBe(140));
+
+    // Home forgets the fold and the offset along with the period (#454)
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    cleanup();
+    renderApp('/overview/expense');
+    await waitFor(() => expect(document.querySelector('[data-testid^="overview-group-"]')).toBeTruthy());
+    expect(screen.queryByTestId(`overview-subs-${catId}`)).toBeNull();
+    expect(screen.getByTestId('overview-list').scrollTop).toBe(0);
+  }, 25_000);
+
   it('the drill period selector swaps the list to the chosen period', async () => {
     renderApp('/overview/expense/groceries');
     await screen.findByTestId('screen-category-drill');

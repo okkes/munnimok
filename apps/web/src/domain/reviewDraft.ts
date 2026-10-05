@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_ID, autoSubFor, isMovementCat, stampMovementSub } from './categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, isMovementCat, stampMovementSub } from './categories';
 import { defaultFamilyFor } from './defaultAccounts';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
@@ -44,7 +44,23 @@ export function initDraft(
     cats: tx.cats?.length ? tx.cats : undefined,
     splits: tx.splits?.length ? tx.splits : undefined,
   };
-  return withCategory(base, existing ?? predictedCatId, catalog);
+  // user ss 2026-10-06: a row whose categories already stand (a spread or
+  // parts) but whose compat shadow is the placeholder — a fetch's overlay
+  // once buried it — must not open on "Pick a category first": the
+  // partition's own primary names the card, and no prediction outranks it
+  return withCategory(base, existing ?? partitionPrimary(base) ?? predictedCatId, catalog);
+}
+
+/** the largest real entry of a standing partition (the settled `reimbursed`
+ *  slice is bookkeeping, never the face); parts answer with their own primary */
+function partitionPrimary(draft: ReviewDraft): string | undefined {
+  if (draft.cats?.length) {
+    const real = draft.cats.filter((c) => c.catId !== REIMBURSED_ID);
+    const pool = real.length ? real : draft.cats;
+    return pool.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), pool[0]).catId;
+  }
+  if (draft.splits?.length) return primaryCatId(draft.splits);
+  return undefined;
 }
 
 /** picking a category may pull the type along (to one the category speaks) */

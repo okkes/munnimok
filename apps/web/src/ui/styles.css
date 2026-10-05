@@ -317,6 +317,14 @@
   }
 }
 
+/* user ss 2026-10-06: a rounded, overflow-hidden card whose HEADER button
+   holds keyboard focus wears the ring on the card itself — the header's
+   own inset ring was a rectangle inside the clip, so its corners were
+   chipped off; the header is quiet-focus and the card follows its radius */
+.m-focus-card:has(> [data-quiet-focus]:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--m-accent);
+}
+
 /* review deck (user request): the confirmed/skipped card exits left,
    the next one slides in from the right */
 @keyframes m-card-out {

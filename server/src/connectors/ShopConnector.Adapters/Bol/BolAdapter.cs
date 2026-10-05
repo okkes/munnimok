@@ -104,18 +104,15 @@ public sealed class BolAdapter : IProviderAdapter
             var result = await LoginAsync(ctx, page, new BolSessionWatcher(ctx, page, _options, _time), ct)
                 .ConfigureAwait(false);
 
-            // The overview fires the operation a moment after the session lands;
-            // a short wait catches it, and a page that never fires it costs the
-            // wait and nothing else - the option's hash still stands.
-            var caught = await Task.WhenAny(learned.Task, Task.Delay(_options.HashProbeMs, ct)).ConfigureAwait(false) == learned.Task;
-            if (caught)
-            {
-                ctx.Note($"{ProviderId}: the orders operation's persisted-query hash was learned from the page and sealed into the session");
-                return result with { Material = BolPersistedQuery.WithHash(result.Material, learned.Task.Result) };
-            }
+            // The page the sign-in landed on, then the overview itself, then
+            // the overview with "Toon meer" pressed: three chances for bol's
+            // own page to say the hash. A page that never says it costs the
+            // waits and nothing else - the option's hash still stands.
+            var hash = await new BolHashProbe(_options).LearnAsync(ctx, page, learned.Task, ct).ConfigureAwait(false);
+            if (hash is null) return result;
 
-            ctx.Note($"{ProviderId}: the orders page fired no persisted operation within {_options.HashProbeMs} ms; the configured hash stands");
-            return result;
+            ctx.Note($"{ProviderId}: the orders operation's persisted-query hash was learned from the page and sealed into the session");
+            return result with { Material = BolPersistedQuery.WithHash(result.Material, hash) };
         }
         finally
         {
@@ -254,8 +251,26 @@ public sealed class BolAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Downloading);
 
-        var (collected, walkWasComplete) = await WalkAsync(ctx, new BolCall(shape, options, cookies, xsrf), request, cap, ct)
-            .ConfigureAwait(false);
+        List<BolOrder> collected;
+        bool walkWasComplete;
+        try
+        {
+            (collected, walkWasComplete) = await WalkAsync(ctx, new BolCall(shape, options, cookies, xsrf), request, cap, ct)
+                .ConfigureAwait(false);
+        }
+        catch (ConnectorException ex) when (learnedHash is null && IsRefusedOperation(ex))
+        {
+            // The CONFIGURED hash was refused and this session never learned
+            // bol's current one: a fresh sign-in learns it from bol's own page
+            // (BolHashProbe), so the person is asked to sign in again rather
+            // than told munni needs an update (user ss 2026-10-06: "The party
+            // changed its site" on every bol sync). A LEARNED hash that is
+            // refused is a change bol made since the sign-in and stays
+            // provider_changed.
+            throw ConnectorException.SessionExpired(
+                $"{ProviderId}: bol refused the configured orders operation and this session learned no hash of its own; " +
+                $"a new sign-in learns the one bol's page sends today ({ex.Detail})");
+        }
 
         var ordered = collected.OrderByDescending(o => o.PlacedAt).ToList();
         var complete = walkWasComplete;
@@ -278,6 +293,10 @@ public sealed class BolAdapter : IProviderAdapter
     /// because it had seen everything rather than because its page budget
     /// ran out.
     /// </summary>
+    /// <summary>The GraphQL shape's refusal of the operation (a hash bol no longer knows reports itself there).</summary>
+    private static bool IsRefusedOperation(ConnectorException ex) =>
+        ex.Code == ErrorCode.ProviderChanged && (ex.Detail ?? string.Empty).Contains("graphql refused", StringComparison.Ordinal);
+
     /// <summary>What one orders request needs beyond its page number: the shape, the options it reads (the learned hash included), the jar and the token.</summary>
     private sealed record BolCall(IBolOrdersShape Shape, BolOptions Options, string Cookies, string? Xsrf);
 
@@ -1010,6 +1029,60 @@ public sealed class BolAdapter : IProviderAdapter
     private static ConnectorException Missing(string what, IReadOnlyList<string> selectors) =>
         ConnectorException.ProviderChanged(
             $"{ProviderId}: no element for the {what}; tried [{string.Join(", ", selectors)}]");
+}
+
+/// <summary>
+/// Makes bol's own page say the orders operation's hash.
+///
+/// The sign-in listens for the operation from before its first navigation
+/// (see <see cref="BolPersistedQuery"/>); this is what happens when the page
+/// the sign-in landed on stays silent. 2026-10-05 (user ss): it did - bol
+/// lands a sign-in somewhere the overview is not, or renders the first page
+/// on the server - so the probe opens the overview itself and, failing that,
+/// presses "Toon meer", which fetches the next page through the very
+/// operation the adapter needs. Behind <see cref="ILoginPage"/> so every
+/// step is drivable offline.
+/// </summary>
+internal sealed class BolHashProbe
+{
+    private readonly BolOptions _options;
+
+    public BolHashProbe(BolOptions options) => _options = options;
+
+    /// <summary>The hash, or null when the page never said it; every step is noted on the job.</summary>
+    public async Task<string?> LearnAsync(IJobContext ctx, ILoginPage page, Task<string> learned, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(learned);
+
+        if (await ArrivedAsync(learned, ct).ConfigureAwait(false)) return learned.Result;
+
+        // The landing page said nothing: the overview is where the operation
+        // lives, so the browser goes there explicitly.
+        await page.GotoAsync(_options.LoginStartUrl, ct).ConfigureAwait(false);
+        if (await ArrivedAsync(learned, ct).ConfigureAwait(false))
+        {
+            ctx.Note($"{BolAdapter.ProviderId}: the orders overview fired the operation once opened");
+            return learned.Result;
+        }
+
+        // A first page rendered on the server fires nothing until the next
+        // one is asked for.
+        if (await page.ClickAsync(_options.LoadMoreSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            && await ArrivedAsync(learned, ct).ConfigureAwait(false))
+        {
+            ctx.Note($"{BolAdapter.ProviderId}: 'Toon meer' made the overview fire the operation");
+            return learned.Result;
+        }
+
+        ctx.Note($"{BolAdapter.ProviderId}: the orders page fired no persisted operation within {_options.HashProbeMs} ms, " +
+                 "not even after opening the overview and pressing 'Toon meer'; the configured hash stands");
+        return null;
+    }
+
+    private async Task<bool> ArrivedAsync(Task<string> learned, CancellationToken ct) =>
+        await Task.WhenAny(learned, Task.Delay(_options.HashProbeMs, ct)).ConfigureAwait(false) == learned;
 }
 
 /// <summary>

@@ -41,8 +41,8 @@ function assertNetworkAllowed(): void {
   }
 }
 
-// one guard for the whole page: a dead session must trigger exactly one
-// return to the login screen, however many background calls hit the 401
+// one breadcrumb per page: a refused session is named once, however many
+// background calls hit the 401 (the expiry mark itself is idempotent)
 let handlingAuthExpiry = false;
 
 /** test seam */
@@ -91,21 +91,26 @@ export async function apiFetch(
     response = await attempt();
     // a 401 WITHOUT a bearer proves nothing about the refresh token —
     // only a rejected real token means the session is truly dead
-    if (response.status === 401 && sentBearer && !handlingAuthExpiry) {
-      // the refresh token is dead too (IdP restart, revocation): no
-      // amount of retrying helps. Clear the session and return to the
-      // login screen instead of sitting on "server unreachable" until a
-      // manual sign-out (user report).
-      handlingAuthExpiry = true;
-      // handled, so a breadcrumb and not an event (GlitchTip 7/13/14, user
-      // rule 2026-10-05): the re-login IS the support; a sign-in that then
-      // fails reports from the login screen
-      console.warn('refresh token dead: forced re-login after double 401');
-      const { clearStaleLogtoState } = await import('@/lib/authState');
-      clearStaleLogtoState('double-401'); // dead refresh token must not poison the next sign-in
-      const { useSession } = await import('@/app/session');
-      useSession.getState().logout();
-      globalThis.location.assign('/#/login');
+    if (response.status === 401 && sentBearer) {
+      // a freshly minted token the server still refuses: the session is
+      // spent (IdP restart, revocation) and no amount of retrying helps.
+      // LOCAL-FIRST (user 2026-10-06: "I randomly get kicked out"): nobody
+      // is logged out and nothing is wiped — the app keeps working on this
+      // device, the offline banner names the state with its Sign in door
+      // (#222's path), and near app open the OIDC round-trip re-mints
+      // quietly on the IdP's surviving session cookie. A breadcrumb, not
+      // an event (GlitchTip 7/13/14, user rule 2026-10-05): a sign-in that
+      // then fails reports from where it fails.
+      if (!handlingAuthExpiry) {
+        handlingAuthExpiry = true;
+        console.warn('session refused: double 401 on a fresh token — asking for a sign-in, nothing logged out');
+      }
+      const { markSessionExpired, attemptSilentReentry } = await import('@/app/sessionExpiry');
+      if (markSessionExpired()) {
+        const { oidcSignIn } = await import('@/app/authToken');
+        const { callbackUri } = await import('@/features/auth/logto');
+        void attemptSilentReentry(() => oidcSignIn(callbackUri()).then(() => undefined)).catch(() => undefined);
+      }
     }
   }
   // #186 (user rule): UNEXPECTED server answers reach GlitchTip from the

@@ -1,4 +1,4 @@
-import { CATEGORY_BY_ID } from './categories';
+import { CATEGORY_BY_ID, REIMBURSED_ID } from './categories';
 import { ALL_KEYWORD_RULES } from './keyword-extras';
 import type { KeywordRule } from './keyword-categories';
 import { predictFromMemory } from './merchantMemory';
@@ -108,6 +108,13 @@ function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPredict
 }
 
 export function predictTx(input: PredictInput): TxPrediction | null {
+  const prediction = predictTxRaw(input);
+  // settlement bookkeeping is never a prediction: `reimbursed` only ever
+  // arrives through an actual reimbursement link (user rule 2026-10-06)
+  return prediction?.catId === REIMBURSED_ID ? null : prediction;
+}
+
+function predictTxRaw(input: PredictInput): TxPrediction | null {
   if (input.memory) {
     const remembered = memoryPrediction(input.memory, input);
     if (remembered) return remembered;
