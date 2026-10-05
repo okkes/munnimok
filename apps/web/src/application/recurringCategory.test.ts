@@ -5,7 +5,7 @@ import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
-import { propagateRecurringCategory } from './recurring';
+import { propagateRecurringCategory, realignRecurringCategories } from './recurring';
 
 const SPACE = 'sp1';
 
@@ -39,6 +39,19 @@ describe('recurring category propagation (the recurring owns the category)', () 
     expect((await store.get('transaction', 'expecting'))?.catId).toBe('expenseReimburse');
     expect((await store.get('transaction', 'other'))?.catId).toBe('groceries');
     expect((await store.get('transaction', 'loose'))?.catId).toBe('groceries');
+  });
+
+  it('user ss 2026-10-06: the boot heal re-files a linked row that disagrees with its recurring, once', async () => {
+    const { store, repo } = await seed();
+    await repo.upsert('recurring', SPACE, 'rec1', { name: 'Gym', catId: 'sport', active: 1 });
+    // linked1 (groceries) takes the recurring's sport; linked2 already wears it;
+    // the expected-reimbursement exception and rec2's row (no recurring) stand
+    expect(await realignRecurringCategories(store, repo)).toBe(1);
+    expect((await store.get('transaction', 'linked1'))?.catId).toBe('sport');
+    expect((await store.get('transaction', 'linked1'))?.needsReview).toBe(0);
+    expect((await store.get('transaction', 'expecting'))?.catId).toBe('expenseReimburse');
+    expect((await store.get('transaction', 'other'))?.catId).toBe('groceries');
+    expect(await realignRecurringCategories(store, repo)).toBe(0); // idempotent
   });
 
   it('a cleared recurring category files linked rows as uncategorized', async () => {

@@ -72,6 +72,32 @@ export async function propagateRecurringCategory(
   return touched;
 }
 
+/**
+ * Every boot (user ss 2026-10-06, the Amazon Prime row filed as Shopping
+ * under a Streaming recurring): a linked row whose category disagrees
+ * with its recurring — a fetch's overlay once buried the recurring's
+ * pick — takes the recurring's category back. The recurring OWNS the
+ * category (user rule 2026-07-28); the reimbursement exception and
+ * split/spread rows stay as they are. Idempotent and cheap.
+ */
+export async function realignRecurringCategories(store: StorageBackend, repo: Repo): Promise<number> {
+  const recs = (await store.allRows('recurring')).filter((r) => r.deleted === 0 && !!r.catId);
+  if (recs.length === 0) return 0;
+  const byId = new Map(recs.map((r) => [r.id, r]));
+  let touched = 0;
+  for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0)) {
+    for (const tx of await visibleTransactions(store, space.id)) {
+      const rec = tx.recurringId ? byId.get(tx.recurringId) : undefined;
+      if (!rec?.catId || tx.deleted !== 0 || tx.splits?.length || tx.cats?.length) continue;
+      if (tx.catId === rec.catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
+      // #260 r2: the recurring applying its category IS the review
+      await writeTxTransform(repo, tx, { catId: rec.catId, needsReview: 0 });
+      touched++;
+    }
+  }
+  return touched;
+}
+
 /** merchant patterns this space already rejected as suggestions */
 export function useDismissedKeys(): ReadonlySet<string> | undefined {
   const { store, spaceId } = useData();

@@ -824,8 +824,10 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
   // bulk mechanism from the detail too (user request) — unlike review
   // it reaches EVERYTHING of this merchant, reviewed included. The
   // settlement category is never a bulk suggestion (user rule).
+  // …and never on the placeholder: an Uncategorized write (a detached
+  // counterparty) is no decision to spread (user ss 2026-10-06)
   const similar =
-    entry.catId === REIMBURSED_ID
+    entry.catId === REIMBURSED_ID || entry.catId === UNCATEGORIZED_ID
       ? []
       : similarTo(deps.allTxs, tx, (item) => !isMultiPartRow(item) && !item.cats?.length && item.catId !== entry.catId);
   deps.bulkArmedReimbRef.current = deps.reimbNow;

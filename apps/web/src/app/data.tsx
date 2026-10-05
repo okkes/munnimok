@@ -256,6 +256,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // (GcIngest) with no counterparty, so this heals continuously.
         const { migrateBareSpecialRows } = await import('@/application/categoryModel');
         await migrateBareSpecialRows(store, repo);
+        // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
+        // a linked row a fetch's overlay re-filed takes it back every boot
+        const { realignRecurringCategories } = await import('@/application/recurring');
+        await realignRecurringCategories(store, repo);
         // transfers are ONE event with two legs — pair them within each
         // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');
