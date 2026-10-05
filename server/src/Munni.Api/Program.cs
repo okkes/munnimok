@@ -148,6 +148,8 @@ else
             var metadata = builder.Configuration["Auth:MetadataAddress"];
             if (!string.IsNullOrEmpty(metadata)) options.MetadataAddress = metadata;
             options.RequireHttpsMetadata = builder.Configuration.GetValue("Auth:RequireHttps", true);
+            // 2026-10-05: a provider the api cannot ask is a 503 that names itself, never a 401 that logs everyone out
+            options.Events = AuthOutage.Events();
         });
 }
 // operator routes (/admin, /control, the catalog publish): the token must carry the `admin` scope
@@ -205,7 +207,10 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
     // real migrations: schema evolves in place across releases
-    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+    var migrated = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await migrated.Database.MigrateAsync();
+    // the 2026-10-05 overlay repair: once per database, remembered in AppSettings
+    await TxMetaOverlayRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
 }
 
 // handled errors keep their CORS headers — unhandled exceptions wipe the

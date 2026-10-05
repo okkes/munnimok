@@ -82,6 +82,18 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
 
     private const int EntityIdMaximumLength = 128;
 
+    /// <summary>
+    /// The open-banking parties: the strongest feed an account can have (user
+    /// rule 2026-10-05). A bank connector or a file import that reaches the same
+    /// account adds its facts but never takes the account over — its stamps
+    /// (provider, connectionId) stay the open-banking connection's, so the row
+    /// never reads as fed by a lesser source or as no longer covered.
+    /// </summary>
+    public static readonly IReadOnlySet<string> OpenBankingProviders = new HashSet<string>(StringComparer.Ordinal) { "enablebanking", "gocardless" };
+
+    /// <summary>How strongly a party feeds an account: open banking above everything else.</summary>
+    public static int FeedRank(string? provider) => provider is not null && OpenBankingProviders.Contains(provider) ? 2 : 1;
+
     /// <summary>The record kinds this ingest files, in the order a page is worked: accounts before the transactions that name them.</summary>
     private static readonly string[] Shapes = [AccountEntity, TransactionEntity, ReceiptEntity, "credit_registration", "student_debt"];
 
@@ -291,9 +303,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             SeenAt = now,
         };
         var fields = await AccountFieldsAsync(reference, account, ct);
-        // minute-grained seed: a balance refresh must re-emit while the same
-        // minute's retry stays a no-op (the GcIngest rule)
-        var op = Op(feed.Id, AccountEntity, accountEntityId, fields, $"conn:{accountEntityId}:{now:yyyy-MM-ddTHH:mm}");
+        // minute-grained seed, per party: a balance refresh must re-emit while the
+        // same minute's retry stays a no-op (the GcIngest rule) — and a second
+        // party reading the same account in that minute still lands its own facts
+        var op = Op(feed.Id, AccountEntity, accountEntityId, fields, $"conn:{accountEntityId}:{provider}:{now:yyyy-MM-ddTHH:mm}");
         var accepted = await ApplyAsync(feed, [op], touched);
 
         await RememberAccountAsync(reference, ct);
@@ -307,15 +320,26 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         var fields = new Dictionary<string, JsonElement>
         {
             [SourceField] = Json(Source),
-            [ProviderField] = Json(reference.Provider),
             [CurrencyField] = Json(reference.Currency),
             // every device shows when this account last heard from its party
             ["lastSyncedAt"] = Json(reference.SeenAt.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)),
         };
-        // #445: and which connection fetched it - when that connection is gone
-        // (reconnected with a consent that reaches other accounts, removed),
-        // nothing fetches the row any more, and the app can say so
-        if (reference.ConnectionId is { } connectionId) fields["connectionId"] = Json(connectionId);
+        // whose account this is: the party and the connection that fetched it
+        // (#445: when that connection is gone nothing fetches the row any more,
+        // and the app can say so). A lesser party never takes over an account an
+        // open-banking connection feeds (user rule 2026-10-05: the ING login
+        // re-stamped the Enable Banking account and its feed read as overruled)
+        var existing = await db.EntityRows
+            .Where(r => r.SpaceId == reference.FeedSpaceId && r.Entity == AccountEntity && r.EntityId == reference.AccountEntityId)
+            .Select(r => r.DataJson)
+            .FirstOrDefaultAsync(ct);
+        var current = existing is null ? null : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(existing);
+        var currentProvider = current is not null && current.TryGetValue(ProviderField, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+        if (FeedRank(reference.Provider) >= FeedRank(currentProvider))
+        {
+            fields[ProviderField] = Json(reference.Provider);
+            if (reference.ConnectionId is { } connectionId) fields["connectionId"] = Json(connectionId);
+        }
         if (isIban) fields["iban"] = Json(reference.AccountRef);
         if (account.Text("masked_number") is { } masked) fields["maskedNumber"] = Json(masked);
         // the institution as the party lists it (§15): the app fetches the same logo the lookup showed
@@ -324,9 +348,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         // the party's display name and type seed the row once; after that
         // the fields belong to the user (GcIngest: re-asserting them every
         // fetch clobbered renames made in the app)
-        var exists = await db.EntityRows.AnyAsync(
-            r => r.SpaceId == reference.FeedSpaceId && r.Entity == AccountEntity && r.EntityId == reference.AccountEntityId, ct);
-        if (!exists)
+        if (existing is null)
         {
             fields[NameField] = Json(account.Text("display_name") ?? (isIban ? $"Bank · {reference.AccountRef[^4..]}" : "Card"));
             fields[TypeField] = Json(AccountTypeOf(account.Text(TypeField)));
@@ -476,10 +498,13 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     /// <summary>
     /// The predicted category and type for one booked row in one space, as
     /// the api's own bank ingest wrote it: written once per row and space
-    /// (the op id is the pair), so a person's later choice is never clobbered
-    /// by a re-fetch.
+    /// (the op id is the pair) and stamped with the FLOOR clock, so it only
+    /// fills what nobody said yet — a person's choice, made before or after,
+    /// always outranks it. (2026-10-05: with the server's live clock the first
+    /// overlay the new op-id scheme wrote buried a whole evening's
+    /// categorisations; <see cref="TxMetaOverlayRepair"/> put them back.)
     /// </summary>
-    private SyncOpDto OverlayOp(string spaceId, TransactionRow row)
+    private static SyncOpDto OverlayOp(string spaceId, TransactionRow row)
     {
         var predicted = KeywordPredictor.Predict(row.Text, row.Direction);
         var fields = new Dictionary<string, JsonElement>
@@ -489,7 +514,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             ["txType"] = Json(predicted?.TxType ?? (row.Direction == CreditDirection ? "income" : "expense")),
             ["needsReview"] = Json(predicted is null ? 1 : 0),
         };
-        return Op(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, $"connmeta:{spaceId}:{row.EntityId}");
+        return new SyncOpDto(ImportIds.OpId($"connmeta:{spaceId}:{row.EntityId}"), spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, ServerHlc.Floor);
     }
 
     private Task<List<string>> AttachedSpacesAsync(ConnectorAccountRef account, CancellationToken ct) =>

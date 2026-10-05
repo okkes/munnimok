@@ -284,6 +284,23 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
         + "</body></html>";
 
     /// <summary>
+    /// A verification-code page the way providers build them: one box per
+    /// digit, each taking one character and handing the focus on as soon as
+    /// it has it. Text that arrives as one insertion lands whole in the first
+    /// box; text typed a character at a time fills them one by one.
+    /// </summary>
+    internal static string CodeForm() =>
+        "<!doctype html><html><body style='margin:0;background:#ffffff;font:16px sans-serif'>"
+        + "<h1 style='margin:24px 16px'>Controlecode</h1>"
+        + "<div style='display:flex;gap:8px;margin:8px 16px'>"
+        + "<input id='d1' maxlength='1' inputmode='numeric' style='width:56px;height:56px;font-size:24px;text-align:center' />"
+        + "<input id='d2' maxlength='1' inputmode='numeric' style='width:56px;height:56px;font-size:24px;text-align:center' />"
+        + "<input id='d3' maxlength='1' inputmode='numeric' style='width:56px;height:56px;font-size:24px;text-align:center' />"
+        + "</div>"
+        + "<script>for (const box of document.querySelectorAll('input')) box.addEventListener('input', () => { if (box.value.length === 1 && box.nextElementSibling) box.nextElementSibling.focus(); });</script>"
+        + "</body></html>";
+
+    /// <summary>
     /// A page with a photograph on it, standing in for the hero image, the
     /// gradients and the antialiased type a real provider login is mostly made
     /// of. A SMOOTH field rather than per-pixel noise, and the difference

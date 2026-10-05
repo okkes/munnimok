@@ -92,6 +92,13 @@ public static class ServerHlc
 
     public static string Now(int counter = 0) => Encode(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), counter);
 
+    /// <summary>
+    /// The stamp that loses to every other: a value written with it fills a
+    /// field nobody set yet and never outranks an opinion a device holds or
+    /// forms later (the connector ingest's prediction overlay, 2026-10-05).
+    /// </summary>
+    public static readonly string Floor = Encode(0, 0);
+
     public static string Encode(long wallMs, int counter) =>
         $"{ToBase36(wallMs).PadLeft(9, '0')}-{ToBase36(counter).PadLeft(4, '0')}-{DeviceId}";
 

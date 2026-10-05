@@ -16,6 +16,15 @@ public static class SentryNoise
 {
     private static readonly string[] RacedTables = ["\"Users\"", "\"UserDevices\"", "\"SpaceAccountLinks\""];
 
+    /// <summary>
+    /// The sync push retries a unique violation on these up to three times
+    /// (two devices pushing the same new row, a push racing the bank
+    /// ingest): EF's command-failed log line of a retried attempt is not an
+    /// incident (GlitchTip 10). Only the LOG line is muted — the exception
+    /// the push throws once the retries are spent still reports.
+    /// </summary>
+    private static readonly string[] RetriedTables = ["\"EntityRows\"", "\"SyncOps\""];
+
     public static bool IsHandledRace(SentryEvent sentryEvent)
     {
         // the caught PostgresException / DbUpdateException event chain
@@ -34,7 +43,7 @@ public static class SentryNoise
         if (sentryEvent.Logger?.StartsWith("Microsoft.EntityFrameworkCore") == true)
         {
             var text = sentryEvent.Message?.Formatted ?? sentryEvent.Message?.Message ?? string.Empty;
-            if (text.Contains("INSERT INTO") && RacedTables.Any(text.Contains)) return true;
+            if (text.Contains("INSERT INTO") && RacedTables.Concat(RetriedTables).Any(text.Contains)) return true;
             // DbUpdateException log line carries no command text — the
             // paired CommandError right before it already told the story
             if (sentryEvent.Logger.StartsWith("Microsoft.EntityFrameworkCore.Update") &&

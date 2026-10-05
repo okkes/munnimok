@@ -18,6 +18,47 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.8.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Your categorisations are back. A bank fetch had quietly overwritten an evening of work with its own guesses; every choice a device had filed is restored, and a guess can never outrank your own choice again.',
+        nl: 'Je categorieën zijn terug. Een bankophaling had stilletjes een avond werk overschreven met eigen gissingen; elke keuze die een apparaat had vastgelegd is hersteld, en een gissing kan nooit meer boven je eigen keuze staan.',
+        tr: 'Kategorilerin geri geldi. Bir banka çekimi bir akşamlık çalışmayı sessizce kendi tahminleriyle üzerine yazmıştı; bir cihazın kaydettiği her seçim geri getirildi ve bir tahmin bir daha senin seçiminin önüne geçemez.',
+      },
+      {
+        en: 'Receipts ask first. A fetched receipt never attaches by itself: the review card asks (yes, no, or another receipt), transactions you already reviewed list their matches under Matches to check and on Home, and a match opens both the receipt and the transaction so you can compare.',
+        nl: 'Bonnen vragen eerst. Een opgehaalde bon koppelt zichzelf nooit: de beoordelingskaart vraagt het (ja, nee, of een andere bon), transacties die je al beoordeeld hebt tonen hun matches onder Te controleren matches en op Home, en een match opent zowel de bon als de transactie om te vergelijken.',
+        tr: 'Fişler önce sorar. Çekilen bir fiş kendiliğinden asla bağlanmaz: inceleme kartı sorar (evet, hayır ya da başka bir fiş), zaten incelediğin işlemler eşleşmelerini Kontrol edilecek eşleşmeler altında ve Ana sayfada gösterir, ve bir eşleşme karşılaştırman için hem fişi hem işlemi açar.',
+      },
+      {
+        en: 'The review card’s counter transaction is yours to change — re-point it or release it, even a remembered one — and a remembered counterparty fills in its category instead of leaving the card on “Pick a category”.',
+        nl: 'De tegentransactie op de beoordelingskaart is van jou — wijs hem opnieuw toe of laat hem los, ook een onthouden paar — en een onthouden tegenpartij vult de categorie in plaats van de kaart op “Kies een categorie” te laten staan.',
+        tr: 'İnceleme kartındaki karşı işlem senin elinde — hatırlanan bir eşleşme dahil yeniden yönlendir ya da bırak — ve hatırlanan bir karşı taraf kartı “Bir kategori seç”te bırakmak yerine kategorisini doldurur.',
+      },
+      {
+        en: 'A linked bank feed (Enable Banking, GoCardless) is never overruled by a bank login or a statement import on the same account, and a statement for an account a party already feeds asks before it adds its rows.',
+        nl: 'Een gekoppelde bankfeed (Enable Banking, GoCardless) wordt nooit overruled door een bank-login of een afschriftimport op dezelfde rekening, en een afschrift voor een rekening die al gevuld wordt vraagt eerst voordat het zijn regels toevoegt.',
+        tr: 'Bağlı bir banka akışı (Enable Banking, GoCardless) aynı hesapta bir banka girişi ya da ekstre içe aktarımı tarafından asla geçersiz kılınmaz; zaten beslenen bir hesaba ait ekstre satırlarını eklemeden önce sorar.',
+      },
+      {
+        en: 'In the live sign-in view, typed text arrives one character at a time — a verification code fills its boxes one digit each. Amazon: a digital order no longer ends the whole fetch.',
+        nl: 'In de live aanmeldweergave komt getypte tekst teken voor teken aan — een controlecode vult zijn vakjes cijfer voor cijfer. Amazon: een digitale bestelling beëindigt niet langer de hele ophaling.',
+        tr: 'Canlı oturum açma görünümünde yazılan metin karakter karakter ulaşır — bir doğrulama kodu kutularını rakam rakam doldurur. Amazon: dijital bir sipariş artık tüm çekimi bitirmiyor.',
+      },
+      {
+        en: 'Recurring costs say how many days are left (“Due in 12 days”) next to the next date; a credit settled only in part keeps the rest editable; a dinner partly paid back wears the dinner’s icon, not “Multiple categories”.',
+        nl: 'Terugkerende kosten zeggen hoeveel dagen nog (“Over 12 dagen”) naast de volgende datum; een deels verrekende ontvangst houdt de rest bewerkbaar; een deels terugbetaald etentje draagt het icoon van het etentje, niet “Meerdere categorieën”.',
+        tr: 'Yinelenen maliyetler bir sonraki tarihin yanında kaç gün kaldığını söyler (“12 gün sonra”); kısmen kapatılan bir alacak kalanını düzenlenebilir tutar; kısmen geri ödenen bir akşam yemeği “Birden fazla kategori” yerine yemeğin simgesini taşır.',
+      },
+      {
+        en: 'Fewer false alarms: an outage at the sign-in server no longer logs you out, and only what still fails after munni handled it reaches the crash tracker — the connector platform now reports there too.',
+        nl: 'Minder vals alarm: een storing bij de aanmeldserver logt je niet meer uit, en alleen wat na munni’s afhandeling nog steeds mislukt bereikt de crashtracker — ook het connectorplatform meldt zich daar nu.',
+        tr: 'Daha az yanlış alarm: oturum açma sunucusundaki bir kesinti artık oturumunu kapatmıyor ve yalnızca munni’nin ele almasından sonra hâlâ başarısız olanlar çökme izleyicisine ulaşıyor — bağlayıcı platformu da artık oraya rapor veriyor.',
+      },
+    ],
+  },
+  {
     version: '5.7.1',
     date: '2026-10-05',
     items: [

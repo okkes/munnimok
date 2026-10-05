@@ -5,6 +5,11 @@ import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
+import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
+import { useUnmatchedReceipts } from '@/application/connections';
+import { useReceiptOps } from '@/application/receipts';
+import { rankForTx } from '@/features/shopping/ReceiptSection';
+import { partyName } from '@/features/connectors/logos';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
@@ -28,7 +33,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, ReceiptLinkRow, ReceiptRow, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
@@ -37,7 +42,7 @@ import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
-import { pairWithExistingRow } from '@/application/counterPair';
+import { pairWithExistingRow, releasePeerLeg } from '@/application/counterPair';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, orDefaultLabel, txTitle } from '@/lib/text';
@@ -309,8 +314,10 @@ const splitWouldReset = (args: {
 
 /** #237 r3: the card's Counter-transaction row descriptor — undefined
  *  hides the row (no counterparty, or a funding pot: nothing ever
- *  shows there); a STORED pair renders tap-less (S3776: out of the
- *  component) */
+ *  shows there). A STORED pair is the person's to change too (user ss
+ *  2026-10-05: a remembered pair sat on the card with no way to touch
+ *  it) — the tap re-points or releases it on confirm (S3776: out of
+ *  the component) */
 function counterTxDescriptor(
   tx: SpaceTx | undefined,
   counterAcct: { type: AccountType } | undefined,
@@ -322,7 +329,7 @@ function counterTxDescriptor(
 ): { face: string; onEdit?: () => void } | undefined {
   if (!tx || !counterAcct || counterAcct.type === 'funding') return undefined;
   const face = counterTxFaceFor(peer, bankFed, tx.currency, lang, t);
-  return tx.transferPeerId ? { face } : { face, onEdit };
+  return { face, onEdit };
 }
 
 /** #161: the remembered pct SPREAD applied onto an untouched draft —
@@ -360,6 +367,8 @@ async function writeConfirmation(args: {
   transform: ReturnType<typeof useTxTransform>;
   /** #237 r2: the EXISTING row the user pointed at (pick-existing) */
   pairPeerId?: string;
+  /** 2026-10-05: a STORED pair the person released on the card — the row forgets its peer (the peer leg was released beforehand) */
+  releasePeer?: boolean;
 }): Promise<void> {
   const { draft } = args;
   // draft-cleared fields on a tx that HAD them need an explicit null —
@@ -381,7 +390,7 @@ async function writeConfirmation(args: {
     ...linkField,
     // #237 r2: a pick-existing peer rides the SAME write — the choke
     // sees the incoming peer and mints nothing
-    ...(args.pairPeerId ? { transferPeerId: args.pairPeerId } : {}),
+    ...peerWriteFor(args.pairPeerId, args.releasePeer),
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
     // #324 (user): the staged note lands with the same write ('' clears)
@@ -390,6 +399,139 @@ async function writeConfirmation(args: {
   for (const item of args.bulk) {
     await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId, args.note), null);
   }
+}
+
+/** the row's own peer pointer in the confirm write: a pick-existing peer, a released stored pair, or nothing */
+function peerWriteFor(pairPeerId: string | undefined, releasePeer: boolean | undefined): { transferPeerId?: string } {
+  if (pairPeerId) return { transferPeerId: pairPeerId };
+  // an explicit null clears the stored pointer (the transform's write shape, as the detail screen does it)
+  return releasePeer ? { transferPeerId: null as never } : {};
+}
+
+/**
+ * 2026-10-05 (user ss): what a confirm does with a STORED pair — re-pointed
+ * by a pick, released through the create/wait door, or orphaned by a dropped
+ * counterparty, the old peer leg is let go first (S3776: out of the handler)
+ */
+function pairReleasePlan(
+  tx: Pick<SpaceTx, 'transferPeerId'>,
+  draft: Pick<ReviewDraft, 'linkedAccountId'>,
+  pickedPeer: { txId: string } | null,
+  releaseStored: boolean,
+): { releasePeer: boolean; pairNew: string | undefined } {
+  const repointed = !!pickedPeer && pickedPeer.txId !== tx.transferPeerId;
+  const releasePeer = !!tx.transferPeerId && (releaseStored || repointed || !draft.linkedAccountId);
+  // a pick that is new to the row pairs on confirm; a pick that IS the stored pair needs no second write
+  const pairNew = pickedPeer && (repointed || !tx.transferPeerId) ? pickedPeer.txId : undefined;
+  return { releasePeer, pairNew };
+}
+
+/** user ss 2026-10-05: the card's Receipt row — an attached receipt opens, a proposal or the suggestions open the sheet */
+function ReviewReceiptRow({ row, onOpen, onAsk }: Readonly<{ row: ReturnType<typeof receiptRowFor>; onOpen: (receiptId: string) => void; onAsk: () => void }>) {
+  const { t } = useLang();
+  if (!row) return null;
+  const attachedId = row.attachedId;
+  return (
+    <button
+      data-testid="review-receipt-row"
+      onClick={attachedId ? () => onOpen(attachedId) : onAsk}
+      className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+    >
+      <Icon name="receipt-text-outline" size={18} color={row.asks ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+      <span className={`min-w-0 flex-1 truncate ${attachedId || row.asks ? '' : 'text-ink-4'}`}>{row.face}</span>
+      <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
+      <Icon name={attachedId ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
+/** the receipt sheet: the proposal's yes / no, then the other receipts that could be this one */
+function ReviewReceiptSheet({
+  open,
+  onOpenChange,
+  proposal,
+  candidates,
+  currency,
+  onAccept,
+  onReject,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  proposal: ReceiptLinkRow | undefined;
+  candidates: readonly ReceiptRow[];
+  currency: string;
+  onAccept: (link: ReceiptLinkRow) => void;
+  onReject: (link: ReceiptLinkRow) => void;
+  onPick: (row: ReceiptRow) => void;
+}>) {
+  const { t, lang } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('receipt.title')} size="tall">
+      <div className="flex flex-col gap-3 pt-1" data-testid="review-receipt-sheet">
+        {proposal && (
+          <div className="rounded-card border border-line bg-surface px-4 py-3" data-testid="review-receipt-proposal">
+            <div className="flex items-center gap-3">
+              <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{proposal.merchant ?? partyName(proposal.source)}</span>
+                <span className="block text-[11px] text-ink-4">{t('receipts.proposedBadge')} · {proposal.date}</span>
+              </span>
+              <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(proposal.totalCents, currency, lang)}</span>
+            </div>
+            <div className="mt-2 flex gap-2 pl-8">
+              <Button size="sm" data-testid="review-receipt-accept" onClick={() => onAccept(proposal)}>
+                {t('receipts.accept')}
+              </Button>
+              <Button size="sm" variant="outline" data-testid="review-receipt-reject" onClick={() => onReject(proposal)}>
+                {t('receipts.reject')}
+              </Button>
+            </div>
+          </div>
+        )}
+        {candidates.length > 0 && (
+          <>
+            <div className="m-cap px-1">{proposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-pick-list">
+              {candidates.map((row) => (
+                <button
+                  key={row.id}
+                  data-testid={`review-receipt-pick-${row.id}`}
+                  onClick={() => onPick(row)}
+                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
+                >
+                  <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink">{row.merchant ?? partyName(row.source)}</span>
+                    <span className="block text-[11px] text-ink-4">{row.date}</span>
+                  </span>
+                  <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(row.totalCents, currency, lang)}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+/** the card's Receipt row: the attached receipt (a door to it), the proposal (a question), or the suggestions (a pick) — null hides the row */
+function receiptRowFor(
+  attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined,
+  proposal: { merchant?: string; source: string; totalCents: number } | undefined,
+  candidates: number,
+  currency: string,
+  lang: ReturnType<typeof useLang>['lang'],
+  t: ReturnType<typeof useLang>['t'],
+): { face: string; attachedId?: string; asks: boolean } | null {
+  if (attached) {
+    return { face: `${attached.merchant ?? partyName(attached.source)} · ${fmtCents(attached.totalCents, currency, lang)}`, attachedId: attached.id, asks: false };
+  }
+  if (proposal) {
+    return { face: `${proposal.merchant ?? partyName(proposal.source)} · ${fmtCents(proposal.totalCents, currency, lang)} · ${t('receipts.proposedBadge')}`, asks: true };
+  }
+  return candidates > 0 ? { face: t('review.receiptNone'), asks: false } : null;
 }
 
 /** #211: the sibling's copy of a category spread — % entries rescale to
@@ -1182,6 +1324,25 @@ export function ReviewPartDeck({
   );
 }
 
+/** 2026-10-05 (user ss): a row that REMEMBERS its counterparty (the
+ * memory, an earlier device, a repaired overlay) but wears no category
+ * files the movement its counter's kind means — the bijection the pick
+ * itself applies — instead of sitting on "Pick a category" next to a
+ * labelled counter transaction. A deliberate category is never touched. */
+function fileRememberedCounter(
+  draft: ReviewDraft | null,
+  accounts: readonly { id: string; type: AccountType }[] | undefined,
+  cats: ReturnType<typeof useCategories>,
+  amountCents: number,
+  ownStamp?: TxType,
+): ReviewDraft | null {
+  if (!draft?.linkedAccountId || draft.splits?.length || draft.cats?.length) return draft;
+  if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
+  const account = accounts?.find((a) => a.id === draft.linkedAccountId);
+  if (!account) return draft;
+  return withLinkedAccount(draft, { id: account.id, type: account.type }, cats, amountCents, ownStamp);
+}
+
 /** own-account counterparty pre-applies the link + suggested type; the
  * hidden 'uncategorized' builtin keeps the confirm armed for transfers */
 function applyOwnCounterDefault(
@@ -1608,6 +1769,8 @@ export function ReviewScreen() {
   // so the bulk offer stands down while it does. The warning asks first
   // when similar transactions were about to ride along.
   const [pickedPeer, setPickedPeer] = useState<{ txId: string; linkedId: string } | null>(null);
+  // 2026-10-05: the create/wait door on a STORED pair means "release it" — the card shows the default again until confirm
+  const [releaseStored, setReleaseStored] = useState(false);
   const [pickWarn, setPickWarn] = useState<{ n: number; stage: () => void } | null>(null);
   // #268 (user): the per-sibling counter-match queue a confirmed
   // row-level pick leaves behind (draft snapshot at confirm time)
@@ -1741,7 +1904,7 @@ export function ReviewScreen() {
   // — clue-matched counterparty, or Uncategorized when nothing matches
   const spaceAccounts = useSpaceAccounts();
   const resolvedDraft = useMemo(
-    () => resolveTransferPrediction(ownTransferDraft, tx, spaceAccounts, cats, ownStamp),
+    () => fileRememberedCounter(resolveTransferPrediction(ownTransferDraft, tx, spaceAccounts, cats, ownStamp), spaceAccounts, cats, tx?.amountCents ?? 0, ownStamp),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [ownTransferDraft, tx?.id, spaceAccounts, cats, ownStamp],
   );
@@ -1753,6 +1916,20 @@ export function ReviewScreen() {
     [resolvedDraft, prediction, tx?.id],
   );
   const draft = stagedDraft ?? spreadDraft;
+  // user ss 2026-10-05: the receipt is part of the review — a fetched
+  // receipt that fits this card asks HERE (yes / no / pick another); what
+  // the person decides here is decided on the Receipts screen as well
+  const receiptEntry = useTxReceiptEntry(tx?.id);
+  const receiptProposals = useProposedMatches();
+  const unmatchedReceipts = useUnmatchedReceipts();
+  const receiptOps = useReceiptOps();
+  const [receiptPickOpen, setReceiptPickOpen] = useState(false);
+  const receiptProposal = useMemo(() => (receiptProposals ?? []).find((l) => l.proposedTxId === tx?.id), [receiptProposals, tx?.id]);
+  const receiptCandidates = useMemo(
+    () => (tx ? rankForTx(tx, (unmatchedReceipts ?? []).filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
+    [tx, unmatchedReceipts, receiptProposal?.receiptId],
+  );
+  const receiptRow = tx ? receiptRowFor(receiptEntry?.data, receiptProposal, receiptCandidates.length, tx.currency, lang, t) : null;
   const draftCounter = useQuery(
     store,
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
@@ -1771,10 +1948,10 @@ export function ReviewScreen() {
   const counterBankFed = (counterAcct?.source ?? 'manual') !== 'manual';
   const peerFaceRow = useMemo(
     () => {
-      const standingPeerId = tx?.transferPeerId ?? pickedPeer?.txId;
+      const standingPeerId = pickedPeer?.txId ?? (releaseStored ? undefined : tx?.transferPeerId);
       return standingPeerId ? allTxs?.find((r) => r.id === standingPeerId) : undefined;
     },
-    [tx?.transferPeerId, pickedPeer, allTxs],
+    [tx?.transferPeerId, pickedPeer, releaseStored, allTxs],
   );
   const counterTxRow = counterTxDescriptor(tx, counterAcct, peerFaceRow, counterBankFed, lang, t, () => setCounterTxOpen(true));
   const events = useEvents();
@@ -1875,6 +2052,7 @@ export function ReviewScreen() {
     setSplitResetOpen(false);
     splitResetArmed.current = false;
     setPickedPeer(null);
+    setReleaseStored(false);
     setPickWarn(null);
     setCounterTxOpen(false);
     eventTouched.current = false;
@@ -2104,6 +2282,11 @@ export function ReviewScreen() {
     // #221→#309: the bare-movement default fallback is GONE — the gate
     // above guarantees every movement confirm carries its picked link
     // (which may well BE the family default, chosen in the ask).
+    // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
+    // whose counterparty was dropped lets its peer leg go first — a stale
+    // peer would keep collapsing the pair in the list
+    const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
+    if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
     await writeConfirmation({
       tx,
       draft,
@@ -2113,8 +2296,9 @@ export function ReviewScreen() {
       bulk: pickedPeer ? [] : bulk,
       transform,
       pairPeerId: pickedPeer?.txId,
+      releasePeer: releasePeer && !pickedPeer,
     });
-    await pairReviewPicks({ store, repo, spaceId }, tx, pickedPeer?.txId, partPeers);
+    await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
     if (queued) setCounterBulk(queued);
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
@@ -2323,6 +2507,16 @@ export function ReviewScreen() {
                     <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
                     <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
                   </button>
+                )}
+
+                {/* user ss 2026-10-05: the receipt row — a proposal asks here,
+                    an attached receipt opens, candidates offer a pick */}
+                {!multiPart && (
+                  <ReviewReceiptRow
+                    row={receiptRow}
+                    onOpen={(receiptId) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } })}
+                    onAsk={() => setReceiptPickOpen(true)}
+                  />
                 )}
 
                 {/* #324 (user): the note joins the review card — staged
@@ -2582,6 +2776,19 @@ export function ReviewScreen() {
           onDetach={counterRowDoors.onDetach}
         />
       )}
+      {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one */}
+      {tx && (
+        <ReviewReceiptSheet
+          open={receiptPickOpen}
+          onOpenChange={setReceiptPickOpen}
+          proposal={receiptProposal}
+          candidates={receiptCandidates}
+          currency={tx.currency}
+          onAccept={(link) => { void receiptOps.acceptMatch(link); setReceiptPickOpen(false); }}
+          onReject={(link) => { void receiptOps.rejectMatch(link); setReceiptPickOpen(false); }}
+          onPick={(row) => { void receiptOps.linkReceipt(row, tx.id); setReceiptPickOpen(false); }}
+        />
+      )}
       {/* #237 r3: the card row's counter-transaction match sheet —
           suggestions first, the rest scrollable; create/await resets
           the pick; a pick with a standing bulk offer warns first.
@@ -2595,11 +2802,12 @@ export function ReviewScreen() {
           target={{ id: counterAcct.id, name: counterAcct.name }}
           anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
           rows={allTxs ?? []}
-          onCreate={resetPickDoor(counterBankFed, false, () => setPickedPeer(null))}
-          onWait={resetPickDoor(counterBankFed, true, () => setPickedPeer(null))}
+          onCreate={resetPickDoor(counterBankFed, false, () => { setPickedPeer(null); setReleaseStored(!!tx.transferPeerId); })}
+          onWait={resetPickDoor(counterBankFed, true, () => { setPickedPeer(null); setReleaseStored(!!tx.transferPeerId); })}
           onPick={(pickedId) => {
             // #268 (user): a row-level pick no longer stands bulk down —
             // confirm walks the siblings through their own match queue
+            setReleaseStored(false);
             setPickedPeer({ txId: pickedId, linkedId: counterAcct.id });
           }}
         />

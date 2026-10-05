@@ -1090,6 +1090,47 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByText('NL69INGB0123456789')).toBeTruthy());
   });
 
+  it('a statement for an account a party already feeds asks first — unticked with the reason, the live feed never replaced (user rule 2026-10-05)', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('accounts-space-head-demo_space');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('fed'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-fed', 'feedacct-fed', {
+      name: 'Betaal (live)', type: 'checking', source: 'connector', provider: 'enablebanking', currency: 'EUR',
+      balanceCents: 5000, iban: 'NL69INGB0123456789', lastSyncedAt: new Date().toISOString(), dataThroughDate: '2026-06-07',
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    await screen.findByTestId('accounts-space-head-demo_space');
+    const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File([CAMT_FIXTURE], 'statement.xml', { type: 'text/xml' })] });
+    fireEvent.change(input);
+    await screen.findByTestId('import-preview');
+    // the match names the live feed and waits for a tick; nothing imports by itself
+    expect(screen.getByTestId('import-fed-0').textContent).toContain('Already fed by');
+    expect((screen.getByTestId('import-select-0') as HTMLInputElement).checked).toBe(false);
+    // #195 pattern: Import with nothing ticked surfaces the note instead of importing
+    fireEvent.click(screen.getByTestId('import-run'));
+    expect(await screen.findByTestId('import-select-blocker')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('import-select-0'));
+    fireEvent.click(screen.getByTestId('import-run'));
+    expect((await screen.findByTestId('import-result')).textContent).toContain('Imported 2 transactions');
+    // the rows joined the live account; it is still the party's
+    const verify = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await verify.accounts.get('feedacct-fed');
+      expect(row?.source).toBe('connector');
+      expect(row?.provider).toBe('enablebanking');
+    });
+    verify.close();
+  }, 20_000);
+
   it('rejects a non-CAMT file with the error banner', async () => {
     renderApp('/accounts');
     await screen.findByTestId('accounts-space-head-demo_space');

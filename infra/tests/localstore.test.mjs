@@ -101,3 +101,18 @@ test('ensureLocalSecrets mints what the stack owns and lacks — the shared stac
   assert.notEqual(rotated.values.PUSH_VAPID_PUBLIC_KEY, p.values.PUSH_VAPID_PUBLIC_KEY);
   assert.equal(rotated.values.LOGTO_ADMIN_M2M_ID, p.values.LOGTO_ADMIN_M2M_ID, 'the rest stays');
 });
+
+test('ensureLocalSecrets: the App Store Connect tile\'s Team ID stands in for the Apple sign-in tile\'s (the manifest fallback) — the other sign-in values are still asked', () => {
+  fx.writeEnv('lcl', { env: 'ios', slot: 2, channel: 'dev', features: { ios: true, signin: ['apple'] } });
+  setWizardValues({ APPLE_TEAM_ID: 'TEAM123456' }, 'lcl');
+  try {
+    const r = ensureLocalSecrets(loadStack('munni-lcl-ios'));
+    assert.ok(!r.missingOperator.includes('LOGTO_APPLE_TEAM_ID') && !r.missingOperator.includes('APPLE_TEAM_ID'), 'one Apple membership');
+    for (const n of ['LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY', 'ASC_KEY_ID']) assert.ok(r.missingOperator.includes(n), `${n} is still asked`);
+    forgetWizardValues(['APPLE_TEAM_ID'], 'lcl');
+    assert.ok(ensureLocalSecrets(loadStack('munni-lcl-ios')).missingOperator.includes('LOGTO_APPLE_TEAM_ID'), 'no Team ID anywhere → asked');
+  } finally {
+    forgetWizardValues(['APPLE_TEAM_ID'], 'lcl');
+    fx.removeEnv('lcl', 'ios');
+  }
+});

@@ -132,10 +132,27 @@ things the api's own bank ingest kept:
   the transactions resource is complete — every remembered row the party
   no longer reports is tombstoned: booked under a new reference, or
   withdrawn. An incomplete pass settles nothing.
-- **The prediction overlay follows the attachment.** A booked row gets a
-  `txMeta` (category, type, `needsReview`) from `KeywordPredictor` in every
-  space the account is attached to, written once per row and space (the
-  op id is the pair), so a person's later choice is never clobbered.
+- **The prediction overlay follows the attachment, and it is a floor.** A
+  booked row gets a `txMeta` (category, type, `needsReview`) from
+  `KeywordPredictor` in every space the account is attached to, written
+  once per row and space (the op id is the pair) and stamped with the
+  floor clock (`ServerHlc.Floor`): it only fills what nobody said yet, so a
+  person's choice — made before the overlay or after it — always outranks
+  it. (2026-10-05: stamped with the server's live clock, the first overlay
+  the renamed op id wrote re-filed a whole account's history over an
+  evening of categorisations; `TxMetaOverlayRepair` runs once per
+  database at startup and puts the devices' values back.)
+- **An open-banking feed is never overruled.** Enable Banking and
+  GoCardless outrank every other party (user rule 2026-10-05). A bank
+  login or a statement import that reaches the same IBAN adds its facts —
+  the balance, the rows — but never re-stamps whose account it is: the
+  row's `provider` and `connectionId` stay the open-banking connection's
+  (`ConnectorIngest.FeedRank`), so the account keeps its card and its
+  coverage never reads as gone. Another open-banking consent may take the
+  stamps over (equal rank). The account op's minute-grained seed is per
+  party, so two parties reading one account in the same minute both land.
+  On the device, a statement for an account a party feeds asks first: it
+  starts unticked with the reason, and the person opts in.
 - **The account row names its institution.** An account record's
   `institution` — the value of the party's lookup, an aggregator's
   institution id — lands as the row's `bankId`, so the app shows the

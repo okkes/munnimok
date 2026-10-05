@@ -196,6 +196,42 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     }
 
     /// <summary>
+    /// Typed text reaches the page one character at a time, each with its own
+    /// key events.
+    ///
+    /// A verification-code page keeps one box per digit and moves the focus
+    /// on the moment a box has its character. The whole code inserted at once
+    /// landed in the first box (user ss 2026-10-05, Albert Heijn's SMS code);
+    /// typed a beat apart, each digit finds its own box.
+    /// </summary>
+    [Fact]
+    public async Task Typed_text_arrives_a_character_at_a_time_so_a_segmented_code_takes_one_digit_a_box()
+    {
+        var (page, control) = await OpenAsync(LiveFrameTests.CodeForm());
+        await using var session = Session(page, control);
+
+        session.Start(CancellationToken.None);
+        await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
+
+        var (x, y) = await CentreOfAsync(page, "#d1");
+        control.SendLiveInput(new LiveInputBatch
+        {
+            Events =
+            [
+                new LiveInput { Kind = LiveInputKind.Down, X = x, Y = y, Sequence = 1 },
+                new LiveInput { Kind = LiveInputKind.Up, X = x, Y = y, Sequence = 2 },
+                new LiveInput { Kind = LiveInputKind.Text, Text = "123", Sequence = 3 },
+            ],
+        });
+
+        await UntilAsync(
+            async () => await ValueOfAsync(page, "#d3") == "3",
+            "the third box to hold the third digit");
+        Assert.Equal("1", await ValueOfAsync(page, "#d1"));
+        Assert.Equal("2", await ValueOfAsync(page, "#d2"));
+    }
+
+    /// <summary>
     /// A key arrives as the key it names and nothing else.
     ///
     /// Enter on a form submits it, which is the whole reason the key channel
@@ -543,7 +579,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     /// Fulfilling the request locally keeps it a genuine navigation with a
     /// genuine host and still contacts nothing.
     /// </summary>
-    private async Task<(IPage Page, FakeControlPlane Control)> OpenAsync()
+    private async Task<(IPage Page, FakeControlPlane Control)> OpenAsync(string? body = null)
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
         {
@@ -555,7 +591,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         await page.RouteAsync("**/*", route => route.FulfillAsync(new RouteFulfillOptions
         {
             ContentType = "text/html",
-            Body = LiveFrameTests.LoginForm(),
+            Body = body ?? LiveFrameTests.LoginForm(),
         }));
 
         await page.GotoAsync(LoginUrl);

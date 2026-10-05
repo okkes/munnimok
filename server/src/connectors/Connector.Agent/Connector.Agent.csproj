@@ -31,6 +31,7 @@
     <!-- Referenced directly because Program.cs uses the generic host; it also
          arrives transitively, and depending on that would be luck. -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Sentry.Extensions.Logging" />
   </ItemGroup>
 
   <ItemGroup>

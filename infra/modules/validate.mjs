@@ -2,6 +2,7 @@ import { createSign, sign as cryptoSign } from 'node:crypto';
 import { dsmSession, DSM_CODE_ADVICE, isTransport, publishedPathParts } from './dsm.mjs';
 import { localAwareFetch } from './insecure-fetch.mjs';
 import { loadStack, platformEnvStacks, stackName } from './stack.mjs';
+import { foldFallbacks } from './secrets.mjs';
 
 /**
  * Credential validators for the setup wizard (user request: "whenever I
@@ -200,8 +201,8 @@ export const VALIDATORS = {
 
   /** ES256 client-secret JWT + the same dummy-code trick against Apple */
   async apple(raw, fetchImpl, { redirectUris = [], iosAppIds = [] } = {}) {
-    // the Team ID is the TestFlight card's Team ID — one membership
-    const values = { ...raw, LOGTO_APPLE_TEAM_ID: raw.LOGTO_APPLE_TEAM_ID || raw.APPLE_TEAM_ID };
+    // the Team ID is the TestFlight card's Team ID — one membership (the manifest's fallback)
+    const values = foldFallbacks({ ...raw });
     const gap = need(values, ['LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']);
     if (gap) return { ok: false, detail: gap };
     // the App ID passes the token check (native flow) yet can never carry

@@ -95,7 +95,11 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         {
             first.AddHeader(RequestContext.TriggerHeader, "schedule");
             using var started = await http.SendAsync(first);
+            var body = await started.JsonAsync();
             Assert.True(started.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, started.StatusCode.ToString());
+            // the interval counts jobs that SUCCEEDED: a 202 is a run still going, and a
+            // second login sent before it lands is inside nothing yet (CI, 2026-10-05)
+            if (body.TextOrNull("bundle") is null) await Flows.AwaitBundleAsync(http, Provider, body.Text("session_id"));
         }
 
         using var request = Wire.Post($"/v1/{Provider}/login", new { subject, inputs = Credentials });

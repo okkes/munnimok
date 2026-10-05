@@ -214,6 +214,121 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('review-bulk')).toBeNull(), { timeout: 10_000 });
   }, 30_000);
 
+  it('a row that REMEMBERS its counterparty wears the movement category, and its stored pair is the person\'s to release from the card (user ss 2026-10-05)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revpair'), { trackOutbox: false });
+    // the oldest card: a top-up whose counterparty and pair survived (the memory, another device) but whose category did not
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp1', {
+      accountId: 'demo_main', date: '2026-01-01', amountCents: -2500, currency: 'EUR',
+      merchant: 'Pot top-up', catId: 'uncategorized', needsReview: 1, linkedAccountId: 'demo_save', transferPeerId: 'rp1peer',
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp1peer', {
+      accountId: 'demo_save', date: '2026-01-01', amountCents: 2500, currency: 'EUR',
+      merchant: 'Pot side', catId: 'savingDeposit', needsReview: 0, linkedAccountId: 'demo_main', transferPeerId: 'rp1',
+    });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+    // the counter's kind files the category — no "Pick a category" next to a labelled pair
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
+    // the stored pair shows, and the row is a door, not a label
+    const counterTxRow = await screen.findByTestId('review-countertx-row');
+    expect(counterTxRow.textContent).toContain('Pot side');
+    expect((counterTxRow as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(counterTxRow);
+    // the pot is manual: the create door releases the stored pair — the card reads the default again
+    fireEvent.click(await screen.findByTestId('counter-fork-create'));
+    await waitFor(() => expect(screen.getByTestId('review-countertx-row').textContent).toContain('created on confirm'));
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.transactions.get('rp1');
+      expect(row?.needsReview).toBe(0);
+      expect(row?.catId).toBe('savingDeposit');
+      expect(row?.transferPeerId ?? null).toBeNull();
+      expect((await db.transactions.get('rp1peer'))?.transferPeerId ?? null).toBeNull();
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('dropping the counterparty on the card releases the stored pair on confirm (user ss 2026-10-05)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revdrop'), { trackOutbox: false });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp2', {
+      accountId: 'demo_main', date: '2026-01-01', amountCents: -1800, currency: 'EUR',
+      merchant: 'Mislabelled shop', catId: 'uncategorized', needsReview: 1, linkedAccountId: 'demo_save', transferPeerId: 'rp2peer',
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp2peer', {
+      accountId: 'demo_save', date: '2026-01-01', amountCents: 1800, currency: 'EUR',
+      merchant: 'Pot side', catId: 'savingDeposit', needsReview: 0, linkedAccountId: 'demo_main', transferPeerId: 'rp2',
+    });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+    // not a transfer after all: the counterparty goes, the counter-transaction row with it
+    fireEvent.click(screen.getByTestId('review-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-detach'));
+    await waitFor(() => expect(screen.queryByTestId('review-countertx-row')).toBeNull());
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery'));
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.transactions.get('rp2');
+      expect(row?.catId).toBe('groceries');
+      expect(row?.linkedAccountId ?? null).toBeNull();
+      expect(row?.transferPeerId ?? null).toBeNull();
+      expect((await db.transactions.get('rp2peer'))?.transferPeerId ?? null).toBeNull();
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('a receipt that fits the card asks on the card — yes attaches it, and the Receipts screen has nothing left to check (user ss 2026-10-05)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revrcpt'), { trackOutbox: false });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rr1', {
+      accountId: 'demo_main', date: '2026-01-01', amountCents: -1316, currency: 'EUR', merchant: 'Albert Heijn 1842', needsReview: 1,
+    });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'rlink-review', {
+      receiptId: 'rcpt:ah:demo_conn_ah:rv', source: 'ah', instanceId: 'demo_conn_ah', date: '2026-01-01', totalCents: 1316, merchant: 'Albert Heijn', auto: 0, proposedTxId: 'rr1',
+    });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const row = await screen.findByTestId('review-receipt-row');
+    expect(row.textContent).toContain('Receipt to check');
+    fireEvent.click(row);
+    await screen.findByTestId('review-receipt-proposal');
+    fireEvent.click(screen.getByTestId('review-receipt-accept'));
+    // the row now reads the attached receipt; the deck is otherwise untouched (the card is still to confirm)
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).not.toContain('Receipt to check'));
+    expect(screen.getByTestId('review-receipt-row').textContent).toContain('Albert Heijn');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const link = await db.receiptLinks.get('rlink-review');
+      expect(link?.txId).toBe('rr1');
+      expect(link?.proposedTxId ?? null).toBeNull();
+    });
+    db.close();
+  }, 20_000);
+
   it('#228 feedback: counter-FIRST from the card row — the pick fills the special category by itself', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

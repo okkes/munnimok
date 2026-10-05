@@ -30,6 +30,27 @@ public class SentryNoiseTests
     }
 
     [Fact]
+    public void MutesThePushesRetriedInsertRaceLogLineButNotItsSpentRetriesException()
+    {
+        // GlitchTip 10 (2026-10-05): a push racing another device's push on the same new row retries — the failed attempt's log line is noise
+        var rows = LogEvent(
+            "Microsoft.EntityFrameworkCore.Database.Command",
+            "Failed executing DbCommand (674ms) [Parameters=[@p0='?']]\nINSERT INTO \"EntityRows\" (\"SpaceId\", \"Entity\", \"EntityId\") VALUES (@p0, @p1, @p2);");
+        Assert.True(SentryNoise.IsHandledRace(rows));
+        var ops = LogEvent(
+            "Microsoft.EntityFrameworkCore.Database.Command",
+            "Failed executing DbCommand (12ms)\nINSERT INTO \"SyncOps\" (\"SpaceId\", \"Seq\") VALUES (@p0, @p1);");
+        Assert.True(SentryNoise.IsHandledRace(ops));
+        // the exception the push throws once its retries are spent still reports: only the Users/UserDevices/links races are swallowed for good
+        var spent = new SentryEvent();
+        spent.SentryExceptions = new[]
+        {
+            new SentryException { Type = "Npgsql.PostgresException", Value = "23505: duplicate key value violates unique constraint \"PK_EntityRows\"" },
+        };
+        Assert.False(SentryNoise.IsHandledRace(spent));
+    }
+
+    [Fact]
     public void MutesTheRedundantSaveChangesLogLine()
     {
         var ev = LogEvent(

@@ -3,10 +3,27 @@ using Connector.Kit.Agent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Sentry;
 using RegistryConnector.Adapters;
 using ShopConnector.Adapters;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Crash reports to GlitchTip (2026-10-05), the environment's connector
+// project shared with the control plane: an adapter that threw reaches it
+// as the scrubbed LogError the runner already writes; a login the person
+// has to redo never does. An empty DSN disables the SDK.
+builder.Logging.AddSentry(options =>
+{
+    options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
+    options.SendDefaultPii = false;
+    options.TracesSampleRate = 0;
+    options.MinimumEventLevel = LogLevel.Error;
+    options.MinimumBreadcrumbLevel = LogLevel.Information;
+    options.Release = builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } tag ? $"munni-connector-agent@{tag}" : null;
+    options.SetBeforeSend((e, _) => { e.SetTag("role", "agent"); return e; });
+});
 
 // The same sections the three control planes bind. They have to be here as
 // well: an agent is where a selector actually gets used, so an unconfirmed

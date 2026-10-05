@@ -16,6 +16,9 @@
   <ItemGroup Label="Hosting">
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <!-- crash reports to GlitchTip (2026-10-05): the control plane as an ASP.NET host, the agent as a generic host -->
+    <PackageVersion Include="Sentry.AspNetCore" Version="6.11.0" />
+    <PackageVersion Include="Sentry.Extensions.Logging" Version="6.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.12" />
   </ItemGroup>
 

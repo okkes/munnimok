@@ -1179,7 +1179,7 @@ const FEATURE_OF = {
   LOGTO_GOOGLE_CLIENT_ID: 'google', LOGTO_GOOGLE_CLIENT_SECRET: 'google',
   LOGTO_APPLE_CLIENT_ID: 'apple', LOGTO_APPLE_TEAM_ID: 'apple', LOGTO_APPLE_KEY_ID: 'apple', LOGTO_APPLE_PRIVATE_KEY: 'apple',
   PLAY_SERVICE_ACCOUNT_JSON: 'android', ANDROID_KEYSTORE_BASE64: 'android', ANDROID_KEYSTORE_PASSWORD: 'android', ANDROID_KEY_ALIAS: 'android', ANDROID_KEY_PASSWORD: 'android',
-  ASC_KEY_ID: 'ios', ASC_ISSUER_ID: 'ios', ASC_KEY_P8: 'ios', APPLE_TEAM_ID: 'ios', APPLE_DEV_CERT_P12: 'ios', APPLE_DEV_CERT_PASSWORD: 'ios',
+  ASC_KEY_ID: 'ios', ASC_ISSUER_ID: 'ios', ASC_KEY_P8: 'ios', APPLE_TEAM_ID: 'ios', APPLE_DEV_CERT_P12: 'ios', APPLE_DEV_CERT_PASSWORD: 'ios', APPLE_DEV_CERT_SERIAL: 'ios',
   GLITCHTIP_EMAIL_URL: 'email',
 };
 /** does an environment (its features) need this operator value? */
@@ -2066,7 +2066,7 @@ async function checkManifest() {
       ...GROUPS.flatMap((g) => g.fields.map((f) => f.name)),
       'GH_PAT', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD',
       // machine-owned — minted by the helper, never pasted
-      'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD',
+      'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD', 'APPLE_DEV_CERT_SERIAL',
       // filled by Wire Firebase push from the Play service account's project — never pasted
       'FCM_SERVICE_ACCOUNT_JSON',
     ]);

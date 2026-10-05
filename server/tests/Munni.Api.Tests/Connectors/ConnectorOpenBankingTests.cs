@@ -87,6 +87,93 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
     }
 
     [Fact]
+    public async Task The_overlay_fills_only_what_nobody_said_a_device_s_category_outranks_it_before_and_after()
+    {
+        const string sub = "overlay-floor";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        const string iban = "NL91MOCK0000000778";
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-floor", "account",
+            [new JsonObject { ["id"] = "acc_floor", ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current" }], ct);
+        var reference = factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_floor"));
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("Floor") }, ServerHlc.Now(0))]));
+        Assert.True((await client.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(reference.FeedSpaceId, reference.AccountEntityId, "2026-01-01"))).IsSuccessStatusCode);
+
+        // the person filed the row BEFORE the party's facts landed (a device that
+        // attached the account itself, or the 2026-10-05 re-overlay of a whole history)
+        var bookedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-F1");
+        var metaId = ImportIds.TxMetaId(spaceId, bookedId);
+        var filed = new Dictionary<string, JsonElement> { ["txId"] = JsonSerializer.SerializeToElement(bookedId), ["catId"] = JsonSerializer.SerializeToElement("tuition"), ["needsReview"] = JsonSerializer.SerializeToElement(0) };
+        await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "txMeta", metaId, filed, "000000200-0000-dev1")]));
+        var tx = Tx("txn_f1", "REF-F1", "2026-09-28", -1250, "Albert Heijn", "Albert Heijn 1350 AMSTERDAM");
+        tx["account_id"] = "acc_floor";
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-floor", "transaction", [tx], ct);
+        var meta = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == metaId));
+        Assert.Contains("\"catId\":\"tuition\"", meta.DataJson);   // the overlay filled nothing the person had said
+        Assert.Contains("\"needsReview\":0", meta.DataJson);
+        Assert.Contains("\"txType\":\"expense\"", meta.DataJson);   // ...and only what nobody had
+        Assert.Contains($"\"txType\":\"{ServerHlc.Floor}\"", meta.FieldVersionsJson);
+
+        // a row the party filed first: the prediction stands until a device speaks, and any device stamp wins
+        var later = Tx("txn_f2", "REF-F2", "2026-09-29", -300, "NS", "NS Reizigers");
+        later["account_id"] = "acc_floor";
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-floor", "transaction", [later], ct);
+        var laterMetaId = ImportIds.TxMetaId(spaceId, ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-F2"));
+        Assert.Contains($"\"catId\":\"{ServerHlc.Floor}\"", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.EntityId == laterMetaId).FieldVersionsJson));
+        var chosen = new Dictionary<string, JsonElement> { ["catId"] = JsonSerializer.SerializeToElement("transport"), ["needsReview"] = JsonSerializer.SerializeToElement(0) };
+        await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "txMeta", laterMetaId, chosen, "000000001-0000-dev1")]));
+        Assert.Contains("\"catId\":\"transport\"", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.EntityId == laterMetaId).DataJson));
+    }
+
+    [Fact]
+    public async Task An_open_banking_feed_is_never_taken_over_by_a_lesser_party_feeding_the_same_account()
+    {
+        const string sub = "feed-rank";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        const string iban = "NL91MOCK0000000779";
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        JsonObject Account(string id, long balance) => new() { ["id"] = id, ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current", ["balance"] = new JsonObject { ["amount"] = new JsonObject { ["value"] = balance, ["currency"] = "EUR" } } };
+        string Row() => factory.Read(db => db.EntityRows.Single(r => r.Entity == "account" && r.EntityId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_eb").AccountEntityId && r.SpaceId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_eb").FeedSpaceId).DataJson);
+
+        // Enable Banking feeds the account first
+        await ingest.IngestAsync(userId, "enablebanking", "Enable Banking", "conn-eb", "account", [Account("acc_rank_eb", 10_000)], ct);
+        Assert.Contains("\"provider\":\"enablebanking\"", Row());
+        Assert.Contains("\"connectionId\":\"conn-eb\"", Row());
+
+        // the bank's own login reaches the same IBAN: its balance lands, the account stays Enable Banking's
+        await ingest.IngestAsync(userId, "ing-nl", "ING", "conn-ing", "account", [Account("acc_rank_ing", 12_000)], ct);
+        var afterIng = Row();
+        Assert.Contains("\"balanceCents\":12000", afterIng);
+        Assert.Contains("\"provider\":\"enablebanking\"", afterIng);
+        Assert.Contains("\"connectionId\":\"conn-eb\"", afterIng);
+        Assert.DoesNotContain("conn-ing", afterIng);
+
+        // another open-banking consent takes the stamps over (equal rank), the bank login still cannot
+        await ingest.IngestAsync(userId, "gocardless", "GoCardless", "conn-gc", "account", [Account("acc_rank_gc", 12_500)], ct);
+        Assert.Contains("\"connectionId\":\"conn-gc\"", Row());
+        await ingest.IngestAsync(userId, "ing-nl", "ING", "conn-ing", "account", [Account("acc_rank_ing", 13_000)], ct);
+        Assert.Contains("\"connectionId\":\"conn-gc\"", Row());
+        Assert.Contains("\"provider\":\"gocardless\"", Row());
+
+        // a bank login that feeds an account nobody else does owns it as before
+        const string own = "NL91MOCK0000000780";
+        await ingest.IngestAsync(userId, "ing-nl", "ING", "conn-ing", "account", [new JsonObject { ["id"] = "acc_rank_solo", ["external_id"] = own, ["iban"] = own, ["display_name"] = "Spaar", ["currency"] = "EUR", ["type"] = "savings" }], ct);
+        var solo = factory.Read(db => db.EntityRows.Single(r => r.Entity == "account" && r.EntityId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_solo").AccountEntityId).DataJson);
+        Assert.Contains("\"provider\":\"ing-nl\"", solo);
+        Assert.Contains("\"connectionId\":\"conn-ing\"", solo);
+    }
+
+    [Fact]
     public async Task The_pending_mirror_follows_the_bank_and_the_overlay_predicts_where_the_account_is_attached()
     {
         const string sub = "pending-mirror";

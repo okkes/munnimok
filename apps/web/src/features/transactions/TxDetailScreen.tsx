@@ -43,8 +43,8 @@ import { TxFormSheet } from './TxFormSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf } from '@/domain/txKind';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
-import { pairWithExistingRow } from '@/application/counterPair';
-import { visibleTransactions, writeTxTransform } from '@/db/joined';
+import { pairWithExistingRow, releasePeerLeg } from '@/application/counterPair';
+import { writeTxTransform } from '@/db/joined';
 import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
@@ -750,38 +750,8 @@ function singleCatPartitionFields(
  *  write. The peer is fetched from the STORE when the live snapshot
  *  hasn't emitted it yet (a slow liveQuery beat left the peer's
  *  transferPeerId dangling — CI-only flake). Module for S3776. */
-async function releasePeerLeg(
-  store: ReturnType<typeof useData>['store'],
-  repo: ReturnType<typeof useData>['repo'],
-  spaceId: string,
-  tx: SpaceTx,
-  allTxs: SpaceTx[] | undefined,
-): Promise<void> {
-  const peerId = tx.transferPeerId;
-  if (!peerId) return;
-  const peer =
-    (allTxs ?? []).find((item) => item.id === peerId) ??
-    (await visibleTransactions(store, spaceId)).find((item) => item.id === peerId);
-  if (peer) {
-    await writeTxTransform(repo, peer, { transferPeerId: null as never });
-    return;
-  }
-  // #255 r4 (user): a minted part-leg's back-pointer is the part-mirror
-  // SOURCE key ("rowId:partId") — releasing from the leg's side must
-  // reach the PART's own pointer, or the part keeps a dead pair
-  const colon = peerId.indexOf(':');
-  if (colon <= 0) return;
-  const ownerId = peerId.slice(0, colon);
-  const partId = peerId.slice(colon + 1);
-  const owner =
-    (allTxs ?? []).find((item) => item.id === ownerId) ??
-    (await visibleTransactions(store, spaceId)).find((item) => item.id === ownerId);
-  if (owner?.splits?.some((s) => s.id === partId && s.transferPeerId === tx.id)) {
-    await writeTxTransform(repo, owner, {
-      splits: owner.splits.map((s) => (s.id === partId ? { ...s, transferPeerId: undefined } : s)),
-    });
-  }
-}
+// releasePeerLeg lives in application/counterPair.ts now (2026-10-05): the
+// review card releases a stored pair the same way this screen does
 
 // retypeRow retired (#220, user): the transaction-level counterparty
 // door was its last caller — the category editor's entries write
@@ -2226,8 +2196,12 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   // #348: the cash wallet takes hand entries, so its rows stay editable
   const onDefaultLedger = !!account?.defaultFor && account.defaultFor !== 'cash';
   // a credit that self-filed as Reimbursed keeps that category as long
-  // as any link lives (user rule) — unlink first, then recategorize
-  const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0) || onDefaultLedger;
+  // as any link lives (user rule) — unlink first, then recategorize. The
+  // part a PARTIAL link left open is the user's to file (user ss
+  // 2026-10-05: +250 settled 163, the uncategorized 87 was stuck): the
+  // settled slice stays pinned inside the editor, the remainder is editable
+  const openRemainder = (tx.cats ?? []).some((c) => c.catId !== REIMBURSED_ID && c.amountCents !== 0);
+  const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0 && !openRemainder) || onDefaultLedger;
   // the recurring OWNS the category (user rule 2026-07-28): a linked row
   // only picks between the recurring's category and expected
   // reimbursement — the editor's picker enforces it

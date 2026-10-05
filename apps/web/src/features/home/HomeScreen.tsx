@@ -45,6 +45,7 @@ import { useGoals } from '@/application/goals';
 import { useLoanStatuses } from '@/application/debts';
 import { usePlanning } from '@/application/planning';
 import { useInsights } from '@/application/insights';
+import { useProposedMatches } from '@/application/receiptLinks';
 import { useNewTransactions } from '@/application/newTxs';
 import { eventNetText, eventTotals } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
@@ -231,6 +232,15 @@ export function HomeScreen() {
   const allTxs = useSpaceTransactions();
   const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
+  // user ss 2026-10-05: a receipt that fits a transaction ALREADY reviewed
+  // has no review card to ask on — Home points at it; one that fits a
+  // transaction still to review asks on that card
+  const receiptProposals = useProposedMatches();
+  const receiptsToCheck = useMemo(() => {
+    if (!receiptProposals || !allTxs) return 0;
+    const reviewed = new Set(allTxs.filter((tx) => tx.needsReview === 0).map((tx) => tx.id));
+    return receiptProposals.filter((l) => l.proposedTxId && reviewed.has(l.proposedTxId)).length;
+  }, [receiptProposals, allTxs]);
 
   // no remount cache here (#361): a stale "true" would bounce a returning
   // Home straight back to onboarding before the fresh flag arrives
@@ -390,6 +400,7 @@ export function HomeScreen() {
   // per-space layout (order + visibility) can rearrange them
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
     review: renderReviewBlock,
+    receipts: renderReceiptsBlock,
     cashflow: renderCashflowBlock,
     networth: renderNetworthBlock,
     overview: renderOverviewBlock,
@@ -842,6 +853,27 @@ export function HomeScreen() {
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
       </>
+    );
+  }
+
+  function renderReceiptsBlock() {
+    if (receiptsToCheck === 0) return null;
+    return (
+      <button
+        data-testid="home-receipts-banner"
+        onClick={() => void navigate({ to: '/receipts' })}
+        className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+      >
+        <Tile icon="receipt-text-outline" bg="var(--m-accent-soft)" color="var(--m-accent-deep)" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-ink">{t('receipts.toCheckTitle')}</span>
+          <span className="block text-[12px] text-ink-3">{t('home.receiptsSub', { n: receiptsToCheck })}</span>
+        </span>
+        <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-accent px-2 text-[12px] font-bold text-white">
+          {receiptsToCheck}
+        </span>
+        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+      </button>
     );
   }
 

@@ -38,6 +38,15 @@ public sealed class JobOutcomeService(
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// The failures only a developer can answer: an adapter that threw, a
+    /// party whose site changed, a reconciliation that did not add up. Every
+    /// other code names something the person does (sign in again, wait,
+    /// start the agent) and is a warning, never an event (2026-10-05).
+    /// </summary>
+    internal static readonly IReadOnlySet<ErrorCode> PagesTheOperator =
+        new HashSet<ErrorCode> { ErrorCode.Internal, ErrorCode.ProviderChanged, ErrorCode.ReconciliationFailed };
+
+    /// <summary>
     /// Where a failed job's picture goes, outside production.
     ///
     /// It used to go nowhere. The comment above the code that dropped it said
@@ -200,8 +209,19 @@ public sealed class JobOutcomeService(
             await sessions.TransitionOrTerminateAsync(session, SessionStateFor(code, session.State), ct);
         }
 
-        logger.LogWarning("job {JobId} ({Kind}/{Provider}) failed: {Code} {Detail}",
-            job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), failure.Detail ?? "-");
+        // 2026-10-05 (user rule): a failure that needs a developer is an error
+        // (it reaches GlitchTip through the logging integration); one the
+        // person can act on — sign in again, wait, start the agent — is not
+        if (PagesTheOperator.Contains(code))
+        {
+            logger.LogError("job {JobId} ({Kind}/{Provider}) failed: {Code} {Detail}",
+                job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), failure.Detail ?? "-");
+        }
+        else
+        {
+            logger.LogWarning("job {JobId} ({Kind}/{Provider}) failed: {Code} {Detail}",
+                job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), failure.Detail ?? "-");
+        }
 
         return job;
     }

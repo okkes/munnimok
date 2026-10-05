@@ -3,8 +3,8 @@ import { localAwareFetch } from './insecure-fetch.mjs';
 
 /**
  * GlitchTip as code: ONE GlitchTip per platform (the shared stack) with
- * one organization and team per platform (`munni-<platform>`) and five
- * projects per environment (pwa, admin, api, android, ios). The API
+ * one organization and team per platform (`munni-<platform>`) and six
+ * projects per environment (pwa, admin, api, android, ios, connector). The API
  * token the shared stack's deploy created inside the container
  * (GLITCHTIP_API_TOKEN) is mirrored into every environment of the
  * platform, so each environment's bootstrap ensures its own projects and
@@ -42,9 +42,9 @@ async function projectDsn(base, token, org, project, fetchImpl) {
   return dsn;
 }
 
-export const PROJECTS = [['web', 'pwa', 'javascript'], ['api', 'api', 'csharp'], ['admin', 'admin', 'javascript'], ['android', 'android', 'javascript'], ['ios', 'ios', 'javascript']];
+export const PROJECTS = [['web', 'pwa', 'javascript'], ['api', 'api', 'csharp'], ['admin', 'admin', 'javascript'], ['android', 'android', 'javascript'], ['ios', 'ios', 'javascript'], ['connector', 'connector', 'csharp']];
 
-/** ensure the platform's org/team and this environment's projects; returns {web, api, admin, android, ios} DSNs */
+/** ensure the platform's org/team and this environment's projects; returns {web, api, admin, android, ios, connector} DSNs */
 export async function applyGlitchTip(shared, stack, token, { fetchImpl = localAwareFetch } = {}) {
   const base = shared.urls.glitchtip;
   const slug = orgSlug(stack.platform);
@@ -58,10 +58,12 @@ export async function applyGlitchTip(shared, stack, token, { fetchImpl = localAw
   return dsns;
 }
 
-/** GitHub write-back (nas): the api's DSN as a secret, the frontends' as variables */
+/** GitHub write-back (nas): the api's and the connector's DSNs as secrets, the frontends' as variables */
 export function writeBackDsns(stack, dsns) {
   const env = stack.githubEnvironment;
   execFileSync('gh', ['secret', 'set', 'API_SENTRY_DSN', '--env', env, '--body', dsns.api]);
+  // the control plane and its agents share one project (tagged by role): a party whose site changed is one story, not two
+  execFileSync('gh', ['secret', 'set', 'CONNECTOR_SENTRY_DSN', '--env', env, '--body', dsns.connector]);
   execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN', '--env', env, '--body', dsns.web]);
   execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN_ADMIN', '--env', env, '--body', dsns.admin]);
   execFileSync('gh', ['variable', 'set', 'NATIVE_GLITCHTIP_DSN_ANDROID', '--env', env, '--body', dsns.android]);

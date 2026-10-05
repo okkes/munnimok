@@ -31,7 +31,8 @@ internal interface ILiveSurface
     /// <summary>Scrolls by a distance in page pixels at the pointer's current position.</summary>
     Task ScrollAsync(double deltaY, CancellationToken ct);
 
-    Task InsertTextAsync(string text, CancellationToken ct);
+    /// <summary>Types the text one character at a time, each with its key events — literal characters, never a key name.</summary>
+    Task TypeTextAsync(string text, CancellationToken ct);
 
     Task PressAsync(LiveKey key, CancellationToken ct);
 }
@@ -90,6 +91,9 @@ internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard) : 
     /// </summary>
     private const float PressMs = 40;
 
+    /// <summary>The beat between two typed characters: long enough for a page to move its focus to the next box, short enough to feel typed.</summary>
+    private const float TypeMs = 35;
+
     public Task MoveAsync(double x, double y, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -135,17 +139,19 @@ internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard) : 
     }
 
     /// <summary>
-    /// <c>InsertTextAsync</c> and never <c>TypeAsync</c> or <c>PressAsync</c>:
-    /// it inserts literal characters and interprets nothing, so no arrangement
-    /// of the relayed string can name a key. The cost is real and is written
-    /// down rather than discovered - insert-text fires no key events, so a
-    /// provider whose submit button enables on <c>keydown</c> will not enable,
-    /// and the failure looks to the human like a wrong password.
+    /// <c>TypeAsync</c> and never <c>PressAsync</c>: it types literal
+    /// characters one at a time and interprets nothing, so no arrangement of
+    /// the relayed string can name a key (only a press resolves key names).
+    /// Each character arrives with its own key events, a beat apart: a
+    /// segmented input (one box per digit of an SMS code) advances a box per
+    /// character instead of taking the whole string into the first one
+    /// (user ss 2026-10-05), and a submit button that enables on
+    /// <c>keydown</c> enables. Insert-text did neither.
     /// </summary>
-    public Task InsertTextAsync(string text, CancellationToken ct)
+    public Task TypeTextAsync(string text, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        return keyboard.InsertTextAsync(text);
+        return keyboard.TypeAsync(text, new KeyboardTypeOptions { Delay = TypeMs });
     }
 
     /// <summary>
@@ -381,7 +387,7 @@ internal static class LiveInputReplay
             case LiveInputKind.Text:
                 if (input.Text is not { Length: > 0 } text) return false;
 
-                await surface.InsertTextAsync(text, ct).ConfigureAwait(false);
+                await surface.TypeTextAsync(text, ct).ConfigureAwait(false);
                 return true;
 
             case LiveInputKind.Key:

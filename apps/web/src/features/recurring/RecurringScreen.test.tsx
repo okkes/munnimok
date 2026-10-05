@@ -7,6 +7,7 @@ import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { resetApiCapabilitiesCache } from '@/lib/api';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { clearRecurringView } from './recurringView';
+import { daysFromToday } from './RecurringScreen';
 import { propagateRecurringCategory, reconcileRecurringLinks } from '@/application/recurring';
 import { mirrorTxId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
@@ -164,6 +165,30 @@ describe('RecurringScreen (demo identity)', () => {
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
+
+  it('a plain monthly subscription says how many days are left, never the day number twice (user ss 2026-10-05)', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('rec-due'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-due', {
+      name: 'Crunchyroll', kind: 'subscription', amountCents: 999, every: 'month', dueDay: 12, active: 1, catId: 'entertainment',
+    });
+    db.close();
+    const row = await screen.findByTestId('recurring-row-rec-due', {}, { timeout: 5000 });
+    await waitFor(() => expect(row.textContent).toMatch(/Due (today|tomorrow|in \d+ days)|Overdue by \d+ days/));
+    expect(row.textContent).not.toContain('Due day');
+    expect(row.textContent).toContain('next ');
+  }, 15_000);
+
+  it('daysFromToday counts calendar days, not clock hours', () => {
+    const noon = new Date(2026, 9, 5, 12, 30);
+    expect(daysFromToday('2026-10-05', noon)).toBe(0);
+    expect(daysFromToday('2026-10-06', noon)).toBe(1);
+    expect(daysFromToday('2026-11-04', noon)).toBe(30);
+    expect(daysFromToday('2026-10-01', noon)).toBe(-4);
+  });
 
   it('luxury subscriptions show the badge and the luxury line', async () => {
     renderApp('/recurring');

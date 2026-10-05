@@ -127,7 +127,10 @@ environment; lcl: into the stack's store); `operator` ones are typed once
 per platform in the wizard and copied wherever the manifest says (platform scope →
 `<platform>-shared` and every `<platform>-<env>`; env scope → the
 environments whose features need it); `module` ones are written back by
-Logto/GlitchTip after they ran. `--verify` fails loudly on drift. The
+Logto/GlitchTip after they ran. An entry may name a `fallback` whose value
+stands in when it is absent (`LOGTO_APPLE_TEAM_ID` ← `APPLE_TEAM_ID`: one Apple
+membership): every check counts it satisfied when the fallback is present and
+the bootstrap folds the fallback into it. `--verify` fails loudly on drift. The
 connector platform's entries (#367) follow the same rules: an environment
 with `features.connectors` mints `CONNECTOR_SEAL_KEY_K1`,
 `CONNECTOR_ENROLLMENT_HMAC` and `CONNECTOR_SUBJECT_SALT` and gets

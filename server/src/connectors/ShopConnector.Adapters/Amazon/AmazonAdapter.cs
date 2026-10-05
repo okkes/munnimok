@@ -778,6 +778,9 @@ public sealed class AmazonAdapter : IProviderAdapter
         /// <summary>Every row inside the window, in the order the pages gave them.</summary>
         public List<AmazonOrderSummary> Collected { get; } = [];
 
+        /// <summary>The cards the list could not place (no readable date): left out of this fetch, named in the notes.</summary>
+        public List<string> Skipped { get; } = [];
+
         /// <summary>Every order id read so far, to notice a page that repeats.</summary>
         public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
 
@@ -898,8 +901,14 @@ public sealed class AmazonAdapter : IProviderAdapter
 
                 ctx.Progress(JobStep.Parsing);
 
+                var before = walk.Skipped.Count;
                 var more = ReadListPage(walk, fetched, dom);
                 ctx.Found(walk.Collected.Count);
+                if (walk.Skipped.Count > before)
+                {
+                    ctx.Note($"the {year} order list: {walk.Skipped.Count - before} card(s) without a readable order date left out of this fetch " +
+                             $"({string.Join(", ", walk.Skipped.Skip(before))}) — the selectors in AmazonOptions.OrderDateLabels/OrderDateSelectors do not cover their layout");
+                }
                 if (!more) break;
             }
         }
@@ -911,7 +920,7 @@ public sealed class AmazonAdapter : IProviderAdapter
     /// </summary>
     private bool ReadListPage(OrderWalk walk, AmazonPage fetched, HtmlNode dom)
     {
-        var rows = AmazonOrderParser.ParseList(dom, _options, walk.Zone);
+        var rows = AmazonOrderParser.ParseList(dom, _options, walk.Zone, walk.Skipped);
         if (rows.Count == 0)
         {
             if (Any(fetched.Html, _options.EmptyHistoryMarkers)) walk.SawEmptyMarker = true;

@@ -95,6 +95,32 @@ describe('#313: desktop columns follow what actually renders', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('a receipt that fits a transaction ALREADY reviewed is pointed at from Home; one that fits a card still to review is not (user ss 2026-10-05)', async () => {
+    const first = renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('transaction', 'demo_space', 'hr-reviewed', { accountId: 'demo_main', date: '2026-01-02', amountCents: -2000, currency: 'EUR', merchant: 'Jumbo', catId: 'groceries', needsReview: 0 });
+    await repo.upsert('transaction', 'demo_space', 'hr-open', { accountId: 'demo_main', date: '2026-01-02', amountCents: -2500, currency: 'EUR', merchant: 'Jumbo', needsReview: 1 });
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-home-1', { receiptId: 'rcpt:jumbo:c:1', source: 'jumbo', instanceId: 'c', date: '2026-01-02', totalCents: 2000, merchant: 'Jumbo', auto: 0, proposedTxId: 'hr-reviewed' });
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-home-2', { receiptId: 'rcpt:jumbo:c:2', source: 'jumbo', instanceId: 'c', date: '2026-01-02', totalCents: 2500, merchant: 'Jumbo', auto: 0, proposedTxId: 'hr-open' });
+    db.close();
+    first.unmount();
+
+    renderApp('/home');
+    const banner = await screen.findByTestId('home-receipts-banner', {}, { timeout: 10_000 });
+    expect(banner.textContent).toContain('Matches to check');
+    expect(banner.textContent).toContain('1');
+    expect(banner.textContent).not.toContain('2 receipts');
+    fireEvent.click(banner);
+    await screen.findByTestId('screen-receipts', {}, { timeout: 10_000 });
+  }, 25_000);
+
   it('few rendering blocks keep one centered column', async () => {
     const first = renderApp('/home');
     await screen.findByTestId('screen-home');

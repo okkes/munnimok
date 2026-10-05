@@ -36,6 +36,16 @@ vi.mock('@/app/config', () => ({
 }));
 
 vi.mock('@/lib/report', () => ({ reportError: vi.fn() }));
+import { isStaleCallbackError } from './logto';
+
+describe('isStaleCallbackError (GlitchTip 16)', () => {
+  it('a state mismatch is a sign-in started over — the fresh sign-in answers it, no event', () => {
+    expect(isStaleCallbackError(new Error('State mismatched in the callback URI'))).toBe(true);
+    expect(isStaleCallbackError({ name: 'LogtoError', message: 'state mismatch' })).toBe(false);   // not an Error: the message is not read
+    expect(isStaleCallbackError(new Error('Grant request is invalid.'))).toBe(false);
+    expect(isStaleCallbackError('State mismatch')).toBe(true);
+  });
+});
 
 const invalidGrant = () => {
   const err = new Error('Grant request is invalid.');
