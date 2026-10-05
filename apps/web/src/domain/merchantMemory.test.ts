@@ -96,6 +96,16 @@ describe('merchant memory', () => {
     const memory = buildMerchantMemory([confirmed({})]);
     expect(predictFromMemory(memory, 'Albert Heijn', +2500)).toBeNull();
   });
+
+  it('user ss 2026-10-06: settlement never teaches — a credit a link filed as Reimbursed does not predict Reimbursed', () => {
+    const memory = buildMerchantMemory([
+      confirmed({ merchant: 'Hr MFA Aarnoutse', catId: 'reimbursed', amountCents: 1391, date: '2026-08-16' }),
+      confirmed({ merchant: 'Hr MFA Aarnoutse', catId: 'reimbursed', amountCents: 2500, date: '2026-09-01' }),
+    ]);
+    expect(predictFromMemory(memory, 'Hr MFA Aarnoutse', 1391)).toBeNull();
+    // and the predictor as a whole never names the settlement category
+    expect(predictTx({ memory: { own: memory, others: new Map() }, merchant: 'Hr MFA Aarnoutse', amountCents: 1391 })).toBeNull();
+  });
 });
 
 /** #161: predictTx reads the layered shape — own space first */
