@@ -3,6 +3,7 @@ import { txTitle } from '@/lib/text';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
+import { REIMBURSED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { TFunc } from '@/i18n';
 import { Highlight, amountQueryFor } from './Highlight';
@@ -23,7 +24,11 @@ function txVisual(
   // #211: the row's own category spread and a container's parts wear the
   // same face rules — several categories under one parent show the
   // parent, across parents the neutral mixed mark
-  const slices = (tx.splits?.length ? tx.splits : (tx.cats ?? [])).filter((s) => s.amountCents !== 0);
+  // the settled Reimbursed slice nullifies value, it is not what the row is
+  // ABOUT (user ss 2026-10-05): a dinner partly paid back wears the dinner's
+  // face; an expected or received reimbursement entry still counts, so a
+  // row that also carries one of those stays mixed
+  const slices = (tx.splits?.length ? tx.splits : (tx.cats ?? [])).filter((s) => s.amountCents !== 0 && s.catId !== REIMBURSED_ID);
   const distinctCatIds = [...new Set(slices.map((s) => s.catId))];
   if (distinctCatIds.length > 1) {
     const parents = [...new Set(distinctCatIds.map((id) => cats.byId(id).parentId ?? id))];

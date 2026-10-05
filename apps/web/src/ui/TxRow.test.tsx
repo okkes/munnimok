@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TransactionRow } from '@/db/types';
 import { renderWithData } from '@/test/harness';
@@ -48,6 +48,32 @@ describe('TxRow', () => {
   it('positive amounts render with an explicit plus', async () => {
     renderWithData(<TxRow tx={tx({ amountCents: 2000, catId: 'salary'})} />);
     expect((await screen.findByTestId('tx-row-t1')).textContent).toContain('+€20.00');
+  });
+
+  it('a row partly paid back wears its own category, not the mixed mark; an open reimbursement entry keeps it mixed (user ss 2026-10-05)', async () => {
+    renderWithData(
+      <TxRow tx={tx({ amountCents: -6000, catId: 'restaurants', cats: [{ catId: 'reimbursed', amountCents: 3000 }, { catId: 'restaurants', amountCents: 3000 }] })} />,
+    );
+    const row = await screen.findByTestId('tx-row-t1');
+    expect(row.textContent).toContain('Dining Out');
+    expect(row.textContent).not.toContain('Multiple categories');
+    cleanup();
+    // settled + still-expected money + a dinner: the expectation is a real opinion, so the face stays mixed
+    renderWithData(
+      <TxRow
+        tx={tx({
+          id: 't2',
+          amountCents: -6000,
+          catId: 'restaurants',
+          cats: [{ catId: 'reimbursed', amountCents: 2000 }, { catId: 'expenseReimburse', amountCents: 2000 }, { catId: 'restaurants', amountCents: 2000 }],
+        })}
+      />,
+    );
+    expect((await screen.findByTestId('tx-row-t2')).textContent).toContain('Multiple categories');
+    cleanup();
+    // a credit settled in full is simply Reimbursed
+    renderWithData(<TxRow tx={tx({ id: 't3', amountCents: 5000, catId: 'reimbursed', cats: [{ catId: 'reimbursed', amountCents: 5000 }] })} />);
+    expect((await screen.findByTestId('tx-row-t3')).textContent).toContain('Reimbursed');
   });
 
   it('unknown categories fall back to Uncategorized', async () => {
