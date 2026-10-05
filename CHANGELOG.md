@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.9.0](https://github.com/okkes/munnimok/compare/v5.8.0...v5.9.0) (2026-10-05)
+
+
+### ✨ Features
+
+* **web:** a credit card's rows take the debt story and the regular cell ([33fb9a5](https://github.com/okkes/munnimok/commit/33fb9a5c3d1bf9bf5ae67b3956bbfa8582863a18))
+* **web:** the overview keeps its folds and scroll offset across a category detour ([2d116e1](https://github.com/okkes/munnimok/commit/2d116e116ed592adec1685281955a6b795edc858))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** bol's sign-in makes the page say its hash; a refused fallback hash asks for a sign-in ([ffccee0](https://github.com/okkes/munnimok/commit/ffccee0d3187dc758bafccaade553c42be71e550))
+* **web:** a refused session asks for a sign-in instead of logging out ([d7e731f](https://github.com/okkes/munnimok/commit/d7e731f21294784998ac445e472d0ed78be75816))
+* **web:** linked rows take their recurring's category back every boot; no bulk offer on the placeholder ([4c9c03e](https://github.com/okkes/munnimok/commit/4c9c03e1430b18d7cee7ba6f9d71ec5f7db26a86))
+* **web:** the overview's total and its breakdown read the same slices ([736f259](https://github.com/okkes/munnimok/commit/736f2595f56df699a560717fafb765f7e4bc22d7))
+* **web:** the settlement category is never predicted; a standing partition names the review card ([81f4f76](https://github.com/okkes/munnimok/commit/81f4f76fef3455d82948ad3be4fd48d856fce2f9))
+
 ## [5.8.0](https://github.com/okkes/munnimok/compare/v5.7.1...v5.8.0) (2026-10-05)
 
 
