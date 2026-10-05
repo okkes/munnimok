@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NATIVE_CALLBACK_KEY } from '@/lib/platform';
-import { landingFor, nativeCallbackUri, nativeNavigate, nativeSignedOutUri } from './nativeAuth';
+import { landingFor, nativeCallbackUri, nativeNavigate, nativeSignedOutUri, startAuthSession } from './nativeAuth';
 
 interface Stub {
   isNativePlatform?: () => boolean;
@@ -15,6 +15,32 @@ const setCapacitor = (stub: Stub | undefined) => {
 afterEach(() => {
   setCapacitor(undefined);
   sessionStorage.clear();
+});
+
+describe('startAuthSession — a session that would not start gets one more try (GlitchTip 15)', () => {
+  it('the second start answers; the first refusal is a breadcrumb', async () => {
+    const start = vi
+      .fn<(o: { url: string; callbackScheme: string }) => Promise<{ url: string | null }>>()
+      .mockRejectedValueOnce(new Error('the auth session could not start'))
+      .mockResolvedValueOnce({ url: 'munni-prod-nas://auth-callback?code=c' });
+    const pause = vi.fn(async () => {});
+    const result = await startAuthSession({ start }, { url: 'https://logto.example/oidc/auth', callbackScheme: 'munni-prod-nas' }, pause);
+    expect(result.url).toBe('munni-prod-nas://auth-callback?code=c');
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(pause).toHaveBeenCalledWith(400);
+  });
+
+  it('a second refusal is the failure the login screen names', async () => {
+    const start = vi.fn(async () => { throw new Error('The operation could not be completed. (ASWebAuthenticationSessionError error 3.)'); });
+    await expect(startAuthSession({ start }, { url: 'https://logto.example/oidc/auth', callbackScheme: 'munni-prod-nas' }, async () => {})).rejects.toThrow(/error 3/);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it('a cancellation is an answer, not a refusal — no second try', async () => {
+    const start = vi.fn(async () => ({ url: null, cancelled: true }));
+    expect(await startAuthSession({ start }, { url: 'u', callbackScheme: 's' }, async () => {})).toEqual({ url: null, cancelled: true });
+    expect(start).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('nativeNavigate — sign-in in the platform auth session (RFC 8252)', () => {

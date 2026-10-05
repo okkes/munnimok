@@ -6,6 +6,9 @@ import { applyOp } from './merge';
 import type { Op, SyncEnvelope } from './merge';
 import type { PullResult, PushResult, SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
+import { reportError } from '@/lib/report';
+
+vi.mock('@/lib/report', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
 import { SyncEngine } from './engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
@@ -23,6 +26,8 @@ class InMemoryServer implements SyncBackend {
   /** #306: reader role — push 403s while pull/list stay granted */
   readerSpaces = new Set<string>();
   rejectedSpaces = new Set<string>(); // 400s (a poisoned op) — never 403
+  /** the pull answers with this status instead of ops (429: the server's pause, 500: a fault) */
+  pullStatus: number | null = null;
   pushCalls: number[] = [];
   /** every push REQUEST that arrived, denied ones included */
   pushAttempts: string[] = [];
@@ -51,6 +56,7 @@ class InMemoryServer implements SyncBackend {
 
   async pull(spaceId: string, since: number): Promise<PullResult> {
     if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    if (this.pullStatus !== null) throw new SyncHttpError(this.pullStatus);
     this.pullCalls++;
     const all = this.ops.filter((o) => o.seq > since && o.spaceId === spaceId);
     const page = all.slice(0, this.pageSize);
@@ -94,6 +100,34 @@ describe('SyncEngine', () => {
   const dbs: MunniDB[] = [];
   afterEach(async () => {
     while (dbs.length) await dbs.pop()!.delete();
+  });
+
+  it('a pause the server asked for (429) or a gateway answer (502/503/504) is the next tick\'s business — no report, status offline; a 500 is a fault and reports (user rule 2026-10-05)', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Paced', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+    const statuses: string[] = [];
+    const off = a.engine.onStatus((s) => statuses.push(s));
+    vi.mocked(reportError).mockClear();
+
+    for (const status of [429, 502, 503, 504]) {
+      server.pullStatus = status;
+      await a.engine.syncAll();
+      expect(statuses.at(-1)).toBe('offline');
+    }
+    expect(reportError).not.toHaveBeenCalled();
+
+    server.pullStatus = 500;
+    await a.engine.syncAll();
+    expect(statuses.at(-1)).toBe('error');
+    expect(reportError).toHaveBeenCalledTimes(1);
+
+    server.pullStatus = null;
+    await a.engine.syncAll();
+    expect(statuses.at(-1)).toBe('idle');
+    off();
   });
 
   it('two devices editing offline converge regardless of sync order', async () => {

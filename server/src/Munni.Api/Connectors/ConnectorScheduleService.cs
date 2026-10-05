@@ -45,12 +45,47 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             try
             {
                 await RunOnceAsync(stoppingToken);
+                _unreachableCycles = 0;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogError(ex, "connector schedule cycle failed");
+                NoteCycleFailure(ex);
             }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>
+    /// How many cycles in a row the control plane could not be reached at all.
+    /// A deploy, a router swap or a container restart makes one or two such
+    /// cycles (GlitchTip 17–19, 2026-10-05): handled by the next tick, so a
+    /// warning — the error that pages the operator waits for the outage to
+    /// last <see cref="UnreachableCyclesBeforeError"/> cycles.
+    /// </summary>
+    private int _unreachableCycles;
+
+    internal const int UnreachableCyclesBeforeError = 3;
+
+    /// <summary>A transport failure (the control plane did not answer, could not be named, answered with a gateway error) rather than a fault in the cycle itself.</summary>
+    internal static bool IsTransport(Exception ex) =>
+        ex is HttpRequestException or System.Net.Sockets.SocketException or TaskCanceledException or TimeoutException
+        || (ex is ConnectorReplyException reply && (int)reply.Reply.Status is 502 or 503 or 504);
+
+    internal void NoteCycleFailure(Exception ex)
+    {
+        if (!IsTransport(ex))
+        {
+            logger.LogError(ex, "connector schedule cycle failed");
+            return;
+        }
+        _unreachableCycles++;
+        if (_unreachableCycles == UnreachableCyclesBeforeError)
+        {
+            logger.LogError(ex, "the connector control plane has been unreachable for {Cycles} schedule cycles", _unreachableCycles);
+        }
+        else
+        {
+            logger.LogWarning("connector schedule cycle skipped: the control plane could not be reached ({Reason}) — cycle {Cycle} of {Limit} before this is an incident", ex.Message, _unreachableCycles, UnreachableCyclesBeforeError);
+        }
     }
 
     /// <summary>One cycle: every kept, active session that is due; returns how many ran.</summary>

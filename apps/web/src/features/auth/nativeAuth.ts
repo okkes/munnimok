@@ -24,6 +24,26 @@ interface BrowserPlugin {
 const plugins = (): { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin } | undefined =>
   (globalThis as { Capacitor?: { Plugins?: { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin } } }).Capacitor?.Plugins;
 
+/**
+ * The platform refuses to start a session while the window is mid-transition
+ * (GlitchTip 15, 2026-10-05: "could not start" / error 3 right after the
+ * app came back): one more try a beat later is the handling; only a second
+ * refusal is the failure the login screen reports.
+ */
+export async function startAuthSession(
+  session: AuthSessionPlugin,
+  options: { url: string; callbackScheme: string },
+  pause: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<{ url: string | null; cancelled?: boolean }> {
+  try {
+    return await session.start(options);
+  } catch (err) {
+    console.warn(`the auth session did not start (${err instanceof Error ? err.message : String(err)}) — trying once more`);
+    await pause(400);
+    return await session.start(options);
+  }
+}
+
 export const nativeCallbackUri = (): string => `${config.nativeScheme}://auth-callback`;
 export const nativeSignedOutUri = (): string => `${config.nativeScheme}://signed-out`;
 
@@ -38,7 +58,7 @@ export const landingFor = (callbackUrl: string): string => (callbackUrl.includes
 export async function nativeNavigate(url: string, go: (path: string) => void = (path) => globalThis.location.assign(path)): Promise<void> {
   const p = plugins();
   if (nativePlatform() === 'ios' && p?.AuthSession?.start) {
-    const result = await p.AuthSession.start({ url, callbackScheme: config.nativeScheme });
+    const result = await startAuthSession(p.AuthSession, { url, callbackScheme: config.nativeScheme });
     if (!result.url) return; // cancelled by the user — the app stays where it was
     sessionStorage.setItem(NATIVE_CALLBACK_KEY, result.url);
     go(landingFor(result.url));

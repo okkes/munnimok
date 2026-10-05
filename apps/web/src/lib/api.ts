@@ -97,8 +97,10 @@ export async function apiFetch(
       // login screen instead of sitting on "server unreachable" until a
       // manual sign-out (user report).
       handlingAuthExpiry = true;
-      const { reportError } = await import('@/lib/report');
-      reportError('auth', new Error('refresh token dead: forced re-login after double 401'));
+      // handled, so a breadcrumb and not an event (GlitchTip 7/13/14, user
+      // rule 2026-10-05): the re-login IS the support; a sign-in that then
+      // fails reports from the login screen
+      console.warn('refresh token dead: forced re-login after double 401');
       const { clearStaleLogtoState } = await import('@/lib/authState');
       clearStaleLogtoState('double-401'); // dead refresh token must not poison the next sign-in
       const { useSession } = await import('@/app/session');
@@ -109,10 +111,12 @@ export async function apiFetch(
   // #186 (user rule): UNEXPECTED server answers reach GlitchTip from the
   // choke point — callers keep swallowing into UI state, but the trace
   // survives. Identity states (401/403/410) have their own handlers,
-  // and plain 4xx are the caller's business; 5xx and 409 are the
+  // and plain 4xx are the caller's business; 500 and 409 are the
   // "should not happen" band (the re-import 409 resolved itself and
-  // left no trace anywhere).
-  if ((response.status >= 500 || response.status === 409) && !opts?.expectStatuses?.includes(response.status)) {
+  // left no trace anywhere). 502/503/504 are a gateway's or a restart's
+  // answer, never a code path of ours (GlitchTip 6, 2026-10-05): the
+  // callers' retry UI handles them.
+  if ((response.status === 500 || response.status === 409) && !opts?.expectStatuses?.includes(response.status)) {
     const { reportWarning } = await import('@/lib/report');
     reportWarning('api', `apiFetch ${init.method ?? 'GET'} ${path} -> ${response.status}`, { status: response.status });
   }

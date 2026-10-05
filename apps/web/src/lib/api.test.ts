@@ -1,6 +1,9 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, getApiCapabilities } from './api';
+import { reportWarning } from './report';
+
+vi.mock('./report', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -35,6 +38,24 @@ describe('apiFetch', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}));
     await apiFetch('/health');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a 500 and a 409 as unexpected; a gateway answer (502/503/504) is a retry, never an event (user rule 2026-10-05)', async () => {
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'a', testAuth: true }));
+    vi.mocked(reportWarning).mockClear();
+    for (const status of [502, 503, 504]) {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}, status));
+      expect((await apiFetch('/connectors/bol/sync', { method: 'POST' })).status).toBe(status);
+    }
+    expect(reportWarning).not.toHaveBeenCalled();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}, 500));
+    await apiFetch('/x');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}, 409));
+    await apiFetch('/y');
+    expect(reportWarning).toHaveBeenCalledTimes(2);
+    // a caller that handles the answer as a designed branch opts out
+    await apiFetch('/feeds', {}, { expectStatuses: [409] });
+    expect(reportWarning).toHaveBeenCalledTimes(2);
   });
 
   it('preserves caller-supplied headers and method', async () => {

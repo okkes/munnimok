@@ -6,6 +6,9 @@ import type { OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
+
+/** answers that mean "not now", never "broken": the server's pause and the gateway's own errors */
+export const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
 import { publishConnectorFrame } from '@/features/connectors/events';
 
 const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
@@ -170,8 +173,14 @@ export class SyncEngine {
       // 401/403 are identity states (the auth path reports + recovers
       // those itself) — report only genuine sync faults
       const authState = err instanceof SyncHttpError && (err.status === 401 || err.status === 403);
-      if (!offline && !authState) reportError('sync', err);
-      this.setStatus(offline ? 'offline' : 'error');
+      // a pause the server asked for (429, the live view's polling shares
+      // the bucket) or a gateway answering for it (502/503/504: a deploy,
+      // a restart) is handled by the next tick — a breadcrumb, never an
+      // event (GlitchTip 2/3/5/20, user rule 2026-10-05)
+      const transient = err instanceof SyncHttpError && TRANSIENT_STATUSES.has(err.status);
+      if (transient) console.warn(`sync paused: ${String(err)} — retrying on the next tick`);
+      else if (!offline && !authState) reportError('sync', err);
+      this.setStatus(offline || transient ? 'offline' : 'error');
     } finally {
       this.running = false;
     }

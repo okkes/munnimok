@@ -76,9 +76,10 @@ function TokenBridge() {
     // callback exchange: its errors have their own wipe handling.
     if (!error || isCallbackPath() || !isInvalidGrantError(error)) return;
     if (markSessionExpired()) {
-      void import('@/lib/report').then(({ reportError }) =>
-        reportError('auth', new Error('refresh grant dead: invalid_grant on token refresh')),
-      );
+      // handled — the re-entry or the banner — so a breadcrumb, not an
+      // event (GlitchTip 4/8/9/11/12, user rule 2026-10-05); a sign-in
+      // that then fails reports from where it fails
+      console.warn('refresh grant dead: invalid_grant on token refresh — re-entering sign-in');
       void attemptSilentReentry(() => signIn(callbackUri()));
     }
   }, [error, signIn]);
@@ -191,8 +192,10 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
       if (!(await finish())) setFailed('no identity claims');
     })().catch((err: unknown) => {
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
-      // shown on screen AND reported: a native user cannot open devtools
-      Sentry.captureException(err);
+      // shown on screen AND reported: a native user cannot open devtools —
+      // unless it is a stale callback (the state of a sign-in that was
+      // started over), which the fresh sign-in below already answers
+      if (!isStaleCallbackError(err)) Sentry.captureException(err);
       // a failed exchange leaves poisoned SDK state behind — clear it so
       // the retry starts a fresh sign-in (password-change loop fix)
       clearStaleLogtoState('native-callback-error');
@@ -201,6 +204,17 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return <CallbackShell failed={failed !== null} detail={failed ?? undefined} />;
+}
+
+/**
+ * A callback whose state no longer matches: the sign-in it belongs to was
+ * started over (a second tap, a second tab, a retry during an outage) and
+ * this URL answers the old one. The screen says "start again" and the
+ * fresh sign-in is the handling — not an incident (GlitchTip 16).
+ */
+export function isStaleCallbackError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /state mismatch/i.test(message);
 }
 
 function WebCallbackScreen() {
@@ -213,7 +227,7 @@ function WebCallbackScreen() {
   });
   useEffect(() => {
     if (!error) return;
-    Sentry.captureException(error);
+    if (!isStaleCallbackError(error)) Sentry.captureException(error);
     // wipe ONLY while the exchange itself failed. The context error is
     // SHARED: any later useLogto call sets it too (iOS cancels the
     // display-name PUT during the /#/home navigation), and wiping then
