@@ -64,7 +64,7 @@ internal sealed class RecordingLiveSurface : ILiveSurface
         return Fail("scroll");
     }
 
-    public Task InsertTextAsync(string text, CancellationToken ct)
+    public Task TypeTextAsync(string text, CancellationToken ct)
     {
         Texts.Add(text);
 
