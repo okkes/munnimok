@@ -8,10 +8,26 @@ import { clock, entryLine, filterEntries, hostOf, isNoise, kb, pathOf, pretty } 
 
 const KINDS = ['navigation', 'request', 'response', 'console', 'dom', 'note'] as const;
 
+const PRODUCTS = ['shop', 'bank', 'registry'] as const;
+
+/** a provider id as a type name: kebab to Pascal */
+export const pascalOf = (id: string): string =>
+  id
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join('');
+
+/** the scaffold's query, or null while the names are not usable */
+export function scaffoldQuery(provider: string, name: string, product: string, country: string): string | null {
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(provider) || !/^[A-Z][A-Za-z0-9]{1,63}$/.test(name) || !/^[A-Z]{2}$/.test(country)) return null;
+  return `?provider=${encodeURIComponent(provider)}&name=${encodeURIComponent(name)}&product=${encodeURIComponent(product)}&country=${encodeURIComponent(country)}`;
+}
+
 /** hands the browser a file to save, where it can (a blob URL); a no-op in a test runtime */
-function download(name: string, text: string, type: string): void {
+function download(name: string, text: string | Blob, type: string): void {
   if (typeof URL.createObjectURL !== 'function') return;
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  const url = URL.createObjectURL(text instanceof Blob ? text : new Blob([text], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -149,6 +165,8 @@ export function TraceScreen({ id, call, busy, act }: Readonly<{ id: string } & S
         </table>
       </section>
 
+      <ScaffoldCard jobId={id} provider={trace.provider} call={call} />
+
       <section className="card" data-testid="trace-cookies">
         <h2>Cookies at the end</h2>
         {trace.cookies.length === 0 ? (
@@ -183,6 +201,88 @@ export function TraceScreen({ id, call, busy, act }: Readonly<{ id: string } & S
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * The new-service scaffold (#441 L5): from this recording, the files an adapter
+ * author starts from — a manifest stub, the OBSERVED options, an adapter stub
+ * with a to-do per call, the JSON answers as redacted fixtures, a test skeleton,
+ * a README and the digest — zipped at their repo paths.
+ */
+function ScaffoldCard({ jobId, provider, call }: Readonly<{ jobId: string; provider: string; call: ScreenProps['call'] }>) {
+  const [id, setId] = useState(provider === 'explore' ? '' : provider);
+  const [name, setName] = useState(provider === 'explore' ? '' : pascalOf(provider));
+  const [product, setProduct] = useState<string>('shop');
+  const [country, setCountry] = useState('NL');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const query = scaffoldQuery(id, name, product, country);
+
+  const fetchZip = async () => {
+    if (!query) return;
+    setBusy(true);
+    setError(null);
+    const res = await call(`/lab/jobs/${encodeURIComponent(jobId)}/scaffold${query}`).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) {
+      setError(res ? `HTTP ${res.status}` : 'network');
+      return;
+    }
+    download(`${id}-scaffold.zip`, await res.blob(), 'application/zip');
+  };
+
+  return (
+    <section className="card" data-testid="trace-scaffold">
+      <h2>Scaffold an adapter</h2>
+      <p className="hint">
+        From this recording: a manifest stub, the OBSERVED options (every host and path seen, with what was observed), an adapter stub with a
+        TODO per call, the JSON answers as redacted fixtures, a test skeleton, a README that says where to register it, and the digest — zipped
+        at their repo paths, to unpack at the repository root.
+      </p>
+      <div className="facts">
+        <label className="fact">
+          <span className="fact-label">provider id</span>
+          <input
+            data-testid="scaffold-provider"
+            value={id}
+            placeholder="kebab-case, e.g. example-shop"
+            onChange={(e) => {
+              setId(e.target.value.trim().toLowerCase());
+              if (!name) setName(pascalOf(e.target.value));
+            }}
+          />
+        </label>
+        <label className="fact">
+          <span className="fact-label">type name</span>
+          <input data-testid="scaffold-name" value={name} placeholder="PascalCase, e.g. ExampleShop" onChange={(e) => setName(e.target.value.trim())} />
+        </label>
+        <label className="fact">
+          <span className="fact-label">product</span>
+          <select data-testid="scaffold-product" value={product} onChange={(e) => setProduct(e.target.value)}>
+            {PRODUCTS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="fact">
+          <span className="fact-label">country</span>
+          <input data-testid="scaffold-country" value={country} maxLength={2} onChange={(e) => setCountry(e.target.value.toUpperCase())} />
+        </label>
+      </div>
+      {error && (
+        <p className="error" data-testid="scaffold-error">
+          {error}
+        </p>
+      )}
+      <div className="row">
+        <button className="btn" data-testid="scaffold-download" disabled={!query || busy} onClick={() => void fetchZip()}>
+          {busy ? 'building…' : 'download the scaffold'}
+        </button>
+      </div>
+    </section>
   );
 }
 

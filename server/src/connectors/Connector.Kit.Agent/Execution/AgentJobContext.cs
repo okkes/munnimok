@@ -230,6 +230,11 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     {
         if (_book is null) return null;
 
+        // The answers still being read land first: a book built while the
+        // browser's reads are in flight holds the requests and none of the
+        // responses.
+        if (_recorder is not null) await _recorder.FlushAsync(ct).ConfigureAwait(false);
+
         var cookies = _recorder is not null && _browser.Started
             ? await _recorder.CookiesAsync(ct).ConfigureAwait(false)
             : [];

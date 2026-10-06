@@ -104,6 +104,14 @@ public sealed class JobOutcomeService(
                 sessions.SealCredentials(session, inputs) ?? session.PendingCredentialBundle;
         }
 
+        // The job goes on the record as succeeded BEFORE the session goes
+        // active. The bundle rides on the same save (one context), so nobody
+        // ever holds a bundle whose job still says running - and the sync
+        // interval reads the job table: a scheduled login that followed its
+        // predecessor's bundle too closely found no succeeded run to measure
+        // from and was let through (CI, 2026-10-06).
+        await queue.CompleteAsync(job.Id, leaseOwner, ct);
+
         // A session that was still parked on a question is running again by
         // definition - the answer that unparked it is what produced this
         // result. There is no edge straight from awaiting_input to active.
@@ -120,8 +128,6 @@ public sealed class JobOutcomeService(
         {
             await db.SaveChangesAsync(ct);
         }
-
-        await queue.CompleteAsync(job.Id, leaseOwner, ct);
 
         // A working provider must be allowed to say so. `degraded` is a
         // machine-set observation - one job hit a shape it did not recognise -

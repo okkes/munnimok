@@ -113,6 +113,43 @@ export interface AgentView {
   bound?: boolean;
   boundAt?: string | null;
   resetting?: boolean;
+  /** what the agent claimed on its last heartbeat (#441 L4) */
+  capabilities?: AgentCapabilities | null;
+}
+
+export interface AgentCapabilities {
+  providers?: string[];
+  runtimes?: string[];
+  egress?: { country?: string; kind?: string } | null;
+  maxConcurrency?: number;
+  class?: string;
+}
+
+export type RetentionStepState = 'running' | 'pass' | 'fail' | 'skip';
+
+/** one step of a retention run (#441 L4), as the lab wrote it */
+export interface RetentionStep {
+  name: string;
+  state: RetentionStepState;
+  detail?: string | null;
+  jobId?: string | null;
+  sessionId?: string | null;
+  at: string;
+}
+
+/** a retention bench run: the agent, the party, the steps' verdicts, how it ended */
+export interface RetentionRun {
+  id: string;
+  agentId?: string | null;
+  agentName?: string | null;
+  provider: string;
+  resource: string;
+  label?: string | null;
+  state: string;
+  steps: RetentionStep[];
+  sessionId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface PrivateAgents {

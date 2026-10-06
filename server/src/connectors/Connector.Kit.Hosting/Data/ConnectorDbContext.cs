@@ -312,6 +312,8 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.ProviderId).HasMaxLength(64);
             e.Property(x => x.ResourceId).HasMaxLength(64);
             e.Property(x => x.LeaseOwner).HasMaxLength(64);
+            e.Property(x => x.AgentId).HasMaxLength(64);
+            e.HasIndex(x => x.AgentId);
             e.Property(x => x.ProfileId).HasMaxLength(64);
             e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(16);
             e.Property(x => x.State).HasConversion<string>().HasMaxLength(16);

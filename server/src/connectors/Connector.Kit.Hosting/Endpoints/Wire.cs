@@ -578,6 +578,9 @@ public sealed record AgentView
 
     /// <summary>A hosted slot that was released and has not wiped its profiles yet: free to nobody.</summary>
     public bool Resetting { get; init; }
+
+    /// <summary>What the agent claimed on its last heartbeat (#441 L4): the parties and runtimes it serves, its egress, its concurrency.</summary>
+    public AgentProtocol.AgentCapabilities? Capabilities { get; init; }
 }
 
 /// <summary>The caller's standing with the hosted private agents (#420 A2).</summary>

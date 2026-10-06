@@ -28,7 +28,7 @@ public sealed record LabMeDto(string Subject, string? Name, string? Email);
 /// in a space. The cockpit reads the same status under <c>/control</c>,
 /// read-only, exactly as it reads consents.
 /// </summary>
-public static class ConnectorLabEndpoints
+public static partial class ConnectorLabEndpoints
 {
     /// <summary>The control plane's own vocabulary (<c>ProviderState</c>): healthy is the working state, not "active".</summary>
     private static readonly string[] States = ["healthy", "degraded", "paused", "retired"];
@@ -64,6 +64,7 @@ public static class ConnectorLabEndpoints
         lab.MapGet("/jobs/{jobId}/trace", JobTrace);
         lab.MapGet("/jobs/{jobId}/trace/digest.md", JobTraceDigest);
         lab.MapDelete("/jobs/{jobId}/trace", DeleteJobTrace);
+        lab.MapGet("/jobs/{jobId}/scaffold", JobScaffold);
         lab.MapGet("/health", Health);
         lab.MapPost("/canaries/{providerId}/run", RunCanary);
         lab.MapGet("/users/{sub}/sessions", UserSessions);
@@ -290,6 +291,51 @@ public static class ConnectorLabEndpoints
         http.Response.Headers.CacheControl = "no-store";
         return Results.File(reply.Bytes, "text/markdown; charset=utf-8");
     }
+
+    /// <summary>
+    /// The new-service scaffold (#441 L5): the recording and its digest read from
+    /// the control plane, turned into the files an adapter author starts from and
+    /// zipped at their repo paths. The names come from the query: the provider id
+    /// (kebab), the type name (Pascal), the product (shop, bank, registry) and
+    /// the country.
+    /// </summary>
+    private static async Task<IResult> JobScaffold(string jobId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var q = http.Request.Query;
+        var provider = q["provider"].ToString().Trim();
+        var name = q["name"].ToString().Trim();
+        var product = q["product"].ToString().Trim().ToLowerInvariant();
+        var country = q["country"].ToString().Trim().ToUpperInvariant();
+        if (country.Length == 0) country = "NL";
+        if (!ScaffoldProvider().IsMatch(provider) || !ScaffoldName().IsMatch(name) || !Munni.Api.Lab.LabScaffold.Products.Contains(product) || !ScaffoldCountry().IsMatch(country))
+        {
+            return Results.BadRequest(new { error = "provider (kebab-case), name (PascalCase), product (shop, bank or registry) and country (ISO-3166 alpha-2) are needed" });
+        }
+
+        var trace = await client.GetAsync($"v1/admin/jobs/{jobId}/trace", new ConnectorCall(), ct);
+        if (!trace.IsSuccess) throw new ConnectorReplyException(trace);
+        var digest = await client.GetAsync($"v1/admin/jobs/{jobId}/trace/digest", new ConnectorCall(), ct);
+        var digestText = digest.IsSuccess && digest.Bytes is not null ? System.Text.Encoding.UTF8.GetString(digest.Bytes) : "(no digest)";
+
+        var files = Munni.Api.Lab.LabScaffold.Files(new Munni.Api.Lab.LabScaffoldRequest(provider, name, product, country), trace.Object, digestText);
+        var packed = Munni.Api.Lab.LabScaffold.Zip(files);
+
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} scaffolded {Name} ({Provider}, {Product}) from connector job {Job}: {Files} files", OperatorOf(http), name, provider, product, jobId, files.Count);
+        }
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.File(packed, "application/zip", $"{provider}-scaffold.zip");
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$")]
+    private static partial System.Text.RegularExpressions.Regex ScaffoldProvider();
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Z][A-Za-z0-9]{1,63}$")]
+    private static partial System.Text.RegularExpressions.Regex ScaffoldName();
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Z]{2}$")]
+    private static partial System.Text.RegularExpressions.Regex ScaffoldCountry();
 
     private static async Task<IResult> DeleteJobTrace(string jobId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
     {

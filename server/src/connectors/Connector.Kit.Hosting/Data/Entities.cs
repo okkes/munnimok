@@ -140,6 +140,13 @@ public sealed class JobRow
 
     public string? LeaseOwner { get; set; }
 
+    /// <summary>
+    /// The agent that last held the lease, kept after it ends (#441 L4): the
+    /// lease owner is cleared when a job settles, and the history has to
+    /// say which machine ran a job long after that.
+    /// </summary>
+    public string? AgentId { get; set; }
+
     public DateTimeOffset? LeaseExpiresAt { get; set; }
 
     /// <summary>Incremented on every lease. Two is the ceiling; see the queue.</summary>

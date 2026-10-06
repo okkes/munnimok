@@ -76,6 +76,12 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
 
         var (_, both) = await ListAsync(http, $"subject={subject}");
         Assert.Equal(2, both.Count);
+
+        // #441 L4: narrowed by the agent that ran it - the inline runner here
+        var (_, inline) = await ListAsync(http, $"subject={subject}&agent=agt_inline");
+        Assert.Equal(2, inline.Count);
+        var (_, nobody) = await ListAsync(http, $"subject={subject}&agent=agt_nobody");
+        Assert.Empty(nobody);
         Assert.Equal("fetch", both[0].Text("kind")); // newest first
         Assert.Equal("receipts", both[0].Text("resource"));
 

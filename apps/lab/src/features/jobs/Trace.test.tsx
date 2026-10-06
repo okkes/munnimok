@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HAPPY, JOBS, renderLab, scriptFetch, TRACE } from '../../test/harness';
 import type { TraceEntry } from '../../types';
 import { entriesLine } from './JobScreen';
+import { pascalOf, scaffoldQuery } from './TraceScreen';
 import { clock, entryLine, filterEntries, hostOf, isNoise, kb, pathOf, pretty } from './traceFacts';
 
 describe('Trace', () => {
@@ -10,10 +11,13 @@ describe('Trace', () => {
     localStorage.clear();
     globalThis.location.hash = '';
     vi.stubGlobal('confirm', vi.fn((_message?: string) => true));
+    // the download helper clicks a blob anchor; happy-dom would follow it and leave the screen
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
   });
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('a recording opens: the noise is folded, the filters narrow it, an entry opens, the jar is listed, the digest downloads, delete returns to the job', async () => {
@@ -75,6 +79,37 @@ describe('Trace', () => {
     scriptFetch({ ...HAPPY(), 'GET /lab/jobs/job_failed1/trace': () => ({ status: 503 }) });
     renderLab('#/jobs/job_failed1/trace');
     expect((await screen.findByTestId('trace-missing')).textContent).toContain('did not answer');
+  });
+
+  it('the scaffold card asks the relay for the zip with the names given and says when it is refused', async () => {
+    const calls = scriptFetch({
+      ...HAPPY(),
+      'GET /lab/jobs/job_lab1/scaffold': (_init, url) => (url?.searchParams.get('name') === 'Refused' ? { status: 400 } : { raw: 'PK', contentType: 'application/zip' }),
+    });
+    renderLab('#/jobs/job_lab1/trace');
+    await screen.findByTestId('trace-scaffold');
+    // a recorded run of a known party pre-fills its id and name
+    expect((screen.getByTestId('scaffold-provider') as HTMLInputElement).value).toBe('mock-store-simple');
+    expect((screen.getByTestId('scaffold-name') as HTMLInputElement).value).toBe('MockStoreSimple');
+    fireEvent.change(screen.getByTestId('scaffold-product'), { target: { value: 'bank' } });
+    fireEvent.click(screen.getByTestId('scaffold-download'));
+    await waitFor(() => expect(calls).toContain('GET /lab/jobs/job_lab1/scaffold'));
+    await waitFor(() => expect(screen.getByTestId('scaffold-download').textContent).toBe('download the scaffold'));
+    expect(screen.queryByTestId('scaffold-error')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('scaffold-name'), { target: { value: 'Refused' } });
+    fireEvent.click(screen.getByTestId('scaffold-download'));
+    expect((await screen.findByTestId('scaffold-error')).textContent).toBe('HTTP 400');
+
+    fireEvent.change(screen.getByTestId('scaffold-provider'), { target: { value: 'Not Kebab' } });
+    expect((screen.getByTestId('scaffold-download') as HTMLButtonElement).disabled).toBe(true);
+
+    expect(pascalOf('example-shop')).toBe('ExampleShop');
+    expect(pascalOf('asn-persistent')).toBe('AsnPersistent');
+    expect(scaffoldQuery('example-shop', 'ExampleShop', 'shop', 'NL')).toBe('?provider=example-shop&name=ExampleShop&product=shop&country=NL');
+    expect(scaffoldQuery('Example', 'ExampleShop', 'shop', 'NL')).toBeNull();
+    expect(scaffoldQuery('example', 'example', 'shop', 'NL')).toBeNull();
+    expect(scaffoldQuery('example', 'Example', 'shop', 'nl')).toBeNull();
   });
 
   it('the helpers: the clock, sizes, hosts and paths, the noise rule, the filters, the line, the pretty body', () => {

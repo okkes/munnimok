@@ -179,6 +179,7 @@ internal static class AgentAdminEndpoints
         Bound = PrivateAgentEndpoints.IsBound(agent),
         BoundAt = agent.BoundAt,
         Resetting = agent.ResetRequestedAt is not null,
+        Capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities()),
     };
 
     internal static ProfileView Profile(ProfileRow profile) => new()

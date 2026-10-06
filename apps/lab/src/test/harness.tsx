@@ -124,6 +124,60 @@ export const EXPLORE_PROVIDER = {
   resources: [],
 };
 
+/** a party that keeps a browser on the person's own machine (T4), for the retention bench */
+export const PERSISTENT_PROVIDER = {
+  id: 'asn-persistent',
+  name: 'ASN (persistent)',
+  kind: 'bank',
+  country: 'NL',
+  manifestVersion: 2,
+  runtime: 'browser_persistent',
+  agent: { required: true, class: 'byo' },
+  unattendedFetch: true,
+  secretCustody: 'agent',
+  auth: { flow: 'device_persistent', config: [], steps: [{ id: 'credentials', fields: [{ key: 'username', type: 'text', required: true }] }], challenges: ['live_view'], session: { ttlSeconds: 7776000, refreshable: true } },
+  resources: [{ id: 'accounts', returns: 'account', params: [] }, { id: 'transactions', returns: 'transaction', params: [{ key: 'since', type: 'date' }] }],
+};
+
+/** a hosted slot (#420 A2) as the fleet lists it, bound to Bob with one kept login */
+export const HOSTED_AGENT = { id: 'agt_hosted', name: 'munni dev private agent 2', class: 'byo', revoked: false, lastHeartbeatAt: new Date(Date.now() - 10_000).toISOString(), online: true, stale: false, hosted: true, bound: true, boundAt: '2026-09-30T05:00:00Z', resetting: false, profiles: [{ id: 'prof_h', provider: 'asn-persistent', healthy: true, lastOkAt: '2026-10-06T09:00:00Z' }], capabilities: { providers: [], runtimes: ['browser_persistent', 'browser_interactive'], egress: { country: 'NL', kind: 'residential' }, maxConcurrency: 1, class: 'byo' } };
+
+/** the retention bench's history (#441 L4): one run passed on the kitchen laptop, one failed on the queue's pick */
+export const RETENTION_RUNS = [
+  {
+    id: 'lrr_1',
+    agentId: 'agt_kitchen',
+    agentName: 'the kitchen laptop',
+    provider: 'asn-persistent',
+    resource: 'transactions',
+    label: 'first pass',
+    state: 'passed',
+    steps: [
+      { name: 'sign-in', state: 'pass', detail: 'signed in as O. Doker', sessionId: 'ses_lab9', jobId: 'job_lab1', at: '2026-10-06T10:00:00Z' },
+      { name: 'fetch', state: 'pass', detail: '12 record(s) in one round trip', at: '2026-10-06T10:00:30Z' },
+      { name: 'kept-login', state: 'pass', detail: 'prof_1 kept, last ok never', at: '2026-10-06T10:00:31Z' },
+      { name: 'fetch-again', state: 'pass', detail: '12 record(s) in one round trip; steps: queued, downloading', at: '2026-10-06T10:01:00Z' },
+      { name: 'release', state: 'skip', detail: 'not a hosted slot', at: '2026-10-06T10:01:01Z' },
+    ],
+    sessionId: 'ses_lab9',
+    createdAt: '2026-10-06T10:00:00Z',
+    updatedAt: '2026-10-06T10:01:01Z',
+  },
+  {
+    id: 'lrr_2',
+    agentId: null,
+    agentName: null,
+    provider: 'mock-store-simple',
+    resource: 'receipts',
+    label: null,
+    state: 'failed',
+    steps: [{ name: 'sign-in', state: 'fail', detail: 'invalid_credentials (reconnect)', at: '2026-10-05T10:00:00Z' }],
+    sessionId: null,
+    createdAt: '2026-10-05T10:00:00Z',
+    updatedAt: '2026-10-05T10:00:10Z',
+  },
+];
+
 export const AGENTS = {
   agents: [
     { id: 'agt_fleet1', name: 'munni dev pooled agent 1', class: 'pooled', revoked: false, lastHeartbeatAt: new Date(Date.now() - 20_000).toISOString(), online: true, stale: false, profiles: [] },
@@ -324,6 +378,9 @@ export const HAPPY = (): Record<string, Handler> => ({
   'GET /lab/jobs/job_lab1/trace': () => ({ body: TRACE }),
   'GET /lab/jobs/job_lab1/trace/digest.md': () => ({ raw: '# Recording of mock-store-simple', contentType: 'text/markdown' }),
   'GET /lab/providers/explore': () => ({ body: EXPLORE_PROVIDER }),
+  'GET /lab/providers/asn-persistent': () => ({ body: PERSISTENT_PROVIDER }),
+  'GET /lab/bench/retention/runs': () => ({ body: RETENTION_RUNS }),
+  'GET /lab/bench/retention/runs/lrr_1': () => ({ body: RETENTION_RUNS[0] }),
   'GET /lab/jobs/job_failed1/artifacts/screenshot': () => ({ raw: 'not-really-a-png', contentType: 'image/png' }),
   'GET /lab/health': () => ({ body: HEALTH_REPORT }),
   'GET /lab/bench/sessions': () => ({ body: BENCH_SESSIONS }),
