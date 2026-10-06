@@ -31,6 +31,15 @@ export function rememberDrillPeriod(key: string, index: number): void {
   drillPeriods.set(key, index);
 }
 
+/** user request 2026-10-06: the drill's "show linked transactions" toggle, remembered per drill like its period */
+const drillLinked = new Map<string, boolean>();
+
+export const recallDrillLinked = (key: string): boolean | undefined => drillLinked.get(key);
+
+export function rememberDrillLinked(key: string, on: boolean): void {
+  drillLinked.set(key, on);
+}
+
 /** the overview's remembered fold state for a kind, if any */
 export const recallExpanded = (kind: string): Record<string, boolean> | undefined => overviewExpanded.get(kind);
 
@@ -50,6 +59,7 @@ export function rememberScroll(kind: string, top: number): void {
 export function clearOverviewPeriods(): void {
   overviewPeriods.clear();
   drillPeriods.clear();
+  drillLinked.clear();
   overviewExpanded.clear();
   overviewScroll.clear();
 }

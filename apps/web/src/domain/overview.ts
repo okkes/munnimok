@@ -1,4 +1,4 @@
-import type { AccountRow, TxView } from '@/db/types';
+import type { AccountRow, TxType, TxView } from '@/db/types';
 import { REIMBURSED_ID, mainCatOf } from './categories';
 import { inPeriod } from './periods';
 import { txSliceViews } from './txSlices';
@@ -101,15 +101,75 @@ export function contributionCents(kind: OverviewKind, tx: TxView, accountsById?:
     .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
 }
 
-export function txsForKind(
-  kind: OverviewKind,
-  txs: TxView[],
-  _accountsById: Map<string, AccountRow>,
-  period: Period,
-): TxView[] {
+/** the rows of a period with a part in this bucket, both legs of a linked pair included */
+function rowsForKind(kind: OverviewKind, txs: TxView[], period: Period): TxView[] {
   return txs.filter(
     (tx) => tx.deleted === 0 && inPeriod(tx.date, period) && countableViews(tx).some((view) => viewInKind(kind, view)),
   );
+}
+
+export function txsForKind(
+  kind: OverviewKind,
+  txs: TxView[],
+  accountsById: Map<string, AccountRow>,
+  period: Period,
+): TxView[] {
+  return collapsePairedLegs(kind, rowsForKind(kind, txs, period), accountsById).kept;
+}
+
+/** the ledger a family's rows are stamped by: the leg that carries the meaning when a linked pair lands in the bucket twice */
+const FAMILY_STAMP: Partial<Record<OverviewKind, TxType>> = { saving: 'saving', investment: 'investment', debt: 'debtPayment' };
+
+/**
+ * User ss 2026-10-06 (Debt Payment €1,224.98 = both legs of every
+ * repayment): a linked pair whose two legs BOTH land in a family bucket —
+ * the loan's +52.08 and the checking account's −52.08, both filed Repaid —
+ * counts once, by the leg on the family's own ledger (the loan's), or by
+ * the positive one where neither ledger is stamped. The other leg is the
+ * counterpart: out of the total, reachable for the drill's linked view.
+ * Income and expense are untouched — a pair there is a transfer wearing
+ * the wrong category, which is the person's to fix.
+ */
+export function collapsePairedLegs(
+  kind: OverviewKind,
+  rows: TxView[],
+  accountsById: Map<string, AccountRow>,
+): { kept: TxView[]; counterparts: Map<string, TxView> } {
+  const counterparts = new Map<string, TxView>();
+  if (!FAMILY_MAIN[kind]) return { kept: rows, counterparts };
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const reverse = new Map<string, TxView>();
+  for (const row of rows) {
+    if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
+  }
+  const stamp = FAMILY_STAMP[kind];
+  const onLedger = (row: TxView) => !!stamp && accountStamp(accountsById.get(row.accountId)?.type) === stamp;
+  const dropped = new Set<string>();
+  const settled = (id: string) => dropped.has(id) || counterparts.has(id);
+  for (const row of rows) {
+    if (settled(row.id)) continue;
+    const peer = peerOf(row, byId, reverse);
+    if (!peer || settled(peer.id)) continue;
+    const keep = countingLeg(row, peer, onLedger);
+    const drop = keep === row ? peer : row;
+    dropped.add(drop.id);
+    counterparts.set(keep.id, drop);
+  }
+  return { kept: dropped.size === 0 ? rows : rows.filter((row) => !dropped.has(row.id)), counterparts };
+}
+
+/** the other leg of a linked pair, whichever side carries the link */
+function peerOf(row: TxView, byId: Map<string, TxView>, reverse: Map<string, TxView>): TxView | undefined {
+  const peer = (row.transferPeerId ? byId.get(row.transferPeerId) : undefined) ?? reverse.get(row.id);
+  return peer && peer.id !== row.id ? peer : undefined;
+}
+
+/** the leg that counts: the family ledger's, else the positive one */
+function countingLeg(row: TxView, peer: TxView, onLedger: (tx: TxView) => boolean): TxView {
+  const mine = onLedger(row);
+  const theirs = onLedger(peer);
+  if (mine !== theirs) return mine ? row : peer;
+  return row.amountCents < peer.amountCents ? peer : row;
 }
 
 export interface OverviewSummary {
@@ -194,15 +254,21 @@ export function txsForCategory(
   period: Period,
   catId: string,
   catalog: CatalogLookup,
-): { txs: TxView[]; totalCents: number } {
+): { txs: TxView[]; totalCents: number; counterparts: Map<string, TxView> } {
+  const { kept, counterparts } = collapsePairedLegs(kind, rowsForKind(kind, txs, period), accountsById);
   // split transactions belong to every category their slices touch
-  const matches = txsForKind(kind, txs, accountsById, period).filter(
-    (tx) => categoryContributionCents(kind, tx, catId, catalog, accountsById) !== 0,
-  );
+  const matches = kept.filter((tx) => categoryContributionCents(kind, tx, catId, catalog, accountsById) !== 0);
   matches.sort((a, b) => b.date.localeCompare(a.date));
+  // the dropped legs of the pairs listed here, for the drill's linked view
+  const listed = new Map<string, TxView>();
+  for (const tx of matches) {
+    const peer = counterparts.get(tx.id);
+    if (peer) listed.set(tx.id, peer);
+  }
   return {
     txs: matches,
     totalCents: matches.reduce((sum, tx) => sum + categoryContributionCents(kind, tx, catId, catalog, accountsById), 0),
+    counterparts: listed,
   };
 }
 

@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import {
   Outlet,
   createHashHistory,
@@ -5,6 +6,7 @@ import {
   createRoute,
   createRouter,
   redirect,
+  useNavigate,
 } from '@tanstack/react-router';
 import { MasterDetailLayout } from '@/ui/SplitPane';
 import { AppLayout } from './AppLayout';
@@ -293,7 +295,15 @@ const categoryDrillRoute = createRoute({
  *  tx/$txId precedent) — back returns to the drill, period intact */
 function OverviewTxDetail() {
   const { kind, catId } = overviewTxRoute.useParams();
-  return <TxDetailScreen backTo={`/overview/${kind}/${catId}`} />;
+  const navigate = useNavigate();
+  // user request 2026-10-06: the counterpart (and every other detour from
+  // the detail) stays under the drill instead of jumping to the Transactions tab
+  const openTx = useCallback(
+    (txId: string, part?: string) =>
+      void navigate({ to: '/overview/$kind/$catId/tx/$txId', params: { kind, catId, txId }, search: part ? { part } : {} }),
+    [navigate, kind, catId],
+  );
+  return <TxDetailScreen backTo={`/overview/${kind}/${catId}`} openTx={openTx} />;
 }
 const overviewTxRoute = createRoute({
   getParentRoute: () => categoryDrillRoute,
