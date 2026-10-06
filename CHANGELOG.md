@@ -1,5 +1,30 @@
 # Changelog
 
+## [5.15.0](https://github.com/okkes/munnimok/compare/v5.14.0...v5.15.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **categories:** a Gift sub-category under Income; Entertainment's Activities reads Activity ([6e39ac6](https://github.com/okkes/munnimok/commit/6e39ac6948677370ee4804af689c30f51598a04b))
+* **categories:** the category picker at full height, its search and lenses pinned at the top ([efd8f99](https://github.com/okkes/munnimok/commit/efd8f99a8360341b513a01facef87c5f125d3bc8))
+* **overview:** every period side by side - Home's This period gains See all, the Periods screen pages through the history with a chart per tile ([f6a0e27](https://github.com/okkes/munnimok/commit/f6a0e27c21b0dc713511d013c7998bd1311d5146))
+* **receipts:** the fetched receipts fold per shop, folded by default ([c508e2a](https://github.com/okkes/munnimok/commit/c508e2a21ab9f0c57100ce54ee517ea6e158a6e9))
+* **receipts:** the invoice viewer - full height, drawn at the width, zoomable ([05be242](https://github.com/okkes/munnimok/commit/05be242e9a7550d7677c5dfc29383db49b0e17db))
+* **recurring:** link a payment from the recurring's own screen - the charges around its due dates first, a search over every transaction ([b5c1c2b](https://github.com/okkes/munnimok/commit/b5c1c2b24b878edf77b97dec60e417dcbe4fd441))
+* **review:** the receipt that fits is suggested on the card and attached with the confirm; the sheet reaches every receipt; the receipt screen is a detour that comes back ([4e05166](https://github.com/okkes/munnimok/commit/4e051662b3dd50f3a4f371b4ea7e7eba666265c7))
+* **spaces:** the space picture framed and zoomed - the circle the lists keep, with a pinch and a slider ([8186c7c](https://github.com/okkes/munnimok/commit/8186c7ceb4f1c2c150a6b780f06e01ee547fbd77))
+* **sync:** the changes still waiting on this device show on Home and in Settings ([2bd867e](https://github.com/okkes/munnimok/commit/2bd867edf28faaaefa3931743da4ef81e1d0e7c2))
+* **transactions:** an amount range on the Filters sheet - a lowest and a highest amount, on the amount's size ([41438d9](https://github.com/okkes/munnimok/commit/41438d9e5c6946d67e9e307be549d479b8ac8475))
+* **transactions:** several reimbursements in one gesture, and the second link of a pair defaults to what is still open ([c2a5afa](https://github.com/okkes/munnimok/commit/c2a5afaa383c26730fd0bfb5045c75246e2bb931))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** bol's cookie wall is pressed by its own buttons, refusing first, and a press that cannot land never fails the login ([3ea49af](https://github.com/okkes/munnimok/commit/3ea49af5017328370b6fbe0cd732201c5ed818a7))
+* **connectors:** the remove-connection confirm and the icon picker mount beside the connection sheet, not inside it ([2b226a2](https://github.com/okkes/munnimok/commit/2b226a22b444b4eae1f262838e437e107a701a98))
+* **review:** the outgoing card flies out with the next card, never before it - one flight per confirm ([0f481c9](https://github.com/okkes/munnimok/commit/0f481c98e99ec5f818914eee324e0c32658d5cbc))
+* **wizard:** the bootstrap that mints the Logto machine credential files it in the vault in the same run; the Access tab says what to press when the item is missing ([9e8c7f6](https://github.com/okkes/munnimok/commit/9e8c7f612fd68289975b3a690971fb6e5ddf7f57))
+
 ## [5.14.0](https://github.com/okkes/munnimok/compare/v5.13.0...v5.14.0) (2026-10-06)
 
 
