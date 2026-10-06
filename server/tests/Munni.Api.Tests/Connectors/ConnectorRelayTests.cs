@@ -299,7 +299,8 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
             Assert.DoesNotMatch("(?i)bundle|input|credential|secret|token|password", property.Name);
         }
         Assert.Equal(
-            ["ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "Provider", "ScheduleNotBefore", "State", "UserId"],
+            // PendingArtifactsJobId (#441 L1) is a job id: the open question a scheduled failure left, never the picture itself
+            ["ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "PendingArtifactsJobId", "Provider", "ScheduleNotBefore", "State", "UserId"],
             typeof(ConnectorSession).GetProperties().Select(p => p.Name).Order().ToArray());
         Assert.Equal(
             ["AccountEntityId", "AccountRef", "ConnectionId", "Currency", "Excluded", "ExternalId", "FeedSpaceId", "Id", "Provider", "SeenAt", "UserId"],

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, TxView } from '@/db/types';
-import { categoryBreakdown, contributionCents, overviewSummary, txsForKind } from './overview';
+import { categoryBreakdown, collapsePairedLegs, contributionCents, overviewSummary, txsForCategory, txsForKind } from './overview';
 import { inPeriod, periodHistory } from './periods';
 
 const PERIOD = { start: '2026-07-01', end: '2026-07-31' };
@@ -25,7 +25,44 @@ const accounts = new Map<string, AccountRow>([
   ['checking', { id: 'checking', type: 'checking' } as AccountRow],
   ['savings', { id: 'savings', type: 'savings' } as AccountRow],
   ['broker', { id: 'broker', type: 'brokerage' } as AccountRow],
+  ['loan', { id: 'loan', type: 'loan' } as AccountRow],
 ]);
+
+describe('collapsePairedLegs (user ss 2026-10-06: Debt Payment counted both legs of every repayment)', () => {
+  const debtCatalog = {
+    byId: (id: string | undefined) => (id === 'loanRepayment' ? { id: 'loanRepayment', parentId: 'debt' } : { id: id ?? 'uncategorized' }),
+  };
+  const repayment = (id: string, accountId: string, amountCents: number, peer?: string) =>
+    tx({ id, accountId, amountCents, txType: 'debtPayment', catId: 'loanRepayment', ...(peer ? { transferPeerId: peer } : {}) });
+
+  it('a pair filed Repaid on both legs counts once, by the loan ledger\'s leg; the other leg is its counterpart', () => {
+    const txs = [repayment('in', 'loan', 5_208, 'out'), repayment('out', 'checking', -5_208)];
+    const { kept, counterparts } = collapsePairedLegs('debt', txs, accounts);
+    expect(kept.map((t) => t.id)).toEqual(['in']);
+    expect(counterparts.get('in')?.id).toBe('out');
+    // the total and the drill agree with it
+    expect(overviewSummary(txs, accounts, PERIOD).debtCents).toBe(5_208);
+    const drill = txsForCategory('debt', txs, accounts, PERIOD, 'debt', debtCatalog);
+    expect(drill.totalCents).toBe(5_208);
+    expect(drill.txs.map((t) => t.id)).toEqual(['in']);
+    expect(drill.counterparts.get('in')?.id).toBe('out');
+  });
+
+  it('the link may point either way; without a stamped ledger the positive leg wins; an unlinked leg stays', () => {
+    const backwards = [repayment('in2', 'loan', 6_324), repayment('out2', 'checking', -6_324, 'in2')];
+    expect(collapsePairedLegs('debt', backwards, accounts).kept.map((t) => t.id)).toEqual(['in2']);
+    const unstamped = [repayment('a', 'checking', 1_000, 'b'), repayment('b', 'checking', -1_000)];
+    expect(collapsePairedLegs('debt', unstamped, accounts).kept.map((t) => t.id)).toEqual(['a']);
+    const lone = [repayment('solo', 'checking', -5_520)];
+    expect(collapsePairedLegs('debt', lone, accounts).kept.map((t) => t.id)).toEqual(['solo']);
+    expect(overviewSummary(lone, accounts, PERIOD).debtCents).toBe(5_520);
+  });
+
+  it('income and expense are left alone: a pair there is a mislabelled transfer, the person\'s to fix', () => {
+    const txs = [tx({ id: 'x', amountCents: -2_000, transferPeerId: 'y' }), tx({ id: 'y', amountCents: 2_000, txType: 'income' })];
+    expect(collapsePairedLegs('expense', txs, accounts).kept).toHaveLength(2);
+  });
+});
 
 describe('periodHistory', () => {
   it('monthly periods start on the configured day', () => {

@@ -198,6 +198,9 @@ namespace Munni.Api.Migrations
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("PendingArtifactsJobId")
+                        .HasColumnType("text");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasColumnType("text");

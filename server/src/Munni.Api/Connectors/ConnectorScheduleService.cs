@@ -162,6 +162,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             else
             {
                 row.LastScheduleError = null;
+                row.PendingArtifactsJobId = null;
             }
         }
         catch (ConnectorReplyException ex)
@@ -199,8 +200,11 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
                     // the person will find the question in the hub
                     row.State = "awaiting_input";
                     row.LastScheduleError = null;
+                    row.PendingArtifactsJobId = null;
                     return;
                 case "failed" or "expired":
+                    // the picture the run left behind waits on the person: the hub asks (#441 L1)
+                    row.PendingArtifactsJobId = job.Body["artifactsJobId"]?.GetValue<string>();
                     Refused(row, CodeOf(job.Body) ?? (state == "expired" ? "challenge_expired" : InternalCode), RetryAfterOf(job.Body));
                     return;
                 default:
@@ -219,7 +223,11 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, call, ct);
         if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next) return next;
         if (collected.Status >= 400) Refused(row, CodeOf(collected.Body) ?? InternalCode, RetryAfterOf(collected.Body));
-        else row.LastScheduleError = null;
+        else
+        {
+            row.LastScheduleError = null;
+            row.PendingArtifactsJobId = null;
+        }
         return null;
     }
 

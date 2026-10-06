@@ -224,6 +224,62 @@ namespace Connector.Kit.Hosting.Data.Migrations
                     b.ToTable("enrollments", (string)null);
                 });
 
+            modelBuilder.Entity("Connector.Kit.Hosting.Data.JobArtifactRow", b =>
+                {
+                    b.Property<string>("JobId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CapturedAt")
+                        .IsRequired()
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<string>("DomDigest")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ExpiresAt")
+                        .IsRequired()
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<string>("ProviderId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<byte[]>("Screenshot")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SharedAt")
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("JobId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("ProviderId", "Status");
+
+                    b.ToTable("job_artifacts", (string)null);
+                });
+
             modelBuilder.Entity("Connector.Kit.Hosting.Data.JobRow", b =>
                 {
                     b.Property<string>("Id")
@@ -337,6 +393,8 @@ namespace Connector.Kit.Hosting.Data.Migrations
                     b.HasIndex("LeaseExpiresAt");
 
                     b.HasIndex("SessionId");
+
+                    b.HasIndex("ProviderId", "CreatedAt");
 
                     b.HasIndex("State", "ProviderId");
 

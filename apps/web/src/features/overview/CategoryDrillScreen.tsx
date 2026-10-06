@@ -7,12 +7,13 @@ import { categoryContributionCents, txsForCategory } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { recallDrillPeriod, rememberDrillPeriod } from './periodMemory';
+import { recallDrillLinked, recallDrillPeriod, rememberDrillLinked, rememberDrillPeriod } from './periodMemory';
 import { LOCALES, useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { matchingPartIndexes } from '@/domain/txFilter';
@@ -81,6 +82,13 @@ export function CategoryDrillScreen() {
   useEffect(() => {
     rememberDrillPeriod(memoKey, periodIndex);
   }, [memoKey, periodIndex]);
+  // user request 2026-10-06: the counterpart legs of linked pairs hide by
+  // default (they are out of the total); the toggle shows each pair as one
+  // unit, remembered like the period
+  const [showLinked, setShowLinked] = useState(() => recallDrillLinked(memoKey) ?? false);
+  useEffect(() => {
+    rememberDrillLinked(memoKey, showLinked);
+  }, [memoKey, showLinked]);
   // the space row loads async: the first render computes periods with
   // default month boundaries, so a custom period start makes `from`
   // unmatchable and the drill snapped back to the CURRENT period (user
@@ -159,8 +167,16 @@ export function CategoryDrillScreen() {
           />
         </div>
 
-        <div className="m-cap mt-5 mb-1 px-1">
-          {t('overview.payments')} · {selected.txs.length}
+        <div className="mt-5 mb-1 flex items-center justify-between gap-2 px-1">
+          <span className="m-cap">
+            {t('overview.payments')} · {selected.txs.length}
+          </span>
+          {selected.counterparts.size > 0 && (
+            <Chip testId="catdrill-linked" selected={showLinked} onClick={() => setShowLinked((v) => !v)}>
+              <Icon name="swap-horizontal" size={14} />
+              {t('overview.showLinked')}
+            </Chip>
+          )}
         </div>
         {selected.txs.length > 0 ? (
           <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="catdrill-list">
@@ -192,7 +208,7 @@ export function CategoryDrillScreen() {
                   />
                 ));
               }
-              return (
+              const row = (
                 <TxRow
                   key={tx.id}
                   tx={tx}
@@ -202,6 +218,22 @@ export function CategoryDrillScreen() {
                   amountOverrideCents={signed}
                   onClick={() => openTx(tx.id)}
                 />
+              );
+              // the linked view: the counted leg and its counterpart as one
+              // unit — the pattern the transactions list uses for a pair
+              const counterpart = showLinked ? selected.counterparts.get(tx.id) : undefined;
+              if (!counterpart) return row;
+              return (
+                <div key={tx.id} className="py-1.5" data-testid={`catdrill-pair-${tx.id}`}>
+                  <div className="mb-0.5 flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
+                    <Icon name="swap-horizontal" size={12} color="var(--m-accent-deep)" />
+                    {t('tx.linkedPair')}
+                  </div>
+                  <div className="rounded-card bg-bg px-2">
+                    {row}
+                    <TxRow tx={counterpart} showDate hideCategory={!!cat.parentId} onClick={() => openTx(counterpart.id)} />
+                  </div>
+                </div>
               );
             })}
           </div>

@@ -42,7 +42,8 @@ export interface SyncOptions {
   onProgress?: (job: JobView) => void;
 }
 
-const JOB_POLL_MS = 2_000;
+/** the follow's pace, a knob so a test can run a cut-off follow in milliseconds rather than half a minute */
+export const syncTuning = { pollMs: 2_000, pollMisses: 15 };
 // a first fetch of a long history (Amazon opens a page per order) runs for a quarter of an hour and more
 const JOB_CEILING_MS = 45 * 60 * 1_000;
 const SIGN_IN_CODES = new Set(['session_expired', 'invalid_credentials', 'mfa_failed', 'consent_expired', 'unsupported_resource']);
@@ -59,12 +60,13 @@ async function patchRow(storage: StorageBackend, id: string, patch: Partial<Conn
   if (row) await storage.connectorConnPut({ ...row, ...patch });
 }
 
-const lastErrorOf = (envelope: ErrorEnvelope): ConnectorLastError => ({
+const lastErrorOf = (envelope: ErrorEnvelope, artifactsJobId?: string): ConnectorLastError => ({
   code: envelope.code,
   messageKey: envelope.messageKey,
   userAction: envelope.userAction,
   retryAfterSeconds: envelope.retryAfterSeconds ?? undefined,
   at: new Date().toISOString(),
+  ...(artifactsJobId ? { artifactsJobId } : {}),
 });
 
 const empty = (): SyncReport => ({ status: 'error', added: 0, accounts: 0, transactions: 0, linked: 0, proposed: 0 });
@@ -85,7 +87,7 @@ async function landAndMatch(storage: StorageBackend, repo: Repo, engine: SyncEng
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** the job's view, freshest first: a frame when the stream carries one, the poll as the safety net */
-async function nextView(provider: string, job: JobView, waitMs: number): Promise<JobView> {
+async function nextView(provider: string, job: JobView, waitMs: number): Promise<JobView | null> {
   let unsubscribe = () => {};
   const fromStream = new Promise<JobView | null>((resolve) => {
     unsubscribe = subscribeConnectorFrames(job.sessionId, () => resolve(null), job.jobId);
@@ -94,7 +96,12 @@ async function nextView(provider: string, job: JobView, waitMs: number): Promise
   // frames never carry the bundle a rotation may have attached
   await Promise.race([fromStream, sleep(waitMs)]);
   unsubscribe();
-  return connectorApi.job(provider, job.jobId);
+  // a poll that dies on the network — a phone that slept mid-request, a
+  // tunnel — is a miss, not the end of the follow (prod 2026-10-06)
+  return connectorApi.job(provider, job.jobId).catch((err: unknown) => {
+    if (err instanceof ConnectorError) throw err;
+    return null;
+  });
 }
 
 /** a view that shows a rotated bundle consumed the single delivery: keep it at once */
@@ -113,20 +120,36 @@ type Followed = { job: JobView; bundle: string } | { asked: JobView };
 async function followJob(storage: StorageBackend, connectionId: string, provider: string, first: JobView, bundle: string, options: SyncOptions): Promise<Followed> {
   let job = first;
   let current = bundle;
+  let misses = 0;
   const deadline = Date.now() + JOB_CEILING_MS;
   for (;;) {
     current = await keepRotated(storage, connectionId, job, current);
     options.onProgress?.(job);
     if (TERMINAL_JOB.has(job.state)) return { job, bundle: current };
     if (job.state === 'awaiting_input' && job.challenge) {
-      const value = options.onChallenge ? await options.onChallenge(job) : null;
-      if (value === null) return { asked: job };
-      job = await connectorApi.answerJob(provider, job.jobId, job.challenge.id, value);
+      const answered = await answerIfPresent(provider, job, options);
+      if (!answered) return { asked: job };
+      job = answered;
       continue;
     }
     if (Date.now() > deadline) return { asked: job };
-    job = await nextView(provider, job, JOB_POLL_MS);
+    ({ job, misses } = await pollWithPatience(provider, job, misses));
   }
+}
+
+/** a question mid-run, answered through the caller when a human is there; null when nobody is */
+async function answerIfPresent(provider: string, job: JobView, options: SyncOptions): Promise<JobView | null> {
+  const value = options.onChallenge ? await options.onChallenge(job) : null;
+  if (value === null || !job.challenge) return null;
+  return connectorApi.answerJob(provider, job.jobId, job.challenge.id, value);
+}
+
+/** the next view, or the same one after a miss — and the end of the follow once the misses pile up */
+async function pollWithPatience(provider: string, job: JobView, misses: number): Promise<{ job: JobView; misses: number }> {
+  const next = await nextView(provider, job, syncTuning.pollMs);
+  if (next) return { job: next, misses: 0 };
+  if (misses + 1 >= syncTuning.pollMisses) throw new Error(`job ${job.jobId} could not be followed: the relay stopped answering`);
+  return { job, misses: misses + 1 };
 }
 
 /** a job that ended without succeeding speaks the envelope it carried, or the one its state implies */
@@ -138,7 +161,7 @@ function jobFailure(job: JobView): ConnectorError {
     userAction: 'retry',
     messageKey: `connect.error.${expired ? 'challenge_expired' : 'internal'}`,
   };
-  return new ConnectorError(expired ? 410 : 500, envelope);
+  return new ConnectorError(expired ? 410 : 500, envelope, job.artifactsJobId ?? undefined);
 }
 
 type Landed = { ingested: IngestedCounts | undefined; partial: boolean } | { asked: JobView };
@@ -151,16 +174,29 @@ type Landed = { ingested: IngestedCounts | undefined; partial: boolean } | { ask
  * transactions were never asked for) — follow that one and collect
  * again, until the relay says the walk is done.
  */
-async function collectJob(storage: StorageBackend, row: ConnectorConnRow, first: JobView, bundle: string, options: SyncOptions): Promise<Landed> {
+async function collectJob(
+  storage: StorageBackend,
+  row: ConnectorConnRow,
+  first: JobView,
+  bundle: string,
+  options: SyncOptions,
+  since: string | undefined,
+): Promise<Landed> {
   let job = first;
   let current = bundle;
   for (;;) {
+    // remembered on the row: a device that closes on it resumes it on the
+    // next sync instead of asking the party all over again (prod 2026-10-06)
+    await patchRow(storage, row.id, { pendingJob: { jobId: job.jobId, since, startedAt: new Date().toISOString() } });
     const followed = await followJob(storage, row.id, row.provider, job, current, options);
     if ('asked' in followed) return followed;
     if (followed.job.state !== 'succeeded') throw jobFailure(followed.job);
-    const collected = await connectorApi.collect(row.provider, followed.job.jobId, followed.bundle, sinceFor(row));
+    const collected = await connectorApi.collect(row.provider, followed.job.jobId, followed.bundle, since);
     current = await keepRotated(storage, row.id, collected.job, followed.bundle);
-    if (!collected.running) return { ingested: collected.job.ingested, partial: collected.job.complete === false };
+    if (!collected.running) {
+      await patchRow(storage, row.id, { pendingJob: undefined });
+      return { ingested: collected.job.ingested, partial: collected.job.complete === false };
+    }
     job = collected.job;
   }
 }
@@ -180,14 +216,50 @@ async function refused(storage: StorageBackend, connectionId: string, err: Conne
   } else if (envelope.code === 'rate_limited') {
     report.status = 'wait';
   }
-  await patchRow(storage, connectionId, { ...(state ? { state } : {}), lastError: lastErrorOf(envelope) });
+  // #441 L1: the picture a failed run left waits on the person's word — or
+  // goes at once where they said "always"
+  const row = await storage.connectorConnGet(connectionId);
+  let artifactsJobId = err.artifactsJobId;
+  if (artifactsJobId && row?.reportFailures) {
+    await connectorApi.shareArtifacts(row.provider, artifactsJobId).catch(() => undefined);
+    artifactsJobId = undefined;
+  }
+  await patchRow(storage, connectionId, { ...(state ? { state } : {}), pendingJob: undefined, lastError: lastErrorOf(envelope, artifactsJobId) });
   return report;
+}
+
+/**
+ * A job the relay accepted earlier and this device never collected — the
+ * app was closed on it — is followed and collected before anything new is
+ * asked for; one the relay has since forgotten (a day) is let go and the
+ * sync starts afresh. Prod 2026-10-06: a phone that kept reopening the app
+ * started a fresh half-hour Amazon fetch each time and collected none of
+ * them, while the hub read "Fetching…" for ever.
+ */
+async function resumePending(storage: StorageBackend, row: ConnectorConnRow, bundle: string, options: SyncOptions): Promise<Landed | null> {
+  const pending = row.pendingJob;
+  if (!pending) return null;
+  let first: JobView | null;
+  try {
+    first = await connectorApi.job(row.provider, pending.jobId);
+  } catch (err) {
+    if (!(err instanceof ConnectorError) || (err.status !== 404 && err.envelope.code !== 'unsupported_resource')) throw err;
+    first = null;
+  }
+  if (!first) {
+    await patchRow(storage, row.id, { pendingJob: undefined });
+    return null;
+  }
+  return collectJob(storage, row, first, bundle, options, pending.since);
 }
 
 /** the relay's answer, landed: the counts it ingested, or the question it stopped at */
 async function land(storage: StorageBackend, row: ConnectorConnRow, bundle: string, options: SyncOptions): Promise<Landed> {
-  const answer = await connectorApi.sync(row.provider, { connectionId: row.id, bundle, since: sinceFor(row) });
-  if (answer.accepted) return collectJob(storage, row, answer.job, bundle, options);
+  const resumed = await resumePending(storage, row, bundle, options);
+  if (resumed) return resumed;
+  const since = sinceFor(row);
+  const answer = await connectorApi.sync(row.provider, { connectionId: row.id, bundle, since });
+  if (answer.accepted) return collectJob(storage, row, answer.job, bundle, options, since);
   if (answer.outcome.session?.bundle) await keepBundle(storage, row.id, answer.outcome.session.bundle);
   return { ingested: answer.outcome.ingested, partial: answer.outcome.complete === false };
 }
@@ -218,12 +290,27 @@ async function run(storage: StorageBackend, repo: Repo, row: ConnectorConnRow, b
 }
 
 /**
+ * One sync per connection at a time: a second ask while one runs joins it
+ * (prod 2026-10-06: the keep-alive, the auto-sync after a bank cycle and
+ * Sync now each queued their own half-hour Amazon fetch).
+ */
+const inFlight = new Map<string, Promise<SyncReport>>();
+
+export function syncConnection(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions = {}): Promise<SyncReport> {
+  const running = inFlight.get(connectionId);
+  if (running) return running;
+  const task = syncOnce(storage, repo, connectionId, options).finally(() => inFlight.delete(connectionId));
+  inFlight.set(connectionId, task);
+  return task;
+}
+
+/**
  * One sync, reported to the activity store from start to end whoever
  * started it (the connect, the app-open keep-alive, Sync now), so the
  * rows show it running — with the count the party's run has found so far
  * — and show what it brought once done (user request 2026-10-02).
  */
-export async function syncConnection(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions = {}): Promise<SyncReport> {
+async function syncOnce(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions): Promise<SyncReport> {
   const row = await storage.connectorConnGet(connectionId);
   if (!row) return empty();
   const bundle = await readBundle(storage, connectionId);

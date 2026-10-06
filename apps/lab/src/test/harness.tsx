@@ -5,7 +5,7 @@ import type { LabConfig } from '../config';
 
 export const CONFIG: LabConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '' };
 
-export type Handler = (init?: RequestInit, url?: URL) => { status?: number; body?: unknown };
+export type Handler = (init?: RequestInit, url?: URL) => { status?: number; body?: unknown; raw?: BodyInit; contentType?: string };
 
 /** a scripted fetch: `METHOD /path` → answer; unknown routes answer 404; every call is recorded */
 export function scriptFetch(routes: Record<string, Handler>) {
@@ -17,6 +17,9 @@ export function scriptFetch(routes: Record<string, Handler>) {
       const key = `${(init?.method ?? 'GET').toUpperCase()} ${url.pathname}`;
       calls.push(key);
       const out = routes[key]?.(init, url) ?? { status: 404 };
+      if (out.raw !== undefined) {
+        return new Response(out.raw, { status: out.status ?? 200, headers: { 'Content-Type': out.contentType ?? 'application/octet-stream' } });
+      }
       return new Response(JSON.stringify(out.body ?? {}), {
         status: out.status ?? 200,
         headers: { 'Content-Type': 'application/json' },
@@ -136,6 +139,123 @@ export const CONSENTS = {
 
 export const ME = { subject: 'u_labsubjectabc', name: 'The Operator', email: 'op@example.test' };
 
+const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
+
+/** the job history as the relay renders it (#441 L1) */
+export const JOBS = {
+  jobs: [
+    {
+      jobId: 'job_failed1',
+      sessionId: 'ses_1',
+      subject: 'u_bob',
+      who: 'Bob',
+      providerId: 'ah',
+      kind: 'fetch',
+      state: 'failed',
+      resource: 'receipts',
+      trigger: 'schedule',
+      progress: { step: 'fetching', stepsDone: ['queued', 'leased', 'logging_in'], found: 12 },
+      attempts: 1,
+      credentialSubmitted: false,
+      complete: true,
+      agentId: 'agt_fleet1',
+      fleetOnly: false,
+      createdAt: minutesAgo(30),
+      updatedAt: minutesAgo(28),
+      error: { code: 'provider_changed', retriable: false, userAction: 'none', messageKey: 'connect.error.provider_changed' },
+      errorDetail: 'the order list showed neither an order nor an empty-history notice',
+      notes: ['opened the orders page', 'no cards found'],
+      params: { resourceId: 'receipts', since: '2026-09-01' },
+      config: {},
+      artifacts: 'retained',
+      domDigest: 'sha256:orders-v9',
+      hasScreenshot: true,
+      artifactsExpireAt: '2026-11-05T00:00:00Z',
+    },
+    {
+      jobId: 'job_pending1',
+      sessionId: 'ses_2',
+      subject: 'u_alice',
+      who: 'Alice',
+      providerId: 'ah',
+      kind: 'login',
+      state: 'failed',
+      trigger: 'user',
+      progress: { step: 'logging_in', stepsDone: ['queued', 'leased'] },
+      attempts: 1,
+      credentialSubmitted: true,
+      complete: true,
+      fleetOnly: true,
+      createdAt: minutesAgo(90),
+      updatedAt: minutesAgo(89),
+      error: { code: 'invalid_credentials', retriable: false, userAction: 'reauth', messageKey: 'connect.error.invalid_credentials' },
+      notes: [],
+      artifacts: 'pending',
+      hasScreenshot: false,
+      artifactsExpireAt: '2026-10-08T10:00:00Z',
+    },
+    {
+      jobId: 'job_lab1',
+      sessionId: 'ses_3',
+      subject: 'u_labsubjectabc',
+      who: null,
+      providerId: 'mock-store-simple',
+      kind: 'fetch',
+      state: 'succeeded',
+      resource: 'receipts',
+      trigger: 'lab',
+      progress: { step: 'done', stepsDone: ['queued', 'fetching', 'normalizing'], found: 3 },
+      attempts: 1,
+      credentialSubmitted: false,
+      complete: true,
+      fleetOnly: false,
+      createdAt: minutesAgo(5),
+      updatedAt: minutesAgo(4),
+      notes: ['read receipts and parsed what came back'],
+      artifacts: 'none',
+      hasScreenshot: false,
+    },
+  ],
+  truncated: false,
+};
+
+/** the health report (#441 L1): one party broken today, one fine */
+export const HEALTH_REPORT = {
+  generatedAt: minutesAgo(0),
+  providers: [
+    {
+      providerId: 'ah',
+      status: STATUS.providers[0],
+      windows: {
+        '24h': { total: 5, succeeded: 2, failed: 2, expired: 1, open: 0, byCode: { providerChanged: 2, agentUnavailable: 1 }, byTrigger: { user: 3, schedule: 2 }, peopleAffected: 2 },
+        '7d': { total: 20, succeeded: 15, failed: 4, expired: 1, open: 0, byCode: { providerChanged: 5 }, byTrigger: { user: 12, schedule: 8 }, peopleAffected: 3 },
+        '30d': { total: 60, succeeded: 52, failed: 7, expired: 1, open: 0, byCode: { providerChanged: 8 }, byTrigger: { user: 30, schedule: 30 }, peopleAffected: 3 },
+      },
+      lastSuccessAt: minutesAgo(600),
+      lastFailure: { jobId: 'job_failed1', code: 'providerChanged', trigger: 'schedule', at: minutesAgo(28) },
+      sessions: { active: 4, needsReauth: 1 },
+      canary: CANARIES.canaries[0],
+      reports: 1,
+      pendingReports: 1,
+    },
+    {
+      providerId: 'mock-store-simple',
+      status: STATUS.providers[1],
+      windows: {
+        '24h': { total: 3, succeeded: 3, failed: 0, expired: 0, open: 0, byCode: {}, byTrigger: { lab: 3 }, peopleAffected: 0 },
+        '7d': { total: 3, succeeded: 3, failed: 0, expired: 0, open: 0, byCode: {}, byTrigger: { lab: 3 }, peopleAffected: 0 },
+        '30d': { total: 3, succeeded: 3, failed: 0, expired: 0, open: 0, byCode: {}, byTrigger: { lab: 3 }, peopleAffected: 0 },
+      },
+      lastSuccessAt: minutesAgo(4),
+      lastFailure: null,
+      sessions: { active: 1 },
+      canary: null,
+      reports: 0,
+      pendingReports: 0,
+    },
+  ],
+};
+
 /** every happy route of the L0 lab */
 export const HAPPY = (): Record<string, Handler> => ({
   'GET /lab/ping': () => ({ body: { admin: true } }),
@@ -148,4 +268,9 @@ export const HAPPY = (): Record<string, Handler> => ({
   'GET /lab/private-agents': () => ({ body: PRIVATE }),
   'GET /lab/canaries': () => ({ body: CANARIES }),
   'GET /lab/me': () => ({ body: ME }),
+  'GET /lab/jobs': () => ({ body: JOBS }),
+  'GET /lab/jobs/job_failed1': () => ({ body: JOBS.jobs[0] }),
+  'GET /lab/jobs/job_pending1': () => ({ body: JOBS.jobs[1] }),
+  'GET /lab/jobs/job_failed1/artifacts/screenshot': () => ({ raw: 'not-really-a-png', contentType: 'image/png' }),
+  'GET /lab/health': () => ({ body: HEALTH_REPORT }),
 });

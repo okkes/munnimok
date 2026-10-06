@@ -14,6 +14,7 @@ import { publicOrigin } from '@/app/config';
 import { ConnectorError, connectorApi, deviceClass } from './api';
 import { ChallengeCard } from './ChallengeCard';
 import { rememberReturn } from './connectorReturn';
+import { ReportAsk } from './ReportAsk';
 import { subscribeConnectorFrames } from './events';
 import { LookupField } from './LookupField';
 import {
@@ -50,7 +51,7 @@ type Phase =
   | { kind: 'form' }
   | { kind: 'running'; view: SessionView }
   | { kind: 'challenge'; view: SessionView }
-  | { kind: 'failed'; error: ErrorEnvelope }
+  | { kind: 'failed'; error: ErrorEnvelope; artifactsJobId?: string }
   | { kind: 'done' };
 
 /** a sign-in started earlier (and maybe closed) to pick up where it stands */
@@ -127,6 +128,8 @@ export function ConnectFlowSheet({
   const [values, setValues] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
+  // #441 L1: the answer given to "report this failure?" for the failure on screen
+  const [reported, setReported] = useState<'yes' | 'no' | null>(null);
   // a party that only talks to a browser on the person's own machine: the agent that will hold the sign-in
   const [agents, setAgents] = useState<AgentView[] | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -190,11 +193,25 @@ export function ConnectFlowSheet({
   const problems: Record<string, FieldProblem> = step ? validateValues(step.fields, values) : {};
   const pending = usePendingLogins.getState();
 
-  const fail = (error: ErrorEnvelope) => {
+  const fail = (error: ErrorEnvelope, artifactsJobId?: string) => {
     stopFollowing.current();
     // the person reads the failure here; the hub needs no second copy of it
     pending.remove(connectionId.current);
-    setPhase({ kind: 'failed', error });
+    setReported(null);
+    setPhase({ kind: 'failed', error, artifactsJobId });
+  };
+
+  // #441 L1: the person's word on the picture a failed sign-in left behind
+  const answerReport = async (jobId: string, share: boolean) => {
+    setBusy(true);
+    try {
+      await (share ? connectorApi.shareArtifacts(provider, jobId) : connectorApi.declineArtifacts(provider, jobId));
+    } catch {
+      // a question the relay no longer holds has lapsed by itself
+    } finally {
+      setReported(share ? 'yes' : 'no');
+      setBusy(false);
+    }
   };
 
   const notePending = (view: SessionView) => {
@@ -237,7 +254,7 @@ export function ConnectFlowSheet({
       return;
     }
     if (TERMINAL_STATES.has(view.state)) {
-      fail(view.error ?? failedWith(view.state));
+      fail(view.error ?? failedWith(view.state), view.artifactsJobId ?? undefined);
       return;
     }
     notePending(view);
@@ -538,6 +555,9 @@ export function ConnectFlowSheet({
             <p className="text-[13px] leading-relaxed text-negative" data-testid="connect-error">
               {t(errorKey(phase.error.code))}
             </p>
+            {phase.artifactsJobId && (
+              <ReportAsk testId="connect-report" answered={reported} busy={busy} onAnswer={(share) => void answerReport(phase.artifactsJobId ?? '', share)} />
+            )}
             {phase.error.retriable !== false && (
               <Button data-testid="connect-retry" onClick={retry}>
                 {t('connect.action.retry')}

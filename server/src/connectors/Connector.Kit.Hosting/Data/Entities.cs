@@ -163,10 +163,19 @@ public sealed class JobRow
 
     public const string ScheduleTrigger = "schedule";
 
+    /// <summary>The operator's lab (#441): a run from the test bench, held like a person's and read like the operator's own.</summary>
+    public const string LabTrigger = "lab";
+
+    /// <summary>A canary's run (#441 L1): the operator's own connection, on its schedule or on demand.</summary>
+    public const string CanaryTrigger = "canary";
+
     /// <summary>
     /// Who asked for the job: a person (<see cref="UserTrigger"/>), the relay's scheduler
-    /// (<see cref="ScheduleTrigger"/>), or nobody in particular (null: the platform's own
-    /// work). The provider's interval between syncs is enforced between scheduled jobs only.
+    /// (<see cref="ScheduleTrigger"/>), the operator's lab (<see cref="LabTrigger"/>), a canary
+    /// (<see cref="CanaryTrigger"/>), or nobody in particular (null: the platform's own work,
+    /// and every row from before the column existed). The provider's interval between syncs
+    /// is enforced between scheduled jobs only; whose failure pictures are whose is decided by
+    /// it too - see <see cref="Connector.Kit.Hosting.Jobs.JobArtifactService"/>.
     /// </summary>
     public string? Trigger { get; set; }
 
@@ -564,4 +573,51 @@ public enum PrivateAgentRequestState
     Withdrawn,
     /// <summary>Approved once; the slot has since been given back or taken away.</summary>
     Released,
+}
+
+/// <summary>
+/// What a failed run left behind (#441 L1): the redacted picture of the page
+/// it stopped on and a digest of that page's shape, one set per job.
+/// </summary>
+/// <remarks>
+/// Keyed by the job rather than given an id of its own, because there is
+/// nothing to say about a second picture of the same run: a job tried twice
+/// keeps the later one. The row holds no secret - the agent never photographs
+/// a page while a secret field holds content - but it is still a picture of
+/// somebody's account, which is why <see cref="Status"/> exists: a person's
+/// picture is <see cref="ArtifactStatus.Pending"/> and served by no route until
+/// they say otherwise. See <c>JobArtifactService</c>.
+/// </remarks>
+public sealed class JobArtifactRow
+{
+    public string JobId { get; set; } = string.Empty;
+
+    public string SessionId { get; set; } = string.Empty;
+
+    public string ProviderId { get; set; } = string.Empty;
+
+    public ArtifactStatus Status { get; set; }
+
+    /// <summary>Redacted PNG; null when the agent could not photograph the page, or when the picture outgrew the cap.</summary>
+    public byte[]? Screenshot { get; set; }
+
+    /// <summary>A hash of the page's shape: two failures with the same digest are the same page, whatever the pictures look like.</summary>
+    public string? DomDigest { get; set; }
+
+    public DateTimeOffset CapturedAt { get; set; }
+
+    /// <summary>Pending: when the unanswered question lapses and the row goes. Retained: when the report has served its purpose.</summary>
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    /// <summary>When the person said yes - or, for the operator's own run, when it was captured.</summary>
+    public DateTimeOffset? SharedAt { get; set; }
+}
+
+public enum ArtifactStatus
+{
+    /// <summary>Held unread until the person whose run it was says the operator may look.</summary>
+    Pending,
+
+    /// <summary>The person said yes, or the run was the operator's own (the lab's, a canary's): readable until it expires.</summary>
+    Retained,
 }

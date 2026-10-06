@@ -3,22 +3,33 @@ import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
 import { hrefOf } from '../../app/router';
 import { when } from '../../lib/format';
-import type { ConnectorStatus, HealthInfo } from '../../types';
+import type { ConnectorStatus, HealthInfo, HealthReport } from '../../types';
 import { StateChip } from '../providers/StateChip';
+
+const day = (report: HealthReport) => report.providers.map((p) => p.windows['24h']).filter((w) => w !== undefined);
+export const failedToday = (report: HealthReport): number => day(report).reduce((n, w) => n + w.failed + w.expired, 0);
+export const peopleToday = (report: HealthReport): number => day(report).reduce((n, w) => n + w.peopleAffected, 0);
+export const reportsToRead = (report: HealthReport): number => report.providers.reduce((n, p) => n + p.reports, 0);
 
 /** the environment's connector platform at a glance: the fleet, the queue, the parties' health */
 export function DashboardScreen({ call }: Readonly<ScreenProps>) {
   // null = this environment runs no connectors (404); 'unreachable' = the control plane did not answer
   const [status, setStatus] = useState<ConnectorStatus | null | 'unreachable' | 'loading'>('loading');
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  const [report, setReport] = useState<HealthReport | null>(null);
 
   useEffect(() => {
     let live = true;
     void (async () => {
-      const [s, h] = await Promise.all([getJson<ConnectorStatus>(call, '/lab/status'), getJson<HealthInfo>(call, '/health')]);
+      const [s, h, r] = await Promise.all([
+        getJson<ConnectorStatus>(call, '/lab/status'),
+        getJson<HealthInfo>(call, '/health'),
+        getJson<HealthReport>(call, '/lab/health'),
+      ]);
       if (!live) return;
       setStatus(s);
       setHealth(h && h !== 'unreachable' ? h : null);
+      setReport(r && r !== 'unreachable' ? r : null);
     })();
     return () => {
       live = false;
@@ -62,6 +73,20 @@ export function DashboardScreen({ call }: Readonly<ScreenProps>) {
               <div className="tile-value">{status.relay?.openStreams ?? 0}</div>
               <div className="tile-label">Open event streams</div>
             </div>
+            {report && (
+              <>
+                <div className={`tile ${failedToday(report) > 0 ? 'tile-warn' : ''}`} data-testid="dashboard-failures">
+                  <div className="tile-value">
+                    {failedToday(report)} · {peopleToday(report)}
+                  </div>
+                  <div className="tile-label">Failed runs today · people affected</div>
+                </div>
+                <div className={`tile ${reportsToRead(report) > 0 ? 'tile-warn' : ''}`} data-testid="dashboard-reports">
+                  <div className="tile-value">{reportsToRead(report)}</div>
+                  <div className="tile-label">Failure reports to read</div>
+                </div>
+              </>
+            )}
           </div>
 
           <section className="card">

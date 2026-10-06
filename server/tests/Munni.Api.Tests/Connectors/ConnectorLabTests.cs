@@ -79,6 +79,57 @@ public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.NotNull(cockpit!["providers"]);
     }
 
+    /// <summary>
+    /// L1: the history names who ran what (the relay maps each pseudonym to
+    /// the person; the control plane never learns it), narrows by user, reads
+    /// one job back, reports health per party, and runs a canary now.
+    /// </summary>
+    [Fact]
+    public async Task The_history_names_the_people_behind_the_runs_and_health_counts_them()
+    {
+        using var operatorClient = factory.ClientFor("the-operator", scope: Admin);
+        using var shopper = factory.ClientFor("history-shopper");
+        using var login = await shopper.PostAsJsonAsync("/connectors/mock-store-simple/login", new
+        {
+            connectionId = "conn-history",
+            inputs = Credentials,
+            consent = new { acceptedAt = DateTimeOffset.UtcNow, termsVersion = "v1" },
+        });
+        Assert.True(login.IsSuccessStatusCode, await login.Content.ReadAsStringAsync());
+
+        // narrowed to the person by their sub: the relay turns it into the subject the control plane knows
+        var theirs = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/jobs?user=history-shopper&kind=login");
+        var mine = Assert.Single(theirs!["jobs"]!.AsArray())!;
+        Assert.Equal("succeeded", mine["state"]!.GetValue<string>());
+        Assert.Equal("user", mine["trigger"]!.GetValue<string>());
+        Assert.Equal("mock-store-simple", mine["providerId"]!.GetValue<string>());
+        // and named: the pseudonym mapped back to the person (their name, e-mail or id), never left as the subject alone
+        Assert.NotNull(mine["who"]);
+        Assert.NotEqual(mine["subject"]!.GetValue<string>(), mine["who"]!.GetValue<string>());
+        Assert.DoesNotContain("hunter2", theirs.ToJsonString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("job_id", theirs.ToJsonString(), StringComparison.Ordinal);
+
+        var history = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/jobs?provider=mock-store-simple&kind=login");
+        Assert.Contains(history!["jobs"]!.AsArray(), j => j!["jobId"]!.GetValue<string>() == mine["jobId"]!.GetValue<string>());
+        Assert.Equal(HttpStatusCode.NotFound, (await operatorClient.GetAsync("/lab/jobs?user=nobody-at-all")).StatusCode);
+
+        var one = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs/{mine["jobId"]!.GetValue<string>()}");
+        Assert.Equal(mine["jobId"]!.GetValue<string>(), one!["jobId"]!.GetValue<string>());
+        Assert.NotNull(one["who"]);
+        Assert.Equal("none", one["artifacts"]!.GetValue<string>());
+
+        var health = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/health");
+        var simple = health!["providers"]!.AsArray().Single(p => p!["providerId"]!.GetValue<string>() == "mock-store-simple")!;
+        Assert.True(simple["windows"]!["24h"]!["succeeded"]!.GetValue<int>() >= 1);
+        Assert.NotNull(simple["status"]!["state"]);
+        Assert.NotNull(simple["sessions"]);
+
+        // no canary enrolled for this party: the refusal is the envelope, not a bare 500
+        using var run = await operatorClient.PostAsync("/lab/canaries/mock-store-simple/run", null);
+        Assert.Equal(HttpStatusCode.BadRequest, run.StatusCode);
+        Assert.Contains("unsupported_resource", await run.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task The_kill_switch_pauses_a_party_and_the_catalogue_says_so()
     {

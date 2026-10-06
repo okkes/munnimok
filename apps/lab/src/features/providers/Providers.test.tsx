@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGUE, CONSENTS, HAPPY, renderLab, scriptFetch } from '../../test/harness';
+import { codeLine } from './ProviderHealth';
 import { agentLine, allFields, quotaLine, quotaLow, sessionLine } from './providerFacts';
 
 describe('Providers', () => {
@@ -12,6 +13,30 @@ describe('Providers', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('L1: a party\'s page carries its health — the windows, the codes as the wire spells them, the last failure, the reports — and runs its canary now', async () => {
+    let runs = 0;
+    scriptFetch({
+      ...HAPPY(),
+      'POST /lab/canaries/ah/run': () => {
+        runs += 1;
+        return { body: { providerId: 'ah', resource: 'receipts', intervalMinutes: 60, lastJobId: 'job_now' } };
+      },
+    });
+    renderLab('#/providers/ah');
+    const health = await screen.findByTestId('provider-health');
+    expect(screen.getByTestId('provider-health-24h').textContent).toContain('5');
+    expect(screen.getByTestId('provider-health-24h').textContent).toContain('user: 3 · schedule: 2');
+    expect(health.querySelectorAll('tbody tr')).toHaveLength(3);
+    expect(screen.getByTestId('provider-health-codes').textContent).toBe('provider_changed: 2 · agent_unavailable: 1');
+    expect(screen.getByTestId('provider-health-last-failure').getAttribute('href')).toBe('#/jobs/job_failed1');
+    expect(screen.getByTestId('provider-health-sessions').textContent).toContain('needs_reauth: 1');
+    expect(screen.getByTestId('provider-health-reports').textContent).toContain('1 to read · 1 awaiting the person');
+    expect(screen.getByTestId('provider-jobs-link').getAttribute('href')).toBe('#/jobs?provider=ah');
+    fireEvent.click(screen.getByTestId('provider-canary-run'));
+    await waitFor(() => expect(runs).toBe(1));
+    expect(codeLine({})).toBe('—');
   });
 
   it('lists every party banks first with tier, agent line, state and budget; the filter narrows', async () => {

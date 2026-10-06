@@ -1263,6 +1263,7 @@ function PartDetailBody({
   activeEvents,
   allowedCatIds,
   onManageSplits,
+  open,
 }: Readonly<{
   tx: SpaceTx;
   part: TxSplit;
@@ -1272,6 +1273,8 @@ function PartDetailBody({
   activeEvents: readonly { id: string; name: string; icon?: string }[];
   allowedCatIds?: readonly string[];
   onManageSplits: () => void;
+  /** opens another transaction (or a part) under the tree this detail lives in */
+  open: OpenTx;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -1420,13 +1423,8 @@ function PartDetailBody({
               <button
                 data-testid="tx-part-countertx-row"
                 onClick={() => {
-                  if (partPeer) {
-                    void navigate({
-                      to: '/transactions/$txId',
-                      params: { txId: partPeer.nav.txId },
-                      ...(partPeer.nav.part ? { search: { part: partPeer.nav.part } } : {}),
-                    });
-                  } else setPartMatchOpen(true);
+                  if (partPeer) open(partPeer.nav.txId, partPeer.nav.part ?? undefined);
+                  else setPartMatchOpen(true);
                 }}
                 className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
               >
@@ -1570,7 +1568,7 @@ function PartDetailBody({
           <button
             key={`${linkRow.txId}-${linkRow.partId}`}
             data-testid={`tx-part-reimb-${linkRow.txId}`}
-            onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkRow.txId } })}
+            onClick={() => open(linkRow.txId)}
             className="m-tap flex w-full items-center gap-3 border-x-0 border-t-0 border-b border-line-2 bg-transparent px-4 py-2.5 text-left text-[13px] last:border-0"
           >
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
@@ -1586,7 +1584,7 @@ function PartDetailBody({
           <button
             key={`out-${given.rowId}`}
             data-testid={`tx-part-given-${given.rowId}`}
-            onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: given.rowId } })}
+            onClick={() => open(given.rowId)}
             className="m-tap flex w-full items-center gap-3 border-x-0 border-t-0 border-b border-line-2 bg-transparent px-4 py-2.5 text-left text-[13px] last:border-0"
           >
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
@@ -1610,9 +1608,7 @@ function PartDetailBody({
         tx={tx}
         parts={parts}
         currentId={part.id}
-        onOpen={(partId) =>
-          void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: partId } })
-        }
+        onOpen={(partId) => open(tx.id, partId)}
       />
       <button
         data-testid="tx-part-manage"
@@ -1624,7 +1620,7 @@ function PartDetailBody({
       </button>
       <button
         data-testid="tx-part-whole"
-        onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: {} })}
+        onClick={() => open(tx.id)}
         className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-line bg-surface px-4 py-2.5 text-[13px] font-medium text-ink"
       >
         <Icon name="receipt-text-outline" size={15} />
@@ -1942,6 +1938,9 @@ function DetailAccountBlock({
   );
 }
 
+/** opens another transaction (or one of its parts) under the tree this detail lives in */
+export type OpenTx = (txId: string, part?: string) => void;
+
 // NOSONAR-next-line: S3776 — router-level composition. Every decision
 // (category routing, retype, bulk arms, partition rewrites, the ask
 // plumbing) lives in the module helpers above; what remains here is
@@ -1950,7 +1949,7 @@ function DetailAccountBlock({
 // #168 r5 (user): `backTo` is where LEAVING the detail lands (panes
 // close, Esc, delete) — the /recurring/tx/$txId mount passes /recurring
 // so the recurring list keeps the master pane; mobile back stays history.
-export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?: string }> = {}) { // NOSONAR(S3776)
+export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ backTo?: string; openTx?: OpenTx }> = {}) { // NOSONAR(S3776)
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
@@ -2008,6 +2007,11 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
+  // user request 2026-10-06: a detour to another transaction (the
+  // counterpart, a part, a reimbursement link) stays under the tree this
+  // detail was opened in — the overview's drill keeps its context; the
+  // default is the canonical /transactions tree
+  const open: OpenTx = openTx ?? ((txId, part) => void navigate({ to: '/transactions/$txId', params: { txId }, search: part ? { part } : {} }));
   const panes = useLgViewport();
 
   // desktop affordance (D5): Esc closes the detail pane back to the plain
@@ -2462,6 +2466,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
             activeEvents={activeEventsList}
             allowedCatIds={recurringAllowedCats}
             onManageSplits={openValuesEditor}
+            open={open}
           />
         ) : (
           <>
@@ -2518,14 +2523,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
           // or its exact part page; unresolvable = no jump at all (the
           // blind jump rendered an empty detail, the reported glitch)
           onOpenPeer={
-            resolvedPeer
-              ? () =>
-                  void navigate({
-                    to: '/transactions/$txId',
-                    params: { txId: resolvedPeer.nav.txId },
-                    ...(resolvedPeer.nav.part ? { search: { part: resolvedPeer.nav.part } } : {}),
-                  })
-              : undefined
+            resolvedPeer ? () => open(resolvedPeer.nav.txId, resolvedPeer.nav.part ?? undefined) : undefined
           }
           onUnpair={onDefaultLedger ? undefined : unpair}
           // #265 (user): a recurring-narrowed row's counter door STAYS
@@ -2557,9 +2555,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
             fallbackColor={color}
             // #328 (user): locked = no door — undefined drops the chevron
             onEdit={categoryLocked ? undefined : openCategoriesEditor}
-            onOpenPart={(id) =>
-              void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: id } })
-            }
+            onOpenPart={(id) => open(tx.id, id)}
           />
           {bulkOffer && (
             <DetailBulkBar

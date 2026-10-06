@@ -98,7 +98,24 @@ and refuse every transition they do not list.
 closes every deadline: a lease past its TTL fails the job back to the queue,
 a challenge past its expiry fails its job, a job abandoned for 30 minutes
 expires, tickets and enrollment codes lapse after 15 minutes, staged results
-older than a day are purged, uncollected credential bundles after 30 days.
+older than a day are purged, uncollected credential bundles after 30 days,
+a failed run's picture after two days unanswered or a month once shared.
+
+## Failure reports (#441 L1)
+
+An agent that fails a job sends the last picture of the page it stopped on
+(never while a secret field holds content) and a digest of the page's
+shape. The control plane keeps them in `job_artifacts`, keyed by the job
+(`JobArtifactService`): the operator's own runs — the lab's
+(`X-Connector-Trigger: lab`, honoured for the admin scope only) and a
+canary's (stamped `canary`) — are retained at once; a person's run is
+held pending, served by no route, until that person says the operator may
+look. The app asks "report this failure?" beside the error, and the hub
+asks for a scheduled run's. Yes retains the picture for a month, no
+deletes it, no answer within two days deletes it too, a disconnect takes
+the open question with it, and a picture past `MaxArtifactBytes` (1 MiB)
+keeps the digest alone. The jobs table never loses a row; `/v1/admin/jobs`
+and `/v1/admin/health` read it by `(ProviderId, CreatedAt)`.
 
 ## Pacing
 

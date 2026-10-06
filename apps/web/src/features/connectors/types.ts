@@ -200,6 +200,8 @@ export interface SessionView {
   config?: Record<string, string>;
   notes?: string[];
   error?: ErrorEnvelope;
+  /** #441 L1: the failed sign-in whose last picture waits on the person's word — the sheet asks */
+  artifactsJobId?: string | null;
 }
 
 export interface IngestedCounts {
@@ -231,6 +233,8 @@ export interface JobView {
   error?: ErrorEnvelope;
   /** on a collect that ingested */
   ingested?: IngestedCounts;
+  /** #441 L1: this job, when its last picture waits on the person's word */
+  artifactsJobId?: string | null;
 }
 
 /** `POST …/sync` 200 */
@@ -258,6 +262,8 @@ export interface BindingView {
   lastScheduleError?: string | null;
   /** the party asked for a pause: the relay holds its own syncs until then */
   scheduleNotBefore?: string | null;
+  /** #441 L1: a scheduled run failed and left a picture that waits on the person's word — the hub asks */
+  artifactsJobId?: string | null;
 }
 
 /** a household agent the caller enrolled, as the relay lists it */

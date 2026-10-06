@@ -36,6 +36,9 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
     /// <summary>Operator-owned connections, run on a schedule. See <see cref="CanaryRow"/>.</summary>
     public DbSet<CanaryRow> Canaries => Set<CanaryRow>();
 
+    /// <summary>What failed runs left behind, kept with the person's leave or for the operator's own runs. See <see cref="JobArtifactRow"/>.</summary>
+    public DbSet<JobArtifactRow> JobArtifacts => Set<JobArtifactRow>();
+
     /// <summary>
     /// Applies migrations when the assembly carries any, and falls back to
     /// <c>EnsureCreated</c> otherwise.
@@ -318,6 +321,10 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.HasIndex(x => new { x.State, x.ProviderId });
             e.HasIndex(x => x.SessionId);
             e.HasIndex(x => x.LeaseExpiresAt);
+            // The operator reads the history by provider, newest first, and
+            // health is a month of one provider's rows (#441 L1): without this
+            // pair both are a scan of a table that is never purged.
+            e.HasIndex(x => new { x.ProviderId, x.CreatedAt });
         });
 
         modelBuilder.Entity<ChallengeRow>(e =>
@@ -423,6 +430,20 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.ResourceId).HasMaxLength(64);
             e.Property(x => x.LastJobId).HasMaxLength(64);
             e.Property(x => x.LastVerdict).HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<JobArtifactRow>(e =>
+        {
+            e.ToTable("job_artifacts");
+            e.HasKey(x => x.JobId);
+            e.Property(x => x.JobId).HasMaxLength(64);
+            e.Property(x => x.SessionId).HasMaxLength(64);
+            e.Property(x => x.ProviderId).HasMaxLength(64);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.DomDigest).HasMaxLength(128);
+            e.HasIndex(x => x.ExpiresAt);
+            e.HasIndex(x => x.SessionId);
+            e.HasIndex(x => new { x.ProviderId, x.Status });
         });
 
         modelBuilder.Entity<EnrollmentRow>(e =>

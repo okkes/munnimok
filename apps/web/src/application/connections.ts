@@ -258,6 +258,10 @@ export interface ConnectionOps {
   syncNow: (connectionId: string, options?: Pick<SyncOptions, 'onChallenge' | 'onProgress'>) => Promise<SyncReport>;
   /** per-space inclusion (accountLink analogue); added spaces re-match */
   setIncludedSpaces: (connectionId: string, spaceIds: string[]) => Promise<void>;
+  /** #441 L1: the person's answer to "report this failure?" — yes keeps the picture for the people who run munni, no deletes it; either way the question closes */
+  answerReport: (connectionId: string, jobId: string, share: boolean) => Promise<void>;
+  /** #441 L1: always report this connection's failures without asking */
+  setReportFailures: (connectionId: string, always: boolean) => Promise<void>;
 }
 
 const hashIdentity = async (provider: string, identity: string): Promise<string> => {
@@ -386,6 +390,21 @@ export function useConnectionOps(): ConnectionOps {
       void logActivity(storage, repo, spaceId, 'storeRemove', meta?.displayName);
     },
     syncNow: (connectionId, options) => syncConnection(storage, repo, connectionId, { engine, ...options }),
+    answerReport: async (connectionId, jobId, share) => {
+      const row = await storage.connectorConnGet(connectionId);
+      const provider = row?.provider ?? (await metaOf(storage, connectionId))?.store;
+      if (!provider) return;
+      // a question the relay no longer holds has lapsed by itself: nothing to say about that
+      await (share ? connectorApi.shareArtifacts(provider, jobId) : connectorApi.declineArtifacts(provider, jobId)).catch(() => undefined);
+      if (row?.lastError?.artifactsJobId === jobId) {
+        const { artifactsJobId: _answered, ...rest } = row.lastError;
+        await storage.connectorConnPut({ ...row, lastError: rest });
+      }
+    },
+    setReportFailures: async (connectionId, always) => {
+      const row = await storage.connectorConnGet(connectionId);
+      if (row) await storage.connectorConnPut({ ...row, reportFailures: always || undefined });
+    },
     setIncludedSpaces: async (connectionId, spaceIds) => {
       const meta = await metaOf(storage, connectionId);
       if (!meta) return;
@@ -418,7 +437,8 @@ const AUTO_SYNC_MS = 15 * 60 * 1000;
 async function syncDue(storage: StorageBackend, repo: Repo, dueMs: number, options: SyncOptions): Promise<void> {
   for (const row of await storage.connectorConnAll()) {
     if (row.state !== 'active') continue;
-    if (row.lastSyncAt && Date.now() - Date.parse(row.lastSyncAt) < dueMs) continue;
+    // a job accepted earlier and never collected is due now, whatever the clock says (prod 2026-10-06)
+    if (row.lastSyncAt && !row.pendingJob && Date.now() - Date.parse(row.lastSyncAt) < dueMs) continue;
     if (!(await readBundle(storage, row.id))) continue;
     await syncConnection(storage, repo, row.id, options).catch(() => undefined);
   }

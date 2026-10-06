@@ -34,3 +34,6 @@ export const TIER: Record<string, string> = {
   browser_persistent: 'T4 · browser persistent',
 };
 export const tierOf = (runtime: string | undefined): string => (runtime ? (TIER[runtime] ?? runtime) : '—');
+
+/** the relay renders every key camelCase; an error code or a session state reads back as the wire spells it */
+export const snake = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);

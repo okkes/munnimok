@@ -63,7 +63,7 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 The cockpit (`apps/control`) keeps its read-only `/control/connectors`
 twin: the status and an aggregator's inventory, never a write.
 
-## The screens (slice L0)
+## The screens (slices L0–L1)
 
 - **Dashboard** — parties accepting work, agents online, jobs in flight
   and awaiting input, open event streams; every party with its state,
@@ -87,15 +87,35 @@ twin: the status and an aggregator's inventory, never a write.
   with the cost named; the private slots with their requests (approve,
   deny) and holders (take back); **Enrol a browser for the lab** — a code
   under the lab subject and the compose line, copyable.
-- **Canaries** — party, resource, interval, last run, verdict.
+- **Canaries** — party, resource, interval, last run, verdict; L1: run
+  now per row, the last run a link.
+- **Jobs** (L1) — every run the control plane made, newest first: who
+  asked (a person by name — the relay maps the pseudonym, the control
+  plane never learns it — the schedule, the lab, a canary), the party,
+  the run, how it ended, what it left behind; narrowed by party, state,
+  kind, trigger, code and user, the filters living in the hash
+  (`#/jobs?provider=ah&state=failed`) so a narrowed list is a link. A
+  run in full: the facts, the error with its operator detail, what the
+  adapter said, what it asked for, and the picture — shown once the
+  person reported it (fetched with the lab's credentials), named as
+  waiting while they have not. What was typed is on no view.
+- **Provider** (L1) — a Health card: the last day, week and month by
+  runs, successes, failures, open runs, people affected and who asked;
+  failures today by code as the wire spells them; the last success and
+  the last failure (a link to the run); sessions by state; the reports
+  to read and the pictures awaiting the person; `every run →` into the
+  narrowed history; the canary card runs the canary now.
+- **Dashboard** (L1) — failed runs today with the people affected, and
+  the failure reports to read.
 - **Settings** — the operator, the lab subject, the sign-in mode, the
   api, the build and the identity provider.
 
 ## What follows (the plan on #441)
 
-L1 jobs and health (the control plane's job history and per-provider
-health aggregates, real users' failures by error code, canary run-now,
-lab-run artifacts, the consented failure reports of real users); L2 the
+L1 done (2026-10-06: the job history, per-party health, failure reports
+with the person's consent — see architecture.md "Failure reports" — the
+lab trigger, canary run-now, one fetch in flight per session and
+resource); L2 the
 test bench (connect with challenges and the live view, agent targeting,
 fetch and records by shape, lab sessions, lab-managed canaries); L3 the
 recorder (record-a-run, the Explore job, trace storage and viewer, the
