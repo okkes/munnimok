@@ -169,23 +169,9 @@ public sealed class JobRunner
         {
             context.Progress(JobStep.AgentAssigned);
 
-            JobResultRequest run;
-            try
-            {
-                run = await ExecuteAsync(adapter, manifest, job, context, profileId, lease.Token).ConfigureAwait(false);
-            }
-            finally
-            {
-                // The recording lands BEFORE the result or the failure (#441 L3),
-                // while the job is still leased and the browser still holds its
-                // cookie jar - and it lands on a failure too, which is the run
-                // an adapter author most wants to read. Not on a lost lease: the
-                // control plane has already decided what happened to that job.
-                if (!leaseLost && !abort.IsCancellationRequested)
-                {
-                    await PostTraceAsync(job, context).ConfigureAwait(false);
-                }
-            }
+            var run = await RunAdapterAsync(
+                adapter, manifest, job, context, profileId, lease.Token,
+                mayPostTrace: () => !leaseLost && !abort.IsCancellationRequested).ConfigureAwait(false);
 
             // Attached HERE rather than in each of ExecuteAsync's branches, so
             // that a job kind added later carries them without anybody
@@ -728,6 +714,32 @@ public sealed class JobRunner
     /// telling the control plane how a job ended must survive the job ending,
     /// including a shutdown that aborted it.
     /// </summary>
+    /// <summary>
+    /// The adapter's run, with the recording posted when it is over - BEFORE
+    /// the result or the failure (#441 L3), while the job is still leased and
+    /// the browser still holds its cookie jar, and on a failure too, which is
+    /// the run an adapter author most wants to read. Not on a lost lease or
+    /// a shutdown: the control plane has already decided what happened.
+    /// </summary>
+    private async Task<JobResultRequest> RunAdapterAsync(
+        IProviderAdapter adapter,
+        ProviderManifest manifest,
+        LeasedJob job,
+        AgentJobContext context,
+        string? profileId,
+        CancellationToken ct,
+        Func<bool> mayPostTrace)
+    {
+        try
+        {
+            return await ExecuteAsync(adapter, manifest, job, context, profileId, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (mayPostTrace()) await PostTraceAsync(job, context).ConfigureAwait(false);
+        }
+    }
+
     private async Task PostTraceAsync(LeasedJob job, AgentJobContext context)
     {
         if (!context.Records) return;

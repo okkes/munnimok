@@ -19,26 +19,28 @@ public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
     /// <summary>The most a response is buffered for the book; past this, size and type only.</summary>
     public const long MaxBufferedBytes = 2 * 1024 * 1024;
 
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
         var open = book();
-        if (open is null) return await base.SendAsync(request, ct).ConfigureAwait(false);
+        if (open is null) return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         var url = request.RequestUri?.ToString() ?? string.Empty;
         var method = request.Method.Method;
 
-        open.Request(
-            TraceBook.ViaHttp,
-            method,
-            url,
-            resourceType: "http",
-            Flatten(request.Headers, request.Content?.Headers),
-            request.Content?.Headers.ContentType?.ToString(),
-            await RequestBodyAsync(request.Content, ct).ConfigureAwait(false));
+        open.Request(new TraceCall
+        {
+            Via = TraceBook.ViaHttp,
+            Method = method,
+            Url = url,
+            ResourceType = "http",
+            Headers = Flatten(request.Headers, request.Content?.Headers),
+            ContentType = request.Content?.Headers.ContentType?.ToString(),
+            Body = await RequestBodyAsync(request.Content, cancellationToken).ConfigureAwait(false),
+        });
 
-        var response = await base.SendAsync(request, ct).ConfigureAwait(false);
+        var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         var contentType = response.Content.Headers.ContentType?.ToString();
         var length = response.Content.Headers.ContentLength;
@@ -48,7 +50,7 @@ public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
         {
             // Read once into memory and hand the adapter the same bytes: the
             // book keeps its copy, the adapter reads as if nothing happened.
-            var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
             if (bytes.LongLength <= MaxBufferedBytes)
             {
                 body = System.Text.Encoding.UTF8.GetString(bytes);
@@ -66,15 +68,18 @@ public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
         }
 
         open.Response(
-            TraceBook.ViaHttp,
-            method,
-            url,
+            new TraceCall
+            {
+                Via = TraceBook.ViaHttp,
+                Method = method,
+                Url = url,
+                ResourceType = "http",
+                Headers = Flatten(response.Headers, response.Content.Headers),
+                ContentType = contentType,
+                Body = body,
+            },
             (int)response.StatusCode,
-            resourceType: "http",
-            Flatten(response.Headers, response.Content.Headers),
-            contentType,
-            length,
-            body);
+            length);
 
         return response;
     }

@@ -33,15 +33,29 @@ public sealed class TraceBookTests
     public void Nothing_the_run_was_handed_as_a_secret_survives_into_the_book()
     {
         var book = Book("hunter2", "tok_access_123");
-        book.Request(
-            TraceBook.ViaBrowser, "POST", "https://provider.test/api/session?token=tok_access_123", "fetch",
-            [new("Authorization", "Bearer tok_access_123"), new("Cookie", "sid=hunter2abc"), new("Content-Type", "application/json")],
-            "application/json",
-            "{\"username\":\"shopper\",\"password\":\"hunter2\",\"note\":\"my password is hunter2\"}");
+        book.Request(new TraceCall
+        {
+            Via = TraceBook.ViaBrowser,
+            Method = "POST",
+            Url = "https://provider.test/api/session?token=tok_access_123",
+            ResourceType = "fetch",
+            Headers = [new("Authorization", "Bearer tok_access_123"), new("Cookie", "sid=hunter2abc"), new("Content-Type", "application/json")],
+            ContentType = "application/json",
+            Body = "{\"username\":\"shopper\",\"password\":\"hunter2\",\"note\":\"my password is hunter2\"}",
+        });
         book.Response(
-            TraceBook.ViaHttp, "GET", "https://api.provider.test/me", 200, "http",
-            [new("Set-Cookie", "sid=hunter2abc; Path=/")], "application/json", 40,
-            "{\"greeting\":\"hello shopper, token tok_access_123\"}");
+            new TraceCall
+            {
+                Via = TraceBook.ViaHttp,
+                Method = "GET",
+                Url = "https://api.provider.test/me",
+                ResourceType = "http",
+                Headers = [new("Set-Cookie", "sid=hunter2abc; Path=/")],
+                ContentType = "application/json",
+                Body = "{\"greeting\":\"hello shopper, token tok_access_123\"}",
+            },
+            200,
+            40);
         book.Console("error", "leaked hunter2 in a console line");
         book.Dom("https://provider.test/me", "sha256:abc", "<input value=\"hunter2\">");
 
@@ -68,8 +82,10 @@ public sealed class TraceBookTests
     public void A_body_is_cut_at_the_cap_and_says_so()
     {
         var book = Book();
-        book.Response(TraceBook.ViaBrowser, "GET", "https://provider.test/big", 200, "document", [], "text/html", null,
-            new string('x', TraceBook.MaxBodyChars + 100));
+        book.Response(
+            new TraceCall { Via = TraceBook.ViaBrowser, Method = "GET", Url = "https://provider.test/big", ResourceType = "document", ContentType = "text/html", Body = new string('x', TraceBook.MaxBodyChars + 100) },
+            200,
+            null);
 
         var entry = Assert.Single(book.Build().Entries);
 
@@ -109,7 +125,7 @@ public sealed class TraceBookTests
     [Fact]
     public void A_cookie_is_kept_as_a_name_its_attributes_and_a_fingerprint()
     {
-        var cookie = TraceBook.Cookie("sid", "secret-cookie-value", "provider.test", "", DateTimeOffset.UnixEpoch, httpOnly: true, secure: true, "Lax");
+        var cookie = TraceBook.Cookie("sid", "secret-cookie-value", "provider.test", "", new CookieAttributes(DateTimeOffset.UnixEpoch, HttpOnly: true, Secure: true, "Lax"));
 
         Assert.Equal("sid", cookie.Name);
         Assert.Equal("/", cookie.Path);
@@ -128,7 +144,7 @@ public sealed class TraceBookTests
     {
         var book = Book();
         book.Navigation("https://provider.test/");
-        var json = System.Text.Json.JsonSerializer.Serialize(book.Build([TraceBook.Cookie("a", "b", "provider.test", "/", null, false, false, null)]), ConnectorWireJson.Options);
+        var json = System.Text.Json.JsonSerializer.Serialize(book.Build([TraceBook.Cookie("a", "b", "provider.test", "/", new CookieAttributes())]), ConnectorWireJson.Options);
 
         Assert.Contains("\"at_ms\"", json, StringComparison.Ordinal);
         Assert.Contains("\"kind\":\"navigation\"", json, StringComparison.Ordinal);

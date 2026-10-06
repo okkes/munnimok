@@ -130,22 +130,7 @@ internal static class LiveEndpoints
                 provider, sessionId, challengeId, RequestContext.RequireSubject(http),
                 registry, sessions, challenges, views, time, ct);
 
-            // Once, here, at the edge. Everything downstream - the queue, the
-            // poll, the agent's dispatcher - is entitled to assume a batch it
-            // holds is answerable, and a second opinion further in would be a
-            // second definition of what a legal gesture is.
-            if (!batch.IsWellFormed())
-            {
-                throw ConnectorException.InvalidRequest("this live input batch is not answerable");
-            }
-
-            // The navigation vocabulary (#441 L3) exists for the operator's
-            // explore run and nowhere else: a person's streamed login goes
-            // where the provider sends it, never where a relayed event says.
-            if (batch.Navigates() && !string.Equals(job.ProviderId, Connector.Kit.Exploring.ExploreProvider.Id, StringComparison.Ordinal))
-            {
-                throw ConnectorException.InvalidRequest("navigation is the explore run's alone");
-            }
+            RequireAnswerable(batch, job);
 
             channel.Enqueue(job.Id, batch);
             signals.Signal(ConnectorSignals.LiveInput(job.Id));
@@ -260,6 +245,28 @@ internal static class LiveEndpoints
     /// plane enforces - after it, no further pixels leave and no further
     /// keystroke is accepted, whatever the frame loop is still doing.
     /// </summary>
+    /// <summary>
+    /// Once, here, at the edge. Everything downstream - the queue, the poll,
+    /// the agent's dispatcher - is entitled to assume a batch it holds is
+    /// answerable, and a second opinion further in would be a second
+    /// definition of what a legal gesture is. The navigation vocabulary
+    /// (#441 L3) exists for the operator's explore run and nowhere else: a
+    /// person's streamed login goes where the provider sends it, never where
+    /// a relayed event says.
+    /// </summary>
+    private static void RequireAnswerable(LiveInputBatch batch, JobRow job)
+    {
+        if (!batch.IsWellFormed())
+        {
+            throw ConnectorException.InvalidRequest("this live input batch is not answerable");
+        }
+
+        if (batch.Navigates() && !string.Equals(job.ProviderId, Connector.Kit.Exploring.ExploreProvider.Id, StringComparison.Ordinal))
+        {
+            throw ConnectorException.InvalidRequest("navigation is the explore run's alone");
+        }
+    }
+
     private static async Task<JobRow> RequireLiveJobAsync(
         string provider,
         string sessionId,

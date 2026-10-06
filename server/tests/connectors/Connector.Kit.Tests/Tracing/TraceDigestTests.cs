@@ -14,18 +14,34 @@ public sealed class TraceDigestTests
     {
         var book = new TraceBook("job_42", "mock-store", ["hunter2"]);
         book.Navigation("https://shop.test/login");
-        book.Request(TraceBook.ViaBrowser, "GET", "https://shop.test/login", "document", [], null, null);
-        book.Response(TraceBook.ViaBrowser, "GET", "https://shop.test/login", 200, "document", [], "text/html; charset=utf-8", 2048, "<html></html>");
-        book.Request(TraceBook.ViaBrowser, "GET", "https://cdn.shop.test/app.js", "script", [], null, null);
-        book.Response(TraceBook.ViaBrowser, "GET", "https://cdn.shop.test/app.js", 200, "script", [], "application/javascript", 90_000, null);
-        book.Request(TraceBook.ViaBrowser, "POST", "https://shop.test/api/session", "fetch", [], "application/x-www-form-urlencoded", "username=shopper&password=hunter2");
-        book.Response(TraceBook.ViaBrowser, "POST", "https://shop.test/api/session", 200, "fetch", [], "application/json", 80,
-            "{\"ok\":true,\"orders\":[{\"id\":\"o1\",\"total\":12.5,\"lines\":[{\"sku\":\"a\"}]}],\"customer\":{\"name\":\"x\"}}");
-        book.Response(TraceBook.ViaHttp, "GET", "https://api.shop.test/v1/orders", 200, "http", [], "application/json", 20, "[{\"id\":\"o1\"}]");
+        book.Request(Browser("GET", "https://shop.test/login", "document"));
+        book.Response(Browser("GET", "https://shop.test/login", "document", "text/html; charset=utf-8", "<html></html>"), 200, 2048);
+        book.Request(Browser("GET", "https://cdn.shop.test/app.js", "script"));
+        book.Response(Browser("GET", "https://cdn.shop.test/app.js", "script", "application/javascript"), 200, 90_000);
+        book.Request(Browser("POST", "https://shop.test/api/session", "fetch", "application/x-www-form-urlencoded", "username=shopper&password=hunter2"));
+        book.Response(
+            Browser("POST", "https://shop.test/api/session", "fetch", "application/json",
+                "{\"ok\":true,\"orders\":[{\"id\":\"o1\",\"total\":12.5,\"lines\":[{\"sku\":\"a\"}]}],\"customer\":{\"name\":\"x\"}}"),
+            200,
+            80);
+        book.Response(
+            new TraceCall { Via = TraceBook.ViaHttp, Method = "GET", Url = "https://api.shop.test/v1/orders", ResourceType = "http", ContentType = "application/json", Body = "[{\"id\":\"o1\"}]" },
+            200,
+            20);
         book.Console("error", "Uncaught TypeError: x is undefined\n  at app.js:1");
         book.Console("log", "noise");
-        return book.Build([TraceBook.Cookie("sid", "secret", "shop.test", "/", null, true, true, "Lax")]);
+        return book.Build([TraceBook.Cookie("sid", "secret", "shop.test", "/", new CookieAttributes(HttpOnly: true, Secure: true, SameSite: "Lax"))]);
     }
+
+    private static TraceCall Browser(string method, string url, string resourceType, string? contentType = null, string? body = null) => new()
+    {
+        Via = TraceBook.ViaBrowser,
+        Method = method,
+        Url = url,
+        ResourceType = resourceType,
+        ContentType = contentType,
+        Body = body,
+    };
 
     [Fact]
     public void The_digest_lists_pages_calls_forms_cookies_and_the_console_and_never_a_value()

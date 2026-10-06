@@ -80,10 +80,11 @@ internal sealed class PageRecorder : IAsyncDisposable
                     c.Value,
                     c.Domain,
                     c.Path,
-                    c.Expires is > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires) : null,
-                    c.HttpOnly,
-                    c.Secure,
-                    c.SameSite.ToString())),
+                    new CookieAttributes(
+                        c.Expires is > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)c.Expires) : null,
+                        c.HttpOnly,
+                        c.Secure,
+                        c.SameSite.ToString()))),
             ];
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -156,7 +157,16 @@ internal sealed class PageRecorder : IAsyncDisposable
         var contentType = headers.FirstOrDefault(h => h.Key.Equals("content-type", StringComparison.OrdinalIgnoreCase)).Value;
         var body = TraceRedaction.IsText(contentType) ? request.PostData : null;
 
-        _book.Request(TraceBook.ViaBrowser, request.Method, request.Url, request.ResourceType, headers, contentType, body);
+        _book.Request(new TraceCall
+        {
+            Via = TraceBook.ViaBrowser,
+            Method = request.Method,
+            Url = request.Url,
+            ResourceType = request.ResourceType,
+            Headers = headers,
+            ContentType = contentType,
+            Body = body,
+        });
     }
 
     private async Task RecordResponseAsync(IResponse response)
@@ -183,7 +193,19 @@ internal sealed class PageRecorder : IAsyncDisposable
             }
         }
 
-        _book.Response(TraceBook.ViaBrowser, request.Method, response.Url, response.Status, request.ResourceType, headers, contentType, size, body);
+        _book.Response(
+            new TraceCall
+            {
+                Via = TraceBook.ViaBrowser,
+                Method = request.Method,
+                Url = response.Url,
+                ResourceType = request.ResourceType,
+                Headers = headers,
+                ContentType = contentType,
+                Body = body,
+            },
+            response.Status,
+            size);
     }
 
     private async Task SnapshotAsync(IPage page)

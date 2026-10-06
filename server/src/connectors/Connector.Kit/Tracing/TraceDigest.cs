@@ -85,42 +85,44 @@ public static class TraceDigest
         return node is null ? "null" : Shape(node, 0);
     }
 
-    private static string Shape(JsonNode node, int depth)
+    private static string Shape(JsonNode node, int depth) => node switch
     {
-        switch (node)
-        {
-            case JsonObject obj:
-            {
-                if (depth >= MaxShapeDepth) return "{…}";
+        JsonObject obj => ShapeObject(obj, depth),
+        JsonArray array => ShapeArray(array, depth),
+        JsonValue value => ShapeValue(value),
+        _ => "null",
+    };
 
-                var parts = obj.Take(MaxShapeKeys)
-                    .Select(p => p.Value is null ? $"{p.Key}: null" : $"{p.Key}: {Shape(p.Value, depth + 1)}")
-                    .ToList();
-                if (obj.Count > MaxShapeKeys) parts.Add($"… {obj.Count - MaxShapeKeys} more");
-                return "{" + string.Join(", ", parts) + "}";
-            }
+    private static string ShapeObject(JsonObject obj, int depth)
+    {
+        if (depth >= MaxShapeDepth) return "{…}";
 
-            case JsonArray array:
-            {
-                var first = array.FirstOrDefault(a => a is not null);
-                var inner = first is null ? "?" : depth >= MaxShapeDepth ? "…" : Shape(first, depth + 1);
-                return $"[{array.Count.ToString(CultureInfo.InvariantCulture)} × {inner}]";
-            }
-
-            case JsonValue value:
-                return value.GetValueKind() switch
-                {
-                    JsonValueKind.String => "string",
-                    JsonValueKind.Number => "number",
-                    JsonValueKind.True or JsonValueKind.False => "bool",
-                    JsonValueKind.Null => "null",
-                    _ => "value",
-                };
-
-            default:
-                return "null";
-        }
+        var parts = obj.Take(MaxShapeKeys)
+            .Select(p => p.Value is null ? $"{p.Key}: null" : $"{p.Key}: {Shape(p.Value, depth + 1)}")
+            .ToList();
+        if (obj.Count > MaxShapeKeys) parts.Add($"… {obj.Count - MaxShapeKeys} more");
+        return "{" + string.Join(", ", parts) + "}";
     }
+
+    private static string ShapeArray(JsonArray array, int depth)
+    {
+        var first = array.FirstOrDefault(a => a is not null);
+        string inner;
+        if (first is null) inner = "?";
+        else if (depth >= MaxShapeDepth) inner = "…";
+        else inner = Shape(first, depth + 1);
+
+        return $"[{array.Count.ToString(CultureInfo.InvariantCulture)} × {inner}]";
+    }
+
+    private static string ShapeValue(JsonValue value) => value.GetValueKind() switch
+    {
+        JsonValueKind.String => "string",
+        JsonValueKind.Number => "number",
+        JsonValueKind.True or JsonValueKind.False => "bool",
+        JsonValueKind.Null => "null",
+        _ => "value",
+    };
 
     private static void Pages(StringBuilder sb, JobTrace trace)
     {
@@ -165,24 +167,27 @@ public static class TraceDigest
         {
             sb.Append("### ").AppendLine(group.Key);
             sb.AppendLine();
-            foreach (var call in group.Take(MaxListed))
-            {
-                sb.Append("- ").Append(Clock(call.AtMs)).Append(' ')
-                    .Append(call.Method ?? "GET").Append(' ').Append(PathOf(call.Url))
-                    .Append(" → ").Append(call.Status?.ToString(CultureInfo.InvariantCulture) ?? "?");
-                if (call.ContentType is not null) sb.Append(' ').Append(Media(call.ContentType));
-                if (call.Size is { } size) sb.Append(' ').Append(Kb(size));
-                if (call.Via == TraceBook.ViaHttp) sb.Append(" (http client)");
-                sb.AppendLine();
+            foreach (var call in group.Take(MaxListed)) CallLine(sb, call);
 
-                if (call.Body is { Length: > 0 } body && IsJson(call.ContentType) && !call.BodyTruncated)
-                {
-                    sb.Append("  - shape: `").Append(Shape(body)).AppendLine("`");
-                }
-            }
-
-            if (group.Count() > MaxListed) sb.Append("- … ").Append(group.Count() - MaxListed).AppendLine(" more");
+            var count = group.Count();
+            if (count > MaxListed) sb.Append("- … ").Append(count - MaxListed).AppendLine(" more");
             sb.AppendLine();
+        }
+    }
+
+    private static void CallLine(StringBuilder sb, TraceEntry call)
+    {
+        sb.Append("- ").Append(Clock(call.AtMs)).Append(' ')
+            .Append(call.Method ?? "GET").Append(' ').Append(PathOf(call.Url))
+            .Append(" → ").Append(call.Status?.ToString(CultureInfo.InvariantCulture) ?? "?");
+        if (call.ContentType is not null) sb.Append(' ').Append(Media(call.ContentType));
+        if (call.Size is { } size) sb.Append(' ').Append(Kb(size));
+        if (call.Via == TraceBook.ViaHttp) sb.Append(" (http client)");
+        sb.AppendLine();
+
+        if (call.Body is { Length: > 0 } body && IsJson(call.ContentType) && !call.BodyTruncated)
+        {
+            sb.Append("  - shape: `").Append(Shape(body)).AppendLine("`");
         }
     }
 

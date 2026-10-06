@@ -296,18 +296,14 @@ public static partial class TraceRedaction
         return touched;
     }
 
-    private static string FormBody(string body)
+    private static string FormBody(string body) => string.Join('&', body.Split('&').Select(MaskFormPair));
+
+    private static string MaskFormPair(string pair)
     {
-        var pairs = body.Split('&');
-        for (var i = 0; i < pairs.Length; i++)
-        {
-            var eq = pairs[i].IndexOf('=', StringComparison.Ordinal);
-            if (eq < 0) continue;
+        var eq = pair.IndexOf('=', StringComparison.Ordinal);
+        if (eq < 0) return pair;
 
-            var key = Uri.UnescapeDataString(pairs[i][..eq].Replace('+', ' '));
-            if (IsSecretKey(key)) pairs[i] = $"{pairs[i][..eq]}={Masked(pairs[i].Length - eq - 1)}";
-        }
-
-        return string.Join('&', pairs);
+        var key = Uri.UnescapeDataString(pair[..eq].Replace('+', ' '));
+        return IsSecretKey(key) ? $"{pair[..eq]}={Masked(pair.Length - eq - 1)}" : pair;
     }
 }

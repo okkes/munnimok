@@ -82,57 +82,47 @@ public sealed class TraceBook
     public void Navigation(string url) =>
         Add(new TraceEntry { Seq = 0, AtMs = 0, Kind = TraceKind.Navigation, Via = ViaBrowser, Url = Clean(url) });
 
-    public void Request(
-        string via,
-        string method,
-        string url,
-        string? resourceType,
-        IEnumerable<KeyValuePair<string, string>> headers,
-        string? contentType,
-        string? body)
+    /// <summary>A request as it left: the browser's or the HTTP client's.</summary>
+    public void Request(TraceCall call)
     {
-        var (text, cut) = Body(contentType, body);
+        ArgumentNullException.ThrowIfNull(call);
+
+        var (text, cut) = Body(call.ContentType, call.Body);
         Add(new TraceEntry
         {
             Seq = 0,
             AtMs = 0,
             Kind = TraceKind.Request,
-            Via = via,
-            Method = method,
-            Url = Clean(url),
-            ResourceType = resourceType,
-            ContentType = contentType,
-            Headers = Headers(headers),
+            Via = call.Via,
+            Method = call.Method,
+            Url = Clean(call.Url),
+            ResourceType = call.ResourceType,
+            ContentType = call.ContentType,
+            Headers = Headers(call.Headers),
             Body = text,
             BodyTruncated = cut,
         });
     }
 
-    public void Response(
-        string via,
-        string method,
-        string url,
-        int status,
-        string? resourceType,
-        IEnumerable<KeyValuePair<string, string>> headers,
-        string? contentType,
-        long? size,
-        string? body)
+    /// <summary>A response as it arrived, for the call it answers.</summary>
+    public void Response(TraceCall call, int status, long? size)
     {
-        var (text, cut) = Body(contentType, body);
+        ArgumentNullException.ThrowIfNull(call);
+
+        var (text, cut) = Body(call.ContentType, call.Body);
         Add(new TraceEntry
         {
             Seq = 0,
             AtMs = 0,
             Kind = TraceKind.Response,
-            Via = via,
-            Method = method,
-            Url = Clean(url),
+            Via = call.Via,
+            Method = call.Method,
+            Url = Clean(call.Url),
             Status = status,
-            ResourceType = resourceType,
-            ContentType = contentType,
+            ResourceType = call.ResourceType,
+            ContentType = call.ContentType,
             Size = size,
-            Headers = Headers(headers),
+            Headers = Headers(call.Headers),
             Body = text,
             BodyTruncated = cut,
         });
@@ -169,19 +159,12 @@ public sealed class TraceBook
         Add(new TraceEntry { Seq = 0, AtMs = 0, Kind = TraceKind.Note, Text = Scrub(Cut(text, MaxHeaderChars).Text) });
 
     /// <summary>A cookie as the book keeps it: name and attributes, the value as a fingerprint.</summary>
-    public static TraceCookie Cookie(
-        string name,
-        string value,
-        string domain,
-        string path,
-        DateTimeOffset? expires,
-        bool httpOnly,
-        bool secure,
-        string? sameSite)
+    public static TraceCookie Cookie(string name, string value, string domain, string path, CookieAttributes attributes)
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(value);
         ArgumentNullException.ThrowIfNull(domain);
+        ArgumentNullException.ThrowIfNull(attributes);
 
         var (length, hash) = TraceRedaction.Fingerprint(value);
         return new TraceCookie
@@ -189,10 +172,10 @@ public sealed class TraceBook
             Name = name,
             Domain = domain,
             Path = string.IsNullOrEmpty(path) ? "/" : path,
-            Expires = expires,
-            HttpOnly = httpOnly,
-            Secure = secure,
-            SameSite = sameSite,
+            Expires = attributes.Expires,
+            HttpOnly = attributes.HttpOnly,
+            Secure = attributes.Secure,
+            SameSite = attributes.SameSite,
             ValueLength = length,
             ValueHash = hash,
         };
@@ -258,7 +241,7 @@ public sealed class TraceBook
         return (Scrub(text), cut);
     }
 
-    private IReadOnlyList<TraceHeader> Headers(IEnumerable<KeyValuePair<string, string>> headers)
+    private List<TraceHeader> Headers(IEnumerable<KeyValuePair<string, string>> headers)
     {
         var kept = new List<TraceHeader>();
         foreach (var (name, value) in headers)
@@ -278,3 +261,30 @@ public sealed class TraceBook
             ? (text, false)
             : (string.Create(CultureInfo.InvariantCulture, $"{text[..max]}… [{text.Length - max} more]"), true);
 }
+
+/// <summary>One call as a surface saw it, before the book redacts it.</summary>
+public sealed record TraceCall
+{
+    /// <summary><see cref="TraceBook.ViaBrowser"/> or <see cref="TraceBook.ViaHttp"/>.</summary>
+    public required string Via { get; init; }
+
+    public required string Method { get; init; }
+
+    public required string Url { get; init; }
+
+    public string? ResourceType { get; init; }
+
+    public IEnumerable<KeyValuePair<string, string>> Headers { get; init; } = [];
+
+    public string? ContentType { get; init; }
+
+    /// <summary>A text body, or null for a binary one or one that was not read.</summary>
+    public string? Body { get; init; }
+}
+
+/// <summary>A cookie's attributes, everything about it that is not its name, its scope or its value.</summary>
+public sealed record CookieAttributes(
+    DateTimeOffset? Expires = null,
+    bool HttpOnly = false,
+    bool Secure = false,
+    string? SameSite = null);
