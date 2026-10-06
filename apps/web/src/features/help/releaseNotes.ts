@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.15.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Every period side by side: This period on Home gained See all — page through earlier periods, see the six tiles for each, and a chart per tile shows how you are doing against the periods before.',
+        nl: 'Elke periode naast elkaar: Deze periode op Home kreeg Alles bekijken — blader door eerdere periodes, zie de zes tegels van elk, en een grafiek per tegel laat zien hoe je het doet ten opzichte van de periodes ervoor.',
+        tr: 'Her dönem yan yana: Ana ekrandaki Bu dönem kutusuna Tümünü gör eklendi — önceki dönemleri gezin, her birinin altı kutusunu görün; kutu başına bir grafik önceki dönemlere göre nasıl gittiğinizi gösterir.',
+      },
+      {
+        en: 'The review card now suggests the receipt that fits a purchase and attaches it when you confirm — open the Receipt row to pick another from every receipt, filtered by shop, or none. Opening a receipt from the card brings you back to the same card.',
+        nl: 'De beoordelingskaart stelt nu de bon voor die bij een aankoop past en koppelt die zodra je bevestigt — open de rij Bon om een andere te kiezen uit alle bonnen, gefilterd op winkel, of geen. Een bon openen vanaf de kaart brengt je terug naar dezelfde kaart.',
+        tr: 'İnceleme kartı artık bir alışverişe uyan fişi öneriyor ve onayladığınızda bağlıyor — Fiş satırını açıp mağazaya göre süzülmüş tüm fişlerden başka birini ya da hiçbirini seçebilirsiniz. Karttan bir fiş açmak sizi aynı karta geri getirir.',
+      },
+      {
+        en: 'Filters take an amount range, a recurring cost links a payment from its own screen (the charges around its due dates first, a search over everything), and the category picker fills the screen with its search pinned at the top.',
+        nl: 'Filters nemen een bedragbereik, een vaste last koppelt een betaling vanaf zijn eigen scherm (eerst de afschrijvingen rond de vervaldata, dan zoeken in alles), en de categoriekiezer vult het scherm met de zoekbalk vastgezet bovenaan.',
+        tr: 'Filtreler tutar aralığı alıyor, sabit bir gider kendi ekranından ödeme bağlıyor (önce vade tarihleri civarındaki ödemeler, sonra her şeyde arama) ve kategori seçici, aramayı üstte sabitleyerek ekranı dolduruyor.',
+      },
+      {
+        en: 'Frame your space’s picture: drag it inside the circle and pinch or slide to zoom — every list shows the circle you chose. Invoices open in a full-height viewer drawn at the screen’s width, with zoom.',
+        nl: 'Kadreer de foto van je space: sleep hem in de cirkel en knijp of schuif om te zoomen — elke lijst toont de cirkel die je koos. Facturen openen in een weergave op volle hoogte, getekend op schermbreedte, met zoom.',
+        tr: 'Alanınızın resmini çerçeveleyin: daireye sürükleyin, yakınlaştırmak için sıkıştırın ya da kaydırın — her liste seçtiğiniz daireyi gösterir. Faturalar ekran genişliğinde çizilen, yakınlaştırmalı tam boy bir görüntüleyicide açılır.',
+      },
+      {
+        en: 'A small pill on Home counts the changes still waiting to sync — they go out by themselves once you are online. New: a Gift category under Income; fetched receipts fold per shop.',
+        nl: 'Een kleine pil op Home telt de wijzigingen die nog wachten op sync — ze gaan vanzelf weg zodra je online bent. Nieuw: een categorie Cadeau onder Inkomsten; opgehaalde bonnen klappen per winkel in.',
+        tr: 'Ana ekrandaki küçük bir rozet eşitlenmeyi bekleyen değişiklikleri sayar — çevrimiçi olunca kendiliğinden gider. Yeni: Gelir altında Hediye kategorisi; getirilen fişler mağaza başına katlanır.',
+      },
+      {
+        en: 'Fixes: a confirmed card slides away once instead of twice on a phone, the remove-connection question no longer hides behind its sheet, and bol.com signs in again past its cookie wall.',
+        nl: 'Fixes: een bevestigde kaart schuift op een telefoon één keer weg in plaats van twee, de vraag bij het verwijderen van een koppeling verstopt zich niet meer achter zijn paneel, en bol.com logt weer in voorbij zijn cookiemuur.',
+        tr: 'Düzeltmeler: onaylanan kart telefonda iki kez değil bir kez kayıyor, bağlantıyı kaldırma sorusu artık panelinin arkasına saklanmıyor ve bol.com çerez duvarını geçip yeniden giriş yapıyor.',
+      },
+    ],
+  },
+  {
     version: '5.14.0',
     date: '2026-10-06',
     items: [
