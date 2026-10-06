@@ -1809,15 +1809,23 @@ export function ReviewScreen() {
   // keeps the #228 counter-first door open)
   const [pickedPlainCat, setPickedPlainCat] = useState(false);
   // deck animation (user request): keep the outgoing card's markup as a
-  // ghost that flies out left while the next card slides in from the right
+  // ghost that flies out left while the next card slides in from the right.
+  // 2026-10-06 (user ss, phone): the ghost used to fly the moment Confirm
+  // was pressed while the card itself stood until the writes had landed,
+  // then slid away under the next one - two flights. The snapshot is only
+  // ARMED here; the flight starts with the swap (the effect below the deck).
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [leavingHtml, setLeavingHtml] = useState<string | null>(null);
+  const armedLeaving = useRef<{ html: string; fromId: string } | null>(null);
+  const ghostTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureLeaving = () => {
     if (!cardRef.current) return;
+    const fromId = cardRef.current.dataset.cardId ?? '';
     // strip testids so the decorative ghost never doubles a live element
-    setLeavingHtml(cardRef.current.innerHTML.replaceAll(/data-testid="[^"]*"/g, ''));
-    setTimeout(() => setLeavingHtml(null), 260);
+    armedLeaving.current = { html: cardRef.current.innerHTML.replaceAll(/data-testid="[^"]*"/g, ''), fromId };
   };
+  // a second tap while the confirm's writes run must not re-enter (it re-armed the ghost and wrote twice)
+  const confirming = useRef(false);
   const [linkRecurring, setLinkRecurring] = useState(true);
   // no auto-match? the user can still link a recurring by hand (user request)
   const [manualRecId, setManualRecId] = useState<string | null>(null);
@@ -1849,6 +1857,23 @@ export function ReviewScreen() {
   // snapshot) while the counter queue runs
   const tx = shownCard(heldTx, remaining);
   const heldDeck = heldDeckProps(!!counterBulk);
+  // the armed ghost takes off the moment another card is up - the same
+  // render that slides the new card in - and never before
+  const shownId = tx?.id;
+  useEffect(() => {
+    const armed = armedLeaving.current;
+    if (!armed || armed.fromId === shownId) return;
+    armedLeaving.current = null;
+    setLeavingHtml(armed.html);
+    if (ghostTimer.current) clearTimeout(ghostTimer.current);
+    ghostTimer.current = setTimeout(() => setLeavingHtml(null), 260);
+  }, [shownId]);
+  useEffect(
+    () => () => {
+      if (ghostTimer.current) clearTimeout(ghostTimer.current);
+    },
+    [],
+  );
   // #275: back from the create-category detour — the same card is up
   // (skipped restored above); reopen the category editor once so the
   // fresh category is one tap away
@@ -2241,7 +2266,7 @@ export function ReviewScreen() {
 
   const confirm = async () => {
     // #268 r2 (user): a held deck accepts no further confirms
-    if (!tx || !draft || counterBulk) return;
+    if (!tx || !draft || counterBulk || confirming.current) return;
     if (!draftReady(draft)) {
       pointAtBlocker(draft);
       return;
@@ -2279,31 +2304,36 @@ export function ReviewScreen() {
     // exit flight plays when the queue finishes instead of now
     if (queued) setHeldTx(tx);
     else captureLeaving();
-    // #221→#309: the bare-movement default fallback is GONE — the gate
-    // above guarantees every movement confirm carries its picked link
-    // (which may well BE the family default, chosen in the ask).
-    // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
-    // whose counterparty was dropped lets its peer leg go first — a stale
-    // peer would keep collapsing the pair in the list
-    const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
-    if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
-    await writeConfirmation({
-      tx,
-      draft,
-      recurringId,
-      eventId,
-      note,
-      bulk: pickedPeer ? [] : bulk,
-      transform,
-      pairPeerId: pickedPeer?.txId,
-      releasePeer: releasePeer && !pickedPeer,
-    });
-    await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
-    if (queued) setCounterBulk(queued);
-    // other billing cycles of a linked recurring pick up their link here
-    void recurringOps.reconcile().catch(() => undefined);
-    logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
-    hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
+    confirming.current = true;
+    try {
+      // #221→#309: the bare-movement default fallback is GONE — the gate
+      // above guarantees every movement confirm carries its picked link
+      // (which may well BE the family default, chosen in the ask).
+      // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
+      // whose counterparty was dropped lets its peer leg go first — a stale
+      // peer would keep collapsing the pair in the list
+      const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
+      if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
+      await writeConfirmation({
+        tx,
+        draft,
+        recurringId,
+        eventId,
+        note,
+        bulk: pickedPeer ? [] : bulk,
+        transform,
+        pairPeerId: pickedPeer?.txId,
+        releasePeer: releasePeer && !pickedPeer,
+      });
+      await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
+      if (queued) setCounterBulk(queued);
+      // other billing cycles of a linked recurring pick up their link here
+      void recurringOps.reconcile().catch(() => undefined);
+      logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
+      hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
+    } finally {
+      confirming.current = false;
+    }
   };
 
   // #268: one queue step — the sibling gets the whole decision through
@@ -2408,7 +2438,7 @@ export function ReviewScreen() {
                 dangerouslySetInnerHTML={{ __html: leavingHtml }} // NOSONAR
               />
             )}
-            <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in">
+            <div key={`card-${tx.id}`} ref={cardRef} data-card-id={tx.id} className="m-card-in">
             {/* #268 r2 (user): data-held marks the frozen face while the
                 counter queue covers the screen — the deck sits still */}
             <div

@@ -42,6 +42,20 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
+  it('the outgoing card flies out WITH the next card, never before it (user ss 2026-10-06: the slide played twice on a phone)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const first = screen.getByTestId('review-card').textContent;
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    // no ghost while the writes run — the card stands until the swap
+    expect(document.querySelector('.m-card-out')).toBeNull();
+    await waitFor(() => expect(screen.getByText('2 / 3')).toBeTruthy(), { timeout: 5000 });
+    // the ghost mounts with the swap, wearing the OLD card; it is gone after its flight
+    await waitFor(() => expect(document.querySelector('.m-card-out')).toBeTruthy());
+    expect(screen.getByTestId('review-card').textContent).not.toBe(first);
+    await waitFor(() => expect(document.querySelector('.m-card-out')).toBeNull(), { timeout: 2000 });
+  }, 15_000);
+
   it('#133 C: no kind row — a ◆ pick asks the counterparty; #228: the card\'s own Counterparty row carries it', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
