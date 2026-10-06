@@ -49,7 +49,10 @@ export const LOGIN_STEPS = new Set(['authenticating', 'awaiting_human']);
 /** whether the second fetch reused what was kept, read off the run's steps */
 export function noLoginVerdict(job: OperatorJob | null): Verdict {
   if (!job) return { state: 'fail', detail: 'the second fetch left no run in the history' };
-  if (job.state !== 'succeeded') return { state: 'fail', detail: `the run ended ${job.state}${job.error ? ` (${job.error.code})` : ''}` };
+  if (job.state !== 'succeeded') {
+    const code = job.error ? ` (${job.error.code})` : '';
+    return { state: 'fail', detail: `the run ended ${job.state}${code}` };
+  }
   const done = job.progress?.stepsDone ?? [];
   const signedIn = done.filter((s) => LOGIN_STEPS.has(s));
   if (signedIn.length > 0) return { state: 'fail', detail: `the run signed in again (${signedIn.join(', ')})` };

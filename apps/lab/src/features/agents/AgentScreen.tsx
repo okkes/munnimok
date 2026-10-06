@@ -20,6 +20,12 @@ export function capabilityLines(agent: AgentView): { label: string; value: strin
   ];
 }
 
+/** a hosted slot's holder, in words */
+export function holderLine(agent: AgentView, holder: string | null): string {
+  if (agent.bound) return `${holder ?? 'somebody'} since ${when(agent.boundAt)}`;
+  return agent.resetting ? 'wiping…' : 'free';
+}
+
 /**
  * One agent in full (#441 L4): what it claims, the logins it keeps, the
  * runs it took, the retention runs made on it, and the doors — revoke,
@@ -112,7 +118,7 @@ export function AgentScreen({ id, call, busy, act }: Readonly<{ id: string } & S
           <Fact label="Online" value={agent.online ? 'yes' : 'no'} />
           <Fact label="Catalogue" value={agent.stale ? 'stale — rebuild the image' : 'matches the control plane'} />
           <Fact label="Revoked" value={agent.revoked ? 'yes' : 'no'} />
-          {agent.hosted && <Fact label="Holder" value={agent.bound ? `${holder ?? 'somebody'} since ${when(agent.boundAt)}` : agent.resetting ? 'wiping…' : 'free'} />}
+          {agent.hosted && <Fact label="Holder" value={holderLine(agent, holder)} />}
           {capabilityLines(agent).map((line) => (
             <Fact key={line.label} label={line.label} value={line.value} />
           ))}

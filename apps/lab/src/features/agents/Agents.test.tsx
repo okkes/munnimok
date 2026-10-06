@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AGENTS, HAPPY, HOSTED_AGENT, PRIVATE, renderLab, scriptFetch } from '../../test/harness';
+import { capabilityLines, holderLine } from './AgentScreen';
 import { agentHealth, slotHolder } from './AgentsScreen';
 
 describe('Agents', () => {
@@ -137,6 +138,11 @@ describe('Agents', () => {
 
   it('the health and holder helpers', () => {
     const base = AGENTS.agents[0];
+    expect(holderLine({ ...base, hosted: true, bound: false, resetting: true }, null)).toBe('wiping…');
+    expect(holderLine({ ...base, hosted: true, bound: false, resetting: false }, null)).toBe('free');
+    expect(holderLine({ ...base, hosted: true, bound: true, boundAt: '2026-09-30T05:00:00Z' }, 'Bob')).toContain('Bob since');
+    expect(capabilityLines(base)[0].value).toBe('none recorded');
+    expect(capabilityLines(HOSTED_AGENT).map((l) => l.value)).toEqual(['every party this connector has', 'browser_persistent, browser_interactive', 'residential · NL', '1']);
     expect(agentHealth({ ...base, revoked: true }).label).toBe('revoked');
     expect(agentHealth({ ...base, stale: true }).label).toBe('stale catalogue');
     expect(agentHealth({ ...base, online: false }).label).toBe('offline');

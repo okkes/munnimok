@@ -4,21 +4,11 @@ import type { Call } from '../../../app/api';
 import type { ScreenProps } from '../../../app/LabApp';
 import { hrefOf, navigate, useRouteQuery } from '../../../app/router';
 import { when } from '../../../lib/format';
-import type { AgentView, ProviderEntry, RetentionRun, RetentionStep, RetentionStepState, SessionView } from '../../../types';
+import type { AgentView, ProviderEntry, RetentionRun, RetentionStep, SessionView } from '../../../types';
 import { ConnectScreen } from '../ConnectScreen';
-import { fetchOnce, isPersistent, keptLoginVerdict, latestFetchJob, noLoginVerdict, readAgent, retentionTuning, runChip, runVerdict, STEPS, stepChip, wipeVerdict } from './retentionFacts';
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-type Phase = 'sign-in' | 'fetch' | 'kept-login' | 'fetch-again' | 'release' | 'done';
-
-interface StepWrite {
-  name: string;
-  state: RetentionStepState;
-  detail?: string;
-  jobId?: string | null;
-  sessionId?: string | null;
-}
+import { DRIVERS, isDriven } from './retentionDriver';
+import type { Phase, StepWrite } from './retentionDriver';
+import { isPersistent, readAgent, runChip, runVerdict, STEPS, stepChip } from './retentionFacts';
 
 /** the run's report and the pen that writes it */
 function useRun(call: Call, id: string) {
@@ -43,11 +33,11 @@ function useRun(call: Call, id: string) {
     [call, id],
   );
 
-  return { run, write, finish };
+  return { run, write, finish, setRun };
 }
 
 /** the party's manifest and the agent's listing, read once */
-function useContext(call: Call, run: RetentionRun | null) {
+function useRunContext(call: Call, run: RetentionRun | null) {
   const [party, setParty] = useState<ProviderEntry | null>(null);
   const [agent, setAgent] = useState<AgentView | undefined>(undefined);
   const provider = run?.provider ?? null;
@@ -89,6 +79,37 @@ function StepList({ run }: Readonly<{ run: RetentionRun }>) {
   );
 }
 
+/** the run's facts: the agent, the party and how it keeps its session, the label, the start, the session */
+function RunFacts({ run, party }: Readonly<{ run: RetentionRun; party: ProviderEntry | null }>) {
+  return (
+    <div className="facts">
+      <div className="fact">
+        <span className="fact-label">Agent</span>
+        <span className="fact-value">{run.agentId ? <a href={hrefOf(`agents/${encodeURIComponent(run.agentId)}`)}>{run.agentName ?? run.agentId}</a> : 'whatever the queue decides'}</span>
+      </div>
+      <div className="fact">
+        <span className="fact-label">Party</span>
+        <span className="fact-value">
+          <a href={hrefOf(`providers/${encodeURIComponent(run.provider)}`)}>{run.provider}</a>
+          {isPersistent(party) ? ' · keeps a browser on the agent' : ' · keeps its session in the bundle'}
+        </span>
+      </div>
+      <div className="fact">
+        <span className="fact-label">Label</span>
+        <span className="fact-value">{run.label ?? '—'}</span>
+      </div>
+      <div className="fact">
+        <span className="fact-label">Started</span>
+        <span className="fact-value">{when(run.createdAt)}</span>
+      </div>
+      <div className="fact">
+        <span className="fact-label">Session</span>
+        <span className="fact-value mono">{run.sessionId ? <a href={hrefOf(`bench/sessions/${encodeURIComponent(run.sessionId)}`)}>{run.sessionId}</a> : '—'}</span>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One retention run (#441 L4), driven here while it runs: the sign-in on
  * the pinned agent through the bench's own connect flow, then the fetch,
@@ -98,9 +119,9 @@ function StepList({ run }: Readonly<{ run: RetentionRun }>) {
 export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const query = useRouteQuery();
   const wantsRelease = query.get('release') === '1';
-  const { run, write, finish } = useRun(call, id);
+  const { run, write, finish, setRun } = useRun(call, id);
   const live = run && run !== 'unreachable' && run !== 'loading' ? run : null;
-  const { party, agent } = useContext(call, live);
+  const { party, agent } = useRunContext(call, live);
   const [phase, setPhase] = useState<Phase>('sign-in');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const driving = useRef<Phase | null>(null);
@@ -118,79 +139,26 @@ export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: strin
     [write, finish],
   );
 
-  // the scenario after the sign-in, one phase at a time
+  // the scenario after the sign-in, one phase at a time, each handing over to the next
   useEffect(() => {
-    if (!live || live.state !== 'running' || !party || !sessionId || phase === 'sign-in' || phase === 'done' || driving.current === phase) return;
+    if (live?.state !== 'running' || !party || !sessionId || !isDriven(phase) || driving.current === phase) return;
     driving.current = phase;
-    void (async () => {
-      if (phase === 'fetch') {
-        await write({ name: 'fetch', state: 'running' });
-        const first = await fetchOnce(call, live.provider, sessionId, live.resource);
-        await write({ name: 'fetch', state: first.ok ? 'pass' : 'fail', detail: first.detail, jobId: first.jobId });
-        if (!first.ok) {
-          await finish('failed');
-          setPhase('done');
-          return;
-        }
-        setPhase('kept-login');
-        return;
-      }
-      if (phase === 'kept-login') {
-        const now = live.agentId ? await readAgent(call, live.agentId) : undefined;
-        const verdict = live.agentId ? keptLoginVerdict(now, live.provider, isPersistent(party)) : { state: 'skip' as const, detail: 'no agent was pinned; the queue chose' };
-        await write({ name: 'kept-login', ...verdict });
-        setPhase('fetch-again');
-        return;
-      }
-      if (phase === 'fetch-again') {
-        await write({ name: 'fetch-again', state: 'running' });
-        const second = await fetchOnce(call, live.provider, sessionId, live.resource);
-        if (!second.ok) {
-          await write({ name: 'fetch-again', state: 'fail', detail: second.detail, jobId: second.jobId });
-        } else {
-          const job = await latestFetchJob(call, sessionId);
-          const verdict = noLoginVerdict(job);
-          await write({ name: 'fetch-again', state: verdict.state, detail: `${second.detail}; ${verdict.detail}`, jobId: job?.jobId ?? second.jobId });
-        }
-        setPhase('release');
-        return;
-      }
-      // release
-      if (!wantsRelease || !live.agentId || !agent?.hosted) {
-        await write({ name: 'release', state: 'skip', detail: agent?.hosted ? 'not asked for' : 'not a hosted slot' });
-      } else {
-        await write({ name: 'release', state: 'running', detail: 'the slot is released; waiting for the wipe' });
-        const released = await call(`/lab/private-agents/${encodeURIComponent(live.agentId)}/release`, { method: 'POST' }).catch(() => null);
-        if (!released?.ok) {
-          await write({ name: 'release', state: 'fail', detail: `the release was refused (HTTP ${released?.status ?? 'network'})` });
-        } else {
-          const deadline = Date.now() + retentionTuning.wipeTimeoutMs;
-          let verdict = wipeVerdict(await readAgent(call, live.agentId));
-          while (verdict.state === 'running' && Date.now() < deadline) {
-            await sleep(retentionTuning.wipePollMs);
-            verdict = wipeVerdict(await readAgent(call, live.agentId));
-          }
-          await write({ name: 'release', state: verdict.state === 'running' ? 'fail' : verdict.state, detail: verdict.state === 'running' ? `the wipe did not finish in time: ${verdict.detail}` : verdict.detail });
-        }
-      }
-      setPhase('done');
-    })();
+    void DRIVERS[phase]({ call, run: live, sessionId, party, agent, wantsRelease, write, finish }).then(setPhase);
   }, [phase, live, party, sessionId, agent, wantsRelease, call, write, finish]);
 
   // the end: the verdict from the steps, written once
   useEffect(() => {
-    if (phase !== 'done' || !live || live.state !== 'running') return;
+    if (phase !== 'done' || live?.state !== 'running') return;
     void finish(runVerdict(live.steps));
   }, [phase, live, finish]);
 
   const abort = async () => {
     if (!globalThis.confirm('Abort this run? The steps taken so far stay in the report.')) return;
-    await act(() => call(`/lab/bench/retention/runs/${encodeURIComponent(id)}/finish`, { method: 'POST', body: JSON.stringify({ state: 'aborted' }) }));
-    setPhase('done');
-    setRunState('aborted');
-  };
-  const setRunState = (state: string) => {
-    if (live) live.state = state;
+    const ok = await act(() => call(`/lab/bench/retention/runs/${encodeURIComponent(id)}/finish`, { method: 'POST', body: JSON.stringify({ state: 'aborted' }) }));
+    if (ok && live) {
+      setPhase('done');
+      setRun({ ...live, state: 'aborted' });
+    }
   };
 
   const remove = async () => {
@@ -226,12 +194,11 @@ export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: strin
         </span>
         <span className="sub mono">{live.id}</span>
         <span className="spacer" />
-        {live.state === 'running' && (
+        {live.state === 'running' ? (
           <button className="btn quiet" data-testid="retention-abort" disabled={busy} onClick={() => void abort()}>
             abort
           </button>
-        )}
-        {live.state !== 'running' && (
+        ) : (
           <button className="btn danger" data-testid="retention-delete" disabled={busy} onClick={() => void remove()}>
             delete
           </button>
@@ -239,31 +206,7 @@ export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: strin
       </div>
 
       <section className="card" data-testid="retention-run-facts">
-        <div className="facts">
-          <div className="fact">
-            <span className="fact-label">Agent</span>
-            <span className="fact-value">{live.agentId ? <a href={hrefOf(`agents/${encodeURIComponent(live.agentId)}`)}>{live.agentName ?? live.agentId}</a> : 'whatever the queue decides'}</span>
-          </div>
-          <div className="fact">
-            <span className="fact-label">Party</span>
-            <span className="fact-value">
-              <a href={hrefOf(`providers/${encodeURIComponent(live.provider)}`)}>{live.provider}</a>
-              {isPersistent(party) ? ' · keeps a browser on the agent' : ' · keeps its session in the bundle'}
-            </span>
-          </div>
-          <div className="fact">
-            <span className="fact-label">Label</span>
-            <span className="fact-value">{live.label ?? '—'}</span>
-          </div>
-          <div className="fact">
-            <span className="fact-label">Started</span>
-            <span className="fact-value">{when(live.createdAt)}</span>
-          </div>
-          <div className="fact">
-            <span className="fact-label">Session</span>
-            <span className="fact-value mono">{live.sessionId ? <a href={hrefOf(`bench/sessions/${encodeURIComponent(live.sessionId)}`)}>{live.sessionId}</a> : '—'}</span>
-          </div>
-        </div>
+        <RunFacts run={live} party={party} />
         <StepList run={live} />
       </section>
 
