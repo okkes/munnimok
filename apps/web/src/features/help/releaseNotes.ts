@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.10.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Behind the scenes: the people who run munni got a connector lab, where every party’s health, the browser agents and the canaries are watched from one place — the groundwork for fixing a party faster when it changes its site.',
+        nl: 'Achter de schermen: de mensen die munni draaien kregen een connector-lab, waar de gezondheid van elke partij, de browseragents en de kanaries vanuit één plek bewaakt worden — het fundament om een partij sneller te herstellen als die haar site verandert.',
+        tr: 'Perde arkasında: munni’yi işletenler bir bağlayıcı laboratuvarı edindi; her tarafın sağlığı, tarayıcı ajanları ve kanaryalar tek yerden izleniyor — sitesini değiştiren bir tarafı daha hızlı onarmanın temeli.',
+      },
+    ],
+  },
+  {
     version: '5.9.0',
     date: '2026-10-06',
     items: [

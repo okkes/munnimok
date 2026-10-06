@@ -202,17 +202,21 @@ carries its accounts too.
 Attaching to a space stays the user's explicit step; ingest never writes a
 link and never an overlay.
 
-## Operator (`/admin/connectors`, `/control/connectors`, the `admin` scope)
+## Operator (`/lab`, `/control/connectors`, the `admin` scope)
+
+The operator's routes are the connector lab's (#441, [lab.md](lab.md)); the admin portal's Connectors tab hands over to the lab. `GET /lab/ping` is mapped always (403 without the scope); the rest only when the environment runs connectors (404 otherwise), and `GET /lab/me` names the operator's **lab subject** — the pseudonym every lab run belongs to, never the person's app subject.
 
 | Route | What it does |
 | --- | --- |
-| `GET /admin/connectors/status`, `GET /control/connectors/status` | the control plane's status: providers with their health, agents online, the queue, plus `relay.openStreams` |
-| `POST /admin/connectors/providers/{id}/status` | the kill switch: `{ state: healthy\|degraded\|paused\|retired, reasonKey? }`; the operator and the reason go to the server log |
-| `GET /admin/connectors/agents`, `DELETE /admin/connectors/agents/{id}` | every household agent, whoever owns it; revoke any |
-| `GET /admin/connectors/private-agents`, `POST …/requests/{id}/approve`, `POST …/requests/{id}/deny`, `POST …/{agentId}/release` | hosted private agents (#420 A2): `{ total, free, slots: [{ agent, subject?, who? }], requests: [{ id, subject, who?, state, createdAt, decidedAt?, agentId? }] }` — every slot with who holds it (the relay maps each pseudonymous subject to the user's name or e-mail; the control plane never learns it), every open request and the last month's decisions; approving binds the oldest free slot (online, unbound, wiped) to the asker and answers `agent_unavailable` when none is; taking a slot back expires the sessions pinned to it and asks the agent to wipe |
-| `GET /admin/connectors/canaries` | the operator's own connections that prove a party still works |
-| `GET /admin/connectors/providers/{id}/remote-consents`, `DELETE …/remote-consents/{consentId}` | what the operator's account at the party holds (§15): every consent with `origin`, `status`, `reference`, `accountCount` — foreign environments' and legacy ones included — and a revoke, logged with the operator |
-| `GET /admin/connectors/users/{sub}/sessions` | one user's bindings — the same rows `GET /admin/users/{sub}/diagnosis` now carries as `connectorSessions` |
+| `GET /lab/status`, `GET /control/connectors/status` | the control plane's status: providers with their health, agents online, the queue, plus `relay.openStreams` |
+| `GET /lab/providers`, `GET /lab/providers/{id}` | the catalogue with every manifest and its status beside it |
+| `POST /lab/providers/{id}/status` | the kill switch: `{ state: healthy\|degraded\|paused\|retired, reasonKey? }`; the operator and the reason go to the server log |
+| `GET /lab/agents`, `DELETE /lab/agents/{id}` | every household agent, whoever owns it; revoke any |
+| `POST /lab/agents/enrollment` | a one-time enrollment code under the lab subject with the household compose line — the operator's own test machine |
+| `GET /lab/private-agents`, `POST …/requests/{id}/approve`, `POST …/requests/{id}/deny`, `POST …/{agentId}/release` | hosted private agents (#420 A2): `{ total, free, slots: [{ agent, subject?, who? }], requests: [{ id, subject, who?, state, createdAt, decidedAt?, agentId? }] }` — every slot with who holds it (the relay maps each pseudonymous subject to the user's name or e-mail; the control plane never learns it), every open request and the last month's decisions; approving binds the oldest free slot (online, unbound, wiped) to the asker and answers `agent_unavailable` when none is; taking a slot back expires the sessions pinned to it and asks the agent to wipe |
+| `GET /lab/canaries` | the operator's own connections that prove a party still works |
+| `GET /lab/providers/{id}/remote-consents`, `DELETE …/remote-consents/{consentId}` | what the operator's account at the party holds (§15): every consent with `origin`, `status`, `reference`, `accountCount` — foreign environments' and legacy ones included — and a revoke, logged with the operator |
+| `GET /lab/users/{sub}/sessions` | one user's bindings — the same rows `GET /admin/users/{sub}/diagnosis` now carries as `connectorSessions` |
 
 In production the machine token the relay mints must carry the control
 plane's admin scope (`connector:admin`) for these routes; the platform (M2)
