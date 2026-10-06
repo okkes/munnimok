@@ -84,6 +84,9 @@ export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } 
         <StateChip state={status?.state} testId="provider-state" />
         <span className="sub mono">{p.id}</span>
         <span className="spacer" />
+        <a className="btn" data-testid="provider-connect-lab" href={hrefOf(`bench/connect/${encodeURIComponent(p.id)}`)}>
+          connect in the lab
+        </a>
       </div>
 
       <section className="card" data-testid="provider-status-card">

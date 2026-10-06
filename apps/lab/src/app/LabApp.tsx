@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LabConfig } from '../config';
 import { AgentsScreen } from '../features/agents/AgentsScreen';
+import { BenchScreen } from '../features/bench/BenchScreen';
+import { ConnectScreen } from '../features/bench/ConnectScreen';
+import { SessionScreen } from '../features/bench/SessionScreen';
 import { CanariesScreen } from '../features/canaries/CanariesScreen';
 import { JobScreen } from '../features/jobs/JobScreen';
 import { JobsScreen } from '../features/jobs/JobsScreen';
@@ -39,6 +42,7 @@ const NAV: readonly (readonly [string, string])[] = [
   ['', 'Dashboard'],
   ['providers', 'Providers'],
   ['jobs', 'Jobs'],
+  ['bench', 'Bench'],
   ['agents', 'Agents'],
   ['canaries', 'Canaries'],
   ['settings', 'Settings'],
@@ -157,6 +161,9 @@ export function LabApp({ config, getToken, signOut }: Readonly<LabAppProps>) {
         {gate === 'ok' && section === 'providers' && route[1] !== undefined && <ProviderScreen {...screen} id={route[1]} />}
         {gate === 'ok' && section === 'jobs' && route[1] === undefined && <JobsScreen {...screen} />}
         {gate === 'ok' && section === 'jobs' && route[1] !== undefined && <JobScreen {...screen} id={route[1]} />}
+        {gate === 'ok' && section === 'bench' && route[1] === undefined && <BenchScreen {...screen} />}
+        {gate === 'ok' && section === 'bench' && route[1] === 'connect' && route[2] !== undefined && <ConnectScreen {...screen} provider={route[2]} />}
+        {gate === 'ok' && section === 'bench' && route[1] === 'sessions' && route[2] !== undefined && <SessionScreen {...screen} id={route[2]} />}
         {gate === 'ok' && section === 'agents' && <AgentsScreen {...screen} />}
         {gate === 'ok' && section === 'canaries' && <CanariesScreen {...screen} />}
         {gate === 'ok' && section === 'settings' && <SettingsScreen {...screen} config={config} testAuth={!getToken} />}
