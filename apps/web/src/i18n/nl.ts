@@ -2797,4 +2797,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.amountRange': 'Bedrag',
   'tx.amountMin': 'vanaf',
   'tx.amountMax': 'tot',
+  'sync.pendingShort': '{n} te syncen',
+  'sync.pendingOnline': 'Wijzigingen die wachten op sync: {n}',
+  'sync.pendingOffline': 'Opgeslagen op dit apparaat, nog niet gesynct: {n} — ze syncen zodra je weer online bent',
 };

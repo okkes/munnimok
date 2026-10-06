@@ -1,6 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from './data';
+import { usePendingSync } from './pendingSync';
 import { Icon } from '@/ui/Icon';
 import type { SyncStatus } from '@/sync/engine';
 import { getProtocolIssue } from '@/lib/api';
@@ -136,21 +138,47 @@ export function OfflineBanner() {
   );
 }
 
+/** what the pill says: the reason outranks the count, a count alone says how many wait */
+export function syncPillFace(
+  reason: OfflineReason | null,
+  pending: number,
+  status: SyncStatus,
+  t: (key: 'sync.signInAgain' | 'sync.offlineShort' | 'sync.syncing' | 'sync.pendingShort', vars?: Record<string, string | number>) => string,
+): { icon: string; text: string } | null {
+  if (!reason && pending === 0) return null;
+  const count = pending > 0 ? t('sync.pendingShort', { n: pending }) : null;
+  if (reason === 'session-expired') return { icon: 'account-lock-outline', text: t('sync.signInAgain') };
+  if (reason) return { icon: 'wifi-off', text: count ? `${t('sync.offlineShort')} · ${count}` : t('sync.offlineShort') };
+  if (status === 'syncing') return { icon: 'cloud-sync-outline', text: t('sync.syncing') };
+  return { icon: 'cloud-upload-outline', text: count ?? '' };
+}
+
 /** Quiet pill for the Home app bar: keeps signalling offline after the
- *  banner was dismissed, without shouting. */
-export function OfflineIndicator() {
+ *  banner was dismissed, without shouting — and (user 2026-10-06) counts
+ *  the changes still waiting on this device: they sync by themselves once
+ *  the server is back in reach. Tapping it opens Settings, whose sync row
+ *  says the same in a sentence. */
+export function SyncIndicator() {
   const { t } = useLang();
+  const navigate = useNavigate();
+  const { engine } = useData();
   const reason = useOfflineReason();
-  if (!reason) return null;
-  const expired = reason === 'session-expired';
+  const pending = usePendingSync();
+  const [status, setStatus] = useState<SyncStatus>(engine?.getStatus() ?? 'idle');
+  useEffect(() => engine?.onStatus(setStatus), [engine]);
+  const face = syncPillFace(reason, pending, status, t);
+  if (!face) return null;
   return (
-    <span
-      data-testid="home-offline-indicator"
-      title={t(OFFLINE_REASON_KEYS[reason])}
-      className="flex items-center gap-1.5 rounded-full bg-warning-soft px-2.5 py-1 text-[11px] font-medium text-ink-2"
+    <button
+      type="button"
+      data-testid={reason ? 'home-offline-indicator' : 'home-sync-indicator'}
+      data-pending={pending}
+      title={reason ? t(OFFLINE_REASON_KEYS[reason]) : t('sync.pendingOnline', { n: pending })}
+      onClick={() => void navigate({ to: '/settings' })}
+      className="m-tap flex items-center gap-1.5 rounded-full border-none bg-warning-soft px-2.5 py-1 text-[11px] font-medium text-ink-2"
     >
-      <Icon name={expired ? 'account-lock-outline' : 'wifi-off'} size={12} color="var(--m-warning)" />
-      {expired ? t('sync.signInAgain') : t('sync.offlineShort')}
-    </span>
+      <Icon name={face.icon} size={12} color="var(--m-warning)" />
+      {face.text}
+    </button>
   );
 }

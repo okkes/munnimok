@@ -2797,4 +2797,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.amountRange': 'Tutar',
   'tx.amountMin': 'en az',
   'tx.amountMax': 'en fazla',
+  'sync.pendingShort': '{n} senkron bekliyor',
+  'sync.pendingOnline': 'Eşitlenmeyi bekleyen değişiklik: {n}',
+  'sync.pendingOffline': 'Bu cihazda kayıtlı, henüz eşitlenmedi: {n} — tekrar çevrimiçi olunca eşitlenir',
 };

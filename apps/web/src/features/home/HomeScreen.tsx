@@ -23,7 +23,7 @@ import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
 import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
-import { OfflineIndicator } from '@/app/OfflineBanner';
+import { SyncIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { InstallHint } from '@/features/help/InstallHint';
 import { UpdateCard } from './UpdateCard';
@@ -428,7 +428,7 @@ export function HomeScreen() {
         title={t('tab.home')}
         trailing={
           <>
-            <OfflineIndicator />
+            <SyncIndicator />
             <NotificationsBell />
             <HelpButton tourId="home" />
             <SpaceSwitcher />

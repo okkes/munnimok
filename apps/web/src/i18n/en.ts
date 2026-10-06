@@ -2795,6 +2795,9 @@ export const en = {
   'tx.amountRange': 'Amount',
   'tx.amountMin': 'from',
   'tx.amountMax': 'up to',
+  'sync.pendingShort': '{n} to sync',
+  'sync.pendingOnline': 'Changes waiting to sync: {n}',
+  'sync.pendingOffline': 'Saved on this device, not synced yet: {n} — they sync once you are back online',
 } as const;
 
 export type TranslationKey = keyof typeof en;
