@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
+import { hrefOf } from '../../app/router';
 import { ago, shortId, when } from '../../lib/format';
 import type { AgentView, Enrollment, PrivateAgents } from '../../types';
 import { AbsentCard } from '../dashboard/DashboardScreen';
@@ -147,7 +148,11 @@ export function AgentsScreen({ call, busy, act }: Readonly<ScreenProps>) {
               return (
                 <tr key={a.id} data-testid={`agent-${a.id}`} className={a.online && !a.revoked ? '' : 'stale'}>
                   <td>
-                    <div className="cell-title">{a.name}</div>
+                    <div className="cell-title">
+                      <a href={hrefOf(`agents/${encodeURIComponent(a.id)}`)} data-testid={`agent-open-${a.id}`}>
+                        {a.name}
+                      </a>
+                    </div>
                     <div className="cell-sub">{shortId(a.id)}</div>
                   </td>
                   <td>

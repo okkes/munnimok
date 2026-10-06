@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENTS, HAPPY, PRIVATE, renderLab, scriptFetch } from '../../test/harness';
+import { AGENTS, HAPPY, HOSTED_AGENT, PRIVATE, renderLab, scriptFetch } from '../../test/harness';
 import { agentHealth, slotHolder } from './AgentsScreen';
 
 describe('Agents', () => {
@@ -94,6 +94,45 @@ describe('Agents', () => {
     scriptFetch({ ...HAPPY(), 'GET /lab/agents': () => ({ status: 404 }) });
     renderLab('#/agents');
     expect(await screen.findByTestId('lab-absent')).toBeTruthy();
+  });
+
+  it('an agent opens in full: its claims, the logins it keeps, the runs it took, the retention runs on it, the doors', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    const calls = scriptFetch({
+      ...HAPPY(),
+      'GET /lab/agents': () => ({ body: { agents: [...AGENTS.agents, HOSTED_AGENT] } }),
+      'DELETE /lab/agents/agt_kitchen': () => ({ status: 204 }),
+      'POST /lab/private-agents/agt_hosted/release': () => ({ status: 204 }),
+    });
+    renderLab('#/agents');
+    fireEvent.click(await screen.findByTestId('agent-open-agt_kitchen'));
+    await waitFor(() => expect(globalThis.location.hash).toBe('#/agents/agt_kitchen'));
+    expect((await screen.findByTestId('agent-title')).textContent).toBe('the kitchen laptop');
+    expect(screen.getByTestId('agent-health').textContent).toBe('offline');
+    expect(screen.getByTestId('agent-facts').textContent).toContain('none recorded');
+    expect(screen.getByTestId('agent-profiles').textContent).toContain('asn-persistent');
+    expect(screen.getByTestId('agent-jobs').textContent).toContain('provider_changed');
+    expect(screen.getByTestId('agent-retention').textContent).toContain('4 passed, 1 skipped');
+    expect(calls).toContain('GET /lab/jobs');
+    fireEvent.click(screen.getByTestId('agent-revoke'));
+    await waitFor(() => expect(calls).toContain('DELETE /lab/agents/agt_kitchen'));
+    fireEvent.click(screen.getByTestId('agent-bench'));
+    expect(globalThis.location.hash).toBe('#/bench/retention?agent=agt_kitchen');
+    cleanup();
+
+    renderLab('#/agents/agt_hosted');
+    expect((await screen.findByTestId('agent-title')).textContent).toBe(HOSTED_AGENT.name);
+    expect(screen.getByTestId('agent-facts').textContent).toContain('residential · NL');
+    expect(screen.getByTestId('agent-facts').textContent).toContain('browser_persistent, browser_interactive');
+    expect(screen.getByTestId('agent-facts').textContent).toContain('hosted slot');
+    expect(screen.queryByTestId('agent-revoke')).toBeNull();
+    fireEvent.click(screen.getByTestId('agent-release'));
+    await waitFor(() => expect(calls).toContain('POST /lab/private-agents/agt_hosted/release'));
+    cleanup();
+
+    scriptFetch(HAPPY());
+    renderLab('#/agents/agt_nobody');
+    expect((await screen.findByTestId('agent-missing')).textContent).toContain('No agent named');
   });
 
   it('the health and holder helpers', () => {

@@ -75,6 +75,9 @@ export function BenchScreen({ call }: Readonly<ScreenProps>) {
             </option>
           ))}
         </select>
+        <a className="btn quiet" href={hrefOf('bench/retention')} data-testid="bench-retention-link">
+          retention bench →
+        </a>
         <button className="btn" data-testid="bench-connect" disabled={!party} onClick={() => navigate(`bench/connect/${encodeURIComponent(party)}`)}>
           connect
         </button>

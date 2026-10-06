@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LabConfig } from '../config';
+import { AgentScreen } from '../features/agents/AgentScreen';
 import { AgentsScreen } from '../features/agents/AgentsScreen';
 import { BenchScreen } from '../features/bench/BenchScreen';
 import { ConnectScreen } from '../features/bench/ConnectScreen';
 import { SessionScreen } from '../features/bench/SessionScreen';
+import { RetentionRunScreen } from '../features/bench/retention/RetentionRunScreen';
+import { RetentionScreen } from '../features/bench/retention/RetentionScreen';
 import { CanariesScreen } from '../features/canaries/CanariesScreen';
 import { JobScreen } from '../features/jobs/JobScreen';
 import { JobsScreen } from '../features/jobs/JobsScreen';
@@ -166,7 +169,10 @@ export function LabApp({ config, getToken, signOut }: Readonly<LabAppProps>) {
         {gate === 'ok' && section === 'bench' && route[1] === undefined && <BenchScreen {...screen} />}
         {gate === 'ok' && section === 'bench' && route[1] === 'connect' && route[2] !== undefined && <ConnectScreen {...screen} provider={route[2]} />}
         {gate === 'ok' && section === 'bench' && route[1] === 'sessions' && route[2] !== undefined && <SessionScreen {...screen} id={route[2]} />}
-        {gate === 'ok' && section === 'agents' && <AgentsScreen {...screen} />}
+        {gate === 'ok' && section === 'bench' && route[1] === 'retention' && route[2] === undefined && <RetentionScreen {...screen} />}
+        {gate === 'ok' && section === 'bench' && route[1] === 'retention' && route[2] !== undefined && <RetentionRunScreen {...screen} id={route[2]} />}
+        {gate === 'ok' && section === 'agents' && route[1] === undefined && <AgentsScreen {...screen} />}
+        {gate === 'ok' && section === 'agents' && route[1] !== undefined && <AgentScreen {...screen} id={route[1]} />}
         {gate === 'ok' && section === 'canaries' && <CanariesScreen {...screen} />}
         {gate === 'ok' && section === 'settings' && <SettingsScreen {...screen} config={config} testAuth={!getToken} />}
       </main>
