@@ -20,6 +20,9 @@ const dayDiff = (fromIso: string, toIso: string): number => Math.round((Date.par
 
 const REIMB_CAT_IDS = new Set<string>([EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID]);
 
+/** the fields the earmark math reads off a row */
+type ReimbRow = Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>;
+
 /** does the row book itself as reimbursement money (category, part or
  *  #211 category-spread entry)? */
 export function filedAsReimbursement(tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits'>): boolean {
@@ -52,7 +55,7 @@ export function partEarmarkCents(part: Pick<TxSplit, 'catId' | 'cats' | 'amountC
  * from this once more - a second link from the same pair defaulted to
  * (earmark - links) - links and could not reach the remainder.
  */
-export function reimbEarmarkCents(tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>): number | null {
+export function reimbEarmarkCents(tx: ReimbRow): number | null {
   const parts = tx.splits ?? [];
   if (parts.length > 0) {
     const marked = parts.map(partEarmarkCents).filter((cents): cents is number => cents !== null);
@@ -79,10 +82,7 @@ export function partOpenCents(row: Pick<TransactionRow, 'reimbursements'>, part:
  * amount of a link. The earmark is already net of the settle (above), so
  * nothing is subtracted twice.
  */
-export function expenseNeedCents(
-  expense: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>,
-  partId?: string,
-): number {
+export function expenseNeedCents(expense: ReimbRow, partId?: string): number {
   const part = partId ? (expense.splits ?? []).find((p) => p.id === partId) : undefined;
   if (part) {
     const open = partOpenCents(expense, part);
@@ -100,10 +100,7 @@ export function expenseNeedCents(
  * links; its groceries slice never does - user rule 2026-07-28). The earmark
  * is net of the settle, so `given` is not subtracted from it again.
  */
-export function creditGiveableCents(
-  credit: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>,
-  given: number,
-): number {
+export function creditGiveableCents(credit: ReimbRow, given: number): number {
   const net = creditRemainingCents(credit, given);
   const earmark = reimbEarmarkCents(credit);
   return earmark === null ? net : Math.max(0, Math.min(net, earmark));

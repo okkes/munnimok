@@ -448,6 +448,12 @@ function ReviewReceiptRow({ row, onOpen, onAsk }: Readonly<{ row: ReturnType<typ
   );
 }
 
+/** the receipt the sheet marks: the person's pick, else the best match while the card still holds it */
+const stagedReceiptId = (stage: ReceiptStage, autoId: string | null): string | null => {
+  if (stage.kind === 'picked') return stage.receipt.id;
+  return stage.kind === 'auto' ? autoId : null;
+};
+
 /** the receipt sheet (user 2026-10-06): the proposal's yes / no, the suggestions, and every receipt behind a search
  *  and the parties' chips — a tap stages the pick for the confirm, the eye opens the receipt, None leaves it */
 function ReviewReceiptSheet({
@@ -482,7 +488,7 @@ function ReviewReceiptSheet({
   const [party, setParty] = useState<string | null>(null);
   const parties = useMemo(() => receiptParties(all), [all]);
   const listed = useMemo(() => filterReceipts(all, query, party).slice(0, 100), [all, query, party]);
-  const stagedId = stage.kind === 'picked' ? stage.receipt.id : stage.kind === 'auto' ? autoId : null;
+  const stagedId = stagedReceiptId(stage, autoId);
   const row = (r: ReceiptRow, prefix: string) => {
     const on = stagedId === r.id;
     return (
@@ -581,15 +587,18 @@ function ReviewReceiptSheet({
 
 /** the card's Receipt row: the attached receipt (a door to it), the person's pick, the proposal (a question), the best match (suggested), or None — null hides the row */
 function receiptRowFor(
-  attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined,
-  proposal: { merchant?: string; source: string; totalCents: number } | undefined,
-  stage: ReceiptStage,
-  auto: { merchant?: string; source: string; totalCents: number } | null,
-  candidates: number,
+  state: {
+    attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined;
+    proposal: { merchant?: string; source: string; totalCents: number } | undefined;
+    stage: ReceiptStage;
+    auto: { merchant?: string; source: string; totalCents: number } | null;
+    candidates: number;
+  },
   currency: string,
   lang: ReturnType<typeof useLang>['lang'],
   t: ReturnType<typeof useLang>['t'],
 ): { face: string; attachedId?: string; asks: boolean } | null {
+  const { attached, proposal, stage, auto, candidates } = state;
   const name = (r: { merchant?: string; source: string; totalCents: number }) => `${r.merchant ?? partyName(r.source)} · ${fmtCents(r.totalCents, currency, lang)}`;
   if (attached) return { face: name(attached), attachedId: attached.id, asks: false };
   if (stage.kind === 'picked') return { face: name(stage.receipt), asks: true };
@@ -2028,7 +2037,9 @@ export function ReviewScreen() {
     [tx, unmatchedReceipts, receiptProposal?.receiptId],
   );
   const autoReceipt = useMemo(() => (tx && !receiptProposal ? autoReceiptFor(tx, receiptCandidates) : null), [tx, receiptProposal, receiptCandidates]);
-  const receiptRow = tx ? receiptRowFor(receiptEntry?.data, receiptProposal, receiptStage, autoReceipt, receiptCandidates.length, tx.currency, lang, t) : null;
+  const receiptRow = tx
+    ? receiptRowFor({ attached: receiptEntry?.data, proposal: receiptProposal, stage: receiptStage, auto: autoReceipt, candidates: receiptCandidates.length }, tx.currency, lang, t)
+    : null;
   /** the receipt screen is a detour (user 2026-10-06): the deck's place and the card's staged picks come back with the person */
   const openReceipt = (receiptId: string) => {
     if (!tx) return;

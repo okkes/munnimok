@@ -64,7 +64,8 @@ function deltaText(delta: PeriodDelta | null, money: (cents: number) => string, 
   if (delta === null) return t('periods.noPrevious');
   if (delta.cents === 0) return t('periods.same');
   const arrow = delta.cents > 0 ? '▲' : '▼';
-  const pct = delta.pct === null ? '' : ` · ${delta.pct > 0 ? '+' : ''}${delta.pct}%`;
+  const sign = delta.pct !== null && delta.pct > 0 ? '+' : '';
+  const pct = delta.pct === null ? '' : ` · ${sign}${delta.pct}%`;
   return `${arrow} ${money(Math.abs(delta.cents))}${pct} ${t('periods.vsPrevious')}`;
 }
 

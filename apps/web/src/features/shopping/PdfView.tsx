@@ -15,7 +15,7 @@ export function dataUrlBytes(dataUrl: string): Uint8Array {
   const comma = dataUrl.indexOf(',');
   const binary = atob(comma < 0 ? '' : dataUrl.slice(comma + 1));
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.codePointAt(i) ?? 0;
   return bytes;
 }
 
@@ -200,12 +200,13 @@ export function PdfView({ dataUrl, testId }: Readonly<{ dataUrl: string; testId:
 
   const step = (factor: number) => setZoom((z) => clampZoom(z * factor));
   const pageCount = doc?.numPages ?? 0;
+  const status = pageCount > 0 ? t('receipts.pageCount', { n: pageCount }) : t(failed ? 'receipts.pdfFailed' : 'receipts.pdfLoading');
   const tool = 'm-tap flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-ink disabled:opacity-40';
   return (
     <div className="flex flex-col gap-2" data-testid={testId}>
       <div className="flex items-center gap-2 px-1 text-[12px] text-ink-3">
         <span className="min-w-0 flex-1 truncate" data-testid={`${testId}-pages`}>
-          {pageCount > 0 ? t('receipts.pageCount', { n: pageCount }) : failed ? t('receipts.pdfFailed') : t('receipts.pdfLoading')}
+          {status}
         </span>
         <button type="button" aria-label={t('receipts.zoomOut')} data-testid={`${testId}-zoom-out`} disabled={zoom <= ZOOM_MIN} onClick={() => step(1 / ZOOM_STEP)} className={tool}>
           <Icon name="minus" size={16} />

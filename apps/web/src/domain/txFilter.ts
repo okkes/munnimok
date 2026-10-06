@@ -54,6 +54,15 @@ function querySign(q: string | undefined): -1 | 0 | 1 {
   return 0;
 }
 
+/** the date bounds and the amount's size (inclusive on every edge) */
+const withinBounds = (tx: TxView, filter: TxFilter): boolean => {
+  if (filter.from && tx.date < filter.from) return false;
+  if (filter.to && tx.date > filter.to) return false;
+  const size = Math.abs(tx.amountCents);
+  if (filter.minCents !== undefined && size < filter.minCents) return false;
+  return filter.maxCents === undefined || size <= filter.maxCents;
+};
+
 export function filterTxs<T extends TxView>(txs: T[], filter: TxFilter): T[] {
   const q = filter.query?.trim().toLowerCase();
   const signQ = querySign(q);
@@ -65,11 +74,7 @@ export function filterTxs<T extends TxView>(txs: T[], filter: TxFilter): T[] {
     if (filter.onlyUncategorized && !isUncategorized(tx)) return false;
     if (filter.catIds?.size && !anySlice(tx, (v) => filter.catIds!.has(v.catId ?? ''))) return false;
     if (filter.txTypes?.size && !anySlice(tx, (v) => filter.txTypes!.has(v.effType))) return false;
-    if (filter.from && tx.date < filter.from) return false;
-    if (filter.to && tx.date > filter.to) return false;
-    const size = Math.abs(tx.amountCents);
-    if (filter.minCents !== undefined && size < filter.minCents) return false;
-    if (filter.maxCents !== undefined && size > filter.maxCents) return false;
+    if (!withinBounds(tx, filter)) return false;
     return !q || matchesQuery(tx, q, amountQ, signQ);
   });
 }

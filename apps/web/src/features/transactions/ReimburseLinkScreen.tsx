@@ -92,7 +92,7 @@ interface Pick {
 }
 
 const keyOf = (rowId: string, partId?: string, creditPartId?: string): string => `${rowId}|${partId ?? ''}|${creditPartId ?? ''}`;
-const amountTestId = (key: string): string => `reimb-amount-${key.replaceAll('|', '-').replace(/-+$/, '')}`;
+const amountTestId = (key: string): string => `reimb-amount-${key.split('|').filter(Boolean).join('-')}`;
 const centsOf = (pick: Pick): number => Math.max(0, parseCents(pick.text) ?? 0);
 
 /** the picks' shades on the composition bar: the accent, lighter with every next pick */
