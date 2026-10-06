@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HAPPY, renderLab, scriptFetch, TRACE } from '../../test/harness';
+import { HAPPY, JOBS, renderLab, scriptFetch, TRACE } from '../../test/harness';
 import type { TraceEntry } from '../../types';
+import { entriesLine } from './JobScreen';
 import { clock, entryLine, filterEntries, hostOf, isNoise, kb, pathOf, pretty } from './traceFacts';
 
 describe('Trace', () => {
@@ -107,5 +108,9 @@ describe('Trace', () => {
     expect(pretty('{"a":1}')).toBe('{\n  "a": 1\n}');
     expect(pretty('<html>')).toBe('<html>');
     expect(pretty(null)).toBe('');
+
+    const summary = JOBS.jobs[2].trace!;
+    expect(entriesLine(summary)).toBe('12');
+    expect(entriesLine({ ...summary, truncated: true, dropped: 7 })).toBe('12 (7 dropped — the book ran out of room)');
   });
 });
