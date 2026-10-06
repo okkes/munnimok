@@ -1,0 +1,82 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
+import * as Sentry from '@sentry/react';
+import { LabApp } from './app/LabApp';
+import { config, glitchtipDsn } from './config';
+import './styles.css';
+
+if (glitchtipDsn) {
+  Sentry.init({ dsn: glitchtipDsn, sendDefaultPii: false, sendClientReports: false });
+}
+
+const logtoConfigured = Boolean(config.logtoEndpoint && config.logtoAppId);
+
+/** OIDC entry: sign in via Logto when configured, else test-auth sub input */
+function Root() {
+  if (!logtoConfigured) return <LabApp config={config} getToken={null} />;
+  return (
+    <LogtoProvider
+      config={{
+        endpoint: config.logtoEndpoint,
+        appId: config.logtoAppId,
+        resources: config.logtoResource ? [config.logtoResource] : [],
+        // the API admits an operator by the `admin` scope on its access
+        // token (a Logto role on the API resource grants it) — ask for it
+        scopes: ['admin'],
+      }}
+    >
+      <LogtoGate />
+    </LogtoProvider>
+  );
+}
+
+// Single-flight token fetch: a screen fires several /lab/* calls in
+// parallel and Logto ROTATES refresh tokens — concurrent refreshes race and
+// the loser's consumed token gets the whole grant revoked. One in-flight
+// fetch serves all callers.
+let tokenInflight: Promise<string | undefined> | null = null;
+function singleFlight(fetchToken: () => Promise<string | undefined>): Promise<string | undefined> {
+  tokenInflight ??= fetchToken().finally(() => {
+    tokenInflight = null;
+  });
+  return tokenInflight;
+}
+
+function LogtoGate() {
+  const { isAuthenticated, isLoading, signIn, signOut, getAccessToken } = useLogto();
+  const isCallback = window.location.pathname.endsWith('/auth-callback');
+  if (isCallback) return <Callback />;
+  if (isLoading) return <p className="center">…</p>;
+  if (!isAuthenticated) {
+    return (
+      <div className="center">
+        <button className="btn" onClick={() => void signIn(`${window.location.origin}/auth-callback`)}>
+          Sign in
+        </button>
+        <p className="hint">
+          Same account as the munni app — there is no lab password. An operator grants admin per account in the setup wizard (the
+          environment&apos;s Access tab).
+        </p>
+      </div>
+    );
+  }
+  return (
+    <LabApp
+      config={config}
+      getToken={() => singleFlight(() => getAccessToken(config.logtoResource || undefined))}
+      signOut={() => void signOut(window.location.origin)}
+    />
+  );
+}
+
+function Callback() {
+  useHandleSignInCallback(() => window.location.replace(window.location.origin));
+  return <p className="center">…</p>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <Root />
+  </React.StrictMode>,
+);

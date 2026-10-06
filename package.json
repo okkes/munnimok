@@ -6,6 +6,7 @@
     "apps/web",
     "apps/admin",
     "apps/control",
+    "apps/lab",
     "apps/native"
   ],
   "scripts": {
