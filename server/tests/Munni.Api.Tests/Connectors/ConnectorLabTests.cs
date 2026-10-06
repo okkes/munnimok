@@ -35,7 +35,8 @@ public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<Conn
         using var operatorClient = factory.ClientFor("lab-operator", scope: Admin);
         var me = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/me");
         var labSubject = me!["subject"]!.GetValue<string>();
-        Assert.StartsWith("u_", labSubject, StringComparison.Ordinal);
+        // the operator's marker first (a lab session can become a canary), the pseudonym after it — never the app's own subject
+        Assert.StartsWith("canary:u_", labSubject, StringComparison.Ordinal);
 
         // the app's own agent list is the APP subject's: an agent enrolled for the lab must not appear there
         using var minted = await operatorClient.PostAsJsonAsync("/lab/agents/enrollment", new { name = "the lab box" });

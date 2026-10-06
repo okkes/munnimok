@@ -30,6 +30,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ConnectorSession> ConnectorSessions => Set<ConnectorSession>();
     public DbSet<ConnectorAccountRef> ConnectorAccountRefs => Set<ConnectorAccountRef>();
     public DbSet<ConnectorPendingTx> ConnectorPendingTxs => Set<ConnectorPendingTx>();
+    /// <summary>The operator's own connections from the lab's test bench (#441 L2). See <see cref="Munni.Api.Lab.LabSession"/>.</summary>
+    public DbSet<Munni.Api.Lab.LabSession> LabSessions => Set<Munni.Api.Lab.LabSession>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +43,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.UserId, x.Provider, x.ConnectionId }).IsUnique();
         });
         modelBuilder.Entity<ConnectorAccountRef>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+        });
+        modelBuilder.Entity<Munni.Api.Lab.LabSession>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.UserId);

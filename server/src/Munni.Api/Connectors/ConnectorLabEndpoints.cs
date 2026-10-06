@@ -64,6 +64,8 @@ public static class ConnectorLabEndpoints
         lab.MapGet("/health", Health);
         lab.MapPost("/canaries/{providerId}/run", RunCanary);
         lab.MapGet("/users/{sub}/sessions", UserSessions);
+        // L2: the test bench — the operator's own sessions, sign-ins with their challenges and the live view, fetches, canaries
+        Munni.Api.Lab.LabBenchEndpoints.Map(lab);
 
         // the cockpit's read-only view of the designated environment (§15.6): the
         // parties with their quota, and an aggregator's inventory of consents —

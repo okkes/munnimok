@@ -32,12 +32,16 @@ does not make is a bug in this file.
 ## The lab subject
 
 Every run the lab starts belongs to a **lab subject** minted per
-operator — `SubjectMinter.ForLab`: the same HMAC as the app's subject
-over `lab:` + the user id. The control plane knows the lab as that
-pseudonym and never as the person; the person's own connections in the
-app are another subject entirely, so nothing the lab connects, fetches
-or records shows up in the app or is ingested into a space.
-`GET /lab/me` names it.
+operator — `SubjectMinter.ForLab`: the control plane's operator marker
+(`canary:`) in front of the same HMAC as the app's subject over `lab:`
++ the user id. The control plane knows the lab as that pseudonym and
+never as the person; the person's own connections in the app are another
+subject entirely (`u_…`, never marked), so nothing the lab connects,
+fetches or records shows up in the app or is ingested into a space. The
+marker is what lets a lab session become a party's canary (L2): a bundle
+opens only against the subject it was sealed for, and only a marked
+subject may be enrolled — so a person's bundle can never land in the
+canary table, and the lab's can with one tap. `GET /lab/me` names it.
 
 ## The relay (`/lab`, the `admin` scope)
 
@@ -63,7 +67,7 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 The cockpit (`apps/control`) keeps its read-only `/control/connectors`
 twin: the status and an aggregator's inventory, never a write.
 
-## The screens (slices L0–L1)
+## The screens (slices L0–L2)
 
 - **Dashboard** — parties accepting work, agents online, jobs in flight
   and awaiting input, open event streams; every party with its state,
@@ -107,6 +111,25 @@ twin: the status and an aggregator's inventory, never a write.
   narrowed history; the canary card runs the canary now.
 - **Dashboard** (L1) — failed runs today with the people affected, and
   the failure reports to read.
+- **Bench** (L2) — the test bench: the operator's own connections at the
+  parties, made under the lab subject. Pick a party and sign in on the
+  manifest's own form (its steps and fields, the party's config, a label),
+  say where the run happens (no preference, the fleet, or one agent from
+  the Agents list), and watch the run: the step, the queue position, the
+  notes, and whatever the party asks — a code, a picture to tap (the taps
+  encoded as the control plane reads them), a choice, a page to open and
+  the address it returns, or the live browser (the lab's own live view:
+  frames long-polled past the last sequence, taps/moves/scrolls/text/keys
+  batched every 80 ms as fractions of the frame). A settled session is
+  listed with its state, whether its bundle is kept, where it runs, when
+  it was last used and the last error; its page fetches any resource with
+  the params the manifest declares (a date, a multi pick, the accounts) in
+  one round trip — or follows the job when the run outruns the window,
+  answering its question — and lists the records by their columns; **make
+  canary** hands the bundle to the control plane for the resource and
+  interval chosen (the lab session goes with it); **disconnect** signs out
+  at the party and forgets the session. A party's page carries a
+  *connect in the lab* door.
 - **Settings** — the operator, the lab subject, the sign-in mode, the
   api, the build and the identity provider.
 
@@ -115,7 +138,10 @@ twin: the status and an aggregator's inventory, never a write.
 L1 done (2026-10-06: the job history, per-party health, failure reports
 with the person's consent — see architecture.md "Failure reports" — the
 lab trigger, canary run-now, one fetch in flight per session and
-resource); L2 the
+resource); L2 done (2026-10-06: the bench — see above; the lab subject
+now carries the canary marker, lab sessions rest on the relay as
+`LabSession` rows in `Munni.Api.Lab`, the bench's routes under
+`/lab/bench`); the test bench plan read: the
 test bench (connect with challenges and the live view, agent targeting,
 fetch and records by shape, lab sessions, lab-managed canaries); L3 the
 recorder (record-a-run, the Explore job, trace storage and viewer, the

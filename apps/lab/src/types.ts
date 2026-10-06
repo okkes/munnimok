@@ -227,3 +227,90 @@ export interface HealthReport {
   generatedAt: string;
   providers: ProviderHealth[];
 }
+
+// ---- the test bench (#441 L2) ----------------------------------------------
+
+/** one of the operator's own connections, kept by the relay; never its bundle */
+export interface LabSessionRow {
+  sessionId: string;
+  provider: string;
+  label?: string | null;
+  state: string;
+  hasBundle: boolean;
+  preferAgent?: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  lastError?: string | null;
+}
+
+export interface ChallengeView {
+  id: string;
+  type: string;
+  answerKind?: string;
+  promptKey?: string | null;
+  imageUrl?: string | null;
+  expiresAt: string;
+  code?: string | null;
+  delivery?: string | null;
+  length?: number | null;
+  options?: { value: string; label: string }[] | null;
+  url?: string | null;
+  returnPattern?: string | null;
+}
+
+export interface ProgressView {
+  step: string;
+  stepsDone: string[];
+  found?: number | null;
+  ahead?: number | null;
+}
+
+export interface ErrorView {
+  code: string;
+  retriable: boolean;
+  userAction: string;
+  messageKey?: string;
+}
+
+/** a sign-in as the bench reads it (the bundle stripped by the relay) */
+export interface SessionView {
+  sessionId: string;
+  state: string;
+  expiresAt?: string | null;
+  providerAccount?: { displayName: string; externalId?: string | null } | null;
+  challenge?: ChallengeView | null;
+  progress?: ProgressView | null;
+  notes?: string[];
+  error?: ErrorView | null;
+  artifactsJobId?: string | null;
+  label?: string | null;
+}
+
+/** a fetch's answer: the page (200), or the job to follow (202) */
+export interface FetchView {
+  accepted: boolean;
+  resource?: string;
+  data?: Record<string, unknown>[];
+  cursor?: string | null;
+  complete?: boolean;
+  notes?: string[];
+  jobId?: string;
+  state?: string;
+  challenge?: ChallengeView | null;
+  progress?: ProgressView | null;
+}
+
+/** a job as the bench follows it: the page once it succeeded */
+export interface JobView {
+  jobId: string;
+  sessionId: string;
+  state: string;
+  resource?: string | null;
+  progress?: ProgressView | null;
+  challenge?: ChallengeView | null;
+  data?: Record<string, unknown>[] | null;
+  cursor?: string | null;
+  complete?: boolean;
+  notes?: string[];
+  error?: ErrorView | null;
+}

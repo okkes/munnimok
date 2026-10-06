@@ -16,6 +16,15 @@ public sealed class SubjectMinter
     /// <summary>Every user subject starts with this; the connector's canary marker never does.</summary>
     public const string Prefix = "u_";
 
+    /// <summary>
+    /// The control plane's operator marker (<c>CanaryService.SubjectPrefix</c>):
+    /// only a subject that carries it may be enrolled as a canary, which is
+    /// what keeps a person's bundle out of that table even by mistake. The
+    /// LAB subject carries it, so a lab session can become a party's canary;
+    /// a user subject never does.
+    /// </summary>
+    public const string CanaryMarker = "canary:";
+
     private readonly byte[] _key;
 
     public SubjectMinter(string salt)
@@ -30,9 +39,13 @@ public sealed class SubjectMinter
     /// The operator's LAB subject (#441): the same person, another pseudonym —
     /// everything the lab connects, fetches or records belongs to it, so a
     /// test run never shows up among the person's own connections in the app
-    /// and nothing of it is ever ingested into a space.
+    /// and nothing of it is ever ingested into a space. It carries the
+    /// control plane's canary marker (L2): a lab session is the operator's
+    /// own connection, and the bundle sealed for this subject is the one a
+    /// canary can be made of — a bundle opens only against the subject it
+    /// was sealed for, so no other minting path could get there.
     /// </summary>
-    public string ForLab(Guid userId) => Mint($"lab:{userId:D}");
+    public string ForLab(Guid userId) => CanaryMarker + Mint($"lab:{userId:D}");
 
     private string Mint(string material)
     {

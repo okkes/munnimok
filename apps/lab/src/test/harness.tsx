@@ -219,6 +219,12 @@ export const JOBS = {
   truncated: false,
 };
 
+/** the bench's sessions (#441 L2): one kept, one that lost its bundle */
+export const BENCH_SESSIONS = [
+  { sessionId: 'ses_lab1', provider: 'mock-store-simple', label: 'the bench run', state: 'active', hasBundle: true, preferAgent: 'fleet', createdAt: '2026-10-06T10:00:00Z', lastUsedAt: '2026-10-06T11:00:00Z', lastError: null },
+  { sessionId: 'ses_lab2', provider: 'ah', label: null, state: 'needs_reauth', hasBundle: false, preferAgent: null, createdAt: '2026-10-05T10:00:00Z', lastUsedAt: '2026-10-05T10:30:00Z', lastError: 'session_expired' },
+];
+
 /** the health report (#441 L1): one party broken today, one fine */
 export const HEALTH_REPORT = {
   generatedAt: minutesAgo(0),
@@ -273,4 +279,6 @@ export const HAPPY = (): Record<string, Handler> => ({
   'GET /lab/jobs/job_pending1': () => ({ body: JOBS.jobs[1] }),
   'GET /lab/jobs/job_failed1/artifacts/screenshot': () => ({ raw: 'not-really-a-png', contentType: 'image/png' }),
   'GET /lab/health': () => ({ body: HEALTH_REPORT }),
+  'GET /lab/bench/sessions': () => ({ body: BENCH_SESSIONS }),
+  'GET /lab/providers/mock-store-simple': () => ({ body: CATALOGUE.providers[1] }),
 });

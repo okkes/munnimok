@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.12.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Behind the scenes: the people who run munni got a test bench in the connector lab — they can sign in to a party themselves, answer its questions, fetch and read what comes back, and turn that connection into the canary that watches the party for you.',
+        nl: 'Achter de schermen: de mensen die munni draaien kregen een testbank in het connector-lab — ze kunnen zelf bij een partij inloggen, haar vragen beantwoorden, ophalen en lezen wat terugkomt, en die koppeling tot de kanarie maken die de partij voor jou in de gaten houdt.',
+        tr: 'Perde arkasında: munni’yi işletenler bağlayıcı laboratuvarında bir test tezgâhı edindi — bir tarafa kendileri giriş yapabilir, sorularını yanıtlayabilir, gelenleri çekip okuyabilir ve o bağlantıyı tarafı senin için izleyen kanaryaya dönüştürebilir.',
+      },
+    ],
+  },
+  {
     version: '5.11.0',
     date: '2026-10-06',
     items: [
