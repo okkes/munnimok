@@ -94,6 +94,29 @@ internal sealed class PageRecorder : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Waits for the bodies and snapshots still being read, so a book built
+    /// now holds them. Playwright raises its events synchronously and a body
+    /// is read afterwards; on a slow machine the adapter is done before the
+    /// reads are (CI, 2026-10-06: a trace with the requests and none of the
+    /// answers). A read that outlives the wait is a body the trace goes
+    /// without, never an error.
+    /// </summary>
+    public async Task FlushAsync(CancellationToken ct)
+    {
+        var reads = _pending.Keys.ToArray();
+        if (reads.Length == 0) return;
+
+        try
+        {
+            await Task.WhenAll(reads).WaitAsync(GatherTimeout, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is TimeoutException or AggregateException)
+        {
+            _logger.LogDebug(ex, "the recorder left {Count} body read(s) behind", reads.Length);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _detached, 1) == 1) return;
@@ -108,20 +131,7 @@ internal sealed class PageRecorder : IAsyncDisposable
             page.Load -= OnLoad;
         }
 
-        // Whatever bodies are still being read get a moment to land; a read
-        // that outlives this is a body the trace goes without.
-        var reads = _pending.Keys.ToArray();
-        if (reads.Length > 0)
-        {
-            try
-            {
-                await Task.WhenAll(reads).WaitAsync(GatherTimeout).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is TimeoutException or AggregateException)
-            {
-                _logger.LogDebug(ex, "the recorder left {Count} body read(s) behind", reads.Length);
-            }
-        }
+        await FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     private void OnRequest(object? sender, IRequest request) => Track(RecordRequestAsync(request));
