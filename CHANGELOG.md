@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.10.0](https://github.com/okkes/munnimok/compare/v5.9.0...v5.10.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **api:** the lab's relay at /lab with a lab subject per operator ([c4e3253](https://github.com/okkes/munnimok/commit/c4e32535bb09cc6f018f3b03e62a0525aa8c9a12))
+* **infra:** the lab in every environment ([0a07071](https://github.com/okkes/munnimok/commit/0a0707123ff5ba19b426b7464f942832b4a790bf))
+* **lab:** the connector lab, a fifth app for the operator ([#441](https://github.com/okkes/munnimok/issues/441), slice L0) ([07f8001](https://github.com/okkes/munnimok/commit/07f800186237b1f55b2845cb0b29dff0c2dfd082))
+
 ## [5.9.0](https://github.com/okkes/munnimok/compare/v5.8.0...v5.9.0) (2026-10-05)
 
 
