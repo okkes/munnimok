@@ -1,6 +1,32 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HAPPY, renderLab, scriptFetch } from '../../test/harness';
+
+describe('Canaries — run now (L1)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    globalThis.location.hash = '';
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('runs a canary on demand and reloads the list', async () => {
+    let runs = 0;
+    const calls = scriptFetch({
+      ...HAPPY(),
+      'POST /lab/canaries/ah/run': () => {
+        runs += 1;
+        return { body: { providerId: 'ah', resource: 'receipts', intervalMinutes: 60, lastJobId: 'job_now' } };
+      },
+    });
+    renderLab('#/canaries');
+    fireEvent.click(await screen.findByTestId('canary-run-ah'));
+    await waitFor(() => expect(runs).toBe(1));
+    await waitFor(() => expect(calls.filter((c) => c === 'GET /lab/canaries').length).toBeGreaterThanOrEqual(2));
+  });
+});
 
 describe('Canaries and Settings', () => {
   beforeEach(() => {

@@ -3,8 +3,9 @@ import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
 import { hrefOf } from '../../app/router';
 import { minutes, tierOf, when } from '../../lib/format';
-import type { Canary, ProviderEntry, RemoteConsent } from '../../types';
+import type { Canary, HealthReport, ProviderEntry, ProviderHealth, RemoteConsent } from '../../types';
 import { KillSwitch } from './KillSwitch';
+import { ProviderHealthCard } from './ProviderHealth';
 import { agentLine, allFields, quotaLine, sessionLine } from './providerFacts';
 import { StateChip } from './StateChip';
 
@@ -14,13 +15,24 @@ type Inventory = 'closed' | 'loading' | 'none' | RemoteConsent[];
 export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const [entry, setEntry] = useState<ProviderEntry | null | 'unreachable' | 'loading'>('loading');
   const [canaries, setCanaries] = useState<Canary[]>([]);
+  const [health, setHealth] = useState<ProviderHealth | null>(null);
   const [inventory, setInventory] = useState<Inventory>('closed');
 
   const load = useCallback(async () => {
-    const [e, c] = await Promise.all([getJson<ProviderEntry>(call, `/lab/providers/${encodeURIComponent(id)}`), getJson<{ canaries: Canary[] }>(call, '/lab/canaries')]);
+    const [e, c, h] = await Promise.all([
+      getJson<ProviderEntry>(call, `/lab/providers/${encodeURIComponent(id)}`),
+      getJson<{ canaries: Canary[] }>(call, '/lab/canaries'),
+      getJson<HealthReport>(call, '/lab/health'),
+    ]);
     setEntry(e);
     setCanaries(c && c !== 'unreachable' ? c.canaries.filter((x) => x.providerId === id) : []);
+    setHealth(h && h !== 'unreachable' ? (h.providers.find((p) => p.providerId === id) ?? null) : null);
   }, [call, id]);
+
+  // the canary now, not on its next due minute: the control plane answers 202 with the run to follow
+  const runCanary = async () => {
+    if (await act(() => call(`/lab/canaries/${encodeURIComponent(id)}/run`, { method: 'POST' }))) await load();
+  };
   useEffect(() => {
     void load();
   }, [load]);
@@ -179,6 +191,8 @@ export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } 
         </table>
       </section>
 
+      <ProviderHealthCard id={p.id} health={health} />
+
       <section className="card" data-testid="provider-inventory-card">
         <div className="card-head">
           <h2>Inventory</h2>
@@ -247,12 +261,25 @@ export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } 
       </section>
 
       <section className="card" data-testid="provider-canary-card">
-        <h2>Canary</h2>
+        <div className="card-head">
+          <h2>Canary</h2>
+          {canaries.length > 0 && (
+            <button data-testid="provider-canary-run" className="btn" disabled={busy} onClick={() => void runCanary()}>
+              run now
+            </button>
+          )}
+        </div>
         {canaries.length === 0 && <p className="hint">No canary proves this party yet.</p>}
         {canaries.map((c) => (
           <p key={`${c.providerId}:${c.resource}`} data-testid="provider-canary">
             <span className="mono">{c.resource}</span> every {minutes(c.intervalMinutes)} · last run {when(c.lastRunAt)} ·{' '}
             {c.intact == null ? <span className="sub">not run yet</span> : <span className={`chip ${c.intact ? 'ok-chip' : 'danger-chip'}`}>{c.intact ? 'intact' : (c.verdict ?? 'broken')}</span>}
+            {c.lastJobId && (
+              <>
+                {' '}
+                · <a href={hrefOf(`jobs/${encodeURIComponent(c.lastJobId)}`)}>the run</a>
+              </>
+            )}
           </p>
         ))}
       </section>

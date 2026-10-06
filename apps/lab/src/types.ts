@@ -162,3 +162,68 @@ export interface HealthInfo {
   protocol?: number;
   capabilities?: Record<string, unknown>;
 }
+
+/** a run as the operator reads it (#441 L1): what happened, never what was typed */
+export interface OperatorJob {
+  jobId: string;
+  sessionId: string;
+  subject: string;
+  /** the relay's name for the subject; null for the lab's own runs and for people it cannot place */
+  who?: string | null;
+  providerId: string;
+  kind: string;
+  state: string;
+  resource?: string | null;
+  trigger?: string | null;
+  progress?: { step: string; stepsDone: string[]; found?: number | null; ahead?: number | null } | null;
+  attempts: number;
+  credentialSubmitted: boolean;
+  complete: boolean;
+  agentId?: string | null;
+  profileId?: string | null;
+  fleetOnly: boolean;
+  createdAt: string;
+  updatedAt: string;
+  error?: { code: string; retriable: boolean; userAction: string; messageKey: string } | null;
+  errorDetail?: string | null;
+  notes: string[];
+  params?: unknown;
+  config?: Record<string, string> | null;
+  artifacts: 'none' | 'pending' | 'retained';
+  domDigest?: string | null;
+  hasScreenshot: boolean;
+  artifactsExpireAt?: string | null;
+}
+
+export interface JobList {
+  jobs: OperatorJob[];
+  truncated: boolean;
+}
+
+export interface HealthWindow {
+  total: number;
+  succeeded: number;
+  failed: number;
+  expired: number;
+  open: number;
+  byCode: Record<string, number>;
+  byTrigger: Record<string, number>;
+  peopleAffected: number;
+}
+
+export interface ProviderHealth {
+  providerId: string;
+  status: ProviderStatus;
+  windows: Record<string, HealthWindow>;
+  lastSuccessAt?: string | null;
+  lastFailure?: { jobId: string; code: string; trigger?: string | null; at: string } | null;
+  sessions: Record<string, number>;
+  canary?: Canary | null;
+  reports: number;
+  pendingReports: number;
+}
+
+export interface HealthReport {
+  generatedAt: string;
+  providers: ProviderHealth[];
+}

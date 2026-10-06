@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LabConfig } from '../config';
 import { AgentsScreen } from '../features/agents/AgentsScreen';
 import { CanariesScreen } from '../features/canaries/CanariesScreen';
+import { JobScreen } from '../features/jobs/JobScreen';
+import { JobsScreen } from '../features/jobs/JobsScreen';
 import { DashboardScreen } from '../features/dashboard/DashboardScreen';
 import { ProviderScreen } from '../features/providers/ProviderScreen';
 import { ProvidersScreen } from '../features/providers/ProvidersScreen';
@@ -36,6 +38,7 @@ type Gate = 'loading' | 'ok' | 'denied' | 'unreachable' | 'disconnected';
 const NAV: readonly (readonly [string, string])[] = [
   ['', 'Dashboard'],
   ['providers', 'Providers'],
+  ['jobs', 'Jobs'],
   ['agents', 'Agents'],
   ['canaries', 'Canaries'],
   ['settings', 'Settings'],
@@ -152,6 +155,8 @@ export function LabApp({ config, getToken, signOut }: Readonly<LabAppProps>) {
         {gate === 'ok' && section === '' && <DashboardScreen {...screen} />}
         {gate === 'ok' && section === 'providers' && route[1] === undefined && <ProvidersScreen {...screen} />}
         {gate === 'ok' && section === 'providers' && route[1] !== undefined && <ProviderScreen {...screen} id={route[1]} />}
+        {gate === 'ok' && section === 'jobs' && route[1] === undefined && <JobsScreen {...screen} />}
+        {gate === 'ok' && section === 'jobs' && route[1] !== undefined && <JobScreen {...screen} id={route[1]} />}
         {gate === 'ok' && section === 'agents' && <AgentsScreen {...screen} />}
         {gate === 'ok' && section === 'canaries' && <CanariesScreen {...screen} />}
         {gate === 'ok' && section === 'settings' && <SettingsScreen {...screen} config={config} testAuth={!getToken} />}

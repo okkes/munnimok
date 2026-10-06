@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
 import { hrefOf } from '../../app/router';
@@ -7,15 +7,20 @@ import type { Canary } from '../../types';
 import { AbsentCard } from '../dashboard/DashboardScreen';
 
 /** the operator's own connections that prove a party still works, fetched on their interval */
-export function CanariesScreen({ call }: Readonly<ScreenProps>) {
+export function CanariesScreen({ call, busy, act }: Readonly<ScreenProps>) {
   const [canaries, setCanaries] = useState<Canary[] | null | 'unreachable' | 'loading'>('loading');
 
-  useEffect(() => {
-    void (async () => {
-      const res = await getJson<{ canaries: Canary[] }>(call, '/lab/canaries');
-      setCanaries(res === null || res === 'unreachable' ? res : res.canaries);
-    })();
+  const load = useCallback(async () => {
+    const res = await getJson<{ canaries: Canary[] }>(call, '/lab/canaries');
+    setCanaries(res === null || res === 'unreachable' ? res : res.canaries);
   }, [call]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const runNow = async (providerId: string) => {
+    if (await act(() => call(`/lab/canaries/${encodeURIComponent(providerId)}/run`, { method: 'POST' }))) await load();
+  };
 
   if (canaries === 'loading') {
     return (
@@ -60,6 +65,7 @@ export function CanariesScreen({ call }: Readonly<ScreenProps>) {
               <th>Every</th>
               <th>Last run</th>
               <th>Verdict</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -77,12 +83,23 @@ export function CanariesScreen({ call }: Readonly<ScreenProps>) {
                   ) : (
                     <span className={`chip ${c.intact ? 'ok-chip' : 'danger-chip'}`}>{c.intact ? 'intact' : (c.verdict ?? 'broken')}</span>
                   )}
+                  {c.lastJobId && (
+                    <>
+                      {' '}
+                      <a href={hrefOf(`jobs/${encodeURIComponent(c.lastJobId)}`)}>run</a>
+                    </>
+                  )}
+                </td>
+                <td className="cell-actions">
+                  <button data-testid={`canary-run-${c.providerId}`} className="btn" disabled={busy} onClick={() => void runNow(c.providerId)}>
+                    run now
+                  </button>
                 </td>
               </tr>
             ))}
             {canaries.length === 0 && (
               <tr>
-                <td colSpan={5} className="empty">
+                <td colSpan={6} className="empty">
                   No canaries configured.
                 </td>
               </tr>
