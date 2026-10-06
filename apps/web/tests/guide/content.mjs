@@ -23,6 +23,13 @@ export const GUIDE = [
     shots: ['01-shell-home', '59-overview-home'],
   },
   {
+    id: 'periods',
+    title: "Every period side by side",
+    body: "This period's See all on Home opens the Periods screen: the same six tiles — earned, spent, saved, invested, funded, repaid — for any period on record. The arrows walk back one period at a time, and every tile carries a chart over the whole history: closed periods as a solid line, the running one dashed as \"so far\", with the change against the period before under the amount.",
+    tips: ["Tap a dot on any chart and every card jumps to that period — the pager follows.", "A tile opens the drill-down for that kind, on the same period when it is among the six the drill shows.", "Up is green or red by what it means: spending less is good news, earning, saving, investing and repaying more are; funding stays neutral."],
+    shots: ['59-overview-home', '01-shell-home'],
+  },
+  {
     id: 'banks',
     title: 'Connecting your bank',
     body: `Settings → Global settings → All accounts. Connect a bank — the door leads to Settings → Connections, where GoCardless and Enable Banking list the banks (read-only PSD2 access — munni can never move money): pick the country and the bank, give permission on the bank's own page and land back in munni with the connection named — or import statements: pick your bank from the searchable list (ASN, ING, PayPal — or the universal CAMT.053 door for any other), several files at once, with a live transaction count while a big import runs for accounts your bank won't share; those are global, listed first. Manual cash/savings accounts live INSIDE a space — the overview lists them under their space, and creating one takes you to "This space's accounts" (the wallet icon; the bank icon is the global overview). Bank data lands once per account; each space picks its accounts with a start date AND decides what the account is to that space — checking, savings, a loan… or a funding account: a shared pot you send money to, whose transactions never show in the space and whose balance counts toward nothing. Connected and imported accounts both land global — nothing joins a space by itself: the result offers the attach step directly, with the account already picked, where you choose the account type and how far back its history shows. Attaching into a shared space first reminds you that its members will see the account.`,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, TxView } from '@/db/types';
-import { categoryBreakdown, collapsePairedLegs, contributionCents, overviewSummary, txsForCategory, txsForKind } from './overview';
-import { inPeriod, periodHistory } from './periods';
+import { categoryBreakdown, collapsePairedLegs, contributionCents, overviewSummary, overviewSummarySeries, txsForCategory, txsForKind } from './overview';
+import { inPeriod, periodHistory, periodHistoryCovering } from './periods';
 
 const PERIOD = { start: '2026-07-01', end: '2026-07-31' };
 
@@ -240,5 +240,33 @@ describe('categoryBreakdown', () => {
     expect(earned.reduce((sum, g) => sum + g.totalCents, 0)).toBe(earnedTotal);
     expect(earned.map((g) => g.catId)).toEqual(['income', 'reimbursement']);
     expect(overviewSummary(txs, accounts, PERIOD)).toMatchObject({ incomeCents: 105_000, expenseCents: 4_588 });
+  });
+});
+
+describe('period history (the Periods screen, user 2026-10-06)', () => {
+  it('overviewSummarySeries: one summary per period, in the order given', () => {
+    const periods = [
+      { start: '2026-06-01', end: '2026-06-30' },
+      { start: '2026-07-01', end: '2026-07-31' },
+    ];
+    const txs = [tx({ date: '2026-06-10', amountCents: -2000 }), tx({ date: '2026-07-10', amountCents: -1000 }), tx({ date: '2026-07-12', amountCents: 5000, txType: 'income' })];
+    const series = overviewSummarySeries(txs, accounts, periods);
+    expect(series.map((s) => s.expenseCents)).toEqual([2000, 1000]);
+    expect(series.map((s) => s.incomeCents)).toEqual([0, 5000]);
+  });
+
+  it('periodHistoryCovering: reaches back to the earliest date, at least two periods, at most the cap', () => {
+    const now = new Date(2026, 9, 6);
+    expect(periodHistoryCovering('month', 1, null, { cap: 36 }, now)).toHaveLength(2);
+    const back = periodHistoryCovering('month', 1, '2026-03-15', { cap: 36 }, now);
+    expect(back[0].start).toBe('2026-03-01');
+    expect(back.at(-1)?.start).toBe('2026-10-01');
+    expect(periodHistoryCovering('month', 1, '2000-01-01', { cap: 36 }, now)).toHaveLength(36);
+    expect(periodHistoryCovering('month', 1, '2030-01-01', { cap: 36 }, now)).toHaveLength(2);
+    // a period day in the future of the month: the running period started last month
+    const day20 = periodHistoryCovering('month', 20, '2026-09-25', { cap: 36 }, now);
+    expect(day20[0].start).toBe('2026-08-20');
+    expect(day20[1].start).toBe('2026-09-20');
+    expect(day20).toHaveLength(2);
   });
 });
