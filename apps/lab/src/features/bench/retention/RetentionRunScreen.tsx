@@ -6,7 +6,7 @@ import { hrefOf, navigate, useRouteQuery } from '../../../app/router';
 import { when } from '../../../lib/format';
 import type { AgentView, ProviderEntry, RetentionRun, RetentionStep, SessionView } from '../../../types';
 import { ConnectScreen } from '../ConnectScreen';
-import { DRIVERS, isDriven } from './retentionDriver';
+import { drive, isDriven } from './retentionDriver';
 import type { Phase, StepWrite } from './retentionDriver';
 import { isPersistent, readAgent, runChip, runVerdict, STEPS, stepChip } from './retentionFacts';
 
@@ -143,7 +143,7 @@ export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: strin
   useEffect(() => {
     if (live?.state !== 'running' || !party || !sessionId || !isDriven(phase) || driving.current === phase) return;
     driving.current = phase;
-    void DRIVERS[phase]({ call, run: live, sessionId, party, agent, wantsRelease, write, finish }).then(setPhase);
+    void drive(phase, { call, run: live, sessionId, party, agent, wantsRelease, write, finish }).then(setPhase);
   }, [phase, live, party, sessionId, agent, wantsRelease, call, write, finish]);
 
   // the end: the verdict from the steps, written once

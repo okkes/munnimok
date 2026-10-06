@@ -4,6 +4,9 @@ import { fetchOnce, isPersistent, keptLoginVerdict, latestFetchJob, noLoginVerdi
 
 export type Phase = 'sign-in' | 'fetch' | 'kept-login' | 'fetch-again' | 'release' | 'done';
 
+/** the phases the lab drives itself, once the sign-in is in */
+export type DrivenPhase = 'fetch' | 'kept-login' | 'fetch-again' | 'release';
+
 export interface StepWrite {
   name: string;
   state: RetentionStepState;
@@ -26,52 +29,49 @@ export interface DriverContext {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** step 2: one recorded fetch; a refusal ends the run */
-export async function runFetch(ctx: DriverContext): Promise<Phase> {
+/** step 2: one recorded fetch; whether the run goes on - a refusal ends it */
+async function fetchStep(ctx: DriverContext): Promise<boolean> {
   await ctx.write({ name: 'fetch', state: 'running' });
   const first = await fetchOnce(ctx.call, ctx.run.provider, ctx.sessionId, ctx.run.resource);
   await ctx.write({ name: 'fetch', state: first.ok ? 'pass' : 'fail', detail: first.detail, jobId: first.jobId });
-  if (first.ok) return 'kept-login';
-  await ctx.finish('failed');
-  return 'done';
+  if (!first.ok) await ctx.finish('failed');
+  return first.ok;
 }
 
 /** step 3: what the agent keeps now, read off the fleet */
-export async function runKeptLogin(ctx: DriverContext): Promise<Phase> {
+async function keptLoginStep(ctx: DriverContext): Promise<void> {
   if (!ctx.run.agentId) {
     await ctx.write({ name: 'kept-login', state: 'skip', detail: 'no agent was pinned; the queue chose' });
-    return 'fetch-again';
+    return;
   }
   const now = await readAgent(ctx.call, ctx.run.agentId);
   await ctx.write({ name: 'kept-login', ...keptLoginVerdict(now, ctx.run.provider, isPersistent(ctx.party)) });
-  return 'fetch-again';
 }
 
 /** step 4: a second fetch, judged by the steps the run went through */
-export async function runFetchAgain(ctx: DriverContext): Promise<Phase> {
+async function fetchAgainStep(ctx: DriverContext): Promise<void> {
   await ctx.write({ name: 'fetch-again', state: 'running' });
   const second = await fetchOnce(ctx.call, ctx.run.provider, ctx.sessionId, ctx.run.resource);
   if (!second.ok) {
     await ctx.write({ name: 'fetch-again', state: 'fail', detail: second.detail, jobId: second.jobId });
-    return 'release';
+    return;
   }
   const job = await latestFetchJob(ctx.call, ctx.sessionId);
   const verdict = noLoginVerdict(job);
   await ctx.write({ name: 'fetch-again', state: verdict.state, detail: `${second.detail}; ${verdict.detail}`, jobId: job?.jobId ?? second.jobId });
-  return 'release';
 }
 
 /** step 5: the hosted slot released and the wipe watched, when asked for */
-export async function runRelease(ctx: DriverContext): Promise<Phase> {
+async function releaseStep(ctx: DriverContext): Promise<void> {
   if (!ctx.wantsRelease || !ctx.run.agentId || !ctx.agent?.hosted) {
     await ctx.write({ name: 'release', state: 'skip', detail: ctx.agent?.hosted ? 'not asked for' : 'not a hosted slot' });
-    return 'done';
+    return;
   }
   await ctx.write({ name: 'release', state: 'running', detail: 'the slot is released; waiting for the wipe' });
   const released = await ctx.call(`/lab/private-agents/${encodeURIComponent(ctx.run.agentId)}/release`, { method: 'POST' }).catch(() => null);
   if (!released?.ok) {
     await ctx.write({ name: 'release', state: 'fail', detail: `the release was refused (HTTP ${released?.status ?? 'network'})` });
-    return 'done';
+    return;
   }
   const deadline = Date.now() + retentionTuning.wipeTimeoutMs;
   let verdict = wipeVerdict(await readAgent(ctx.call, ctx.run.agentId));
@@ -81,15 +81,25 @@ export async function runRelease(ctx: DriverContext): Promise<Phase> {
   }
   const timedOut = verdict.state === 'running';
   await ctx.write({ name: 'release', state: timedOut ? 'fail' : verdict.state, detail: timedOut ? `the wipe did not finish in time: ${verdict.detail}` : verdict.detail });
-  return 'done';
 }
 
-/** the phases after the sign-in, each handing over to the next */
-export const DRIVERS: Record<'fetch' | 'kept-login' | 'fetch-again' | 'release', (ctx: DriverContext) => Promise<Phase>> = {
-  fetch: runFetch,
-  'kept-login': runKeptLogin,
-  'fetch-again': runFetchAgain,
-  release: runRelease,
-};
+/** the phases after the sign-in: the step taken, then the phase that follows it */
+export async function drive(phase: DrivenPhase, ctx: DriverContext): Promise<Phase> {
+  switch (phase) {
+    case 'fetch':
+      return (await fetchStep(ctx)) ? 'kept-login' : 'done';
+    case 'kept-login':
+      await keptLoginStep(ctx);
+      return 'fetch-again';
+    case 'fetch-again':
+      await fetchAgainStep(ctx);
+      return 'release';
+    default:
+      await releaseStep(ctx);
+      return 'done';
+  }
+}
 
-export const isDriven = (phase: Phase): phase is keyof typeof DRIVERS => phase in DRIVERS;
+const DRIVEN: ReadonlySet<Phase> = new Set<Phase>(['fetch', 'kept-login', 'fetch-again', 'release']);
+
+export const isDriven = (phase: Phase): phase is DrivenPhase => DRIVEN.has(phase);
