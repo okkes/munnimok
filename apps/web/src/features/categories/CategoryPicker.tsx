@@ -11,7 +11,6 @@ import { Icon } from '@/ui/Icon';
 import { Chip, toneColor } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
-import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
 import { catName, useCategories } from './useCategories';
 import { useCategoryAvailability } from '@/application/planning';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -65,6 +64,17 @@ interface CategoryPickerProps {
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
+/** the nearest scrolling ancestor (the sheet's own scroller) back to its top */
+function rewindScroller(el: HTMLElement | null): void {
+  for (let node = el?.parentElement; node; node = node.parentElement) {
+    const overflow = globalThis.getComputedStyle(node).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') {
+      node.scrollTop = 0;
+      return;
+    }
+  }
+}
+
 export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter, counterAccounts, onPickWithCounter }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
@@ -132,12 +142,10 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     setQuery('');
   };
 
-  // #245 (user): the search rides along — #273 r2: 1:1 WITH the scroll
-  // (no animation; the finger owns the motion); the list's cap grows by
-  // exactly the freed height, so the tail always stays reachable.
-  // #323 (user): the query doubles as the hook's resetKey — a filtered
-  // (shorter) list must not inherit the unfiltered state's collapse slack
-  const { offset: searchOffset, onListScroll, reset: resetCollapse } = useSearchCollapse(noSpecials ? 56 : 90, query);
+  // 2026-10-06 (user): the picker takes the sheet's whole height and the
+  // search with its lenses stays pinned at the top (the #245/#273 ride-along
+  // field is gone) — the sheet's own scroller holds the list, so a rewind
+  // means scrolling THAT
   const listRef = useRef<HTMLDivElement>(null);
   // #273 r3 (user): reopening must start whole — field shown, list at
   // top. #329 (user): the ◆ lens resets with it — a filter toggled on
@@ -146,22 +154,23 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   // reopen (as the #323 resetKey it also rewinds the collapse slack).
   useEffect(() => {
     if (!open) return;
-    resetCollapse();
     setSpecialOnly(false);
     setCounterAcct(null); // #339: the chip resets with the lens/search
     setQuery('');
-    if (listRef.current) listRef.current.scrollTop = 0;
+    rewindScroller(listRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  // #323 (user): the hook dropped its offset on the query change — the
-  // scroller rewinds with it so the shorter result list starts at its top
+  // #323 (user): a query change rewinds the scroller so the shorter
+  // result list starts at its top
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = 0;
+    rewindScroller(listRef.current);
   }, [query]);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall" dragHandle>
-      <CollapsingSearch offset={searchOffset} testId="catpicker-search-wrap">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="full">
+      {/* the header is sticky inside the sheet's scroller and bleeds over
+          its padding, so the list scrolls away underneath it */}
+      <div className="sticky top-0 z-10 -mx-5 bg-bg px-5 pb-2" data-testid="catpicker-search-wrap">
         <SearchField testId="catpicker-search" value={query} onChange={setQuery} placeholder={t('cats.searchPlaceholder')} />
         {/* #246: the ◆ lens — hidden where specials are off the table */}
         {!noSpecials && (
@@ -172,44 +181,38 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
             </Chip>
           </div>
         )}
-      </CollapsingSearch>
-      <div
-        ref={listRef}
-        className="mt-2 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
-        style={{ maxHeight: 440 + searchOffset }}
-        data-testid="catpicker-list"
-        onScroll={onListScroll}
-      >
-      {/* #339 (user): pick-by-counter — "I know WHERE the money went,
-          not what to call it": a chip narrows to categories that can
-          point at that account, and the later pick suggests it */}
-      {counterAccounts && counterAccounts.length > 0 && (
-        <div className="mt-1 mb-1" data-testid="catpicker-counter-filter">
-          <div className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-ink-4">
-            {t('cats.counterFilter')}
-            <span title={t('cats.counterFilterHint')} aria-label={t('cats.counterFilterHint')}>
-              <Icon name="information-outline" size={13} color="var(--m-ink-4)" />
-            </span>
+        {/* #339 (user): pick-by-counter — "I know WHERE the money went,
+            not what to call it": a chip narrows to categories that can
+            point at that account, and the later pick suggests it */}
+        {counterAccounts && counterAccounts.length > 0 && (
+          <div className="mt-2" data-testid="catpicker-counter-filter">
+            <div className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-ink-4">
+              {t('cats.counterFilter')}
+              <span title={t('cats.counterFilterHint')} aria-label={t('cats.counterFilterHint')}>
+                <Icon name="information-outline" size={13} color="var(--m-ink-4)" />
+              </span>
+            </div>
+            <ScrollRow className="mt-1" tone="surface">
+              {counterAccounts.map((a) => (
+                <Chip
+                  key={a.id}
+                  testId={`catpicker-counter-${a.id}`}
+                  selected={counterAcct === a.id}
+                  onClick={() => setCounterAcct((v) => (v === a.id ? null : a.id))}
+                >
+                  {a.name}
+                </Chip>
+              ))}
+            </ScrollRow>
+            {counterAcct && (
+              <p className="px-1 pt-0.5 text-[11px] text-ink-4" data-testid="catpicker-counter-note">
+                {t('cats.counterFilterActive')}
+              </p>
+            )}
           </div>
-          <ScrollRow className="mt-1" tone="surface">
-            {counterAccounts.map((a) => (
-              <Chip
-                key={a.id}
-                testId={`catpicker-counter-${a.id}`}
-                selected={counterAcct === a.id}
-                onClick={() => setCounterAcct((v) => (v === a.id ? null : a.id))}
-              >
-                {a.name}
-              </Chip>
-            ))}
-          </ScrollRow>
-          {counterAcct && (
-            <p className="px-1 pt-0.5 text-[11px] text-ink-4" data-testid="catpicker-counter-note">
-              {t('cats.counterFilterActive')}
-            </p>
-          )}
-        </div>
-      )}
+        )}
+      </div>
+      <div ref={listRef} className="mt-1" data-testid="catpicker-list">
       {/* #322 (user): the narrowed list says WHY and offers the way out —
           detaching the counterparty right here frees the whole catalog
           without a trip back to the counter row */}

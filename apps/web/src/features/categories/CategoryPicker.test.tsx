@@ -170,7 +170,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await screen.findByTestId('catpicker-groceries');
   }, 15_000);
 
-  it('the search field rides the scroll 1:1, comes back whole on a filter change, and never overshoots a short list', async () => {
+  it('the picker is full height, with the search and its lenses pinned at the top while the list scrolls (user 2026-10-06)', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
@@ -180,52 +180,17 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
 
-    const list = screen.getByTestId('catpicker-list') as HTMLElement;
-    Object.defineProperty(list, 'scrollHeight', { value: 1400, configurable: true });
-    Object.defineProperty(list, 'clientHeight', { value: 400, configurable: true });
-    const wrapper = screen.getByTestId('catpicker-search-wrap') as HTMLElement;
-    const shown = () => Number.parseFloat(wrapper.style.height);
-    const listCap = () => Number.parseFloat(list.style.maxHeight);
-    const whole = shown();
-    const capAtRest = listCap();
-
-    // 30px of downward travel tucks exactly 30px of the field away — and
-    // the list's cap grows by the same amount, so the tail stays reachable
-    list.scrollTop = 30;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(shown()).toBe(whole - 30));
-    expect(listCap()).toBe(capAtRest + 30);
-    expect(wrapper.style.pointerEvents).toBe('');
-    // far enough down the field settles on its collapsed floor, still tappable
-    list.scrollTop = 400;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(shown()).toBeLessThan(whole - 30));
-    const floor = shown();
-    expect(floor).toBeGreaterThan(0);
-    // upward travel reveals it the same 1:1 way
-    list.scrollTop = 340;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(shown()).toBe(floor + 60));
-
-    // a query change shrinks the content: the field returns whole and the
-    // list rewinds to its top instead of rubber-banding on stale slack
-    list.scrollTop = 400;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(shown()).toBe(floor));
-    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'groc' } });
-    await waitFor(() => expect(shown()).toBe(whole));
-    expect(listCap()).toBe(capAtRest);
-    expect(list.scrollTop).toBe(0);
-
-    // a SHORT list only spends the scroll room still below it: 150 of a
-    // 200px range leaves 50px, so at most 50px of the field tucks away
-    Object.defineProperty(list, 'scrollHeight', { value: 600, configurable: true });
-    list.scrollTop = 150;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(shown()).toBe(whole - 50));
+    const wrap = screen.getByTestId('catpicker-search-wrap');
+    expect(wrap.className).toContain('sticky');
+    expect(wrap.contains(screen.getByTestId('catpicker-search'))).toBe(true);
+    expect(wrap.contains(screen.getByTestId('catpicker-special-filter'))).toBe(true);
+    // the whole height: the Sheet marks a full-size body
+    expect(wrap.closest('[data-full]')).toBeTruthy();
+    // no inner scroller caps the list any more — the sheet's own scrolls
+    expect((screen.getByTestId('catpicker-list') as HTMLElement).style.maxHeight).toBe('');
   }, 15_000);
 
-  it('lens, query and the tucked-away field all reset when the picker closes — the next visit starts whole', async () => {
+  it('lens and query reset when the picker closes — the next visit starts whole', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
@@ -234,20 +199,11 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
-    const shown = () => Number.parseFloat((screen.getByTestId('catpicker-search-wrap') as HTMLElement).style.height);
-    const whole = shown();
 
     fireEvent.click(screen.getByTestId('catpicker-special-filter'));
     await waitFor(() => expect(screen.queryByTestId('catpicker-groceries')).toBeNull());
     // a typed query must not survive the close either…
     fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'gro' } });
-    // …nor a field scrolled partly out of sight
-    const list = screen.getByTestId('catpicker-list') as HTMLElement;
-    Object.defineProperty(list, 'scrollHeight', { value: 1400, configurable: true });
-    Object.defineProperty(list, 'clientHeight', { value: 400, configurable: true });
-    list.scrollTop = 40;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(shown()).toBeLessThan(whole));
     // dismiss WITHOUT picking (Escape reaches only the top sheet)…
     fireEvent.keyDown(window, { key: 'Escape' });
     // …and the reopened picker starts whole: chip off, field empty and
@@ -256,7 +212,6 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await screen.findByTestId('catpicker-groceries');
     expect(screen.getByTestId('catpicker-special-filter').getAttribute('aria-pressed')).toBe('false');
     expect((screen.getByTestId('catpicker-search') as HTMLInputElement).value).toBe('');
-    await waitFor(() => expect(shown()).toBe(whole));
   }, 15_000);
 
   it('#322: a counter-narrowed picker offers the detach door — tap frees the full catalog in place', async () => {
