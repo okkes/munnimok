@@ -38,6 +38,7 @@ describe('admin runtime config overlay', () => {
       logtoEndpoint: 'https://logto-iac.example.test',
       logtoAppId: 'iac-admin-app',
       logtoResource: 'https://munni-iac-api.example.test',
+      labUrl: 'http://localhost:5177',
     });
     expect(glitchtipDsn).toBe('https://key@glitchtip-iac.example.test/2');
   });

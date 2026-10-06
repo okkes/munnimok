@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './config';
-import { ConnectorsScreen } from './ConnectorsScreen';
 import bundledCatalog from './generated/bundledCatalog.json';
 
 interface UserDiagnosis {
@@ -289,7 +288,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
         {!blocked && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
-        {!blocked && screen === 'connectors' && <ConnectorsScreen call={call} busy={busy} act={act} />}
+        {!blocked && screen === 'connectors' && <LabHandoverScreen labUrl={config.labUrl} />}
         {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}
@@ -305,6 +304,24 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
         )}
       </main>
     </div>
+  );
+}
+
+/** #441: the connectors are the lab's now — every operator act on a party, an agent or a slot lives there */
+function LabHandoverScreen({ labUrl }: Readonly<{ labUrl: string }>) {
+  return (
+    <>
+      <h1>Connectors</h1>
+      <section className="card" data-testid="connectors-handover">
+        <p className="hint">
+          The connectors moved to the lab: the parties with the kill switch, the fleet and the private slots, the canaries and an
+          aggregator&apos;s inventory — and from there the test bench and the recorder. Same account, same admin role.
+        </p>
+        <a className="btn" data-testid="connectors-open-lab" href={labUrl} target="_blank" rel="noreferrer">
+          Open the lab
+        </a>
+      </section>
+    </>
   );
 }
 
