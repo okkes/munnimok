@@ -21,6 +21,7 @@ export function BenchScreen({ call }: Readonly<ScreenProps>) {
   const [sessions, setSessions] = useState<LabSessionRow[] | null | 'unreachable' | 'loading'>('loading');
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const [party, setParty] = useState('');
+  const [address, setAddress] = useState('');
 
   const load = useCallback(async () => {
     const [s, c] = await Promise.all([getJson<LabSessionRow[]>(call, '/lab/bench/sessions'), getJson<Catalogue>(call, '/lab/providers')]);
@@ -78,6 +79,12 @@ export function BenchScreen({ call }: Readonly<ScreenProps>) {
           connect
         </button>
       </div>
+      <div className="row" style={{ marginBottom: 8 }} data-testid="bench-explore">
+        <input data-testid="bench-explore-url" value={address} placeholder="https://… explore a site that has no adapter yet" onChange={(e) => setAddress(e.target.value)} />
+        <button className="btn quiet" data-testid="bench-explore-go" disabled={!/^https?:\/\/\S+/.test(address.trim())} onClick={() => navigate(`bench/connect/explore?url=${encodeURIComponent(address.trim())}`)}>
+          explore
+        </button>
+      </div>
       <p className="hint">
         Your own connections at the parties, made under the lab subject: sign in the way a person would (codes, pictures, the live browser),
         say where the run happens (the fleet or one agent), fetch a resource and read the records back — nothing is ingested, nothing
@@ -102,7 +109,7 @@ export function BenchScreen({ call }: Readonly<ScreenProps>) {
                 <td>
                   <div className="cell-title">
                     <a href={hrefOf(`bench/sessions/${encodeURIComponent(s.sessionId)}`)} onClick={(e) => e.stopPropagation()}>
-                      {nameOf(s.provider)}
+                      {s.provider === 'explore' ? 'Explore a site' : nameOf(s.provider)}
                     </a>
                   </div>
                   <div className="cell-sub mono">{shortId(s.sessionId)}</div>

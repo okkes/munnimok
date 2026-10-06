@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
-import { hrefOf } from '../../app/router';
+import { hrefOf, navigate } from '../../app/router';
 import { when } from '../../lib/format';
 import type { OperatorJob } from '../../types';
 import { stateChip, triggerWord, whoLine } from './jobFacts';
@@ -107,6 +107,23 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
         <h2>What it asked for</h2>
         <pre className="code">{JSON.stringify({ params: job.params ?? null, config: job.config ?? {} }, null, 2)}</pre>
       </section>
+
+      {job.trace && (
+        <section className="card" data-testid="job-trace">
+          <div className="card-head">
+            <h2>The recording</h2>
+            <button className="btn" data-testid="job-trace-open" onClick={() => navigate(`jobs/${encodeURIComponent(job.jobId)}/trace`)}>
+              open the recording
+            </button>
+          </div>
+          <div className="facts">
+            <Fact label="Entries" value={`${job.trace.entries}${job.trace.truncated ? ` (${job.trace.dropped} dropped — the book ran out of room)` : ''}`} />
+            <Fact label="Size" value={`${(job.trace.bytes / 1024).toFixed(1)} KB packed`} />
+            <Fact label="Ran" value={`${when(job.trace.startedAt)} → ${when(job.trace.endedAt)}`} />
+            <Fact label="Kept until" value={when(job.trace.expiresAt)} />
+          </div>
+        </section>
+      )}
 
       <section className="card" data-testid="job-artifacts">
         <h2>What it left behind</h2>

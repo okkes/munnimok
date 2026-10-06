@@ -27,6 +27,7 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   const [job, setJob] = useState<JobView | null>(null);
   const [canaryResource, setCanaryResource] = useState('');
   const [every, setEvery] = useState('60');
+  const [record, setRecord] = useState(false);
 
   const load = useCallback(async () => {
     const list = await getJson<LabSessionRow[]>(call, '/lab/bench/sessions');
@@ -82,7 +83,7 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
     setRunning('fetch');
     const res = await call(`/lab/bench/sessions/${encodeURIComponent(id)}/fetch`, {
       method: 'POST',
-      body: JSON.stringify({ resource: chosen, params: paramsBody(params, values) }),
+      body: JSON.stringify({ resource: chosen, params: paramsBody(params, values), ...(record ? { record: true } : {}) }),
     }).catch(() => null);
     if (!res?.ok) {
       setFetchError(await reasonOf(res));
@@ -187,6 +188,9 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
           {params.map((p) => (
             <ParamInput key={p.key} spec={p} value={values[p.key]} onChange={(v) => setValue(p.key, v)} />
           ))}
+          <button type="button" role="switch" aria-checked={record} className={`btn quiet${record ? ' on' : ''}`} data-testid="bench-fetch-record" onClick={() => setRecord((v) => !v)}>
+            {record ? 'recording' : 'record'}
+          </button>
           <button className="btn" data-testid="bench-fetch" disabled={!session.hasBundle || running !== null || !chosen} onClick={() => void fetchNow()}>
             {running ? 'fetching…' : 'fetch'}
           </button>

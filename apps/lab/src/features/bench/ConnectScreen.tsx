@@ -2,13 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getJson, reasonOf } from '../../app/api';
 import type { Call } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
-import { hrefOf, navigate } from '../../app/router';
-import type { AgentView, ChallengeView, ProviderEntry, SessionView } from '../../types';
+import { hrefOf, navigate, useRouteQuery } from '../../app/router';
+import type { AgentView, ChallengeView, JobList, ProviderEntry, SessionView } from '../../types';
 import { encodeTaps, signInFields, TERMINAL } from './benchFacts';
 import { LiveView } from './LiveView';
 import { sessionChip } from './BenchScreen';
 
 const POLL_MS = 1_500;
+
+/** the control plane's own provider for an explore run (#441 L3): a browser the operator drives, recorded throughout */
+export const EXPLORE = 'explore';
 
 /** the picture a challenge carries, fetched with the lab's credentials */
 function useChallengeImage(call: Call, provider: string, sessionId: string | null, challenge: ChallengeView | null | undefined): string | null {
@@ -45,9 +48,17 @@ function useChallengeImage(call: Call, provider: string, sessionId: string | nul
  * a choice, a page to open, the live browser), answered here.
  */
 export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: string } & ScreenProps>) {
+  const explore = provider === EXPLORE;
+  const query = useRouteQuery();
   const [party, setParty] = useState<ProviderEntry | null | 'loading'>('loading');
+  const [record, setRecord] = useState(explore);
+  const [recordingJob, setRecordingJob] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentView[]>([]);
-  const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [inputs, setInputs] = useState<Record<string, string>>(() => {
+    const url = explore ? query.get('url') : null;
+    const initial: Record<string, string> = url ? { url } : {};
+    return initial;
+  });
   const [config, setConfig] = useState<Record<string, string>>({});
   const [label, setLabel] = useState('');
   const [runOn, setRunOn] = useState('');
@@ -81,6 +92,15 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
   }, [call, base]);
 
   useEffect(() => {
+    if (!record || !view || !TERMINAL.has(view.state) || recordingJob) return;
+    void (async () => {
+      const list = await getJson<JobList>(call, `/lab/jobs?session=${encodeURIComponent(view.sessionId)}&limit=1`);
+      if (!alive.current || !list || list === 'unreachable') return;
+      setRecordingJob(list.jobs[0]?.jobId ?? null);
+    })();
+  }, [record, view, recordingJob, call]);
+
+  useEffect(() => {
     if (!view || TERMINAL.has(view.state)) return undefined;
     if (view.state === 'awaiting_input' && view.challenge?.type === 'live_view') return undefined; // the live view says when the page moved on
     const timer = setInterval(() => void refresh(view.sessionId), POLL_MS);
@@ -90,7 +110,9 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
   const start = async () => {
     setError(null);
     setSending(true);
-    const res = await call(base, { method: 'POST', body: JSON.stringify({ inputs, config, label: label || undefined, preferAgent: runOn || undefined }) }).catch(() => null);
+    const res = explore
+      ? await call('/lab/bench/explore', { method: 'POST', body: JSON.stringify({ url: inputs.url ?? '', label: label || undefined, preferAgent: runOn || undefined }) }).catch(() => null)
+      : await call(base, { method: 'POST', body: JSON.stringify({ inputs, config, label: label || undefined, preferAgent: runOn || undefined, ...(record ? { record: true } : {}) }) }).catch(() => null);
     setSending(false);
     if (!res?.ok) {
       setError(await reasonOf(res));
@@ -144,18 +166,26 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
         <a href={hrefOf('bench')}>← Bench</a>
       </p>
       <div className="head-row">
-        <h1 data-testid="bench-connect-title">Connect to {party.name}</h1>
+        <h1 data-testid="bench-connect-title">{explore ? 'Explore a site' : `Connect to ${party.name}`}</h1>
         <span className="sub mono">{party.id}</span>
         <span className="spacer" />
       </div>
 
       {!view && (
         <section className="card" data-testid="bench-connect-form">
-          <h2>Sign in</h2>
-          <p className="hint">
-            The manifest&apos;s own form ({party.auth?.flow ?? 'password'}); what you type goes to the party under the lab subject and is kept nowhere here.
-            {party.auth?.challenges?.length ? ` It may ask: ${party.auth.challenges.join(', ')}.` : ''}
-          </p>
+          <h2>{explore ? 'Start at' : 'Sign in'}</h2>
+          {explore ? (
+            <p className="hint" data-testid="bench-explore-hint">
+              A browser on a fleet agent opens at this address (a public host — never the NAS&apos;s own network). Drive it through the live view:
+              tap, type, open another address, go back, reload. Everything the browser does is recorded with the secrets taken out; press done
+              when you have seen enough and read the recording in the job history.
+            </p>
+          ) : (
+            <p className="hint">
+              The manifest&apos;s own form ({party.auth?.flow ?? 'password'}); what you type goes to the party under the lab subject and is kept nowhere here.
+              {party.auth?.challenges?.length ? ` It may ask: ${party.auth.challenges.join(', ')}.` : ''}
+            </p>
+          )}
           <div className="facts">
             {fields.map((f) => (
               <label key={`${f.step}:${f.key}`} className="fact">
@@ -173,6 +203,14 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
               </label>
             ))}
             {fields.length === 0 && <p className="hint">No typed fields — the party signs you in on its own page.</p>}
+            {!explore && (
+              <div className="fact">
+                <span className="fact-label">record</span>
+                <button type="button" role="switch" aria-checked={record} className={`btn quiet${record ? ' on' : ''}`} data-testid="bench-record" onClick={() => setRecord((v) => !v)}>
+                  {record ? 'recording this run' : 'not recorded'}
+                </button>
+              </div>
+            )}
             {configFields.map((f) => (
               <label key={f.key} className="fact">
                 <span className="fact-label">
@@ -201,7 +239,7 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
           </div>
           <div className="row">
             <button className="btn" data-testid="bench-start" disabled={!ready || sending} onClick={() => void start()}>
-              {sending ? 'starting…' : 'sign in'}
+              {sending ? 'starting…' : explore ? 'open' : 'sign in'}
             </button>
           </div>
         </section>
@@ -254,7 +292,19 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
               </h3>
               {challenge.promptKey && <p className="hint mono">{challenge.promptKey}</p>}
               {challenge.type === 'live_view' && (
-                <LiveView call={call} provider={provider} sessionId={view.sessionId} challengeId={challenge.id} onEnded={() => void refresh(view.sessionId)} />
+                <>
+                  <LiveView call={call} provider={provider} sessionId={view.sessionId} challengeId={challenge.id} navigation={explore} onEnded={() => void refresh(view.sessionId)} />
+                  {explore && (
+                    <div className="row" style={{ marginTop: 8 }}>
+                      <button className="btn" data-testid="bench-explore-done" disabled={sending} onClick={() => void send('done')}>
+                        done — stop recording
+                      </button>
+                      <button className="btn quiet" data-testid="bench-explore-more" disabled={sending} onClick={() => void send('more')}>
+                        another 30 minutes
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
               {(challenge.type === 'mfa_code' || (challenge.type === 'image' && challenge.answerKind !== 'taps')) && (
                 <div className="row">
@@ -351,7 +401,12 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
                 cancel
               </button>
             )}
-            {view.state === 'active' && (
+            {recordingJob && (
+              <button className="btn" data-testid="bench-open-recording" onClick={() => navigate(`jobs/${encodeURIComponent(recordingJob)}/trace`)}>
+                open the recording
+              </button>
+            )}
+            {view.state === 'active' && !explore && (
               <button className="btn" data-testid="bench-open-session" onClick={() => navigate(`bench/sessions/${encodeURIComponent(view.sessionId)}`)}>
                 connected — open the session
               </button>

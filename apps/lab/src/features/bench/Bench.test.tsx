@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BENCH_SESSIONS, CATALOGUE, HAPPY, renderLab, scriptFetch } from '../../test/harness';
+import { BENCH_SESSIONS, CATALOGUE, HAPPY, JOBS, renderLab, scriptFetch } from '../../test/harness';
 import { cellText, columnsOf, encodeTaps, paramsBody } from './benchFacts';
 import { parseSize } from './LiveView';
 
@@ -411,5 +411,104 @@ describe('Bench — the edges', () => {
   it('the helpers once more: a boolean cell, a param left out', () => {
     expect(cellText(true)).toBe('true');
     expect(paramsBody([{ key: 'a', type: 'text' }], {})).toEqual({});
+  });
+});
+
+describe('Bench — explore and record', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    globalThis.location.hash = '';
+    vi.stubGlobal('confirm', vi.fn((_message?: string) => true));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('the bench opens an explore run at a typed address; the view takes an address, back and reload; done ends it and the recording opens', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const inputs: { kind: string; url?: string }[] = [];
+    const answers: string[] = [];
+    scriptFetch({
+      ...HAPPY(),
+      'POST /lab/bench/explore': (init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return { status: 202, body: { sessionId: 'ses_x', state: 'awaiting_input', challenge: { id: 'cx', type: 'live_view', promptKey: 'lab.explore.drive', expiresAt: '2026-10-06T12:30:00Z' } } };
+      },
+      'GET /lab/bench/explore/login/ses_x/challenges/cx/live/frame': () => ({ raw: 'jpeg', contentType: 'image/jpeg' }),
+      'POST /lab/bench/explore/login/ses_x/challenges/cx/live/input': (init) => {
+        inputs.push(...((JSON.parse(String(init?.body)) as { events: { kind: string; url?: string }[] }).events));
+        return { status: 202 };
+      },
+      'POST /lab/bench/explore/login/ses_x/answer': (init) => {
+        answers.push((JSON.parse(String(init?.body)) as { value: string }).value);
+        return { body: { sessionId: 'ses_x', state: 'active' } };
+      },
+      'GET /lab/jobs': () => ({ body: { jobs: [JOBS.jobs[2]], truncated: false } }),
+    });
+    renderLab('#/bench');
+    const box = await screen.findByTestId('bench-explore-url');
+    expect((screen.getByTestId('bench-explore-go') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(box, { target: { value: 'https://www.example.com/' } });
+    fireEvent.click(screen.getByTestId('bench-explore-go'));
+    await waitFor(() => expect(globalThis.location.hash).toBe('#/bench/connect/explore?url=https%3A%2F%2Fwww.example.com%2F'));
+
+    expect((await screen.findByTestId('bench-connect-title')).textContent).toBe('Explore a site');
+    expect(screen.getByTestId('bench-explore-hint').textContent).toContain('recorded');
+    expect((screen.getByTestId('bench-input-url') as HTMLInputElement).value).toBe('https://www.example.com/');
+    expect(screen.queryByTestId('bench-record')).toBeNull();
+    fireEvent.click(screen.getByTestId('bench-start'));
+
+    await screen.findByTestId('bench-live-nav');
+    expect(bodies[0]).toEqual({ url: 'https://www.example.com/' });
+    fireEvent.change(screen.getByTestId('bench-live-address'), { target: { value: 'https://www.example.com/orders' } });
+    fireEvent.click(screen.getByTestId('bench-live-go'));
+    fireEvent.click(screen.getByTestId('bench-live-back'));
+    fireEvent.click(screen.getByTestId('bench-live-reload'));
+    await waitFor(() => expect(inputs.map((e) => e.kind)).toEqual(['navigate', 'back', 'reload']), { timeout: 3000 });
+    expect(inputs[0].url).toBe('https://www.example.com/orders');
+
+    fireEvent.click(screen.getByTestId('bench-explore-done'));
+    await waitFor(() => expect(answers).toEqual(['done']));
+    await screen.findByTestId('bench-open-recording', {}, { timeout: 4000 });
+    expect(screen.queryByTestId('bench-open-session')).toBeNull();
+    fireEvent.click(screen.getByTestId('bench-open-recording'));
+    expect(globalThis.location.hash).toBe('#/jobs/job_lab1/trace');
+  }, 12_000);
+
+  it('a sign-in and a fetch carry the record flag only when it is switched on', async () => {
+    const logins: Record<string, unknown>[] = [];
+    const fetches: Record<string, unknown>[] = [];
+    scriptFetch({
+      ...HAPPY(),
+      'POST /lab/bench/mock-store-simple/login': (init) => {
+        logins.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return { body: { sessionId: 'ses_r', state: 'active' } };
+      },
+      'POST /lab/bench/sessions/ses_lab1/fetch': (init) => {
+        fetches.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return { body: { accepted: false, resource: 'receipts', data: [], complete: true } };
+      },
+    });
+    renderLab('#/bench/connect/mock-store-simple');
+    fireEvent.change(await screen.findByTestId('bench-input-username'), { target: { value: 'u' } });
+    fireEvent.change(screen.getByTestId('bench-input-password'), { target: { value: 'p' } });
+    expect(screen.getByTestId('bench-record').textContent).toBe('not recorded');
+    fireEvent.click(screen.getByTestId('bench-record'));
+    expect(screen.getByTestId('bench-record').textContent).toBe('recording this run');
+    fireEvent.click(screen.getByTestId('bench-start'));
+    await screen.findByTestId('bench-run');
+    expect(logins[0].record).toBe(true);
+    cleanup();
+
+    renderLab('#/bench/sessions/ses_lab1');
+    await screen.findByTestId('bench-session-title');
+    fireEvent.click(screen.getByTestId('bench-fetch'));
+    await waitFor(() => expect(fetches).toHaveLength(1));
+    expect(fetches[0].record).toBeUndefined();
+    fireEvent.click(screen.getByTestId('bench-fetch-record'));
+    fireEvent.click(screen.getByTestId('bench-fetch'));
+    await waitFor(() => expect(fetches).toHaveLength(2));
+    expect(fetches[1].record).toBe(true);
   });
 });

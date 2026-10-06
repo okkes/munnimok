@@ -193,6 +193,72 @@ export interface OperatorJob {
   domDigest?: string | null;
   hasScreenshot: boolean;
   artifactsExpireAt?: string | null;
+  /** the run's recording, when one is kept (#441 L3) */
+  trace?: TraceSummary | null;
+}
+
+export interface TraceSummary {
+  entries: number;
+  dropped: number;
+  truncated: boolean;
+  bytes: number;
+  startedAt: string;
+  endedAt: string;
+  capturedAt: string;
+  expiresAt: string;
+}
+
+export type TraceKind = 'navigation' | 'request' | 'response' | 'console' | 'dom' | 'note';
+
+export interface TraceHeader {
+  name: string;
+  value: string;
+}
+
+/** one line of a recording: a navigation, a call, an answer, a console line, a document snapshot, a note */
+export interface TraceEntry {
+  seq: number;
+  atMs: number;
+  kind: TraceKind;
+  via?: string | null;
+  method?: string | null;
+  url?: string | null;
+  status?: number | null;
+  resourceType?: string | null;
+  contentType?: string | null;
+  size?: number | null;
+  headers?: TraceHeader[];
+  body?: string | null;
+  bodyTruncated?: boolean;
+  text?: string | null;
+  level?: string | null;
+  html?: string | null;
+  htmlTruncated?: boolean;
+}
+
+export interface TraceCookie {
+  name: string;
+  domain: string;
+  path: string;
+  expires?: string | null;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: string | null;
+  valueLength: number;
+  valueHash: string;
+}
+
+/** a run's recording (#441 L3), as the control plane kept it: redacted before it was written */
+export interface JobTrace {
+  version: number;
+  jobId: string;
+  provider: string;
+  startedAt: string;
+  endedAt: string;
+  entries: TraceEntry[];
+  cookies: TraceCookie[];
+  truncated: boolean;
+  dropped: number;
 }
 
 export interface JobList {

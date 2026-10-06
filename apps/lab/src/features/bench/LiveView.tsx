@@ -16,7 +16,7 @@ const FLUSH_MS = 80;
 const BATCH_MAX = 64;
 const MOVE_GAP_MS = 40;
 
-export type LiveInputKind = 'move' | 'down' | 'up' | 'scroll' | 'text' | 'key';
+export type LiveInputKind = 'move' | 'down' | 'up' | 'scroll' | 'text' | 'key' | 'navigate' | 'back' | 'reload';
 
 export interface LiveInputEvent {
   kind: LiveInputKind;
@@ -24,6 +24,8 @@ export interface LiveInputEvent {
   y?: number;
   text?: string;
   key?: string;
+  /** for navigate: the address to open — an explore run's vocabulary, refused everywhere else (#441 L3) */
+  url?: string;
   deltaY?: number;
   sequence: number;
 }
@@ -42,12 +44,14 @@ export function LiveView({
   sessionId,
   challengeId,
   onEnded,
-}: Readonly<{ call: Call; provider: string; sessionId: string; challengeId: string; onEnded?: () => void }>) {
+  navigation = false,
+}: Readonly<{ call: Call; provider: string; sessionId: string; challengeId: string; onEnded?: () => void; navigation?: boolean }>) {
   const base = `/lab/bench/${encodeURIComponent(provider)}/login/${encodeURIComponent(sessionId)}/challenges/${encodeURIComponent(challengeId)}/live`;
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [size, setSize] = useState({ width: 390, height: 844 });
   const [origin, setOrigin] = useState<string | null>(null);
   const [text, setText] = useState('');
+  const [address, setAddress] = useState('');
   const [sent, setSent] = useState(0);
   const sequence = useRef(0);
   const inputSequence = useRef(0);
@@ -160,8 +164,40 @@ export function LiveView({
     setText('');
   };
 
+  const go = () => {
+    const url = address.trim();
+    if (!/^https?:\/\/\S+/.test(url)) return;
+    push({ kind: 'navigate', url });
+  };
+
   return (
     <div data-testid="bench-live">
+      {navigation && (
+        <div className="row" style={{ marginBottom: 8 }} data-testid="bench-live-nav">
+          <button className="btn quiet" data-testid="bench-live-back" onClick={() => push({ kind: 'back' })}>
+            ← back
+          </button>
+          <button className="btn quiet" data-testid="bench-live-reload" onClick={() => push({ kind: 'reload' })}>
+            reload
+          </button>
+          <input
+            data-testid="bench-live-address"
+            value={address}
+            placeholder="https://… (a public host; Enter opens it)"
+            autoComplete="off"
+            onChange={(e) => setAddress(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                go();
+              }
+            }}
+          />
+          <button className="btn" data-testid="bench-live-go" onClick={go}>
+            open
+          </button>
+        </div>
+      )}
       <p className="hint">
         The party&apos;s page, live from the agent&apos;s browser: tap, type and scroll as the person would. {origin ? `Origin: ${origin}.` : ''}{' '}
         <span className="sub">{sent} input event(s) sent · frame {sequence.current}</span>

@@ -108,6 +108,22 @@ export const CATALOGUE = {
   ],
 };
 
+/** the control plane's own explore provider (#441 L3): one input, the address; the live view as its only challenge */
+export const EXPLORE_PROVIDER = {
+  id: 'explore',
+  name: 'Explore a site',
+  kind: 'lab',
+  country: 'NL',
+  manifestVersion: 1,
+  runtime: 'browser_interactive',
+  agent: { required: true, class: 'pooled' },
+  unattendedFetch: false,
+  secretCustody: 'client',
+  operatorOnly: true,
+  auth: { flow: 'challenge_response', config: [], steps: [{ id: 'start', fields: [{ key: 'url', type: 'text', required: true }] }], challenges: ['live_view'], session: { ttlSeconds: 86400, refreshable: false } },
+  resources: [],
+};
+
 export const AGENTS = {
   agents: [
     { id: 'agt_fleet1', name: 'munni dev pooled agent 1', class: 'pooled', revoked: false, lastHeartbeatAt: new Date(Date.now() - 20_000).toISOString(), online: true, stale: false, profiles: [] },
@@ -214,6 +230,7 @@ export const JOBS = {
       notes: ['read receipts and parsed what came back'],
       artifacts: 'none',
       hasScreenshot: false,
+      trace: { entries: 12, dropped: 0, truncated: false, bytes: 4096, startedAt: '2026-10-06T12:00:00Z', endedAt: '2026-10-06T12:00:09Z', capturedAt: '2026-10-06T12:00:10Z', expiresAt: '2026-11-05T12:00:10Z' },
     },
   ],
   truncated: false,
@@ -226,6 +243,32 @@ export const BENCH_SESSIONS = [
 ];
 
 /** the health report (#441 L1): one party broken today, one fine */
+/** a run's recording (#441 L3): a page, an API call with a JSON answer, a script nobody reads, a console error, the jar */
+export const TRACE = {
+  version: 1,
+  jobId: 'job_lab1',
+  provider: 'mock-store-simple',
+  startedAt: '2026-10-06T12:00:00Z',
+  endedAt: '2026-10-06T12:00:09Z',
+  truncated: false,
+  dropped: 0,
+  entries: [
+    { seq: 1, atMs: 0, kind: 'note', text: 'the browser\u2019s recorder is attached' },
+    { seq: 2, atMs: 120, kind: 'navigation', via: 'browser', url: 'https://shop.test/login' },
+    { seq: 3, atMs: 130, kind: 'request', via: 'browser', method: 'GET', url: 'https://shop.test/login', resourceType: 'document', headers: [{ name: 'cookie', value: 'sid=«redacted:32»' }] },
+    { seq: 4, atMs: 400, kind: 'response', via: 'browser', method: 'GET', url: 'https://shop.test/login', status: 200, resourceType: 'document', contentType: 'text/html; charset=utf-8', size: 2048, headers: [{ name: 'set-cookie', value: 'sid=«redacted:32»; Path=/; HttpOnly' }], body: '<html><body>login</body></html>' },
+    { seq: 5, atMs: 410, kind: 'request', via: 'browser', method: 'GET', url: 'https://shop.test/app.js', resourceType: 'script' },
+    { seq: 6, atMs: 900, kind: 'response', via: 'browser', method: 'GET', url: 'https://shop.test/app.js', status: 200, resourceType: 'script', contentType: 'application/javascript', size: 90000 },
+    { seq: 7, atMs: 1500, kind: 'request', via: 'browser', method: 'POST', url: 'https://shop.test/api/session', resourceType: 'fetch', contentType: 'application/json', body: '{"username":"shopper","password":"«redacted:7»"}' },
+    { seq: 8, atMs: 1900, kind: 'response', via: 'browser', method: 'POST', url: 'https://shop.test/api/session', status: 200, resourceType: 'fetch', contentType: 'application/json', size: 64, body: '{"ok":true,"orders":[{"id":"o1","total":12.5}]}' },
+    { seq: 9, atMs: 2000, kind: 'console', via: 'browser', level: 'error', text: 'Uncaught TypeError: x is undefined' },
+    { seq: 10, atMs: 2100, kind: 'dom', via: 'browser', url: 'https://shop.test/orders', text: 'sha256:orders-v9', html: '<html><body>orders</body></html>' },
+    { seq: 11, atMs: 2500, kind: 'response', via: 'http', method: 'GET', url: 'https://api.shop.test/v1/orders?token=«redacted:40»', status: 200, resourceType: 'http', contentType: 'application/json', size: 120, body: '[{"id":"o1"}]' },
+    { seq: 12, atMs: 9000, kind: 'note', text: 'the run ended' },
+  ],
+  cookies: [{ name: 'sid', domain: 'shop.test', path: '/', expires: null, httpOnly: true, secure: true, sameSite: 'Lax', valueLength: 32, valueHash: 'abcdef012345' }],
+};
+
 export const HEALTH_REPORT = {
   generatedAt: minutesAgo(0),
   providers: [
@@ -277,6 +320,10 @@ export const HAPPY = (): Record<string, Handler> => ({
   'GET /lab/jobs': () => ({ body: JOBS }),
   'GET /lab/jobs/job_failed1': () => ({ body: JOBS.jobs[0] }),
   'GET /lab/jobs/job_pending1': () => ({ body: JOBS.jobs[1] }),
+  'GET /lab/jobs/job_lab1': () => ({ body: JOBS.jobs[2] }),
+  'GET /lab/jobs/job_lab1/trace': () => ({ body: TRACE }),
+  'GET /lab/jobs/job_lab1/trace/digest.md': () => ({ raw: '# Recording of mock-store-simple', contentType: 'text/markdown' }),
+  'GET /lab/providers/explore': () => ({ body: EXPLORE_PROVIDER }),
   'GET /lab/jobs/job_failed1/artifacts/screenshot': () => ({ raw: 'not-really-a-png', contentType: 'image/png' }),
   'GET /lab/health': () => ({ body: HEALTH_REPORT }),
   'GET /lab/bench/sessions': () => ({ body: BENCH_SESSIONS }),
