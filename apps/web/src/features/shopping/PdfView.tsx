@@ -200,7 +200,9 @@ export function PdfView({ dataUrl, testId }: Readonly<{ dataUrl: string; testId:
 
   const step = (factor: number) => setZoom((z) => clampZoom(z * factor));
   const pageCount = doc?.numPages ?? 0;
-  const status = pageCount > 0 ? t('receipts.pageCount', { n: pageCount }) : t(failed ? 'receipts.pdfFailed' : 'receipts.pdfLoading');
+  let status = t('receipts.pdfLoading');
+  if (pageCount > 0) status = t('receipts.pageCount', { n: pageCount });
+  else if (failed) status = t('receipts.pdfFailed');
   const tool = 'm-tap flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-ink disabled:opacity-40';
   return (
     <div className="flex flex-col gap-2" data-testid={testId}>
