@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.14.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Behind the scenes: the connector lab can now prove that a household agent keeps a login and reuses it on the next sync — so a connection that should stay signed in gets checked before you notice.',
+        nl: 'Achter de schermen: het connector-lab kan nu aantonen dat een huishoud-agent een login bewaart en bij de volgende synchronisatie hergebruikt — zo wordt een koppeling die ingelogd hoort te blijven gecontroleerd voordat jij het merkt.',
+        tr: 'Perde arkasında: bağlayıcı laboratuvarı artık bir ev aracısının bir girişi sakladığını ve sonraki eşitlemede yeniden kullandığını kanıtlayabiliyor — böylece oturumda kalması gereken bir bağlantı sen fark etmeden kontrol edilir.',
+      },
+    ],
+  },
+  {
     version: '5.13.0',
     date: '2026-10-06',
     items: [
