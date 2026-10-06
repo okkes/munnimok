@@ -2800,4 +2800,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'sync.pendingShort': '{n} te syncen',
   'sync.pendingOnline': 'Wijzigingen die wachten op sync: {n}',
   'sync.pendingOffline': 'Opgeslagen op dit apparaat, nog niet gesynct: {n} — ze syncen zodra je weer online bent',
+  'recurring.linkPayment': 'Betaling koppelen',
+  'recurring.linkHint': 'Tik op een afschrijving om die aan {name} te koppelen; die komt bij de betalingen.',
+  'recurring.linkNear': 'Rond een vervaldatum (± {days} dagen)',
+  'recurring.linkNearEmpty': 'Geen ongekoppelde afschrijving binnen een week van een vervaldatum — zoek hierboven.',
+  'recurring.linkAll': 'Alle transacties',
+  'recurring.linkSearchHint': 'Zoek in alle transacties…',
+  'recurring.linkNoneFound': 'Niets gevonden',
 };

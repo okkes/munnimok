@@ -10,6 +10,7 @@ import { txSliceViews } from '@/domain/txSlices';
 import { detectPriceChange, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
+import { RecurringLinkSheet } from './RecurringLinkSheet';
 import type { FormState } from './RecurringFormSheet';
 import { HeroCard, Pill, Tile } from '@/ui/primitives';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
@@ -29,6 +30,9 @@ export function RecurringDetailScreen() {
   const navigate = useNavigate();
   const ops = useRecurringOps();
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
+  // user 2026-10-06: a door to link a charge by hand, after the creation
+  // flow's one-time proposal list is long gone
+  const [linking, setLinking] = useState(false);
 
   // 'loading' sentinel: Dexie's get() yields undefined both while loading
   // and for a missing row — only the latter should bounce the screen
@@ -196,6 +200,15 @@ export function RecurringDetailScreen() {
             {t('recurring.detailNoPayments')}
           </p>
         )}
+        <button
+          type="button"
+          data-testid="recdetail-link-payment"
+          onClick={() => setLinking(true)}
+          className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-3 py-2.5 text-[13px] font-medium text-accent-deep"
+        >
+          <Icon name="link-variant-plus" size={16} />
+          {t('recurring.linkPayment')}
+        </button>
       </div>
 
       <RecurringFormSheet
@@ -203,6 +216,7 @@ export function RecurringDetailScreen() {
         onClose={() => setFormInitial(null)}
         onDeleted={() => void navigate({ to: '/recurring', replace: true })}
       />
+      <RecurringLinkSheet rec={linking ? rec : null} onClose={() => setLinking(false)} />
     </div>
   );
 }

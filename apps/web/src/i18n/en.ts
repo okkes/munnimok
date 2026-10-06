@@ -2798,6 +2798,13 @@ export const en = {
   'sync.pendingShort': '{n} to sync',
   'sync.pendingOnline': 'Changes waiting to sync: {n}',
   'sync.pendingOffline': 'Saved on this device, not synced yet: {n} — they sync once you are back online',
+  'recurring.linkPayment': 'Link a payment',
+  'recurring.linkHint': 'Tap a charge to link it to {name}; it joins the payments.',
+  'recurring.linkNear': 'Around a due date (± {days} days)',
+  'recurring.linkNearEmpty': 'No unlinked charge within a week of a due date — search for it above.',
+  'recurring.linkAll': 'Every transaction',
+  'recurring.linkSearchHint': 'Search every transaction…',
+  'recurring.linkNoneFound': 'Nothing matches',
 } as const;
 
 export type TranslationKey = keyof typeof en;

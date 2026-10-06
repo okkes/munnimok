@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { resetApiCapabilitiesCache } from '@/lib/api';
@@ -934,4 +934,59 @@ describe('reconcileRecurringLinks', () => {
     expect(await reconcileRecurringLinks(new DexieBackend(db), repo, 's1')).toBe(0);
     db.close();
   });
+});
+
+describe('link a payment from the detail screen (user 2026-10-06)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+    clearRecurringView();
+  });
+
+  it('lists the unlinked charges around a due date, searches every transaction, and a tap links the charge', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-link'), { trackOutbox: false });
+    const today = new Date();
+    const dueDay = Math.min(today.getDate(), 28);
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_link', { name: 'Gym Link', kind: 'subscription', amountCents: 2_500, every: 'month', dueDay, active: 1 });
+    const charge = (id: string, dayOffset: number) =>
+      repo.upsert('transaction', DEMO_SPACE_ID, id, {
+        accountId: 'demo_main',
+        date: iso(new Date(today.getFullYear(), today.getMonth(), dueDay + dayOffset)),
+        amountCents: -2_500,
+        currency: 'EUR',
+        merchant: 'GYM CLUB',
+        catId: 'sport',
+        needsReview: 0,
+      });
+    // three days after this month's due date, and twelve days before it (a week clear of either month's)
+    await charge('gym_near', 3);
+    await charge('gym_far', -12);
+    db.close();
+    cleanup();
+
+    renderApp('/recurring/rec_link');
+    await screen.findByTestId('recdetail-no-payments', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('recdetail-link-payment'));
+    const near = await screen.findByTestId('reclink-near');
+    expect(within(near).getByTestId('tx-row-gym_near')).toBeTruthy();
+    expect(within(near).queryByTestId('tx-row-gym_far')).toBeNull();
+
+    // typing searches every transaction, the far one included
+    fireEvent.change(screen.getByTestId('reclink-search'), { target: { value: 'gym' } });
+    const all = await screen.findByTestId('reclink-all');
+    expect(within(all).getByTestId('tx-row-gym_far')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('reclink-search'), { target: { value: '' } });
+
+    // a tap links the charge: it leaves the quick list and joins the payments behind the sheet
+    fireEvent.click(within(await screen.findByTestId('reclink-near')).getByTestId('tx-row-gym_near'));
+    // the demo seed's own recent purchases sit around today's due day too, so the list stays; the linked row is what leaves
+    await waitFor(() => expect(within(screen.getByTestId('reclink-near')).queryByTestId('tx-row-gym_near')).toBeNull(), { timeout: 5000 });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    const payments = await screen.findByTestId('recdetail-payments', {}, { timeout: 5000 });
+    expect(payments.textContent).toContain('GYM CLUB');
+  }, 20_000);
 });

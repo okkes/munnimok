@@ -2800,4 +2800,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'sync.pendingShort': '{n} senkron bekliyor',
   'sync.pendingOnline': 'Eşitlenmeyi bekleyen değişiklik: {n}',
   'sync.pendingOffline': 'Bu cihazda kayıtlı, henüz eşitlenmedi: {n} — tekrar çevrimiçi olunca eşitlenir',
+  'recurring.linkPayment': 'Ödeme bağla',
+  'recurring.linkHint': '{name} ile bağlamak için bir ödemeye dokunun; ödemelere eklenir.',
+  'recurring.linkNear': 'Vade tarihi civarı (± {days} gün)',
+  'recurring.linkNearEmpty': 'Vade tarihinin bir haftası içinde bağlanmamış ödeme yok — yukarıdan arayın.',
+  'recurring.linkAll': 'Tüm işlemler',
+  'recurring.linkSearchHint': 'Tüm işlemlerde ara…',
+  'recurring.linkNoneFound': 'Eşleşen yok',
 };
