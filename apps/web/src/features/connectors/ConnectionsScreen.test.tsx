@@ -56,6 +56,79 @@ async function seedReceipts(connectionId: string) {
   db.close();
 }
 
+describe('Connections hub — the failure report (#441 L1)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    usePendingLogins.setState({ logins: {} });
+    useSyncActivity.setState({ activity: {} });
+  });
+
+  it('a failed run\'s picture is offered for reporting under the card; yes relays the share and closes the question', async () => {
+    await seedConnection('c-asked', { lastError: { code: 'provider_changed', messageKey: 'connect.error.provider_changed', userAction: 'none', artifactsJobId: 'job_9' } });
+    let shared = 0;
+    const { fetchMock } = renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        [`POST /connectors/${PROVIDER}/jobs/job_9/artifacts/share`]: () => {
+          shared += 1;
+          return { jobId: 'job_9', expiresAt: '2026-11-05T00:00:00Z' };
+        },
+      },
+    });
+    await screen.findByTestId('conn-report-c-asked');
+    expect(screen.getByTestId('conn-report-c-asked').textContent).toContain('Report this failure?');
+    fireEvent.click(screen.getByTestId('conn-report-c-asked-yes'));
+    await screen.findByTestId('conn-report-c-asked-done');
+    await waitFor(() => expect(shared).toBe(1));
+    await waitFor(async () => {
+      const db = await userDb();
+      const row = await db.connectorConns.get('c-asked');
+      db.close();
+      expect(row?.lastError?.artifactsJobId).toBeUndefined();
+    });
+    expect(fetchMock).toBeTruthy();
+  }, 20_000);
+
+  it('no deletes it; the relay\'s own open question (a scheduled run) is asked the same way', async () => {
+    await seedConnection('c-sched');
+    let declined = 0;
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        'GET /connectors/sessions': () => [
+          { sessionId: 'ses_1', provider: PROVIDER, connectionId: 'c-sched', state: 'active', createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-10-06T00:00:00Z', scheduled: true, lastScheduleError: 'provider_changed', artifactsJobId: 'job_s' },
+        ],
+        [`DELETE /connectors/${PROVIDER}/jobs/job_s/artifacts`]: () => {
+          declined += 1;
+          return new Response(null, { status: 204 });
+        },
+      },
+    });
+    fireEvent.click(await screen.findByTestId('conn-report-c-sched-no'));
+    await screen.findByTestId('conn-report-c-sched-done');
+    await waitFor(() => expect(declined).toBe(1));
+    expect(screen.getByTestId('conn-report-c-sched-done').textContent).toContain('Not reported');
+  }, 20_000);
+
+  it('the manage sheet keeps a standing answer: always report this connection\'s failures', async () => {
+    await seedConnection('c-always');
+    renderAppAsUser('/connections', { api: { ...catalogue } });
+    fireEvent.click(await screen.findByTestId('conn-manage-c-always'));
+    const toggle = await screen.findByTestId('conn-report-always');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getByTestId('conn-report-always').getAttribute('aria-checked')).toBe('true'));
+    await waitFor(async () => {
+      const db = await userDb();
+      const row = await db.connectorConns.get('c-always');
+      db.close();
+      expect(row?.reportFailures).toBe(true);
+    });
+  }, 20_000);
+});
+
 describe('Connections hub (signed-in user)', () => {
   beforeEach(() => {
     localStorage.clear();

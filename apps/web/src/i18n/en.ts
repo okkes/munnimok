@@ -2763,6 +2763,16 @@ export const en = {
   'receipt.unreconciled': 'The party’s line items do not add up to its total.',
   'tour.conn.7t': 'Fetched receipts',
   'tour.conn.7b': 'Everything your shops handed over, per connection, with the dates covered — and a counter climbing while a fetch runs. A shop reaches a space only once you pick it.',
+  // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
+  'conn.report.ask': 'Report this failure?',
+  'conn.report.sub': 'Sends the last picture of the page where it stopped — secret fields hidden — to the people who run munni, kept for a month. Nothing is sent unless you say yes.',
+  'conn.report.yes': 'Report',
+  'conn.report.no': 'No thanks',
+  'conn.report.thanks': 'Thank you — the report is on its way.',
+  'conn.report.declined': 'Not reported. The picture was deleted.',
+  'conn.report.always': 'Always report failures',
+  'conn.report.alwaysSub': 'Send the picture without asking each time this connection fails.',
+  'overview.showLinked': 'Show linked transactions',
 } as const;
 
 export type TranslationKey = keyof typeof en;

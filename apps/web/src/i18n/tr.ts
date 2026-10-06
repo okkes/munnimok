@@ -2765,4 +2765,14 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'receipt.unreconciled': 'Tarafın kalemleri toplamına eşit değil.',
   'tour.conn.7t': 'Alınan fişler',
   'tour.conn.7b': 'Mağazalarının verdiği her şey, bağlantı başına, kapsanan tarihlerle — ve alım sürerken artan bir sayaç. Bir mağaza, ancak sen seçince bir alana ulaşır.',
+  // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
+  'conn.report.ask': 'Bu hata bildirilsin mi?',
+  'conn.report.sub': 'Takıldığı sayfanın son görüntüsünü — gizli alanlar gizlenmiş olarak — munni’yi işletenlere gönderir, bir ay saklanır. Evet demeden hiçbir şey gönderilmez.',
+  'conn.report.yes': 'Bildir',
+  'conn.report.no': 'Hayır, teşekkürler',
+  'conn.report.thanks': 'Teşekkürler — bildirim yolda.',
+  'conn.report.declined': 'Bildirilmedi. Görüntü silindi.',
+  'conn.report.always': 'Hataları her zaman bildir',
+  'conn.report.alwaysSub': 'Bu bağlantı her başarısız olduğunda sormadan görüntüyü gönder.',
+  'overview.showLinked': 'Bağlantılı işlemleri göster',
 };

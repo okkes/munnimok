@@ -31,6 +31,8 @@ export class ConnectorError extends Error {
   constructor(
     readonly status: number,
     readonly envelope: ErrorEnvelope,
+    /** #441 L1: the failed job whose last picture waits on the person's word */
+    readonly artifactsJobId?: string,
   ) {
     super(`connector ${envelope.code} (${status})`);
     this.name = 'ConnectorError';
@@ -40,6 +42,10 @@ export class ConnectorError extends Error {
 export const deviceClass = (): DeviceClass => (isNativeApp() ? 'native' : 'web');
 
 const BASE = '/connectors';
+
+/** how long one job poll may hang before it counts as a miss: a phone that slept mid-request must not hang the follow for ever (prod 2026-10-06) */
+const POLL_TIMEOUT_MS = 20_000;
+const pollSignal = (): AbortSignal | undefined => (typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(POLL_TIMEOUT_MS) : undefined);
 
 /** a failed answer that is not the envelope (a validation problem, a bare 404) still speaks it */
 function envelopeOf(status: number, body: unknown): ErrorEnvelope {
@@ -189,11 +195,21 @@ export const connectorApi = {
   },
 
   async job(provider: string, jobId: string): Promise<JobView> {
-    return (await call<JobView>(`/${provider}/jobs/${jobId}`)).body;
+    return (await call<JobView>(`/${provider}/jobs/${jobId}`, { signal: pollSignal() })).body;
   },
 
   async answerJob(provider: string, jobId: string, challengeId: string, value: string): Promise<JobView> {
     return (await call<JobView>(`/${provider}/jobs/${jobId}/answer`, json({ challengeId, value }))).body;
+  },
+
+  /** #441 L1: the person says the people who run munni may see what a failed run left behind; the control plane keeps it a month */
+  async shareArtifacts(provider: string, jobId: string): Promise<void> {
+    await call<unknown>(`/${provider}/jobs/${jobId}/artifacts/share`, { method: 'POST' });
+  },
+
+  /** the person says no: deleted on the spot */
+  async declineArtifacts(provider: string, jobId: string): Promise<void> {
+    await call<unknown>(`/${provider}/jobs/${jobId}/artifacts`, { method: 'DELETE' });
   },
 
   /** ingests the job's page once it succeeded and walks on to the resources after it; `running` while the

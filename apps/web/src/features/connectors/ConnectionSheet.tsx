@@ -87,6 +87,30 @@ export function ConnectionSheet({
         <p className="px-1 text-[11px] leading-snug text-ink-4">{t('conn.sharedSpacesSub')}</p>
         <SpacePicker spaces={allSpaces} selected={includedSpaceIds} disabled={busy} onToggle={(id) => void toggleSpace(id)} testId="conn-manage-spaces" />
 
+        {/* #441 L1: a failed run's picture reaches the people who run munni only with the person's word — this gives it once */}
+        {view.device && (
+          <div className="flex items-center justify-between gap-3 rounded-input border border-line bg-surface px-3 py-2.5 text-[13px] text-ink">
+            <span className="flex min-w-0 flex-col">
+              <span>{t('conn.report.always')}</span>
+              <span className="text-[11px] leading-snug text-ink-4">{t('conn.report.alwaysSub')}</span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!view.device.reportFailures}
+              aria-label={t('conn.report.always')}
+              data-testid="conn-report-always"
+              disabled={busy}
+              onClick={() => void ops.setReportFailures(view.meta.id, !view.device?.reportFailures)}
+              className={`flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-none p-0.5 transition-colors ${
+                view.device.reportFailures ? 'justify-end bg-accent' : 'justify-start bg-bg-2'
+              }`}
+            >
+              <span className="h-4 w-4 rounded-full bg-surface shadow" />
+            </button>
+          </div>
+        )}
+
         <Button variant="danger" data-testid="conn-remove" disabled={busy} onClick={() => setConfirmRemove(true)}>
           {t('conn.remove')}
         </Button>

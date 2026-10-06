@@ -568,6 +568,21 @@ export interface ConnectorLastError {
   retryAfterSeconds?: number;
   /** ISO: when the relay said so — with retryAfterSeconds, the moment a pause is over */
   at?: string;
+  /** #441 L1: the failed job whose last picture waits on the person's word; cleared by their answer */
+  artifactsJobId?: string;
+}
+
+/**
+ * A fetch the relay accepted and this device has not collected yet
+ * (prod 2026-10-06: a phone that kept reopening the app started a fresh
+ * half-hour Amazon fetch each time and never collected the first). The
+ * next sync follows and collects THIS job before asking for anything new.
+ */
+export interface ConnectorPendingJob {
+  jobId: string;
+  /** the window the job was asked for; the collect repeats it */
+  since?: string;
+  startedAt: string;
 }
 
 /**
@@ -595,6 +610,9 @@ export interface ConnectorConnRow {
   refreshedAt: string;
   lastSyncAt?: string;
   lastError?: ConnectorLastError;
+  pendingJob?: ConnectorPendingJob;
+  /** #441 L1: always report this connection's failures to the people who run munni, without asking */
+  reportFailures?: boolean;
 }
 
 /**

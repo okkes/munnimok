@@ -9,7 +9,7 @@ import { storeConnLinkId } from '@/domain/feedIds';
 import { NO_INGEST } from '@/test/connectorFixtures';
 import { ConnectorError, connectorApi } from './api';
 import { readBundle } from './bundles';
-import { syncConnection } from './connectorSync';
+import { syncConnection, syncTuning } from './connectorSync';
 import { publishConnectorFrame, resetConnectorFrames, subscribeConnectorFrames } from './events';
 import type { ErrorEnvelope, JobView } from './types';
 
@@ -142,6 +142,70 @@ describe('syncConnection — one pass through the relay', () => {
     const report = await syncConnection(backend, repo, CONN);
     expect(report).toMatchObject({ status: 'blocked' });
     expect((await backend.connectorConnGet(CONN))?.state).toBe('blocked');
+  });
+
+  it('prod 2026-10-06: a job accepted earlier is remembered on the row and resumed before any new fetch — gone, it is let go', async () => {
+    // the first sync is cut off mid-follow (the app closed on it): the job stays on the row
+    const pace = { ...syncTuning };
+    Object.assign(syncTuning, { pollMs: 1, pollMisses: 2 });
+    try {
+      vi.spyOn(connectorApi, 'sync').mockResolvedValue({ accepted: true, job: job({ state: 'running' }) });
+      vi.spyOn(connectorApi, 'job').mockRejectedValue(new TypeError('the phone slept'));
+      await expect(syncConnection(backend, repo, CONN)).rejects.toThrow(/stopped answering/);
+    } finally {
+      Object.assign(syncTuning, pace);
+    }
+    expect((await backend.connectorConnGet(CONN))?.pendingJob).toMatchObject({ jobId: 'job_1' });
+
+    // the next sync follows THAT job to its end and collects it: no second fetch is asked for
+    const sync = vi.spyOn(connectorApi, 'sync').mockResolvedValue({ accepted: true, job: job({ jobId: 'job_2', state: 'running' }) });
+    sync.mockClear();
+    vi.spyOn(connectorApi, 'job').mockResolvedValue(job({ state: 'succeeded', complete: true }));
+    const collect = vi.spyOn(connectorApi, 'collect').mockResolvedValue({ running: false, job: job({ state: 'succeeded', complete: true, ingested: { ...NO_INGEST, receipts: 3 } }) });
+    const report = await syncConnection(backend, repo, CONN);
+    expect(report).toMatchObject({ status: 'ok', added: 3 });
+    expect(sync).not.toHaveBeenCalled();
+    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.old', undefined);
+    expect((await backend.connectorConnGet(CONN))?.pendingJob).toBeUndefined();
+
+    // a remembered job the relay no longer holds is forgotten, and the sync starts afresh
+    await backend.connectorConnPut({ ...(await backend.connectorConnGet(CONN))!, pendingJob: { jobId: 'job_gone', startedAt: '2026-10-05T00:00:00Z' } });
+    vi.spyOn(connectorApi, 'job').mockRejectedValue(new ConnectorError(404, envelope('unsupported_resource')));
+    sync.mockClear();
+    sync.mockResolvedValue({ accepted: false, outcome: { sessionId: 'ses_1', state: 'active', ingested: { ...NO_INGEST } } });
+    expect((await syncConnection(backend, repo, CONN)).status).toBe('ok');
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect((await backend.connectorConnGet(CONN))?.pendingJob).toBeUndefined();
+  }, 15_000);
+
+  it('one sync per connection at a time: a second ask joins the one running', async () => {
+    let release: (answer: Awaited<ReturnType<typeof connectorApi.sync>>) => void = () => {};
+    const gate = new Promise<Awaited<ReturnType<typeof connectorApi.sync>>>((resolve) => {
+      release = resolve;
+    });
+    const sync = vi.spyOn(connectorApi, 'sync').mockImplementation(() => gate);
+    const first = syncConnection(backend, repo, CONN);
+    const second = syncConnection(backend, repo, CONN);
+    expect(second).toBe(first);
+    await vi.waitFor(() => expect(sync).toHaveBeenCalledTimes(1));
+    release({ accepted: false, outcome: { sessionId: 'ses_1', state: 'active', ingested: { ...NO_INGEST, records: 1, receipts: 1 } } });
+    expect((await first).added).toBe(1);
+    expect(sync).toHaveBeenCalledTimes(1);
+  });
+
+  it('#441 L1: a failed job that left a picture puts the question on the row — or answers it where the person said "always"', async () => {
+    vi.spyOn(connectorApi, 'sync').mockResolvedValue({
+      accepted: true,
+      job: job({ state: 'failed', complete: true, error: envelope('provider_changed'), artifactsJobId: 'job_1' }),
+    });
+    await syncConnection(backend, repo, CONN);
+    expect((await backend.connectorConnGet(CONN))?.lastError?.artifactsJobId).toBe('job_1');
+
+    await backend.connectorConnPut({ ...(await backend.connectorConnGet(CONN))!, reportFailures: true });
+    const share = vi.spyOn(connectorApi, 'shareArtifacts').mockResolvedValue();
+    await syncConnection(backend, repo, CONN);
+    expect(share).toHaveBeenCalledWith(PROVIDER, 'job_1');
+    expect((await backend.connectorConnGet(CONN))?.lastError?.artifactsJobId).toBeUndefined();
   });
 });
 

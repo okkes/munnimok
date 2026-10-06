@@ -2765,4 +2765,14 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'receipt.unreconciled': 'De regels van de partij tellen niet op tot het totaal.',
   'tour.conn.7t': 'Opgehaalde bonnen',
   'tour.conn.7b': 'Alles wat je winkels hebben aangeleverd, per koppeling, met de gedekte datums — en een teller die oploopt terwijl het ophalen loopt. Een winkel bereikt een space pas als jij die kiest.',
+  // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
+  'conn.report.ask': 'Deze storing melden?',
+  'conn.report.sub': 'Stuurt de laatste afbeelding van de pagina waar het stokte — geheime velden verborgen — naar de mensen die munni draaien, een maand bewaard. Zonder je ja wordt niets gestuurd.',
+  'conn.report.yes': 'Melden',
+  'conn.report.no': 'Nee, bedankt',
+  'conn.report.thanks': 'Dank je — de melding is onderweg.',
+  'conn.report.declined': 'Niet gemeld. De afbeelding is verwijderd.',
+  'conn.report.always': 'Storingen altijd melden',
+  'conn.report.alwaysSub': 'Stuur de afbeelding zonder het elke keer te vragen als deze koppeling faalt.',
+  'overview.showLinked': 'Gekoppelde transacties tonen',
 };

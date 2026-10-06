@@ -29,6 +29,7 @@ import { ConnectionSheet } from './ConnectionSheet';
 import { rangeLine } from './ConnectionReceiptsScreen';
 import { SpacePicker } from './SpacePicker';
 import { RESULT_TTL_MS, resultStillFresh, useSyncActivity } from './syncActivity';
+import { ReportAsk } from './ReportAsk';
 import { ConnectionSyncCard } from './ConnectionSyncCard';
 import type { SyncReport } from './connectorSync';
 import { kindIcon, partyLogo, partyName } from './logos';
@@ -176,6 +177,8 @@ export function ConnectionsScreen() {
   // the step after naming a shop: which spaces its receipts reach (none until picked, user ruling 2026-10-02)
   const [spacesStep, setSpacesStep] = useState<{ connectionId: string; picked: string[] } | null>(null);
   const [ask, setAsk] = useState<JobAsk | null>(null);
+  // #441 L1: answers given to "report this failure?" this visit (the relay's copy refreshes on the next load)
+  const [reportAnswers, setReportAnswers] = useState<Record<string, 'yes' | 'no'>>({});
   // every sync in flight or just finished, whoever started it; the rows read it
   const activity = useSyncActivity((s) => s.activity);
   const ranges = useFetchedRanges();
@@ -447,6 +450,25 @@ export function ConnectionsScreen() {
     );
   };
 
+  /** #441 L1: a failed run left a picture that waits on the person's word — asked once, under the card */
+  const reportAsk = (view: ConnectionView) => {
+    const jobId = view.device?.lastError?.artifactsJobId ?? bindings.get(view.meta.id)?.artifactsJobId ?? undefined;
+    if (!jobId || !signedIn) return null;
+    return (
+      <div className="mt-2 pl-9">
+        <ReportAsk
+          testId={`conn-report-${view.meta.id}`}
+          answered={reportAnswers[jobId] ?? null}
+          busy={false}
+          onAnswer={(share) => {
+            setReportAnswers((s) => ({ ...s, [jobId]: share ? 'yes' : 'no' }));
+            void ops.answerReport(view.meta.id, jobId, share);
+          }}
+        />
+      </div>
+    );
+  };
+
   const renderCard = (view: ConnectionView) => {
     const manifest = catalogue.byId.get(view.meta.store);
     const kind = kindOf(view);
@@ -489,6 +511,7 @@ export function ConnectionsScreen() {
           </button>
         </div>
         {kind === 'store' ? usedIn(view) : accountsOf(view)}
+        {reportAsk(view)}
       </div>
     );
   };
