@@ -56,7 +56,7 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.Equal("active", mine["state"]!.GetValue<string>());
         Assert.True(mine["hasBundle"]!.GetValue<bool>());
         Assert.Equal("fleet", mine["preferAgent"]!.GetValue<string>());
-        Assert.DoesNotContain("sb_v1.", sessions.ToJsonString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("sb_v1.", sessions!.ToJsonString(), StringComparison.Ordinal);
 
         // and not among anybody's connections: the lab subject is not a person's, the relay binds nothing
         Assert.Empty(factory.Read(db => db.ConnectorSessions.Where(s => s.Id == sessionId).ToList()));

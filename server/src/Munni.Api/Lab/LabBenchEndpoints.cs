@@ -79,6 +79,7 @@ public sealed class LabCanaryRequestValidator : AbstractValidator<LabCanaryReque
 public static class LabBenchEndpoints
 {
     private const string Trigger = "lab";
+    private const string BundleField = "bundle";
     private const string Native = "native";
 
     public static void Map(RouteGroupBuilder lab)
@@ -360,14 +361,14 @@ public static class LabBenchEndpoints
     private static void Keep(LabSession row, JsonObject view, DateTimeOffset now)
     {
         if (view.Text("state") is { Length: > 0 } state) row.State = state;
-        if (view.Text("bundle") is { Length: > 0 } bundle) row.Bundle = bundle;
+        if (view.Text(BundleField) is { Length: > 0 } bundle) row.Bundle = bundle;
         row.LastUsedAt = now;
     }
 
     /// <summary>A fetch or a job that rotated the bundle: the newest one is the one that opens tomorrow.</summary>
     private static void KeepRotated(LabSession row, JsonObject view)
     {
-        if (view["session"] is JsonObject session && session.Text("bundle") is { Length: > 0 } rotated) row.Bundle = rotated;
+        if (view["session"] is JsonObject session && session.Text(BundleField) is { Length: > 0 } rotated) row.Bundle = rotated;
     }
 
     private static async Task KeepForJobAsync(ConnectorRelay relay, HttpContext http, JsonObject view, CancellationToken ct)
@@ -384,9 +385,9 @@ public static class LabBenchEndpoints
     private static JsonObject Strip(JsonObject view)
     {
         var camel = (JsonObject)ConnectorJson.ToCamel(view)!;
-        camel.Remove("bundle");
+        camel.Remove(BundleField);
         camel.Remove("credentialBundle");
-        if (camel["session"] is JsonObject session) session.Remove("bundle");
+        if (camel["session"] is JsonObject session) session.Remove(BundleField);
         return camel;
     }
 
