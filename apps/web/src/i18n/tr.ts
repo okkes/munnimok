@@ -2822,4 +2822,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'review.receiptView': 'Fişi görüntüle',
   'review.receiptEvery': 'Tüm taraflar',
   'review.receiptNoneFound': 'Eşleşen fiş yok',
+  'reimb.pickedCount': '{n} bağla · {amount}',
+  'reimb.nothingPicked': 'Bağlamak için işlemlere dokunun — birkaçı birden',
+  'reimb.stillOpen': '{amount} hâlâ açık',
+  'reimb.stillToGive': '{amount} verilecek kaldı',
+  'reimb.linkedBefore': '{amount} daha önce bağlandı',
+  'reimb.totalError': 'Toplamı kalan {max} tutarını aşıyor',
+  'reimb.ofMax': '/ {max}',
 };

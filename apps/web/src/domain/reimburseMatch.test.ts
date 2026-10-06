@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filedAsReimbursement, reimbEarmarkCents, suggestCounterparts } from './reimburseMatch';
+import { filedAsReimbursement, reimbEarmarkCents, suggestCounterparts, creditGiveableCents, expenseNeedCents, partEarmarkCents } from './reimburseMatch';
 import type { TransactionRow } from '@/db/types';
 
 const tx = (over: Partial<TransactionRow>): TransactionRow =>
@@ -77,5 +77,54 @@ describe('reimbursement earmarks', () => {
     const row = tx({ catId: 'groceries' });
     expect(filedAsReimbursement(row)).toBe(false);
     expect(reimbEarmarkCents(row)).toBeNull();
+  });
+});
+
+describe('reimbursement earmarks, net of the settle (user ss 2026-10-06: the second link defaulted too low)', () => {
+  it('a row filed whole: the first link needs the whole value, the second only what the settle left', () => {
+    const fresh = tx({ amountCents: -5_000, catId: 'expenseReimburse' });
+    expect(expenseNeedCents(fresh)).toBe(5_000);
+    // after linking 20,00 the settle wrote [expenseReimburse 30,00][reimbursed 20,00]
+    const settled = tx({
+      amountCents: -5_000,
+      catId: 'expenseReimburse',
+      reimbursements: [{ txId: 'c', amountCents: 2_000 }],
+      cats: [{ catId: 'expenseReimburse', amountCents: 3_000 }, { catId: 'reimbursed', amountCents: 2_000 }],
+    });
+    expect(reimbEarmarkCents(settled)).toBe(3_000);
+    expect(expenseNeedCents(settled)).toBe(3_000);
+  });
+
+  it('a credit filed whole gives its whole value first and exactly the rest after a settle - never the rest minus the given', () => {
+    const fresh = tx({ id: 'c', amountCents: 5_000, catId: 'reimburse' });
+    expect(creditGiveableCents(fresh, 0)).toBe(5_000);
+    const settled = tx({
+      id: 'c',
+      amountCents: 5_000,
+      catId: 'reimburse',
+      cats: [{ catId: 'reimburse', amountCents: 3_000 }, { catId: 'reimbursed', amountCents: 2_000 }],
+    });
+    expect(creditGiveableCents(settled, 2_000)).toBe(3_000);
+    // an uncategorized credit (it self-files on the first link) gives its open value
+    expect(creditGiveableCents(tx({ id: 'u', amountCents: 4_000, catId: 'uncategorized' }), 1_000)).toBe(3_000);
+  });
+
+  it('a part answers through its own cats once settled, and a part anchor needs its own open value, not the container\'s', () => {
+    const row = tx({
+      amountCents: -9_000,
+      catId: 'restaurants',
+      reimbursements: [{ txId: 'c', amountCents: 500, partId: 'p2' }],
+      splits: [
+        { id: 'p1', catId: 'restaurants', amountCents: 6_000 },
+        { id: 'p2', catId: 'expenseReimburse', amountCents: 3_000, cats: [{ catId: 'expenseReimburse', amountCents: 2_500 }, { catId: 'reimbursed', amountCents: 500 }] },
+      ],
+    });
+    expect(partEarmarkCents(row.splits![1])).toBe(2_500);
+    expect(partEarmarkCents(row.splits![0])).toBeNull();
+    expect(reimbEarmarkCents(row)).toBe(2_500);
+    expect(expenseNeedCents(row, 'p2')).toBe(2_500);
+    expect(expenseNeedCents(row, 'p1')).toBe(6_000);
+    // a container filed as reimbursement whose parts say otherwise earmarks nothing
+    expect(reimbEarmarkCents(tx({ amountCents: -9_000, catId: 'expenseReimburse', splits: [{ id: 'q', catId: 'groceries', amountCents: 9_000 }] }))).toBeNull();
   });
 });

@@ -2822,4 +2822,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'review.receiptView': 'Bon bekijken',
   'review.receiptEvery': 'Elke partij',
   'review.receiptNoneFound': 'Geen bon gevonden',
+  'reimb.pickedCount': 'Koppel {n} · {amount}',
+  'reimb.nothingPicked': 'Tik op de transacties om te koppelen — meerdere tegelijk',
+  'reimb.stillOpen': '{amount} nog open',
+  'reimb.stillToGive': '{amount} nog te geven',
+  'reimb.linkedBefore': '{amount} eerder gekoppeld',
+  'reimb.totalError': 'Samen is dat meer dan de {max} die over is',
+  'reimb.ofMax': 'van {max}',
 };

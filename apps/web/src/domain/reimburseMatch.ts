@@ -1,4 +1,4 @@
-import type { TransactionRow } from '@/db/types';
+import type { TransactionRow, TxSplit } from '@/db/types';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID } from '@/domain/categories';
 import { creditRemainingCents, netAmountCents, remainingCents } from '@/domain/reimbursement';
 
@@ -27,18 +27,86 @@ export function filedAsReimbursement(tx: Pick<TransactionRow, 'catId' | 'cats' |
   return [...(tx.splits ?? []), ...(tx.cats ?? [])].some((s) => REIMB_CAT_IDS.has(s.catId));
 }
 
+const reimbSliceCents = (slices: readonly { catId: string; amountCents: number }[] | undefined): number | null => {
+  const hits = (slices ?? []).filter((s) => REIMB_CAT_IDS.has(s.catId));
+  return hits.length > 0 ? hits.reduce((sum, s) => sum + Math.abs(s.amountCents), 0) : null;
+};
+
+/** what ONE part of a split still earmarks: its own cats' slice once a
+ *  settle has written them, else the whole part when it is filed so */
+export function partEarmarkCents(part: Pick<TxSplit, 'catId' | 'cats' | 'amountCents'>): number | null {
+  const inner = reimbSliceCents(part.cats);
+  if (inner !== null) return inner;
+  return REIMB_CAT_IDS.has(part.catId) ? Math.abs(part.amountCents) : null;
+}
+
 /**
- * What the row's reimbursement CATEGORY earmarks, in cents — the slice
- * value when split (container parts and #211 row spreads alike), the
- * whole net value when the row itself is filed as expected/received
- * reimbursement, and null when it carries no reimbursement bookkeeping
- * at all (the caller falls back to the net value, today's behavior).
+ * What the row's reimbursement CATEGORY still earmarks, in cents - NET of
+ * what has been settled already: a settle moves linked cents out of the
+ * expected/received slice into `reimbursed`, so the slice that is left IS
+ * what is still expected. Parts answer through their own cats (#228: the
+ * settle lives on the part), a #211 row spread through the row's cats,
+ * a row filed whole through its net value; null when the row carries no
+ * reimbursement bookkeeping at all (the caller falls back to the open
+ * value). 2026-10-06 (user ss): the callers used to subtract the links
+ * from this once more - a second link from the same pair defaulted to
+ * (earmark - links) - links and could not reach the remainder.
  */
 export function reimbEarmarkCents(tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>): number | null {
-  const slices = [...(tx.splits ?? []), ...(tx.cats ?? [])].filter((s) => REIMB_CAT_IDS.has(s.catId));
-  if (slices.length > 0) return slices.reduce((sum, s) => sum + Math.abs(s.amountCents), 0);
+  const parts = tx.splits ?? [];
+  if (parts.length > 0) {
+    const marked = parts.map(partEarmarkCents).filter((cents): cents is number => cents !== null);
+    return marked.length > 0 ? marked.reduce((sum, cents) => sum + cents, 0) : null;
+  }
+  const spread = reimbSliceCents(tx.cats);
+  if (spread !== null) return spread;
   if (tx.catId && REIMB_CAT_IDS.has(tx.catId)) return Math.abs(netAmountCents(tx));
   return null;
+}
+
+/** #197: what a split expense's PART still expects back - its magnitude
+ *  minus the links already targeting it */
+export function partOpenCents(row: Pick<TransactionRow, 'reimbursements'>, part: Pick<TxSplit, 'id' | 'amountCents'>): number {
+  return Math.max(
+    0,
+    Math.abs(part.amountCents) - (row.reimbursements ?? []).filter((r) => r.partId === part.id).reduce((sum, r) => sum + r.amountCents, 0),
+  );
+}
+
+/**
+ * What an expense (or one of its parts) still NEEDS back: its open value,
+ * capped by its reimbursement earmark when it carries one - the default
+ * amount of a link. The earmark is already net of the settle (above), so
+ * nothing is subtracted twice.
+ */
+export function expenseNeedCents(
+  expense: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>,
+  partId?: string,
+): number {
+  const part = partId ? (expense.splits ?? []).find((p) => p.id === partId) : undefined;
+  if (part) {
+    const open = partOpenCents(expense, part);
+    const earmark = partEarmarkCents(part);
+    return earmark === null ? open : Math.min(open, earmark);
+  }
+  const open = remainingCents(expense);
+  const earmark = reimbEarmarkCents(expense);
+  return earmark === null ? open : Math.min(open, earmark);
+}
+
+/**
+ * What a credit can still give - its open value, capped by its received-
+ * reimbursement earmark when it carries one (a split's received slice funds
+ * links; its groceries slice never does - user rule 2026-07-28). The earmark
+ * is net of the settle, so `given` is not subtracted from it again.
+ */
+export function creditGiveableCents(
+  credit: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>,
+  given: number,
+): number {
+  const net = creditRemainingCents(credit, given);
+  const earmark = reimbEarmarkCents(credit);
+  return earmark === null ? net : Math.max(0, Math.min(net, earmark));
 }
 
 function amountScore(candidateCents: number, neededCents: number): number {

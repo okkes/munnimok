@@ -996,7 +996,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     const picker = await screen.findByTestId('reimb-link-list');
     await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')).toBeTruthy());
     fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')!);
-    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    const amountInput = (await screen.findByTestId(/^reimb-amount-/)) as HTMLInputElement;
     expect(amountInput.value).toBe('52,40');
 
     // link a partial 20,00 instead
@@ -1051,6 +1051,106 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     db.close();
   });
 
+  it('links several credits in one gesture (user 2026-10-06): each pick carries its own amount within what the expense has left, the bar shows the composition, the second link from a pair defaults to what is still open', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('multi-seed'), { trackOutbox: false });
+    // a dinner of 90 expected back, and two friends paying 40 and 30
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'mx1', {
+      accountId: 'demo_main', date: '2026-05-10', amountCents: -9000, currency: 'EUR', merchant: 'Dinner for three', catId: 'expenseReimburse', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'mc1', {
+      accountId: 'demo_main', date: '2026-05-11', amountCents: 4000, currency: 'EUR', merchant: 'Tikkie Anna', catId: 'uncategorized', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'mc2', {
+      accountId: 'demo_main', date: '2026-05-12', amountCents: 3000, currency: 'EUR', merchant: 'Tikkie Bob', catId: 'uncategorized', needsReview: 0,
+    });
+    seed.close();
+    cleanup();
+
+    renderApp('/transactions/mx1');
+    fireEvent.click(await screen.findByTestId('reimb-add'));
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid="reimb-pick-mc1"] [data-testid^="tx-row-"]')).toBeTruthy());
+    expect((screen.getByTestId('reimb-save') as HTMLButtonElement).disabled).toBe(true);
+    // the first pick takes all it can give, the second the same - both within the 90 open
+    fireEvent.click(picker.querySelector('[data-testid="reimb-pick-mc1"] [data-testid^="tx-row-"]')!);
+    expect((screen.getByTestId('reimb-amount-mc1') as HTMLInputElement).value).toBe('40,00');
+    fireEvent.click(picker.querySelector('[data-testid="reimb-pick-mc2"] [data-testid^="tx-row-"]')!);
+    expect((screen.getByTestId('reimb-amount-mc2') as HTMLInputElement).value).toBe('30,00');
+    expect(screen.getByTestId('reimb-footer-line').textContent).toContain('€70.00');
+    expect(screen.getByTestId('reimb-footer-line').textContent).toContain('€20.00');
+    expect(screen.getByTestId('reimb-save').textContent).toContain('2');
+    // the expense side previews the sum, each credit its own
+    const impact = await screen.findByTestId('reimb-impact');
+    expect(impact.textContent).toContain('€90.00 → €20.00');
+    expect(impact.textContent).toContain('€0.00 → €40.00');
+    expect(impact.textContent).toContain('€0.00 → €30.00');
+    // one amount too high interrupts the save and names the ceiling
+    fireEvent.change(screen.getByTestId('reimb-amount-mc2'), { target: { value: '35,00' } });
+    fireEvent.click(screen.getByTestId('reimb-save'));
+    expect((await screen.findByTestId('reimb-amount-error')).textContent).toContain('€30.00');
+    fireEvent.change(screen.getByTestId('reimb-amount-mc2'), { target: { value: '30,00' } });
+    fireEvent.click(screen.getByTestId('reimb-save'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const expense = await db.transactions.get('mx1');
+      expect(expense?.reimbursements).toEqual([{ txId: 'mc1', amountCents: 4000 }, { txId: 'mc2', amountCents: 3000 }]);
+      expect(expense?.cats?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(7000);
+      expect(expense?.cats?.find((s) => s.catId === 'expenseReimburse')?.amountCents).toBe(2000);
+      const anna = await db.transactions.get('mc1');
+      expect(anna?.cats?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(4000);
+    }, { timeout: 8000 });
+    // the second link from the same pair: what the settle left (20), not 20 minus the links again
+    fireEvent.click(await screen.findByTestId('reimb-add'));
+    const again = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(again.querySelector('[data-testid="reimb-pick-mc1"]')).toBeNull());
+    db.close();
+  }, 25_000);
+
+  it('the second link from the same pair defaults to what the settle left, not minus the links again (user ss 2026-10-06)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('second-seed'), { trackOutbox: false });
+    // a 50 expected back, 20 of it settled already against a 100 credit
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'sx2', {
+      accountId: 'demo_main', date: '2026-05-10', amountCents: -5000, currency: 'EUR', merchant: 'Kebab night', catId: 'expenseReimburse', needsReview: 0,
+      reimbursements: [{ txId: 'sc2', amountCents: 2000 }],
+      cats: [{ catId: 'expenseReimburse', amountCents: 3000 }, { catId: 'reimbursed', amountCents: 2000 }],
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'sc2', {
+      accountId: 'demo_main', date: '2026-05-11', amountCents: 10_000, currency: 'EUR', merchant: 'Tikkie kebab', catId: 'reimburse', needsReview: 0,
+      cats: [{ catId: 'reimburse', amountCents: 8000 }, { catId: 'reimbursed', amountCents: 2000 }],
+    });
+    seed.close();
+    cleanup();
+
+    renderApp('/transactions/sx2');
+    fireEvent.click(await screen.findByTestId('reimb-add'));
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid="reimb-pick-sc2"] [data-testid^="tx-row-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid="reimb-pick-sc2"] [data-testid^="tx-row-"]')!);
+    // 30 is what is still expected (50 - 20 settled); it used to read 10
+    expect((screen.getByTestId('reimb-amount-sc2') as HTMLInputElement).value).toBe('30,00');
+    expect(screen.getByTestId('reimb-footer-line').textContent).toContain('€20.00');
+    fireEvent.click(screen.getByTestId('reimb-save'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const expense = await db.transactions.get('sx2');
+      expect(expense?.reimbursements).toEqual([{ txId: 'sc2', amountCents: 5000 }]);
+      expect(expense?.cats?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(5000);
+      const credit = await db.transactions.get('sc2');
+      expect(credit?.cats?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(5000);
+      expect(credit?.cats?.find((s) => s.catId === 'reimburse')?.amountCents).toBe(5000);
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
   it('#233 r3: a SPREAD expense previews every touched slice — engine-true, untouched ones stay quiet', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
@@ -1075,7 +1175,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     const picker = await screen.findByTestId('reimb-link-list');
     await waitFor(() => expect(picker.querySelector('[data-testid="reimb-pick-imp2"] [data-testid^="tx-row-"]')).toBeTruthy());
     fireEvent.click(picker.querySelector('[data-testid="reimb-pick-imp2"] [data-testid^="tx-row-"]')!);
-    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    const amountInput = (await screen.findByTestId(/^reimb-amount-/)) as HTMLInputElement;
     fireEvent.change(amountInput, { target: { value: '30,00' } });
     const impact = await screen.findByTestId('reimb-impact');
     // expense side: hotel shrinks, reimbursed grows — groceries silent
@@ -1103,7 +1203,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')!);
     // the prefill is already clamped to the expense's open remainder —
     // save it as-is (which expense is "most recent" is demo-data detail)
-    await screen.findByTestId('reimb-amount');
+    await screen.findByTestId(/^reimb-amount-/);
     fireEvent.click(screen.getByTestId('reimb-save'));
 
     // hero shows what the salary is still worth, gross struck through
@@ -1161,7 +1261,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(picker.querySelector('[data-testid="reimb-pick-rsplit"]')).toBeNull();
     fireEvent.click(screen.getAllByTestId('reimb-pick-rsplit-part-1').at(-1)!.querySelector('button')!);
     // the prefill is the PART's open value, not the container's
-    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    const amountInput = (await screen.findByTestId(/^reimb-amount-/)) as HTMLInputElement;
     expect(amountInput.value).toBe('15,00');
     fireEvent.click(screen.getByTestId('reimb-save'));
     await waitFor(async () => {
@@ -1203,7 +1303,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(picker.querySelector('[data-testid="reimb-pick-csplit"]')).toBeNull();
     fireEvent.click(screen.getAllByTestId('reimb-pick-csplit-part-0').at(-1)!.querySelector('button')!);
     // the prefill is what THAT part can still fund (its reimb earmark)
-    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    const amountInput = (await screen.findByTestId(/^reimb-amount-/)) as HTMLInputElement;
     expect(amountInput.value).toBe('30,00');
     fireEvent.click(screen.getByTestId('reimb-save'));
     await waitFor(async () => {

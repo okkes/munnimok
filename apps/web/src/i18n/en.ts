@@ -2820,6 +2820,13 @@ export const en = {
   'review.receiptView': 'View the receipt',
   'review.receiptEvery': 'Every party',
   'review.receiptNoneFound': 'No receipt matches',
+  'reimb.pickedCount': 'Link {n} · {amount}',
+  'reimb.nothingPicked': 'Tap the transactions to link — several at once',
+  'reimb.stillOpen': '{amount} still open',
+  'reimb.stillToGive': '{amount} left to give',
+  'reimb.linkedBefore': '{amount} linked before',
+  'reimb.totalError': 'Together that is more than the {max} left',
+  'reimb.ofMax': 'of {max}',
 } as const;
 
 export type TranslationKey = keyof typeof en;
