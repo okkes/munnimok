@@ -2813,6 +2813,13 @@ export const en = {
   'receipts.zoomFit': 'Fit the width',
   'space.dragToFrame': 'Drag to frame · pinch or slide to zoom',
   'image.zoom': 'Zoom',
+  'review.receiptAuto': 'suggested',
+  'review.receiptAll': 'All receipts',
+  'review.receiptSearch': 'Search receipts…',
+  'review.receiptNoneOption': 'No receipt',
+  'review.receiptView': 'View the receipt',
+  'review.receiptEvery': 'Every party',
+  'review.receiptNoneFound': 'No receipt matches',
 } as const;
 
 export type TranslationKey = keyof typeof en;

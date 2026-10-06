@@ -2815,4 +2815,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'receipts.zoomFit': 'Genişliğe sığdır',
   'space.dragToFrame': 'Çerçevelemek için sürükleyin · yakınlaştırmak için sıkıştırın ya da kaydırın',
   'image.zoom': 'Yakınlaştırma',
+  'review.receiptAuto': 'önerilen',
+  'review.receiptAll': 'Tüm fişler',
+  'review.receiptSearch': 'Fiş ara…',
+  'review.receiptNoneOption': 'Fiş yok',
+  'review.receiptView': 'Fişi görüntüle',
+  'review.receiptEvery': 'Tüm taraflar',
+  'review.receiptNoneFound': 'Eşleşen fiş yok',
 };

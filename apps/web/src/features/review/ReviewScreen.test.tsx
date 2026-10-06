@@ -1678,3 +1678,107 @@ describe('resolveTransferPrediction (unit)', () => {
     expect(resolveTransferPrediction(stamped, tx, [paypal], catalog, 'saving')).toBe(stamped);
   });
 });
+
+describe('the receipt on the review card (user 2026-10-06)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  /** two shops in the space with an unlinked receipt each, and the flagged card the Amazon one fits */
+  async function seedShopsAndCard() {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revauto'), { trackOutbox: false });
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    const { storeConnLinkId } = await import('@/domain/feedIds');
+    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_amz'), { instanceId: 'demo_conn_amz', store: 'amazon-nl', displayName: 'Amazon' });
+    await seedRepo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, 'demo_conn_cb'), { instanceId: 'demo_conn_cb', store: 'coolblue', displayName: 'Coolblue' });
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, 'rcpt:amazon-nl:demo_conn_amz:a1', { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl' });
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, 'rcpt:coolblue:demo_conn_cb:c1', { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'ra1', {
+      accountId: 'demo_main', date: '2026-01-10', amountCents: -5956, currency: 'EUR', merchant: 'Amzn Mktp NL', catId: 'groceries', needsReview: 1,
+    });
+    seed.close();
+    cleanup();
+  }
+
+  it('the best-matching receipt is suggested on the card and attached on confirm; the sheet searches every receipt and a pick replaces it', async () => {
+    await seedShopsAndCard();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    // the oldest card first: the one the Amazon receipt fits to the cent, a day apart
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Amazon.nl'), { timeout: 5000 });
+    expect(screen.getByTestId('review-receipt-row').textContent).toContain('suggested');
+
+    // the sheet: the suggestion is marked; every receipt sits behind the search and the parties' chips
+    fireEvent.click(screen.getByTestId('review-receipt-row'));
+    await screen.findByTestId('review-receipt-sheet');
+    expect(screen.getByTestId('review-receipt-pick-rcpt:amazon-nl:demo_conn_amz:a1').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('review-receipt-all-list').textContent).toContain('Coolblue');
+    fireEvent.click(screen.getByTestId('review-receipt-party-coolblue'));
+    expect(screen.queryByTestId('review-receipt-all-rcpt:amazon-nl:demo_conn_amz:a1')).toBeNull();
+    fireEvent.change(screen.getByTestId('review-receipt-search'), { target: { value: '57,98' } });
+    fireEvent.click(screen.getByTestId('review-receipt-all-rcpt:coolblue:demo_conn_cb:c1'));
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Coolblue'));
+    expect(screen.getByTestId('review-receipt-row').textContent).not.toContain('suggested');
+
+    // confirm attaches the pick
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const links = await db.receiptLinks.toArray();
+      expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe('rcpt:coolblue:demo_conn_cb:c1');
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
+  it('left alone, the suggestion is attached by the confirm; "No receipt" leaves the card without one', async () => {
+    await seedShopsAndCard();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('suggested'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const links = await db.receiptLinks.toArray();
+      expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe('rcpt:amazon-nl:demo_conn_amz:a1');
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
+  it('opening the receipt from the card is a detour: the deck comes back to the same card with its staged picks', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revback'), { trackOutbox: false });
+    // two flagged cards older than the demo's: the second one wears an attached receipt
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rb0', { accountId: 'demo_main', date: '2026-01-02', amountCents: -500, currency: 'EUR', merchant: 'Bakker', catId: 'groceries', needsReview: 1 });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rb1', { accountId: 'demo_main', date: '2026-01-05', amountCents: -1316, currency: 'EUR', merchant: 'Albert Heijn 1842', catId: 'groceries', needsReview: 1 });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'rlink-back', {
+      receiptId: 'rcpt:ah:demo_conn_ah:rb', source: 'ah', instanceId: 'demo_conn_ah', date: '2026-01-05', totalCents: 1316, merchant: 'Albert Heijn', auto: 0, txId: 'rb1',
+    });
+    seed.close();
+    cleanup();
+
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    expect(screen.getByTestId('review-card').textContent).toContain('Bakker');
+    fireEvent.click(screen.getByTestId('review-skip-btn'));
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('Albert Heijn'));
+    fireEvent.change(screen.getByTestId('review-notes'), { target: { value: 'checked the items' } });
+    // the attached receipt's door opens the receipt screen…
+    fireEvent.click(screen.getByTestId('review-receipt-row'));
+    await screen.findByTestId('screen-receipt');
+    // …and coming back (the screen remounts) lands on the SAME card, note and all — not on the first one
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('Albert Heijn'));
+    expect((screen.getByTestId('review-notes') as HTMLTextAreaElement).value).toBe('checked the items');
+  }, 25_000);
+});

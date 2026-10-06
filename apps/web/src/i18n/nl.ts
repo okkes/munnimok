@@ -2815,4 +2815,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'receipts.zoomFit': 'Passend in de breedte',
   'space.dragToFrame': 'Sleep om te kadreren · knijp of schuif om te zoomen',
   'image.zoom': 'Zoom',
+  'review.receiptAuto': 'voorgesteld',
+  'review.receiptAll': 'Alle bonnen',
+  'review.receiptSearch': 'Zoek bonnen…',
+  'review.receiptNoneOption': 'Geen bon',
+  'review.receiptView': 'Bon bekijken',
+  'review.receiptEvery': 'Elke partij',
+  'review.receiptNoneFound': 'Geen bon gevonden',
 };
