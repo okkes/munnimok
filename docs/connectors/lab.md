@@ -67,7 +67,7 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 The cockpit (`apps/control`) keeps its read-only `/control/connectors`
 twin: the status and an aggregator's inventory, never a write.
 
-## The screens (slices L0–L4)
+## The screens (slices L0–L5)
 
 - **Dashboard** — parties accepting work, agents online, jobs in flight
   and awaiting input, open event streams; every party with its state,
@@ -172,6 +172,20 @@ twin: the status and an aggregator's inventory, never a write.
   survives the tab; the history lists runs newest first with their
   verdicts, a run page is its report (steps with details, the jobs and
   recordings linked), abort and delete.
+- **New service** (L5) — the Recording screen's *Scaffold an adapter*
+  card: name the party (its kebab id, its Pascal type name, the product
+  — shop, bank or registry — and the country) and download the zip the
+  relay builds from the recording: a manifest stub (kind, country,
+  runtime and agent as observed, the fields the recording posted, one
+  resource, every TODO a promise to confirm), the OBSERVED options
+  (the first page, the host that answered the JSON, a constant per
+  call with what was observed in its comment), an adapter stub with a
+  TODO per call that refuses honestly until written, the JSON answers
+  worth reading as redacted fixtures with a README naming each, a test
+  skeleton (the manifest validates; one skipped test per fixture), a
+  README that says where to register it, and `digest.md`. Every path is
+  a repo path: unpack at the root. Explore a site that has no adapter
+  yet, press done, open the recording, scaffold — that is the wizard.
 - **Settings** — the operator, the lab subject, the sign-in mode, the
   api, the build and the identity provider.
 
@@ -191,5 +205,6 @@ fetch and records by shape, lab sessions, lab-managed canaries); L3 done
 navigation vocabulary, `job_traces` with digest.md, the lab's Recording
 screen); L4 done (2026-10-06: the retention bench — see above; the
 history narrowed by `agent`, the job's agent kept after its lease, the
-agent's claims on its view, `LabRetentionRun` on the relay); L5 the
-new-service wizard with the adapter scaffold.
+agent's claims on its view, `LabRetentionRun` on the relay); L5 done
+(2026-10-06: the new-service scaffold — see above; `LabScaffold` on the
+relay, `GET /lab/jobs/{id}/scaffold`). The plan on #441 is complete.

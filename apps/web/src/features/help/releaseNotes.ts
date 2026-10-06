@@ -26,6 +26,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         nl: 'Achter de schermen: het connector-lab kan nu aantonen dat een huishoud-agent een login bewaart en bij de volgende synchronisatie hergebruikt — zo wordt een koppeling die ingelogd hoort te blijven gecontroleerd voordat jij het merkt.',
         tr: 'Perde arkasında: bağlayıcı laboratuvarı artık bir ev aracısının bir girişi sakladığını ve sonraki eşitlemede yeniden kullandığını kanıtlayabiliyor — böylece oturumda kalması gereken bir bağlantı sen fark etmeden kontrol edilir.',
       },
+      {
+        en: 'Behind the scenes: the connector lab can also turn an explored site into the starting files for a new connection — so a shop or bank you ask for gets built faster.',
+        nl: 'Achter de schermen: het connector-lab kan een verkende site ook omzetten in de startbestanden voor een nieuwe koppeling — zo wordt een winkel of bank waar je om vraagt sneller gebouwd.',
+        tr: 'Perde arkasında: bağlayıcı laboratuvarı keşfedilen bir siteyi yeni bir bağlantının başlangıç dosyalarına da dönüştürebiliyor — böylece istediğin bir mağaza ya da banka daha hızlı kurulur.',
+      },
     ],
   },
   {
