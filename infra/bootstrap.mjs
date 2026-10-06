@@ -425,7 +425,10 @@ async function ciApply() {
       console.log(glitchtipState.seeded ? '  glitchtip: accepts the API token — every environment\'s bootstrap creates its projects with it' : '  glitchtip: does not accept the token yet — the deploy creates the admin + token inside the container');
     }
   }
-  const vault = await keepInVault(values, fresh);
+  // The run that mints a credential files it in the vault as well: the job's env
+  // only carries what GitHub held before the run, so without this the Access tab
+  // stayed empty until a second bootstrap (prod + dev, 2026-10-06).
+  const vault = await keepInVault({ ...values, ...secretsState.values }, fresh);
 
   // DSM as code: the shared stack owns the NAS-wide pieces (wildcard
   // certificate, live dir, poller); every stack owns its own rules, bound

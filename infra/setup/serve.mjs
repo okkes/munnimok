@@ -654,7 +654,7 @@ async function accessCredential(stack, fetchImpl = localAwareFetch) {
   const shared = withPlatformEnv(stack.platform, () => sharedOf(stack));
   const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, fetchImpl);
   const item = items.find((i) => i.name === 'Logto infra M2M');
-  if (!item?.username || !item?.password) throw new Error(`the vault holds no "Logto infra M2M" item in folder ${stack.stack} yet — the environment's bootstrap keeps it there once Logto is seeded`);
+  if (!item?.username || !item?.password) throw new Error(`the vault holds no "Logto infra M2M" item in folder ${stack.stack} yet — Bootstrap files it there (the machine credential it mints; the chained Deploy seeds it into Logto): press Bootstrap + Deploy for this environment once, then Reload users`);
   return { m2mId: item.username, m2mSecret: item.password };
 }
 

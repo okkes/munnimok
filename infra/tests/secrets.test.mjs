@@ -103,6 +103,8 @@ test('ensureSecrets (environment, before the shared stack ran): mints VAPID + it
   const r = ensureSecrets(prodStack());
   assert.deepEqual(r.minted.sort(), ['LOGTO_ADMIN_M2M_ID', 'LOGTO_ADMIN_M2M_SECRET', 'LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET', 'POSTGRES_PASSWORD', 'PUSH_VAPID_PRIVATE_KEY', 'PUSH_VAPID_PUBLIC_KEY']);
   const stored = gh.secrets('nas-prod');
+  assert.deepEqual(Object.keys(r.values).sort(), r.minted.filter((n) => !n.startsWith('PUSH_VAPID_')).sort(), 'the minted values come back by name, so the same run can file them in the vault');
+  assert.equal(r.values.LOGTO_INFRA_M2M_ID, stored.LOGTO_INFRA_M2M_ID, 'the value returned is the value stored');
   assert.deepEqual(Object.keys(stored).sort(), r.minted.sort(), 'exactly the minted ones landed in nas-prod');
   assert.match(stored.PUSH_VAPID_PUBLIC_KEY, /^B[A-Za-z0-9_-]{86}$/);
   assert.match(stored.LOGTO_INFRA_M2M_ID, /^infra[0-9a-f]{16}$/);
