@@ -170,8 +170,9 @@ public sealed class JobRunner
             context.Progress(JobStep.AgentAssigned);
 
             var run = await RunAdapterAsync(
-                adapter, manifest, job, context, profileId, lease.Token,
-                mayPostTrace: () => !leaseLost && !abort.IsCancellationRequested).ConfigureAwait(false);
+                adapter, manifest, job, context, profileId,
+                mayPostTrace: () => !leaseLost && !abort.IsCancellationRequested,
+                lease.Token).ConfigureAwait(false);
 
             // Attached HERE rather than in each of ExecuteAsync's branches, so
             // that a job kind added later carries them without anybody
@@ -182,24 +183,7 @@ public sealed class JobRunner
             context.Progress(JobStep.Finalizing);
             await context.FlushProgressAsync().ConfigureAwait(false);
 
-            // Deliberately not inside the failure mapping below. The run
-            // succeeded; a post that will not land is a delivery problem, and
-            // reporting it as a failed job would throw away real data the
-            // adapter already went and got.
-            if (await SendAsync(ct => _control.ResultAsync(job.JobId, result, ct), $"result for {job.JobId}")
-                    .ConfigureAwait(false))
-            {
-                if (profileId is not null) _profiles.MarkOk(profileId, job.Provider, _time.GetUtcNow());
-                _logger.LogInformation("job {JobId} ({Kind}/{Provider}) succeeded", job.JobId, job.Kind, job.Provider);
-            }
-            else
-            {
-                // The control plane's lease TTL is the documented backstop for
-                // an agent that goes silent, and it returns the job to the
-                // queue exactly once.
-                _logger.LogError("job {JobId}: succeeded but the result did not land; leaving it to the lease TTL",
-                    job.JobId);
-            }
+            await LandResultAsync(job, result, profileId).ConfigureAwait(false);
         }
         catch (ConnectorException ex)
         {
@@ -721,14 +705,36 @@ public sealed class JobRunner
     /// the run an adapter author most wants to read. Not on a lost lease or
     /// a shutdown: the control plane has already decided what happened.
     /// </summary>
+    /// <summary>
+    /// The result, posted. Deliberately not inside the failure mapping: the
+    /// run succeeded; a post that will not land is a delivery problem, and
+    /// reporting it as a failed job would throw away real data the adapter
+    /// already went and got.
+    /// </summary>
+    private async Task LandResultAsync(LeasedJob job, JobResultRequest result, string? profileId)
+    {
+        if (await SendAsync(ct => _control.ResultAsync(job.JobId, result, ct), $"result for {job.JobId}")
+                .ConfigureAwait(false))
+        {
+            if (profileId is not null) _profiles.MarkOk(profileId, job.Provider, _time.GetUtcNow());
+            _logger.LogInformation("job {JobId} ({Kind}/{Provider}) succeeded", job.JobId, job.Kind, job.Provider);
+            return;
+        }
+
+        // The control plane's lease TTL is the documented backstop for an
+        // agent that goes silent, and it returns the job to the queue exactly
+        // once.
+        _logger.LogError("job {JobId}: succeeded but the result did not land; leaving it to the lease TTL", job.JobId);
+    }
+
     private async Task<JobResultRequest> RunAdapterAsync(
         IProviderAdapter adapter,
         ProviderManifest manifest,
         LeasedJob job,
         AgentJobContext context,
         string? profileId,
-        CancellationToken ct,
-        Func<bool> mayPostTrace)
+        Func<bool> mayPostTrace,
+        CancellationToken ct)
     {
         try
         {

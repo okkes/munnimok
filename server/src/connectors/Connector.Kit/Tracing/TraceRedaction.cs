@@ -282,9 +282,9 @@ public static partial class TraceRedaction
             }
 
             case JsonArray array:
-                foreach (var item in array)
+                foreach (var item in array.Where(i => i is not null))
                 {
-                    if (item is not null) touched |= MaskNode(item, depth + 1);
+                    touched |= MaskNode(item!, depth + 1);
                 }
 
                 break;
