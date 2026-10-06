@@ -67,7 +67,7 @@ describe('Providers', () => {
   });
 
   it('a party page shows its facts, fields, resources and canary; the inventory loads and revokes after asking', async () => {
-    const confirm = vi.fn(() => true);
+    const confirm = vi.fn((_message?: string) => true);
     vi.stubGlobal('confirm', confirm);
     const calls = scriptFetch({
       ...HAPPY(),

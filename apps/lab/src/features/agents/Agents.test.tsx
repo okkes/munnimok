@@ -15,7 +15,7 @@ describe('Agents', () => {
   });
 
   it('lists the fleet and the own machines with health, heartbeat and kept logins; revoke asks first', async () => {
-    const confirm = vi.fn(() => true);
+    const confirm = vi.fn((_message?: string) => true);
     vi.stubGlobal('confirm', confirm);
     let revoked = false;
     const calls = scriptFetch({

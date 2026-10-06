@@ -13,7 +13,7 @@ export function scriptFetch(routes: Record<string, Handler>) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
+      const url = new URL(input instanceof Request ? input.url : input.toString());
       const key = `${(init?.method ?? 'GET').toUpperCase()} ${url.pathname}`;
       calls.push(key);
       const out = routes[key]?.(init, url) ?? { status: 404 };

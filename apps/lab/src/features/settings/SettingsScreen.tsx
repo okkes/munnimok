@@ -4,9 +4,21 @@ import type { ScreenProps } from '../../app/LabApp';
 import type { LabConfig } from '../../config';
 import type { HealthInfo, LabMe } from '../../types';
 
+type MeState = LabMe | null | 'unreachable' | 'loading';
+
+/** the lab subject line: the pseudonym, or why there is none */
+function subjectLine(me: MeState): string {
+  if (me === 'loading') return '…';
+  if (me === null) return 'none — this environment runs no connectors';
+  if (me === 'unreachable') return 'not answering';
+  return me.subject;
+}
+
+const operatorLine = (me: MeState): string => (me !== 'loading' && me !== null && me !== 'unreachable' ? (me.name ?? me.email ?? '—') : '—');
+
 /** who the lab is here: the operator, the lab subject the control plane knows them as, the environment it talks to */
 export function SettingsScreen({ call, config, testAuth }: Readonly<{ config: LabConfig; testAuth: boolean } & ScreenProps>) {
-  const [me, setMe] = useState<LabMe | null | 'unreachable' | 'loading'>('loading');
+  const [me, setMe] = useState<MeState>('loading');
   const [health, setHealth] = useState<HealthInfo | null>(null);
 
   useEffect(() => {
@@ -29,12 +41,12 @@ export function SettingsScreen({ call, config, testAuth }: Readonly<{ config: La
         <div className="facts">
           <div className="fact">
             <span className="fact-label">Operator</span>
-            <span className="fact-value">{me !== 'loading' && me !== null && me !== 'unreachable' ? (me.name ?? me.email ?? '—') : '—'}</span>
+            <span className="fact-value">{operatorLine(me)}</span>
           </div>
           <div className="fact">
             <span className="fact-label">Lab subject</span>
             <span className="fact-value mono" data-testid="settings-subject">
-              {me === 'loading' ? '…' : me === null ? 'none — this environment runs no connectors' : me === 'unreachable' ? 'not answering' : me.subject}
+              {subjectLine(me)}
             </span>
           </div>
           <div className="fact">

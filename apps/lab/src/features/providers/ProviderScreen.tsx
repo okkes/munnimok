@@ -60,6 +60,7 @@ export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } 
   const p = entry;
   const status = p.status;
   const fields = allFields(p);
+  const kindLine = p.country ? `${p.kind} · ${p.country}` : p.kind;
 
   return (
     <>
@@ -94,7 +95,7 @@ export function ProviderScreen({ id, call, busy, act }: Readonly<{ id: string } 
       <section className="card" data-testid="provider-facts">
         <h2>What the manifest promises</h2>
         <div className="facts">
-          <Fact label="Kind" value={`${p.kind}${p.country ? ` · ${p.country}` : ''}`} />
+          <Fact label="Kind" value={kindLine} />
           <Fact label="Runtime" value={tierOf(p.runtime)} />
           <Fact label="Runs on" value={agentLine(p)} />
           <Fact label="Secret custody" value={p.secretCustody ?? '—'} />
