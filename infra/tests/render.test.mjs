@@ -84,7 +84,7 @@ test('shared stack in LAN mode: the family Caddy takes 443 and fronts every envi
     assert.match(caddy, /^\tlocal_certs$/m);
     assert.deepEqual(siteAddresses(caddy).sort(), [
       'https://localhost:8384',
-      ...['prod', 'dev'].flatMap((e) => [`https://munni-${e}-lcl.${d}`, `https://munni-${e}-lcl-admin.${d}`, `https://munni-${e}-lcl-api.${d}`, `https://munni-${e}-lcl-logto.${d}`, `https://munni-${e}-lcl-logto-admin.${d}`]),
+      ...['prod', 'dev'].flatMap((e) => [`https://munni-${e}-lcl.${d}`, `https://munni-${e}-lcl-admin.${d}`, `https://munni-${e}-lcl-lab.${d}`, `https://munni-${e}-lcl-api.${d}`, `https://munni-${e}-lcl-logto.${d}`, `https://munni-${e}-lcl-logto-admin.${d}`]),
       `https://glitchtip-lcl.${d}`, `https://control-lcl.${d}`, `https://pgadmin-lcl.${d}`, `https://vault-lcl.${d}`,
       `http://ca.${d}`,
     ].sort());
@@ -142,8 +142,8 @@ test('shared stack with no environment yet (mid create/delete): renders with the
 test('environment stack on nas: env-suffixed services with plain in-stack aliases, own Postgres + own Logto (public hostnames resolved via host-gateway), the api\'s CORS with the control cockpit when it powers it', () => {
   const { compose, env, stack } = render('munni-nas-prod');
   assert.match(compose, /^name: munni-nas-prod$/m);
-  assert.deepEqual(servicesOf(compose), ['postgres-prod', 'web-prod', 'admin-prod', 'api-prod', 'logto-prod']);
-  for (const [svc, alias] of [['postgres-prod', 'postgres'], ['web-prod', 'web'], ['admin-prod', 'admin'], ['api-prod', 'api'], ['logto-prod', 'logto']]) {
+  assert.deepEqual(servicesOf(compose), ['postgres-prod', 'web-prod', 'admin-prod', 'lab-prod', 'api-prod', 'logto-prod']);
+  for (const [svc, alias] of [['postgres-prod', 'postgres'], ['web-prod', 'web'], ['admin-prod', 'admin'], ['lab-prod', 'lab'], ['api-prod', 'api'], ['logto-prod', 'logto']]) {
     assert.match(block(compose, svc), new RegExp(`aliases: \\[${alias}\\]`), `${svc} answers to "${alias}" inside the stack`);
     assert.match(block(compose, svc), /^      shared: \{\}$/m, `${svc} joins the platform's shared network`);
   }
@@ -158,11 +158,17 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   });
   assert.deepEqual(portsOf(block(compose, 'web-prod')), ['8380:80']);
   assert.equal(envOf(block(compose, 'admin-prod')).MUNNI_LOGTO_APP_ID, '${ADMIN_LOGTO_APP_ID}');
+  assert.equal(envOf(block(compose, 'admin-prod')).MUNNI_LAB_URL, `https://munni-prod-nas-lab.${DOMAIN}`, 'the portal hands its Connectors tab over to the lab (#441)');
+  // the lab (#441): its own app id and crash project, the same api and identity provider
+  assert.deepEqual(envOf(block(compose, 'lab-prod')), { MUNNI_API_URL: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`, MUNNI_LOGTO_APP_ID: '${LAB_LOGTO_APP_ID}', MUNNI_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_GLITCHTIP_DSN: '${LAB_GLITCHTIP_DSN}' });
+  assert.deepEqual(portsOf(block(compose, 'lab-prod')), ['8388:80']);
+  assert.match(env, /^LAB_LOGTO_APP_ID=\$\{VITE_LOGTO_APP_ID_LAB\}$/m);
+  assert.match(env, /^LAB_GLITCHTIP_DSN=\$\{VITE_GLITCHTIP_DSN_LAB\}$/m);
   const api = envOf(block(compose, 'api-prod'));
   assert.equal(api.Auth__Authority, `https://munni-prod-nas-logto.${DOMAIN}/oidc`);
   assert.equal(api.Auth__Audience, `https://munni-prod-nas-api.${DOMAIN}`);
   assert.deepEqual(Object.keys(api).filter((k) => k.startsWith('Auth__')), ['Auth__Authority', 'Auth__Audience'], 'hosted: https-strict, metadata from the authority itself');
-  assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
+  assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://munni-prod-nas-lab.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.equal(api.ConnectionStrings__Db, 'Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}');
   assert.equal(api.Ocr__BaseUrl, 'http://ocr:8884');
   assert.deepEqual(portsOf(block(compose, 'api-prod')), ['8382:8080']);
@@ -185,11 +191,11 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
 
   // another environment: its own slot ports, image channel and app channel; the cockpit is not its guest
   const staging = render('munni-nas-staging');
-  assert.deepEqual(servicesOf(staging.compose), ['postgres-staging', 'web-staging', 'admin-staging', 'api-staging', 'logto-staging']);
+  assert.deepEqual(servicesOf(staging.compose), ['postgres-staging', 'web-staging', 'admin-staging', 'lab-staging', 'api-staging', 'logto-staging']);
   assert.deepEqual(portsOf(block(staging.compose, 'web-staging')), ['8480:80']);
   assert.deepEqual(portsOf(block(staging.compose, 'logto-staging')), ['3301:3301', '3302:3302']);
   assert.equal(envOf(block(staging.compose, 'web-staging')).MUNNI_CHANNEL, 'staging');
-  assert.deepEqual(corsOf(block(staging.compose, 'api-staging')), [`https://munni-staging-nas.${DOMAIN}`, `https://munni-staging-nas-admin.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
+  assert.deepEqual(corsOf(block(staging.compose, 'api-staging')), [`https://munni-staging-nas.${DOMAIN}`, `https://munni-staging-nas-admin.${DOMAIN}`, `https://munni-staging-nas-lab.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.match(staging.env, /^TAG=dev$/m);
 });
 
@@ -200,7 +206,7 @@ test('environment stack on lcl: in-network Logto metadata over http, CORS with t
   assert.equal(api.Auth__Authority, 'http://localhost:3201/oidc');
   assert.equal(api.Auth__MetadataAddress, 'http://logto:3201/oidc/.well-known/openid-configuration', 'the issuer stays the browser-facing url; metadata is fetched in-network');
   assert.equal(api.Auth__RequireHttps, '"false"');
-  assert.deepEqual(corsOf(block(plain.compose, 'api-prod')), ['http://localhost:8380', 'http://localhost:8381', 'http://localhost:8385', 'https://localhost', 'capacitor://localhost']);
+  assert.deepEqual(corsOf(block(plain.compose, 'api-prod')), ['http://localhost:8380', 'http://localhost:8381', 'http://localhost:8388', 'http://localhost:8385', 'https://localhost', 'capacitor://localhost']);
   assert.equal(envOf(block(plain.compose, 'logto-prod')).TRUST_PROXY_HEADER, '"0"', 'no proxy in front without LAN mode');
   assert.deepEqual(under(block(plain.compose, 'logto-prod'), 'extra_hosts'), [], 'localhost needs no host-gateway mapping');
   assert.equal(envOf(block(plain.compose, 'web-prod')).MUNNI_PUBLIC_ORIGIN, 'http://localhost:8380');
@@ -213,13 +219,13 @@ test('environment stack on lcl: in-network Logto metadata over http, CORS with t
   assert.match(plain.env, /^LOGODEV_SECRET_KEY=$/m);
   assert.doesNotMatch(plain.env, /\$\{/);
   const dev = render('munni-lcl-dev', values);
-  assert.deepEqual(corsOf(block(dev.compose, 'api-dev')), ['http://localhost:8480', 'http://localhost:8481', 'https://localhost', 'capacitor://localhost'], 'dev does not power the cockpit');
+  assert.deepEqual(corsOf(block(dev.compose, 'api-dev')), ['http://localhost:8480', 'http://localhost:8481', 'http://localhost:8488', 'https://localhost', 'capacitor://localhost'], 'dev does not power the cockpit');
 
   fx.lanOn('192.168.1.50');
   try {
     const d = '192-168-1-50.sslip.io';
     const lan = render('munni-lcl-prod', values);
-    assert.deepEqual(corsOf(block(lan.compose, 'api-prod')), [`https://munni-prod-lcl.${d}`, `https://munni-prod-lcl-admin.${d}`, 'http://localhost:8380', 'http://localhost:8381', `https://control-lcl.${d}`, 'http://localhost:8385', 'https://localhost', 'capacitor://localhost']);
+    assert.deepEqual(corsOf(block(lan.compose, 'api-prod')), [`https://munni-prod-lcl.${d}`, `https://munni-prod-lcl-admin.${d}`, `https://munni-prod-lcl-lab.${d}`, 'http://localhost:8380', 'http://localhost:8381', 'http://localhost:8388', `https://control-lcl.${d}`, 'http://localhost:8385', 'https://localhost', 'capacitor://localhost']);
     assert.equal(envOf(block(lan.compose, 'logto-prod')).TRUST_PROXY_HEADER, '"1"', 'behind the family Caddy');
     assert.equal(envOf(block(lan.compose, 'logto-prod')).ENDPOINT, `https://munni-prod-lcl-logto.${d}`);
     assert.equal(envOf(block(lan.compose, 'api-prod')).Auth__MetadataAddress, 'http://logto:3201/oidc/.well-known/openid-configuration');

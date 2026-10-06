@@ -308,6 +308,13 @@ escrow, no server-side recovery, no honeypot.
   Logto app + explicit server-side grant list — quota, user diagnosis,
   GDPR deletion, catalog publishing. Shares no code with the member
   app.
+- **Connector lab** (`apps/lab`, #441, docs/connectors/lab.md): the
+  operator's workbench for the connector platform — parties and their
+  health with the kill switch, the fleet and the hosted slots, the
+  canaries; the test bench, the recorder and the retention checks
+  follow. Same account and admin scope as the console, its own Logto
+  app and crash project, a lab subject per operator so nothing it does
+  reaches the app.
 - **Infrastructure as code** (`infra/`): stack files + bootstrap mint
   secrets, render compose/env, drive Logto (apps, social connectors)
   and DSM reverse-proxy rules; see infra/README.md for the

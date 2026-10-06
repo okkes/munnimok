@@ -37,10 +37,10 @@ test('names: stack ↔ platform/env round-trip, hosts carry env and platform, po
   assert.deepEqual(parseStackName('munni-lcl-dev'), { platform: 'lcl', env: 'dev' });
   assert.equal(parseStackName('munni-nas'), null);
   assert.equal(parseStackName('other-nas-prod'), null);
-  assert.deepEqual(hostsFor('nas', 'prod'), { web: 'munni-prod-nas', admin: 'munni-prod-nas-admin', api: 'munni-prod-nas-api', logto: 'munni-prod-nas-logto', logtoAdmin: 'munni-prod-nas-logto-admin' });
+  assert.deepEqual(hostsFor('nas', 'prod'), { web: 'munni-prod-nas', admin: 'munni-prod-nas-admin', api: 'munni-prod-nas-api', lab: 'munni-prod-nas-lab', logto: 'munni-prod-nas-logto', logtoAdmin: 'munni-prod-nas-logto-admin' });
   assert.deepEqual(hostsFor('lcl'), { glitchtip: 'glitchtip-lcl', vault: 'vault-lcl', control: 'control-lcl', pgadmin: 'pgadmin-lcl' });
   assert.deepEqual(envPorts(0), PORT_SLOT);
-  assert.deepEqual(envPorts(2), { web: 8580, admin: 8581, api: 8582, connector: 8587, logto: 3401, logtoAdmin: 3402 });
+  assert.deepEqual(envPorts(2), { web: 8580, admin: 8581, api: 8582, connector: 8587, lab: 8588, logto: 3401, logtoAdmin: 3402 });
   assert.deepEqual(hostsFor('nas', 'prod', { connectors: true }).connector, 'munni-prod-nas-connector', 'the control plane host exists only for an environment that runs connectors');
   assert.deepEqual(SHARED_PORTS, { glitchtip: 8383, vault: 8384, control: 8385, pgadmin: 8386 });
 });
@@ -51,8 +51,8 @@ test('lcl stack: plain localhost urls on the slot ports (the vault https), LAN m
   assert.equal(prod.delivery, 'docker');
   assert.equal(prod.domain, null);
   assert.equal(prod.host('web'), 'localhost');
-  assert.deepEqual(prod.urls, { web: 'http://localhost:8380', admin: 'http://localhost:8381', api: 'http://localhost:8382', logto: 'http://localhost:3201', logtoAdmin: 'http://localhost:3202' });
-  assert.deepEqual(loadStack('munni-lcl-dev').urls, { web: 'http://localhost:8480', admin: 'http://localhost:8481', api: 'http://localhost:8482', logto: 'http://localhost:3301', logtoAdmin: 'http://localhost:3302' });
+  assert.deepEqual(prod.urls, { web: 'http://localhost:8380', admin: 'http://localhost:8381', api: 'http://localhost:8382', lab: 'http://localhost:8388', logto: 'http://localhost:3201', logtoAdmin: 'http://localhost:3202' });
+  assert.deepEqual(loadStack('munni-lcl-dev').urls, { web: 'http://localhost:8480', admin: 'http://localhost:8481', api: 'http://localhost:8482', lab: 'http://localhost:8488', logto: 'http://localhost:3301', logtoAdmin: 'http://localhost:3302' });
   const shared = loadStack('munni-lcl-shared');
   assert.equal(shared.role, 'shared');
   assert.deepEqual(shared.urls, { glitchtip: 'http://localhost:8383', vault: 'https://localhost:8384', control: 'http://localhost:8385', pgadmin: 'http://localhost:8386' });
@@ -74,6 +74,7 @@ test('lcl stack: plain localhost urls on the slot ports (the vault https), LAN m
     assert.deepEqual(lanProd.urls, {
       web: 'https://munni-prod-lcl.192-168-1-50.sslip.io',
       admin: 'https://munni-prod-lcl-admin.192-168-1-50.sslip.io',
+      lab: 'https://munni-prod-lcl-lab.192-168-1-50.sslip.io',
       api: 'https://munni-prod-lcl-api.192-168-1-50.sslip.io',
       logto: 'https://munni-prod-lcl-logto.192-168-1-50.sslip.io',
       logtoAdmin: 'https://munni-prod-lcl-logto-admin.192-168-1-50.sslip.io',
@@ -106,11 +107,12 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
   assert.deepEqual(prod.urls, {
     web: `https://munni-prod-nas.${DOMAIN}`,
     admin: `https://munni-prod-nas-admin.${DOMAIN}`,
+    lab: `https://munni-prod-nas-lab.${DOMAIN}`,
     api: `https://munni-prod-nas-api.${DOMAIN}`,
     logto: `https://munni-prod-nas-logto.${DOMAIN}`,
     logtoAdmin: `https://munni-prod-nas-logto-admin.${DOMAIN}`,
   });
-  assert.deepEqual(prod.ports, { web: 8380, admin: 8381, api: 8382, connector: 8387, logto: 3201, logtoAdmin: 3202 });
+  assert.deepEqual(prod.ports, { web: 8380, admin: 8381, api: 8382, connector: 8387, lab: 8388, logto: 3201, logtoAdmin: 3202 });
   assert.equal(prod.githubEnvironment, 'nas-prod');
   assert.equal(prod.sharedStack, 'munni-nas-shared');
   assert.equal(prod.channel, 'latest');
@@ -122,7 +124,7 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
 
   const staging = loadStack('munni-nas-staging');
   assert.equal(staging.slot, 1);
-  assert.deepEqual(staging.ports, { web: 8480, admin: 8481, api: 8482, connector: 8487, logto: 3301, logtoAdmin: 3302 });
+  assert.deepEqual(staging.ports, { web: 8480, admin: 8481, api: 8482, connector: 8487, lab: 8488, logto: 3301, logtoAdmin: 3302 });
   assert.equal(staging.urls.web, `https://munni-staging-nas.${DOMAIN}`);
   assert.equal(staging.channel, 'dev');
   assert.equal(staging.appChannel, 'staging', 'a non-prod environment calls itself staging by default');

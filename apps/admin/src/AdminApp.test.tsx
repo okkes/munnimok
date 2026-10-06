@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminApp } from './AdminApp';
 import type { AdminConfig } from './config';
 
-const CONFIG: AdminConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '' };
+const CONFIG: AdminConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '', labUrl: 'https://lab.test' };
 
 const USERS = [
   { id: 'u1', sub: 'sub-alice', displayName: 'Alice', email: 'alice@x.nl', createdAt: '2026-01-01T00:00:00Z', spaceCount: 2 },
@@ -39,37 +39,6 @@ const CATALOG = {
     { id: 'groceries', names: { en: 'Food shops', nl: 'Eten', tr: 'Gida' }, icon: 'cart' },
   ],
   keywords: [{ catId: 'hobby', keywords: ['padel'] }],
-};
-
-// the connector control plane as /admin/connectors/* relays it (#367 M6)
-const CONNECTOR_STATUS = {
-  service: { kinds: ['bank', 'registry', 'store'], version: '1.0.0', manifestDigest: 'sha256-abcdef1234567890' },
-  providers: [
-    { providerId: 'ah', state: 'paused', since: '2026-09-29T10:00:00Z', reasonKey: 'connect.paused.maintenance', acceptsWork: false },
-    { providerId: 'mock-store-simple', state: 'healthy', since: '2026-09-29T09:00:00Z', reasonKey: null, acceptsWork: true },
-  ],
-  agents: { total: 2, online: 1, revoked: 0 },
-  queue: { queued: 1, running: 0, awaitingInput: 2 },
-  relay: { openStreams: 3 },
-};
-const CONNECTOR_AGENTS = {
-  agents: [
-    { id: 'agt_kitchen', name: 'the kitchen laptop', class: 'byo', revoked: false, lastHeartbeatAt: '2026-09-30T06:00:00Z', online: true, stale: false, profiles: [{ id: 'prof_1', provider: 'asn-persistent', healthy: true, lastOkAt: null }] },
-  ],
-};
-const CONNECTOR_CANARIES = {
-  canaries: [{ providerId: 'ah', resource: 'receipts', intervalMinutes: 60, lastRunAt: '2026-09-30T05:00:00Z', lastJobId: 'job_1', intact: false, verdict: 'login page changed' }],
-};
-// the hosted private agents (#420 A2): one free slot, one bound to Bob, Alice asking
-const slotAgent = (id: string, name: string, extra: Record<string, unknown>) => ({ id, name, class: 'byo', revoked: false, lastHeartbeatAt: '2026-09-30T06:00:00Z', online: true, stale: false, profiles: [], hosted: true, ...extra });
-const CONNECTOR_PRIVATE = {
-  total: 2,
-  free: 1,
-  slots: [
-    { agent: slotAgent('agt_slot1', 'munni dev private agent 1', { bound: false, resetting: false }), subject: null, who: null },
-    { agent: slotAgent('agt_slot2', 'munni dev private agent 2', { bound: true, boundAt: '2026-09-30T05:00:00Z', resetting: false, profiles: [{ id: 'prof_2', provider: 'duo', healthy: true, lastOkAt: null }] }), subject: 'u_bob', who: 'Bob' },
-  ],
-  requests: [{ id: 'par_1', subject: 'u_alice', who: 'Alice', state: 'pending', createdAt: '2026-09-30T06:30:00Z' }],
 };
 
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
@@ -215,104 +184,12 @@ describe('AdminApp (test-auth mode)', () => {
     await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('must be arrays'));
   });
 
-  it('connectors: the parties with the kill switch, the fleet with revoke, the canaries (#367 M6)', async () => {
-    const posted: unknown[] = [];
-    let revoked = false;
-    const calls = scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/connectors/status': () => ({ body: CONNECTOR_STATUS }),
-      'GET /admin/connectors/agents': () => ({ body: revoked ? { agents: [] } : CONNECTOR_AGENTS }),
-      'GET /admin/connectors/canaries': () => ({ body: CONNECTOR_CANARIES }),
-      'POST /admin/connectors/providers/ah/status': (init) => {
-        posted.push(JSON.parse(String(init?.body)));
-        return { body: { providerId: 'ah', state: 'healthy', since: '2026-09-30T06:00:00Z', reasonKey: null, acceptsWork: true } };
-      },
-      'POST /admin/connectors/providers/mock-store-simple/status': (init) => {
-        posted.push(JSON.parse(String(init?.body)));
-        return { body: { providerId: 'mock-store-simple', state: 'paused', since: '2026-09-30T06:00:00Z', reasonKey: null, acceptsWork: false } };
-      },
-      'DELETE /admin/connectors/agents/agt_kitchen': () => {
-        revoked = true;
-        return { status: 204 };
-      },
-      'GET /admin/connectors/private-agents': () => ({ body: CONNECTOR_PRIVATE }),
-      'POST /admin/connectors/private-agents/requests/par_1/approve': () => ({ body: { ...CONNECTOR_PRIVATE.requests[0], state: 'approved', agentId: 'agt_slot1' } }),
-      'POST /admin/connectors/private-agents/agt_slot2/release': () => ({ status: 204 }),
-    });
-    vi.stubGlobal('confirm', vi.fn(() => true));
+  it('#441: the Connectors tab hands over to the lab with its link', async () => {
+    scriptFetch(HAPPY_ROUTES());
     renderAdmin();
     fireEvent.click(await screen.findByTestId('nav-connectors'));
-    const tiles = await screen.findByTestId('connectors-tiles');
-    expect(tiles.textContent).toContain('1 / 2'); // one of two parties accepts work; one of two agents is online
-    expect(tiles.textContent).toContain('1 · 2'); // one job in flight, two awaiting input
-    const providers = screen.getByTestId('connectors-providers');
-    expect(screen.getByTestId('connector-state-ah').textContent).toBe('paused');
-    expect(providers.textContent).toContain('connect.paused.maintenance');
-
-    // resume the paused party; pause the healthy one with a reason key
-    fireEvent.click(screen.getByTestId('connector-resume-ah'));
-    await waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0]).toEqual({ state: 'healthy', reasonKey: null });
-    fireEvent.change(screen.getByTestId('connector-reason-mock-store-simple'), { target: { value: 'connect.paused.maintenance' } });
-    fireEvent.click(screen.getByTestId('connector-pause-mock-store-simple'));
-    await waitFor(() => expect(posted).toHaveLength(2));
-    expect(posted[1]).toEqual({ state: 'paused', reasonKey: 'connect.paused.maintenance' });
-
-    // retiring expires every live session, so it wants the id typed
-    fireEvent.click(await screen.findByTestId('connector-retire-mock-store-simple'));
-    const typed = await screen.findByTestId('connector-retire-typed');
-    expect((screen.getByTestId('connector-retire-confirm') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(typed, { target: { value: 'mock-store-simple' } });
-    fireEvent.click(screen.getByTestId('connector-retire-confirm'));
-    await waitFor(() => expect(posted).toHaveLength(3));
-    expect(posted[2]).toMatchObject({ state: 'retired' });
-
-    // the fleet: health and the logins each keeps; revoking asks first
-    const agents = screen.getByTestId('connectors-agents');
-    expect(agents.textContent).toContain('the kitchen laptop');
-    expect(agents.textContent).toContain('online');
-    expect(agents.textContent).toContain('asn-persistent');
-    fireEvent.click(screen.getByTestId('agent-revoke-agt_kitchen'));
-    await waitFor(() => expect(revoked).toBe(true));
-    expect(calls).toContain('DELETE /admin/connectors/agents/agt_kitchen');
-    await waitFor(() => expect(screen.getByTestId('connectors-agents').textContent).toContain('No household agents'));
-
-    // the private agents (#420 A2): the request wears a name beside its pseudonym and is approved; a bound slot can be taken back
-    expect(screen.getByTestId('connectors-private-free').textContent).toBe('1 of 2 free');
-    expect(screen.getByTestId('private-request-par_1').textContent).toContain('Alice');
-    fireEvent.click(screen.getByTestId('private-approve-par_1'));
-    await waitFor(() => expect(calls).toContain('POST /admin/connectors/private-agents/requests/par_1/approve'));
-    expect(screen.getByTestId('private-slot-agt_slot2').textContent).toContain('Bob');
-    expect(screen.getByTestId('private-slot-agt_slot1').textContent).toContain('free');
-    expect(screen.queryByTestId('private-release-agt_slot1')).toBeNull();
-    fireEvent.click(screen.getByTestId('private-release-agt_slot2'));
-    await waitFor(() => expect(calls).toContain('POST /admin/connectors/private-agents/agt_slot2/release'));
-
-    // a broken canary wears its verdict
-    expect(screen.getByTestId('connectors-canaries').textContent).toContain('login page changed');
-  });
-
-  it('connectors: an environment without connectors says so, and a relay refusal reaches the error strip as its code', async () => {
-    scriptFetch({ ...HAPPY_ROUTES(), 'GET /admin/connectors/status': () => ({ status: 404 }) });
-    renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-connectors'));
-    expect((await screen.findByTestId('connectors-absent')).textContent).toContain('runs no connectors');
-    cleanup();
-
-    scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/connectors/status': () => ({ body: { ...CONNECTOR_STATUS, providers: [CONNECTOR_STATUS.providers[1]] } }),
-      'GET /admin/connectors/agents': () => ({ body: { agents: [] } }),
-      'GET /admin/connectors/canaries': () => ({ body: { canaries: [] } }),
-      'POST /admin/connectors/providers/mock-store-simple/status': () => ({
-        status: 503,
-        body: { error: { code: 'provider_unavailable', retriable: true, userAction: 'retry', messageKey: 'connect.error.provider_unavailable', detailId: null, retryAfterSeconds: null } },
-      }),
-    });
-    renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-connectors'));
-    fireEvent.click(await screen.findByTestId('connector-pause-mock-store-simple'));
-    expect((await screen.findByTestId('admin-error')).textContent).toContain('provider_unavailable');
+    expect((await screen.findByTestId('connectors-handover')).textContent).toContain('moved to the lab');
+    expect(screen.getByTestId('connectors-open-lab').getAttribute('href')).toBe('https://lab.test');
   });
 
   it('a user diagnosis lists the connector sessions the relay binds (#367 M6)', async () => {
@@ -334,58 +211,6 @@ describe('AdminApp (test-auth mode)', () => {
     const line = await screen.findByTestId('user-diagnosis-connectors');
     expect(line.textContent).toContain('mock-store-simple awaiting_input');
     expect(line.textContent).toContain('conn-1234567…');
-  });
-
-  it('connectors: a bank party shows its budget, and its inventory lists every environment’s consents with a revoke that asks first (#414)', async () => {
-    const revoked: string[] = [];
-    scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/connectors/status': () => ({
-        body: {
-          ...CONNECTOR_STATUS,
-          providers: [
-            { providerId: 'gocardless', state: 'healthy', since: '2026-09-30T03:00:00Z', reasonKey: null, acceptsWork: true, quota: { limit: 10, remaining: 2, resetAt: '2026-10-01T00:00:00Z', seenAt: '2026-09-30T03:05:00Z' } },
-            CONNECTOR_STATUS.providers[1],
-          ],
-        },
-      }),
-      'GET /admin/connectors/agents': () => ({ body: { agents: [] } }),
-      'GET /admin/connectors/canaries': () => ({ body: { canaries: [] } }),
-      'GET /admin/connectors/providers/gocardless/remote-consents': () => ({
-        body: {
-          consents: [
-            { id: 'req-here-0001', status: 'LN', createdAt: '2026-09-01T00:00:00Z', reference: 'ref-1', institutionId: 'ING_INGBNL2A', origin: 'https://app.munni.example', accountCount: 2 },
-            { id: 'req-gone-0002', status: 'EX', createdAt: null, reference: null, institutionId: 'ASN_BANK_ASNBNL21', origin: null, accountCount: 0 },
-          ].filter((c) => !revoked.includes(c.id)),
-        },
-      }),
-      'DELETE /admin/connectors/providers/gocardless/remote-consents/req-gone-0002': () => {
-        revoked.push('req-gone-0002');
-        return { status: 204 };
-      },
-    });
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-connectors'));
-    // the budget: two of ten calls left, nearly spent (a fifth or less)
-    const quota = await screen.findByTestId('connector-quota-gocardless');
-    expect(quota.textContent).toContain('2 / 10');
-    expect(quota.className).toContain('warn');
-    // a party that said nothing about its budget shows none
-    expect(screen.getByTestId('connector-quota-mock-store-simple').textContent).toBe('—');
-
-    fireEvent.click(screen.getByTestId('connector-inventory-gocardless'));
-    const table = await screen.findByTestId('connector-inventory');
-    expect(table.textContent).toContain('ING_INGBNL2A');
-    expect(table.textContent).toContain('https://app.munni.example');
-    expect(table.textContent).toContain('unattributed');
-    fireEvent.click(screen.getByTestId('remote-consent-revoke-req-gone-0002'));
-    await waitFor(() => expect(revoked).toEqual(['req-gone-0002']));
-    await waitFor(() => expect(screen.getByTestId('connector-inventory').textContent).not.toContain('ASN_BANK_ASNBNL21'));
-
-    // a party without an inventory says so
-    fireEvent.click(screen.getByTestId('connector-inventory-mock-store-simple'));
-    await screen.findByTestId('connector-inventory-none');
   });
 
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {

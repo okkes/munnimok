@@ -176,8 +176,10 @@ jobs:
           CONNECTOR_PRIVATE_CODE: ${{ secrets.CONNECTOR_PRIVATE_CODE }}
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
           VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
+          VITE_LOGTO_APP_ID_LAB: ${{ vars.VITE_LOGTO_APP_ID_LAB }}
           VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
           VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
+          VITE_GLITCHTIP_DSN_LAB: ${{ vars.VITE_GLITCHTIP_DSN_LAB }}
       - name: Upload to Synology File Station (bundle first, stamp last)
         if: ${{ steps.ready.outputs.ok == 'true' }}
         run: |

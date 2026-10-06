@@ -320,7 +320,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 
 <section id="s-platforms" data-step="Platforms">
   <h2><span class="n">1</span> Platforms</h2>
-  <p class="sub">Every platform runs the same design: one <b>shared stack</b> (<code>munni-&lt;platform&gt;-shared</code> — GlitchTip, the vault, pgAdmin, the control cockpit) and any number of <b>environments</b> (<code>munni-&lt;platform&gt;-&lt;env&gt;</code> — web, admin, api, its own Logto and its own Postgres). Pick the platform this page works on; the steps below follow it.</p>
+  <p class="sub">Every platform runs the same design: one <b>shared stack</b> (<code>munni-&lt;platform&gt;-shared</code> — GlitchTip, the vault, pgAdmin, the control cockpit) and any number of <b>environments</b> (<code>munni-&lt;platform&gt;-&lt;env&gt;</code> — web, admin, the connector lab, api, its own Logto and its own Postgres). Pick the platform this page works on; the steps below follow it.</p>
   <div class="platforms" id="platform-cards"><div class="p off"><b>reading the platforms…</b><span>the helper lists them</span></div></div>
 </section>
 
@@ -1217,7 +1217,7 @@ const GROUPS = [
     how: [
       'DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).',
       'Paste it below; it also personalizes every link on this page.',
-      'DNS: Synology DDNS resolves *.<domain> by itself — nothing to do. An own domain instead needs a wildcard record pointing at the NAS (munni-<env>-nas, -api, -admin, -logto, -logto-admin and glitchtip-nas, vault-nas, control-nas, pgadmin-nas); the wildcard certificate then comes from acme.sh with the synology_dsm hook. The NAS status (step 3) tells whether the names resolve.',
+      'DNS: Synology DDNS resolves *.<domain> by itself — nothing to do. An own domain instead needs a wildcard record pointing at the NAS (munni-<env>-nas, -api, -admin, -lab, -logto, -logto-admin and glitchtip-nas, vault-nas, control-nas, pgadmin-nas); the wildcard certificate then comes from acme.sh with the synology_dsm hook. The NAS status (step 3) tells whether the names resolve.',
     ],
     fields: [{ name: 'PLATFORM_DOMAIN', ph: 'yourname.synology.me', mirror: 'domain' }],
   },
@@ -1434,7 +1434,7 @@ function nasHostsOf(stack) {
   const [, p, env] = m;
   const h = env === 'shared'
     ? { glitchtip: `glitchtip-${p}`, vault: `vault-${p}`, control: `control-${p}`, pgadmin: `pgadmin-${p}` }
-    : { web: `munni-${env}-${p}`, admin: `munni-${env}-${p}-admin`, api: `munni-${env}-${p}-api`, logto: `munni-${env}-${p}-logto`, logtoAdmin: `munni-${env}-${p}-logto-admin` };
+    : { web: `munni-${env}-${p}`, admin: `munni-${env}-${p}-admin`, lab: `munni-${env}-${p}-lab`, api: `munni-${env}-${p}-api`, logto: `munni-${env}-${p}-logto`, logtoAdmin: `munni-${env}-${p}-logto-admin` };
   return Object.fromEntries(Object.entries(h).map(([k, v]) => [k, `https://${v}.${S.domain}`]));
 }
 /** every url a stack has: lcl from the helper's status, nas from the domain */
@@ -2444,7 +2444,7 @@ function renderLclStatus(st) {
   const rows = [`${dot(st.docker?.ok)} Docker ${st.docker?.ok ? esc(st.docker.version) : '<b>not running — start Docker Desktop</b>'}`];
   for (const [name, s] of Object.entries(st.stacks ?? {})) {
     const parts = [`<b>${esc(stackLabel(name))}</b> <span class="envtag">${esc(name)}</span>`, `${dot(s.rendered)} ${s.rendered ? 'set up' : 'not set up yet'}`];
-    if (s.urls?.web) parts.push(link('app', s.services.web, s.urls.web), link('admin', s.services.web, s.urls.admin), link('api', s.services.api, `${s.urls.api}/health`), link('logto', s.services.logto, s.urls.logtoAdmin));
+    if (s.urls?.web) parts.push(link('app', s.services.web, s.urls.web), link('admin', s.services.web, s.urls.admin), link('lab', s.services.web, s.urls.lab), link('api', s.services.api, `${s.urls.api}/health`), link('logto', s.services.logto, s.urls.logtoAdmin));
     if (s.urls?.glitchtip) parts.push(link('glitchtip', s.services.glitchtip, s.urls.glitchtip), link('vault', s.services.vault, s.urls.vault), link('control', s.services.control, s.urls.control), link('pgadmin', s.services.pgadmin, s.urls.pgadmin));
     rows.push(parts.join(' &nbsp;·&nbsp; '));
   }
@@ -3108,7 +3108,7 @@ function accessHtml(env) {
     <ol class="why" style="padding-left:18px;margin:6px 0">
       <li>Sign in to the app once — ${link(u.web)} — with the account you want to operate with (Google, Apple or e-mail, whatever this environment offers). That creates the user.</li>
       <li>It appears below (<b>Reload users</b> if not yet); switch <b>admin</b> on.</li>
-      <li>Open the admin portal — ${link(u.admin)} — with the same account. A session opened before the switch signs out and in again: the role rides on the next token.</li>
+      <li>Open the admin portal — ${link(u.admin)} — or the connector lab — ${link(u.lab)} — with the same account. A session opened before the switch signs out and in again: the role rides on the next token.</li>
     </ol>
     <p class="why">The vault's <i>Logto console</i> item is Logto's own console (${link(u.logtoAdmin)}), not the admin portal.</p>
     <div class="runrow"><button class="ghost" data-act="access" data-stack="${env.stack}">Reload users</button></div>

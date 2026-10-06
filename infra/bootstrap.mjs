@@ -106,7 +106,7 @@ async function keepInVault(values, fresh = []) {
     if (values.LOGTO_ADMIN_M2M_ID) add({ name: 'Logto admin-tenant M2M', username: values.LOGTO_ADMIN_M2M_ID, password: values.LOGTO_ADMIN_M2M_SECRET ?? '', uri: stack.urls.logtoAdmin, notes: 'Machine credential that claimed the console admin.' });
     if (values.POSTGRES_PASSWORD) add({ name: `Postgres (${stack.stack})`, username: 'munni', password: values.POSTGRES_PASSWORD, notes: 'The environment\'s database server (munni + logto databases).' });
     // the item the operator looks for first — and the one that has no password: the admin portal takes the operator's own app account
-    add({ name: 'Admin portal (no password)', kind: 'note', notes: `${stack.urls.admin}\n\nNo account of its own: sign in with the account you use in the app (${stack.urls.web}) — Google, Apple or e-mail. Then, in the setup wizard, environment "${stack.env}" → Access → switch admin on for that account (a session opened before that signs out and in again). The "Logto console" item is Logto's own console at ${stack.urls.logtoAdmin}, not the admin portal.` });
+    add({ name: 'Admin portal + lab (no password)', kind: 'note', notes: `${stack.urls.admin}\n${stack.urls.lab}\n\nNo account of its own: sign in with the account you use in the app (${stack.urls.web}) — Google, Apple or e-mail. Then, in the setup wizard, environment "${stack.env}" → Access → switch admin on for that account (a session opened before that signs out and in again). The "Logto console" item is Logto's own console at ${stack.urls.logtoAdmin}, not the admin portal.` });
   }
   for (const item of fresh) add(item);
   const items = [...byName.values()];
@@ -155,6 +155,7 @@ async function probeAll() {
     allUp &= await probe('pgadmin', `${stack.urls.pgadmin}/misc/ping`);
   } else {
     allUp &= await probe('web', stack.urls.web);
+    allUp &= await probe('lab', stack.urls.lab);
     allUp &= await probe('api', `${stack.urls.api}/health`);
     allUp &= await probe('logto', `${stack.urls.logto}/oidc/.well-known/openid-configuration`);
   }
@@ -176,7 +177,7 @@ async function applyLogto(values, write, fresh) {
     state.seeded = true;
     write.logto(apps);
     state.wired = true;
-    console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, native ${apps.native.id}${apps.control ? `, control ${apps.control.id}` : ''})`);
+    console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, lab ${apps.lab.id}, native ${apps.native.id}${apps.control ? `, control ${apps.control.id}` : ''})`);
   } catch (e) {
     console.log(`  logto: not answering with the infra credential yet (${e.message}) — the deploy seeds it; the next bootstrap picks it up`);
     return state;
@@ -240,7 +241,7 @@ async function applyGlitchtipFor(values, write) {
     state.seeded = true;
     write.glitchtip(dsns);
     state.wired = true;
-    console.log(`  glitchtip: org/projects ensured, DSNs written back (${stack.stack}-pwa/-api/-admin/-android/-ios)`);
+    console.log(`  glitchtip: org/projects ensured, DSNs written back (${stack.stack}-pwa/-api/-admin/-lab/-android/-ios/-connector)`);
   } catch (e) {
     console.log(`  glitchtip: does not accept the token yet (${e.message}) — the shared stack's deploy creates it; the next bootstrap picks it up`);
   }
@@ -273,9 +274,9 @@ async function localApply() {
     console.log(controlAppId ? `  control: signs in via ${stack.controlApi}'s control app (${controlAppId})` : `  control: waiting for ${stack.controlApi ?? 'a control environment'}'s sign-in setup`);
   } else {
     const write = {
-      logto: (apps) => { Object.assign(values, { LOGTO_M2M_APP_ID: apps.m2m.id, LOGTO_M2M_APP_SECRET: apps.m2m.secret, VITE_LOGTO_APP_ID: apps.web.id, VITE_LOGTO_APP_ID_ADMIN: apps.admin.id, NATIVE_LOGTO_APP_ID: apps.native.id, ...(apps.control ? { VITE_LOGTO_APP_ID_CONTROL: apps.control.id, CONTROL_LOGTO_APP_ID: apps.control.id } : {}) }); saveLocalValues(stack, values); },
+      logto: (apps) => { Object.assign(values, { LOGTO_M2M_APP_ID: apps.m2m.id, LOGTO_M2M_APP_SECRET: apps.m2m.secret, VITE_LOGTO_APP_ID: apps.web.id, VITE_LOGTO_APP_ID_ADMIN: apps.admin.id, VITE_LOGTO_APP_ID_LAB: apps.lab.id, NATIVE_LOGTO_APP_ID: apps.native.id, ...(apps.control ? { VITE_LOGTO_APP_ID_CONTROL: apps.control.id, CONTROL_LOGTO_APP_ID: apps.control.id } : {}) }); saveLocalValues(stack, values); },
       console: (c) => { values.LOGTO_CONSOLE_USERNAME = c.username; values.LOGTO_CONSOLE_PASSWORD = c.password; saveLocalValues(stack, values); },
-      glitchtip: (dsns) => { Object.assign(values, { API_SENTRY_DSN: dsns.api.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), CONNECTOR_SENTRY_DSN: dsns.connector.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), VITE_GLITCHTIP_DSN: dsns.web, VITE_GLITCHTIP_DSN_ADMIN: dsns.admin, NATIVE_GLITCHTIP_DSN_ANDROID: dsns.android, NATIVE_GLITCHTIP_DSN_IOS: dsns.ios }); saveLocalValues(stack, values); }, // NOSONAR S5332 — container-to-container on the private docker network
+      glitchtip: (dsns) => { Object.assign(values, { API_SENTRY_DSN: dsns.api.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), CONNECTOR_SENTRY_DSN: dsns.connector.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), VITE_GLITCHTIP_DSN: dsns.web, VITE_GLITCHTIP_DSN_ADMIN: dsns.admin, VITE_GLITCHTIP_DSN_LAB: dsns.lab, NATIVE_GLITCHTIP_DSN_ANDROID: dsns.android, NATIVE_GLITCHTIP_DSN_IOS: dsns.ios }); saveLocalValues(stack, values); }, // NOSONAR S5332 — container-to-container on the private docker network
       connector: (access) => { Object.assign(values, { CONNECTOR_M2M_APP_ID: access.appId, CONNECTOR_M2M_APP_SECRET: access.secret }); saveLocalValues(stack, values); },
     };
     await applyLogto(values, write, fresh);

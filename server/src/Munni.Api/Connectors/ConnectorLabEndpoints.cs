@@ -12,43 +12,55 @@ public sealed record ConnectorProviderStatusRequest(string State, string? Reason
 /// <summary>A user's connector session as the operator's diagnosis lists it.</summary>
 public sealed record AdminConnectorSessionDto(string SessionId, string Provider, string ConnectionId, string State, DateTimeOffset LastSeenAt);
 
+/// <summary>Who the lab is to the control plane: the operator's own lab subject, with the operator's name beside it.</summary>
+public sealed record LabMeDto(string Subject, string? Name, string? Email);
+
 /// <summary>
-/// The operator's side of the relay (docs/connector-integration-plan.md §9,
-/// D10: the admin panel IS munni's admin portal): the fleet's status, the
-/// kill switch per party, every household agent, the canaries — all under
-/// the same <c>admin</c> scope as the rest of <c>/admin</c>, relayed to the
-/// control plane's own admin routes. The cockpit reads the same status
-/// under <c>/control</c>, read-only, exactly as it reads consents.
+/// The connector lab's side of the relay (#441, docs/connectors/lab.md):
+/// the control plane as the operator works it — the status line, the
+/// catalogue with every manifest, the kill switch per party, the fleet,
+/// the hosted private slots, the canaries, an aggregator's inventory — all
+/// under the <c>admin</c> scope, relayed to the control plane's own routes
+/// with the api's machine token. The lab's own runs belong to a LAB
+/// SUBJECT per operator (<see cref="SubjectMinter.ForLab"/>): never the
+/// person's app subject, so nothing the lab does shows in the app or lands
+/// in a space. The cockpit reads the same status under <c>/control</c>,
+/// read-only, exactly as it reads consents.
 /// </summary>
-public static class ConnectorAdminEndpoints
+public static class ConnectorLabEndpoints
 {
     /// <summary>The control plane's own vocabulary (<c>ProviderState</c>): healthy is the working state, not "active".</summary>
     private static readonly string[] States = ["healthy", "degraded", "paused", "retired"];
 
-    public static void MapConnectorAdmin(this IEndpointRouteBuilder app)
+    public static void MapConnectorLab(this IEndpointRouteBuilder app)
     {
-        var admin = app.MapGroup("/admin/connectors")
+        var lab = app.MapGroup("/lab")
             .RequireAuthorization(AdminScope.Policy)
             .WithSafeRouteParams()
             .AddEndpointFilter<ConnectorReplyFilter>();
 
-        admin.MapGet("/status", Status);
-        admin.MapPost("/providers/{providerId}/status", SetProviderStatus).WithValidation<ConnectorProviderStatusRequest>();
-        admin.MapGet("/agents", Fleet);
-        admin.MapDelete("/agents/{agentId}", RevokeAny);
+        lab.MapGet("/me", Me);
+        lab.MapGet("/status", Status);
+        lab.MapGet("/providers", Catalogue);
+        lab.MapGet("/providers/{providerId}", Provider);
+        lab.MapPost("/providers/{providerId}/status", SetProviderStatus).WithValidation<ConnectorProviderStatusRequest>();
+        lab.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
+        lab.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
+        lab.MapGet("/agents", Fleet);
+        lab.MapDelete("/agents/{agentId}", RevokeAny);
+        // a browser enrolled for the lab's own subject: the machine the test bench and the recorder run on when picked
+        lab.MapPost("/agents/enrollment", EnrolForLab).WithValidation<ConnectorEnrollmentRequest>();
         // hosted private agents (#420 A2): the slots and the requests, the decisions, taking a slot back
-        admin.MapGet("/private-agents", PrivateAgents);
-        admin.MapPost("/private-agents/requests/{requestId}/approve", ApprovePrivateAgent);
-        admin.MapPost("/private-agents/requests/{requestId}/deny", DenyPrivateAgent);
-        admin.MapPost("/private-agents/{agentId}/release", ReleasePrivateAgent);
-        admin.MapGet("/canaries", Canaries);
-        admin.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
-        admin.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
-        admin.MapGet("/users/{sub}/sessions", UserSessions);
+        lab.MapGet("/private-agents", PrivateAgents);
+        lab.MapPost("/private-agents/requests/{requestId}/approve", ApprovePrivateAgent);
+        lab.MapPost("/private-agents/requests/{requestId}/deny", DenyPrivateAgent);
+        lab.MapPost("/private-agents/{agentId}/release", ReleasePrivateAgent);
+        lab.MapGet("/canaries", Canaries);
+        lab.MapGet("/users/{sub}/sessions", UserSessions);
 
         // the cockpit's read-only view of the designated environment (§15.6): the
         // parties with their quota, and an aggregator's inventory of consents —
-        // never a revocation, which stays in the environment's own portal
+        // never a revocation, which stays in the environment's own lab
         var control = app.MapGroup("/control/connectors")
             .RequireAuthorization(AdminScope.Policy)
             .WithSafeRouteParams()
@@ -56,6 +68,13 @@ public static class ConnectorAdminEndpoints
 
         control.MapGet("/status", Status);
         control.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
+    }
+
+    /// <summary>The operator's lab subject and name — what the control plane knows the lab as, and who sits behind it.</summary>
+    private static async Task<IResult> Me(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var user = await relay.Db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == http.GetUserId(), ct);
+        return Results.Ok(new LabMeDto(relay.LabSubjectOf(http), user?.DisplayName, user?.Email));
     }
 
     /// <summary>Providers with their health, agents online, the queue — the control plane's own status line.</summary>
@@ -66,6 +85,21 @@ public static class ConnectorAdminEndpoints
         var status = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
         status["relay"] = new JsonObject { ["openStreams"] = bridge.Open };
         return Results.Json(status);
+    }
+
+    /// <summary>Every manifest with its status beside it — what the lab's Providers screen and the test bench read.</summary>
+    private static async Task<IResult> Catalogue(ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync("v1/providers", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
+    }
+
+    private static async Task<IResult> Provider(string providerId, ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync($"v1/providers/{providerId}", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
 
     /// <summary>
@@ -116,6 +150,33 @@ public static class ConnectorAdminEndpoints
             logger.LogInformation("operator {Operator} revoked connector agent {Agent}", OperatorOf(http), agentId);
         }
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// A one-time enrollment code under the LAB subject, with the line that
+    /// starts a household agent against this environment — the same door the
+    /// app offers a person, for the operator's own test machine. The agent
+    /// then serves the lab's runs and nobody else's.
+    /// </summary>
+    private static async Task<IResult> EnrolForLab(
+        ConnectorEnrollmentRequest request, HttpContext http, ConnectorRelay relay, ConnectorOptions options, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var subject = relay.LabSubjectOf(http);
+        var reply = await relay.Client.PostAsync("v1/agents/enrollment", new ConnectorCall
+        {
+            Subject = subject,
+            Body = new WireEnrollment(subject, request.Name),
+        }, ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+
+        var code = reply.Text("code") ?? string.Empty;
+        var expiresAt = reply.Object["expires_at"]?.GetValue<DateTimeOffset>() ?? DateTimeOffset.UtcNow;
+        var url = string.IsNullOrWhiteSpace(options.AgentPublicUrl) ? null : options.AgentPublicUrl;
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} minted a lab agent enrollment named {Name}", OperatorOf(http), request.Name);
+        }
+        return Results.Ok(new ConnectorEnrollmentDto(code, expiresAt, url, url is null ? null : ConnectorRelayEndpoints.ComposeCommand(url, code, request.Name)));
     }
 
     /// <summary>
@@ -180,7 +241,6 @@ public static class ConnectorAdminEndpoints
         return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
 
-    /// <summary>One user's bindings — ids and state, the same rows the diagnosis carries.</summary>
     /// <summary>What the operator's account at the party holds (§15): every consent, foreign and legacy ones included, with the environment that made it.</summary>
     private static async Task<IResult> RemoteConsents(string providerId, ConnectorClient client, CancellationToken ct)
     {
@@ -201,6 +261,7 @@ public static class ConnectorAdminEndpoints
         return Results.NoContent();
     }
 
+    /// <summary>One user's bindings — ids and state, the same rows the diagnosis carries.</summary>
     private static async Task<IResult> UserSessions(string sub, AppDbContext db)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);

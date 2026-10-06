@@ -50,7 +50,7 @@ async function client(stack, { m2mId, m2mSecret }, fetchImpl = localAwareFetch) 
 }
 
 /**
- * the app definitions one environment needs: SPA web + admin (+ the
+ * the app definitions one environment needs: SPA web + admin + lab (+ the
  * control cockpit when this environment powers it), native, m2m. Redirect
  * URIs mirror what the apps really send (origin + /auth-callback; the
  * native shell returns via /native-auth or its scheme).
@@ -63,6 +63,8 @@ export function appDefinitions(stack) {
   const defs = {
     web: spa(`${stack.stack} web`, stack.urls.web, stack.ports.web),
     admin: spa(`${stack.stack} admin`, stack.urls.admin, stack.ports.admin),
+    // the connector lab (#441): the same admin scope, its own app id
+    lab: spa(`${stack.stack} lab`, stack.urls.lab, stack.ports.lab),
     native: {
       name: `${stack.stack} native`,
       type: 'Native',
@@ -108,7 +110,7 @@ const credential = (name, value) => {
   return value;
 };
 
-/** upsert-by-name; returns {web, admin, native, m2m, control?, resource} */
+/** upsert-by-name; returns {web, admin, lab, native, m2m, control?, resource} */
 export async function applyApps(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const existing = await call('/applications?page_size=100');
@@ -290,6 +292,7 @@ export function writeBack(stack, apps) {
   const setVar = (name, value) => execFileSync('gh', ['variable', 'set', name, '--env', env, '--body', value]);
   setVar('VITE_LOGTO_APP_ID', apps.web.id);
   setVar('VITE_LOGTO_APP_ID_ADMIN', apps.admin.id);
+  setVar('VITE_LOGTO_APP_ID_LAB', apps.lab.id);
   setVar('VITE_LOGTO_ENDPOINT', stack.urls.logto);
   setVar('NATIVE_LOGTO_APP_ID', apps.native.id);
   setVar('NATIVE_API_URL', stack.urls.api);

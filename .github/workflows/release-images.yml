@@ -5,6 +5,10 @@ on:
     branches: [main, master, dev]
     paths:
       - 'apps/web/**'
+      - 'apps/admin/**'
+      - 'apps/control/**'
+      - 'apps/lab/**'
+      - 'deploy/nginx/**'
       - 'server/**'
       - 'package-lock.json'
       - '.github/workflows/release-images.yml'
@@ -134,6 +138,18 @@ jobs:
           cache-from: type=gha,scope=admin-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=admin-${{ matrix.arch }}
 
+      # the connector lab (#441): the operator's workbench beside the admin
+      # portal, in every environment; configured through the runtime overlay
+      - name: Build & push lab
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/lab/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/munni-lab:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=lab-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=lab-${{ matrix.arch }}
+
       # the shared-services cockpit — a separate app from the env admin
       # dashboard. Nothing is baked: every stack that runs it configures
       # it through the runtime overlay (MUNNI_* env at container start).
@@ -193,7 +209,7 @@ jobs:
         run: |
           CHANNEL='${{ needs.images.outputs.channel }}'
           BUILD='${{ needs.images.outputs.build }}'
-          for image in munni-api munni-web munni-admin munni-control munni-connector-api; do
+          for image in munni-api munni-web munni-admin munni-lab munni-control munni-connector-api; do
             docker buildx imagetools create \
               -t "$REGISTRY/$image:$CHANNEL" \
               -t "$REGISTRY/$image:$CHANNEL-$BUILD" \

@@ -1,5 +1,5 @@
 // GlitchTip as code: ONE GlitchTip per platform (the shared stack), one
-// org + team per platform, six projects per environment — against a
+// org + team per platform, seven projects per environment — against a
 // faked Sentry-shaped API.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -63,19 +63,19 @@ const shared = () => loadStack('munni-nas-shared');
 const prod = () => loadStack('munni-nas-prod');
 const staging = () => loadStack('munni-nas-staging');
 
-test('applyGlitchTip: the platform\'s org + team (munni-<platform>) and the environment\'s six projects, at the shared stack\'s GlitchTip with the platform token; six DSNs come back', async () => {
+test('applyGlitchTip: the platform\'s org + team (munni-<platform>) and the environment\'s seven projects, at the shared stack\'s GlitchTip with the platform token; seven DSNs come back', async () => {
   const { state, fetchImpl } = fakeGlitchTip();
   const dsns = await applyGlitchTip(shared(), prod(), 'tok-123', { fetchImpl });
-  assert.deepEqual(Object.keys(dsns).sort(), ['admin', 'android', 'api', 'connector', 'ios', 'web']);
+  assert.deepEqual(Object.keys(dsns).sort(), ['admin', 'android', 'api', 'connector', 'ios', 'lab', 'web']);
   for (const dsn of Object.values(dsns)) assert.match(dsn, /^https:\/\/key@glitchtip\.test\/\d+$/);
-  assert.equal(new Set(Object.values(dsns)).size, 6, 'one key per project');
+  assert.equal(new Set(Object.values(dsns)).size, 7, 'one key per project');
   assert.equal(orgSlug('nas'), 'munni-nas');
   assert.deepEqual(state.orgs, [{ name: 'munni-nas', slug: 'munni-nas' }]);
   assert.deepEqual(state.teams, [{ org: 'munni-nas', slug: 'munni-nas' }]);
   assert.deepEqual(state.projects.map((p) => [p.slug, p.platform]).sort(), [
-    ['munni-nas-prod-admin', 'javascript'], ['munni-nas-prod-android', 'javascript'], ['munni-nas-prod-api', 'csharp'], ['munni-nas-prod-connector', 'csharp'], ['munni-nas-prod-ios', 'javascript'], ['munni-nas-prod-pwa', 'javascript'],
+    ['munni-nas-prod-admin', 'javascript'], ['munni-nas-prod-android', 'javascript'], ['munni-nas-prod-api', 'csharp'], ['munni-nas-prod-connector', 'csharp'], ['munni-nas-prod-ios', 'javascript'], ['munni-nas-prod-lab', 'javascript'], ['munni-nas-prod-pwa', 'javascript'],
   ]);
-  assert.equal(PROJECTS.length, 6);
+  assert.equal(PROJECTS.length, 7);
   assert.deepEqual([...state.tokens], ['Bearer tok-123']);
   assert.deepEqual([...state.hosts], [`glitchtip-nas.${DOMAIN}`], 'the shared stack\'s GlitchTip');
 
@@ -84,10 +84,10 @@ test('applyGlitchTip: the platform\'s org + team (munni-<platform>) and the envi
   assert.equal(state.writes, writes, 'and no write at all');
 
   const more = await applyGlitchTip(shared(), staging(), 'tok-123', { fetchImpl });
-  assert.equal(new Set([...Object.values(dsns), ...Object.values(more)]).size, 12, 'another environment: its own six projects and keys');
+  assert.equal(new Set([...Object.values(dsns), ...Object.values(more)]).size, 14, 'another environment: its own seven projects and keys');
   assert.equal(state.orgs.length, 1, 'one org per platform');
   assert.equal(state.teams.length, 1);
-  assert.equal(state.projects.length, 12);
+  assert.equal(state.projects.length, 14);
 });
 
 test('applyGlitchTip surfaces API failures with status and body', async () => {
@@ -104,15 +104,15 @@ test('glitchtipAnswers: a 200 with the token means the seed landed; 401 or no an
   assert.equal(await glitchtipAnswers(shared(), 'tok', async () => { throw new Error('ECONNREFUSED'); }), false);
 });
 
-test('removeProjects: the environment\'s six projects go from the platform\'s org, another environment\'s stay; the ones already gone are named absent', async () => {
+test('removeProjects: the environment\'s seven projects go from the platform\'s org, another environment\'s stay; the ones already gone are named absent', async () => {
   const { state, fetchImpl } = fakeGlitchTip();
   await applyGlitchTip(shared(), prod(), 'tok', { fetchImpl });
   await applyGlitchTip(shared(), staging(), 'tok', { fetchImpl });
   const r = await removeProjects(shared(), staging(), 'tok', { fetchImpl });
-  assert.deepEqual(r, { removed: ['munni-nas-staging-pwa', 'munni-nas-staging-api', 'munni-nas-staging-admin', 'munni-nas-staging-android', 'munni-nas-staging-ios', 'munni-nas-staging-connector'], absent: [] });
-  assert.deepEqual(state.projects.map((p) => p.slug).sort(), ['munni-nas-prod-admin', 'munni-nas-prod-android', 'munni-nas-prod-api', 'munni-nas-prod-connector', 'munni-nas-prod-ios', 'munni-nas-prod-pwa']);
+  assert.deepEqual(r, { removed: ['munni-nas-staging-pwa', 'munni-nas-staging-api', 'munni-nas-staging-admin', 'munni-nas-staging-lab', 'munni-nas-staging-android', 'munni-nas-staging-ios', 'munni-nas-staging-connector'], absent: [] });
+  assert.deepEqual(state.projects.map((p) => p.slug).sort(), ['munni-nas-prod-admin', 'munni-nas-prod-android', 'munni-nas-prod-api', 'munni-nas-prod-connector', 'munni-nas-prod-ios', 'munni-nas-prod-lab', 'munni-nas-prod-pwa']);
   state.projects = state.projects.filter((p) => p.slug !== 'munni-nas-prod-ios');
-  assert.deepEqual(await removeProjects(shared(), prod(), 'tok', { fetchImpl }), { removed: ['munni-nas-prod-pwa', 'munni-nas-prod-api', 'munni-nas-prod-admin', 'munni-nas-prod-android', 'munni-nas-prod-connector'], absent: ['munni-nas-prod-ios'] });
+  assert.deepEqual(await removeProjects(shared(), prod(), 'tok', { fetchImpl }), { removed: ['munni-nas-prod-pwa', 'munni-nas-prod-api', 'munni-nas-prod-admin', 'munni-nas-prod-lab', 'munni-nas-prod-android', 'munni-nas-prod-connector'], absent: ['munni-nas-prod-ios'] });
   assert.deepEqual(state.projects, []);
 });
 
@@ -120,9 +120,9 @@ test('writeBackDsns: the api\'s and the connector\'s DSNs become secrets of the 
   const gh = fakeGh();
   try {
     gh.seed('nas-prod');
-    writeBackDsns(prod(), { api: 'dsn-api', web: 'dsn-web', admin: 'dsn-admin', android: 'dsn-android', ios: 'dsn-ios', connector: 'dsn-connector' });
+    writeBackDsns(prod(), { api: 'dsn-api', web: 'dsn-web', admin: 'dsn-admin', lab: 'dsn-lab', android: 'dsn-android', ios: 'dsn-ios', connector: 'dsn-connector' });
     assert.deepEqual(gh.secrets('nas-prod'), { API_SENTRY_DSN: 'dsn-api', CONNECTOR_SENTRY_DSN: 'dsn-connector' });
-    assert.deepEqual(gh.variables('nas-prod'), { VITE_GLITCHTIP_DSN: 'dsn-web', VITE_GLITCHTIP_DSN_ADMIN: 'dsn-admin', NATIVE_GLITCHTIP_DSN_ANDROID: 'dsn-android', NATIVE_GLITCHTIP_DSN_IOS: 'dsn-ios' });
+    assert.deepEqual(gh.variables('nas-prod'), { VITE_GLITCHTIP_DSN: 'dsn-web', VITE_GLITCHTIP_DSN_ADMIN: 'dsn-admin', VITE_GLITCHTIP_DSN_LAB: 'dsn-lab', NATIVE_GLITCHTIP_DSN_ANDROID: 'dsn-android', NATIVE_GLITCHTIP_DSN_IOS: 'dsn-ios' });
   } finally {
     gh.cleanup();
   }

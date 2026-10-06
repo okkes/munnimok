@@ -70,6 +70,15 @@ jobs:
         run: npx playwright test
         working-directory: apps/web
 
+      # The operator consoles' unit tests (admin, control, lab) — the same
+      # coverage floors as the app, cheap suites, never skipped
+      - name: Console unit tests
+        run: |
+          for app in admin control lab; do
+            echo "== $app"
+            (cd "apps/$app" && npx vitest run --coverage) || exit 1
+          done
+
       # Upload test results (failure screenshots + traces) as downloadable artifact
       - name: Upload test results
         if: failure()

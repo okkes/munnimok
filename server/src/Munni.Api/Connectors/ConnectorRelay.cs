@@ -35,4 +35,7 @@ public sealed class ConnectorRelay(
 
     /// <summary>The subject the control plane sees for the signed-in user of this request.</summary>
     public string SubjectOf(HttpContext http) => Minter.For(http.GetUserId());
+
+    /// <summary>The caller's lab subject (#441): the operator's own runs, apart from the person's app connections.</summary>
+    public string LabSubjectOf(HttpContext http) => Minter.ForLab(http.GetUserId());
 }

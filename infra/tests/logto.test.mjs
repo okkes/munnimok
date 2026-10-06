@@ -70,7 +70,9 @@ function fakeLogto({ users = [], apps = [], roles = [], resources = [] } = {}) {
 test('appDefinitions: web/admin SPAs, the native shell, the api\'s m2m app — and the control cockpit only for the environment that powers it; LAN mode registers the localhost twins too', () => {
   const prod = loadStack('munni-nas-prod');
   const defs = appDefinitions(prod);
-  assert.deepEqual(Object.keys(defs), ['web', 'admin', 'native', 'm2m', 'control']);
+  assert.deepEqual(Object.keys(defs), ['web', 'admin', 'lab', 'native', 'm2m', 'control']);
+  assert.equal(defs.lab.name, 'munni-nas-prod lab');
+  assert.deepEqual(defs.lab.oidcClientMetadata.redirectUris, [`https://munni-prod-nas-lab.${DOMAIN}/auth-callback`]);
   assert.deepEqual(defs.web, { name: 'munni-nas-prod web', type: 'SPA', oidcClientMetadata: { redirectUris: [`https://munni-prod-nas.${DOMAIN}/auth-callback`], postLogoutRedirectUris: [`https://munni-prod-nas.${DOMAIN}`] }, customClientMetadata: { corsAllowedOrigins: [`https://munni-prod-nas.${DOMAIN}`] } });
   assert.equal(defs.admin.name, 'munni-nas-prod admin');
   assert.deepEqual(defs.admin.oidcClientMetadata.redirectUris, [`https://munni-prod-nas-admin.${DOMAIN}/auth-callback`]);
@@ -81,7 +83,7 @@ test('appDefinitions: web/admin SPAs, the native shell, the api\'s m2m app — a
   });
   assert.deepEqual(defs.m2m, { name: 'munni-nas-prod api m2m', type: 'MachineToMachine' });
   assert.deepEqual(defs.control.oidcClientMetadata.redirectUris, [`https://control-nas.${DOMAIN}/auth-callback`], 'the cockpit lives on the shared stack\'s host');
-  assert.deepEqual(Object.keys(appDefinitions(loadStack('munni-nas-staging'))), ['web', 'admin', 'native', 'm2m'], 'staging does not power the cockpit');
+  assert.deepEqual(Object.keys(appDefinitions(loadStack('munni-nas-staging'))), ['web', 'admin', 'lab', 'native', 'm2m'], 'staging does not power the cockpit');
 
   assert.deepEqual(appDefinitions(loadStack('munni-lcl-prod')).web.oidcClientMetadata.redirectUris, ['http://localhost:8380/auth-callback']);
   fx.lanOn('192.168.1.50');
@@ -100,8 +102,8 @@ test('applyApps: upsert by name — the first run creates the five apps and the 
   const prod = loadStack('munni-nas-prod');
   const logto = fakeLogto();
   const first = await applyApps(prod, creds, { fetchImpl: logto.fetchImpl });
-  assert.deepEqual(Object.keys(first), ['web', 'admin', 'native', 'm2m', 'control', 'resource']);
-  assert.deepEqual(logto.state.apps.map((a) => a.name), ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control']);
+  assert.deepEqual(Object.keys(first), ['web', 'admin', 'lab', 'native', 'm2m', 'control', 'resource']);
+  assert.deepEqual(logto.state.apps.map((a) => a.name), ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod lab', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control']);
   const m2m = logto.state.apps.find((a) => a.type === 'MachineToMachine');
   assert.equal(first.m2m.secret, logto.state.secrets[m2m.id].find((s) => s.name === MACHINE_SECRET_NAME).value, "the api's machine credential is the module's own application secret — the app endpoints carry none");
   assert.deepEqual(logto.state.resources, [{ id: first.resource.id, name: 'munni-nas-prod api', indicator: `https://munni-prod-nas-api.${DOMAIN}` }]);
@@ -109,9 +111,9 @@ test('applyApps: upsert by name — the first run creates the five apps and the 
   const writesAfterFirst = logto.writes();
   const second = await applyApps(prod, creds, { fetchImpl: logto.fetchImpl });
   assert.deepEqual(second, first, 'same ids, same resource');
-  assert.equal(logto.state.apps.length, 5);
+  assert.equal(logto.state.apps.length, 6);
   assert.equal(logto.state.resources.length, 1);
-  assert.equal(logto.writes(), writesAfterFirst + 5, 'one PATCH per app carries the current definition — nothing created twice');
+  assert.equal(logto.writes(), writesAfterFirst + 6, 'one PATCH per app carries the current definition — nothing created twice');
   assert.equal(logto.state.secrets[m2m.id].length, 2, "Default secret + the module's own — read back, not minted again");
   assert.ok(logto.calls.filter((c) => c.method === 'PATCH').every((c) => c.body.oidcClientMetadata || c.body.type === 'MachineToMachine'));
   await assert.rejects(applyApps(prod, creds, { fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'bad credential' }) }), /401.*bad credential/);
@@ -161,11 +163,11 @@ test('removeApps: the environment\'s apps go by their names and its API resource
   const logto = fakeLogto({ apps: [{ id: 'keep', name: 'munni-nas-staging web', type: 'SPA' }], resources: [{ id: 'keep-res', name: 'munni-nas-staging api', indicator: `https://munni-staging-nas-api.${DOMAIN}` }] });
   await applyApps(prod, creds, { fetchImpl: logto.fetchImpl });
   const r = await removeApps(prod, creds, { fetchImpl: logto.fetchImpl });
-  assert.deepEqual(r, { removed: ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control', `resource https://munni-prod-nas-api.${DOMAIN}`], absent: [] });
+  assert.deepEqual(r, { removed: ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod lab', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control', `resource https://munni-prod-nas-api.${DOMAIN}`], absent: [] });
   assert.deepEqual(logto.state.apps.map((a) => a.id), ['keep']);
   assert.deepEqual(logto.state.resources.map((x) => x.id), ['keep-res']);
   const again = await removeApps(prod, creds, { fetchImpl: logto.fetchImpl });
-  assert.deepEqual(again, { removed: [], absent: ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control'] });
+  assert.deepEqual(again, { removed: [], absent: ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod lab', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control'] });
 });
 
 test('writeBack: the frontends\' app ids and endpoints become variables of the stack\'s GitHub environment, the api\'s machine credential its secrets', () => {
@@ -173,9 +175,9 @@ test('writeBack: the frontends\' app ids and endpoints become variables of the s
   try {
     gh.seed('nas-prod');
     const prod = loadStack('munni-nas-prod');
-    writeBack(prod, { web: { id: 'w1' }, admin: { id: 'a1' }, native: { id: 'n1' }, m2m: { id: 'm1', secret: 'ms' } });
+    writeBack(prod, { web: { id: 'w1' }, admin: { id: 'a1' }, lab: { id: 'l1' }, native: { id: 'n1' }, m2m: { id: 'm1', secret: 'ms' } });
     assert.deepEqual(gh.variables('nas-prod'), {
-      VITE_LOGTO_APP_ID: 'w1', VITE_LOGTO_APP_ID_ADMIN: 'a1', VITE_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`,
+      VITE_LOGTO_APP_ID: 'w1', VITE_LOGTO_APP_ID_ADMIN: 'a1', VITE_LOGTO_APP_ID_LAB: 'l1', VITE_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`,
       NATIVE_LOGTO_APP_ID: 'n1', NATIVE_API_URL: `https://munni-prod-nas-api.${DOMAIN}`, NATIVE_PUBLIC_ORIGIN: `https://munni-prod-nas.${DOMAIN}`, NATIVE_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`, NATIVE_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`,
     });
     assert.deepEqual(gh.secrets('nas-prod'), { LOGTO_M2M_APP_ID: 'm1', LOGTO_M2M_APP_SECRET: 'ms' });
@@ -189,7 +191,7 @@ test('writeBack / writeBackConnector refuse a credential without a value — the
   try {
     gh.seed('nas-prod');
     const prod = loadStack('munni-nas-prod');
-    assert.throws(() => writeBack(prod, { web: { id: 'w1' }, admin: { id: 'a1' }, native: { id: 'n1' }, m2m: { id: 'm1', secret: undefined } }), /LOGTO_M2M_APP_SECRET: no value to write back/);
+    assert.throws(() => writeBack(prod, { web: { id: 'w1' }, admin: { id: 'a1' }, lab: { id: 'l1' }, native: { id: 'n1' }, m2m: { id: 'm1', secret: undefined } }), /LOGTO_M2M_APP_SECRET: no value to write back/);
     assert.throws(() => writeBackConnector(prod, { appId: 'c1', secret: '' }), /CONNECTOR_M2M_APP_SECRET: no value to write back/);
     assert.deepEqual(gh.secrets('nas-prod'), {}, 'nothing stored');
     assert.deepEqual(gh.variables('nas-prod'), {}, 'not even the ids — the write-back is all or nothing');

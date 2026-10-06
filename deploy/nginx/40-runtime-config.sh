@@ -19,7 +19,7 @@ OUT="$ROOT/runtime-config.js"
 [ -w "$ROOT" ] || { echo "40-runtime-config: $ROOT not writable — skipping" >&2; exit 0; }
 
 json=""
-for name in API_URL LOGTO_ENDPOINT LOGTO_APP_ID LOGTO_RESOURCE GLITCHTIP_DSN CHANNEL NATIVE_SCHEME PUBLIC_ORIGIN; do
+for name in API_URL LOGTO_ENDPOINT LOGTO_APP_ID LOGTO_RESOURCE GLITCHTIP_DSN CHANNEL NATIVE_SCHEME PUBLIC_ORIGIN LAB_URL; do
   eval "val=\${MUNNI_${name}:-}"
   [ -n "$val" ] || continue
   esc=$(printf '%s' "$val" | sed 's/\\/\\\\/g; s/"/\\"/g')

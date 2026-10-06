@@ -316,6 +316,7 @@ function familyCaddyfile(shared) {
     const envSites = platformEnvStacks(shared.platform).map((env) => [
       site(`https://${env.host('web')}`, `web-${env.env}:80`),
       site(`https://${env.host('admin')}`, `admin-${env.env}:80`),
+      site(`https://${env.host('lab')}`, `lab-${env.env}:80`),
       site(`https://${env.host('api')}`, `api-${env.env}:8080`),
       // household agents dial the control plane from outside (#367); only an environment that runs connectors has the host
       env.hosts.connector ? site(`https://${env.host('connector')}`, `connector-${env.env}:8080`) : '',
@@ -345,10 +346,10 @@ function pgadminServers(shared) {
 
 /* ── an environment stack ─────────────────────────────────────────────── */
 
-/** browser origins the api accepts: its own web/admin, the localhost twins in LAN mode, the control cockpit when this env powers it */
+/** browser origins the api accepts: its own web/admin/lab, the localhost twins in LAN mode, the control cockpit when this env powers it */
 function corsOrigins(s) {
-  const origins = [s.urls.web, s.urls.admin];
-  if (s.delivery === 'docker' && s.lan) origins.push(`http://localhost:${s.ports.web}`, `http://localhost:${s.ports.admin}`);
+  const origins = [s.urls.web, s.urls.admin, s.urls.lab];
+  if (s.delivery === 'docker' && s.lan) origins.push(`http://localhost:${s.ports.web}`, `http://localhost:${s.ports.admin}`, `http://localhost:${s.ports.lab}`);
   try {
     const shared = loadStack(s.sharedStack);
     if (shared.controlApi === s.stack) {
@@ -365,7 +366,7 @@ function envCompose(s) {
   const e = s.env;
   const local = s.delivery === 'docker';
   return `${header(s)}
-# A complete environment: own web/admin/api, OWN Logto and OWN postgres
+# A complete environment: own web/admin/lab/api, OWN Logto and OWN postgres
 # (deleting this stack never touches another environment), riding
 # ${s.sharedStack} only for glitchtip/ocr over "${sharedNet(s.platform)}".
 # Service names carry the environment (web-${e}, …): a compose service
@@ -434,11 +435,29 @@ services:
       MUNNI_LOGTO_APP_ID: \${ADMIN_LOGTO_APP_ID}
       MUNNI_LOGTO_RESOURCE: ${s.urls.api}
       MUNNI_GLITCHTIP_DSN: \${ADMIN_GLITCHTIP_DSN}
+      # the portal's Connectors tab hands over to the lab (#441)
+      MUNNI_LAB_URL: ${s.urls.lab}
     ports:
       - "${p.admin}:80"
     networks:
       default:
         aliases: [admin]
+      shared: {}
+
+  lab-${e}:
+    image: \${REGISTRY}/munni-lab:\${TAG}
+    restart: unless-stopped
+    environment:
+      MUNNI_API_URL: ${s.urls.api}
+      MUNNI_LOGTO_ENDPOINT: ${s.urls.logto}
+      MUNNI_LOGTO_APP_ID: \${LAB_LOGTO_APP_ID}
+      MUNNI_LOGTO_RESOURCE: ${s.urls.api}
+      MUNNI_GLITCHTIP_DSN: \${LAB_GLITCHTIP_DSN}
+    ports:
+      - "${p.lab}:80"
+    networks:
+      default:
+        aliases: [lab]
       shared: {}
 
   api-${e}:
@@ -601,10 +620,12 @@ LOGTO_M2M_APP_ID=\${LOGTO_M2M_APP_ID}
 LOGTO_M2M_APP_SECRET=\${LOGTO_M2M_APP_SECRET}
 WEB_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID}
 ADMIN_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID_ADMIN}
+LAB_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID_LAB}
 
 # crash reports (written back by the glitchtip module)
 WEB_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN}
 ADMIN_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN_ADMIN}
+LAB_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN_LAB}
 API_SENTRY_DSN=\${API_SENTRY_DSN}
 
 GOCARDLESS_SECRET_ID=\${GOCARDLESS_SECRET_ID}

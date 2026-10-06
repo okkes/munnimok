@@ -19,6 +19,7 @@ is a bug in this folder.
 | [relay.md](relay.md) | The munni API's side (slices M1, M5): configuration, the routes the app calls, subjects and bindings, the scheduled syncs of household-agent custody, the event bridge, how records land in the feeds, the operator's routes |
 | [client.md](client.md) | The app's side (slices M3–M5): the Connections hub, the connect flow and its challenges, custody of the bundle, sync and matching, banks and registries with the attach step, the household agents, the E2EE device sync, what the app never does |
 | [deploy.md](deploy.md) | Running it: the local loop, the images, the household agent, what munni's platform renders |
+| [lab.md](lab.md) | The connector lab (`apps/lab`, #441): the operator's workbench — the dashboard and the kill switch, the fleet and the slots, the lab subject, its relay (`/lab`), and the slices that follow (jobs and health, the test bench, the recorder, the retention bench) |
 | [../connector-integration-plan.md](../connector-integration-plan.md) | The plan that brought it here and the slices that follow (relay, platform, hub, banks, registries, admin) |
 | [research/](research/) | Provider research notes |
 
