@@ -16,7 +16,7 @@ omitted.
 | `X-Connector-Key` | request | every `/v1` route, development | the shared secret, when one is configured |
 | `X-Connector-Subject` | request | every route naming a session, job, ticket or agent; optional beside a body `subject`, and must then agree | the user the call is made for — opaque to the connector |
 | `X-Connector-Ticket` | request | `GET /v1/{provider}/{resource}`, `…/ack` | a ticket from `sessions/resume` |
-| `X-Connector-Trigger` | request | login, fetch | `user` (default) or `schedule`; a schedule is held to the provider's `min_interval_seconds` |
+| `X-Connector-Trigger` | request | login, fetch | `user` (default), `schedule` (held to the provider's `min_interval_seconds`) or `lab` (the operator's own run; honoured for the admin scope only, and the one trigger that may carry `record`) |
 | `X-Device-Class` | request | login | `native` (default) or `web`; web bundles live shorter |
 | `Idempotency-Key` | request | login | a repeated login with the same key for the same subject returns the same session |
 | `X-Manifest-Version` | response | the routes that read a provider's manifest: login, session view, resume, disconnect, fetch, ack, job view | which contract version of that provider answered |
@@ -33,17 +33,17 @@ omitted.
 | `GET /{provider}/options/{field}?q=…` | the values of a `lookup` field, listed by the party at connect time (an aggregator's institutions); every other query parameter is context (the step's country); `{ options: [{ value, label, has_logo }] }` |
 | `GET /{provider}/options/{field}/{token}/logo` | the option's logo, vendored by the control plane once and cached for a month; `token` is the option's value as base64url (a party may name an option `ASN Bank\|NL`); 404 when the party has none |
 | `GET /health` (anonymous, outside the group) | liveness |
-| `POST /{provider}/login` | start a session: `subject`, `inputs` or a `credential_bundle`, `config`, `consent`, `prefer_agent`, `label` → 200 with the session (active, bundle attached) or 202 to follow |
+| `POST /{provider}/login` | start a session: `subject`, `inputs` or a `credential_bundle`, `config`, `consent`, `prefer_agent`, `label`, `record` (#441 L3: the run's browser and HTTP calls are recorded, redacted, for the operator; `invalid_request` on any trigger but `lab`) → 200 with the session (active, bundle attached) or 202 to follow. An operator-only provider (`operator_only` on the manifest; the lab's `explore`) answers the lab trigger alone — `unsupported_resource` otherwise — and is left out of `GET /providers` |
 | `GET /{provider}/login/{sessionId}` | the session view; hands over the bundle once |
 | `GET /{provider}/login/{sessionId}/events` | the same view as server-sent events until terminal or active; never carries the bundle |
 | `GET …/challenges/{challengeId}/image` | a challenge's picture (PNG) |
 | `POST /{provider}/login/{sessionId}/answer` | `challenge_id`, `value` |
 | `POST /{provider}/login/{sessionId}/cancel` | fails the run in flight |
-| `GET …/challenges/{challengeId}/live/frame?after=n`, `POST …/live/input` | the live view: newest JPEG frame past `n` (long poll), the human's taps and keys |
+| `GET …/challenges/{challengeId}/live/frame?after=n`, `POST …/live/input` | the live view: newest JPEG frame past `n` (long poll), the human's taps and keys (`move`, `down`, `up`, `scroll`, `text`, `key`); #441 L3 adds `navigate` (`url`: http(s), a public host, no user-info), `back` and `reload` — refused as a whole batch on every run but an `explore` run's, where the operator drives their own browser |
 | `POST /{provider}/sessions/resume` | `subject`, `bundle` → a ticket (15 min) |
 | `DELETE /{provider}/sessions/{sessionId}` | disconnect, with an optional `bundle` for the upstream logout |
 | `GET /{provider}/{resource}?…` | fetch with a ticket: 200 data page, 202 job handle, or a challenge; a fetch of a resource already in flight for the session is handed that job's 202 instead of a second run (prod 2026-10-06: a phone reopening the app queued four Amazon fetches behind one another) |
-| `POST /{provider}/{resource}:fetch` | one round trip: `subject`, `bundle`, `params` |
+| `POST /{provider}/{resource}:fetch` | one round trip: `subject`, `bundle`, `params`, `record` (#441 L3, the lab trigger only) |
 | `POST /{provider}/{resource}/ack` | `cursor` → purges the staged rows up to it |
 | `GET /{provider}/jobs/{jobId}`, `…/events`, `POST …/answer` | following a fetch that did not finish inside its window; identical contract to a login |
 | `POST /{provider}/jobs/{jobId}/artifacts/share`, `DELETE /{provider}/jobs/{jobId}/artifacts` | #441 L1: what a failed run left behind — the last picture of the page (never taken while a secret field holds content) and a digest of the page's shape — is the person's to give. A session or job view whose `artifacts_job_id` is set says a picture waits on their answer; yes retains it for the operator for a month (`{ job_id, expires_at }`), no deletes it, no answer within two days deletes it too, and a disconnect takes the open question with it. Both go through the same subject join as the view |
@@ -60,6 +60,7 @@ omitted.
 | `POST /canaries/{id}/run` | #441 L1: the canary now, not on its next due minute — the view names the job to follow; refused while its last run is still in flight or the provider is paused |
 | `GET /jobs`, `GET /jobs/{jobId}` | #441 L1: the history, newest first, narrowed by `provider`, `subject`, `session`, `state`, `kind`, `trigger` (`user`, `schedule`, `lab`, `canary`, `none`), `code`, `since`, `before` and `limit` (100, up to 500; `truncated` says when the limit cut the list); every column that says what happened — the progress, attempts, the agent, the error with its operator detail, the notes, the validated params and config, what it left behind (`artifacts`: `none`, `pending`, `retained`, with `dom_digest` and `has_screenshot` once retained) — and none of the ones that say what was typed: inputs and material have no field on this view |
 | `GET /jobs/{jobId}/artifacts/screenshot` | the picture a failed run left, once retained (PNG, never cached); `unsupported_resource` while pending, once declined, or when none was taken |
+| `GET /jobs/{jobId}/trace`, `GET /jobs/{jobId}/trace/digest`, `DELETE /jobs/{jobId}/trace` | #441 L3: a run's recording — the trace as JSON (`entries[]` with `seq`, `at_ms`, `kind` ∈ navigation/request/response/console/dom/note, `via` ∈ browser/http, method, url, status, `resource_type`, `content_type`, size, `headers[]`, a text body cut at 64 KiB, a document snapshot cut at 256 KiB; `cookies[]` as name, domain, path, flags, expiry, `value_length` and `value_hash` — never a value; `truncated`/`dropped` when the book ran out of room), `digest.md` as `text/markdown` (pages, the calls worth reading with the shape of every JSON answer, forms by field name, the jar, the console), and the delete (204, 404). Every header, field and query value whose name says secret reads `«redacted:n»`; every value the run was handed as a credential or session material is masked wherever it appeared. Kept `ArtifactRetentionDays` (30), then swept; `trace` on the job view summarises it |
 | `GET /health` | per-provider health off the month's jobs: windows `24h`, `7d`, `30d` with outcomes, open runs, failures by code, runs by trigger and the people affected (distinct sessions of people's runs that failed — lab and canary runs are the operator's); the last success and failure, sessions by state, the canary's last word, the reports to read and the pictures still waiting on a person |
 | `GET /agents`, `DELETE /agents/{agentId}` | every agent, whoever owns it; revoke any |
 | `GET /private-agents`, `POST /private-agents/requests/{requestId}/approve`, `POST …/deny`, `POST /private-agents/{agentId}/release` | the hosted slots (`total`, `free`, `slots[{agent, subject}]`) and the requests (pending first, a month of decisions); approving binds the oldest free online wiped slot to the asker (`agent_unavailable` when none); taking a slot back expires the sessions pinned to it and asks the agent to wipe |
@@ -73,6 +74,7 @@ omitted.
 | `POST /jobs/lease` | long poll for a job matching the agent's capabilities, or 204 |
 | `POST /jobs/{jobId}/renew`, `/progress`, `/challenge`, `GET /jobs/{jobId}/answer`, `POST /jobs/{jobId}/result`, `/fail` | the job's life |
 | `POST /jobs/{jobId}/live/frame`, `GET /jobs/{jobId}/live/input?after=n` | the live view from the agent's side |
+| `POST /jobs/{jobId}/trace` | #441 L3: the run's recording, JSON (`Content-Encoding: gzip` honoured), posted while the job is still leased and before its result or failure; kept only for the operator's run (the lab's, a canary's) — answered `{ entries, bytes }`, zero when dropped; past `MaxTraceBytes` (8 MiB packed) it is refused. A leased job's `record` flag is what starts the recording on the agent |
 
 ## Errors
 

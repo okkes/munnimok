@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.13.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'Behind the scenes: the connector lab can now record a test run and explore a site that has no connection yet — so new parties get built faster and a broken one gets fixed sooner. Your own syncs are never recorded.',
+        nl: 'Achter de schermen: het connector-lab kan nu een testrun opnemen en een site verkennen die nog geen koppeling heeft — zo worden nieuwe partijen sneller gebouwd en een kapotte eerder hersteld. Je eigen synchronisaties worden nooit opgenomen.',
+        tr: 'Perde arkasında: bağlayıcı laboratuvarı artık bir test çalışmasını kaydedebiliyor ve henüz bağlantısı olmayan bir siteyi keşfedebiliyor — böylece yeni taraflar daha hızlı kurulur, bozulan biri daha erken onarılır. Kendi eşitlemelerin asla kaydedilmez.',
+      },
+    ],
+  },
+  {
     version: '5.12.0',
     date: '2026-10-06',
     items: [
