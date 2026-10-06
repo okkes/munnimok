@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.13.0](https://github.com/okkes/munnimok/compare/v5.12.0...v5.13.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **api:** the lab's recordings - record on the bench, the explore door, the trace routes ([#441](https://github.com/okkes/munnimok/issues/441) L3) ([881f7c0](https://github.com/okkes/munnimok/commit/881f7c0b093ad623221f701492de5c45dbbae558))
+* **connectors:** the recorder - traces of a lab run, the explore provider, the navigation vocabulary ([#441](https://github.com/okkes/munnimok/issues/441) L3) ([21a0617](https://github.com/okkes/munnimok/commit/21a0617714f498f78392a25492934fe0fd0b8378))
+* **lab:** the recorder - record this run, explore a site, the recording screen ([#441](https://github.com/okkes/munnimok/issues/441) L3) ([1c72865](https://github.com/okkes/munnimok/commit/1c728651749bbaf2865e0e9fb67b11b88150d600))
+
 ## [5.12.0](https://github.com/okkes/munnimok/compare/v5.11.0...v5.12.0) (2026-10-06)
 
 
