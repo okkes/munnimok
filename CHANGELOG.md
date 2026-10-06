@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.12.0](https://github.com/okkes/munnimok/compare/v5.11.0...v5.12.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **api:** the lab's test bench - lab sessions, sign-ins with their challenges and the live view, fetches without ingesting, canaries ([#441](https://github.com/okkes/munnimok/issues/441) L2) ([0eb723b](https://github.com/okkes/munnimok/commit/0eb723b16e4ee337dcd6c41e4bacafc0145d32c1))
+* **lab:** the test bench - connect to a party as the operator, answer what it asks, fetch and read the records, make the session a canary ([#441](https://github.com/okkes/munnimok/issues/441) L2) ([a58cc52](https://github.com/okkes/munnimok/commit/a58cc5259edf1a403bae970ed022e0e6b9f1410f))
+
 ## [5.11.0](https://github.com/okkes/munnimok/compare/v5.10.0...v5.11.0) (2026-10-06)
 
 
