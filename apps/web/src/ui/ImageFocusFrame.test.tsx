@@ -56,3 +56,38 @@ describe('ImageFocusFrame (#446: drag the picture to choose what shows)', () => 
     expect(onFocus).not.toHaveBeenCalled();
   });
 });
+
+describe('the circle frame with zoom (user 2026-10-06: the space picture)', () => {
+  it('draws the circle over the square, the slider sets the scale around the focus, and a pinch does the same', () => {
+    const onFocus = vi.fn();
+    render(<ImageFocusFrame src="data:image/jpeg;base64,ZmFrZQ==" focus={{ x: 40, y: 60 }} onFocus={onFocus} hint="Drag" testId="frame" shape="circle" zoom zoomLabel="Zoom" />);
+    const frame = screen.getByTestId('frame');
+    expect(frame.getAttribute('data-shape')).toBe('circle');
+    expect(screen.getByTestId('frame-mask')).toBeTruthy();
+    expect((screen.getByTestId('frame-img') as HTMLElement).style.transform).toBe('');
+
+    fireEvent.change(screen.getByTestId('frame-zoom'), { target: { value: '2' } });
+    expect(onFocus).toHaveBeenLastCalledWith({ x: 40, y: 60, scale: 2 });
+
+    // two fingers 100px apart spreading to 150px: half again as large
+    fireEvent.pointerDown(frame, { pointerId: 1, clientX: 100, clientY: 80 });
+    fireEvent.pointerDown(frame, { pointerId: 2, clientX: 200, clientY: 80 });
+    fireEvent.pointerMove(frame, { pointerId: 2, clientX: 250, clientY: 80 });
+    expect(onFocus).toHaveBeenLastCalledWith({ x: 40, y: 60, scale: 1.5 });
+    fireEvent.pointerUp(frame, { pointerId: 2 });
+    fireEvent.pointerUp(frame, { pointerId: 1 });
+  });
+
+  it('a zoomed picture renders scaled around its focus and pans across the larger overhang', () => {
+    const onFocus = vi.fn();
+    render(<ImageFocusFrame src="data:image/jpeg;base64,ZmFrZQ==" focus={{ x: 50, y: 50, scale: 2 }} onFocus={onFocus} hint="Drag" testId="frame" zoom />);
+    const img = screen.getByTestId('frame-img') as HTMLElement;
+    expect(img.style.transform).toBe('scale(2)');
+    expect(img.style.transformOrigin).toBe('50% 50%');
+    const frame = loadPicture('frame');
+    // at 2× the 1200×400 picture overhangs 372px sideways: 93px of drag is a quarter of the range
+    fireEvent.pointerDown(frame, { pointerId: 1, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(frame, { pointerId: 1, clientX: 7, clientY: 50 });
+    expect(onFocus).toHaveBeenLastCalledWith({ x: 75, y: 50, scale: 2 });
+  });
+});

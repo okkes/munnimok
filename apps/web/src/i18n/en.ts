@@ -2811,6 +2811,8 @@ export const en = {
   'receipts.zoomIn': 'Zoom in',
   'receipts.zoomOut': 'Zoom out',
   'receipts.zoomFit': 'Fit the width',
+  'space.dragToFrame': 'Drag to frame · pinch or slide to zoom',
+  'image.zoom': 'Zoom',
 } as const;
 
 export type TranslationKey = keyof typeof en;

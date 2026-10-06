@@ -2813,4 +2813,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'receipts.zoomIn': 'Inzoomen',
   'receipts.zoomOut': 'Uitzoomen',
   'receipts.zoomFit': 'Passend in de breedte',
+  'space.dragToFrame': 'Sleep om te kadreren · knijp of schuif om te zoomen',
+  'image.zoom': 'Zoom',
 };

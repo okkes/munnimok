@@ -28,6 +28,10 @@ export interface SpaceRow extends SyncEnvelope {
   createdByName?: string;
   /** custom image (small data URL, client-downscaled) — wins over `icon` in lists */
   picture?: string;
+  /** where the picture is shown from and how far it is zoomed (user
+   *  2026-10-06): object-position percentages + a scale; absent or null =
+   *  the centre at 1× */
+  pictureFocus?: { x: number; y: number; scale?: number } | null;
   /** MDI icon shown in lists (default 'leaf') */
   icon?: string;
   color?: string;

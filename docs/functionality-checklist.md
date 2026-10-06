@@ -19,6 +19,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Invite-lock toggle gates all sharing; invite an existing friend with a role; invite a new person from the members screen (accept joins the space)
 - [ ] Members: view, change role, remove; the removed member is told once and lands in another space; a read-only member keeps pulling quietly (no eviction popup, writes park)
 - [ ] Leave a space; history start date moves with honest consequences
+- [ ] The space picture framed and zoomed (2026-10-06, user): an own picture gets the events' focus frame in the settings and the create form, drawn as the circle the lists keep (the rest dimmed) with a zoom slider and a two-finger pinch up to 3×; the focus is stored on the space (`pictureFocus` {x, y, scale}, null when cleared) and every circle — the switcher, the lists, the settings header, the accounts and categories faces — draws the picture at it through one SpacePicture; pictures downscale to 384px now so a zoomed circle stays sharp; events gain the same zoom.
 
 ## Home
 - [ ] Overview totals and their breakdowns read the SAME slices (2026-10-06, user ss: Earned €4,392 above an Income group of €3,861): the settled `reimbursed` value is out on both sides — spent counts net of it and the credit that settled it is not income — while expected and received reimbursement count and list under their own Reimbursement group (domain/overview.ts countableViews; the Home tiles' overviewSummary agrees); the trend charts already counted net

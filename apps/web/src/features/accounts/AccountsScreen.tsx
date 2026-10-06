@@ -17,6 +17,7 @@ import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
 import { institutionLogoUrl } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
+import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
@@ -282,7 +283,7 @@ interface EchoEntry {
  *  wins, else icon + color circle (the SpaceSwitcher recipe, compact) */
 function SpaceAvatar({ space }: Readonly<{ space?: SpaceRow }>) {
   if (space?.picture) {
-    return <img src={space.picture} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />;
+    return <SpacePicture space={space} className="h-6 w-6" />;
   }
   return (
     <span

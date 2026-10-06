@@ -4,6 +4,8 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
+import type { ImageFocus } from '@/lib/imageFocus';
+import { ImageFocusFrame } from '@/ui/ImageFocusFrame';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { apiFetch } from '@/lib/api';
 import { useData } from '@/app/data';
@@ -24,7 +26,9 @@ import { SpaceIconGrid } from './SpaceIconGrid';
 
 /** one downscale path for all three photo doors (input, native, webcam) */
 export const applySpacePhoto = (file: File, onPicture: (dataUrl: string) => void): void => {
-  void downscaleImage(file, 128).then(onPicture).catch(() => undefined);
+  // 384px (was 128): the picture can be zoomed up to 3× into a circle drawn
+  // at up to 44px on a 3× screen, and must still be sharp there
+  void downscaleImage(file, 384).then(onPicture).catch(() => undefined);
 };
 
 /**
@@ -149,6 +153,7 @@ export function SpaceSettingsScreen() {
   const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(SPACE_COLORS[0]);
   const [picture, setPicture] = useState('');
+  const [focus, setFocus] = useState<ImageFocus | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -174,6 +179,7 @@ export function SpaceSettingsScreen() {
     setIconQuery('');
     setColor(space.color ?? SPACE_COLORS[0]);
     setPicture(space.picture ?? '');
+    setFocus(space.pictureFocus ?? null);
   }
 
   const readOnly = myRole === 'reader';
@@ -181,11 +187,11 @@ export function SpaceSettingsScreen() {
   // #164: dirty vs a freshly derived seed (EditAccountSheet pattern) —
   // tapping back with edits pending asks instead of dropping them
   const seedNow = space
-    ? { name: space.name, icon: space.icon ?? SPACE_ICONS[0], color: space.color ?? SPACE_COLORS[0], picture: space.picture ?? '' }
+    ? { name: space.name, icon: space.icon ?? SPACE_ICONS[0], color: space.color ?? SPACE_COLORS[0], picture: space.picture ?? '', focus: JSON.stringify(space.pictureFocus ?? null) }
     : null;
   const dirty =
     seedNow !== null &&
-    (name !== seedNow.name || icon !== seedNow.icon || color !== seedNow.color || picture !== seedNow.picture);
+    (name !== seedNow.name || icon !== seedNow.icon || color !== seedNow.color || picture !== seedNow.picture || JSON.stringify(focus) !== seedNow.focus);
   const { guardedBack, sheet: discardSheet } = useDiscardGuard(dirty, goBack);
 
   const save = async () => {
@@ -210,6 +216,8 @@ export function SpaceSettingsScreen() {
       icon,
       color,
       picture, // '' clears a previously set image
+      // the focus belongs to an own picture; null syncs a clearing (the events rule)
+      pictureFocus: picture.startsWith('data:') ? (focus ?? null) : null,
     });
     void logActivity(store, repo, space.id, 'spaceEdit', name.trim());
     goBack();
@@ -288,11 +296,28 @@ export function SpaceSettingsScreen() {
             {/* #301: the strip is shared with the create form now */}
             <SpacePhotoStrip
               picture={picture}
-              onPicture={setPicture}
+              onPicture={(url) => {
+                setPicture(url);
+                setFocus(null);
+              }}
               disabled={readOnly}
               onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
               testIdPrefix="space-photo"
             />
+            {/* user 2026-10-06: the circle the lists keep, dragged and zoomed
+                into place — own pictures only, a bundled one has no frame */}
+            {picture.startsWith('data:') && !readOnly && (
+              <ImageFocusFrame
+                src={picture}
+                focus={focus}
+                onFocus={setFocus}
+                shape="circle"
+                zoom
+                zoomLabel={t('image.zoom')}
+                hint={t('space.dragToFrame')}
+                testId="space-photo-focus"
+              />
+            )}
             {/* #285: the shared grid — the whole font behind the search, glyphs
                 in the picked color. #146 (user): a picture wins over symbol+color
                 everywhere, so while one is set the grid sleeps (r2: nothing is

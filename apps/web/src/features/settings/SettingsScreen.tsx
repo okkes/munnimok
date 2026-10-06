@@ -18,6 +18,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
+import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useMyRole } from '@/features/spaces/SpaceSharing';
 import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { PERIOD_KEYS } from '@/features/spaces/PeriodSettingsScreen';
@@ -95,7 +96,7 @@ function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefin
       className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
     >
       {space?.picture ? (
-        <img src={space.picture} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
+        <SpacePicture space={space} className="h-11 w-11" />
       ) : (
         <span
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"

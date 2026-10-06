@@ -198,7 +198,16 @@ describe('SpacesScreen (demo identity)', () => {
   it('back with unsaved edits asks first; Stay keeps editing, Leave discards (#164)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+    // the 'Active space' badge resolves inside waitFor (the file's own rule)
+    let active: Element | undefined;
+    await waitFor(() => {
+      active = screen
+        .getAllByText('Active space')
+        .map((el) => el.closest('[data-testid^="space-row-"]'))
+        .find(Boolean) as Element | undefined;
+      expect(active).toBeTruthy();
+    });
+    const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     const input = (await screen.findByTestId('space-edit-name')) as HTMLInputElement;
@@ -226,7 +235,16 @@ describe('SpacesScreen (demo identity)', () => {
   it('renames a space from the edit sheet', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+    // the 'Active space' badge resolves inside waitFor (the file's own rule)
+    let active: Element | undefined;
+    await waitFor(() => {
+      active = screen
+        .getAllByText('Active space')
+        .map((el) => el.closest('[data-testid^="space-row-"]'))
+        .find(Boolean) as Element | undefined;
+      expect(active).toBeTruthy();
+    });
+    const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.change(await screen.findByTestId('space-edit-name'), { target: { value: 'Household' } });
@@ -240,7 +258,16 @@ describe('SpacesScreen (demo identity)', () => {
   it('saves icon and color from the slimmed settings screen (period/currency/history moved out)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+    // the 'Active space' badge resolves inside waitFor (the file's own rule)
+    let active: Element | undefined;
+    await waitFor(() => {
+      active = screen
+        .getAllByText('Active space')
+        .map((el) => el.closest('[data-testid^="space-row-"]'))
+        .find(Boolean) as Element | undefined;
+      expect(active).toBeTruthy();
+    });
+    const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.click(await screen.findByTestId('space-icon-briefcase-outline'));
@@ -279,7 +306,16 @@ describe('SpacesScreen (demo identity)', () => {
   it('a set picture puts the symbol and color pickers to sleep (#146)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+    // the 'Active space' badge resolves inside waitFor (the file's own rule)
+    let active: Element | undefined;
+    await waitFor(() => {
+      active = screen
+        .getAllByText('Active space')
+        .map((el) => el.closest('[data-testid^="space-row-"]'))
+        .find(Boolean) as Element | undefined;
+      expect(active).toBeTruthy();
+    });
+    const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
 
     // seed the picture directly — the file input needs a real image decoder
     const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
@@ -459,7 +495,16 @@ describe('SpacesScreen (demo identity)', () => {
   it('#285: settings icon search narrows and extends the grid; color previews live', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+    // the 'Active space' badge resolves inside waitFor (the file's own rule)
+    let active: Element | undefined;
+    await waitFor(() => {
+      active = screen
+        .getAllByText('Active space')
+        .map((el) => el.closest('[data-testid^="space-row-"]'))
+        .find(Boolean) as Element | undefined;
+      expect(active).toBeTruthy();
+    });
+    const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     // the identity form mounts once the space row loads — wait for it
@@ -557,4 +602,55 @@ describe('SpacesScreen (demo identity)', () => {
       vi.useRealTimers();
     }
   });
+});
+
+describe('the space picture is framed and zoomed (user 2026-10-06)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('an uploaded picture gets the round frame with a zoom; the focus is saved and the circles draw at it', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    // the 'Active space' badge resolves inside waitFor (the file's own rule)
+    let active: Element | undefined;
+    await waitFor(() => {
+      active = screen
+        .getAllByText('Active space')
+        .map((el) => el.closest('[data-testid^="space-row-"]'))
+        .find(Boolean) as Element | undefined;
+      expect(active).toBeTruthy();
+    });
+    const id = active!.getAttribute('data-testid')!.replace('space-row-', '');
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    await screen.findByTestId('screen-space-settings');
+    expect(screen.queryByTestId('space-photo-focus')).toBeNull();
+
+    fireEvent.change(await screen.findByTestId('space-photo-input'), { target: { files: [new File(['x'], 'me.png', { type: 'image/png' })] } });
+    const frame = await screen.findByTestId('space-photo-focus');
+    expect(frame.getAttribute('data-shape')).toBe('circle');
+    expect(screen.getByTestId('space-photo-focus-mask')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('space-photo-focus-zoom'), { target: { value: '2' } });
+    const img = screen.getByTestId('space-photo-focus-img') as HTMLElement;
+    expect(img.style.transform).toBe('scale(2)');
+    expect(img.style.transformOrigin).toBe('50% 50%');
+
+    fireEvent.click(screen.getByTestId('space-edit-save'));
+    await screen.findByTestId('screen-spaces');
+    // the list's circle draws at the stored focus…
+    await waitFor(() => {
+      const circle = screen.getByTestId(`space-row-${id}`).querySelector('[data-testid="space-picture"] img') as HTMLElement | null;
+      expect(circle?.style.transform).toBe('scale(2)');
+    });
+    // …which the row carries
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.spaces.get(id);
+      expect(row?.pictureFocus).toEqual({ x: 50, y: 50, scale: 2 });
+    });
+    db.close();
+  }, 20_000);
 });

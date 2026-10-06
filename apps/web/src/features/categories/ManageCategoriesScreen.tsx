@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import type { CategoryRow, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
+import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { hapticNotify } from '@/lib/platform';
@@ -1049,7 +1050,7 @@ export function ManageCategoriesScreen() {
             <div key={space.id} className="mb-3">
               <div className="m-cap flex items-center gap-2 px-1">
                 {space.picture ? (
-                  <img src={space.picture} alt="" className="h-4 w-4 rounded-full object-cover" />
+                  <SpacePicture space={space} className="h-4 w-4" />
                 ) : (
                   <Icon name={space.icon ?? 'leaf'} size={14} color={space.color} />
                 )}

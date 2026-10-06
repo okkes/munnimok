@@ -2813,4 +2813,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'receipts.zoomIn': 'Yakınlaştır',
   'receipts.zoomOut': 'Uzaklaştır',
   'receipts.zoomFit': 'Genişliğe sığdır',
+  'space.dragToFrame': 'Çerçevelemek için sürükleyin · yakınlaştırmak için sıkıştırın ya da kaydırın',
+  'image.zoom': 'Yakınlaştırma',
 };
