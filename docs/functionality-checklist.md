@@ -86,6 +86,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 ## Portfolio, insights & receipts
 - [ ] Holdings buy/sell and valuation; overview/trends/insights drill correctly; a drill's transaction opens INSIDE the overview (right pane at lg) and the chosen period survives the detour; uncategorized reads gray everywhere; funding-filed recurrings get no leak advice
 - [ ] Receipt capture (camera/webcam/upload) links to transactions; connected shops pull receipts through the Connections hub (#367); a fetched receipt carries the party's invoice, listed with a badge and opened in place; a receipt whose best match is a transaction already reviewed asks first — under Matches to check on the Receipts screen and on the transaction itself — yes attaches it, no makes sure that transaction is never proposed again
+- [ ] The invoice viewer (2026-10-06, user): the invoice sheet takes the whole height (the wide dialog on a desktop) and a PDF is drawn by pdf.js (lazy-loaded, its worker a bundled asset) page by page at the frame's width, so the reader only scrolls down; the toolbar, ctrl/⌘ + wheel and a two-finger pinch zoom from the width up to 4× (the frame owns its pointers, the sheet never drags under it); a picture gets the same tall frame; the download row stays. The browser's PDF plugin fit the page instead and Android had none.
 
 ## Splits (bill splitting) & friends
 - [ ] Split session with a friend end to end (invite, expenses, settle)

@@ -17,6 +17,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { PdfView } from './PdfView';
 import { TxRow } from '@/ui/TxRow';
 import type { ReceiptDocument, ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
@@ -33,17 +34,23 @@ const titleOf = (receipt: ReceiptRow | null, t: Translate): string => {
   return receipt.merchant ?? partyName(receipt.source);
 };
 
-/** an invoice the party issued, shown in place — a PDF or a picture, from its data URL */
+/** an invoice the party issued, shown in place — a PDF or a picture, from
+ *  its data URL. User 2026-10-06: the sheet takes the whole height (the
+ *  wide dialog on a desktop) and a PDF is drawn by pdf.js at the frame's
+ *  width with zoom on top — the browser's own plugin fit the page instead,
+ *  zoomed as it pleased, and Android had none. */
 function InvoiceSheet({ document, onClose }: Readonly<{ document: ReceiptDocument | null; onClose: () => void }>) {
   const { t } = useLang();
   return (
-    <Sheet open={document !== null} onOpenChange={(open) => !open && onClose()} title={t('receipts.invoice')} size="tall">
+    <Sheet open={document !== null} onOpenChange={(open) => !open && onClose()} title={t('receipts.invoice')} size="full" wide>
       {document && (
         <div className="flex flex-col gap-2" data-testid="receipt-invoice-view">
           {document.mime.startsWith('image/') ? (
-            <img src={document.dataUrl} alt={t('receipts.invoice')} className="w-full rounded-card object-contain" />
+            <div className="h-[calc(100dvh-250px)] overflow-auto rounded-card border border-line bg-bg-2 lg:h-[min(calc(92dvh-250px),760px)]" data-sheet-no-drag>
+              <img src={document.dataUrl} alt={t('receipts.invoice')} className="w-full" />
+            </div>
           ) : (
-            <iframe title={document.filename ?? t('receipts.invoice')} src={document.dataUrl} className="w-full rounded-card border border-line bg-white" style={{ height: 460 }} />
+            <PdfView dataUrl={document.dataUrl} testId="receipt-pdf" />
           )}
           <a
             data-testid="receipt-invoice-download"

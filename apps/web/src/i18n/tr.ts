@@ -2807,4 +2807,10 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'recurring.linkAll': 'Tüm işlemler',
   'recurring.linkSearchHint': 'Tüm işlemlerde ara…',
   'recurring.linkNoneFound': 'Eşleşen yok',
+  'receipts.pdfLoading': 'Fatura açılıyor…',
+  'receipts.pdfFailed': 'Fatura burada çizilemedi — indirin.',
+  'receipts.pageCount': 'Sayfa: {n}',
+  'receipts.zoomIn': 'Yakınlaştır',
+  'receipts.zoomOut': 'Uzaklaştır',
+  'receipts.zoomFit': 'Genişliğe sığdır',
 };

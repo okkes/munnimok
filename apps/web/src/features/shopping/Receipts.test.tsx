@@ -3,6 +3,23 @@ import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp } from '@/test/harness';
+import { clampZoom, dataUrlBytes } from './PdfView';
+
+// pdf.js is mocked: happy-dom has no canvas, and the viewer's shape is what is under test
+vi.mock('pdfjs-dist', () => ({
+  GlobalWorkerOptions: { workerSrc: '' },
+  getDocument: () => ({
+    promise: Promise.resolve({
+      numPages: 2,
+      getPage: () =>
+        Promise.resolve({
+          getViewport: ({ scale }: { scale: number }) => ({ width: 595 * scale, height: 842 * scale }),
+          render: () => ({ promise: Promise.resolve() }),
+        }),
+    }),
+  }),
+}));
+vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf.worker.js' }));
 
 // happy-dom has no canvas — the downscaler is covered by lib/image.test.ts
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
@@ -199,7 +216,26 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receipt-document-0'));
     await screen.findByTestId('receipt-invoice-view');
     expect((screen.getByTestId('receipt-invoice-download') as HTMLAnchorElement).getAttribute('download')).toBe('factuur-1.pdf');
+    // user 2026-10-06: drawn page by page at the frame's width, the sheet at full height; the toolbar zooms
+    await screen.findByTestId('receipt-pdf-page-2');
+    expect(screen.getByTestId('receipt-invoice-view').closest('[data-full]')).toBeTruthy();
+    expect(screen.getByTestId('receipt-pdf-zoom').textContent).toBe('100%');
+    expect((screen.getByTestId('receipt-pdf-zoom-out') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('receipt-pdf-zoom-in'));
+    expect(screen.getByTestId('receipt-pdf-zoom').textContent).toBe('125%');
+    expect((screen.getByTestId('receipt-pdf-zoom-out') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('receipt-pdf-zoom-fit'));
+    expect(screen.getByTestId('receipt-pdf-zoom').textContent).toBe('100%');
   }, 15_000);
+
+  it('the viewer\'s helpers: zoom never goes under the width nor past 4×; a data URL yields its bytes', () => {
+    expect(clampZoom(0.5)).toBe(1);
+    expect(clampZoom(1.25)).toBe(1.25);
+    expect(clampZoom(9)).toBe(4);
+    expect(clampZoom(1.2345)).toBe(1.23);
+    expect([...dataUrlBytes('data:application/pdf;base64,JVBERi0=')]).toEqual([37, 80, 68, 70, 45]);
+    expect(dataUrlBytes('nonsense')).toHaveLength(0);
+  });
 
   it('a proposed match asks on the transaction; yes attaches it (§5.7)', async () => {
     const txId = await openFirstTx();

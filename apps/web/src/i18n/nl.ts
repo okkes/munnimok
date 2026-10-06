@@ -2807,4 +2807,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'recurring.linkAll': 'Alle transacties',
   'recurring.linkSearchHint': 'Zoek in alle transacties…',
   'recurring.linkNoneFound': 'Niets gevonden',
+  'receipts.pdfLoading': 'Factuur openen…',
+  'receipts.pdfFailed': 'De factuur kan hier niet worden getekend — download hem.',
+  'receipts.pageCount': 'Pagina\'s: {n}',
+  'receipts.zoomIn': 'Inzoomen',
+  'receipts.zoomOut': 'Uitzoomen',
+  'receipts.zoomFit': 'Passend in de breedte',
 };

@@ -2805,6 +2805,12 @@ export const en = {
   'recurring.linkAll': 'Every transaction',
   'recurring.linkSearchHint': 'Search every transaction…',
   'recurring.linkNoneFound': 'Nothing matches',
+  'receipts.pdfLoading': 'Opening the invoice…',
+  'receipts.pdfFailed': 'The invoice could not be drawn here — download it instead.',
+  'receipts.pageCount': 'Pages: {n}',
+  'receipts.zoomIn': 'Zoom in',
+  'receipts.zoomOut': 'Zoom out',
+  'receipts.zoomFit': 'Fit the width',
 } as const;
 
 export type TranslationKey = keyof typeof en;
