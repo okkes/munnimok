@@ -162,7 +162,7 @@ const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
 const streamHead = (res) => res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
 
 /* ── status ───────────────────────────────────────────────────────── */
-const SERVICE_PROBE_PATH = { web: '', api: '/health', logto: '/oidc/.well-known/openid-configuration', glitchtip: '/api/0/', vault: '/alive', control: '', pgadmin: '/misc/ping' };
+const SERVICE_PROBE_PATH = { web: '', lab: '', api: '/health', logto: '/oidc/.well-known/openid-configuration', glitchtip: '/api/0/', vault: '/alive', control: '', pgadmin: '/misc/ping' };
 
 async function stackStatus(name, probeImpl) {
   const stack = loadStack(name);
@@ -1718,10 +1718,12 @@ const VAULT_PURPOSE = {
   GLITCHTIP_API_TOKEN: 'GlitchTip API token the setup uses to create orgs/projects and read DSNs back.',
   VITE_GLITCHTIP_DSN: 'Crash-report DSN for the munni web app. Public by design.',
   VITE_GLITCHTIP_DSN_ADMIN: 'Crash-report DSN for the admin portal. Public by design.',
+  VITE_GLITCHTIP_DSN_LAB: 'Crash-report DSN for the connector lab. Public by design.',
   API_SENTRY_DSN: 'Crash-report DSN for the api (container-network form).',
   CONNECTOR_SENTRY_DSN: 'Crash-report DSN for the connector control plane and its agents (container-network form).',
   VITE_LOGTO_APP_ID: 'Logto application id (public client id) the munni web app signs in with.',
   VITE_LOGTO_APP_ID_ADMIN: 'Logto application id the admin portal signs in with.',
+  VITE_LOGTO_APP_ID_LAB: 'Logto application id the connector lab signs in with.',
   VITE_LOGTO_APP_ID_CONTROL: 'Logto application id the control cockpit signs in with.',
   NATIVE_LOGTO_APP_ID: 'Logto application id the native (Android/iOS) shells sign in with.',
   LOGTO_M2M_APP_ID: 'Machine-to-machine app id the api itself uses against Logto.',

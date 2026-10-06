@@ -34,14 +34,14 @@ environment stacks (`munni-<platform>-<env>`: web, admin, api, its OWN
 Logto and its OWN Postgres).
 
 Naming: environment hosts are `munni-<env>-<platform>` (+ `-api`,
-`-admin`, `-logto`, `-logto-admin`); shared hosts are
+`-admin`, `-lab`, `-logto`, `-logto-admin`); shared hosts are
 `<service>-<platform>` (`glitchtip-nas`, `vault-nas`, `pgadmin-nas`,
 `control-nas`). On `nas` they sit under the platform's domain; on `lcl`
 under `<lan-ip-dashed>.sslip.io` in LAN mode, else `localhost:<port>`.
 Ports come from the environment's SLOT (stable across deletions): web
-8380 + 100·slot, admin 8381 + …, api 8382 + …, logto 3201 + 100·slot,
-logto admin 3202 + …; the shared stack uses 8383 (glitchtip), 8384
-(vault), 8385 (control), 8386 (pgadmin).
+8380 + 100·slot, admin 8381 + …, api 8382 + …, connector 8387 + …,
+lab 8388 + …, logto 3201 + 100·slot, logto admin 3202 + …; the shared
+stack uses 8383 (glitchtip), 8384 (vault), 8385 (control), 8386 (pgadmin).
 
 GitHub environments: `<platform>-shared` and `<platform>-<env>`. The
 `nas` ones hold every secret its deploys need; the `lcl` ones only what

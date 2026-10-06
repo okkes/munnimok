@@ -405,7 +405,7 @@ test('nas-probe: refuses a bad domain and a docker platform; every host names th
   assert.equal(shared.vault.state, 'no-dns');
   assert.equal(shared.control.state, 'up');
   assert.equal(prod.connector.state, 'up', 'the control plane host joins the probe when the environment runs connectors (#414: a bank party needs it)');
-  assert.equal(body.summary.hosts, 10);
+  assert.equal(body.summary.hosts, 11);
   assert.equal(body.summary.dns, false);
   assert.equal(body.summary.certificate, false);
   assert.ok(body.summary.rulesMissing >= 3);

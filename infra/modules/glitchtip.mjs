@@ -4,7 +4,7 @@ import { localAwareFetch } from './insecure-fetch.mjs';
 /**
  * GlitchTip as code: ONE GlitchTip per platform (the shared stack) with
  * one organization and team per platform (`munni-<platform>`) and six
- * projects per environment (pwa, admin, api, android, ios, connector). The API
+ * projects per environment (pwa, admin, lab, api, android, ios, connector). The API
  * token the shared stack's deploy created inside the container
  * (GLITCHTIP_API_TOKEN) is mirrored into every environment of the
  * platform, so each environment's bootstrap ensures its own projects and
@@ -42,9 +42,9 @@ async function projectDsn(base, token, org, project, fetchImpl) {
   return dsn;
 }
 
-export const PROJECTS = [['web', 'pwa', 'javascript'], ['api', 'api', 'csharp'], ['admin', 'admin', 'javascript'], ['android', 'android', 'javascript'], ['ios', 'ios', 'javascript'], ['connector', 'connector', 'csharp']];
+export const PROJECTS = [['web', 'pwa', 'javascript'], ['api', 'api', 'csharp'], ['admin', 'admin', 'javascript'], ['lab', 'lab', 'javascript'], ['android', 'android', 'javascript'], ['ios', 'ios', 'javascript'], ['connector', 'connector', 'csharp']];
 
-/** ensure the platform's org/team and this environment's projects; returns {web, api, admin, android, ios, connector} DSNs */
+/** ensure the platform's org/team and this environment's projects; returns {web, api, admin, lab, android, ios, connector} DSNs */
 export async function applyGlitchTip(shared, stack, token, { fetchImpl = localAwareFetch } = {}) {
   const base = shared.urls.glitchtip;
   const slug = orgSlug(stack.platform);
@@ -66,6 +66,7 @@ export function writeBackDsns(stack, dsns) {
   execFileSync('gh', ['secret', 'set', 'CONNECTOR_SENTRY_DSN', '--env', env, '--body', dsns.connector]);
   execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN', '--env', env, '--body', dsns.web]);
   execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN_ADMIN', '--env', env, '--body', dsns.admin]);
+  execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN_LAB', '--env', env, '--body', dsns.lab]);
   execFileSync('gh', ['variable', 'set', 'NATIVE_GLITCHTIP_DSN_ANDROID', '--env', env, '--body', dsns.android]);
   execFileSync('gh', ['variable', 'set', 'NATIVE_GLITCHTIP_DSN_IOS', '--env', env, '--body', dsns.ios]);
 }

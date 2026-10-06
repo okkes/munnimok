@@ -49,6 +49,18 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Error 'admin analysis failed' }
 } finally { Pop-Location }
 
+# --- lab: the connector workbench, same regime as admin -------------------
+Write-Host "==> vitest coverage (apps/lab)" -ForegroundColor Cyan
+Push-Location (Join-Path $repo 'apps\lab')
+try {
+    npx vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary
+    if ($LASTEXITCODE -ne 0) { Write-Error 'lab vitest failed - fix tests before analyzing' }
+
+    Write-Host "==> sonar-scanner (munni-lab)" -ForegroundColor Cyan
+    docker run --rm -e SONAR_HOST_URL=$sonarHost -e SONAR_TOKEN=$sonarToken -v "${PWD}:/usr/src" sonarsource/sonar-scanner-cli
+    if ($LASTEXITCODE -ne 0) { Write-Error 'lab analysis failed' }
+} finally { Pop-Location }
+
 # --- control: the shared-services cockpit, same regime as admin ----------
 Write-Host "==> vitest coverage (apps/control)" -ForegroundColor Cyan
 Push-Location (Join-Path $repo 'apps\control')

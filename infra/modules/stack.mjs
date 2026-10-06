@@ -27,7 +27,7 @@ export const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 export const branchFor = (platformBranch, channel) => platformBranch || (channel === 'latest' ? 'master' : channel);
 
 /** environment ports come from the SLOT — stable across deletions; the connector control plane (#367) sits past the shared stack's fixed 8383-8386 */
-export const PORT_SLOT = { web: 8380, admin: 8381, api: 8382, connector: 8387, logto: 3201, logtoAdmin: 3202 };
+export const PORT_SLOT = { web: 8380, admin: 8381, api: 8382, connector: 8387, lab: 8388, logto: 3201, logtoAdmin: 3202 };
 export const SHARED_PORTS = { glitchtip: 8383, vault: 8384, control: 8385, pgadmin: 8386 };
 export const envPorts = (slot) => Object.fromEntries(Object.entries(PORT_SLOT).map(([k, base]) => [k, base + 100 * slot]));
 
@@ -173,6 +173,8 @@ export const hostsFor = (platform, env = null, { connectors = false } = {}) => (
     web: `munni-${env}-${platform}`,
     admin: `munni-${env}-${platform}-admin`,
     api: `munni-${env}-${platform}-api`,
+    // the connector lab (#441): the operator's workbench beside the admin portal, in every environment
+    lab: `munni-${env}-${platform}-lab`,
     ...(connectors ? { connector: `munni-${env}-${platform}-connector` } : {}),
     logto: `munni-${env}-${platform}-logto`,
     logtoAdmin: `munni-${env}-${platform}-logto-admin`,
