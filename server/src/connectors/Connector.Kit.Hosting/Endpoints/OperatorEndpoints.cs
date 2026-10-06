@@ -81,6 +81,7 @@ internal static class OperatorEndpoints
         if (Value(q, "provider") is { } provider) query = query.Where(x => x.Job.ProviderId == provider);
         if (Value(q, "subject") is { } subject) query = query.Where(x => x.Subject == subject);
         if (Value(q, "session") is { } session) query = query.Where(x => x.Job.SessionId == session);
+        if (Value(q, "agent") is { } agent) query = query.Where(x => x.Job.AgentId == agent);
 
         if (Value(q, "state") is { } rawState)
         {
@@ -359,7 +360,7 @@ internal static class OperatorEndpoints
         Attempts = job.Attempts,
         CredentialSubmitted = job.CredentialSubmitted,
         Complete = job.Complete,
-        AgentId = job.LeaseOwner,
+        AgentId = job.AgentId ?? job.LeaseOwner,
         ProfileId = job.ProfileId,
         FleetOnly = job.FleetOnly,
         CreatedAt = job.CreatedAt,

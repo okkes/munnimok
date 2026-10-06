@@ -94,6 +94,11 @@ public sealed class AgentListingTests(ShopApiFactory factory)
 
         Assert.True(Row(listed, recent).GetProperty("online").GetBoolean());
         Assert.False(Row(listed, silent).GetProperty("online").GetBoolean());
+
+        // #441 L4: the agent's own claims ride on its view, as it last made them
+        var claims = Row(listed, recent).GetProperty("capabilities");
+        Assert.Equal(1, claims.GetProperty("max_concurrency").GetInt32());
+        Assert.Equal("pooled", claims.GetProperty("class").GetString());
     }
 
     /// <summary>

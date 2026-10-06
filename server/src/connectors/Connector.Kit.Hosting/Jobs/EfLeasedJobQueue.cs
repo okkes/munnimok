@@ -455,6 +455,7 @@ public sealed class EfLeasedJobQueue(
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.State, JobState.Leased)
                 .SetProperty(j => j.LeaseOwner, agentId)
+                .SetProperty(j => j.AgentId, agentId)
                 .SetProperty(j => j.LeaseExpiresAt, leaseExpiresAt)
                 .SetProperty(j => j.Attempts, j => j.Attempts + 1)
                 .SetProperty(j => j.Step, JobStep.AgentAssigned)
