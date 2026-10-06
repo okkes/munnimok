@@ -117,6 +117,8 @@ public static class LabBenchEndpoints
         bench.MapPost("/{provider}/jobs/{jobId}/answer", AnswerJob).WithValidation<ConnectorAnswerRequest>();
         bench.MapPost("/sessions/{sessionId}/canary", MakeCanary).WithValidation<LabCanaryRequest>();
         bench.MapDelete("/sessions/{sessionId}", Disconnect);
+
+        LabRetentionEndpoints.Map(bench);
     }
 
     private static async Task<IResult> Sessions(HttpContext http, ConnectorRelay relay, CancellationToken ct)
