@@ -164,7 +164,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'cat.dating': 'Flört & buluşma',
   'cat.subs': 'Yayın (streaming)',
   'cat.outdoor': 'Doğa & açık hava',
-  'cat.activities': 'Aktiviteler',
+  'cat.activities': 'Aktivite',
   'cat.entertainmentOther': 'Diğer',
   'cat.gym': 'Spor salonu',
   'cat.sportsEquipment': 'Spor ekipmanı',
@@ -2793,4 +2793,5 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.per.2b': 'Oklar her seferinde bir dönem ilerler; grafikteki bir nokta doğrudan oraya atlar.',
   'tour.per.3t': 'Eğilimi okuyun',
   'tour.per.3b': 'Her çizgi bir kutunun zaman içindeki seyri — kapanan dönemler düz, bu dönem kesikli — önceki döneme göre değişimle birlikte.',
+  'cat.giftReceived': 'Hediye',
 };

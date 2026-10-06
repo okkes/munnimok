@@ -162,7 +162,7 @@ export const en = {
   'cat.dating': 'Dating',
   'cat.subs': 'Streaming',
   'cat.outdoor': 'Outdoor & nature',
-  'cat.activities': 'Activities',
+  'cat.activities': 'Activity',
   'cat.entertainmentOther': 'Other',
   'cat.gym': 'Gym Membership',
   'cat.sportsEquipment': 'Sports Equipment',
@@ -2791,6 +2791,7 @@ export const en = {
   'tour.per.2b': 'The arrows move one period at a time; a dot on any chart jumps straight there.',
   'tour.per.3t': 'Read the trend',
   'tour.per.3b': 'Each line is one tile over time — solid for closed periods, dashed for this one so far — with the change against the period before.',
+  'cat.giftReceived': 'Gift',
 } as const;
 
 export type TranslationKey = keyof typeof en;

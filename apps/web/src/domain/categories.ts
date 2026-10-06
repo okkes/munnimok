@@ -37,6 +37,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"freelance","parentId":"income","nameKey":"cat.freelance","icon":"home-city-outline","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"rental","parentId":"income","nameKey":"cat.rental","icon":"store-clock-outline","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"investIncome","parentId":"income","nameKey":"cat.investIncome","icon":"chart-timeline-variant","positive":true,"txTypes":["income"],"direction":"credit"},
+  {"id":"giftReceived","parentId":"income","nameKey":"cat.giftReceived","icon":"gift-open-outline","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"incomeOther","parentId":"income","nameKey":"cat.incomeOther","icon":"cash-plus","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"saving","nameKey":"cat.saving","icon":"piggy-bank-outline","color":"#A8782B","isParent":true,"txTypes":["saving"],"direction":"both"},
   // typed-splits v2: movement subs live on BOTH legs now (R1 stamps put

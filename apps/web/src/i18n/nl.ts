@@ -164,7 +164,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cat.dating': 'Dating',
   'cat.subs': 'Streaming',
   'cat.outdoor': 'Buiten & natuur',
-  'cat.activities': 'Activiteiten',
+  'cat.activities': 'Activiteit',
   'cat.entertainmentOther': 'Overig',
   'cat.gym': 'Sportschool',
   'cat.sportsEquipment': 'Sportuitrusting',
@@ -2793,4 +2793,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.per.2b': 'De pijlen gaan één periode per keer; een punt in een grafiek springt er direct heen.',
   'tour.per.3t': 'Lees de trend',
   'tour.per.3b': 'Elke lijn is één tegel door de tijd — doorgetrokken voor afgesloten periodes, gestippeld voor deze tot nu toe — met het verschil met de periode ervoor.',
+  'cat.giftReceived': 'Cadeau',
 };
