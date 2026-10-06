@@ -23,7 +23,7 @@ public sealed record AdminUserDiagnosisDto(
 /// Admin area: user overview, operator-initiated deletion and the per-user
 /// sync-chain diagnosis. Every route requires the token's `admin` scope
 /// (AdminScope) — who is an admin is decided in Logto, never here. The
-/// parties (banks included, §15) are managed under /admin/connectors.
+/// parties (banks included, §15) are managed in the lab (/lab, #441).
 /// </summary>
 public static class AdminEndpoints
 {
@@ -77,7 +77,7 @@ public static class AdminEndpoints
             memberSpaces,
             ownedFeedIds.Select(id => new AdminFeedDto(id, maxSeqs.GetValueOrDefault(id))).ToList(),
             attachments,
-            await Connectors.ConnectorAdminEndpoints.SessionsOfAsync(db, user.Id)));
+            await Connectors.ConnectorLabEndpoints.SessionsOfAsync(db, user.Id)));
     }
 
     private static async Task<IResult> DeleteUser(string sub, HttpContext http, AppDbContext db, Social.AccountDeletion deletion)

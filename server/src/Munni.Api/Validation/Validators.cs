@@ -215,7 +215,7 @@ public sealed class ConnectorProviderStatusRequestValidator : AbstractValidator<
 {
     public ConnectorProviderStatusRequestValidator()
     {
-        RuleFor(r => r.State).Must(Connectors.ConnectorAdminEndpoints.IsState).WithMessage("state must be healthy, degraded, paused or retired");
+        RuleFor(r => r.State).Must(Connectors.ConnectorLabEndpoints.IsState).WithMessage("state must be healthy, degraded, paused or retired");
         RuleFor(r => r.ReasonKey).MaximumLength(120);
     }
 }

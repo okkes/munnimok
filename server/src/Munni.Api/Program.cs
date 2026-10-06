@@ -270,6 +270,7 @@ app.MapRates();
 app.MapAccounts();
 app.MapAdmin();
 app.MapControl();
+app.MapLab();
 app.MapCatalog();
 app.MapConnectionSync();
 ConnectorSetup.Map(app, connectors);

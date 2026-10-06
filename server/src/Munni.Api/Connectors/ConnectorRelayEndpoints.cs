@@ -377,7 +377,7 @@ public static partial class ConnectorRelayEndpoints
 
         // hosted private agents (#420 A2): the caller's standing, a request,
         // withdrawing it, giving the slot back — the operator decides in the
-        // admin portal (ConnectorAdminEndpoints)
+        // the lab (ConnectorLabEndpoints)
         group.MapGet("/private-agents/mine", PrivateAgentMine);
         group.MapPost("/private-agents/requests", PrivateAgentRequest);
         group.MapDelete("/private-agents/requests/{requestId}", PrivateAgentWithdraw);

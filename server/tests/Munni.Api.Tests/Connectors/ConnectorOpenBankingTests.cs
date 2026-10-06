@@ -49,7 +49,7 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
 
         // the party said something about its budget: the operator sees it on the status document
         using var operatorClient = factory.ClientFor("the-quota-operator", scope: Admin);
-        var status = await operatorClient.GetFromJsonAsync<JsonObject>("/admin/connectors/status");
+        var status = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/status");
         var party = status!["providers"]!.AsArray().OfType<JsonObject>().Single(p => p["providerId"]!.GetValue<string>() == Consent);
         Assert.Equal(4, party["quota"]!["limit"]!.GetValue<int>());
         Assert.Equal(3, party["quota"]!["remaining"]!.GetValue<int>());
@@ -242,15 +242,15 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.BadRequest, unsupported.StatusCode);   // the connector's own refusal, relayed
 
         using var operatorClient = factory.ClientFor("the-inventory-operator", scope: Admin);
-        var consents = await operatorClient.GetFromJsonAsync<JsonObject>($"/admin/connectors/providers/{Consent}/remote-consents");
+        var consents = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/providers/{Consent}/remote-consents");
         var list = consents!["consents"]!.AsArray().OfType<JsonObject>().ToList();
         Assert.Contains(list, c => c["origin"]!.GetValue<string>() == "https://other.mock.invalid" && c["reference"]!.GetValue<string>() == "legacy");
-        using var revoked = await operatorClient.DeleteAsync($"/admin/connectors/providers/{Consent}/remote-consents/mock-consent-elsewhere");
+        using var revoked = await operatorClient.DeleteAsync($"/lab/providers/{Consent}/remote-consents/mock-consent-elsewhere");
         Assert.Equal(HttpStatusCode.NoContent, revoked.StatusCode);
-        var after = await operatorClient.GetFromJsonAsync<JsonObject>($"/admin/connectors/providers/{Consent}/remote-consents");
+        var after = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/providers/{Consent}/remote-consents");
         Assert.DoesNotContain(after!["consents"]!.AsArray().OfType<JsonObject>(), c => c["id"]!.GetValue<string>() == "mock-consent-elsewhere");
         using var plain = factory.ClientFor("plain-user");
-        Assert.Equal(HttpStatusCode.Forbidden, (await plain.GetAsync($"/admin/connectors/providers/{Consent}/remote-consents")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await plain.GetAsync($"/lab/providers/{Consent}/remote-consents")).StatusCode);
     }
 
     [Fact]

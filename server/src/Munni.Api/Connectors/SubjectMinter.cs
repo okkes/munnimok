@@ -24,9 +24,19 @@ public sealed class SubjectMinter
         _key = Encoding.UTF8.GetBytes(salt);
     }
 
-    public string For(Guid userId)
+    public string For(Guid userId) => Mint(userId.ToString("D"));
+
+    /// <summary>
+    /// The operator's LAB subject (#441): the same person, another pseudonym —
+    /// everything the lab connects, fetches or records belongs to it, so a
+    /// test run never shows up among the person's own connections in the app
+    /// and nothing of it is ever ingested into a space.
+    /// </summary>
+    public string ForLab(Guid userId) => Mint($"lab:{userId:D}");
+
+    private string Mint(string material)
     {
-        var mac = HMACSHA256.HashData(_key, Encoding.UTF8.GetBytes(userId.ToString("D")));
+        var mac = HMACSHA256.HashData(_key, Encoding.UTF8.GetBytes(material));
         return Prefix + Base64Url.EncodeToString(mac)[..21];
     }
 }

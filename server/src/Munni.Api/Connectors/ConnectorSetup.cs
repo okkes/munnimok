@@ -64,7 +64,7 @@ public static class ConnectorSetup
         {
             case ConnectorPresence.Enabled:
                 app.MapConnectors();
-                app.MapConnectorAdmin();
+                app.MapConnectorLab();
                 break;
             case ConnectorPresence.WaitingForCredential:
                 app.Logger.LogWarning(
