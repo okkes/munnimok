@@ -143,7 +143,7 @@ public sealed class BolAdapter : IProviderAdapter
         // chain takes us to the form and brings us back, which is the flow a
         // shopper takes and the cleanest signal that we are in.
         await page.GotoAsync(_options.LoginStartUrl, ct).ConfigureAwait(false);
-        await page.ClickAsync(_options.ConsentSelectors, _options.ProbeMs, ct).ConfigureAwait(false);
+        await BolConsent.DismissAsync(ctx, page, _options, ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.Authenticating);
 
@@ -155,7 +155,7 @@ public sealed class BolAdapter : IProviderAdapter
             // straight at it costs one navigation and is worth far more than
             // failing on a 302 that changed shape.
             await page.GotoAsync(_options.LoginFormUrl, ct).ConfigureAwait(false);
-            await page.ClickAsync(_options.ConsentSelectors, _options.ProbeMs, ct).ConfigureAwait(false);
+            await BolConsent.DismissAsync(ctx, page, _options, ct).ConfigureAwait(false);
 
             if (!await page.FillAsync(_options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
                     .ConfigureAwait(false))
@@ -1066,6 +1066,10 @@ internal sealed class BolHashProbe
             ctx.Note($"{BolAdapter.ProviderId}: the orders overview fired the operation once opened");
             return learned.Result;
         }
+
+        // 2026-10-06 (prod): the cookie wall over the overview swallowed the
+        // "Toon meer" press - out of the way first
+        await BolConsent.DismissAsync(ctx, page, _options, ct).ConfigureAwait(false);
 
         // A first page rendered on the server fires nothing until the next
         // one is asked for.

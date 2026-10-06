@@ -143,14 +143,29 @@ public sealed record BolOptions
         "input[type='submit']",
     ];
 
-    /// <summary>Best effort - a consent wall left standing covers the form.</summary>
+    /// <summary>
+    /// The cookie wall's way out, most specific first. 2026-10-06 (prod): bol
+    /// serves the wall as a Radix dialog (role "dialog", data-state "open")
+    /// whose buttons read "Weigeren" and "Alles accepteren" - refusing comes
+    /// first (fewer trackers in a session that is the person's own), accepting
+    /// is the fallback; the older ids stay for the day bol serves them again.
+    /// The bare "accept-all" test id is gone: it matched a button UNDER the
+    /// dialog, whose click timed out on the dialog itself. Best effort - a wall
+    /// left standing covers the form (<see cref="BolConsent"/>).
+    /// </summary>
     public IReadOnlyList<string> ConsentSelectors { get; init; } =
     [
+        "[role='dialog'][data-state='open'] button:has-text('Weigeren')",
+        "[role='dialog'][data-state='open'] button:has-text('Alles accepteren')",
+        "[role='dialog'] button:has-text('Weigeren')",
+        "[role='dialog'] button:has-text('Alles accepteren')",
         "#js-first-screen-accept-all-button",
         "button[data-test='consent-modal-confirm-btn']",
         "#onetrust-accept-btn-handler",
-        "button[data-test='accept-all']",
     ];
+
+    /// <summary>How long the cookie wall gets to show up after a navigation - its script hydrates after the page, and 500 ms was not it.</summary>
+    public int ConsentMs { get; init; } = 2_000;
 
     /// <summary>
     /// UNCONFIRMED, and the most dangerous list in this file after the money

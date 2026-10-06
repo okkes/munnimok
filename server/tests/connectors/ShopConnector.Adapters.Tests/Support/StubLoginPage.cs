@@ -138,9 +138,23 @@ internal sealed class StubLoginPage : ILoginPage
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// A button that is on the page but cannot be pressed: what Playwright
+    /// raises when something else intercepts the pointer until the click's
+    /// budget runs out (bol's cookie dialog, 2026-10-06). Thrown by the next
+    /// click that finds its button, once.
+    /// </summary>
+    public Exception? ClickThrows { get; set; }
+
     public Task<bool> ClickAsync(IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct)
     {
         if (Match(selectors) is not { } hit) return Task.FromResult(false);
+
+        if (ClickThrows is { } thrown)
+        {
+            ClickThrows = null;
+            return Task.FromException<bool>(thrown);
+        }
 
         Record("click");
         _clicked.Add(hit);

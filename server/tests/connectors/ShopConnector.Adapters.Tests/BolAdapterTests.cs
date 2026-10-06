@@ -76,6 +76,9 @@ public sealed class BolAdapterTests
     private const string CodeBox = "input[autocomplete='one-time-code']";
     private const string CodeSubmit = "[data-test='verify-code-submit']";
     private const string Recaptcha = "iframe[src*='recaptcha']";
+    // the cookie wall as bol serves it on 2026-10-06: a Radix dialog with both answers
+    private const string ConsentRefuse = "[role='dialog'][data-state='open'] button:has-text('Weigeren')";
+    private const string ConsentAccept = "[role='dialog'][data-state='open'] button:has-text('Alles accepteren')";
 
     /// <summary>The one code that sends a consumer back through the login.</summary>
     private static readonly string[] SessionExpiredOnly = ["session_expired"];
@@ -326,6 +329,43 @@ public sealed class BolAdapterTests
         // spent, which is what makes this recoverable by fixing a selector.
         Assert.False(ctx.CredentialWasSubmitted);
         Assert.Empty(page.Clicked);
+    }
+
+    [Fact]
+    public async Task The_cookie_wall_is_refused_before_the_form_is_touched_and_accepted_when_it_cannot_be()
+    {
+        var page = StubLoginPage.Showing(ConsentRefuse, ConsentAccept, Username, PasswordBox, Submit);
+        using var ctx = LoginContext(page);
+
+        await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
+
+        // refusing first, before a field is filled; the accept button stays untouched
+        Assert.Equal(ConsentRefuse, page.Clicked[0]);
+        var calls = page.Calls.ToList();
+        Assert.True(calls.IndexOf("click") < calls.IndexOf("fill"), "the wall goes before the form is filled");
+        Assert.DoesNotContain(ConsentAccept, page.Clicked);
+        Assert.Contains(ctx.Notes, n => n.Contains("cookie wall was dismissed", StringComparison.Ordinal));
+
+        var acceptOnly = StubLoginPage.Showing(ConsentAccept, Username, PasswordBox, Submit);
+        using var ctx2 = LoginContext(acceptOnly);
+        await Adapter().LoginAsync(ctx2, acceptOnly, Arrives(), CancellationToken.None);
+        Assert.Equal(ConsentAccept, acceptOnly.Clicked[0]);
+    }
+
+    [Fact]
+    public async Task A_cookie_wall_button_that_cannot_be_pressed_never_takes_the_login_down()
+    {
+        // 2026-10-06 (prod, four logins): the click found a button under the dialog and timed out on its paragraph
+        var page = SignedInPage();
+        page.Reveal(ConsentRefuse);
+        page.ClickThrows = new TimeoutException("Timeout 500ms exceeded: <p>…</p> from <div role=\"dialog\"> intercepts pointer events");
+        using var ctx = LoginContext(page);
+
+        var result = await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(Submit, page.Clicked[^1]);
+        Assert.Contains(ctx.Notes, n => n.Contains("could not be pressed", StringComparison.Ordinal));
     }
 
     [Fact]
