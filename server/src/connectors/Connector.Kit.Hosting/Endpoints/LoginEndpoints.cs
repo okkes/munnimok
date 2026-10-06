@@ -173,6 +173,9 @@ internal static class LoginEndpoints
         var manifest = registry.RequireManifest(provider);
         RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
+        RequestContext.RequireOperatorsDoor(http, manifest);
+        var record = RequestContext.RecordOf(http, request.Record);
+
         await RequireWorkAcceptedAsync(statuses, manifest, ct);
         var deviceClass = RequestContext.DeviceClassOf(http);
         RequireConsent(platform, request.Consent);
@@ -229,7 +232,7 @@ internal static class LoginEndpoints
 
         await StartLoginJobAsync(
             sessions, queue, inline, session, manifest, inputs, request.Config, profileId, fleetRequested,
-            RequestContext.TriggerNameOf(http), ct);
+            RequestContext.TriggerNameOf(http), record, ct);
 
         // A short wait, not a long one. An HTTP-tier provider usually
         // finishes inside it and the caller gets its bundle in one round
@@ -294,6 +297,7 @@ internal static class LoginEndpoints
         string? profileId,
         bool fleetRequested,
         string trigger,
+        bool record,
         CancellationToken ct)
     {
         // RUNNING BEFORE THE JOB EXISTS, and the order is the whole point.
@@ -322,6 +326,7 @@ internal static class LoginEndpoints
             ProfileId = profileId,
             FleetOnly = fleetRequested,
             Trigger = trigger,
+            Record = record,
         }, ct);
 
         if (inline.CanRun(manifest)) inline.Dispatch();

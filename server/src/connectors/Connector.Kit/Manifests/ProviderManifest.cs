@@ -72,6 +72,14 @@ public sealed record ProviderManifest
     public bool LoginNeedsHeadedAgent { get; init; }
 
     /// <summary>
+    /// The operator's alone (#441 L3): left out of every consumer catalogue and
+    /// refused on every door but the lab's. The explore run is one - a browser
+    /// driven around a site that has no adapter yet is nothing a person should
+    /// ever be offered.
+    /// </summary>
+    public bool OperatorOnly { get; init; }
+
+    /// <summary>
     /// What disconnecting does to the account upstream, if anything.
     ///
     /// There was no field, so <c>DELETE /sessions/{id}</c> called
@@ -151,6 +159,9 @@ public enum ProviderKind
     /// not have.
     /// </summary>
     Registry,
+
+    /// <summary>The lab's own: an operator-only provider that is a tool, not a party (#441 L3).</summary>
+    Lab,
 }
 
 /// <summary>

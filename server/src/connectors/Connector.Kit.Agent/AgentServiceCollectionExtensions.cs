@@ -68,6 +68,12 @@ public static class AgentServiceCollectionExtensions
             services.Add(adapter);
         }
 
+        // The operator's explore run (#441 L3) rides on every agent image: the
+        // control plane carries the same manifest, so the agent-served digests
+        // agree, and the queue hands an explore job to a fleet agent only -
+        // a household's own machine never leases a job that is not its owner's.
+        services.AddSingleton<IProviderAdapter>(sp => new Exploring.ExploreAdapter(sp.GetRequiredService<TimeProvider>()));
+
         // ── the machine ──────────────────────────────────────────────────
         services.AddSingleton<IProviderRegistry>(sp => new ProviderRegistry(sp.GetServices<IProviderAdapter>()));
         services.AddSingleton(sp => new AgentStateStore(

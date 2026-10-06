@@ -8,6 +8,7 @@ using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
 using Connector.Kit.Security;
+using Connector.Kit.Tracing;
 using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Execution;
@@ -168,7 +169,23 @@ public sealed class JobRunner
         {
             context.Progress(JobStep.AgentAssigned);
 
-            var run = await ExecuteAsync(adapter, manifest, job, context, profileId, lease.Token).ConfigureAwait(false);
+            JobResultRequest run;
+            try
+            {
+                run = await ExecuteAsync(adapter, manifest, job, context, profileId, lease.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                // The recording lands BEFORE the result or the failure (#441 L3),
+                // while the job is still leased and the browser still holds its
+                // cookie jar - and it lands on a failure too, which is the run
+                // an adapter author most wants to read. Not on a lost lease: the
+                // control plane has already decided what happened to that job.
+                if (!leaseLost && !abort.IsCancellationRequested)
+                {
+                    await PostTraceAsync(job, context).ConfigureAwait(false);
+                }
+            }
 
             // Attached HERE rather than in each of ExecuteAsync's branches, so
             // that a job kind added later carries them without anybody
@@ -711,6 +728,31 @@ public sealed class JobRunner
     /// telling the control plane how a job ended must survive the job ending,
     /// including a shutdown that aborted it.
     /// </summary>
+    private async Task PostTraceAsync(LeasedJob job, AgentJobContext context)
+    {
+        if (!context.Records) return;
+
+        JobTrace? trace;
+        try
+        {
+            using var closing = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            trace = await context.TraceAsync(closing.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "job {JobId}: the recording could not be closed", job.JobId);
+            return;
+        }
+
+        if (trace is null) return;
+
+        var landed = await SendAsync(ct => _control.PostTraceAsync(job.JobId, trace, ct), $"trace for {job.JobId}")
+            .ConfigureAwait(false);
+        _logger.LogInformation(
+            "job {JobId}: recording of {Entries} entries ({Dropped} dropped) {Landed}",
+            job.JobId, trace.Entries.Count, trace.Dropped, landed ? "posted" : "did not land");
+    }
+
     private async Task<bool> SendAsync(Func<CancellationToken, Task> post, string what)
     {
         const int Attempts = 3;

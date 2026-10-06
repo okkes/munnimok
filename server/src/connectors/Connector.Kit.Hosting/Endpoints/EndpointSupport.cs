@@ -129,6 +129,35 @@ public static class RequestContext
         _ => JobRow.UserTrigger,
     };
 
+    /// <summary>
+    /// Whether this run is recorded (#441 L3): only when asked AND the caller
+    /// is the lab. Asked without the lab trigger is refused rather than
+    /// ignored - a consumer that sends the flag has misread the contract, and
+    /// a silent no would hide that.
+    /// </summary>
+    public static bool RecordOf(HttpContext http, bool requested)
+    {
+        if (!requested) return false;
+
+        if (TriggerOf(http) != FetchTrigger.Lab)
+        {
+            throw ConnectorException.InvalidRequest("recording a run is the lab's alone");
+        }
+
+        return true;
+    }
+
+    /// <summary>An operator-only provider (#441 L3) answers the lab's trigger and nobody else's.</summary>
+    public static void RequireOperatorsDoor(HttpContext http, Manifests.ProviderManifest manifest)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+
+        if (manifest.OperatorOnly && TriggerOf(http) != FetchTrigger.Lab)
+        {
+            throw ConnectorException.Unsupported($"provider '{manifest.Id}' is the operator's alone");
+        }
+    }
+
     public static FetchTrigger TriggerOf(HttpContext http)
     {
         ArgumentNullException.ThrowIfNull(http);

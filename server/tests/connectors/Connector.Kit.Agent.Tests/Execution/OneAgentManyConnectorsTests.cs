@@ -55,11 +55,11 @@ public sealed class OneAgentManyConnectorsTests
                 "both connectors should have come online: " + string.Join(" | ", machine.Log.Lines));
 
             Assert.Contains(
-                "bank: agent agt_bank online: providers test-provider; runtimes browser_interactive; " +
+                "bank: agent agt_bank online: providers explore, test-provider; runtimes browser_interactive; " +
                 "concurrency 1 for the whole machine",
                 machine.Log.Lines);
             Assert.Contains(
-                "registry: agent agt_registry online: providers test-provider; runtimes browser_interactive; " +
+                "registry: agent agt_registry online: providers explore, test-provider; runtimes browser_interactive; " +
                 "concurrency 1 for the whole machine",
                 machine.Log.Lines);
 

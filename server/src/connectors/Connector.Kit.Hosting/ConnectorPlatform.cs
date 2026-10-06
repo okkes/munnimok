@@ -74,6 +74,11 @@ public static class ConnectorPlatform
         // "connectors are pipes, not stores... raw provider payloads are off
         // in production". Withholding it here rather than at the request means
         // the catalogue never advertises what production would refuse.
+        // The operator's explore run (#441 L3): the manifest only, so the queue
+        // can hold its jobs and a fleet agent - which carries the adapter -
+        // can lease them. Left out of every consumer catalogue by its flag.
+        services.AddSingleton(Connector.Kit.Exploring.ExploreProvider.ManifestOnly);
+
         services.AddSingleton<IProviderRegistry>(sp =>
             new ProviderRegistry(sp.GetServices<IProviderAdapter>(), offerRawPayloads: !options.IsProduction));
 
@@ -100,6 +105,7 @@ public static class ConnectorPlatform
         services.AddScoped<SyncInterval>();
         services.AddScoped<CanaryService>();
         services.AddScoped<JobArtifactService>();
+        services.AddScoped<JobTraceService>();
         services.AddScoped<JobOutcomeService>();
         services.AddScoped<ViewBuilder>();
         services.AddScoped<FetchRunner>();
@@ -116,7 +122,9 @@ public static class ConnectorPlatform
         // adapters is what makes "human-plausible cadence, never a firehose"
         // a property of the platform.
         services.AddTransient<PolitenessHandler>();
+        services.AddTransient(_ => new Connector.Kit.Tracing.TraceHttpHandler(() => Connector.Kit.Tracing.TraceScope.Book));
         services.AddHttpClient(InlineJobRunner.HttpClientName)
+            .AddHttpMessageHandler<Connector.Kit.Tracing.TraceHttpHandler>()
             .AddHttpMessageHandler<PolitenessHandler>();
 
         services.AddSingleton<IInlineJobRunner, InlineJobRunner>();

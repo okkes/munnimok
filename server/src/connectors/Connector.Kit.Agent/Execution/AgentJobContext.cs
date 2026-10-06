@@ -3,13 +3,16 @@ using System.Threading.Channels;
 using Connector.Kit.Adapters;
 using Connector.Kit.Agent.Browsing;
 using Connector.Kit.Agent.Networking;
+using Connector.Kit.Agent.Tracing;
 using Connector.Kit.Agent.Transport;
 using Connector.Kit.AgentProtocol;
+using Connector.Kit.Exploring;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
 using Connector.Kit.Security;
+using Connector.Kit.Tracing;
 using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Execution;
@@ -63,6 +66,14 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     /// </summary>
     private readonly LiveFrameSequence _frames = new();
 
+    // The recording, when the job asked for one (#441 L3): the book every
+    // surface writes into, the browser's recorder attached when the page is
+    // created, and the HTTP client's handler. Null for every run that did not
+    // ask, which is every run but the lab's.
+    private readonly TraceBook? _book;
+    private readonly PageRecorder? _recorder;
+    private readonly bool _explore;
+
     private int _credentialSubmitted;
     private JobStep _lastStep = JobStep.AgentAssigned;
 
@@ -111,21 +122,6 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         WorkDirectory = Path.Combine(Path.GetFullPath(options.WorkRootDirectory), options.Job.JobId);
         Directory.CreateDirectory(WorkDirectory);
 
-        _redactor = new ScreenshotRedactor(options.Manifest, _logger);
-        _loginOrigins = options.Manifest.Auth.LoginOrigins;
-        _browser = new BrowserLease(
-            options.Browser with { DownloadsPath = WorkDirectory },
-            _redactor,
-            _logger);
-
-        _http = BuildHttpClient(gate, options);
-
-        // The same gate the HTTP client is behind, not a second one. Two gates
-        // would be two independent rate limits on one provider, which adds up
-        // to twice the rate at the far end - and the far end is the only place
-        // the number means anything.
-        Pacer = new GatedPacer(gate, options.Job.Provider, PolitenessGap(options.Job));
-
         SecretValues =
         [
             .. options.Manifest.Auth.AllFields()
@@ -134,6 +130,41 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
                 .Where(v => !string.IsNullOrEmpty(v))
                 .Select(v => v!),
         ];
+
+        _redactor = new ScreenshotRedactor(options.Manifest, _logger);
+        _loginOrigins = options.Manifest.Auth.LoginOrigins;
+        _explore = string.Equals(options.Manifest.Id, ExploreProvider.Id, StringComparison.Ordinal);
+
+        if (options.Job.Record)
+        {
+            _book = new TraceBook(options.Job.JobId, options.Job.Provider, SecretValues, _time);
+            _recorder = new PageRecorder(_book, (page, ct) => _redactor.DomDigestAsync(page, ct), _logger);
+        }
+
+        var recorder = _recorder;
+        _browser = new BrowserLease(
+            options.Browser with
+            {
+                DownloadsPath = WorkDirectory,
+                OnPage = recorder is null
+                    ? options.Browser.OnPage
+                    : page =>
+                    {
+                        recorder.Attach(page);
+                        return Task.CompletedTask;
+                    },
+            },
+            _redactor,
+            _logger);
+
+        _http = BuildHttpClient(gate, options, _book);
+
+        // The same gate the HTTP client is behind, not a second one. Two gates
+        // would be two independent rate limits on one provider, which adds up
+        // to twice the rate at the far end - and the far end is the only place
+        // the number means anything.
+        Pacer = new GatedPacer(gate, options.Job.Provider, PolitenessGap(options.Job));
+
 
         _pump = Task.Run(PumpProgressAsync);
     }
@@ -186,6 +217,26 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
 
     /// <summary>The secret input values for this job, for scrubbing outbound detail.</summary>
     internal IReadOnlyCollection<string> SecretValues { get; }
+
+    /// <summary>Whether this run is being recorded (#441 L3).</summary>
+    internal bool Records => _book is not null;
+
+    /// <summary>
+    /// The recording as it stands, closed with the cookie jar: null when the
+    /// run was never recorded. Called by the runner once the adapter is done,
+    /// before the browser goes - the jar lives in it.
+    /// </summary>
+    internal async Task<JobTrace?> TraceAsync(CancellationToken ct)
+    {
+        if (_book is null) return null;
+
+        var cookies = _recorder is not null && _browser.Started
+            ? await _recorder.CookiesAsync(ct).ConfigureAwait(false)
+            : [];
+
+        _book.Note("the run ended");
+        return _book.Build(cookies);
+    }
 
     /// <summary>
     /// The adapter's own diagnostics, on this job's logger AND kept for the
@@ -467,6 +518,7 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
 
         await FlushProgressAsync().ConfigureAwait(false);
+        if (_recorder is not null) await _recorder.DisposeAsync().ConfigureAwait(false);
         await _browser.DisposeAsync().ConfigureAwait(false);
         _http.Dispose();
 
@@ -481,7 +533,7 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
     /// a privacy one. Connection reuse is worth far less than that isolation:
     /// jobs are minutes apart, not milliseconds.
     /// </summary>
-    private static HttpClient BuildHttpClient(PolitenessGate gate, JobContextOptions options)
+    private static HttpClient BuildHttpClient(PolitenessGate gate, JobContextOptions options, TraceBook? book)
     {
         var transport = new SocketsHttpHandler
         {
@@ -499,7 +551,11 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
             InnerHandler = transport,
         };
 
-        return new HttpClient(limiter, disposeHandler: true) { Timeout = options.HttpTimeout };
+        // The recorder sits outermost, so it sees the call as the adapter made
+        // it and the answer as the adapter will read it.
+        HttpMessageHandler top = book is null ? limiter : new TraceHttpHandler(() => book) { InnerHandler = limiter };
+
+        return new HttpClient(top, disposeHandler: true) { Timeout = options.HttpTimeout };
     }
 
     /// <summary>
@@ -604,7 +660,12 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
             // keeps the old behaviour, which is the stricter one.
             var session = new LiveViewSession(
                 page, _redactor, _control, JobId, _frames,
-                new LiveViewOptions { Origins = _loginOrigins }, _logger, _time);
+                // An explore run (#441 L3) is the operator's own browser: it streams
+                // whatever origin they walk to and takes the navigation vocabulary.
+                // Both decided here, from the provider, never from anything relayed.
+                new LiveViewOptions { Origins = _loginOrigins, AnyOrigin = _explore, Navigation = _explore },
+                _logger,
+                _time);
 
             session.Start(ct);
             return session;

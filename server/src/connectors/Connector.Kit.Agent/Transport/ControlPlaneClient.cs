@@ -7,6 +7,7 @@ using Connector.Kit.AgentProtocol;
 using Connector.Kit.Jobs;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
+using Connector.Kit.Tracing;
 using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Transport;
@@ -358,6 +359,54 @@ public sealed class ControlPlaneClient
 
         EnsureSuccess(response, "live input");
         return await ReadAsync<LiveInputBatch>(response, ct).ConfigureAwait(false);
+    }
+
+    public const string TraceEntriesHeader = "X-Trace-Entries";
+
+    public const string TraceDroppedHeader = "X-Trace-Dropped";
+
+    /// <summary>
+    /// The run's recording (#441 L3), gzipped JSON: a trace is the one post
+    /// that can weigh megabytes, and a page of HTML compresses ten to one.
+    /// Sent before the result, while the job is still leased.
+    /// </summary>
+    public async Task PostTraceAsync(string jobId, JobTrace trace, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+
+        var path = JobPath(jobId, "trace");
+        var client = _factory.CreateClient(_clientName);
+
+        using var packed = new MemoryStream();
+        await using (var zip = new System.IO.Compression.GZipStream(packed, System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true))
+        {
+            await JsonSerializer.SerializeAsync(zip, trace, AgentJson.Options, ct).ConfigureAwait(false);
+        }
+
+        using var content = new ByteArrayContent(packed.ToArray());
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
+        request.Headers.TryAddWithoutValidation(TraceEntriesHeader, trace.Entries.Count.ToString(CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation(TraceDroppedHeader, trace.Dropped.ToString(CultureInfo.InvariantCulture));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ControlPlaneException(ex.StatusCode, $"POST {path} did not reach the control plane", ex);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new ControlPlaneException(
+                HttpStatusCode.RequestTimeout, $"POST {path} timed out before the control plane answered", ex);
+        }
+
+        using (response) EnsureSuccess(response, "trace");
     }
 
     public async Task ResultAsync(string jobId, JobResultRequest result, CancellationToken ct)

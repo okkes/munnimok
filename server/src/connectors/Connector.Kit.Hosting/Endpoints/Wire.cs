@@ -65,6 +65,9 @@ public sealed record LoginRequest
 
     public ConsentRecord? Consent { get; init; }
 
+    /// <summary>Record the run (#441 L3). Honoured with the lab trigger only; refused otherwise.</summary>
+    public bool Record { get; init; }
+
     /// <summary>
     /// Where this run should happen: an agent id, the reserved word
     /// <see cref="RunOn.Fleet"/>, or nothing at all. Required for a
@@ -304,6 +307,9 @@ public sealed record OneShotFetchRequest
     /// <summary>Same vocabulary as the query string, validated against the same ParamSpec.</summary>
     public IReadOnlyDictionary<string, JsonNode?> Params { get; init; } =
         new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+
+    /// <summary>Record the run (#441 L3). Honoured with the lab trigger only; refused otherwise.</summary>
+    public bool Record { get; init; }
 }
 
 public sealed record DataResponse
@@ -807,6 +813,35 @@ public sealed record OperatorJobView
     public bool HasScreenshot { get; init; }
 
     public DateTimeOffset? ArtifactsExpireAt { get; init; }
+
+    /// <summary>The run's recording, when one is kept (#441 L3).</summary>
+    public TraceSummaryView? Trace { get; init; }
+}
+
+public sealed record TraceSummaryView
+{
+    public int Entries { get; init; }
+
+    public int Dropped { get; init; }
+
+    public bool Truncated { get; init; }
+
+    public int Bytes { get; init; }
+
+    public DateTimeOffset StartedAt { get; init; }
+
+    public DateTimeOffset EndedAt { get; init; }
+
+    public DateTimeOffset CapturedAt { get; init; }
+
+    public DateTimeOffset ExpiresAt { get; init; }
+}
+
+public sealed record TraceAckResponse
+{
+    public int Entries { get; init; }
+
+    public int Bytes { get; init; }
 }
 
 public sealed record JobListResponse

@@ -139,6 +139,14 @@ internal static class LiveEndpoints
                 throw ConnectorException.InvalidRequest("this live input batch is not answerable");
             }
 
+            // The navigation vocabulary (#441 L3) exists for the operator's
+            // explore run and nowhere else: a person's streamed login goes
+            // where the provider sends it, never where a relayed event says.
+            if (batch.Navigates() && !string.Equals(job.ProviderId, Connector.Kit.Exploring.ExploreProvider.Id, StringComparison.Ordinal))
+            {
+                throw ConnectorException.InvalidRequest("navigation is the explore run's alone");
+            }
+
             channel.Enqueue(job.Id, batch);
             signals.Signal(ConnectorSignals.LiveInput(job.Id));
 

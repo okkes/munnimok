@@ -225,7 +225,7 @@ internal sealed class TestRig : IDisposable
         public bool TryGetManifest(string providerId, out ProviderManifest manifest)
         {
             manifest = served;
-            return string.Equals(providerId, ProviderId, StringComparison.Ordinal);
+            return string.Equals(providerId, served.Id, StringComparison.Ordinal);
         }
 
         public ProviderManifest RequireManifest(string providerId) =>
@@ -234,7 +234,7 @@ internal sealed class TestRig : IDisposable
         public bool TryGetAdapter(string providerId, out IProviderAdapter found)
         {
             found = adapter;
-            return string.Equals(providerId, ProviderId, StringComparison.Ordinal);
+            return string.Equals(providerId, served.Id, StringComparison.Ordinal);
         }
     }
 }

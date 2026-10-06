@@ -219,6 +219,13 @@ public sealed record LeasedJob
     public required DateTimeOffset LeaseExpiresAt { get; init; }
 
     public JobLimits Limits { get; init; } = new();
+
+    /// <summary>
+    /// Record this run (#441 L3): the browser's and the HTTP client's calls,
+    /// redacted, posted to the control plane when the run ends. Set only on a
+    /// lab run - the control plane refuses it on any other door.
+    /// </summary>
+    public bool Record { get; init; }
 }
 
 public sealed record JobLimits

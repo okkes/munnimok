@@ -179,6 +179,9 @@ public sealed class JobRow
     /// </summary>
     public string? Trigger { get; set; }
 
+    /// <summary>Record this run (#441 L3). Set only through the lab's door; the agent and the inline runner read it.</summary>
+    public bool Record { get; set; }
+
     /// <summary>
     /// False when the adapter stopped short of the end of the window. A first
     /// connect on a heavy account paginates rather than running for ten
@@ -620,4 +623,41 @@ public enum ArtifactStatus
 
     /// <summary>The person said yes, or the run was the operator's own (the lab's, a canary's): readable until it expires.</summary>
     Retained,
+}
+
+/// <summary>
+/// A run's recording (#441 L3): the trace as the agent posted it, gzipped,
+/// and the digest rendered from it once. One per job, the operator's to
+/// read until it expires.
+/// </summary>
+public sealed class JobTraceRow
+{
+    public string JobId { get; set; } = string.Empty;
+
+    public string SessionId { get; set; } = string.Empty;
+
+    public string ProviderId { get; set; } = string.Empty;
+
+    public int Entries { get; set; }
+
+    public int Dropped { get; set; }
+
+    public bool Truncated { get; set; }
+
+    /// <summary>The packed size, kept beside the bytes so a listing never loads them.</summary>
+    public int ByteCount { get; set; }
+
+    /// <summary>The trace's JSON, gzipped.</summary>
+    public byte[] Bytes { get; set; } = [];
+
+    /// <summary>digest.md: the page an adapter author reads first.</summary>
+    public string Digest { get; set; } = string.Empty;
+
+    public DateTimeOffset StartedAt { get; set; }
+
+    public DateTimeOffset EndedAt { get; set; }
+
+    public DateTimeOffset CapturedAt { get; set; }
+
+    public DateTimeOffset ExpiresAt { get; set; }
 }

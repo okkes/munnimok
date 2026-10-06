@@ -53,7 +53,12 @@ internal static class CatalogEndpoints
 
             http.Response.Headers.ETag = etag;
 
-            var providers = registry.Manifests.Select(m => Describe(m, health.GetValueOrDefault(m.Id))).ToList();
+            // An operator-only provider (#441 L3) is left out: the catalogue is
+            // what a person may connect to, and the lab knows its own by name.
+            var providers = registry.Manifests
+                .Where(m => !m.OperatorOnly)
+                .Select(m => Describe(m, health.GetValueOrDefault(m.Id)))
+                .ToList();
 
             return ConnectorResults.Json(new CatalogResponse
             {
@@ -256,7 +261,7 @@ internal static class CatalogEndpoints
 
     private static ServiceDescriptor Descriptor(ConnectorPlatformOptions platform, IProviderRegistry registry) => new()
     {
-        Kinds = registry.Manifests.Select(m => m.Kind).Distinct().OrderBy(k => k.ToString(), StringComparer.Ordinal).ToList(),
+        Kinds = registry.Manifests.Where(m => !m.OperatorOnly).Select(m => m.Kind).Distinct().OrderBy(k => k.ToString(), StringComparer.Ordinal).ToList(),
         Version = platform.ServiceVersion,
         ManifestDigest = registry.CatalogDigest,
     };

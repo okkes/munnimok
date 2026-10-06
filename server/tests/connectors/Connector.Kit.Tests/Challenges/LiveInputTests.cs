@@ -29,7 +29,7 @@ public sealed class LiveInputTests
     /// somebody adds on a Friday because a provider needed it.
     /// </summary>
     [Fact]
-    public void An_event_cannot_name_a_destination()
+    public void An_event_names_a_destination_for_one_kind_only_and_that_kind_is_the_explore_runs()
     {
         var carried = typeof(LiveInput)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -44,11 +44,36 @@ public sealed class LiveInputTests
             nameof(LiveInput.Kind),
             nameof(LiveInput.Sequence),
             nameof(LiveInput.Text),
+            // The one destination (#441 L3): an address, read by the Navigate kind
+            // alone, held to the explore rule (http(s), a public host, no
+            // user-info), refused by the control plane on every run but an
+            // explore run and dispatched by the agent only on a view it opened
+            // with navigation allowed. Still no selector, no script, no path.
+            nameof(LiveInput.Url),
             nameof(LiveInput.X),
             nameof(LiveInput.Y),
         ];
 
         Assert.Equal(expected, carried);
+    }
+
+    [Fact]
+    public void A_navigation_is_well_formed_only_for_a_public_http_address()
+    {
+        Assert.True(new LiveInput { Kind = LiveInputKind.Navigate, Url = "https://www.example.com/login?x=1" }.IsWellFormed());
+        Assert.True(new LiveInput { Kind = LiveInputKind.Back }.IsWellFormed());
+        Assert.True(new LiveInput { Kind = LiveInputKind.Reload }.IsWellFormed());
+
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate, Url = "javascript:alert(1)" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate, Url = "file:///etc/passwd" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate, Url = "http://localhost:5001/" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate, Url = "http://10.0.0.1/" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate, Url = "http://nas.local/" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = LiveInputKind.Navigate, Url = "https://user:pw@www.example.com/" }.IsWellFormed());
+
+        Assert.True(new LiveInputBatch { Events = [new LiveInput { Kind = LiveInputKind.Back }] }.Navigates());
+        Assert.False(new LiveInputBatch { Events = [new LiveInput { Kind = LiveInputKind.Key, Key = LiveKey.Enter }] }.Navigates());
     }
 
     /// <summary>
@@ -211,7 +236,7 @@ public sealed class LiveInputTests
         // Belt and braces on the ordering: an undefined kind with a perfectly
         // good payload must still be refused, or the check is only running on
         // the paths that were already failing.
-        Assert.False(new LiveInput { Kind = (LiveInputKind)7, Text = "hello" }.IsWellFormed());
+        Assert.False(new LiveInput { Kind = (LiveInputKind)99, Text = "hello" }.IsWellFormed());
         Assert.False(new LiveInput { Kind = (LiveInputKind)(-1), Key = LiveKey.Enter }.IsWellFormed());
     }
 

@@ -129,6 +129,16 @@ internal sealed record LiveViewOptions
     /// exercise exists to measure being wrong for a reason nobody can see.
     /// </summary>
     public TimeSpan EmptyPollFloor { get; init; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Stream whatever http(s) origin the page is on (#441 L3): the explore
+    /// run's, where the operator drives their own browser and there is no
+    /// login to stop at. Every other view keeps the origin latch.
+    /// </summary>
+    public bool AnyOrigin { get; init; }
+
+    /// <summary>Replay the navigation vocabulary (open an address, back, reload). Explore runs only.</summary>
+    public bool Navigation { get; init; }
 }
 
 /// <summary>
@@ -239,7 +249,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         _options = options;
         _logger = logger;
         _time = time;
-        _surface = surface ?? new PlaywrightLiveSurface(page.Mouse, page.Keyboard);
+        _surface = surface ?? new PlaywrightLiveSurface(page.Mouse, page.Keyboard, page);
         _meter = new LiveViewMeter(time, options.MeterInterval);
 
         _origins = BuildOrigins(options.Origins, page, logger);
@@ -542,7 +552,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 var frame = ((int)(size >> 32), (int)(size & 0xFFFFFFFF));
 
                 var dispatched = await LiveInputReplay
-                    .ReplayAsync(batch.Events, frame, _surface, _logger, ct).ConfigureAwait(false);
+                    .ReplayAsync(batch.Events, frame, _surface, _logger, ct, _options.Navigation).ConfigureAwait(false);
 
                 // Something moved, so the picture is about to be worth taking.
                 if (dispatched > 0) Nudge();
@@ -725,6 +735,12 @@ internal sealed class LiveViewSession : IAsyncDisposable
     /// </summary>
     private bool IsAllowed(string? url)
     {
+        // The operator's own browser (#441 L3): every page it lands on is
+        // theirs to see, the blank one and the error page included - a start
+        // address that did not resolve must still leave a picture to type
+        // the next address over.
+        if (_options.AnyOrigin) return true;
+
         if (_origins.Count == 0) return false;
 
         if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)) return false;

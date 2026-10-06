@@ -50,6 +50,13 @@ internal static class OperatorEndpoints
         admin.MapGet("/jobs/{jobId}", OneAsync);
         admin.MapGet("/jobs/{jobId}/artifacts/screenshot", ScreenshotAsync)
             .Produces<byte[]>(StatusCodes.Status200OK, "image/png");
+        admin.MapGet("/jobs/{jobId}/trace", TraceAsync)
+            .Produces<Connector.Kit.Tracing.JobTrace>(StatusCodes.Status200OK, "application/json");
+        admin.MapGet("/jobs/{jobId}/trace/digest", DigestAsync)
+            .Produces<string>(StatusCodes.Status200OK, "text/markdown");
+        admin.MapDelete("/jobs/{jobId}/trace", DeleteTraceAsync)
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
         admin.MapGet("/health", HealthAsync);
         admin.MapPost("/canaries/{id}/run", RunCanaryAsync);
     }
@@ -129,10 +136,11 @@ internal static class OperatorEndpoints
         var kept = await db.JobArtifacts.AsNoTracking()
             .Where(a => ids.Contains(a.JobId))
             .ToDictionaryAsync(a => a.JobId, StringComparer.Ordinal, ct);
+        var recorded = await TraceSummariesAsync(db, ids, ct);
 
         return ConnectorResults.Json(new JobListResponse
         {
-            Jobs = [.. rows.Select(r => View(r.Job, r.Subject, kept.GetValueOrDefault(r.Job.Id)))],
+            Jobs = [.. rows.Select(r => View(r.Job, r.Subject, kept.GetValueOrDefault(r.Job.Id), recorded.GetValueOrDefault(r.Job.Id)))],
             Truncated = truncated,
         });
     }
@@ -149,8 +157,9 @@ internal static class OperatorEndpoints
             ?? throw ConnectorException.Unsupported($"unknown job '{jobId}'");
 
         var kept = await db.JobArtifacts.AsNoTracking().FirstOrDefaultAsync(a => a.JobId == jobId, ct);
+        var recorded = await TraceSummariesAsync(db, [jobId], ct);
 
-        return ConnectorResults.Json(View(row.Job, row.Subject, kept));
+        return ConnectorResults.Json(View(row.Job, row.Subject, kept, recorded.GetValueOrDefault(jobId)));
     }
 
     /// <summary>
@@ -183,6 +192,72 @@ internal static class OperatorEndpoints
     /// say something about them, the canary's last word, and the reports
     /// waiting to be read.
     /// </summary>
+    private static async Task<IResult> TraceAsync(
+        HttpContext http,
+        string jobId,
+        JobTraceService traces,
+        CancellationToken ct)
+    {
+        var row = await traces.FindAsync(jobId, ct)
+                  ?? throw ConnectorException.Unsupported($"job '{jobId}' has no recording");
+
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.Bytes(JobTraceService.Unpack(row), "application/json");
+    }
+
+    private static async Task<IResult> DigestAsync(
+        HttpContext http,
+        string jobId,
+        JobTraceService traces,
+        CancellationToken ct)
+    {
+        var row = await traces.FindAsync(jobId, ct)
+                  ?? throw ConnectorException.Unsupported($"job '{jobId}' has no recording");
+
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.Text(row.Digest, "text/markdown");
+    }
+
+    private static async Task<IResult> DeleteTraceAsync(string jobId, JobTraceService traces, CancellationToken ct) =>
+        await traces.DeleteAsync(jobId, ct) ? Results.NoContent() : Results.NotFound();
+
+    private static async Task<Dictionary<string, TraceSummaryView>> TraceSummariesAsync(
+        ConnectorDbContext db, IReadOnlyList<string> ids, CancellationToken ct)
+    {
+        // The summary columns only: a listing that loaded every packed trace
+        // would read megabytes to print a count.
+        var rows = await db.JobTraces.AsNoTracking()
+            .Where(t => ids.Contains(t.JobId))
+            .Select(t => new
+            {
+                t.JobId,
+                t.Entries,
+                t.Dropped,
+                t.Truncated,
+                t.ByteCount,
+                t.StartedAt,
+                t.EndedAt,
+                t.CapturedAt,
+                t.ExpiresAt,
+            })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(
+            t => t.JobId,
+            t => new TraceSummaryView
+            {
+                Entries = t.Entries,
+                Dropped = t.Dropped,
+                Truncated = t.Truncated,
+                Bytes = t.ByteCount,
+                StartedAt = t.StartedAt,
+                EndedAt = t.EndedAt,
+                CapturedAt = t.CapturedAt,
+                ExpiresAt = t.ExpiresAt,
+            },
+            StringComparer.Ordinal);
+    }
+
     private static async Task<ConnectorJsonResult<HealthReportResponse>> HealthAsync(
         IProviderRegistry registry,
         ProviderStatusService statuses,
@@ -270,7 +345,7 @@ internal static class OperatorEndpoints
     // ---- the view ----------------------------------------------------------
 
     /// <summary>One job as the operator reads it. Inputs and material have no field here; see the type's summary.</summary>
-    internal static OperatorJobView View(JobRow job, string subject, JobArtifactRow? kept) => new()
+    internal static OperatorJobView View(JobRow job, string subject, JobArtifactRow? kept, TraceSummaryView? trace = null) => new()
     {
         JobId = job.Id,
         SessionId = job.SessionId,
@@ -298,6 +373,7 @@ internal static class OperatorEndpoints
         DomDigest = kept is { Status: ArtifactStatus.Retained } ? kept.DomDigest : null,
         HasScreenshot = kept is { Status: ArtifactStatus.Retained, Screenshot: not null },
         ArtifactsExpireAt = kept?.ExpiresAt,
+        Trace = trace,
     };
 
     private static string ArtifactsWord(JobArtifactRow? kept) => kept?.Status switch

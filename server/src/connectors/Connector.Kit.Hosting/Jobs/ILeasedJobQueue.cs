@@ -111,6 +111,9 @@ public sealed record NewJob
     /// </summary>
     public bool FleetOnly { get; init; }
 
+    /// <summary>Record this run (#441 L3). The lab's alone; the endpoints refuse it on every other trigger.</summary>
+    public bool Record { get; init; }
+
     /// <summary>
     /// Who asked: <see cref="JobRow.UserTrigger"/> for a person, <see cref="JobRow.ScheduleTrigger"/>
     /// for the relay's scheduler, null for the platform's own work. The provider's interval
