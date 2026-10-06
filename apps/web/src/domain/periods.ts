@@ -65,3 +65,22 @@ export function nextPeriod(periodType: SpacePeriodType, periodDay: number, now =
 }
 
 export const inPeriod = (date: string, period: Period): boolean => date >= period.start && date <= period.end;
+
+/**
+ * Newest last: every period from the one holding `earliest` (a yyyy-mm-dd,
+ * or null for "nothing on record") up to the current one — at least `min`
+ * periods so a chart has two points, at most `cap` so three years of
+ * monthly history is where it stops.
+ */
+export function periodHistoryCovering(
+  periodType: SpacePeriodType,
+  periodDay: number,
+  earliest: string | null,
+  { min = 2, cap = 36 }: { min?: number; cap?: number } = {},
+  now = new Date(),
+): Period[] {
+  const all = periodHistory(periodType, periodDay, Math.max(min, cap), now);
+  const first = earliest === null ? -1 : all.findIndex((p) => p.end >= earliest);
+  const from = first < 0 ? all.length - min : Math.min(first, all.length - min);
+  return all.slice(Math.max(0, from));
+}

@@ -4,8 +4,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
-import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
+import { TILE_META, tileValueClass } from '@/features/overview/tileMeta';
 import { addDays, nextDueDate } from '@/domain/recurring';
 import {
   daysUntil,
@@ -23,7 +23,7 @@ import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
 import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
-import { OfflineIndicator } from '@/app/OfflineBanner';
+import { SyncIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { InstallHint } from '@/features/help/InstallHint';
 import { UpdateCard } from './UpdateCard';
@@ -69,23 +69,6 @@ import { setCategoriesCreateIntent } from '@/features/categories/categoriesHando
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { setFriendsAddIntent } from '@/features/friends/friendsHandoff';
 import { setSpacesCreateIntent } from '@/features/spaces/spacesHandoff';
-
-const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary; signed?: boolean }> = {
-  income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
-  expense: { icon: 'cash-remove', color: 'var(--m-negative)', field: 'expenseCents' },
-  saving: { icon: 'piggy-bank-outline', color: 'var(--m-warning)', field: 'savingCents' },
-  investment: { icon: 'chart-timeline-variant', color: 'var(--m-special)', field: 'investmentCents' },
-  // signed: contributing to a pot is green, drawing from it is red; a
-  // borrowing-heavy period flips Repaid the same way (user rule 2026-08-01)
-  funding: { icon: 'hand-coin', color: 'var(--m-accent-deep)', field: 'fundingCents', signed: true },
-  debt: { icon: 'hand-coin-outline', color: 'var(--m-special)', field: 'debtCents', signed: true },
-};
-
-/** signed tiles color their VALUE by direction; the rest stay plain ink */
-const tileValueClass = (kind: OverviewKind, cents: number): string => {
-  if (!TILE_META[kind].signed) return 'text-ink';
-  return cents < 0 ? 'text-negative' : 'text-accent-deep';
-};
 
 /** #327 r3 (user): the square tiles sit inside the card's rounded
  *  overflow-hidden frame — each corner tile owns the card's corner so
@@ -445,7 +428,7 @@ export function HomeScreen() {
         title={t('tab.home')}
         trailing={
           <>
-            <OfflineIndicator />
+            <SyncIndicator />
             <NotificationsBell />
             <HelpButton tourId="home" />
             <SpaceSwitcher />
@@ -754,8 +737,18 @@ export function HomeScreen() {
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('overview.thisPeriod')}</span>
-          <span className="text-[10px] font-medium normal-case text-ink-4" data-testid="home-period-range">
-            {fmtShort(period.start)} – {fmtShort(period.end)}
+          {/* the period stays in view (user 2026-10-06); See all opens every period side by side */}
+          <span className="flex items-baseline gap-2">
+            <span className="text-[10px] font-medium normal-case text-ink-4" data-testid="home-period-range">
+              {fmtShort(period.start)} – {fmtShort(period.end)}
+            </span>
+            <button
+              data-testid="home-periods-all"
+              onClick={() => void navigate({ to: '/periods' })}
+              className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+            >
+              {t('action.seeAll')}
+            </button>
           </span>
         </div>
         <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface">

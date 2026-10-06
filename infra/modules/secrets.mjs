@@ -158,6 +158,8 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
   ensureEnvironment(env);
   const present = existingEnvSecrets(env);
   const minted = [];
+  // the minted values themselves, by name — the same run files them in the platform's vault; GitHub never hands a secret back
+  const values = {};
   const mirrored = [];
   const missingOperator = [];
   const waitingForShared = [];
@@ -194,15 +196,17 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
         for (const e of envsLacking) setEnvSecret(e, entry.name, known);
         mirrored.push(entry.name);
       } else {
-        setOwn(entry.name, generateValue(entry.name));
+        const value = generateValue(entry.name);
+        setOwn(entry.name, value);
         minted.push(entry.name);
+        values[entry.name] = value;
       }
     } else if (entry.owner === 'operator' && !entry.optional && !satisfiedBy(entry, (n) => present.has(n))) {
       missingOperator.push(entry.name);
     }
     // module-owned: written back later — never minted
   }
-  return { minted, mirrored, missingOperator, waitingForShared };
+  return { minted, mirrored, missingOperator, waitingForShared, values };
 }
 
 /** manifest-vs-reality check used by --verify (no writes) */

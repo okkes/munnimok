@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useData } from '@/app/data';
 import { useAttentionMap, useOtherSpacesDot } from '@/application/spaceAttention';
 import { Icon } from '@/ui/Icon';
@@ -54,7 +55,7 @@ export function SpaceSwitcher() {
         className="m-tap relative flex h-9 w-9 items-center justify-center rounded-full border-none bg-transparent"
       >
         {active?.picture ? (
-          <img src={active.picture} alt="" className="h-8 w-8 rounded-full object-cover" />
+          <SpacePicture space={active} className="h-8 w-8" />
         ) : (
           <span
             className="flex h-8 w-8 items-center justify-center rounded-full"
@@ -87,7 +88,7 @@ export function SpaceSwitcher() {
               className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-3 text-left"
             >
               {space.picture ? (
-                <img src={space.picture} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                <SpacePicture space={space} className="h-9 w-9" />
               ) : (
                 <span
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"

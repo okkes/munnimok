@@ -2,23 +2,24 @@ import { Fragment, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
-import { LOCALES, useLang } from '@/i18n';
+import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { filterTxs } from '@/domain/txFilter';
-import { clampReimbursement, creditPartGivenCents, creditRemainingCents, givenCents, isReimbContainer, remainingCents, settledCats } from '@/domain/reimbursement';
-import { reimbEarmarkCents, suggestCounterparts } from '@/domain/reimburseMatch';
+import { creditPartGivenCents, creditRemainingCents, givenCents, isReimbContainer, remainingCents, settledCats } from '@/domain/reimbursement';
+import { expenseNeedCents, partOpenCents, suggestCounterparts } from '@/domain/reimburseMatch';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useReimburseLinks } from './useReimburseLinks';
+import type { LinkEntry } from './useReimburseLinks';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { SearchField } from '@/ui/SearchField';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
+import { StackedBar } from '@/ui/charts';
 import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
 
@@ -35,6 +36,8 @@ interface ImpactSide {
   lines: ImpactLine[];
 }
 
+type NameOf = (catId: string) => string;
+
 /** #233 r3: the preview diffs the REAL settlement engine — settledCats
  *  before vs after — so spreads, earmarks and the claimant carve-out
  *  all preview exactly what the save would write. Module for S3776. */
@@ -42,7 +45,7 @@ function impactLinesFor(
   subject: { amountCents: number; catId?: string; cats?: { catId: string; amountCents: number }[] },
   beforeCents: number,
   afterCents: number,
-  nameOf: (catId: string) => string,
+  nameOf: NameOf,
 ): ImpactLine[] {
   const before = settledCats(subject, beforeCents, nameOf);
   const after = settledCats(subject, afterCents, nameOf);
@@ -57,103 +60,57 @@ function impactLinesFor(
     .filter((line) => line.before !== line.after);
 }
 
-function impactSides(args: {
-  expense: SpaceTx;
-  expensePartId?: string;
-  credit: SpaceTx;
-  creditPartId?: string;
-  cents: number;
-  allTxs: SpaceTx[];
-  nameOf: (catId: string) => string;
-}): ImpactSide[] {
-  const { expense, credit, cents, allTxs, nameOf } = args;
-  const ePart = args.expensePartId ? (expense.splits ?? []).find((part) => part.id === args.expensePartId) : undefined;
-  const eSubject = ePart ? { amountCents: ePart.amountCents, catId: ePart.catId, cats: ePart.cats } : expense;
-  const eAlready = (expense.reimbursements ?? [])
-    .filter((link) => (ePart ? link.partId === args.expensePartId : true))
+/** the expense's (or its part's) category shift when `addCents` more is reimbursed */
+function expenseImpact(expense: SpaceTx, partId: string | undefined, addCents: number, nameOf: NameOf): ImpactSide {
+  const part = partId ? (expense.splits ?? []).find((p) => p.id === partId) : undefined;
+  const subject = part ? { amountCents: part.amountCents, catId: part.catId, cats: part.cats } : expense;
+  const already = (expense.reimbursements ?? [])
+    .filter((link) => (part ? link.partId === partId : true))
     .reduce((sum, link) => sum + link.amountCents, 0);
-  const cPart = args.creditPartId ? (credit.splits ?? []).find((part) => part.id === args.creditPartId) : undefined;
-  const cGiven =
-    cPart && args.creditPartId ? creditPartGivenCents(allTxs, credit.id, args.creditPartId) : givenCents(allTxs, credit.id);
+  return { title: cleanBankText(expense.merchant), lines: impactLinesFor(subject, already, already + addCents, nameOf) };
+}
+
+/** the credit's (or its part's) category shift when it gives `addCents` more */
+function creditImpact(credit: SpaceTx, creditPartId: string | undefined, addCents: number, allTxs: SpaceTx[], nameOf: NameOf): ImpactSide {
+  const part = creditPartId ? (credit.splits ?? []).find((p) => p.id === creditPartId) : undefined;
+  const given = part && creditPartId ? creditPartGivenCents(allTxs, credit.id, creditPartId) : givenCents(allTxs, credit.id);
   // the credit self-files as Reimbursed exactly like the save would
-  const selfFiles =
-    !cPart &&
-    !isReimbContainer(credit) &&
-    (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1);
-  const cSubject = cPart
-    ? { amountCents: cPart.amountCents, catId: cPart.catId, cats: cPart.cats }
-    : { ...credit, catId: selfFiles ? REIMBURSED_ID : credit.catId };
-  return [
-    { title: cleanBankText(expense.merchant), lines: impactLinesFor(eSubject, eAlready, eAlready + cents, nameOf) },
-    { title: cleanBankText(credit.merchant), lines: impactLinesFor(cSubject, cGiven, cGiven + cents, nameOf) },
-  ];
+  const selfFiles = !part && !isReimbContainer(credit) && (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1);
+  const subject = part ? { amountCents: part.amountCents, catId: part.catId, cats: part.cats } : { ...credit, catId: selfFiles ? REIMBURSED_ID : credit.catId };
+  return { title: cleanBankText(credit.merchant), lines: impactLinesFor(subject, given, given + addCents, nameOf) };
 }
 
-/** #197: what a split expense's PART still expects back — its magnitude
- *  minus the links already targeting it */
-const partOpenCents = (row: SpaceTx, part: TxSplit): number =>
-  Math.max(
-    0,
-    Math.abs(part.amountCents) -
-      (row.reimbursements ?? []).filter((r) => r.partId === part.id).reduce((sum, r) => sum + r.amountCents, 0),
-  );
-
-/** #197 (both directions): a split row offers its PARTS to link against
- *  — the root container is never a target. The caller supplies the
- *  side's own open-value math. Module-level for S3776. */
-function ReimbPartRows({
-  row,
-  testId,
-  hint,
-  money,
-  openOf,
-  onPick,
-  highlight = '',
-}: Readonly<{
+/** one picked counterpart: the row (a part of it when the ids say so), its ceiling and the typed amount */
+interface Pick {
+  key: string;
   row: SpaceTx;
-  testId: string;
-  hint?: string;
-  money: (cents: number) => string;
-  /** the part's linkable value on THIS side (expense: still expected;
-   *  credit: still giveable) */
-  openOf: (row: SpaceTx, part: TxSplit) => number;
-  onPick: (row: SpaceTx, part: TxSplit, openCents: number) => void;
-  highlight?: string;
-}>) {
-  const parts = (row.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
-  const sign = row.amountCents < 0 ? -1 : 1;
-  return (
-    <div key={`${testId}-${row.id}`}>
-      {parts.map((e, ordinal) => {
-        const open = openOf(row, e.part);
-        if (open <= 0) return null;
-        return (
-          <div key={e.part.id ?? e.idx} data-testid={`${testId}-${row.id}-part-${e.idx}`}>
-            <TxPartRow
-              tx={row}
-              part={e.part}
-              index={ordinal}
-              showDate
-              amountText={money(sign * open)}
-              onClick={() => onPick(row, e.part, open)}
-              highlight={highlight}
-            />
-          </div>
-        );
-      })}
-      {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
-    </div>
-  );
+  partId?: string;
+  creditPartId?: string;
+  /** the pair's honest ceiling - the save refuses more, never shrinks silently (#233) */
+  maxCents: number;
+  text: string;
 }
+
+const keyOf = (rowId: string, partId?: string, creditPartId?: string): string => `${rowId}|${partId ?? ''}|${creditPartId ?? ''}`;
+const amountTestId = (key: string): string => `reimb-amount-${key.split('|').filter(Boolean).join('-')}`;
+const centsOf = (pick: Pick): number => Math.max(0, parseCents(pick.text) ?? 0);
+
+/** the picks' shades on the composition bar: the accent, lighter with every next pick */
+const pickColor = (i: number): string => `color-mix(in srgb, var(--m-accent) ${Math.max(35, 100 - i * 18)}%, white)`;
 
 /**
  * Full-screen counterpart picker for reimbursement links (user redesign
  * 2026-07-28, replaces the cramped sheet): searchable like the main
  * transactions list (title + amount, with highlight), with a "suggested"
  * segment on top — the 1–2 rows scoring highest on timing, P2P repayment
- * wording, reimbursement bookkeeping and size. Tapping a row opens the
- * amount sheet; the prefill follows the row's reimbursement EARMARK when
- * it has one (the expected/received slice value), else its open value.
+ * wording, reimbursement bookkeeping and size.
+ *
+ * 2026-10-06 (user): several at once. A tap picks a row and opens its
+ * amount under it, prefilled with what the pair can take - the row's
+ * reimbursement earmark (expected / received slice) or open value, within
+ * what the anchor has left after the earlier picks; the pinned footer
+ * draws the anchor's composition (linked before, each pick, still open),
+ * previews the category shift and links every pick in one gesture.
  */
 export function ReimburseLinkScreen() {
   const { t, lang } = useLang();
@@ -163,17 +120,11 @@ export function ReimburseLinkScreen() {
   const { part: partId } = useSearch({ strict: false }) as { part?: string };
   const allTxs = useSpaceTransactions();
   const tx = useMemo(() => allTxs?.find((row) => row.id === txId), [allTxs, txId]);
-  const { link, giveableCents } = useReimburseLinks(allTxs);
+  const { linkMany, giveableCents } = useReimburseLinks(allTxs);
 
   const [query, setQuery] = useState('');
-  // #197: picking a PART carries its id — the link lands on that part,
-  // never on the root container (partId = expense side, creditPartId =
-  // the split credit's funding part)
-  // #233: maxCents is the pair's honest ceiling — saving above it now
-  // ERRORS instead of silently shrinking to the clamp
-  const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string; creditPartId?: string; maxCents: number } | null>(null);
-  const [amount, setAmount] = useState('');
-  const [amountError, setAmountError] = useState<string | null>(null);
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [error, setError] = useState<{ key?: string; text: string } | null>(null);
   const cats = useCategories();
 
   // the search bar rides along — #273: through the shared GLIDING
@@ -182,7 +133,34 @@ export function ReimburseLinkScreen() {
   const { offset: searchOffset, onListScroll } = useSearchCollapse(56);
 
   const anchorIsExpense = (tx?.amountCents ?? 0) < 0;
+  const anchorPart = useMemo(() => (tx && partId ? (tx.splits ?? []).find((p) => p.id === partId) : undefined), [tx, partId]);
   const givenOf = (id: string) => givenCents(allTxs ?? [], id);
+
+  // #197: what ONE part of a split credit can still give — its own
+  // magnitude minus the links naming it, never more than the whole
+  // credit has left
+  const creditPartOpen = (row: SpaceTx, part: TxSplit): number =>
+    Math.min(
+      giveableCents(row),
+      Math.max(0, Math.abs(part.amountCents) - (part.id ? creditPartGivenCents(allTxs ?? [], row.id, part.id) : 0)),
+    );
+
+  // the anchor's capacity: what it is worth, what was linked before, and
+  // what it can still take / give - a part anchor answers for itself
+  // (2026-10-06: it used to borrow the container's numbers)
+  const anchor = useMemo(() => {
+    if (!tx) return { capacity: 0, before: 0, open: 0, need: 0 };
+    if (anchorIsExpense) {
+      const capacity = Math.abs(anchorPart?.amountCents ?? tx.amountCents);
+      const open = anchorPart ? partOpenCents(tx, anchorPart) : remainingCents(tx);
+      return { capacity, before: capacity - open, open, need: expenseNeedCents(tx, anchorPart?.id) };
+    }
+    const capacity = Math.abs(anchorPart?.amountCents ?? tx.amountCents);
+    const open = anchorPart ? creditPartOpen(tx, anchorPart) : giveableCents(tx);
+    const spent = anchorPart ? Math.abs(anchorPart.amountCents) - open : capacity - creditRemainingCents(tx, givenOf(tx.id));
+    return { capacity, before: Math.max(0, spent), open, need: open };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tx, anchorIsExpense, anchorPart, allTxs]);
 
   // an expense looks at credits with value left; a credit looks at
   // expenses still open — the same space-scoped pools the section used
@@ -200,131 +178,195 @@ export function ReimburseLinkScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tx, candidates],
   );
+  const suggestedIds = useMemo(() => new Set(suggested.map((s) => s.tx.id)), [suggested]);
 
   const listed = useMemo(() => {
     const matched = filterTxs(candidates, { query });
     return [...matched].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 100);
   }, [candidates, query]);
 
-  const openValueOf = (row: SpaceTx): number =>
-    row.amountCents > 0 ? giveableCents(row) : remainingCents(row);
+  const openValueOf = (row: SpaceTx): number => (row.amountCents > 0 ? giveableCents(row) : remainingCents(row));
+  const pickedCents = picks.reduce((sum, pick) => sum + centsOf(pick), 0);
 
-  const pick = (row: SpaceTx) => {
-    const expense = anchorIsExpense ? tx! : row;
-    const credit = anchorIsExpense ? row : tx!;
-    // the prefill follows the EARMARK side of the pair: what the credit
-    // can fund, clamped by what the expense still expects back (its own
-    // expected-reimbursement slice when it carries one)
-    const expected = reimbEarmarkCents(expense);
-    const need = expected === null ? remainingCents(expense) : Math.min(remainingCents(expense), Math.max(0, expected - (expense.reimbursements ?? []).reduce((s, r) => s + r.amountCents, 0)));
-    const prefill = clampReimbursement(expense, giveableCents(credit), Math.max(need, 0) || giveableCents(credit));
-    setChosen({ row, maxCents: clampReimbursement(expense, giveableCents(credit), Number.MAX_SAFE_INTEGER) });
-    setAmount(toText(prefill));
-    setAmountError(null);
+  /** what the anchor can still take for ONE more pick: its need first, then whatever is still open */
+  const budget = (): number => {
+    const need = Math.max(0, anchor.need - pickedCents);
+    return need > 0 ? need : Math.max(0, anchor.open - pickedCents);
   };
 
-  // #197: an EXPENSE part pick (credit anchor) — the prefill is the
-  // part's open value, clamped by what this credit can still give
-  const pickPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
-    const prefill = clampReimbursement(row, giveableCents(tx!), Math.min(openCents, giveableCents(tx!)) || openCents);
-    setChosen({ row, partId: part.id, maxCents: clampReimbursement(row, giveableCents(tx!), openCents) });
-    setAmount(toText(prefill));
-    setAmountError(null);
+  /** the row's own value for this pair and the pair's ceiling */
+  const pairOf = (row: SpaceTx, part?: TxSplit): { own: number; max: number } => {
+    if (anchorIsExpense) {
+      const own = part ? creditPartOpen(row, part) : giveableCents(row);
+      return { own, max: Math.min(anchor.open, own) };
+    }
+    const own = part ? expenseNeedCents(row, part.id) : expenseNeedCents(row);
+    const open = part ? partOpenCents(row, part) : remainingCents(row);
+    return { own, max: Math.min(open, anchor.open) };
   };
 
-  // #197 (the other side): a CREDIT part pick (expense anchor) — the
-  // prefill is what that part can still fund, clamped by the expense
-  const pickCreditPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
-    const prefill = clampReimbursement(tx!, openCents, Math.min(openCents, remainingCents(tx!)) || openCents);
-    setChosen({ row, creditPartId: part.id, maxCents: clampReimbursement(tx!, openCents, Number.MAX_SAFE_INTEGER) });
-    setAmount(toText(prefill));
-    setAmountError(null);
-  };
-
-  // #197: what ONE part of a split credit can still give — its own
-  // magnitude minus the links naming it, never more than the whole
-  // credit has left
-  const creditPartOpen = (row: SpaceTx, part: TxSplit): number =>
-    Math.min(
-      giveableCents(row),
-      Math.max(0, Math.abs(part.amountCents) - (part.id ? creditPartGivenCents(allTxs ?? [], row.id, part.id) : 0)),
-    );
-
-  // #233 r2 (user): the per-side category impact of the typed amount,
-  // live while it is a saveable value — over-max keeps the error path
-  const impactCents = parseCents(amount) ?? 0;
-  const impact = useMemo(() => {
-    if (!tx || !chosen || impactCents <= 0 || impactCents > chosen.maxCents) return null;
-    return impactSides({
-      expense: anchorIsExpense ? tx : chosen.row,
-      expensePartId: anchorIsExpense ? partId : chosen.partId,
-      credit: anchorIsExpense ? chosen.row : tx,
-      creditPartId: anchorIsExpense ? chosen.creditPartId : partId,
-      cents: impactCents,
-      allTxs: allTxs ?? [],
-      nameOf: (catId) => catName(cats.byId(catId), t),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tx, chosen, impactCents, anchorIsExpense, partId, allTxs, cats]);
-
-  const confirm = () => {
-    if (!tx || !chosen) return;
-    const cents = parseCents(amount) ?? 0;
-    // #233 (user): an over-the-ceiling amount INTERRUPTS the save and
-    // says the max — silently shrinking to the clamp taught nothing
-    if (cents <= 0) {
-      setAmountError(t('form.needAmount'));
+  const toggle = (row: SpaceTx, part?: TxSplit) => {
+    const partPick = part && !anchorIsExpense ? part.id : undefined;
+    const creditPartPick = part && anchorIsExpense ? part.id : undefined;
+    const key = keyOf(row.id, partPick, creditPartPick);
+    setError(null);
+    if (picks.some((pick) => pick.key === key)) {
+      setPicks(picks.filter((pick) => pick.key !== key));
       return;
     }
-    if (cents > chosen.maxCents) {
-      setAmountError(t('reimb.maxError', { max: fmtCents(chosen.maxCents, tx.currency, lang) }));
+    const { own, max } = pairOf(row, part);
+    const prefill = Math.max(0, Math.min(own, budget()));
+    setPicks([...picks, { key, row, partId: partPick, creditPartId: creditPartPick, maxCents: max, text: toText(prefill) }]);
+  };
+
+  const setText = (key: string, text: string) => {
+    setError(null);
+    setPicks(picks.map((pick) => (pick.key === key ? { ...pick, text } : pick)));
+  };
+
+  // #233 r2 (user): the category impact of the typed amounts, live while
+  // they are saveable values — the anchor once over every pick, each
+  // counterpart for its own
+  const impact = useMemo((): ImpactSide[] | null => {
+    if (!tx || picks.length === 0) return null;
+    const nameOf: NameOf = (catId) => catName(cats.byId(catId), t);
+    const valid = picks.filter((pick) => centsOf(pick) > 0 && centsOf(pick) <= pick.maxCents);
+    if (valid.length === 0) return null;
+    const total = valid.reduce((sum, pick) => sum + centsOf(pick), 0);
+    const anchorSide = anchorIsExpense ? expenseImpact(tx, partId, total, nameOf) : creditImpact(tx, partId, total, allTxs ?? [], nameOf);
+    const others = valid.map((pick) =>
+      anchorIsExpense ? creditImpact(pick.row, pick.creditPartId, centsOf(pick), allTxs ?? [], nameOf) : expenseImpact(pick.row, pick.partId, centsOf(pick), nameOf),
+    );
+    return [anchorSide, ...others].filter((side) => side.lines.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tx, picks, anchorIsExpense, partId, allTxs, cats]);
+
+  const confirm = () => {
+    if (!tx || picks.length === 0) return;
+    for (const pick of picks) {
+      const cents = centsOf(pick);
+      // #233 (user): an over-the-ceiling amount INTERRUPTS the save and
+      // says the max — silently shrinking to the clamp taught nothing
+      if (cents <= 0) {
+        setError({ key: pick.key, text: t('form.needAmount') });
+        return;
+      }
+      if (cents > pick.maxCents) {
+        setError({ key: pick.key, text: t('reimb.maxError', { max: fmtCents(pick.maxCents, tx.currency, lang) }) });
+        return;
+      }
+    }
+    if (pickedCents > anchor.open) {
+      setError({ text: t('reimb.totalError', { max: fmtCents(anchor.open, tx.currency, lang) }) });
       return;
     }
     // the part target lives on the EXPENSE side's split — from the
     // expense anchor it rides the ?part param; the CREDIT part rides
     // the pick (expense anchor) or the ?part param (credit anchor's
     // own part page, #197)
-    if (anchorIsExpense) link(tx, chosen.row, cents, partId, chosen.creditPartId);
-    else link(chosen.row, tx, cents, chosen.partId, partId);
-    setChosen(null);
+    const entries: LinkEntry[] = picks.map((pick) =>
+      anchorIsExpense
+        ? { expense: tx, credit: pick.row, cents: centsOf(pick), partId, creditPartId: pick.creditPartId }
+        : { expense: pick.row, credit: tx, cents: centsOf(pick), partId: pick.partId, creditPartId: partId },
+    );
+    linkMany(entries);
+    setPicks([]);
     // REPLACE, not back: pressing back on the detail afterwards must not
     // resurface a stale picker — a part-born link returns to its part
     void navigate({ to: '/transactions/$txId', params: { txId }, search: partId ? { part: partId } : {}, replace: true });
   };
 
-  const rowFor = (row: SpaceTx, testId: string, hint?: string) => {
-    // #197 (both directions): a split row offers its PARTS, never the
-    // root — expenses their still-expected parts, credits their
-    // still-giveable ones
-    const rowParts = (row.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-    if (rowParts.length > 1) {
-      return (
-        <ReimbPartRows
-          key={`${testId}-${row.id}`}
-          row={row}
-          testId={testId}
-          hint={hint}
-          money={(cents) => fmtCents(cents, row.currency, lang)}
-          openOf={anchorIsExpense ? creditPartOpen : partOpenCents}
-          onPick={anchorIsExpense ? pickCreditPart : pickPart}
-          highlight={query}
-        />
-      );
-    }
+  const money = (cents: number) => fmtCents(cents, tx?.currency ?? 'EUR', lang);
+
+  /** a pickable row: the check, the row itself, and under a picked one its amount (once, in one segment) */
+  const pickable = (row: SpaceTx, part: TxSplit | undefined, testId: string, withInput: boolean, face: React.ReactNode) => {
+    const key = keyOf(row.id, part && !anchorIsExpense ? part.id : undefined, part && anchorIsExpense ? part.id : undefined);
+    const pick = picks.find((p) => p.key === key);
+    const picked = !!pick;
     return (
-      <div key={`${testId}-${row.id}`} data-testid={`${testId}-${row.id}`}>
-        <TxRow
-          tx={row}
-          showDate
-          hideUnreviewed
-          highlight={query}
-          amountOverrideCents={row.amountCents > 0 ? openValueOf(row) : -openValueOf(row)}
-          onClick={() => pick(row)}
-        />
-        {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
+      <div key={testId} data-testid={testId} data-picked={picked ? '' : undefined} className={picked ? 'bg-accent/5' : ''}>
+        <div className="flex items-stretch">
+          <button
+            type="button"
+            aria-pressed={picked}
+            data-testid={`${testId}-check`}
+            onClick={() => toggle(row, part)}
+            className="m-tap flex w-9 shrink-0 items-center justify-center border-none bg-transparent"
+          >
+            <Icon name={picked ? 'check-circle' : 'checkbox-blank-circle-outline'} size={20} color={picked ? 'var(--m-accent)' : 'var(--m-ink-4)'} />
+          </button>
+          <div className="min-w-0 flex-1">{face}</div>
+        </div>
+        {pick && withInput && (
+          <div className="flex items-center gap-2 pb-2 pl-9">
+            <input
+              data-testid={amountTestId(key)}
+              value={pick.text}
+              onChange={(e) => setText(key, e.target.value)}
+              aria-invalid={error?.key === key}
+              inputMode="decimal"
+              placeholder={t('reimb.amountLabel')}
+              className={`h-9 w-32 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(error?.key === key)}`}
+            />
+            <span className="text-[11px] text-ink-4">{t('reimb.ofMax', { max: money(pick.maxCents) })}</span>
+          </div>
+        )}
       </div>
     );
   };
+
+  const rowFor = (row: SpaceTx, testId: string, segment: 'suggested' | 'list', hint?: string) => {
+    const withInput = segment === (suggestedIds.has(row.id) ? 'suggested' : 'list');
+    // #197 (both directions): a split row offers its PARTS, never the
+    // root — expenses their still-expected parts, credits their
+    // still-giveable ones
+    const parts = (row.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
+    if (parts.length > 1) {
+      const sign = row.amountCents < 0 ? -1 : 1;
+      return (
+        <div key={`${testId}-${row.id}`}>
+          {parts.map((e, ordinal) => {
+            const open = anchorIsExpense ? creditPartOpen(row, e.part) : partOpenCents(row, e.part);
+            if (open <= 0) return null;
+            return pickable(
+              row,
+              e.part,
+              `${testId}-${row.id}-part-${e.idx}`,
+              withInput,
+              <TxPartRow tx={row} part={e.part} index={ordinal} showDate amountText={money(sign * open)} onClick={() => toggle(row, e.part)} highlight={query} />,
+            );
+          })}
+          {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
+        </div>
+      );
+    }
+    return (
+      <Fragment key={`${testId}-${row.id}`}>
+        {pickable(
+          row,
+          undefined,
+          `${testId}-${row.id}`,
+          withInput,
+          <TxRow
+            tx={row}
+            showDate
+            hideUnreviewed
+            highlight={query}
+            amountOverrideCents={row.amountCents > 0 ? openValueOf(row) : -openValueOf(row)}
+            onClick={() => toggle(row)}
+          />,
+        )}
+        {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
+      </Fragment>
+    );
+  };
+
+  const left = Math.max(0, anchor.capacity - anchor.before - pickedCents);
+  const segments = [
+    { id: 'before', value: anchor.before, color: 'var(--m-ink-4)' },
+    ...picks.map((pick, i) => ({ id: pick.key, value: centsOf(pick), color: pickColor(i) })),
+    { id: 'open', value: left, color: 'var(--m-line)' },
+  ];
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-reimb-link">
@@ -347,16 +389,10 @@ export function ReimburseLinkScreen() {
           the sticky+translate version left its slot as a void */}
       <CollapsingSearch offset={searchOffset}>
         <div className="px-5 pt-1 pb-2">
-          <SearchField
-            testId="reimb-link-search"
-            value={query}
-            onChange={setQuery}
-            placeholder={t('tx.searchPlaceholder')}
-          />
+          <SearchField testId="reimb-link-search" value={query} onChange={setQuery} placeholder={t('tx.searchPlaceholder')} />
         </div>
       </CollapsingSearch>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onScroll={onListScroll}>
-
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4" onScroll={onListScroll}>
         {/* the smart segment stands down while the user searches */}
         {!query && suggested.length > 0 && (
           <>
@@ -364,61 +400,31 @@ export function ReimburseLinkScreen() {
               <Icon name="lightbulb-outline" size={13} />
               {t('reimb.suggested')}
             </div>
-            <div className="mb-3 divide-y divide-line-2 overflow-hidden rounded-card border border-accent/40 bg-surface px-3" data-testid="reimb-link-suggested">
-              {suggested.map(({ tx: row }) => rowFor(row, 'reimb-suggest', t('reimb.suggestedWhy')))}
+            <div className="mb-3 divide-y divide-line-2 overflow-hidden rounded-card border border-accent/40 bg-surface px-1" data-testid="reimb-link-suggested">
+              {suggested.map(({ tx: row }) => rowFor(row, 'reimb-suggest', 'suggested', t('reimb.suggestedWhy')))}
             </div>
           </>
         )}
 
         <div className="m-cap mt-2 mb-1 px-1">{t(anchorIsExpense ? 'reimb.allCredits' : 'reimb.allExpenses')}</div>
-        <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-3" data-testid="reimb-link-list">
-          {listed.map((row) => rowFor(row, 'reimb-pick'))}
+        <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-1" data-testid="reimb-link-list">
+          {listed.map((row) => rowFor(row, 'reimb-pick', 'list'))}
           {listed.length === 0 && <div className="px-1 py-4 text-center text-[12px] text-ink-4">—</div>}
         </div>
       </div>
 
-      {/* the amount sheet: how much of the pair actually links */}
-      {/* #233 r4 (user): both sides sit IN the sheet now — the title
-          names the ACT, not one of the two rows */}
-      <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={t('reimb.confirmTitle')} size="form">
-        <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
-          {/* #270 r2 (user): BOTH transactions' face — title, date and
-              amount of each side of the link */}
-          {chosen && tx && (
-            <div
-              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-3 gap-y-1 rounded-input bg-bg px-3 py-2"
-              data-testid="reimb-confirm-pair"
-            >
-              {/* #233 r4 (user): dates align as their OWN column, like
-                  the amounts */}
-              {[tx, chosen.row].map((row) => (
-                <Fragment key={row.id}>
-                  <span className="min-w-0 truncate text-[12px] text-ink-2" data-testid="reimb-confirm-side">
-                    {cleanBankText(row.merchant)}
-                  </span>
-                  <span className="text-right text-[12px] text-ink-4">
-                    {new Date(row.date).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' })}
-                  </span>
-                  <span className="m-num text-right text-[12px] text-ink-3">{fmtCents(row.amountCents, row.currency, lang, { sign: true })}</span>
-                </Fragment>
-              ))}
-            </div>
-          )}
-          <input
-            data-testid="reimb-amount"
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value);
-              setAmountError(null);
-            }}
-            aria-invalid={!!amountError}
-            inputMode="decimal"
-            placeholder={t('reimb.amountLabel')}
-            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none${blockerRing(!!amountError)}`}
-          />
-          <FormBlockerNote show={!!amountError} text={amountError ?? ''} testId="reimb-amount-error" />
-          {impact && tx && (
-            <div className="rounded-input bg-bg px-3 py-2.5" data-testid="reimb-impact">
+      {/* the pinned footer: the anchor's composition, the category shift, the one save for every pick */}
+      {tx && (
+        <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]" data-testid="reimb-footer">
+          <StackedBar segments={segments} height={10} />
+          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-[11px] text-ink-4" data-testid="reimb-footer-line">
+            {anchor.before > 0 && <span>{t('reimb.linkedBefore', { amount: money(anchor.before) })}</span>}
+            {picks.length > 0 && <span className="font-medium text-accent-deep">{t('reimb.pickedCount', { n: picks.length, amount: money(pickedCents) })}</span>}
+            <span>{t(anchorIsExpense ? 'reimb.stillOpen' : 'reimb.stillToGive', { amount: money(left) })}</span>
+          </div>
+          <FormBlockerNote show={!!error} text={error?.text ?? ''} testId="reimb-amount-error" />
+          {impact && (
+            <div className="mt-2 max-h-40 overflow-y-auto rounded-input bg-surface px-3 py-2.5" data-testid="reimb-impact" data-sheet-no-drag>
               <p className="pb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-4">{t('reimb.impactCaption')}</p>
               {impact.map((side) => (
                 <div key={side.title} className="pt-2 first:pt-0">
@@ -431,22 +437,15 @@ export function ReimburseLinkScreen() {
                       const color = cat.color ?? cats.byId(cat.parentId ?? '').color ?? 'var(--m-ink-3)';
                       return (
                         <Fragment key={line.catId}>
-                          <span
-                            className="flex h-6 w-6 items-center justify-center rounded-full"
-                            style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}
-                          >
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
                             <Icon name={cat.icon} size={13} color={color} />
                           </span>
                           <span className="min-w-0 truncate text-[12.5px] text-ink-2" data-testid="reimb-impact-line">
                             {catName(cat, t)}
                           </span>
-                          <span className="m-num text-right text-[12.5px] text-ink-4">
-                            {fmtCents(line.before, tx.currency, lang)}
-                          </span>
+                          <span className="m-num text-right text-[12.5px] text-ink-4">{money(line.before)}</span>
                           <span className="text-[12px] text-ink-4"> → </span>
-                          <span className="m-num text-right text-[12.5px] font-medium text-ink">
-                            {fmtCents(line.after, tx.currency, lang)}
-                          </span>
+                          <span className="m-num text-right text-[12.5px] font-medium text-ink">{money(line.after)}</span>
                         </Fragment>
                       );
                     })}
@@ -455,11 +454,11 @@ export function ReimburseLinkScreen() {
               ))}
             </div>
           )}
-          <Button data-testid="reimb-save" onClick={confirm}>
-            {t('action.save')}
+          <Button className="mt-2 w-full" data-testid="reimb-save" disabled={picks.length === 0} onClick={confirm}>
+            {picks.length > 0 ? t('reimb.pickedCount', { n: picks.length, amount: money(pickedCents) }) : t('reimb.nothingPicked')}
           </Button>
         </div>
-      </Sheet>
+      )}
     </div>
   );
 }

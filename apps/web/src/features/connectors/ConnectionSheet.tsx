@@ -56,6 +56,7 @@ export function ConnectionSheet({
   };
 
   return (
+    <>
     <Sheet open onOpenChange={(open) => !open && onClose()} title={view.meta.displayName} size="tall">
       <div className="flex flex-col gap-3 pt-1">
         <label className="flex items-center gap-3 text-[13px] text-ink-2">
@@ -115,24 +116,28 @@ export function ConnectionSheet({
           {t('conn.remove')}
         </Button>
       </div>
-      {/* aligned destructive confirm (user request): sheet + cooldown */}
-      <DangerConfirmSheet
-        open={confirmRemove}
-        onOpenChange={setConfirmRemove}
-        title={t('conn.remove')}
-        body={t('conn.removeNote')}
-        onConfirm={() => void remove()}
-        testId="conn-remove"
-      />
-      <BrandIconPicker
-        open={iconOpen}
-        onOpenChange={setIconOpen}
-        initialQuery={view.meta.displayName}
-        onPick={({ logo }) => {
-          void ops.setIcon(view.meta.id, logo);
-          setIconOpen(false);
-        }}
-      />
     </Sheet>
+    {/* aligned destructive confirm (user request): sheet + cooldown.
+        2026-10-06 (user ss, phone): mounted INSIDE the sheet these two
+        came up behind it, dimmed with the covered parent - every other
+        sheet keeps its confirm and pickers as siblings, mounted after it */}
+    <DangerConfirmSheet
+      open={confirmRemove}
+      onOpenChange={setConfirmRemove}
+      title={t('conn.remove')}
+      body={t('conn.removeNote')}
+      onConfirm={() => void remove()}
+      testId="conn-remove"
+    />
+    <BrandIconPicker
+      open={iconOpen}
+      onOpenChange={setIconOpen}
+      initialQuery={view.meta.displayName}
+      onPick={({ logo }) => {
+        void ops.setIcon(view.meta.id, logo);
+        setIconOpen(false);
+      }}
+    />
+    </>
   );
 }

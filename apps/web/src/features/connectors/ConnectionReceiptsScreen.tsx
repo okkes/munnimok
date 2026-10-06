@@ -60,6 +60,15 @@ export function ConnectionReceiptsScreen() {
   const ranges = useFetchedRanges();
   const activity = useSyncActivity((s) => s.activity);
   const [query, setQuery] = useState('');
+  // user 2026-10-06: every shop folded by default — a search unfolds the ones with hits
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (id: string) =>
+    setUnfolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const shops = useMemo(() => (metas ?? []).filter((m) => (m.kind ?? 'store') === 'store').sort((a, b) => a.displayName.localeCompare(b.displayName)), [metas]);
 
@@ -96,16 +105,24 @@ export function ConnectionReceiptsScreen() {
 
   const renderGroup = ({ meta, rows }: { meta: StoreConnRow; rows: ReceiptRow[] }) => {
     const running = activityLine(activity[meta.id], t);
+    const open = unfolded.has(meta.id) || (query.trim().length > 0 && rows.length > 0);
     return (
       <div key={meta.id} data-testid={`receipts-conn-${meta.id}`}>
         <div className="mt-4 mb-1 px-1">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid={`receipts-conn-toggle-${meta.id}`}
+            aria-expanded={open}
+            onClick={() => toggle(meta.id)}
+            className="m-tap flex w-full items-center gap-2 border-none bg-transparent p-0 text-left"
+          >
             {meta.icon ? <img src={meta.icon} alt="" className="h-5 w-5 rounded object-contain" /> : <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />}
             <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{meta.displayName}</span>
             <span className="text-[12px] text-ink-4" data-testid={`receipts-conn-count-${meta.id}`}>
               {rows.length}
             </span>
-          </div>
+            <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} color="var(--m-ink-4)" />
+          </button>
           <p className="text-[11px] text-ink-4" data-testid={`receipts-conn-range-${meta.id}`}>
             {rangeLine(ranges?.[meta.id], t, lang)}
           </p>
@@ -116,9 +133,8 @@ export function ConnectionReceiptsScreen() {
             </p>
           )}
         </div>
-        {rows.length > 0 ? (
-          <div className="overflow-hidden rounded-card border border-line bg-surface">{rows.map(renderRow)}</div>
-        ) : (
+        {open && rows.length > 0 && <div className="overflow-hidden rounded-card border border-line bg-surface">{rows.map(renderRow)}</div>}
+        {open && rows.length === 0 && (
           <p className="rounded-card border border-dashed border-line px-4 py-3 text-[12px] text-ink-4" data-testid={`receipts-conn-empty-${meta.id}`}>
             {t('receipts.noneYet')}
           </p>

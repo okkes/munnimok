@@ -22,6 +22,7 @@ export type TourId =
   | 'spaces'
   | 'categories'
   | 'period'
+  | 'periods'
   | 'overview'
   | 'portfolio'
   | 'insights'
@@ -233,6 +234,17 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.ov.1t', bodyKey: 'tour.ov.1b', illustration: '📊' },
       { titleKey: 'tour.ov.2t', bodyKey: 'tour.ov.2b', illustration: '⏮️' },
       { titleKey: 'tour.ov.3t', bodyKey: 'tour.ov.3b', illustration: '🔬' },
+    ],
+  },
+  {
+    id: 'periods',
+    titleKey: 'periods.title',
+    icon: 'chart-line',
+    screen: '/periods',
+    steps: [
+      { titleKey: 'tour.per.1t', bodyKey: 'tour.per.1b', illustration: '📊', anchor: 'periods-card-income' },
+      { titleKey: 'tour.per.2t', bodyKey: 'tour.per.2b', illustration: '⏮️', anchor: 'periods-pager' },
+      { titleKey: 'tour.per.3t', bodyKey: 'tour.per.3b', illustration: '📈', anchor: 'periods-chart-expense' },
     ],
   },
   {

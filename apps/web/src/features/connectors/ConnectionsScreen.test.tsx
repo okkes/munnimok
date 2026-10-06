@@ -519,6 +519,9 @@ describe('Connections hub (signed-in user)', () => {
     expect(screen.getByTestId('receipts-conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/);
     // the hub's list carries no space's labels
     expect(group.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
+    // user 2026-10-06: folded by default — the count shows, the receipts come out on a tap
+    expect(screen.queryByTestId('receipt-row-rcpt:mock:c-seeded:2')).toBeNull();
+    fireEvent.click(screen.getByTestId('receipts-conn-toggle-c-seeded'));
     expect(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2').textContent).toContain('Invoice');
     fireEvent.click(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2'));
     await screen.findByTestId('screen-receipt');

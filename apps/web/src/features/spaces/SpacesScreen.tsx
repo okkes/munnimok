@@ -7,6 +7,9 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
 import { SpacePhotoStrip, applySpacePhoto } from './SpaceSettingsScreen';
+import { SpacePicture } from './SpacePicture';
+import type { ImageFocus } from '@/lib/imageFocus';
+import { ImageFocusFrame } from '@/ui/ImageFocusFrame';
 import { SpaceIconGrid } from './SpaceIconGrid';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpacesCreateIntent } from './spacesHandoff';
@@ -52,6 +55,7 @@ export function SpacesScreen() {
   const [color, setColor] = useState(SPACE_COLORS[0]);
   // #301: an own picture from birth — the settings strip, re-used
   const [picture, setPicture] = useState('');
+  const [focus, setFocus] = useState<ImageFocus | null>(null);
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
   const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
@@ -103,7 +107,7 @@ export function SpacesScreen() {
         // unless the checkbox was explicitly unticked
         inviteLock: inviteLock ? 1 : 0,
         // #301: the picked picture is born with the space
-        ...(picture ? { picture } : {}),
+        ...(picture ? { picture, pictureFocus: picture.startsWith('data:') ? (focus ?? null) : null } : {}),
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
       .then(async () => {
@@ -127,6 +131,7 @@ export function SpacesScreen() {
     setIconQuery('');
     setColor(SPACE_COLORS[0]);
     setPicture(''); // #301: no picture carried over from the last form
+    setFocus(null);
 
     setPeriodType('month');
     setPeriodDay(1);
@@ -187,7 +192,7 @@ export function SpacesScreen() {
                     className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
                   >
                     {space.picture ? (
-                      <img src={space.picture} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                      <SpacePicture space={space} className="h-10 w-10" />
                     ) : (
                       <span
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
@@ -281,10 +286,25 @@ export function SpacesScreen() {
           <div className="m-cap px-1">{t('space.icon')}</div>
           <SpacePhotoStrip
             picture={picture}
-            onPicture={setPicture}
+            onPicture={(url) => {
+              setPicture(url);
+              setFocus(null);
+            }}
             onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
             testIdPrefix="space-create-photo"
           />
+          {picture.startsWith('data:') && (
+            <ImageFocusFrame
+              src={picture}
+              focus={focus}
+              onFocus={setFocus}
+              shape="circle"
+              zoom
+              zoomLabel={t('image.zoom')}
+              hint={t('space.dragToFrame')}
+              testId="space-create-photo-focus"
+            />
+          )}
           {/* #285: the shared grid — the whole font behind the search, glyphs in
               the picked color. #146 (user): a picture wins over symbol+color
               everywhere, so while one is set the grid sleeps — and #444: it

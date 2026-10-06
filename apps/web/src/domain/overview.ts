@@ -181,6 +181,11 @@ export interface OverviewSummary {
   debtCents: number;
 }
 
+/** the six amounts for every period given, in the order given (the Periods screen's history) */
+export function overviewSummarySeries(txs: TxView[], accountsById: Map<string, AccountRow>, periods: readonly Period[]): OverviewSummary[] {
+  return periods.map((period) => overviewSummary(txs, accountsById, period));
+}
+
 export function overviewSummary(
   txs: TxView[],
   accountsById: Map<string, AccountRow>,

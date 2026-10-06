@@ -347,6 +347,8 @@ export function TransactionsScreen() {
       txTypes: filters.txTypes,
       from: filters.from,
       to: filters.to,
+      minCents: filters.minCents,
+      maxCents: filters.maxCents,
     });
     // quick filter (redesign): expected/received value still open
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);

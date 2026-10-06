@@ -9,6 +9,7 @@ import { logActivity } from '@/application/activity';
 import { applyHistoryMove, historyMoveImpact } from '@/application/historyStart';
 import type { HistoryMoveImpact } from '@/application/historyStart';
 import { OFFLINE_REASON_KEYS, useOfflineReason } from '@/app/OfflineBanner';
+import { usePendingSync } from '@/app/pendingSync';
 import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
@@ -17,6 +18,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
+import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useMyRole } from '@/features/spaces/SpaceSharing';
 import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { PERIOD_KEYS } from '@/features/spaces/PeriodSettingsScreen';
@@ -41,6 +43,7 @@ function SyncStatusRow() {
   useEffect(() => engine?.onStatus(setStatus), [engine]);
   const lastSync = useQuery(store, async () => (await store.metaGet(LAST_SYNC_KEY))?.value as number | undefined, []);
   const offlineReason = useOfflineReason();
+  const pending = usePendingSync();
 
   if (!engine) return null;
   const healthy = status === 'idle' || status === 'syncing';
@@ -50,7 +53,14 @@ function SyncStatusRow() {
   const lastSyncLabel = lastSync
     ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : t('sync.never');
-  const subLine = offlineReason ? t(OFFLINE_REASON_KEYS[offlineReason]) : `${t('sync.lastSync')}: ${lastSyncLabel}`;
+  // user 2026-10-06: writes still waiting on this device take the second
+  // line — offline they say when they will go out
+  let subLine = offlineReason ? t(OFFLINE_REASON_KEYS[offlineReason]) : `${t('sync.lastSync')}: ${lastSyncLabel}`;
+  let subId = offlineReason ? 'settings-sync-reason' : 'settings-sync-last';
+  if (pending > 0) {
+    subLine = t(offlineReason ? 'sync.pendingOffline' : 'sync.pendingOnline', { n: pending });
+    subId = 'settings-sync-pending';
+  }
   return (
     <div className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[15px] text-ink" data-testid="settings-sync-row">
       <Icon
@@ -65,7 +75,7 @@ function SyncStatusRow() {
         <span
           className="block truncate text-[11px]"
           style={{ color: offlineReason ? 'var(--m-warning)' : 'var(--m-ink-4)' }}
-          data-testid={offlineReason ? 'settings-sync-reason' : 'settings-sync-last'}
+          data-testid={subId}
         >
           {subLine}
         </span>
@@ -86,7 +96,7 @@ function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefin
       className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
     >
       {space?.picture ? (
-        <img src={space.picture} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
+        <SpacePicture space={space} className="h-11 w-11" />
       ) : (
         <span
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"

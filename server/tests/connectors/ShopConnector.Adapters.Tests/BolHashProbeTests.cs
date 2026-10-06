@@ -52,6 +52,30 @@ public sealed class BolHashProbeTests
     }
 
     [Fact]
+    public async Task The_cookie_wall_on_the_overview_is_dismissed_before_Toon_meer_is_pressed()
+    {
+        // 2026-10-06 (prod): the wall over the overview swallowed the press
+        const string Consent = "[role='dialog'][data-state='open'] button:has-text('Weigeren')";
+        var learned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var page = StubLoginPage.Showing(LoadMore);
+        page.WhenVisited = (p, url) =>
+        {
+            if (url == Overview) p.Reveal(Consent);
+        };
+        page.WhenClicked = (p, selector) =>
+        {
+            if (selector == Consent) p.Hide(Consent);
+            if (selector == LoadMore) learned.TrySetResult("sha256:more");
+        };
+        using var ctx = new FakeJobContext();
+
+        var hash = await new BolHashProbe(Quick).LearnAsync(ctx, page, learned.Task, CancellationToken.None);
+
+        Assert.Equal("sha256:more", hash);
+        Assert.Equal(new[] { Consent, LoadMore }, page.Clicked);
+    }
+
+    [Fact]
     public async Task A_server_rendered_overview_fires_the_operation_on_Toon_meer()
     {
         var learned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);

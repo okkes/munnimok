@@ -132,3 +132,16 @@ describe('filterTxs', () => {
     expect(hasActiveFilter({ from: '2026-01-01' })).toBe(true);
   });
 });
+
+describe('amount range (user 2026-10-06)', () => {
+  it('inclusive bounds on the amount\'s size, whichever way the money went', () => {
+    const txs = [tx({ amountCents: -500 }), tx({ amountCents: -2500 }), tx({ amountCents: 4000 }), tx({ amountCents: -10000 })];
+    expect(filterTxs(txs, { minCents: 1000 }).map((t) => t.amountCents)).toEqual([-2500, 4000, -10000]);
+    expect(filterTxs(txs, { maxCents: 2500 }).map((t) => t.amountCents)).toEqual([-500, -2500]);
+    expect(filterTxs(txs, { minCents: 2000, maxCents: 5000 }).map((t) => t.amountCents)).toEqual([-2500, 4000]);
+    expect(filterTxs(txs, { minCents: 2500, maxCents: 2500 })).toHaveLength(1);
+    expect(hasActiveFilter({ minCents: 0 })).toBe(true);
+    expect(hasActiveFilter({ maxCents: 100 })).toBe(true);
+    expect(hasActiveFilter({})).toBe(false);
+  });
+});

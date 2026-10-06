@@ -61,6 +61,9 @@ import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVis
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
 import { BulkCounterQueue, CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
 import { setReviewReturn, takeReviewReturn } from './reviewReturn';
+import { AUTO_STAGE, autoReceiptFor, filterReceipts, receiptParties } from './reviewReceipt';
+import type { ReceiptStage } from './reviewReceipt';
+import { SearchField } from '@/ui/SearchField';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -445,29 +448,75 @@ function ReviewReceiptRow({ row, onOpen, onAsk }: Readonly<{ row: ReturnType<typ
   );
 }
 
-/** the receipt sheet: the proposal's yes / no, then the other receipts that could be this one */
+/** the receipt the sheet marks: the person's pick, else the best match while the card still holds it */
+const stagedReceiptId = (stage: ReceiptStage, autoId: string | null): string | null => {
+  if (stage.kind === 'picked') return stage.receipt.id;
+  return stage.kind === 'auto' ? autoId : null;
+};
+
+/** the receipt sheet (user 2026-10-06): the proposal's yes / no, the suggestions, and every receipt behind a search
+ *  and the parties' chips — a tap stages the pick for the confirm, the eye opens the receipt, None leaves it */
 function ReviewReceiptSheet({
   open,
   onOpenChange,
   proposal,
   candidates,
+  all,
+  stage,
+  autoId,
   currency,
   onAccept,
   onReject,
   onPick,
+  onView,
 }: Readonly<{
   open: boolean;
   onOpenChange: (next: boolean) => void;
   proposal: ReceiptLinkRow | undefined;
   candidates: readonly ReceiptRow[];
+  all: readonly ReceiptRow[];
+  stage: ReceiptStage;
+  autoId: string | null;
   currency: string;
   onAccept: (link: ReceiptLinkRow) => void;
   onReject: (link: ReceiptLinkRow) => void;
-  onPick: (row: ReceiptRow) => void;
+  onPick: (row: ReceiptRow | null) => void;
+  onView: (receiptId: string) => void;
 }>) {
   const { t, lang } = useLang();
+  const [query, setQuery] = useState('');
+  const [party, setParty] = useState<string | null>(null);
+  const parties = useMemo(() => receiptParties(all), [all]);
+  const listed = useMemo(() => filterReceipts(all, query, party).slice(0, 100), [all, query, party]);
+  const stagedId = stagedReceiptId(stage, autoId);
+  const row = (r: ReceiptRow, prefix: string) => {
+    const on = stagedId === r.id;
+    return (
+      <div key={r.id} className="flex items-center border-b border-line-2 last:border-0">
+        <button data-testid={`${prefix}-${r.id}`} aria-pressed={on} onClick={() => onPick(r)} className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left">
+          <Icon name={on ? 'check-circle' : 'storefront-outline'} size={16} color={on ? 'var(--m-accent)' : 'var(--m-ink-3)'} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium text-ink">{r.merchant ?? partyName(r.source)}</span>
+            <span className="block text-[11px] text-ink-4">
+              {r.date}
+              {r.items?.length ? ` · ${r.items.length} ${t('receipt.items')}` : ''}
+            </span>
+          </span>
+          <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(r.totalCents, currency, lang)}</span>
+        </button>
+        <button
+          data-testid={`review-receipt-view-${r.id}`}
+          aria-label={t('review.receiptView')}
+          onClick={() => onView(r.id)}
+          className="m-tap flex h-10 w-10 shrink-0 items-center justify-center border-none bg-transparent"
+        >
+          <Icon name="eye-outline" size={16} color="var(--m-ink-4)" />
+        </button>
+      </div>
+    );
+  };
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('receipt.title')} size="tall">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('receipt.title')} size="full">
       <div className="flex flex-col gap-3 pt-1" data-testid="review-receipt-sheet">
         {proposal && (
           <div className="rounded-card border border-line bg-surface px-4 py-3" data-testid="review-receipt-proposal">
@@ -489,49 +538,75 @@ function ReviewReceiptSheet({
             </div>
           </div>
         )}
+        <button
+          data-testid="review-receipt-none"
+          aria-pressed={stage.kind === 'none'}
+          onClick={() => onPick(null)}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-left text-[13px] text-ink-2"
+        >
+          <Icon name={stage.kind === 'none' ? 'check-circle' : 'close-circle-outline'} size={16} color={stage.kind === 'none' ? 'var(--m-accent)' : 'var(--m-ink-4)'} />
+          {t('review.receiptNoneOption')}
+        </button>
         {candidates.length > 0 && (
           <>
             <div className="m-cap px-1">{proposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-pick-list">
-              {candidates.map((row) => (
-                <button
-                  key={row.id}
-                  data-testid={`review-receipt-pick-${row.id}`}
-                  onClick={() => onPick(row)}
-                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
-                >
-                  <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-ink">{row.merchant ?? partyName(row.source)}</span>
-                    <span className="block text-[11px] text-ink-4">{row.date}</span>
-                  </span>
-                  <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(row.totalCents, currency, lang)}</span>
-                </button>
-              ))}
+              {candidates.map((r) => row(r, 'review-receipt-pick'))}
             </div>
           </>
+        )}
+        <div className="m-cap px-1">
+          {t('review.receiptAll')} · {listed.length}
+        </div>
+        <SearchField testId="review-receipt-search" value={query} onChange={setQuery} placeholder={t('review.receiptSearch')} />
+        {parties.length > 1 && (
+          <div className="flex flex-wrap gap-2" data-testid="review-receipt-parties">
+            <Chip testId="review-receipt-party-all" selected={party === null} onClick={() => setParty(null)}>
+              {t('review.receiptEvery')}
+            </Chip>
+            {parties.map((p) => (
+              <Chip key={p.source} testId={`review-receipt-party-${p.source}`} selected={party === p.source} onClick={() => setParty((v) => (v === p.source ? null : p.source))}>
+                {p.label}
+              </Chip>
+            ))}
+          </div>
+        )}
+        {listed.length > 0 ? (
+          <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-all-list">
+            {listed.map((r) => row(r, 'review-receipt-all'))}
+          </div>
+        ) : (
+          <p className="px-1 py-4 text-center text-[12px] text-ink-4" data-testid="review-receipt-all-empty">
+            {t('review.receiptNoneFound')}
+          </p>
         )}
       </div>
     </Sheet>
   );
 }
 
-/** the card's Receipt row: the attached receipt (a door to it), the proposal (a question), or the suggestions (a pick) — null hides the row */
+/** the card's Receipt row: the attached receipt (a door to it), the person's pick, the proposal (a question), the best match (suggested), or None — null hides the row */
 function receiptRowFor(
-  attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined,
-  proposal: { merchant?: string; source: string; totalCents: number } | undefined,
-  candidates: number,
+  state: {
+    attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined;
+    proposal: { merchant?: string; source: string; totalCents: number } | undefined;
+    stage: ReceiptStage;
+    auto: { merchant?: string; source: string; totalCents: number } | null;
+    candidates: number;
+  },
   currency: string,
   lang: ReturnType<typeof useLang>['lang'],
   t: ReturnType<typeof useLang>['t'],
 ): { face: string; attachedId?: string; asks: boolean } | null {
-  if (attached) {
-    return { face: `${attached.merchant ?? partyName(attached.source)} · ${fmtCents(attached.totalCents, currency, lang)}`, attachedId: attached.id, asks: false };
+  const { attached, proposal, stage, auto, candidates } = state;
+  const name = (r: { merchant?: string; source: string; totalCents: number }) => `${r.merchant ?? partyName(r.source)} · ${fmtCents(r.totalCents, currency, lang)}`;
+  if (attached) return { face: name(attached), attachedId: attached.id, asks: false };
+  if (stage.kind === 'picked') return { face: name(stage.receipt), asks: true };
+  if (stage.kind === 'auto') {
+    if (proposal) return { face: `${name(proposal)} · ${t('receipts.proposedBadge')}`, asks: true };
+    if (auto) return { face: `${name(auto)} · ${t('review.receiptAuto')}`, asks: true };
   }
-  if (proposal) {
-    return { face: `${proposal.merchant ?? partyName(proposal.source)} · ${fmtCents(proposal.totalCents, currency, lang)} · ${t('receipts.proposedBadge')}`, asks: true };
-  }
-  return candidates > 0 ? { face: t('review.receiptNone'), asks: false } : null;
+  return candidates > 0 || proposal ? { face: t('review.receiptNone'), asks: false } : null;
 }
 
 /** #211: the sibling's copy of a category spread — % entries rescale to
@@ -1809,15 +1884,23 @@ export function ReviewScreen() {
   // keeps the #228 counter-first door open)
   const [pickedPlainCat, setPickedPlainCat] = useState(false);
   // deck animation (user request): keep the outgoing card's markup as a
-  // ghost that flies out left while the next card slides in from the right
+  // ghost that flies out left while the next card slides in from the right.
+  // 2026-10-06 (user ss, phone): the ghost used to fly the moment Confirm
+  // was pressed while the card itself stood until the writes had landed,
+  // then slid away under the next one - two flights. The snapshot is only
+  // ARMED here; the flight starts with the swap (the effect below the deck).
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [leavingHtml, setLeavingHtml] = useState<string | null>(null);
+  const armedLeaving = useRef<{ html: string; fromId: string } | null>(null);
+  const ghostTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureLeaving = () => {
     if (!cardRef.current) return;
+    const fromId = cardRef.current.dataset.cardId ?? '';
     // strip testids so the decorative ghost never doubles a live element
-    setLeavingHtml(cardRef.current.innerHTML.replaceAll(/data-testid="[^"]*"/g, ''));
-    setTimeout(() => setLeavingHtml(null), 260);
+    armedLeaving.current = { html: cardRef.current.innerHTML.replaceAll(/data-testid="[^"]*"/g, ''), fromId };
   };
+  // a second tap while the confirm's writes run must not re-enter (it re-armed the ghost and wrote twice)
+  const confirming = useRef(false);
   const [linkRecurring, setLinkRecurring] = useState(true);
   // no auto-match? the user can still link a recurring by hand (user request)
   const [manualRecId, setManualRecId] = useState<string | null>(null);
@@ -1849,15 +1932,36 @@ export function ReviewScreen() {
   // snapshot) while the counter queue runs
   const tx = shownCard(heldTx, remaining);
   const heldDeck = heldDeckProps(!!counterBulk);
+  // the armed ghost takes off the moment another card is up - the same
+  // render that slides the new card in - and never before
+  const shownId = tx?.id;
+  useEffect(() => {
+    const armed = armedLeaving.current;
+    if (!armed || armed.fromId === shownId) return;
+    armedLeaving.current = null;
+    setLeavingHtml(armed.html);
+    if (ghostTimer.current) clearTimeout(ghostTimer.current);
+    ghostTimer.current = setTimeout(() => setLeavingHtml(null), 260);
+  }, [shownId]);
+  useEffect(
+    () => () => {
+      if (ghostTimer.current) clearTimeout(ghostTimer.current);
+    },
+    [],
+  );
   // #275: back from the create-category detour — the same card is up
   // (skipped restored above); reopen the category editor once so the
   // fresh category is one tap away
   useEffect(() => {
     const back = returnState.current;
-    if (back?.reopenCats && tx?.id === back.txId) {
-      returnState.current = null;
-      setCatsOpen(true);
-    }
+    if (!back || tx?.id !== back.txId) return;
+    returnState.current = null;
+    if (back.reopenCats) setCatsOpen(true);
+    // 2026-10-06 (user): back from the receipt screen — the card's staged picks come back too
+    if (back.draft !== undefined) setStagedDraft(back.draft);
+    if (back.note !== undefined) setNoteDraft(back.note);
+    if (back.receipt) setReceiptStage(back.receipt);
+    if (back.bulk) setBulkSelected(new Set(back.bulk));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tx?.id]);
 
@@ -1924,12 +2028,24 @@ export function ReviewScreen() {
   const unmatchedReceipts = useUnmatchedReceipts();
   const receiptOps = useReceiptOps();
   const [receiptPickOpen, setReceiptPickOpen] = useState(false);
+  // user 2026-10-06: the receipt the card attaches on confirm — the best
+  // match by itself (like the predicted category), one the person picked, or none
+  const [receiptStage, setReceiptStage] = useState<ReceiptStage>(AUTO_STAGE);
   const receiptProposal = useMemo(() => (receiptProposals ?? []).find((l) => l.proposedTxId === tx?.id), [receiptProposals, tx?.id]);
   const receiptCandidates = useMemo(
     () => (tx ? rankForTx(tx, (unmatchedReceipts ?? []).filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
     [tx, unmatchedReceipts, receiptProposal?.receiptId],
   );
-  const receiptRow = tx ? receiptRowFor(receiptEntry?.data, receiptProposal, receiptCandidates.length, tx.currency, lang, t) : null;
+  const autoReceipt = useMemo(() => (tx && !receiptProposal ? autoReceiptFor(tx, receiptCandidates) : null), [tx, receiptProposal, receiptCandidates]);
+  const receiptRow = tx
+    ? receiptRowFor({ attached: receiptEntry?.data, proposal: receiptProposal, stage: receiptStage, auto: autoReceipt, candidates: receiptCandidates.length }, tx.currency, lang, t)
+    : null;
+  /** the receipt screen is a detour (user 2026-10-06): the deck's place and the card's staged picks come back with the person */
+  const openReceipt = (receiptId: string) => {
+    if (!tx) return;
+    setReviewReturn({ skippedIds: [...skipped], txId: tx.id, reopenCats: false, draft: stagedDraft, note: noteDraft, receipt: receiptStage, bulk: [...bulkSelected] });
+    void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
+  };
   const draftCounter = useQuery(
     store,
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
@@ -2041,6 +2157,8 @@ export function ReviewScreen() {
   // swap (a real race under coverage instrumentation)
   useFreshCardReset(tx?.id, () => {
     setStagedDraft(null);
+    setReceiptStage(AUTO_STAGE);
+    setReceiptPickOpen(false);
     setLinkRecurring(true);
     setManualRecId(null);
     setEventPick(null);
@@ -2239,9 +2357,27 @@ export function ReviewScreen() {
     else setCounterRequired(true);
   };
 
+  // user 2026-10-06: the receipt the card showed is attached with the
+  // confirm — a proposal accepted, the best match linked, the person's own
+  // pick honoured (a proposal they passed over is turned down), none left alone
+  const settleReceipt = async () => {
+    if (!tx || receiptEntry?.data || multiPart) return;
+    if (receiptStage.kind === 'picked') {
+      if (receiptProposal) await receiptOps.rejectMatch(receiptProposal);
+      await receiptOps.linkReceipt(receiptStage.receipt, tx.id);
+      return;
+    }
+    if (receiptStage.kind === 'none') {
+      if (receiptProposal) await receiptOps.rejectMatch(receiptProposal);
+      return;
+    }
+    if (receiptProposal) await receiptOps.acceptMatch(receiptProposal);
+    else if (autoReceipt) await receiptOps.linkReceipt(autoReceipt, tx.id);
+  };
+
   const confirm = async () => {
     // #268 r2 (user): a held deck accepts no further confirms
-    if (!tx || !draft || counterBulk) return;
+    if (!tx || !draft || counterBulk || confirming.current) return;
     if (!draftReady(draft)) {
       pointAtBlocker(draft);
       return;
@@ -2279,31 +2415,37 @@ export function ReviewScreen() {
     // exit flight plays when the queue finishes instead of now
     if (queued) setHeldTx(tx);
     else captureLeaving();
-    // #221→#309: the bare-movement default fallback is GONE — the gate
-    // above guarantees every movement confirm carries its picked link
-    // (which may well BE the family default, chosen in the ask).
-    // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
-    // whose counterparty was dropped lets its peer leg go first — a stale
-    // peer would keep collapsing the pair in the list
-    const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
-    if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
-    await writeConfirmation({
-      tx,
-      draft,
-      recurringId,
-      eventId,
-      note,
-      bulk: pickedPeer ? [] : bulk,
-      transform,
-      pairPeerId: pickedPeer?.txId,
-      releasePeer: releasePeer && !pickedPeer,
-    });
-    await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
-    if (queued) setCounterBulk(queued);
-    // other billing cycles of a linked recurring pick up their link here
-    void recurringOps.reconcile().catch(() => undefined);
-    logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
-    hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
+    confirming.current = true;
+    try {
+      // #221→#309: the bare-movement default fallback is GONE — the gate
+      // above guarantees every movement confirm carries its picked link
+      // (which may well BE the family default, chosen in the ask).
+      // 2026-10-05 (user ss): a stored pair the card re-pointed, released, or
+      // whose counterparty was dropped lets its peer leg go first — a stale
+      // peer would keep collapsing the pair in the list
+      const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
+      if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
+      await writeConfirmation({
+        tx,
+        draft,
+        recurringId,
+        eventId,
+        note,
+        bulk: pickedPeer ? [] : bulk,
+        transform,
+        pairPeerId: pickedPeer?.txId,
+        releasePeer: releasePeer && !pickedPeer,
+      });
+      await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
+      await settleReceipt();
+      if (queued) setCounterBulk(queued);
+      // other billing cycles of a linked recurring pick up their link here
+      void recurringOps.reconcile().catch(() => undefined);
+      logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
+      hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
+    } finally {
+      confirming.current = false;
+    }
   };
 
   // #268: one queue step — the sibling gets the whole decision through
@@ -2408,7 +2550,7 @@ export function ReviewScreen() {
                 dangerouslySetInnerHTML={{ __html: leavingHtml }} // NOSONAR
               />
             )}
-            <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in">
+            <div key={`card-${tx.id}`} ref={cardRef} data-card-id={tx.id} className="m-card-in">
             {/* #268 r2 (user): data-held marks the frozen face while the
                 counter queue covers the screen — the deck sits still */}
             <div
@@ -2514,7 +2656,7 @@ export function ReviewScreen() {
                 {!multiPart && (
                   <ReviewReceiptRow
                     row={receiptRow}
-                    onOpen={(receiptId) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } })}
+                    onOpen={openReceipt}
                     onAsk={() => setReceiptPickOpen(true)}
                   />
                 )}
@@ -2783,10 +2925,14 @@ export function ReviewScreen() {
           onOpenChange={setReceiptPickOpen}
           proposal={receiptProposal}
           candidates={receiptCandidates}
+          all={unmatchedReceipts ?? []}
+          stage={receiptStage}
+          autoId={autoReceipt?.id ?? null}
           currency={tx.currency}
           onAccept={(link) => { void receiptOps.acceptMatch(link); setReceiptPickOpen(false); }}
           onReject={(link) => { void receiptOps.rejectMatch(link); setReceiptPickOpen(false); }}
-          onPick={(row) => { void receiptOps.linkReceipt(row, tx.id); setReceiptPickOpen(false); }}
+          onPick={(row) => { setReceiptStage(row ? { kind: 'picked', receipt: row } : { kind: 'none' }); setReceiptPickOpen(false); }}
+          onView={openReceipt}
         />
       )}
       {/* #237 r3: the card row's counter-transaction match sheet —

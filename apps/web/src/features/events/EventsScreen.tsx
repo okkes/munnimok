@@ -9,7 +9,7 @@ import { useEventOps, useEvents } from '@/application/events';
 import { useSpaceTransactions } from '@/application/transactions';
 import { eventNetText, eventTotals } from '@/domain/events';
 import type { EventRow } from '@/db/types';
-import { focusPosition } from '@/lib/imageFocus';
+import { focusStyle } from '@/lib/imageFocus';
 import type { ImageFocus } from '@/lib/imageFocus';
 import { ImageFocusFrame } from '@/ui/ImageFocusFrame';
 import { downscaleImage } from '@/lib/image';
@@ -45,9 +45,7 @@ export const eventPicture = (event: Pick<EventRow, 'picture'>): string => event.
 
 /** #446: where a cover-fitted rendering crops the picture - the card, the
  *  hero and the Home tile each apply the ONE stored focus to their own frame */
-export const eventPictureStyle = (event: Pick<EventRow, 'pictureFocus'>): { objectPosition: string } => ({
-  objectPosition: focusPosition(event.pictureFocus),
-});
+export const eventPictureStyle = (event: Pick<EventRow, 'pictureFocus'>): ReturnType<typeof focusStyle> => focusStyle(event.pictureFocus);
 
 /** create/edit: the picture carries the character; icons retired */
 export function EventFormSheet({
@@ -199,7 +197,7 @@ export function EventFormSheet({
             part that stays visible on the card and the hero; the bundled
             ones were composed for the centre and need no frame */}
         {picture.startsWith('data:') && (
-          <ImageFocusFrame src={picture} focus={focus} onFocus={setFocus} hint={t('events.dragToFrame')} testId="eventform-focus" />
+          <ImageFocusFrame src={picture} focus={focus} onFocus={setFocus} zoom zoomLabel={t('image.zoom')} hint={t('events.dragToFrame')} testId="eventform-focus" />
         )}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="eventform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
