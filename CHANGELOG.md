@@ -1,5 +1,20 @@
 # Changelog
 
+## [5.11.0](https://github.com/okkes/munnimok/compare/v5.10.0...v5.11.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **api:** the lab's history, health and pictures; the person's share and decline; the scheduler's open question ([#441](https://github.com/okkes/munnimok/issues/441) L1) ([469d874](https://github.com/okkes/munnimok/commit/469d874064fd58cf13d75d87f199618693b2bebf))
+* **connectors:** the operator's history and health, failure reports with the person's consent, the lab trigger, canary run-now ([#441](https://github.com/okkes/munnimok/issues/441) L1) ([d6f60d9](https://github.com/okkes/munnimok/commit/d6f60d9524e345530eac8861d0c0d66cd712280c))
+* **lab:** the job history, a run in full with its picture, the party's health, canary run-now, the dashboard's failure tiles ([#441](https://github.com/okkes/munnimok/issues/441) L1) ([a9c82c5](https://github.com/okkes/munnimok/commit/a9c82c5fce370946db7c50f3fb21bff24820c962))
+* **web:** a fetch closed on resumes where it left off, one sync at a time, and "report this failure?" ([#441](https://github.com/okkes/munnimok/issues/441) L1, prod 2026-10-06) ([31b3c53](https://github.com/okkes/munnimok/commit/31b3c53fecd9ce4122f5a949282774af10507f88))
+
+
+### 🐞 Bug Fixes
+
+* **web:** the debt drill counts a linked pair once, shows it on request, and keeps the counterpart in the overview (user ss 2026-10-06) ([ebb0248](https://github.com/okkes/munnimok/commit/ebb02489fda1491121959fa1171c1406503238f2))
+
 ## [5.10.0](https://github.com/okkes/munnimok/compare/v5.9.0...v5.10.0) (2026-10-06)
 
 
