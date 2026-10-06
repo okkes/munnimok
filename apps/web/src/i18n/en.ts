@@ -2792,6 +2792,9 @@ export const en = {
   'tour.per.3t': 'Read the trend',
   'tour.per.3b': 'Each line is one tile over time — solid for closed periods, dashed for this one so far — with the change against the period before.',
   'cat.giftReceived': 'Gift',
+  'tx.amountRange': 'Amount',
+  'tx.amountMin': 'from',
+  'tx.amountMax': 'up to',
 } as const;
 
 export type TranslationKey = keyof typeof en;

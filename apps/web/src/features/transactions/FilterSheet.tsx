@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useSpaceAccounts } from '@/application/transactions';
 import type { SpaceAccount } from '@/db/joined';
 import type { TxType } from '@/db/types';
@@ -5,6 +6,7 @@ import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useLang } from '@/i18n';
+import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
@@ -24,12 +26,19 @@ export interface SheetFilters {
   mainCatIds: ReadonlySet<string>;
   from?: string;
   to?: string;
+  /** inclusive cents bounds on the amount's size (user 2026-10-06) */
+  minCents?: number;
+  maxCents?: number;
 }
 
 export const EMPTY_FILTERS: SheetFilters = { accountIds: new Set(), txTypes: new Set(), mainCatIds: new Set() };
 
 export const countActive = (f: SheetFilters): number =>
-  f.accountIds.size + f.txTypes.size + f.mainCatIds.size + (f.from || f.to ? 1 : 0);
+  f.accountIds.size +
+  f.txTypes.size +
+  f.mainCatIds.size +
+  (f.from || f.to ? 1 : 0) +
+  (f.minCents !== undefined || f.maxCents !== undefined ? 1 : 0);
 
 function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set);
@@ -90,6 +99,57 @@ function AccountChips({
   );
 }
 
+const centsText = (cents: number | undefined): string => (cents === undefined ? '' : (cents / 100).toFixed(2));
+
+/**
+ * User 2026-10-06: "more than x and less than x" — two typed amounts, EU or
+ * dotted decimals alike (parseCents), applied to the amount's SIZE so a
+ * €50 purchase and a €50 refund both answer "between 40 and 60". The boxes
+ * keep what was typed while it is still half a number; a reset from
+ * outside (Clear filters) empties them.
+ */
+function AmountRange({ value, onChange }: Readonly<{ value: SheetFilters; onChange: (next: SheetFilters) => void }>) {
+  const { t } = useLang();
+  const [minText, setMinText] = useState(() => centsText(value.minCents));
+  const [maxText, setMaxText] = useState(() => centsText(value.maxCents));
+  useEffect(() => {
+    if (value.minCents === undefined && parseCents(minText) !== null) setMinText('');
+    if (value.maxCents === undefined && parseCents(maxText) !== null) setMaxText('');
+  }, [value.minCents, value.maxCents, minText, maxText]);
+  const edit = (field: 'minCents' | 'maxCents', text: string) => {
+    (field === 'minCents' ? setMinText : setMaxText)(text);
+    const cents = parseCents(text);
+    onChange({ ...value, [field]: cents === null ? undefined : Math.abs(cents) });
+  };
+  const box = 'h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none';
+  return (
+    <>
+      <div className="m-cap px-1">{t('tx.amountRange')}</div>
+      <div className="flex items-center gap-2">
+        <input
+          data-testid="filter-amount-min"
+          type="text"
+          inputMode="decimal"
+          placeholder={t('tx.amountMin')}
+          value={minText}
+          onChange={(e) => edit('minCents', e.target.value)}
+          className={box}
+        />
+        <span className="text-ink-4">–</span>
+        <input
+          data-testid="filter-amount-max"
+          type="text"
+          inputMode="decimal"
+          placeholder={t('tx.amountMax')}
+          value={maxText}
+          onChange={(e) => edit('maxCents', e.target.value)}
+          className={box}
+        />
+      </div>
+    </>
+  );
+}
+
 export function FilterSheet({
   open,
   onOpenChange,
@@ -137,6 +197,8 @@ export function FilterSheet({
             </Chip>
           ))}
         </div>
+
+        <AmountRange value={value} onChange={onChange} />
 
         <div className="m-cap px-1">{t('tx.dateRange')}</div>
         <div className="flex items-center gap-2">

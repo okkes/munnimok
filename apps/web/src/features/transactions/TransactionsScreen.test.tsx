@@ -249,6 +249,34 @@ describe('TransactionsScreen (demo identity)', () => {
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
 
+  it('the filter sheet narrows by amount: between two typed sizes, whichever way the money went (user 2026-10-06)', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await waitFor(() => expect(rows().length).toBeGreaterThan(3));
+    const all = rows().length;
+
+    fireEvent.click(screen.getByTestId('tx-filter-open'));
+    // nothing in the demo is a million euros
+    fireEvent.change(await screen.findByTestId('filter-amount-min'), { target: { value: '1000000' } });
+    fireEvent.click(screen.getByTestId('filter-done'));
+    await waitFor(() => expect(rows()).toHaveLength(0));
+    expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
+
+    // the pair counts as one filter; an EU decimal parses; a bound alone works
+    fireEvent.click(screen.getByTestId('tx-filter-open'));
+    fireEvent.change(screen.getByTestId('filter-amount-min'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('filter-amount-max'), { target: { value: '0,01' } });
+    fireEvent.click(screen.getByTestId('filter-done'));
+    await waitFor(() => expect(rows()).toHaveLength(0));
+    expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
+
+    fireEvent.click(screen.getByTestId('tx-filter-clear'));
+    await waitFor(() => expect(rows()).toHaveLength(all));
+    // the boxes empty with the reset
+    fireEvent.click(screen.getByTestId('tx-filter-open'));
+    expect((await screen.findByTestId('filter-amount-max')).getAttribute('value')).toBe('');
+  }, 15_000);
+
   it('#237 (a): a same-sign wallet pair collapses to the PURCHASE, wearing the funding note', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');

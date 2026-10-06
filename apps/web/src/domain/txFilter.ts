@@ -16,6 +16,10 @@ export interface TxFilter {
   /** inclusive yyyy-mm-dd bounds (overview drill-down scopes to a period) */
   from?: string;
   to?: string;
+  /** inclusive bounds on the amount's SIZE, in cents — "between €10 and
+   *  €50" finds a purchase and a refund of that size alike (user 2026-10-06) */
+  minCents?: number;
+  maxCents?: number;
 }
 
 /** text hit on merchant/description — part labels included (typed-splits
@@ -63,13 +67,24 @@ export function filterTxs<T extends TxView>(txs: T[], filter: TxFilter): T[] {
     if (filter.txTypes?.size && !anySlice(tx, (v) => filter.txTypes!.has(v.effType))) return false;
     if (filter.from && tx.date < filter.from) return false;
     if (filter.to && tx.date > filter.to) return false;
+    const size = Math.abs(tx.amountCents);
+    if (filter.minCents !== undefined && size < filter.minCents) return false;
+    if (filter.maxCents !== undefined && size > filter.maxCents) return false;
     return !q || matchesQuery(tx, q, amountQ, signQ);
   });
 }
 
 export const hasActiveFilter = (f: TxFilter): boolean =>
   Boolean(
-    f.query?.trim() || f.accountIds?.size || f.onlyNeedsReview || f.catIds?.size || f.txTypes?.size || f.from || f.to,
+    f.query?.trim() ||
+      f.accountIds?.size ||
+      f.onlyNeedsReview ||
+      f.catIds?.size ||
+      f.txTypes?.size ||
+      f.from ||
+      f.to ||
+      f.minCents !== undefined ||
+      f.maxCents !== undefined,
   );
 
 /**

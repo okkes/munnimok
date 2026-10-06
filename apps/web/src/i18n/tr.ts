@@ -2794,4 +2794,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.per.3t': 'Eğilimi okuyun',
   'tour.per.3b': 'Her çizgi bir kutunun zaman içindeki seyri — kapanan dönemler düz, bu dönem kesikli — önceki döneme göre değişimle birlikte.',
   'cat.giftReceived': 'Hediye',
+  'tx.amountRange': 'Tutar',
+  'tx.amountMin': 'en az',
+  'tx.amountMax': 'en fazla',
 };
