@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.11.0',
+    date: '2026-10-06',
+    items: [
+      {
+        en: 'A shop fetch you closed the app on is picked up where it left off instead of starting over — no more "Fetching…" that never ends, and one fetch at a time per connection.',
+        nl: 'Een winkelophaling waarbij je de app sloot, gaat verder waar hij was in plaats van opnieuw te beginnen — geen eindeloos "Ophalen…" meer, en één ophaling tegelijk per koppeling.',
+        tr: 'Uygulamayı kapattığın bir mağaza alımı baştan başlamak yerine kaldığı yerden sürüyor — artık bitmeyen "Alınıyor…" yok ve bağlantı başına tek alım.',
+      },
+      {
+        en: 'When a party’s run fails, munni may ask "Report this failure?" — yes sends the last picture of the page (secret fields hidden) to the people who run munni for a month, no deletes it; a connection’s menu can answer once and for all.',
+        nl: 'Als een partij faalt, vraagt munni soms "Deze storing melden?" — ja stuurt de laatste afbeelding van de pagina (geheime velden verborgen) een maand naar de mensen die munni draaien, nee verwijdert hem; het menu van een koppeling kan het eens en voor altijd beantwoorden.',
+        tr: 'Bir tarafın çalışması başarısız olduğunda munni "Bu hata bildirilsin mi?" diye sorabilir — evet sayfanın son görüntüsünü (gizli alanlar gizli) bir aylığına munni’yi işletenlere gönderir, hayır siler; bir bağlantının menüsü bunu bir kez ve tamamen yanıtlayabilir.',
+      },
+      {
+        en: 'Debt Payment adds up: a repayment and its counterpart on the other account count once. The drill lists what counts; "Show linked transactions" shows each pair together, and opening the counterpart stays inside the overview.',
+        nl: 'Schuldaflossing telt kloppend op: een aflossing en haar tegenpost op de andere rekening tellen één keer. De detailpagina toont wat telt; "Gekoppelde transacties tonen" zet elk paar bij elkaar, en de tegenpost openen blijft binnen het overzicht.',
+        tr: 'Borç ödemesi doğru toplanıyor: bir geri ödeme ile diğer hesaptaki karşılığı bir kez sayılıyor. Ayrıntı yalnızca sayılanları listeler; "Bağlantılı işlemleri göster" her çifti bir arada gösterir ve karşılığı açmak genel bakışın içinde kalır.',
+      },
+    ],
+  },
+  {
     version: '5.10.0',
     date: '2026-10-06',
     items: [
