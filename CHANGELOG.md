@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.14.0](https://github.com/okkes/munnimok/compare/v5.13.0...v5.14.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **api:** the new-service scaffold from a recording - a manifest stub, the observed options, an adapter stub, redacted fixtures, a test skeleton and a README, zipped at repo paths ([#441](https://github.com/okkes/munnimok/issues/441) L5) ([eef4aec](https://github.com/okkes/munnimok/commit/eef4aec6cc2e5df29c28894468d1a93c33cdd81f))
+* **api:** the retention bench's reports - runs with their steps' verdicts, the operator's own ([#441](https://github.com/okkes/munnimok/issues/441) L4) ([167f4f2](https://github.com/okkes/munnimok/commit/167f4f22a973b02ab10f6440ba8546115c8580b8))
+* **connectors:** the agent that ran a job is kept after its lease; the history narrows by agent; an agent's claims ride on its view ([#441](https://github.com/okkes/munnimok/issues/441) L4) ([42bddb5](https://github.com/okkes/munnimok/commit/42bddb56c3d81ee269c910cfe178004a3995da15))
+* **lab:** the household-agent retention bench and the agent page ([#441](https://github.com/okkes/munnimok/issues/441) L4) ([ad76ba5](https://github.com/okkes/munnimok/commit/ad76ba5149a06bfad3c6a5fb355be6eedf0dbab1))
+* **lab:** the scaffold card on the recording screen ([#441](https://github.com/okkes/munnimok/issues/441) L5) ([0e84195](https://github.com/okkes/munnimok/commit/0e84195b63aacfaf097679fae7d2bf50926ad37c))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** a job is on the record as succeeded before its session goes active, so a schedule that follows the bundle sees the run it measures from ([5890001](https://github.com/okkes/munnimok/commit/5890001a29d59925d43b5865594390709197343c))
+* **connectors:** the recorder waits for the answers still being read before the trace is built ([9c8c6a0](https://github.com/okkes/munnimok/commit/9c8c6a09e604313b0785676946b6bfd978db4d3d))
+
 ## [5.13.0](https://github.com/okkes/munnimok/compare/v5.12.0...v5.13.0) (2026-10-06)
 
 
