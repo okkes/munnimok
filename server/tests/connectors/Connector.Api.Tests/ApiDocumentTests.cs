@@ -447,7 +447,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         // person, four for the operator. 60 since the operator's history and
         // health (#441 L1): the person's share and decline, the job list and
         // one job, the picture, the health report, the canary run now.
-        Assert.Equal(60, operations);
+        Assert.Equal(64, operations);
     }
 
     [Theory]

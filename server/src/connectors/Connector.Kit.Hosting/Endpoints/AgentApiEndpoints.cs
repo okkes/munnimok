@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Connector.Kit.Jobs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -109,6 +110,15 @@ internal static class AgentApiEndpoints
         // auth: a streamed login is a job like any other, and its frames must
         // not be reachable by anything that could not already lease it.
         LiveEndpoints.MapAgent(agents);
+
+        agents.MapPost("/jobs/{jobId}/trace", (
+            HttpContext http,
+            string jobId,
+            ConnectorDbContext db,
+            JobTraceService traces,
+            IOptions<ConnectorOptions> options,
+            CancellationToken ct) => TraceAsync(http, jobId, db, traces, options, ct))
+        .WithHttpLogging(HttpLoggingFields.None);
 
         agents.MapPost("/jobs/{jobId}/result", (
             HttpContext http,
@@ -394,6 +404,69 @@ internal static class AgentApiEndpoints
         return pending is null
             ? ConnectorResults.Error(new ConnectorException(ErrorCode.MfaTimeout, "challenge expired unanswered"))
             : Results.NoContent();
+    }
+
+    /// <summary>
+    /// The run's recording (#441 L3): gzipped JSON from the agent, posted
+    /// while the job is still leased. Unpacked here only to be read back
+    /// into a trace, so a body that is not one is refused before it is kept.
+    /// </summary>
+    private static async Task<ConnectorJsonResult<TraceAckResponse>> TraceAsync(
+        HttpContext http,
+        string jobId,
+        ConnectorDbContext db,
+        JobTraceService traces,
+        IOptions<ConnectorOptions> options,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        await RequireLeasedAsync(db, jobId, agent.Id, ct);
+
+        var max = options.Value.MaxTraceBytes;
+        var raw = await ReadBoundedAsync(http.Request, max, ct);
+        var packed = http.Request.Headers.ContentEncoding.ToString().Contains("gzip", StringComparison.OrdinalIgnoreCase);
+
+        byte[] plain;
+        try
+        {
+            plain = packed ? JobTraceService.Gunzip(raw, max * 8) : raw;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            throw ConnectorException.InvalidRequest("the recording is not readable gzip");
+        }
+
+        Connector.Kit.Tracing.JobTrace? trace;
+        try
+        {
+            trace = System.Text.Json.JsonSerializer.Deserialize<Connector.Kit.Tracing.JobTrace>(plain, ConnectorWireJson.Options);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            throw ConnectorException.InvalidRequest("the recording is not a trace");
+        }
+
+        if (trace is null) throw ConnectorException.InvalidRequest("the recording is empty");
+
+        var kept = await traces.KeepAsync(jobId, trace, ct);
+        return ConnectorResults.Json(new TraceAckResponse { Entries = kept?.Entries ?? 0, Bytes = kept?.ByteCount ?? 0 });
+    }
+
+    private static async Task<byte[]> ReadBoundedAsync(HttpRequest request, int max, CancellationToken ct)
+    {
+        if (request.ContentLength > max) throw ConnectorException.InvalidRequest("the recording outweighs the cap");
+
+        using var buffer = new MemoryStream();
+        var chunk = new byte[64 * 1024];
+        while (true)
+        {
+            var read = await request.Body.ReadAsync(chunk, ct);
+            if (read == 0) break;
+            if (buffer.Length + read > max) throw ConnectorException.InvalidRequest("the recording outweighs the cap");
+            await buffer.WriteAsync(chunk.AsMemory(0, read), ct);
+        }
+
+        return buffer.ToArray();
     }
 
     private static async Task<ConnectorJsonResult<AgentAckResponse>> ResultAsync(

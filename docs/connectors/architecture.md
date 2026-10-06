@@ -117,6 +117,40 @@ the open question with it, and a picture past `MaxArtifactBytes` (1 MiB)
 keeps the digest alone. The jobs table never loses a row; `/v1/admin/jobs`
 and `/v1/admin/health` read it by `(ProviderId, CreatedAt)`.
 
+## Recordings (#441 L3)
+
+A lab run may ask to be recorded (`record` on the login or the one-shot
+fetch; the lab trigger alone may carry it, and the operator-only `explore`
+provider always does). On the agent the job context opens a `TraceBook`
+and attaches a `PageRecorder` to the page the lease creates, before its
+first navigation: the main frame's navigations, every request and
+response (documents, XHR and fetch with their text bodies; scripts,
+pictures and fonts as a size and a type), the console, a snapshot of each
+page as it settles, and the HTTP client's calls through `TraceHttpHandler`
+(the same handler sits in the inline runner's client, reading the book
+open for the flow through `TraceScope`). Every entry is redacted on the
+way in — by name (authorization, cookie, anything with token, password or
+session in it, in headers, query strings, form posts and JSON) and by
+value (whatever the run was handed as a secret input or session material)
+— and the book is bounded: a body at 64 KiB, a snapshot at 256 KiB, the
+whole at 3 000 entries or 6 MiB, past which entries are counted and
+dropped. When the adapter is done — on a failure too, which is the run an
+adapter author most wants to read — the agent posts the trace gzipped to
+`POST /agent/v1/jobs/{id}/trace` before its result; the control plane
+keeps it in `job_traces` for the operator's runs only (anybody else's is
+dropped unread), renders `digest.md` once, serves both under
+`/v1/admin/jobs/{id}/trace`, and sweeps them after `ArtifactRetentionDays`.
+
+The explore run is the recorder's other door: a browser on a fleet agent
+opened at an address the operator typed, driven through the live view
+with the navigation vocabulary (`navigate`, `back`, `reload`) that the
+control plane refuses on every other run and the agent dispatches only on
+a view it opened with navigation allowed — decided from the provider,
+never from anything relayed. Public hosts only, checked by the manifest
+field's pattern, by the adapter at run time and by every navigation that
+follows: the fleet sits on the household's own network, and a browser
+pointed at `10.0.0.1` would be the operator inside the NAS.
+
 ## Pacing
 
 Three separate things, on purpose:

@@ -61,6 +61,9 @@ public static class ConnectorLabEndpoints
         lab.MapGet("/jobs", Jobs);
         lab.MapGet("/jobs/{jobId}", Job);
         lab.MapGet("/jobs/{jobId}/artifacts/screenshot", JobScreenshot);
+        lab.MapGet("/jobs/{jobId}/trace", JobTrace);
+        lab.MapGet("/jobs/{jobId}/trace/digest.md", JobTraceDigest);
+        lab.MapDelete("/jobs/{jobId}/trace", DeleteJobTrace);
         lab.MapGet("/health", Health);
         lab.MapPost("/canaries/{providerId}/run", RunCanary);
         lab.MapGet("/users/{sub}/sessions", UserSessions);
@@ -271,6 +274,34 @@ public static class ConnectorLabEndpoints
     }
 
     /// <summary>Per-provider health: the month's runs by outcome, code and trigger, the people affected, the sessions, the canary, the reports.</summary>
+    /// <summary>A run's recording (#441 L3): the trace as the agent posted it, camelCased for the browser.</summary>
+    private static async Task<IResult> JobTrace(string jobId, ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync($"v1/admin/jobs/{jobId}/trace", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
+    }
+
+    /// <summary>The recording's digest.md, served as the markdown it is.</summary>
+    private static async Task<IResult> JobTraceDigest(string jobId, HttpContext http, ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync($"v1/admin/jobs/{jobId}/trace/digest", new ConnectorCall(), ct);
+        if (!reply.IsSuccess || reply.Bytes is null) return ConnectorRelayEndpoints.Relay(http, reply);
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.File(reply.Bytes, "text/markdown; charset=utf-8");
+    }
+
+    private static async Task<IResult> DeleteJobTrace(string jobId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var reply = await client.DeleteAsync($"v1/admin/jobs/{jobId}/trace", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) return ConnectorRelayEndpoints.Relay(http, reply);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} deleted the recording of connector job {Job}", OperatorOf(http), jobId);
+        }
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> Health(ConnectorClient client, CancellationToken ct)
     {
         var reply = await client.GetAsync("v1/admin/health", new ConnectorCall(), ct);

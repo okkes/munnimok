@@ -86,6 +86,18 @@ public sealed class BrowserLease : IChallengeSurface
                 ? _context.Pages[0]
                 : await _context.NewPageAsync().ConfigureAwait(false);
 
+            if (_options.OnPage is { } opened)
+            {
+                try
+                {
+                    await opened(page).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "the page hook failed; the page is handed out unrecorded");
+                }
+            }
+
             Volatile.Write(ref _page, page);
             return page;
         }
@@ -684,4 +696,12 @@ public sealed record BrowserLeaseOptions
     public float OperationTimeoutMs { get; init; } = 30_000;
 
     public IReadOnlyList<string> Args { get; init; } = [];
+
+    /// <summary>
+    /// Called once, with the page the lease created, before anything has
+    /// navigated it (#441 L3): the recorder's door. A hook that throws is
+    /// logged and the page is handed out anyway - a recording is never the
+    /// reason a login fails.
+    /// </summary>
+    public Func<IPage, Task>? OnPage { get; init; }
 }

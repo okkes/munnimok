@@ -83,6 +83,7 @@ public sealed class EfLeasedJobQueue(
             ProfileId = job.ProfileId,
             FleetOnly = job.FleetOnly,
             Trigger = job.Trigger,
+            Record = job.Record,
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -791,6 +792,7 @@ public sealed class EfLeasedJobQueue(
                 : null,
             ProfileId = job.ProfileId,
             LeaseExpiresAt = leaseExpiresAt,
+            Record = job.Record,
             Limits = new JobLimits
             {
                 TimeoutSeconds = Math.Max(_options.Timeouts.JobTimeoutSeconds, LongestResourceSeconds(manifest)),

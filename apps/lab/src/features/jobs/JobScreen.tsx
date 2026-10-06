@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
-import { hrefOf } from '../../app/router';
+import { hrefOf, navigate } from '../../app/router';
 import { when } from '../../lib/format';
-import type { OperatorJob } from '../../types';
+import type { OperatorJob, TraceSummary } from '../../types';
 import { stateChip, triggerWord, whoLine } from './jobFacts';
 
 /** the picture a retained report holds, fetched with the lab's credentials and shown in place */
@@ -108,6 +108,8 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
         <pre className="code">{JSON.stringify({ params: job.params ?? null, config: job.config ?? {} }, null, 2)}</pre>
       </section>
 
+      {job.trace && <RecordingCard jobId={job.jobId} trace={job.trace} />}
+
       <section className="card" data-testid="job-artifacts">
         <h2>What it left behind</h2>
         {job.artifacts === 'none' && <p className="hint">Nothing — no browser ran, or the run did not fail.</p>}
@@ -134,6 +136,32 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
         )}
       </section>
     </>
+  );
+}
+
+/** the entry count, with what the book dropped when it ran out of room */
+export function entriesLine(trace: TraceSummary): string {
+  if (!trace.truncated) return String(trace.entries);
+  return `${trace.entries} (${trace.dropped} dropped — the book ran out of room)`;
+}
+
+/** the run's recording (#441 L3), in brief, with the door to it */
+function RecordingCard({ jobId, trace }: Readonly<{ jobId: string; trace: TraceSummary }>) {
+  return (
+    <section className="card" data-testid="job-trace">
+      <div className="card-head">
+        <h2>The recording</h2>
+        <button className="btn" data-testid="job-trace-open" onClick={() => navigate(`jobs/${encodeURIComponent(jobId)}/trace`)}>
+          open the recording
+        </button>
+      </div>
+      <div className="facts">
+        <Fact label="Entries" value={entriesLine(trace)} />
+        <Fact label="Size" value={`${(trace.bytes / 1024).toFixed(1)} KB packed`} />
+        <Fact label="Ran" value={`${when(trace.startedAt)} → ${when(trace.endedAt)}`} />
+        <Fact label="Kept until" value={when(trace.expiresAt)} />
+      </div>
+    </section>
   );
 }
 

@@ -4,6 +4,7 @@ using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
+using Connector.Kit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -75,9 +76,23 @@ public sealed class InlineJobRunner(
 
         using var renewal = StartLeaseRenewal(job.JobId, budget.Token);
 
+        // A recorded run (#441 L3): the book is open for this asynchronous flow,
+        // the named client's handler writes every call into it, and it is kept
+        // before the outcome is reported - on a failure too.
+        var book = job.Record ? new TraceBook(job.JobId, job.Provider, SecretsOf(job), TimeProvider.System) : null;
+        using var recording = book is null ? null : TraceScope.Open(book);
+
         try
         {
-            var run = await ExecuteAsync(adapter, context, job, budget.Token);
+            JobResultRequest run;
+            try
+            {
+                run = await ExecuteAsync(adapter, context, job, budget.Token);
+            }
+            finally
+            {
+                if (book is not null) await KeepTraceAsync(job, book, ct);
+            }
 
             // Every step the adapter reported reaches the row BEFORE the
             // outcome does. Progress is drained by a pump of its own, and the
@@ -162,6 +177,35 @@ public sealed class InlineJobRunner(
 
             default:
                 throw ConnectorException.InvalidRequest($"unknown job kind '{job.Kind}'");
+        }
+    }
+
+    private IReadOnlyCollection<string> SecretsOf(LeasedJob job)
+    {
+        if (!registry.TryGetManifest(job.Provider, out var manifest)) return [];
+
+        return
+        [
+            .. manifest.Auth.AllFields()
+                .Where(f => f.Secret)
+                .Select(f => job.Inputs.TryGetValue(f.Key, out var v) ? v : null)
+                .Where(v => !string.IsNullOrEmpty(v))
+                .Select(v => v!),
+            .. new[] { job.Material?.AccessToken, job.Material?.RefreshToken }.Where(v => !string.IsNullOrEmpty(v)).Select(v => v!),
+        ];
+    }
+
+    private async Task KeepTraceAsync(LeasedJob job, TraceBook book, CancellationToken ct)
+    {
+        try
+        {
+            book.Note("the run ended");
+            using var scope = scopes.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<JobTraceService>().KeepAsync(job.JobId, book.Build(), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "job {JobId}: the recording could not be kept", job.JobId);
         }
     }
 

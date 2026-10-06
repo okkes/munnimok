@@ -17,10 +17,15 @@ public sealed record LabLoginRequest(
     string? Label = null,
     string? CredentialBundle = null,
     /// <summary><c>fleet</c>, an agent id, or nothing — the control plane's own vocabulary.</summary>
-    string? PreferAgent = null);
+    string? PreferAgent = null,
+    /// <summary>Record the run (#441 L3): the browser's and the HTTP client's calls, redacted, kept on the control plane for the operator.</summary>
+    bool Record = false);
 
 /// <summary>A fetch from the bench: the resource and its params as the manifest spells them (a date, a list of includes, the accounts).</summary>
-public sealed record LabFetchRequest(string Resource, Dictionary<string, JsonNode?>? Params = null);
+public sealed record LabFetchRequest(string Resource, Dictionary<string, JsonNode?>? Params = null, bool Record = false);
+
+/// <summary>An explore run (#441 L3): a browser on a fleet agent opened at this address, driven from the lab's live view, recorded throughout.</summary>
+public sealed record LabExploreRequest(string Url, string? Label = null, string? PreferAgent = null);
 
 /// <summary>A lab session flipped into the party's canary.</summary>
 public sealed record LabCanaryRequest(string Resource, int IntervalMinutes);
@@ -46,6 +51,17 @@ public sealed class LabLoginRequestValidator : AbstractValidator<LabLoginRequest
         RuleFor(r => r.PreferAgent).MaximumLength(64).Matches("^[A-Za-z0-9._:-]+$").When(r => !string.IsNullOrEmpty(r.PreferAgent));
         RuleFor(r => r.Inputs).Must(i => i is null || i.Count <= 32).WithMessage("too many inputs");
         RuleFor(r => r.Config).Must(c => c is null || c.Count <= 32).WithMessage("too many config values");
+    }
+}
+
+public sealed class LabExploreRequestValidator : AbstractValidator<LabExploreRequest>
+{
+    public LabExploreRequestValidator()
+    {
+        RuleFor(r => r.Url).NotEmpty().MaximumLength(2048).Must(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+            .WithMessage("the address must be absolute http(s)");
+        RuleFor(r => r.Label).MaximumLength(128);
+        RuleFor(r => r.PreferAgent).MaximumLength(64).Matches("^[A-Za-z0-9._:-]+$").When(r => !string.IsNullOrEmpty(r.PreferAgent));
     }
 }
 
@@ -81,6 +97,7 @@ public static class LabBenchEndpoints
     private const string Trigger = "lab";
     private const string BundleField = "bundle";
     private const string Native = "native";
+    private const string ExploreProviderId = "explore";
 
     public static void Map(RouteGroupBuilder lab)
     {
@@ -88,6 +105,7 @@ public static class LabBenchEndpoints
 
         bench.MapGet("/sessions", Sessions);
         bench.MapPost("/{provider}/login", Login).WithValidation<LabLoginRequest>();
+        bench.MapPost("/explore", Explore).WithValidation<LabExploreRequest>();
         bench.MapGet("/{provider}/login/{sessionId}", GetSession);
         bench.MapPost("/{provider}/login/{sessionId}/answer", Answer).WithValidation<ConnectorAnswerRequest>();
         bench.MapPost("/{provider}/login/{sessionId}/cancel", Cancel);
@@ -124,7 +142,8 @@ public static class LabBenchEndpoints
                 request.Config ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 request.Label,
                 request.CredentialBundle,
-                request.PreferAgent),
+                request.PreferAgent,
+                request.Record),
             DeviceClass = Native,
             Trigger = Trigger,
         }, ct);
@@ -149,6 +168,26 @@ public static class LabBenchEndpoints
         await relay.Db.SaveChangesAsync(ct);
         return Results.Json(Strip(view), statusCode: (int)reply.Status);
     }
+
+    /// <summary>
+    /// An explore run (#441 L3) is a sign-in to the control plane's own
+    /// <c>explore</c> provider with the address as its one input, recorded
+    /// from the first byte: the session it makes is a lab session like any
+    /// other, and the recording lands in the job history.
+    /// </summary>
+    private static Task<IResult> Explore(LabExploreRequest request, HttpContext http, ConnectorRelay relay, CancellationToken ct) =>
+        Login(
+            ExploreProviderId,
+            new LabLoginRequest(
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["url"] = request.Url.Trim() },
+                null,
+                request.Label,
+                null,
+                request.PreferAgent,
+                Record: true),
+            http,
+            relay,
+            ct);
 
     private static async Task<IResult> GetSession(string provider, string sessionId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
@@ -255,7 +294,7 @@ public static class LabBenchEndpoints
         var reply = await relay.Client.PostAsync($"v1/{row.Provider}/{request.Resource}:fetch", new ConnectorCall
         {
             Subject = subject,
-            Body = new WireOneShotFetch(subject, row.Bundle, request.Params ?? new Dictionary<string, JsonNode?>(StringComparer.Ordinal)),
+            Body = new WireOneShotFetch(subject, row.Bundle, request.Params ?? new Dictionary<string, JsonNode?>(StringComparer.Ordinal), request.Record),
             DeviceClass = Native,
             Trigger = Trigger,
         }, ct);
@@ -401,7 +440,7 @@ public static class LabBenchEndpoints
 }
 
 /// <summary>The one-shot fetch body as the control plane reads it (snake_case on the wire).</summary>
-internal sealed record WireOneShotFetch(string Subject, string Bundle, Dictionary<string, JsonNode?> Params);
+internal sealed record WireOneShotFetch(string Subject, string Bundle, Dictionary<string, JsonNode?> Params, bool Record = false);
 
 /// <summary>The canary enrolment body: the lab subject (it carries the marker), the bundle, the resource, the interval.</summary>
 internal sealed record WireCanary(string Subject, string Bundle, string Resource, int IntervalMinutes);

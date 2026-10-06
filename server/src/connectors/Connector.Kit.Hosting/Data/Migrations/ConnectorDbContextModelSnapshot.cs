@@ -355,6 +355,9 @@ namespace Connector.Kit.Hosting.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<bool>("Record")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("ResourceId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -399,6 +402,77 @@ namespace Connector.Kit.Hosting.Data.Migrations
                     b.HasIndex("State", "ProviderId");
 
                     b.ToTable("jobs", (string)null);
+                });
+
+            modelBuilder.Entity("Connector.Kit.Hosting.Data.JobTraceRow", b =>
+                {
+                    b.Property<string>("JobId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("ByteCount")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Bytes")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("CapturedAt")
+                        .IsRequired()
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<string>("Digest")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Dropped")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EndedAt")
+                        .IsRequired()
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<int>("Entries")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExpiresAt")
+                        .IsRequired()
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<string>("ProviderId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StartedAt")
+                        .IsRequired()
+                        .HasMaxLength(28)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(28)");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("JobId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("ProviderId");
+
+                    b.HasIndex("SessionId");
+
+                    b.ToTable("job_traces", (string)null);
                 });
 
             modelBuilder.Entity("Connector.Kit.Hosting.Data.PrivateAgentRequestRow", b =>

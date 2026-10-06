@@ -30,10 +30,12 @@ export function whoLine(job: Pick<OperatorJob, 'who' | 'subject' | 'trigger'>): 
 }
 
 /** what a failed run left behind, in one word */
-export function artifactsLine(job: Pick<OperatorJob, 'artifacts' | 'hasScreenshot'>): string {
-  if (job.artifacts === 'pending') return 'awaiting the person';
-  if (job.artifacts === 'retained') return job.hasScreenshot ? 'picture' : 'digest';
-  return '';
+export function artifactsLine(job: Pick<OperatorJob, 'artifacts' | 'hasScreenshot'> & { trace?: unknown }): string {
+  const parts: string[] = [];
+  if (job.artifacts === 'pending') parts.push('awaiting the person');
+  if (job.artifacts === 'retained') parts.push(job.hasScreenshot ? 'picture' : 'digest');
+  if (job.trace) parts.push('recording');
+  return parts.join(' · ');
 }
 
 /** how the run ended, in a few words: the code, the count it gathered, or whether the party holds more */

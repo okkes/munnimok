@@ -54,6 +54,13 @@ public sealed class ConnectorOptions
     /// </summary>
     public int MaxArtifactBytes { get; set; } = 1_048_576;
 
+    /// <summary>
+    /// The most a run's recording may weigh packed (#441 L3). The book on the
+    /// agent is bounded well under this; the cap is for a post that is not
+    /// the agent's.
+    /// </summary>
+    public int MaxTraceBytes { get; set; } = 8 * 1_048_576;
+
 
     /// <summary>
     /// HMAC key for one-time agent enrollment codes. Generated per stack; a

@@ -81,6 +81,27 @@ internal sealed class RecordingLiveSurface : ILiveSurface
         return Fail("key");
     }
 
+    public List<Uri> Navigations { get; } = [];
+
+    public Task NavigateAsync(Uri url, CancellationToken ct)
+    {
+        Navigations.Add(url);
+        Trace.Add("navigate " + url);
+        return Fail("navigate");
+    }
+
+    public Task BackAsync(CancellationToken ct)
+    {
+        Trace.Add("back");
+        return Fail("back");
+    }
+
+    public Task ReloadAsync(CancellationToken ct)
+    {
+        Trace.Add("reload");
+        return Fail("reload");
+    }
+
     private Task Fail(string what) =>
         string.Equals(FailOn, what, StringComparison.Ordinal)
             ? Task.FromException(new Microsoft.Playwright.PlaywrightException("the page went away"))

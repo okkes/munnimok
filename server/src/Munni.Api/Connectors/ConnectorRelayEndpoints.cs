@@ -69,7 +69,8 @@ internal sealed record WireLogin(
     Dictionary<string, string> Config,
     string? Label,
     string? CredentialBundle,
-    string? PreferAgent);
+    string? PreferAgent,
+    bool Record = false);
 
 internal sealed record WireAnswer(string ChallengeId, string Value);
 

@@ -67,7 +67,7 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 The cockpit (`apps/control`) keeps its read-only `/control/connectors`
 twin: the status and an aggregator's inventory, never a write.
 
-## The screens (slices L0–L2)
+## The screens (slices L0–L3)
 
 - **Dashboard** — parties accepting work, agents online, jobs in flight
   and awaiting input, open event streams; every party with its state,
@@ -130,6 +130,29 @@ twin: the status and an aggregator's inventory, never a write.
   interval chosen (the lab session goes with it); **disconnect** signs out
   at the party and forgets the session. A party's page carries a
   *connect in the lab* door.
+- **Recorder** (L3) — *record this run* on the connect form and the
+  fetch form asks the control plane to record the run: the browser's
+  navigations, every request and response (documents, XHR and fetch
+  with their text bodies; scripts, pictures and fonts as a size and a
+  type), the console, a snapshot of each page, and the HTTP client's
+  calls — redacted before anything is written (secret-named headers,
+  fields and query values read `«redacted:n»`, a cookie is a length and
+  a hash, whatever the run was handed as a credential is masked
+  wherever it appeared). The job page names the recording; **Recording**
+  (`#/jobs/{id}/trace`) is the timeline — scripts, pictures and fonts
+  folded by default, narrowed by kind and text, an entry opening to its
+  headers and body, the cookie jar at the end — with `digest.md` (the
+  page an adapter author reads first: pages, the calls worth reading
+  with the shape of every JSON answer, forms by field name, the jar,
+  the console) and `trace.json` as downloads, and a delete.
+- **Explore** (L3) — the bench's address box opens an explore run: a
+  browser on a fleet agent at that address (a public host — never the
+  NAS's own network), driven through the live view with an address bar,
+  back and reload besides taps and keys, recorded from the first byte;
+  *done* ends it (*another 30 minutes* extends the window), and the
+  recording opens. The control plane's `explore` provider is
+  operator-only: out of every catalogue, refused on every door but the
+  lab's, and navigation is refused on every live view but its own.
 - **Settings** — the operator, the lab subject, the sign-in mode, the
   api, the build and the identity provider.
 
@@ -143,7 +166,9 @@ now carries the canary marker, lab sessions rest on the relay as
 `LabSession` rows in `Munni.Api.Lab`, the bench's routes under
 `/lab/bench`); the test bench plan read: the
 test bench (connect with challenges and the live view, agent targeting,
-fetch and records by shape, lab sessions, lab-managed canaries); L3 the
-recorder (record-a-run, the Explore job, trace storage and viewer, the
-digest an adapter author reads); L4 the household-agent retention bench;
-L5 the new-service wizard with the adapter scaffold.
+fetch and records by shape, lab sessions, lab-managed canaries); L3 done
+(2026-10-06: the recorder — see above and architecture.md "Recordings";
+`record` on the lab's login and fetch, the `explore` provider, the
+navigation vocabulary, `job_traces` with digest.md, the lab's Recording
+screen); L4 the household-agent retention bench; L5 the new-service
+wizard with the adapter scaffold.

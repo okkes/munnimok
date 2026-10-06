@@ -25,7 +25,9 @@ public static partial class ManifestValidator
         if (!IdPattern.IsMatch(m.Id)) errors.Add($"id '{m.Id}' must be lowercase kebab-case");
         if (!CountryPattern.IsMatch(m.Country)) errors.Add($"country '{m.Country}' must be ISO-3166 alpha-2 uppercase");
         if (m.ManifestVersion < 1) errors.Add("manifest_version must be >= 1");
-        if (m.Resources.Count == 0) errors.Add("at least one resource is required");
+        // An operator-only provider may be a tool with nothing to fetch (the
+        // explore run); every party a person connects to has at least one.
+        if (m.Resources.Count == 0 && !m.OperatorOnly) errors.Add("at least one resource is required");
 
         ValidateCustody(m, errors);
         ValidateAgent(m, errors);

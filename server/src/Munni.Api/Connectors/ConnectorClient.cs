@@ -177,7 +177,9 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
         contentType is not null
         && (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
             || contentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase)
-            || contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase));
+            || contentType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)
+            // a recording's digest (#441 L3): text the relay hands on as it is, never parsed
+            || contentType.Equals("text/markdown", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// The envelope when the control plane sent one; a synthetic

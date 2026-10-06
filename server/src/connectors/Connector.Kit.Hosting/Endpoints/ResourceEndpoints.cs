@@ -87,7 +87,7 @@ internal static class ResourceEndpoints
                 ExpiresAt = time.GetUtcNow().AddSeconds(options.Value.Timeouts.TicketSeconds),
             };
 
-            return await runner.RunAsync(http, provider, resource, Flatten(request.Params), grant, ct);
+            return await runner.RunAsync(http, provider, resource, Flatten(request.Params), grant, ct, RequestContext.RecordOf(http, request.Record));
         })
         // The two outcomes a fetch has, and the reason FetchRunner.RunAsync
         // stays Task<IResult>: which one you get depends on how far the job got
@@ -184,7 +184,8 @@ public sealed class FetchRunner(
         string resourceId,
         IReadOnlyDictionary<string, IReadOnlyList<string>> query,
         TicketGrant grant,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool record = false)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(grant);
@@ -240,6 +241,7 @@ public sealed class FetchRunner(
             // login was deliberately kept off.
             FleetOnly = session.FleetOnly,
             Trigger = RequestContext.TriggerNameOf(http),
+            Record = record,
         }, ct);
 
         if (inline.CanRun(manifest)) inline.Dispatch();

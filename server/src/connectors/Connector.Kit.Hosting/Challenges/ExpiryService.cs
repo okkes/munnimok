@@ -88,6 +88,7 @@ public sealed class ExpiryService(
         await results.SweepAsync(ct);
         // A question nobody answered, a report past its month (#441 L1).
         await provider.GetRequiredService<JobArtifactService>().SweepAsync(ct);
+        await provider.GetRequiredService<JobTraceService>().SweepAsync(ct);
         await ExpireEnrollmentsAsync(db, ct);
         tickets.Sweep();
         idempotency.Sweep();

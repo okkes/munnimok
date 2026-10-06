@@ -138,6 +138,79 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
         }
     }
 
+    [Fact]
+    public async Task A_recorded_bench_run_leaves_a_trace_the_lab_reads_camel_cased_and_deletes()
+    {
+        using var operatorClient = factory.ClientFor("bench-recorder", scope: Admin);
+
+        using var login = await operatorClient.PostAsJsonAsync($"/lab/bench/{Simple}/login", new { inputs = Credentials, record = true });
+        var started = await login.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(login.IsSuccessStatusCode, started!.ToJsonString());
+        var sessionId = started["sessionId"]!.GetValue<string>();
+        await AwaitStateAsync(operatorClient, Simple, sessionId, "active");
+
+        var history = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs?session={sessionId}");
+        var job = Assert.Single(history!["jobs"]!.AsArray())!;
+        var jobId = job["jobId"]!.GetValue<string>();
+        Assert.True(job["trace"]!["entries"]!.GetValue<int>() >= 1, job.ToJsonString());
+
+        using var trace = await operatorClient.GetAsync($"/lab/jobs/{jobId}/trace");
+        Assert.Equal(HttpStatusCode.OK, trace.StatusCode);
+        var text = await trace.Content.ReadAsStringAsync();
+        var body = JsonNode.Parse(text)!.AsObject();
+        Assert.Equal(jobId, body["jobId"]!.GetValue<string>());
+        Assert.NotNull(body["entries"]![0]!["atMs"]);
+        Assert.DoesNotContain(Credentials["password"], text, StringComparison.Ordinal);
+
+        using var digest = await operatorClient.GetAsync($"/lab/jobs/{jobId}/trace/digest.md");
+        Assert.Equal(HttpStatusCode.OK, digest.StatusCode);
+        Assert.Equal("text/markdown", digest.Content.Headers.ContentType?.MediaType);
+        Assert.StartsWith("# Recording of", await digest.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        using var user = factory.ClientFor("bench-plain-reader");
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync($"/lab/jobs/{jobId}/trace")).StatusCode);
+
+        using var removed = await operatorClient.DeleteAsync($"/lab/jobs/{jobId}/trace");
+        Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await operatorClient.GetAsync($"/lab/jobs/{jobId}/trace")).StatusCode);
+    }
+
+    [Fact]
+    public async Task An_explore_run_opens_under_the_lab_subject_and_nowhere_else()
+    {
+        using var operatorClient = factory.ClientFor("bench-explorer", scope: Admin);
+
+        using var malformed = await operatorClient.PostAsJsonAsync("/lab/bench/explore", new { url = "ftp://www.example.com/" });
+        Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+
+        // no fleet agent in the test bench: the run queues and the door answers 202
+        using var opened = await operatorClient.PostAsJsonAsync("/lab/bench/explore", new { url = "https://www.example.com/", label = "look around" });
+        var view = await opened.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.Equal(HttpStatusCode.Accepted, opened.StatusCode);
+        var sessionId = view!["sessionId"]!.GetValue<string>();
+        Assert.Null(view["bundle"]);
+
+        var row = factory.Read(db => db.LabSessions.Single(s => s.Id == sessionId));
+        Assert.Equal("explore", row.Provider);
+        Assert.Equal("look around", row.Label);
+
+        var sessions = await operatorClient.GetFromJsonAsync<JsonArray>("/lab/bench/sessions");
+        Assert.Contains(sessions!, s => s!["sessionId"]!.GetValue<string>() == sessionId && s["provider"]!.GetValue<string>() == "explore");
+
+        var history = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs?session={sessionId}");
+        var job = Assert.Single(history!["jobs"]!.AsArray())!;
+        Assert.Equal("lab", job["trigger"]!.GetValue<string>());
+        Assert.Equal("explore", job["providerId"]!.GetValue<string>());
+
+        // a person's door: the explore provider is nobody's party
+        using var user = factory.ClientFor("bench-explore-user");
+        using var refused = await user.PostAsJsonAsync("/connectors/explore/login", new { inputs = new Dictionary<string, string> { ["url"] = "https://www.example.com/" } });
+        Assert.True(refused.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound, refused.StatusCode.ToString());
+
+        using var gone = await operatorClient.DeleteAsync($"/lab/bench/sessions/{sessionId}");
+        Assert.True(gone.IsSuccessStatusCode || gone.StatusCode == HttpStatusCode.BadRequest, await gone.Content.ReadAsStringAsync());
+    }
+
     private static async Task<JsonObject> AwaitStateAsync(HttpClient client, string provider, string sessionId, string state)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(20);

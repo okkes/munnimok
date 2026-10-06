@@ -43,6 +43,22 @@ public enum LiveInputKind
 
     /// <summary>One of the named keys. Never a chord, never a modifier held down.</summary>
     Key,
+
+    /// <summary>
+    /// Open an address (#441 L3). The operator's vocabulary and nobody else's: the
+    /// control plane refuses it on every run but an explore run, and the agent
+    /// dispatches it only on a live view it opened with navigation allowed - a
+    /// decision keyed on the provider, never on anything relayed. The address
+    /// itself is held to <see cref="Exploring.ExploreProvider.IsNavigable"/>: http(s), a
+    /// public host, no user-info.
+    /// </summary>
+    Navigate,
+
+    /// <summary>One step back in the browser's history. Explore runs only.</summary>
+    Back,
+
+    /// <summary>Reload the page. Explore runs only.</summary>
+    Reload,
 }
 
 /// <summary>
@@ -104,6 +120,9 @@ public sealed record LiveInput
     /// <summary>For <see cref="LiveInputKind.Key"/>.</summary>
     public LiveKey? Key { get; init; }
 
+    /// <summary>For <see cref="LiveInputKind.Navigate"/>: the address to open.</summary>
+    public string? Url { get; init; }
+
     /// <summary>For <see cref="LiveInputKind.Scroll"/>: fractions of the view to travel.</summary>
     public double DeltaY { get; init; }
 
@@ -143,6 +162,10 @@ public sealed record LiveInput
         }
 
         if (Kind is LiveInputKind.Key) return Key is not null && System.Enum.IsDefined(Key.Value);
+
+        if (Kind is LiveInputKind.Navigate) return Exploring.ExploreProvider.IsNavigable(Url, out _);
+
+        if (Kind is LiveInputKind.Back or LiveInputKind.Reload) return true;
 
         if (Kind is LiveInputKind.Scroll) return IsFraction(X) && IsFraction(Y) && double.IsFinite(DeltaY);
 
@@ -184,6 +207,10 @@ public sealed record LiveInputBatch
 
     public bool IsWellFormed() =>
         Events.Count is > 0 and <= MaxEvents && Events.All(e => e.IsWellFormed());
+
+    /// <summary>Whether any event moves the browser itself (#441 L3): allowed on an explore run and nowhere else.</summary>
+    public bool Navigates() =>
+        Events.Any(e => e.Kind is LiveInputKind.Navigate or LiveInputKind.Back or LiveInputKind.Reload);
 }
 
 /// <summary>

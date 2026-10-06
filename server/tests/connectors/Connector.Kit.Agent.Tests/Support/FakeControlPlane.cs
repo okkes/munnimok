@@ -303,6 +303,12 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
 
     public JobResultRequest? Result { get { lock (_gate) return _results.Count == 0 ? null : _results[^1]; } }
 
+    private readonly List<Connector.Kit.Tracing.JobTrace> _traces = [];
+
+    public Connector.Kit.Tracing.JobTrace? Trace { get { lock (_gate) return _traces.Count == 0 ? null : _traces[^1]; } }
+
+    public int TraceCount { get { lock (_gate) return _traces.Count; } }
+
     /// <summary>The wire code of the last reported failure, or null on success.</summary>
     public string? FailureCode => Failure?.Code;
 
@@ -501,6 +507,23 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
             return answer is null
                 ? Empty(HttpStatusCode.NoContent)
                 : Json($$"""{"challenge_id":"{{answer.ChallengeId}}","value":"{{answer.Value}}"}""");
+        }
+
+        if (path.EndsWith("/trace", StringComparison.Ordinal))
+        {
+            var raw = await request.Content!.ReadAsByteArrayAsync(ct);
+            if (request.Content.Headers.ContentEncoding.Contains("gzip"))
+            {
+                using var zipped = new MemoryStream(raw);
+                using var unzip = new System.IO.Compression.GZipStream(zipped, System.IO.Compression.CompressionMode.Decompress);
+                using var plain = new MemoryStream();
+                await unzip.CopyToAsync(plain, ct);
+                raw = plain.ToArray();
+            }
+
+            var trace = System.Text.Json.JsonSerializer.Deserialize<Connector.Kit.Tracing.JobTrace>(raw, AgentJson.Options)!;
+            lock (_gate) _traces.Add(trace);
+            return Empty(HttpStatusCode.OK);
         }
 
         if (path.EndsWith("/result", StringComparison.Ordinal))

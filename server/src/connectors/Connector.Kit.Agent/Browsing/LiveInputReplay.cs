@@ -1,4 +1,5 @@
 using Connector.Kit.Challenges;
+using Connector.Kit.Exploring;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 
@@ -35,6 +36,13 @@ internal interface ILiveSurface
     Task TypeTextAsync(string text, CancellationToken ct);
 
     Task PressAsync(LiveKey key, CancellationToken ct);
+
+    /// <summary>Opens an address the kit already held to the explore rule. Explore runs only (#441 L3).</summary>
+    Task NavigateAsync(Uri url, CancellationToken ct);
+
+    Task BackAsync(CancellationToken ct);
+
+    Task ReloadAsync(CancellationToken ct);
 }
 
 /// <summary>
@@ -82,8 +90,41 @@ internal static class LiveKeys
 /// real one would. We carry the picture out and the events back; the human
 /// logged in.
 /// </summary>
-internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard) : ILiveSurface
+internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard, IPage? page = null) : ILiveSurface
 {
+    /// <summary>A navigation is given this long; a page that takes longer is left loading and the view carries on.</summary>
+    private const float NavigateMs = 20_000;
+
+    public async Task NavigateAsync(Uri url, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        ct.ThrowIfCancellationRequested();
+        if (page is null) throw new InvalidOperationException("this surface has no page to navigate");
+
+        try
+        {
+            await page.GotoAsync(url.ToString(), new PageGotoOptions { WaitUntil = WaitUntilState.Commit, Timeout = NavigateMs })
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Still loading; the shutter will show whatever arrives.
+        }
+    }
+
+    public async Task BackAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (page is null) throw new InvalidOperationException("this surface has no page to navigate");
+        await page.GoBackAsync(new PageGoBackOptions { WaitUntil = WaitUntilState.Commit, Timeout = NavigateMs }).ConfigureAwait(false);
+    }
+
+    public async Task ReloadAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (page is null) throw new InvalidOperationException("this surface has no page to navigate");
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.Commit, Timeout = NavigateMs }).ConfigureAwait(false);
+    }
     /// <summary>
     /// How long the button stays down for a press the human made as one
     /// gesture. Not used for <see cref="DownAsync"/>/<see cref="UpAsync"/>,
@@ -223,7 +264,8 @@ internal static class LiveInputReplay
         (int Width, int Height) frame,
         ILiveSurface surface,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool allowNavigation = false)
     {
         ArgumentNullException.ThrowIfNull(events);
         ArgumentNullException.ThrowIfNull(surface);
@@ -255,7 +297,7 @@ internal static class LiveInputReplay
 
         for (var i = 0; i < events.Count; i++)
         {
-            if (!TryResolve(events, i, region, logger, out points[i], out scrolls[i])) return 0;
+            if (!TryResolve(events, i, region, logger, allowNavigation, out points[i], out scrolls[i])) return 0;
         }
 
         var dispatched = 0;
@@ -390,6 +432,23 @@ internal static class LiveInputReplay
                 await surface.TypeTextAsync(text, ct).ConfigureAwait(false);
                 return true;
 
+            case LiveInputKind.Navigate:
+                // Re-checked here as the key is: the address is parsed by the
+                // kit's own rule and the Uri it produced is what the surface
+                // gets, never the relayed string.
+                if (!ExploreProvider.IsNavigable(input.Url, out var target)) return false;
+
+                await surface.NavigateAsync(target, ct).ConfigureAwait(false);
+                return true;
+
+            case LiveInputKind.Back:
+                await surface.BackAsync(ct).ConfigureAwait(false);
+                return true;
+
+            case LiveInputKind.Reload:
+                await surface.ReloadAsync(ct).ConfigureAwait(false);
+                return true;
+
             case LiveInputKind.Key:
                 // The literal is re-checked here for the same reason: the one
                 // implementation of PressAsync throws on a key it has no word
@@ -415,6 +474,7 @@ internal static class LiveInputReplay
         int i,
         CropRegion region,
         ILogger logger,
+        bool allowNavigation,
         out (double X, double Y) point,
         out double scroll)
     {
@@ -439,6 +499,21 @@ internal static class LiveInputReplay
         }
 
         if (input.Kind is LiveInputKind.Text or LiveInputKind.Key) return true;
+
+        if (input.Kind is LiveInputKind.Navigate or LiveInputKind.Back or LiveInputKind.Reload)
+        {
+            // The whole batch is refused rather than the one event skipped: a
+            // navigation that did not happen changes what every tap after it
+            // would have landed on.
+            if (!allowNavigation)
+            {
+                logger.LogWarning(
+                    "no live input replayed: event {Index} is a {Kind} and this view does not navigate", i, input.Kind);
+                return false;
+            }
+
+            return true;
+        }
 
         point = new Tap(input.X, input.Y).ToPagePixels(region);
         if (!Inside(point, region))
