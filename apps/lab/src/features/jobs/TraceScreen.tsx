@@ -55,6 +55,8 @@ export function TraceScreen({ id, call, busy, act }: Readonly<{ id: string } & S
   }
 
   const noise = trace.entries.filter(isNoise).length;
+  const noiseText = noise ? ` (${noise} scripts, pictures and fonts)` : '';
+  const entriesText = `${trace.entries.length}${noiseText}`;
 
   const saveDigest = async () => {
     const res = await call(`/lab/jobs/${encodeURIComponent(id)}/trace/digest.md`).catch(() => null);
@@ -94,7 +96,7 @@ export function TraceScreen({ id, call, busy, act }: Readonly<{ id: string } & S
         <div className="facts">
           <Fact label="Started" value={when(trace.startedAt)} />
           <Fact label="Ended" value={when(trace.endedAt)} />
-          <Fact label="Entries" value={`${trace.entries.length}${noise ? ` (${noise} scripts, pictures and fonts)` : ''}`} />
+          <Fact label="Entries" value={entriesText} />
           <Fact label="Cookies at the end" value={String(trace.cookies.length)} />
           <Fact label="Complete" value={trace.truncated ? `no — ${trace.dropped} dropped when the book ran out of room` : 'yes'} />
         </div>

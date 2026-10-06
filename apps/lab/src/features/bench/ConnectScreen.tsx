@@ -41,6 +41,70 @@ function useChallengeImage(call: Call, provider: string, sessionId: string | nul
   return url;
 }
 
+/** the run's recording, found in the history once the run has settled (#441 L3) */
+function useRecordingJob(call: Call, view: SessionView | null, wanted: boolean): string | null {
+  const [jobId, setJobId] = useState<string | null>(null);
+  const settled = !!view && TERMINAL.has(view.state);
+  const sessionId = view?.sessionId ?? null;
+  useEffect(() => {
+    if (!wanted || !settled || !sessionId) return undefined;
+    let alive = true;
+    void (async () => {
+      const list = await getJson<JobList>(call, `/lab/jobs?session=${encodeURIComponent(sessionId)}&limit=1`);
+      if (alive && list && list !== 'unreachable') setJobId(list.jobs[0]?.jobId ?? null);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [call, wanted, settled, sessionId]);
+  return jobId;
+}
+
+/** what the start button says */
+function startLabel(sending: boolean, explore: boolean): string {
+  if (sending) return 'starting…';
+  return explore ? 'open' : 'sign in';
+}
+
+/** the form's heading: an explore run starts at an address, a connection signs in */
+function FormIntro({ explore, party }: Readonly<{ explore: boolean; party: ProviderEntry }>) {
+  if (explore) {
+    return (
+      <>
+        <h2>Start at</h2>
+        <p className="hint" data-testid="bench-explore-hint">
+          A browser on a fleet agent opens at this address (a public host — never the NAS&apos;s own network). Drive it through the live view: tap,
+          type, open another address, go back, reload. Everything the browser does is recorded with the secrets taken out; press done when you
+          have seen enough and read the recording in the job history.
+        </p>
+      </>
+    );
+  }
+  return (
+    <>
+      <h2>Sign in</h2>
+      <p className="hint">
+        The manifest&apos;s own form ({party.auth?.flow ?? 'password'}); what you type goes to the party under the lab subject and is kept nowhere here.
+        {party.auth?.challenges?.length ? ` It may ask: ${party.auth.challenges.join(', ')}.` : ''}
+      </p>
+    </>
+  );
+}
+
+/** an explore run's two words: done, or another window */
+function ExploreControls({ sending, send }: Readonly<{ sending: boolean; send: (value: string) => void }>) {
+  return (
+    <div className="row" style={{ marginTop: 8 }}>
+      <button className="btn" data-testid="bench-explore-done" disabled={sending} onClick={() => send('done')}>
+        done — stop recording
+      </button>
+      <button className="btn quiet" data-testid="bench-explore-more" disabled={sending} onClick={() => send('more')}>
+        another 30 minutes
+      </button>
+    </div>
+  );
+}
+
 /**
  * Connect in the lab (#441 L2): the manifest's own sign-in form, the party's
  * config, a label, where the run happens — then the run as it goes: the
@@ -52,7 +116,6 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
   const query = useRouteQuery();
   const [party, setParty] = useState<ProviderEntry | null | 'loading'>('loading');
   const [record, setRecord] = useState(explore);
-  const [recordingJob, setRecordingJob] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentView[]>([]);
   const [inputs, setInputs] = useState<Record<string, string>>(() => {
     const url = explore ? query.get('url') : null;
@@ -70,6 +133,7 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
   const alive = useRef(true);
   const base = `/lab/bench/${encodeURIComponent(provider)}/login`;
   const image = useChallengeImage(call, provider, view?.sessionId ?? null, view?.challenge);
+  const recordingJob = useRecordingJob(call, view, record);
 
   useEffect(() => {
     alive.current = true;
@@ -91,14 +155,6 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
     if (next && next !== 'unreachable') setView(next);
   }, [call, base]);
 
-  useEffect(() => {
-    if (!record || !view || !TERMINAL.has(view.state) || recordingJob) return;
-    void (async () => {
-      const list = await getJson<JobList>(call, `/lab/jobs?session=${encodeURIComponent(view.sessionId)}&limit=1`);
-      if (!alive.current || !list || list === 'unreachable') return;
-      setRecordingJob(list.jobs[0]?.jobId ?? null);
-    })();
-  }, [record, view, recordingJob, call]);
 
   useEffect(() => {
     if (!view || TERMINAL.has(view.state)) return undefined;
@@ -173,19 +229,7 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
 
       {!view && (
         <section className="card" data-testid="bench-connect-form">
-          <h2>{explore ? 'Start at' : 'Sign in'}</h2>
-          {explore ? (
-            <p className="hint" data-testid="bench-explore-hint">
-              A browser on a fleet agent opens at this address (a public host — never the NAS&apos;s own network). Drive it through the live view:
-              tap, type, open another address, go back, reload. Everything the browser does is recorded with the secrets taken out; press done
-              when you have seen enough and read the recording in the job history.
-            </p>
-          ) : (
-            <p className="hint">
-              The manifest&apos;s own form ({party.auth?.flow ?? 'password'}); what you type goes to the party under the lab subject and is kept nowhere here.
-              {party.auth?.challenges?.length ? ` It may ask: ${party.auth.challenges.join(', ')}.` : ''}
-            </p>
-          )}
+          <FormIntro explore={explore} party={party} />
           <div className="facts">
             {fields.map((f) => (
               <label key={`${f.step}:${f.key}`} className="fact">
@@ -239,7 +283,7 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
           </div>
           <div className="row">
             <button className="btn" data-testid="bench-start" disabled={!ready || sending} onClick={() => void start()}>
-              {sending ? 'starting…' : explore ? 'open' : 'sign in'}
+              {startLabel(sending, explore)}
             </button>
           </div>
         </section>
@@ -294,16 +338,7 @@ export function ConnectScreen({ provider, call, busy }: Readonly<{ provider: str
               {challenge.type === 'live_view' && (
                 <>
                   <LiveView call={call} provider={provider} sessionId={view.sessionId} challengeId={challenge.id} navigation={explore} onEnded={() => void refresh(view.sessionId)} />
-                  {explore && (
-                    <div className="row" style={{ marginTop: 8 }}>
-                      <button className="btn" data-testid="bench-explore-done" disabled={sending} onClick={() => void send('done')}>
-                        done — stop recording
-                      </button>
-                      <button className="btn quiet" data-testid="bench-explore-more" disabled={sending} onClick={() => void send('more')}>
-                        another 30 minutes
-                      </button>
-                    </div>
-                  )}
+                  {explore && <ExploreControls sending={sending} send={(value) => void send(value)} />}
                 </>
               )}
               {(challenge.type === 'mfa_code' || (challenge.type === 'image' && challenge.answerKind !== 'taps')) && (

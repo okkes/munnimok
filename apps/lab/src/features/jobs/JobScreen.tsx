@@ -36,6 +36,7 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
   }, [call, id]);
 
   if (job === 'loading') return <p className="hint">loading…</p>;
+  const entriesText = job && job !== 'unreachable' && job.trace ? `${job.trace.entries}${job.trace.truncated ? ` (${job.trace.dropped} dropped — the book ran out of room)` : ''}` : '';
   if (job === null || job === 'unreachable') {
     return (
       <>
@@ -117,7 +118,7 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
             </button>
           </div>
           <div className="facts">
-            <Fact label="Entries" value={`${job.trace.entries}${job.trace.truncated ? ` (${job.trace.dropped} dropped — the book ran out of room)` : ''}`} />
+            <Fact label="Entries" value={entriesText} />
             <Fact label="Size" value={`${(job.trace.bytes / 1024).toFixed(1)} KB packed`} />
             <Fact label="Ran" value={`${when(job.trace.startedAt)} → ${when(job.trace.endedAt)}`} />
             <Fact label="Kept until" value={when(job.trace.expiresAt)} />
