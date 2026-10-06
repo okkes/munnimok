@@ -3,6 +3,7 @@ using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Challenges;
 using Connector.Kit.Hosting.Data;
 using Connector.Kit.Hosting.Infrastructure;
+using Connector.Kit.Hosting.Jobs;
 using Connector.Kit.Hosting.Staging;
 using Connector.Kit.Jobs;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,7 @@ public sealed class ViewBuilder(
     ConnectorDbContext db,
     ChallengeService challenges,
     ResultService results,
+    JobArtifactService artifacts,
     TimeProvider time)
 {
     /// <summary>
@@ -84,6 +86,7 @@ public sealed class ViewBuilder(
             Notes = job is null
                 ? []
                 : ConnectorJson.DeserializeOr<IReadOnlyList<string>>(job.NotesJson, []),
+            ArtifactsJobId = await PendingArtifactsAsync(job, ct),
         };
     }
 
@@ -124,6 +127,7 @@ public sealed class ViewBuilder(
             Error = job.ErrorCode is { } code
                 ? new ConnectorException(code, job.ErrorDetail).ToError()
                 : null,
+            ArtifactsJobId = await PendingArtifactsAsync(job, ct),
         };
     }
 
@@ -157,6 +161,17 @@ public sealed class ViewBuilder(
         var ahead = await db.Jobs.CountAsync(j => j.State == JobState.Queued && j.CreatedAt < job.CreatedAt, ct);
         return view with { Ahead = ahead };
     }
+
+    /// <summary>
+    /// The job whose last picture waits on this person's answer: only a run
+    /// that ended badly, and only while the question is open, so the consumer
+    /// asks beside the error it is showing and never about a run that went
+    /// fine since (#441 L1).
+    /// </summary>
+    private async Task<string?> PendingArtifactsAsync(JobRow? job, CancellationToken ct) =>
+        job is { State: JobState.Failed or JobState.Expired } && await artifacts.IsPendingAsync(job.Id, ct)
+            ? job.Id
+            : null;
 
     private static readonly IReadOnlyDictionary<string, string> Empty =
         new Dictionary<string, string>(StringComparer.Ordinal);

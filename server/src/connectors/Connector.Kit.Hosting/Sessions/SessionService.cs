@@ -320,6 +320,11 @@ public sealed class SessionService(
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.InputsJson, (string?)null)
                 .SetProperty(j => j.MaterialJson, (string?)null), ct);
+        // The question a failed run left for this person goes with the
+        // connection; what they already chose to share stays (#441 L1).
+        await db.JobArtifacts
+            .Where(a => a.SessionId == session.Id && a.Status == ArtifactStatus.Pending)
+            .ExecuteDeleteAsync(ct);
         // The profile row is deliberately left alone. It is not a claim on a
         // session - it names a browser directory on a machine somebody owns,
         // and the trust a bank put in that browser outlives this connection.

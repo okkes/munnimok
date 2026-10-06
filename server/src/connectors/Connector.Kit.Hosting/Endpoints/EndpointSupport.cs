@@ -3,6 +3,7 @@ using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Data;
 using Connector.Kit.Hosting.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Hosting.Endpoints;
@@ -120,9 +121,13 @@ public static class RequestContext
     /// Absent means a person - the historical default, and the one that is
     /// never throttled by a provider's sync interval.
     /// </summary>
-    /// <summary>The trigger as a job row records it: <see cref="JobRow.ScheduleTrigger"/> or <see cref="JobRow.UserTrigger"/>.</summary>
-    public static string TriggerNameOf(HttpContext http) =>
-        TriggerOf(http) == FetchTrigger.Schedule ? JobRow.ScheduleTrigger : JobRow.UserTrigger;
+    /// <summary>The trigger as a job row records it: <see cref="JobRow.UserTrigger"/>, <see cref="JobRow.ScheduleTrigger"/> or <see cref="JobRow.LabTrigger"/>.</summary>
+    public static string TriggerNameOf(HttpContext http) => TriggerOf(http) switch
+    {
+        FetchTrigger.Schedule => JobRow.ScheduleTrigger,
+        FetchTrigger.Lab => JobRow.LabTrigger,
+        _ => JobRow.UserTrigger,
+    };
 
     public static FetchTrigger TriggerOf(HttpContext http)
     {
@@ -135,7 +140,14 @@ public static class RequestContext
         {
             "user" => FetchTrigger.User,
             "schedule" => FetchTrigger.Schedule,
-            _ => throw ConnectorException.InvalidRequest($"{TriggerHeader} must be 'user' or 'schedule'"),
+            // The operator's word, for the operator only: a lab run's failure
+            // pictures are retained without asking anyone, so a consumer that
+            // could claim the word for a person's run would be claiming that
+            // person's consent. In development everybody is the operator.
+            "lab" => http.RequestServices.GetRequiredService<Auth.ConnectorAuth>().IsOperator(http)
+                ? FetchTrigger.Lab
+                : throw ConnectorException.InvalidRequest($"{TriggerHeader} 'lab' needs the admin scope"),
+            _ => throw ConnectorException.InvalidRequest($"{TriggerHeader} must be 'user', 'schedule' or 'lab'"),
         };
     }
 
@@ -184,6 +196,9 @@ public enum FetchTrigger
 
     /// <summary>A schedule. Held to the provider's <c>min_interval_seconds</c> as well.</summary>
     Schedule,
+
+    /// <summary>The operator's lab (#441): paced like a person's, and its failures are the operator's own to read.</summary>
+    Lab,
 }
 
 public static class EventStream

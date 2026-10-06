@@ -45,6 +45,15 @@ public sealed class ConnectorOptions
     /// </remarks>
     public int MaxQueuedJobs { get; set; } = 50;
 
+    /// <summary>
+    /// The most a failed run's screenshot may weigh once decoded (#441 L1). A
+    /// page photographed at a browser's full size is a few hundred kilobytes;
+    /// a picture past this is dropped and the digest kept, so a runaway
+    /// capture cannot make a diagnostics table the biggest thing in the
+    /// database.
+    /// </summary>
+    public int MaxArtifactBytes { get; set; } = 1_048_576;
+
 
     /// <summary>
     /// HMAC key for one-time agent enrollment codes. Generated per stack; a
@@ -327,6 +336,21 @@ public sealed class ConnectorTimeouts
     /// this is only for when it never comes.
     /// </summary>
     public int ResultRetentionDays { get; set; } = 1;
+
+    /// <summary>
+    /// How long a failed run's picture waits for the person to say whether the
+    /// operator may see it (#441 L1). Two days: long enough for somebody who
+    /// closed the app on the error to come back to the question, short enough
+    /// that a question nobody answers does not become a store.
+    /// </summary>
+    public int ArtifactConsentHours { get; set; } = 48;
+
+    /// <summary>
+    /// How long a shared report - or the operator's own run's picture - is
+    /// kept. A month: the time it takes an adapter fix to ship and be seen
+    /// working.
+    /// </summary>
+    public int ArtifactRetentionDays { get; set; } = 30;
 
     public int EnrollmentCodeSeconds { get; set; } = 900;
 

@@ -70,6 +70,13 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
     [InlineData("/v1/{provider}/{resource}/ack", "post", "200", "AckResponse")]
     [InlineData("/v1/{provider}/jobs/{jobId}", "get", "200", "JobResponse")]
     [InlineData("/v1/{provider}/jobs/{jobId}/answer", "post", "200", "JobResponse")]
+    // What a failed run left behind is the person's to give (#441 L1).
+    [InlineData("/v1/{provider}/jobs/{jobId}/artifacts/share", "post", "200", "ArtifactShareResponse")]
+    // The operator's history and health (#441 L1).
+    [InlineData("/v1/admin/jobs", "get", "200", "JobListResponse")]
+    [InlineData("/v1/admin/jobs/{jobId}", "get", "200", "OperatorJobView")]
+    [InlineData("/v1/admin/health", "get", "200", "HealthReportResponse")]
+    [InlineData("/v1/admin/canaries/{id}/run", "post", "200", "CanaryView")]
     // Bring-your-own agents, from the consumer's side.
     [InlineData("/v1/agents", "get", "200", "AgentListResponse")]
     [InlineData("/v1/agents/enrollment", "post", "200", "AgentEnrollmentResponse")]
@@ -437,8 +444,10 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         // two fleet routes: list every agent, revoke any. 45 since the lookup
         // field's options and logo and the operator's remote inventory (#414).
         // 53 since the hosted private agents (#420 A2): four routes for the
-        // person, four for the operator.
-        Assert.Equal(53, operations);
+        // person, four for the operator. 60 since the operator's history and
+        // health (#441 L1): the person's share and decline, the job list and
+        // one job, the picture, the health report, the canary run now.
+        Assert.Equal(60, operations);
     }
 
     [Theory]

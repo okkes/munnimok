@@ -99,6 +99,7 @@ public static class ConnectorPlatform
         services.AddScoped<ProviderStatusService>();
         services.AddScoped<SyncInterval>();
         services.AddScoped<CanaryService>();
+        services.AddScoped<JobArtifactService>();
         services.AddScoped<JobOutcomeService>();
         services.AddScoped<ViewBuilder>();
         services.AddScoped<FetchRunner>();
@@ -130,7 +131,11 @@ public static class ConnectorPlatform
         // the "this host runs the background work" role, and a deployment that
         // wanted one without the other has not been asked for. A test host
         // turns both off and drives the sweep by hand.
-        if (platform.RunExpiryService) services.AddHostedService<CanaryScheduler>();
+        // A singleton in its own right, so the operator's "run it now" reaches
+        // the same scheduler the timer drives (#441 L1); hosted only where the
+        // background work runs.
+        services.AddSingleton<CanaryScheduler>();
+        if (platform.RunExpiryService) services.AddHostedService(sp => sp.GetRequiredService<CanaryScheduler>());
 
         if (options.IsProduction)
         {
@@ -210,6 +215,7 @@ public static class ConnectorPlatform
         JobEndpoints.Map(api);
         AgentAdminEndpoints.Map(api, admin);
         PrivateAgentEndpoints.Map(api, admin);
+        OperatorEndpoints.Map(admin);
 
         return app;
     }

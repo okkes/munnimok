@@ -149,6 +149,14 @@ public sealed record SessionResponse
     /// </para>
     /// </remarks>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>
+    /// The failed sign-in whose last picture waits on this person's answer
+    /// (#441 L1): the consumer asks "report this failure?" beside the error
+    /// and posts the answer to <c>/jobs/{jobId}/artifacts/share</c>, or
+    /// deletes <c>/jobs/{jobId}/artifacts</c>. Null when nothing waits.
+    /// </summary>
+    public string? ArtifactsJobId { get; init; }
 }
 
 public sealed record ChallengeView
@@ -387,6 +395,9 @@ public sealed record JobResponse
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     public ConnectorError? Error { get; init; }
+
+    /// <summary>This job, when its last picture waits on the person's answer; see <see cref="SessionResponse.ArtifactsJobId"/>.</summary>
+    public string? ArtifactsJobId { get; init; }
 }
 
 public sealed record AckRequest
@@ -491,6 +502,22 @@ public sealed record CanaryView
 
     /// <summary>Operator prose. Never a record, and never a user's copy key.</summary>
     public string? Verdict { get; init; }
+
+    /// <summary>The row as the operator sees it: everything but the bundle, which has no field here.</summary>
+    public static CanaryView From(CanaryRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return new CanaryView
+        {
+            ProviderId = row.ProviderId,
+            Resource = row.ResourceId,
+            IntervalMinutes = row.IntervalMinutes,
+            LastRunAt = row.LastRunAt,
+            LastJobId = row.LastJobId,
+            Intact = row.LastIntact,
+            Verdict = row.LastVerdict,
+        };
+    }
 }
 
 public sealed record CanaryListResponse
@@ -702,4 +729,158 @@ public sealed record AgentChallengeRequest
 public sealed record RenewResponse
 {
     public required DateTimeOffset LeaseExpiresAt { get; init; }
+}
+
+// ---- the operator's history and health (#441 L1) ---------------------------
+
+/// <summary>The answer to a share: what is kept and until when. Never the picture - that is the operator's to read, under <c>/admin</c>.</summary>
+public sealed record ArtifactShareResponse
+{
+    public required string JobId { get; init; }
+
+    public required DateTimeOffset ExpiresAt { get; init; }
+}
+
+/// <summary>
+/// A job as the operator reads it: every column that says what happened,
+/// and none of the ones that say what was typed. Inputs and material are
+/// not on this record and have no field to arrive through.
+/// </summary>
+public sealed record OperatorJobView
+{
+    public required string JobId { get; init; }
+
+    public required string SessionId { get; init; }
+
+    /// <summary>The session's pseudonymous subject; the consumer that minted it can say whose.</summary>
+    public required string Subject { get; init; }
+
+    public required string ProviderId { get; init; }
+
+    public required JobKind Kind { get; init; }
+
+    public required JobState State { get; init; }
+
+    public string? Resource { get; init; }
+
+    /// <summary><c>user</c>, <c>schedule</c>, <c>lab</c>, <c>canary</c>, or null for a run nobody in particular asked for.</summary>
+    public string? Trigger { get; init; }
+
+    public required ProgressView Progress { get; init; }
+
+    public int Attempts { get; init; }
+
+    public bool CredentialSubmitted { get; init; }
+
+    public bool Complete { get; init; }
+
+    /// <summary>The agent that last held the lease.</summary>
+    public string? AgentId { get; init; }
+
+    public string? ProfileId { get; init; }
+
+    public bool FleetOnly { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+
+    public DateTimeOffset UpdatedAt { get; init; }
+
+    public ConnectorError? Error { get; init; }
+
+    /// <summary>What the adapter said when it gave up. Operator-facing prose, never shown to an end user.</summary>
+    public string? ErrorDetail { get; init; }
+
+    public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>The validated request: the resource and its window, never raw caller input.</summary>
+    public JsonNode? Params { get; init; }
+
+    public IReadOnlyDictionary<string, string>? Config { get; init; }
+
+    /// <summary><c>none</c>, <c>pending</c> (held for the person's answer; nothing readable), or <c>retained</c>.</summary>
+    public required string Artifacts { get; init; }
+
+    /// <summary>Only once retained.</summary>
+    public string? DomDigest { get; init; }
+
+    /// <summary>Whether <c>/admin/jobs/{jobId}/artifacts/screenshot</c> has a picture to serve.</summary>
+    public bool HasScreenshot { get; init; }
+
+    public DateTimeOffset? ArtifactsExpireAt { get; init; }
+}
+
+public sealed record JobListResponse
+{
+    public required IReadOnlyList<OperatorJobView> Jobs { get; init; }
+
+    /// <summary>True when the limit cut the list: narrow the filters, or ask again with <c>before</c> at the last row's moment.</summary>
+    public bool Truncated { get; init; }
+}
+
+/// <summary>Per-provider health: what happened to its runs lately, and what that did to its people.</summary>
+public sealed record HealthReportResponse
+{
+    public required DateTimeOffset GeneratedAt { get; init; }
+
+    public required IReadOnlyList<ProviderHealthView> Providers { get; init; }
+}
+
+public sealed record ProviderHealthView
+{
+    public required string ProviderId { get; init; }
+
+    public required ProviderStatus Status { get; init; }
+
+    /// <summary>Keyed by window: <c>24h</c>, <c>7d</c>, <c>30d</c>.</summary>
+    public required IReadOnlyDictionary<string, HealthWindow> Windows { get; init; }
+
+    /// <summary>Within the month the report covers; null when no run succeeded in it.</summary>
+    public DateTimeOffset? LastSuccessAt { get; init; }
+
+    public HealthFailure? LastFailure { get; init; }
+
+    /// <summary>Sessions by state (<c>active</c>, <c>needs_reauth</c>, <c>blocked</c>, <c>awaiting_input</c>, ...), every state the table holds.</summary>
+    public required IReadOnlyDictionary<string, int> Sessions { get; init; }
+
+    public CanaryView? Canary { get; init; }
+
+    /// <summary>Failure reports the operator can open now.</summary>
+    public int Reports { get; init; }
+
+    /// <summary>Pictures still waiting on a person's answer. A count and nothing else.</summary>
+    public int PendingReports { get; init; }
+}
+
+public sealed record HealthWindow
+{
+    public int Total { get; init; }
+
+    public int Succeeded { get; init; }
+
+    public int Failed { get; init; }
+
+    public int Expired { get; init; }
+
+    /// <summary>Still queued, leased, running or waiting for an answer.</summary>
+    public int Open { get; init; }
+
+    /// <summary>Failures by wire code.</summary>
+    public required IReadOnlyDictionary<string, int> ByCode { get; init; }
+
+    /// <summary>Runs by who asked: <c>user</c>, <c>schedule</c>, <c>lab</c>, <c>canary</c>, <c>other</c>.</summary>
+    public required IReadOnlyDictionary<string, int> ByTrigger { get; init; }
+
+    /// <summary>Distinct sessions of people - not the operator's runs - whose run failed or expired.</summary>
+    public int PeopleAffected { get; init; }
+}
+
+public sealed record HealthFailure
+{
+    public required string JobId { get; init; }
+
+    public required string Code { get; init; }
+
+    public string? Trigger { get; init; }
+
+    public required DateTimeOffset At { get; init; }
 }

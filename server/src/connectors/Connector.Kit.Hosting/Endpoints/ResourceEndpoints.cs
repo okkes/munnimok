@@ -210,6 +210,18 @@ public sealed class FetchRunner(
             RequestContext.TriggerOf(http), manifest, session.Subject, JobKind.Fetch, resource.Id, ct);
         await RequireProfileHolderOnlineAsync(session, ct);
 
+        // A fetch of this resource already in flight for this connection IS
+        // the fetch the caller gets (prod 2026-10-06: a phone that kept
+        // reopening the app queued four Amazon fetches in twelve minutes;
+        // one ran for half an hour while the other three waited behind the
+        // per-session lease and died as agent_unavailable). The handle is
+        // the same contract as a fresh 202, and whichever device collects
+        // it first collects it.
+        if (await InFlightAsync(session.Id, resource.Id, ct) is { } inFlight)
+        {
+            return ConnectorResults.Json(await views.AcceptedAsync(inFlight, ct), StatusCodes.Status202Accepted);
+        }
+
         var job = await queue.EnqueueAsync(new NewJob
         {
             SessionId = session.Id,
@@ -266,6 +278,23 @@ public sealed class FetchRunner(
                 return ConnectorResults.Json(await views.AcceptedAsync(settled, ct), StatusCodes.Status202Accepted);
         }
     }
+
+    /// <summary>
+    /// The newest fetch of a resource that is still queued, leased, running
+    /// or waiting for an answer, for this session; null when none is.
+    /// </summary>
+    private Task<JobRow?> InFlightAsync(string sessionId, string resourceId, CancellationToken ct) =>
+        db.Jobs.AsNoTracking()
+            .Where(j => j.SessionId == sessionId
+                        && j.Kind == JobKind.Fetch
+                        && j.ResourceId == resourceId
+                        && (j.State == JobState.Queued
+                            || j.State == JobState.Leased
+                            || j.State == JobState.Running
+                            || j.State == JobState.AwaitingInput))
+            .OrderByDescending(j => j.CreatedAt)
+            .ThenByDescending(j => j.Id)
+            .FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// Refuses, now, a fetch that nobody could ever take.

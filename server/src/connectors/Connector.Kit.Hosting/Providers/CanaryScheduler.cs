@@ -1,6 +1,7 @@
 using Connector.Kit.Adapters;
 using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Hosting.Endpoints;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Hosting.Jobs;
 using Connector.Kit.Hosting.Sessions;
@@ -184,55 +185,96 @@ public sealed class CanaryScheduler(
 
         if (due.Count == 0) return;
 
-        var db = provider.GetRequiredService<ConnectorDbContext>();
         var registry = provider.GetRequiredService<IProviderRegistry>();
-        var statuses = provider.GetRequiredService<ProviderStatusService>();
         var sessions = provider.GetRequiredService<SessionService>();
         var queue = provider.GetRequiredService<ILeasedJobQueue>();
         var inline = provider.GetRequiredService<IInlineJobRunner>();
 
         foreach (var canary in due)
         {
-            // Still in flight from an earlier tick. DueAsync goes by the clock
-            // alone, and a provider slower than its own interval would
-            // otherwise be given a second run every tick for ever.
-            if (canary.LastJobId is { } previous && canary.LastIntact is null)
+            if (await HoldAsync(provider, canary, ct) is { } hold)
             {
-                var open = await db.Jobs.AsNoTracking().AnyAsync(
-                    j => j.Id == previous
-                         && (j.State == JobState.Queued
-                             || j.State == JobState.Leased
-                             || j.State == JobState.Running
-                             || j.State == JobState.AwaitingInput),
-                    ct);
-
-                if (open) continue;
-            }
-
-            if (!registry.TryGetManifest(canary.ProviderId, out var manifest))
-            {
-                logger.LogWarning(
-                    "canary for {Provider} names a provider this build does not have", canary.ProviderId);
+                // A run still in flight is the ordinary case between two ticks
+                // and not worth a line a minute; the other holds are.
+                if (!hold.Quiet)
+                {
+                    logger.LogInformation("canary for {Provider} skipped: {Reason}", canary.ProviderId, hold.Reason);
+                }
 
                 continue;
             }
 
-            // A paused provider is an operator saying "stop", and a canary is
-            // work. Running one anyway would keep hitting a provider somebody
-            // has deliberately backed away from - which is the situation the
-            // kill switch exists for.
-            var status = await statuses.GetAsync(manifest.Id, ct);
-
-            if (!status.AcceptsWork)
-            {
-                logger.LogInformation(
-                    "canary for {Provider} skipped: the provider is {State}", manifest.Id, status.State);
-
-                continue;
-            }
-
-            await StartAsync(canary, manifest, sessions, queue, inline, canaries, ct);
+            await StartAsync(canary, registry.RequireManifest(canary.ProviderId), sessions, queue, inline, canaries, ct);
         }
+    }
+
+    /// <summary>
+    /// The operator's "run it now" (#441 L1): the start the schedule would
+    /// make, without waiting for the interval. The same holds apply - a run
+    /// still in flight, a provider this build lacks, a provider somebody
+    /// paused - and come back as refusals rather than silence, because a
+    /// person is waiting for the answer.
+    /// </summary>
+    public async Task<CanaryView> RunNowAsync(string providerId, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var provider = scope.ServiceProvider;
+        var db = provider.GetRequiredService<ConnectorDbContext>();
+
+        var canary = await db.Canaries.FirstOrDefaultAsync(c => c.ProviderId == providerId, ct)
+                     ?? throw ConnectorException.Unsupported($"no canary for '{providerId}'");
+
+        if (await HoldAsync(provider, canary, ct) is { } hold)
+        {
+            throw ConnectorException.InvalidRequest($"the canary for '{providerId}' cannot run now: {hold.Reason}");
+        }
+
+        await StartAsync(
+            canary,
+            provider.GetRequiredService<IProviderRegistry>().RequireManifest(canary.ProviderId),
+            provider.GetRequiredService<SessionService>(),
+            provider.GetRequiredService<ILeasedJobQueue>(),
+            provider.GetRequiredService<IInlineJobRunner>(),
+            provider.GetRequiredService<CanaryService>(),
+            ct);
+
+        return CanaryView.From(canary);
+    }
+
+    private sealed record Hold(string Reason, bool Quiet);
+
+    /// <summary>
+    /// Why a canary must not start right now, or null. Still in flight from an
+    /// earlier tick - DueAsync goes by the clock alone, and a provider slower
+    /// than its own interval would otherwise be given a second run every tick
+    /// for ever; a provider this build does not have; a paused provider - an
+    /// operator saying "stop", and a canary is work, so running one anyway
+    /// would keep hitting a provider somebody has deliberately backed away
+    /// from, which is the situation the kill switch exists for.
+    /// </summary>
+    private static async Task<Hold?> HoldAsync(IServiceProvider provider, CanaryRow canary, CancellationToken ct)
+    {
+        if (canary.LastJobId is { } previous && canary.LastIntact is null)
+        {
+            var db = provider.GetRequiredService<ConnectorDbContext>();
+            var open = await db.Jobs.AsNoTracking().AnyAsync(
+                j => j.Id == previous
+                     && (j.State == JobState.Queued
+                         || j.State == JobState.Leased
+                         || j.State == JobState.Running
+                         || j.State == JobState.AwaitingInput),
+                ct);
+
+            if (open) return new Hold("its last run is still in flight", Quiet: true);
+        }
+
+        if (!provider.GetRequiredService<IProviderRegistry>().TryGetManifest(canary.ProviderId, out _))
+        {
+            return new Hold("it names a provider this build does not have", Quiet: false);
+        }
+
+        var status = await provider.GetRequiredService<ProviderStatusService>().GetAsync(canary.ProviderId, ct);
+        return status.AcceptsWork ? null : new Hold($"the provider is {status.State}", Quiet: false);
     }
 
     private async Task StartAsync(
@@ -272,6 +314,9 @@ public sealed class CanaryScheduler(
                 // the fetches it is a canary FOR would be measuring a machine
                 // nobody's real work goes to.
                 FleetOnly = opened.Session.FleetOnly,
+                // The operator's own run: its failure pictures are retained
+                // without asking, and health counts it apart from people's.
+                Trigger = JobRow.CanaryTrigger,
             }, ct);
 
             canary.LastJobId = job.Id;

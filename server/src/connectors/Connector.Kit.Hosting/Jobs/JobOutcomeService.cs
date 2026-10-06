@@ -11,7 +11,6 @@ using Connector.Kit.Jobs;
 using Connector.Kit.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Jobs;
 
@@ -30,8 +29,8 @@ public sealed class JobOutcomeService(
     SessionService sessions,
     ResultService results,
     ProviderStatusService providerStatus,
+    JobArtifactService artifactStore,
     LiveChannel live,
-    IOptions<ConnectorOptions> options,
     ILogger<JobOutcomeService> logger)
 {
     private static readonly IReadOnlyDictionary<string, string> EmptyInputs =
@@ -45,25 +44,6 @@ public sealed class JobOutcomeService(
     /// </summary>
     internal static readonly IReadOnlySet<ErrorCode> PagesTheOperator =
         new HashSet<ErrorCode> { ErrorCode.Internal, ErrorCode.ProviderChanged, ErrorCode.ReconciliationFailed };
-
-    /// <summary>
-    /// Where a failed job's picture goes, outside production.
-    ///
-    /// It used to go nowhere. The comment above the code that dropped it said
-    /// "artifacts are what make a broken adapter fixable" and then logged the
-    /// NUMBER OF BASE64 CHARACTERS, which is the one fact about a screenshot
-    /// that cannot fix anything. Diagnosing a login that fails only inside a
-    /// pooled browser therefore meant reasoning from a URL and spending
-    /// somebody's real sign-in on each guess.
-    ///
-    /// Under the temp directory rather than anywhere the service serves, and
-    /// written only when <see cref="ConnectorOptions.IsProduction"/> is false:
-    /// a screenshot of a login page is redacted but it is still a picture of
-    /// somebody's account, and it has no business living next to the API in an
-    /// environment holding real ones.
-    /// </summary>
-    internal static string ArtifactDirectory { get; } =
-        Path.Combine(Path.GetTempPath(), "connector-artifacts");
 
     /// <summary>
     /// Records success: stage the records, seal a new bundle where the
@@ -185,7 +165,9 @@ public sealed class JobOutcomeService(
             await db.SaveChangesAsync(ct);
         }
 
-        if (failure.Artifacts is { } artifacts) await KeepAsync(job, artifacts, ct);
+        // What the run left behind, kept by the rules of whose run it was
+        // (#441 L1): the operator's own at once, a person's pending their word.
+        if (failure.Artifacts is { } artifacts) await artifactStore.KeepAsync(job, artifacts, ct);
 
         if (code == ErrorCode.ProviderChanged)
         {
@@ -245,51 +227,6 @@ public sealed class JobOutcomeService(
     /// that is still alive keeps its answer; one that is finished has no use
     /// for it.
     /// </summary>
-    /// <summary>
-    /// Writes a failed job's picture where an operator can look at it.
-    ///
-    /// Never in production, and never fatal: this is diagnostics, and a full
-    /// disk or a read-only filesystem must not turn a job that already failed
-    /// into a request that also fails. The digest is kept beside the image
-    /// because it is the part that survives redaction - two failures with the
-    /// same digest are the same page, whatever the pictures look like.
-    /// </summary>
-    internal async Task KeepAsync(JobRow job, FailureArtifacts artifacts, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(job);
-        ArgumentNullException.ThrowIfNull(artifacts);
-
-        if (options.Value.IsProduction)
-        {
-            logger.LogWarning("job {JobId} failure artifacts: dom {Digest}, screenshot {Bytes} b64 chars",
-                job.Id, artifacts.DomDigest ?? "-", artifacts.ScreenshotBase64?.Length ?? 0);
-            return;
-        }
-
-        try
-        {
-            Directory.CreateDirectory(ArtifactDirectory);
-            var stem = Path.Combine(ArtifactDirectory, $"{job.ProviderId}-{job.Id}");
-
-            if (artifacts.ScreenshotBase64 is { Length: > 0 } encoded)
-            {
-                await File.WriteAllBytesAsync(stem + ".png", Convert.FromBase64String(encoded), ct);
-            }
-
-            await File.WriteAllTextAsync(
-                stem + ".txt",
-                $"job {job.Id}\nprovider {job.ProviderId}\nkind {job.Kind}\ncode {job.ErrorCode}\n"
-                + $"detail {job.ErrorDetail}\ndom {artifacts.DomDigest ?? "-"}\n",
-                ct);
-
-            logger.LogWarning("job {JobId} failure artifacts written to {Stem}.png/.txt", job.Id, stem);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
-        {
-            logger.LogWarning(ex, "job {JobId}: failure artifacts could not be written", job.Id);
-        }
-    }
-
     private Task<int> PurgeChallengeAnswersAsync(string jobId, CancellationToken ct) =>
         db.Challenges
             .Where(c => c.JobId == jobId && c.AnswerValue != null)
