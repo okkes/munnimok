@@ -120,6 +120,81 @@ public class ConnectorJobTests(ConnectorApiFactory factory) : IClassFixture<Conn
 
     // ── helpers ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// #441 L1: what a failed run left behind is the person's to give. The
+    /// picture is seeded on a job of theirs (an agent would have sent it);
+    /// yes relays the share under their subject and the operator may then
+    /// read it through the lab, no deletes it, and somebody else's yes is
+    /// refused the way an unknown job is.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_runs_picture_is_shared_or_declined_by_the_person_it_belongs_to()
+    {
+        const string sub = "report-giver";
+        using var client = factory.ClientFor(sub);
+        using var operatorClient = factory.ClientFor("the-operator", scope: "openid profile admin");
+        var bundle = await LoginAsync(client, SlowStore, "conn-report");
+
+        using var sync = await client.PostAsJsonAsync($"/connectors/{SlowStore}/sync", new { connectionId = "conn-report", bundle, since = "2026-06-01" });
+        var accepted = await sync.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(sync.StatusCode == HttpStatusCode.Accepted, accepted!.ToJsonString());
+        var jobId = accepted["jobId"]!.GetValue<string>();
+        var sessionId = accepted["sessionId"]!.GetValue<string>();
+        var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 1, 2, 3 };
+        await factory.ControlPlane.KeepPendingArtifactsAsync(jobId, sessionId, SlowStore, png);
+
+        // pending: the lab sees that something waits, and no picture
+        var pending = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs/{jobId}");
+        Assert.Equal("pending", pending!["artifacts"]!.GetValue<string>());
+        Assert.False(pending["hasScreenshot"]!.GetValue<bool>());
+        using (var hidden = await operatorClient.GetAsync($"/lab/jobs/{jobId}/artifacts/screenshot"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, hidden.StatusCode);
+        }
+
+        // somebody else cannot give it away
+        using var stranger = factory.ClientFor("a-stranger");
+        using (var refused = await stranger.PostAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts/share", null))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        }
+
+        // the person says yes
+        using var shared = await client.PostAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts/share", null);
+        var answer = await shared.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(shared.StatusCode == HttpStatusCode.OK, answer!.ToJsonString());
+        Assert.Equal(jobId, answer["jobId"]!.GetValue<string>());
+        Assert.NotNull(answer["expiresAt"]);
+
+        var retained = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs/{jobId}");
+        Assert.Equal("retained", retained!["artifacts"]!.GetValue<string>());
+        Assert.Equal("sha256:seeded", retained["domDigest"]!.GetValue<string>());
+        using (var picture = await operatorClient.GetAsync($"/lab/jobs/{jobId}/artifacts/screenshot"))
+        {
+            Assert.Equal(HttpStatusCode.OK, picture.StatusCode);
+            Assert.Equal("image/png", picture.Content.Headers.ContentType?.MediaType);
+            Assert.Equal(png, await picture.Content.ReadAsByteArrayAsync());
+        }
+
+        // and a change of mind deletes it
+        using var declined = await client.DeleteAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts");
+        Assert.Equal(HttpStatusCode.NoContent, declined.StatusCode);
+        Assert.Equal("none", (await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/jobs/{jobId}"))!["artifacts"]!.GetValue<string>());
+
+        // a scheduled run's open question on the binding closes with the answer
+        factory.Write(db =>
+        {
+            var row = db.ConnectorSessions.Single(s => s.Id == sessionId);
+            row.PendingArtifactsJobId = jobId;
+        });
+        var before = await client.GetFromJsonAsync<JsonArray>("/connectors/sessions");
+        Assert.Equal(jobId, before!.Single(s => s!["sessionId"]!.GetValue<string>() == sessionId)!["artifactsJobId"]!.GetValue<string>());
+        using var again = await client.DeleteAsync($"/connectors/{SlowStore}/jobs/{jobId}/artifacts");
+        Assert.Equal(HttpStatusCode.NoContent, again.StatusCode);
+        var after = await client.GetFromJsonAsync<JsonArray>("/connectors/sessions");
+        Assert.Null(after!.Single(s => s!["sessionId"]!.GetValue<string>() == sessionId)!["artifactsJobId"]);
+    }
+
     private static async Task<string> LoginAsync(HttpClient client, string provider, string connectionId)
     {
         using var response = await client.PostAsJsonAsync($"/connectors/{provider}/login", new { connectionId, inputs = Credentials });

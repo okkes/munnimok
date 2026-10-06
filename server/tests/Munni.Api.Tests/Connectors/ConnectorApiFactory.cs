@@ -65,6 +65,31 @@ public sealed class ControlPlaneHost : IAsyncDisposable
         return body!["agent_id"]!.GetValue<string>();
     }
 
+    /// <summary>
+    /// What a failed run would have left behind (#441 L1), written straight
+    /// into the control plane as the outcome service writes it: a picture
+    /// held pending the person's word. The relay under test never writes
+    /// these - an agent does - so the row is seeded.
+    /// </summary>
+    public async Task KeepPendingArtifactsAsync(string jobId, string sessionId, string providerId, byte[] png)
+    {
+        using var scope = _app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Connector.Kit.Hosting.Data.ConnectorDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        db.JobArtifacts.Add(new Connector.Kit.Hosting.Data.JobArtifactRow
+        {
+            JobId = jobId,
+            SessionId = sessionId,
+            ProviderId = providerId,
+            Status = Connector.Kit.Hosting.Data.ArtifactStatus.Pending,
+            Screenshot = png,
+            DomDigest = "sha256:seeded",
+            CapturedAt = now,
+            ExpiresAt = now.AddHours(48),
+        });
+        await db.SaveChangesAsync();
+    }
+
     public static async Task<ControlPlaneHost> StartAsync(int fetchWaitSeconds = 1)
     {
         var root = Path.Combine(Path.GetTempPath(), "munni-relay-tests", Guid.NewGuid().ToString("N"));
@@ -191,5 +216,14 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
     {
         using var scope = Services.CreateScope();
         return query(scope.ServiceProvider.GetRequiredService<AppDbContext>());
+    }
+
+    /// <summary>Puts a row into a state only the relay's own scheduler would reach, through a fresh scope.</summary>
+    public void Write(Action<AppDbContext> change)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        change(db);
+        db.SaveChanges();
     }
 }

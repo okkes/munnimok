@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
@@ -56,6 +57,12 @@ public static class ConnectorLabEndpoints
         lab.MapPost("/private-agents/requests/{requestId}/deny", DenyPrivateAgent);
         lab.MapPost("/private-agents/{agentId}/release", ReleasePrivateAgent);
         lab.MapGet("/canaries", Canaries);
+        // L1: the job history with who ran what, one job, a shared picture, the health report, a canary run now
+        lab.MapGet("/jobs", Jobs);
+        lab.MapGet("/jobs/{jobId}", Job);
+        lab.MapGet("/jobs/{jobId}/artifacts/screenshot", JobScreenshot);
+        lab.MapGet("/health", Health);
+        lab.MapPost("/canaries/{providerId}/run", RunCanary);
         lab.MapGet("/users/{sub}/sessions", UserSessions);
 
         // the cockpit's read-only view of the designated environment (§15.6): the
@@ -191,18 +198,93 @@ public static class ConnectorLabEndpoints
         var reply = await relay.Client.GetAsync("v1/admin/private-agents", new ConnectorCall(), ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
         var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
+        await NameSubjectsAsync(relay, (view["requests"] as JsonArray ?? []).Concat(view["slots"] as JsonArray ?? []), ct);
+        return Results.Json(view);
+    }
 
+    /// <summary>
+    /// `who` on every row that carries a `subject`: the pseudonym mapped
+    /// back to the person's name or e-mail, computed per call and stored
+    /// nowhere. The lab's own subject maps to nobody, which is right.
+    /// </summary>
+    private static async Task NameSubjectsAsync(ConnectorRelay relay, IEnumerable<JsonNode?> rows, CancellationToken ct)
+    {
         var users = await relay.Db.Users.Select(u => new { u.Id, u.Email, u.DisplayName }).ToListAsync(ct);
         var who = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var user in users) who[relay.Minter.For(user.Id)] = user.DisplayName ?? user.Email ?? user.Id.ToString();
 
-        foreach (var node in (view["requests"] as JsonArray ?? []).Concat(view["slots"] as JsonArray ?? []))
+        foreach (var node in rows)
         {
             if (node is not JsonObject row) continue;
             row["who"] = row["subject"]?.GetValue<string>() is { } subject && who.TryGetValue(subject, out var name) ? name : null;
         }
+    }
 
+    /// <summary>
+    /// The control plane's job history (#441 L1) with the query passed
+    /// through — provider, session, state, kind, trigger, code, since,
+    /// before, limit — plus `user=&lt;sub&gt;`, which the relay turns into that
+    /// person's subject, and `who` on every row. Never inputs, never
+    /// material: the control plane's view has no field for them.
+    /// </summary>
+    private static async Task<IResult> Jobs(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var query = QueryHelpers.ParseQuery(http.Request.QueryString.Value);
+        var forward = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var (key, values) in query)
+        {
+            if (key != "user") forward[key] = values.ToString();
+        }
+
+        if (query.TryGetValue("user", out var wanted) && wanted.ToString() is { Length: > 0 } sub)
+        {
+            var user = await relay.Db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Sub == sub, ct);
+            if (user is null) return Results.NotFound();
+            forward["subject"] = relay.Minter.For(user.Id);
+        }
+
+        var reply = await relay.Client.GetAsync(QueryHelpers.AddQueryString("v1/admin/jobs", forward), new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
+        await NameSubjectsAsync(relay, view["jobs"] as JsonArray ?? [], ct);
         return Results.Json(view);
+    }
+
+    private static async Task<IResult> Job(string jobId, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.GetAsync($"v1/admin/jobs/{jobId}", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
+        await NameSubjectsAsync(relay, [view], ct);
+        return Results.Json(view);
+    }
+
+    /// <summary>A picture the operator may see, as the control plane serves it: bytes, never cached. The envelope while nothing may be seen.</summary>
+    private static async Task<IResult> JobScreenshot(string jobId, HttpContext http, ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync($"v1/admin/jobs/{jobId}/artifacts/screenshot", new ConnectorCall(), ct);
+        if (!reply.IsSuccess || reply.Bytes is null) return ConnectorRelayEndpoints.Relay(http, reply);
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
+    }
+
+    /// <summary>Per-provider health: the month's runs by outcome, code and trigger, the people affected, the sessions, the canary, the reports.</summary>
+    private static async Task<IResult> Health(ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync("v1/admin/health", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
+    }
+
+    private static async Task<IResult> RunCanary(string providerId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var reply = await client.PostAsync($"v1/admin/canaries/{providerId}/run", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} ran the canary for connector provider {Provider}", OperatorOf(http), providerId);
+        }
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
 
     private static Task<IResult> ApprovePrivateAgent(string requestId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct) =>

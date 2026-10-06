@@ -51,4 +51,11 @@ public class ConnectorSession
 
     /// <summary>A party's <c>retry_after</c> on a rate-limited refusal (§15): the scheduler waits it out before the next attempt.</summary>
     public DateTimeOffset? ScheduleNotBefore { get; set; }
+
+    /// <summary>
+    /// The failed job whose last picture waits on this person's answer
+    /// (#441 L1), as the relay's own scheduled sync saw it — the hub asks
+    /// "report this failure?", the answer clears it. Null when nothing waits.
+    /// </summary>
+    public string? PendingArtifactsJobId { get; set; }
 }
