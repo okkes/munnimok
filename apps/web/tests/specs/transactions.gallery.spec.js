@@ -110,8 +110,10 @@ for (const V of VARIANTS) {
     // demo's relative-dated rows drift past absolute-dated ones over
     // time, so "the first row" rots with the calendar
     await page.locator('[data-testid="reimb-link-list"] [data-testid^="tx-row-"]').filter({ hasText: 'Demo Corp' }).first().click();
-    await expect(page.locator('[data-testid="reimb-amount"]')).toHaveValue('28,99'); // clamped prefill
-    await page.fill('[data-testid="reimb-amount"]', '10,00');
+    // 2026-10-06 (user): a tap PICKS the row and opens its amount right under it (several can be picked at once)
+    const amount = page.locator('[data-testid^="reimb-amount-"]').first();
+    await expect(amount).toHaveValue('28,99'); // clamped prefill
+    await amount.fill('10,00');
     await page.click('[data-testid="reimb-save"]');
     await page.waitForTimeout(500);
     // net −18.99, gross struck through, summary line

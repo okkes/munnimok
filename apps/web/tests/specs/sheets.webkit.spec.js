@@ -44,7 +44,7 @@ test(`sheet-w1 a tall sheet opens to its full height [${V.id}]`, async ({ browse
   await ctx.close();
 });
 
-test(`sheet-w2 a stacked child keeps the depth step-down [${V.id}]`, async ({ browser }) => {
+test(`sheet-w2 a stacked category picker takes the full height above its parent [${V.id}]`, async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: V.vp, deviceScaleFactor: V.dpr, locale: 'en-US' });
   const page = await ctx.newPage();
   await base(page, V, { demo: true });
@@ -54,10 +54,12 @@ test(`sheet-w2 a stacked child keeps the depth step-down [${V.id}]`, async ({ br
   const sheets = page.locator('.react-modal-sheet-container');
   await expect(sheets).toHaveCount(2);
   // stacked sheets step down 28px per level (Sheet.tsx depth cue) — the
-  // child must be full-height too, just one step shorter than its parent
+  // category picker is the one exception (user 2026-10-06): it takes the
+  // whole height, so it stands AT LEAST as tall as the form under it
   await expect.poll(async () => (await sheets.nth(1).boundingBox())?.height ?? 0).toBeGreaterThan(450);
   const parent = (await sheets.nth(0).boundingBox())?.height ?? 0;
   const child = (await sheets.nth(1).boundingBox())?.height ?? 0;
-  expect(Math.abs(parent - 28 - child)).toBeLessThanOrEqual(2);
+  expect(child).toBeGreaterThanOrEqual(parent - 2);
+  expect(child).toBeLessThanOrEqual(V.vp.height);
   await ctx.close();
 });
