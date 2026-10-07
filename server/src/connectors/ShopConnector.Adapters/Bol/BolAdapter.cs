@@ -419,9 +419,9 @@ public sealed class BolAdapter : IProviderAdapter
     /// What a session learned at sign-in, laid over the configured options:
     /// the page's hash, and since 2026-10-07 (prod) the page's own request.
     /// </summary>
-    private sealed record BolLearned(BolOptions Options, string? Hash, BolPageRequest? Replay)
+    private sealed record BolLearned(BolOptions Options, string? Hash, BolPageRequest? PageRequest)
     {
-        public bool Any => Hash is not null || Replay is not null;
+        public bool Any => Hash is not null || PageRequest is not null;
     }
 
     private BolLearned Learned(SessionMaterial? material)
@@ -441,7 +441,7 @@ public sealed class BolAdapter : IProviderAdapter
     /// <summary>The fetch's note: which hash it sends, and whether the body is the page's own or the rebuilt shape.</summary>
     private static string FetchNote(BolLearned learned)
     {
-        var body = learned.Replay is null
+        var body = learned.PageRequest is null
             ? "rebuilding the request around it"
             : "replaying the page's own request body with its headers";
 
