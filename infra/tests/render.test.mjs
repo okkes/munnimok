@@ -169,6 +169,7 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.equal(api.Auth__Audience, `https://munni-prod-nas-api.${DOMAIN}`);
   assert.deepEqual(Object.keys(api).filter((k) => k.startsWith('Auth__')), ['Auth__Authority', 'Auth__Audience', 'Auth__InviteOnly'], 'hosted: https-strict, metadata from the authority itself');
   assert.equal(api.Auth__InviteOnly, '"false"', 'registration open unless features.inviteOnly says otherwise — the api reports the flag in /health capabilities (user 2026-10-07)');
+  assert.equal(api.Web__Url, api.Cors__Origins__0, 'the api knows the web app by its own setting (the invitation link) - the first CORS origin');
   assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://munni-prod-nas-lab.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.equal(api.ConnectionStrings__Db, 'Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}');
   assert.equal(api.Ocr__BaseUrl, 'http://ocr:8884');
