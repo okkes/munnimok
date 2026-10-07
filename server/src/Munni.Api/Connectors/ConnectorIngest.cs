@@ -371,8 +371,16 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             .Where(a => a.UserId == user.Id && accountIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id, ct);
 
+        // every id this pass will write, so a derived row never adopts a row the pass itself lands
+        var incoming = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tx in records)
+        {
+            var account = tx.Text("account_id") is { } accountId ? known.GetValueOrDefault(accountId) : null;
+            if (account is not null && tx.Text(ExternalIdField) is { } externalId) incoming.Add(ImportIds.TransactionId(account.AccountRef, externalId));
+        }
+        var reconciler = new DerivedRowReconciler(db, incoming);
         var batch = new TransactionBatch();
-        foreach (var tx in records) await PlaceAsync(tx, known, batch, pending, ct);
+        foreach (var tx in records) await PlaceAsync(tx, known, batch, pending, reconciler, ct);
 
         if (batch.Dropped > 0 && logger.IsEnabled(LogLevel.Warning))
         {
@@ -422,7 +430,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     /// back), or lacks an id, a date or an amount.
     /// </summary>
     private async Task PlaceAsync(
-        JsonObject tx, Dictionary<string, ConnectorAccountRef> known, TransactionBatch batch, List<ConnectorPendingTx> pending, CancellationToken ct)
+        JsonObject tx, Dictionary<string, ConnectorAccountRef> known, TransactionBatch batch, List<ConnectorPendingTx> pending,
+        DerivedRowReconciler reconciler, CancellationToken ct)
     {
         var accountId = tx.Text("account_id");
         var account = accountId is null ? null : known.GetValueOrDefault(accountId);
@@ -436,7 +445,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             }
             return;
         }
-        var row = TransactionOp(account, tx);
+        var row = await TransactionOpAsync(account, tx, reconciler, ct);
         if (row is null)
         {
             batch.Dropped++;
@@ -466,7 +475,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     /// external id the party prefixed <c>pending:</c> is mirrored as pending
     /// (§15): the bank has not booked it, and may yet withdraw it.
     /// </summary>
-    private TransactionRow? TransactionOp(ConnectorAccountRef account, JsonObject tx)
+    private async Task<TransactionRow?> TransactionOpAsync(ConnectorAccountRef account, JsonObject tx, DerivedRowReconciler reconciler, CancellationToken ct)
     {
         var externalId = tx.Text(ExternalIdField);
         var bookedAt = tx.Text("booked_at");
@@ -478,6 +487,13 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         var counterparty = tx["counterparty"] as JsonObject;
         var description = tx.Text("description") ?? string.Empty;
         var merchant = counterparty?.Text(NameField);
+        // an id the connector invented may have moved: the row it is the same transaction as keeps its id
+        if (tx["id_is_derived"] is JsonValue derivedFlag && derivedFlag.TryGetValue<bool>(out var derived) && derived && !pending)
+        {
+            var merchantFace = string.IsNullOrWhiteSpace(merchant) ? Truncate(description, 40) : merchant;
+            var key = DerivedRowReconciler.Key(bookedAt, amount.Value.Value, amount.Value.Currency, merchantFace);
+            entityId = await reconciler.ResolveAsync(account, entityId, externalId, key, ct).ConfigureAwait(false);
+        }
         var fields = new Dictionary<string, JsonElement>
         {
             ["accountId"] = Json(account.AccountEntityId),

@@ -46,6 +46,9 @@ public sealed record TransactionDraft
 {
     public required string ExternalId { get; init; }
 
+    /// <summary>True when the adapter built <see cref="ExternalId"/> itself because the bank states none (see <see cref="Transaction.IdIsDerived"/>).</summary>
+    public bool IdIsDerived { get; init; }
+
     public required DateOnly BookedAt { get; init; }
 
     public required Money Amount { get; init; }
@@ -117,6 +120,7 @@ public static class BankRecords
         {
             Id = Ids.ForRecord(Ids.Transaction, sessionId, stated.ExternalId),
             ExternalId = stated.ExternalId,
+            IdIsDerived = stated.IdIsDerived,
             AccountId = accountId,
             BookedAt = stated.BookedAt,
             ValueAt = stated.ValueAt,

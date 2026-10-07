@@ -84,6 +84,17 @@ public sealed record Transaction : NormalizedRecord
     [JsonPropertyName("account_id")]
     public required string AccountId { get; init; }
 
+    /// <summary>
+    /// True when <see cref="NormalizedRecord.ExternalId"/> is the connector's
+    /// own (a party that states none for the row, so the id is built from
+    /// the row's facts). Such an id can move when a fact moves - a consumer
+    /// may reconcile such rows by their content rather than trust the id
+    /// alone (2026-10-07: ING's card repayments landed twice after a new
+    /// sign-in, because the derived id once carried the login session).
+    /// </summary>
+    [JsonPropertyName("id_is_derived")]
+    public bool IdIsDerived { get; init; }
+
     [JsonPropertyName("booked_at")]
     public required DateOnly BookedAt { get; init; }
 
