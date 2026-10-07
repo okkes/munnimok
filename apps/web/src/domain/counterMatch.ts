@@ -17,25 +17,43 @@ export function pointedAtIds(rows: readonly TransactionRow[]): ReadonlySet<strin
 }
 
 /** a row that could still become someone's other leg: not linked, not
- *  paired (in EITHER direction), never a split container (#237) */
+ *  paired (in EITHER direction), never a split container (#237). A row
+ *  that already points at the ANCHOR's own account without a peer IS the
+ *  other leg waiting for its pair (user ss 2026-10-07: the card's
+ *  repayment, filed as a transfer from the checking account, never
+ *  appeared in the checking row's picker) */
 const openRow = (
   row: TransactionRow,
   counterAccountId: string,
-  anchorId: string,
+  anchor: { id: string; accountId?: string },
   pointed: ReadonlySet<string>,
 ): boolean =>
   row.deleted === 0 &&
-  row.id !== anchorId &&
+  row.id !== anchor.id &&
   row.accountId === counterAccountId &&
-  !row.linkedAccountId &&
+  (!row.linkedAccountId || (anchor.accountId !== undefined && row.linkedAccountId === anchor.accountId)) &&
   !row.transferPeerId &&
   !pointed.has(row.id) &&
   (row.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length <= 1;
 
+/** the mirror rows first: a row pointing back at the anchor's account outranks a loose one */
+const mirrorFirst = (anchorAccountId: string | undefined) => (a: TransactionRow, b: TransactionRow): number => {
+  if (anchorAccountId === undefined) return 0;
+  return Number(b.linkedAccountId === anchorAccountId) - Number(a.linkedAccountId === anchorAccountId);
+};
+
+/** the anchor a picker matches against: its own account lets a mirror row qualify */
+export interface MatchAnchor {
+  id: string;
+  amountCents: number;
+  date: string;
+  accountId?: string;
+}
+
 function nearMatches(
   rows: readonly TransactionRow[],
   counterAccountId: string,
-  anchor: { id: string; amountCents: number; date: string },
+  anchor: MatchAnchor,
   sign: 1 | -1,
   limit: number,
 ): TransactionRow[] {
@@ -43,15 +61,16 @@ function nearMatches(
   const anchorTime = Date.parse(anchor.date);
   const tolerance = Math.max(100, Math.round(anchorAbs * 0.02));
   const pointed = pointedAtIds(rows);
+  const mirror = mirrorFirst(anchor.accountId);
   return rows
-    .filter((row) => openRow(row, counterAccountId, anchor.id, pointed) && Math.sign(row.amountCents) === sign)
+    .filter((row) => openRow(row, counterAccountId, anchor, pointed) && Math.sign(row.amountCents) === sign)
     .map((row) => ({
       row,
       amountDiff: Math.abs(Math.abs(row.amountCents) - anchorAbs),
       dayDiff: Math.abs(Date.parse(row.date) - anchorTime) / 86_400_000,
     }))
     .filter((entry) => entry.amountDiff <= tolerance && entry.dayDiff <= 7)
-    .sort((a, b) => a.amountDiff - b.amountDiff || a.dayDiff - b.dayDiff)
+    .sort((a, b) => mirror(a.row, b.row) || a.amountDiff - b.amountDiff || a.dayDiff - b.dayDiff)
     .slice(0, limit)
     .map((entry) => entry.row);
 }
@@ -66,7 +85,7 @@ function nearMatches(
 export function counterDuplicates(
   rows: readonly TransactionRow[],
   counterAccountId: string,
-  anchor: { id: string; amountCents: number; date: string },
+  anchor: MatchAnchor,
   limit = 5,
 ): TransactionRow[] {
   return nearMatches(rows, counterAccountId, anchor, (Math.sign(anchor.amountCents) * -1) as 1 | -1, limit);
@@ -82,7 +101,7 @@ export function counterDuplicates(
 export function counterSameSignCandidates(
   rows: readonly TransactionRow[],
   counterAccountId: string,
-  anchor: { id: string; amountCents: number; date: string },
+  anchor: MatchAnchor,
   limit = 5,
 ): TransactionRow[] {
   return nearMatches(rows, counterAccountId, anchor, Math.sign(anchor.amountCents) as 1 | -1, limit);
@@ -97,12 +116,14 @@ export function counterSameSignCandidates(
 export function counterOpenRows(
   rows: readonly TransactionRow[],
   counterAccountId: string,
-  anchorId: string,
+  anchor: string | { id: string; accountId?: string },
   limit = 30,
 ): TransactionRow[] {
   const pointed = pointedAtIds(rows);
+  const at = typeof anchor === 'string' ? { id: anchor } : anchor;
+  const mirror = mirrorFirst(at.accountId);
   return rows
-    .filter((row) => openRow(row, counterAccountId, anchorId, pointed))
-    .sort((a, b) => b.date.localeCompare(a.date))
+    .filter((row) => openRow(row, counterAccountId, at, pointed))
+    .sort((a, b) => mirror(a, b) || b.date.localeCompare(a.date))
     .slice(0, limit);
 }
