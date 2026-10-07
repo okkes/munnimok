@@ -127,6 +127,95 @@ describe('Connections hub — the failure report (#441 L1)', () => {
       expect(row?.reportFailures).toBe(true);
     });
   }, 20_000);
+
+  it('a standing "always report" is never asked: a question under the card is shared at once, and so is a failed sign-in\'s (user 2026-10-07)', async () => {
+    await seedConnection('c-auto', {
+      reportFailures: true,
+      state: 'needs_reauth',
+      bundle: undefined,
+      lastError: { code: 'provider_changed', messageKey: 'connect.error.provider_changed', userAction: 'none', artifactsJobId: 'job_a' },
+    });
+    const shared: string[] = [];
+    const share = (jobId: string) => () => {
+      shared.push(jobId);
+      return { jobId, expiresAt: '2026-11-05T00:00:00Z' };
+    };
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        [`POST /connectors/${PROVIDER}/jobs/job_a/artifacts/share`]: share('job_a'),
+        [`POST /connectors/${PROVIDER}/jobs/job_b/artifacts/share`]: share('job_b'),
+        [`POST /connectors/${PROVIDER}/login`]: () => ({
+          sessionId: 'ses_b',
+          state: 'failed',
+          error: { code: 'provider_changed', retriable: false, userAction: 'none', messageKey: 'connect.error.provider_changed' },
+          artifactsJobId: 'job_b',
+          notes: [],
+        }),
+      },
+    });
+    await screen.findByTestId('conn-card-c-auto');
+    await waitFor(() => expect(shared).toEqual(['job_a']));
+    expect(screen.queryByTestId('conn-report-c-auto')).toBeNull();
+    await waitFor(async () => {
+      const db = await userDb();
+      const row = await db.connectorConns.get('c-auto');
+      db.close();
+      expect(row?.lastError?.artifactsJobId).toBeUndefined();
+    });
+
+    // a sign-in that fails with a picture of its own: shared the same way, the sheet says thanks instead of asking
+    fireEvent.click(await screen.findByTestId('conn-signin-c-auto', {}, { timeout: 5000 }));
+    fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-report-done', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('connect-report')).toBeNull();
+    expect(shared).toEqual(['job_a', 'job_b']);
+    const db = await userDb();
+    const row = await db.connectorConns.get('c-auto');
+    db.close();
+    expect(row?.lastError?.code).toBe('provider_changed');
+    expect(row?.lastError?.artifactsJobId).toBeUndefined();
+  }, 20_000);
+
+  it('a failed sign-in\'s question survives the sheet: closed unanswered, it waits under the card and is answered there (user 2026-10-07)', async () => {
+    await seedConnection('c-fail', { state: 'needs_reauth', bundle: undefined });
+    let shared = 0;
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        [`POST /connectors/${PROVIDER}/login`]: () => ({
+          sessionId: 'ses_f',
+          state: 'failed',
+          error: { code: 'provider_changed', retriable: false, userAction: 'none', messageKey: 'connect.error.provider_changed' },
+          artifactsJobId: 'job_f',
+          notes: [],
+        }),
+        [`POST /connectors/${PROVIDER}/jobs/job_f/artifacts/share`]: () => {
+          shared += 1;
+          return { jobId: 'job_f', expiresAt: '2026-11-05T00:00:00Z' };
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-signin-c-fail', {}, { timeout: 5000 }));
+    fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    // the sheet asks; closed without an answer, the card asks instead — and the answer closes it for good
+    await screen.findByTestId('connect-report', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('connect-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('connect-report')).toBeNull());
+    fireEvent.click(await screen.findByTestId('conn-report-c-fail-yes', {}, { timeout: 5000 }));
+    await waitFor(() => expect(shared).toBe(1));
+    await waitFor(async () => {
+      const db = await userDb();
+      const row = await db.connectorConns.get('c-fail');
+      db.close();
+      expect(row?.lastError?.artifactsJobId).toBeUndefined();
+    });
+  }, 20_000);
 });
 
 describe('Connections hub (signed-in user)', () => {
@@ -415,7 +504,7 @@ describe('Connections hub (signed-in user)', () => {
     await waitFor(() => expect(Object.keys(sessionStorage).some((k) => sessionStorage.getItem(k) === 'sb_v1.two')).toBe(true));
   }, 20_000);
 
-  it('a refused login explains itself in munni words and offers a retry only when the party would', async () => {
+  it('a refused login explains itself in munni words and always offers a retry — what was typed survives the retry, a close and a reopen (user 2026-10-07)', async () => {
     let attempts = 0;
     renderAppAsUser('/connections', {
       api: {
@@ -426,6 +515,7 @@ describe('Connections hub (signed-in user)', () => {
         },
       },
     });
+    const typed = (testId: string) => (screen.getByTestId(testId) as HTMLInputElement).value;
     await screen.findByTestId('screen-connections');
     fireEvent.click(await screen.findByTestId('conn-add-open'));
     fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
@@ -435,17 +525,69 @@ describe('Connections hub (signed-in user)', () => {
 
     expect((await screen.findByTestId('connect-error', {}, { timeout: 5000 })).textContent).toContain('cannot be reached');
     fireEvent.click(screen.getByTestId('connect-retry'));
-    // back on the form, the second attempt is refused for good
-    fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
-    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'wrong' } });
+    // back on the form with what was typed; the second attempt is refused for good — and still gets a retry
+    await screen.findByTestId('connect-field-username');
+    expect(typed('connect-field-username')).toBe('a@b.nl');
+    expect(typed('connect-field-password')).toBe('wrong');
     fireEvent.click(screen.getByTestId('connect-next'));
     expect((await screen.findByTestId('connect-error', {}, { timeout: 5000 })).textContent).toContain('did not accept');
-    expect(screen.queryByTestId('connect-retry')).toBeNull();
+    fireEvent.click(screen.getByTestId('connect-retry'));
+    await screen.findByTestId('connect-field-username');
+    expect(typed('connect-field-username')).toBe('a@b.nl');
+
+    // closed on a refusal and opened again from the catalogue, the form still reads what was typed
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-error', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('connect-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('connect-failed')).toBeNull());
+    fireEvent.click(screen.getByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`));
+    await screen.findByTestId('connect-field-username');
+    expect(typed('connect-field-username')).toBe('a@b.nl');
+    expect(typed('connect-field-password')).toBe('wrong');
+    expect(attempts).toBe(3);
     // nothing was stored
     const db = await userDb();
     expect(await db.connectorConns.toArray()).toHaveLength(0);
     expect((await db.storeConns.toArray()).filter((c) => c.deleted === 0)).toHaveLength(0);
     db.close();
+  }, 20_000);
+
+  it('the manage sheet\'s "Sign in again" opens the sign-in for that same connection, and the new sign-in keeps the standing report answer (user 2026-10-07)', async () => {
+    await seedConnection('c-again', { reportFailures: true, lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    let request: { connectionId?: string; inputs?: Record<string, string> } = {};
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: (body) => {
+          request = body as typeof request;
+          return { sessionId: 'ses_again', state: 'active', bundle: 'sb_v1.again', providerAccount: { displayName: 'Tester', externalId: '777' }, custody: 'ephemeral', notes: [] };
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    // an active connection offers Sync now, not a sign-in: the door for a changed password is the manage sheet
+    await screen.findByTestId('conn-sync-c-again', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('conn-manage-c-again'));
+    fireEvent.click(await screen.findByTestId('conn-manage-relogin', {}, { timeout: 5000 }));
+    // the manage sheet is gone and the sign-in sheet is up for the same connection
+    await waitFor(() => expect(screen.queryByTestId('conn-manage-relogin')).toBeNull());
+    expect((await screen.findByTestId('connect-notes')).textContent).toContain('stand-in');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'new-pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await waitFor(() => expect(screen.queryByTestId('connect-form')).toBeNull(), { timeout: 5000 });
+    expect(request).toMatchObject({ connectionId: 'c-again', inputs: { username: 'a@b.nl', password: 'new-pw' } });
+    // no naming step — the connection exists; its row carries the new session and still the standing answer
+    expect(screen.queryByTestId('conn-name-input')).toBeNull();
+    await waitFor(async () => {
+      const db = await userDb();
+      const row = await db.connectorConns.get('c-again');
+      db.close();
+      expect(row?.sessionId).toBe('ses_again');
+      expect(row?.reportFailures).toBe(true);
+    });
   }, 20_000);
 
   it('Sync now speaks the party’s answer: new receipts, a pause, a sign-in', async () => {

@@ -14,6 +14,8 @@ import { publicOrigin } from '@/app/config';
 import { ConnectorError, connectorApi, deviceClass } from './api';
 import { ChallengeCard } from './ChallengeCard';
 import { rememberReturn } from './connectorReturn';
+import { noteSignInFailure, settleQuestion } from './connectorSync';
+import type { FailureNoted } from './connectorSync';
 import { ReportAsk } from './ReportAsk';
 import { subscribeConnectorFrames } from './events';
 import { LookupField } from './LookupField';
@@ -63,6 +65,25 @@ export interface ResumeLogin {
 
 const POLL_MS = 2_500;
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
+
+/**
+ * What was typed into the form, kept for this page load only (user
+ * 2026-10-07: a refused sign-in or a closed sheet emptied the form, and the
+ * person typed everything again). Keyed by the connection signing in again,
+ * or by the party for a connection that does not exist yet. Never stored
+ * anywhere — a password is in it — and dropped the moment a sign-in lands.
+ */
+const typedDrafts = new Map<string, Record<string, string>>();
+const draftKeyOf = (reconnectId: string | null, provider: string): string => reconnectId ?? provider;
+
+/** a sign-in that landed while its sheet was closed (the hub's follower adopted it) needs its typed values no more */
+export const forgetTypedValues = (reconnectId: string | null, provider: string): void => {
+  typedDrafts.delete(draftKeyOf(reconnectId, provider));
+};
+
+/** the sheet's word on the picture a failed sign-in left: not known yet, to ask, or the answer given */
+type ReportState = 'pending' | 'ask' | 'yes' | 'no';
+const answerOf = (report: ReportState): 'yes' | 'no' | null => (report === 'yes' || report === 'no' ? report : null);
 
 const inputModeFor = (field: FormField): React.HTMLAttributes<HTMLInputElement>['inputMode'] => {
   if (field.type === 'number') return 'numeric';
@@ -128,8 +149,8 @@ export function ConnectFlowSheet({
   const [values, setValues] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
-  // #441 L1: the answer given to "report this failure?" for the failure on screen
-  const [reported, setReported] = useState<'yes' | 'no' | null>(null);
+  // #441 L1: where "report this failure?" stands for the failure on screen
+  const [report, setReport] = useState<ReportState>('pending');
   // a party that only talks to a browser on the person's own machine: the agent that will hold the sign-in
   const [agents, setAgents] = useState<AgentView[] | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -142,11 +163,14 @@ export function ConnectFlowSheet({
   const startedAt = useRef('');
   // the resumed session is read once the handlers below exist (they close over this render)
   const pickUp = useRef<(sessionId: string) => void>(() => {});
+  // the typed values' place in the page-load memory above
+  const draftKey = draftKeyOf(reconnectId, manifest?.id ?? '');
 
   useEffect(() => {
     if (!open) return;
     setStepIndex(0);
-    setValues({});
+    // the form comes back as it was left (user 2026-10-07)
+    setValues(typedDrafts.get(draftKey) ?? {});
     setAttempted(false);
     setBusy(false);
     setAgents(null);
@@ -167,7 +191,7 @@ export function ConnectFlowSheet({
       // the sheet is gone (unmounted with the hub, or closed): whatever is still pending is the hub's to follow
       usePendingLogins.getState().patch(connectionId.current, { attached: false });
     };
-  }, [open, reconnectId, resume]);
+  }, [open, reconnectId, resume, draftKey]);
 
   useEffect(() => {
     if (!open || !ownComputer) return;
@@ -193,25 +217,39 @@ export function ConnectFlowSheet({
   const problems: Record<string, FieldProblem> = step ? validateValues(step.fields, values) : {};
   const pending = usePendingLogins.getState();
 
+  /**
+   * The failure's word goes on the device row too (user 2026-10-07: "the
+   * tab closes and I cannot report it any more"): the question a picture
+   * waits on then survives this sheet, under the hub's card — and a
+   * standing "always report" shares it without asking. The sheet asks only
+   * once the row has had its say, so no question flashes before a standing
+   * answer.
+   */
+  const noteFailure = async (error: ErrorEnvelope, artifactsJobId?: string) => {
+    const at = attempt.current;
+    const noted = await noteSignInFailure(store, connectionId.current, error, artifactsJobId).catch((): FailureNoted => 'asked');
+    // a later attempt has its own failure, or none: this word is stale
+    if (attempt.current === at) setReport(noted === 'shared' ? 'yes' : 'ask');
+  };
+
   const fail = (error: ErrorEnvelope, artifactsJobId?: string) => {
     stopFollowing.current();
     // the person reads the failure here; the hub needs no second copy of it
     pending.remove(connectionId.current);
-    setReported(null);
+    setReport('pending');
     setPhase({ kind: 'failed', error, artifactsJobId });
+    void noteFailure(error, artifactsJobId);
   };
 
   // #441 L1: the person's word on the picture a failed sign-in left behind
   const answerReport = async (jobId: string, share: boolean) => {
     setBusy(true);
-    try {
-      await (share ? connectorApi.shareArtifacts(provider, jobId) : connectorApi.declineArtifacts(provider, jobId));
-    } catch {
-      // a question the relay no longer holds has lapsed by itself
-    } finally {
-      setReported(share ? 'yes' : 'no');
-      setBusy(false);
-    }
+    // a question the relay no longer holds has lapsed by itself
+    await (share ? connectorApi.shareArtifacts(provider, jobId) : connectorApi.declineArtifacts(provider, jobId)).catch(() => undefined);
+    // answered here, the hub's card must not ask it again (user 2026-10-07)
+    await settleQuestion(store, connectionId.current, jobId).catch(() => undefined);
+    setReport(share ? 'yes' : 'no');
+    setBusy(false);
   };
 
   const notePending = (view: SessionView) => {
@@ -228,6 +266,8 @@ export function ConnectFlowSheet({
       const full = view.bundle ? view : await connectorApi.login(provider, view.sessionId);
       const result = await ops.adopt({ manifest, view: full, connectionId: connectionId.current, reconnect });
       pending.remove(connectionId.current);
+      // the sign-in landed: what was typed for it is forgotten
+      typedDrafts.delete(draftKey);
       setPhase({ kind: 'done' });
       onDone(result, reconnect);
       return;
@@ -407,7 +447,12 @@ export function ConnectFlowSheet({
   const renderField = (field: FormField) => {
     const problem = attempted ? problems[field.key] : undefined;
     const value = values[field.key] ?? '';
-    const set = (v: string) => setValues((all) => ({ ...all, [field.key]: v }));
+    // remembered as typed: a refusal or a close must not empty the form (user 2026-10-07)
+    const set = (v: string) => {
+      const next = { ...values, [field.key]: v };
+      typedDrafts.set(draftKey, next);
+      setValues(next);
+    };
     // A lookup is a search box AND a list of buttons, and it must not sit in a
     // <label>: Safari runs the label's activation for a tap on any descendant,
     // so a bank tapped from the list was re-dispatched to the first labelable
@@ -555,14 +600,14 @@ export function ConnectFlowSheet({
             <p className="text-[13px] leading-relaxed text-negative" data-testid="connect-error">
               {t(errorKey(phase.error.code))}
             </p>
-            {phase.artifactsJobId && (
-              <ReportAsk testId="connect-report" answered={reported} busy={busy} onAnswer={(share) => void answerReport(phase.artifactsJobId ?? '', share)} />
+            {phase.artifactsJobId && report !== 'pending' && (
+              <ReportAsk testId="connect-report" answered={answerOf(report)} busy={busy} onAnswer={(share) => void answerReport(phase.artifactsJobId ?? '', share)} />
             )}
-            {phase.error.retriable !== false && (
-              <Button data-testid="connect-retry" onClick={retry}>
-                {t('connect.action.retry')}
-              </Button>
-            )}
+            {/* offered after EVERY refusal (user 2026-10-07): a party's "no" is as often a typo
+                as a dead account, and the form comes back with what was typed */}
+            <Button data-testid="connect-retry" onClick={retry}>
+              {t('connect.action.retry')}
+            </Button>
             <Button variant="outline" data-testid="connect-cancel" onClick={cancel}>
               {t('connect.cancel')}
             </Button>

@@ -17,12 +17,15 @@ export function ConnectionSheet({
   kind,
   allSpaces,
   includedSpaceIds,
+  onSignInAgain,
   onClose,
 }: Readonly<{
   view: ConnectionView;
   kind: ProviderKind | undefined;
   allSpaces: readonly { id: string; name: string }[];
   includedSpaceIds: readonly string[];
+  /** user 2026-10-07: a new sign-in on this same connection (a changed password); absent where the hub cannot open one */
+  onSignInAgain?: () => void;
   onClose: () => void;
 }>) {
   const { t } = useLang();
@@ -69,6 +72,25 @@ export function ConnectionSheet({
             className="h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
           />
         </label>
+        {/* user 2026-10-07: a changed password is a new sign-in on the SAME connection — never a
+            remove and a fresh one, which would orphan the receipts and accounts keyed by its id */}
+        {onSignInAgain && (
+          <button
+            data-testid="conn-manage-relogin"
+            onClick={() => {
+              onClose();
+              onSignInAgain();
+            }}
+            className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-3 py-2.5 text-left text-[13px] text-ink"
+          >
+            <Icon name="lock-reset" size={20} color="var(--m-ink-3)" />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span>{t('conn.relogin')}</span>
+              <span className="text-[11px] leading-snug text-ink-4">{t('conn.reloginSub')}</span>
+            </span>
+            <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+          </button>
+        )}
         <button
           data-testid="conn-manage-icon"
           onClick={() => setIconOpen(true)}

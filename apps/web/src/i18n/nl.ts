@@ -2769,6 +2769,9 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.conn.7t': 'Opgehaalde bonnen',
   'tour.conn.7b': 'Alles wat je winkels hebben aangeleverd, per koppeling, met de gedekte datums — en een teller die oploopt terwijl het ophalen loopt. Een winkel bereikt een space pas als jij die kiest.',
   // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
+  // user 2026-10-07: a changed password is a new sign-in on the same connection (the manage sheet's row)
+  'conn.relogin': 'Opnieuw inloggen',
+  'conn.reloginSub': 'Wachtwoord veranderd? Vul hier de nieuwe gegevens in.',
   'conn.report.ask': 'Deze storing melden?',
   'conn.report.sub': 'Stuurt de laatste afbeelding van de pagina waar het stokte — geheime velden verborgen — naar de mensen die munni draaien, een maand bewaard. Zonder je ja wordt niets gestuurd.',
   'conn.report.yes': 'Melden',

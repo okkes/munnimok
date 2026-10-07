@@ -69,6 +69,46 @@ const lastErrorOf = (envelope: ErrorEnvelope, artifactsJobId?: string): Connecto
   ...(artifactsJobId ? { artifactsJobId } : {}),
 });
 
+/**
+ * #441 L1: the picture a failed run left waits on the person's word — or
+ * goes at once where they said "always" (user 2026-10-07: the standing
+ * answer means never asked, wherever the failure lands). What comes back
+ * is the question still open: the job id, or nothing once shared.
+ */
+async function shareOrLeave(row: ConnectorConnRow | undefined, artifactsJobId: string | undefined): Promise<string | undefined> {
+  if (!artifactsJobId || !row?.reportFailures) return artifactsJobId;
+  await connectorApi.shareArtifacts(row.provider, artifactsJobId).catch(() => undefined);
+  return undefined;
+}
+
+/** what a failed sign-in left on the device row: its question shared by the standing answer, left open for the hub's card, or nothing to ask */
+export type FailureNoted = 'shared' | 'asked' | 'none';
+
+/**
+ * A sign-in that failed in the sheet writes its word on the device row
+ * too (user 2026-10-07: "the tab closes and I cannot report it any more"):
+ * the question a picture waits on then survives the sheet, under the
+ * hub's card — and a standing "always report" shares it right here. A
+ * connection that has no row yet (its first sign-in) keeps the question
+ * in the sheet alone.
+ */
+export async function noteSignInFailure(storage: StorageBackend, connectionId: string, envelope: ErrorEnvelope, artifactsJobId?: string): Promise<FailureNoted> {
+  const row = await storage.connectorConnGet(connectionId);
+  if (!row) return 'none';
+  const open = await shareOrLeave(row, artifactsJobId);
+  await storage.connectorConnPut({ ...row, lastError: lastErrorOf(envelope, open) });
+  if (open) return 'asked';
+  return artifactsJobId ? 'shared' : 'none';
+}
+
+/** the question is answered (or lapsed): the job id leaves the row so no card asks it again */
+export async function settleQuestion(storage: StorageBackend, connectionId: string, jobId: string): Promise<void> {
+  const row = await storage.connectorConnGet(connectionId);
+  if (row?.lastError?.artifactsJobId !== jobId) return;
+  const { artifactsJobId: _answered, ...rest } = row.lastError;
+  await storage.connectorConnPut({ ...row, lastError: rest });
+}
+
 const empty = (): SyncReport => ({ status: 'error', added: 0, accounts: 0, transactions: 0, linked: 0, proposed: 0 });
 
 /** pull the rows the relay filed, then match them into every included space */
@@ -216,14 +256,8 @@ async function refused(storage: StorageBackend, connectionId: string, err: Conne
   } else if (envelope.code === 'rate_limited') {
     report.status = 'wait';
   }
-  // #441 L1: the picture a failed run left waits on the person's word — or
-  // goes at once where they said "always"
   const row = await storage.connectorConnGet(connectionId);
-  let artifactsJobId = err.artifactsJobId;
-  if (artifactsJobId && row?.reportFailures) {
-    await connectorApi.shareArtifacts(row.provider, artifactsJobId).catch(() => undefined);
-    artifactsJobId = undefined;
-  }
+  const artifactsJobId = await shareOrLeave(row, err.artifactsJobId);
   await patchRow(storage, connectionId, { ...(state ? { state } : {}), pendingJob: undefined, lastError: lastErrorOf(envelope, artifactsJobId) });
   return report;
 }

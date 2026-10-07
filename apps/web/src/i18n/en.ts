@@ -2767,6 +2767,9 @@ export const en = {
   'tour.conn.7t': 'Fetched receipts',
   'tour.conn.7b': 'Everything your shops handed over, per connection, with the dates covered — and a counter climbing while a fetch runs. A shop reaches a space only once you pick it.',
   // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
+  // user 2026-10-07: a changed password is a new sign-in on the same connection (the manage sheet's row)
+  'conn.relogin': 'Sign in again',
+  'conn.reloginSub': 'Changed your password? Enter the new details here.',
   'conn.report.ask': 'Report this failure?',
   'conn.report.sub': 'Sends the last picture of the page where it stopped — secret fields hidden — to the people who run munni, kept for a month. Nothing is sent unless you say yes.',
   'conn.report.yes': 'Report',

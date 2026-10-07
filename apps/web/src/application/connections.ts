@@ -9,7 +9,7 @@ import { logActivity } from './activity';
 import { storeConnLinkId } from '@/domain/feedIds';
 import { ConnectorError, connectorApi } from '@/features/connectors/api';
 import { forgetConnection, keepBundle, readBundle } from '@/features/connectors/bundles';
-import { syncConnection } from '@/features/connectors/connectorSync';
+import { settleQuestion, syncConnection } from '@/features/connectors/connectorSync';
 import type { SyncOptions, SyncReport } from '@/features/connectors/connectorSync';
 import type { ProviderManifest, SessionView } from '@/features/connectors/types';
 import type { Repo } from '@/db/repo';
@@ -293,6 +293,10 @@ async function keepDeviceRow(storage: StorageBackend, connectionId: string, prov
     state: view.state,
     refreshedAt: new Date().toISOString(),
     lastSyncAt: existing?.lastSyncAt,
+    // the person's standing answer outlives the session (user 2026-10-07: a
+    // re-login wiped it and the question came back); the old error and the
+    // old session's job do not — this sign-in settled them
+    reportFailures: existing?.reportFailures,
   });
   if (view.bundle) await keepBundle(storage, connectionId, view.bundle);
 }
@@ -396,10 +400,7 @@ export function useConnectionOps(): ConnectionOps {
       if (!provider) return;
       // a question the relay no longer holds has lapsed by itself: nothing to say about that
       await (share ? connectorApi.shareArtifacts(provider, jobId) : connectorApi.declineArtifacts(provider, jobId)).catch(() => undefined);
-      if (row?.lastError?.artifactsJobId === jobId) {
-        const { artifactsJobId: _answered, ...rest } = row.lastError;
-        await storage.connectorConnPut({ ...row, lastError: rest });
-      }
+      await settleQuestion(storage, connectionId, jobId);
     },
     setReportFailures: async (connectionId, always) => {
       const row = await storage.connectorConnGet(connectionId);

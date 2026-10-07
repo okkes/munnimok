@@ -2769,6 +2769,9 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.conn.7t': 'Alınan fişler',
   'tour.conn.7b': 'Mağazalarının verdiği her şey, bağlantı başına, kapsanan tarihlerle — ve alım sürerken artan bir sayaç. Bir mağaza, ancak sen seçince bir alana ulaşır.',
   // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
+  // user 2026-10-07: a changed password is a new sign-in on the same connection (the manage sheet's row)
+  'conn.relogin': 'Yeniden giriş yap',
+  'conn.reloginSub': 'Şifreni mi değiştirdin? Yeni bilgileri buraya gir.',
   'conn.report.ask': 'Bu hata bildirilsin mi?',
   'conn.report.sub': 'Takıldığı sayfanın son görüntüsünü — gizli alanlar gizlenmiş olarak — munni’yi işletenlere gönderir, bir ay saklanır. Evet demeden hiçbir şey gönderilmez.',
   'conn.report.yes': 'Bildir',
