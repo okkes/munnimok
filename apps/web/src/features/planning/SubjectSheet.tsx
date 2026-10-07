@@ -4,7 +4,9 @@ import { useLang } from '@/i18n';
 import type { PlanRow, PlanSubjectRow } from '@/db/types';
 import type { PlanEditability, PlanningModel, PlanningOps } from '@/application/planning';
 import type { SubjectView } from '@/domain/planning';
-import { coverCandidates, shortfallCents, slackCents, subjectFamily } from '@/domain/planning';
+import { canSkipPeriod, coverCandidates, shortfallCents, slackCents, subjectFamily } from '@/domain/planning';
+import { useData } from '@/app/data';
+import { OverBudgetSheet, useOverBudgetGuard } from './overBudget';
 import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
@@ -42,7 +44,6 @@ function useOpenSource() {
   };
 }
 
-const canSnooze = (view: SubjectView): boolean => view.subject.segment !== 'expenses' && view.subject.segment !== 'budgets';
 
 /** the amount chips: the target, the shortfall, the estimates (expenses) */
 function AmountChips({
@@ -149,6 +150,8 @@ export function SubjectSheet({
   onEdit: (subject: PlanSubjectRow) => void;
 }>) {
   const { t } = useLang();
+  const { spaceId } = useData();
+  const overBudget = useOverBudgetGuard(spaceId);
   const openSource = useOpenSource();
   const [draft, setDraft] = useState('');
   const [coverOpen, setCoverOpen] = useState(false);
@@ -165,10 +168,10 @@ export function SubjectSheet({
   const color = subject.color ?? SEGMENT_COLOR[subject.segment];
   const typed = parseCents(draft);
   const dirty = typed !== null && typed !== view.fundedCents;
-  const save = async () => {
+  const save = () => {
     if (typed === null) return;
-    await ops.fund(subject.id, typed);
-    onClose();
+    // beyond the pool asks once a day (user 2026-10-07): only the part the pool must still give counts
+    overBudget.guard(model.toAllocateOf(plan), typed - view.fundedCents, () => void ops.fund(subject.id, typed).then(onClose));
   };
   return (
     <>
@@ -183,7 +186,7 @@ export function SubjectSheet({
               <Button variant="outline" className="flex-1" data-testid="plan-fund-cancel" onClick={onClose}>
                 {t('action.cancel')}
               </Button>
-              <Button className="flex-1" data-testid="plan-fund-save" disabled={!dirty} onClick={() => void save()}>
+              <Button className="flex-1" data-testid="plan-fund-save" disabled={!dirty} onClick={save}>
                 {t('action.save')}
               </Button>
             </div>
@@ -233,7 +236,8 @@ export function SubjectSheet({
                     {t('plan.cover.title')}
                   </Button>
                 )}
-                {canEdit && canSnooze(view) && (
+                {/* skip only where nothing actually leaves this period (user 2026-10-07): a yearly cost spread out, a goal far off */}
+                {canEdit && (canSkipPeriod(view) || subject.snoozed === 1) && (
                   <Button size="sm" variant="ghost" data-testid="plan-fund-snooze" onClick={() => void ops.snooze(subject.id, subject.snoozed !== 1).then(onClose)}>
                     {subject.snoozed === 1 ? t('plan.fund.unsnooze') : t('plan.fund.snooze')}
                   </Button>
@@ -260,6 +264,7 @@ export function SubjectSheet({
           )}
         </div>
       </Sheet>
+      <OverBudgetSheet guard={overBudget} fmt={fmt} currency={currency} />
       <CoverSheet
         open={coverOpen}
         onOpenChange={setCoverOpen}

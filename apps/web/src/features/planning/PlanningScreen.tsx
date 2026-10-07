@@ -5,7 +5,7 @@ import { useData } from '@/app/data';
 import { usePlanning, usePlanningOps } from '@/application/planning';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import type { PlanRow, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
-import { periodsAhead } from '@/domain/planning';
+import { periodsAhead, shortfallCents } from '@/domain/planning';
 import type { SubjectView, UnplannedMain } from '@/domain/planning';
 import type { Period } from '@/domain/periods';
 import { parseLocalDate } from '@/application/planningModel';
@@ -27,6 +27,7 @@ import { InsightsSheet } from './InsightsSheet';
 import { PlanHeader } from './PlanHeader';
 import { PoolSheet } from './PoolSheet';
 import { ReorderSheet } from './ReorderSheet';
+import { OverBudgetSheet, useOverBudgetGuard } from './overBudget';
 import { SegmentSection } from './SegmentSection';
 import { readFolds, toggleFold, writeFolds } from './segmentFolds';
 import { SegmentsSheet } from './SegmentsSheet';
@@ -34,6 +35,7 @@ import { StartPlanCard } from './StartPlanCard';
 import { SubjectEditor } from './SubjectEditor';
 import type { EditorPreset } from './SubjectEditor';
 import { SubjectSheet } from './SubjectSheet';
+import { UnplannedSheet } from './UnplannedSheet';
 import { SEGMENT_META } from './planningUi';
 
 type MenuItem = 'blueprints' | 'sandbox' | 'segments' | 'reorder' | 'pool' | 'insights';
@@ -68,14 +70,13 @@ function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean
   return model.ahead.find((a) => a.period.start === period.start)?.plan ?? null;
 }
 
-/** the spending no subject answers for, by main, with the door to plan it */
+/** the spending no subject answers for, by main — a row opens the sheet that funds it or plans it (user 2026-10-07) */
 function UnplannedSection({
   rows,
-  editable,
   fmt,
   currency,
-  onPlan,
-}: Readonly<{ rows: UnplannedMain[]; editable: boolean; fmt: (cents: number, currency: string) => string; currency: string; onPlan: (preset: EditorPreset) => void }>) {
+  onOpen,
+}: Readonly<{ rows: UnplannedMain[]; fmt: (cents: number, currency: string) => string; currency: string; onOpen: (row: UnplannedMain) => void }>) {
   const { t } = useLang();
   const cats = useCategories();
   if (rows.length === 0) return null;
@@ -97,7 +98,13 @@ function UnplannedSection({
           const main = cats.byId(row.mainId);
           const subs = row.subs.filter((s) => s.catId !== row.mainId);
           return (
-            <div key={row.mainId} className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0" data-testid={`plan-unplanned-${row.mainId}`}>
+            <button
+              type="button"
+              key={row.mainId}
+              onClick={() => onOpen(row)}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+              data-testid={`plan-unplanned-${row.mainId}`}
+            >
               <Tile icon={main.icon} bg={`color-mix(in srgb, ${main.color} 14%, transparent)`} color={main.color} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
@@ -110,17 +117,8 @@ function UnplannedSection({
                   </span>
                 )}
               </span>
-              {editable && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid={`plan-unplanned-plan-${row.mainId}`}
-                  onClick={() => onPlan({ name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: row.cents })}
-                >
-                  {t('plan.unplannedPlan')}
-                </Button>
-              )}
-            </div>
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            </button>
           );
         })}
       </div>
@@ -233,6 +231,9 @@ export function PlanningScreen() {
   const [openSubjectId, setOpenSubjectId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ subject: PlanSubjectRow | null; preset?: EditorPreset } | null>(null);
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
+  const [unplannedOpen, setUnplannedOpen] = useState<UnplannedMain | null>(null);
+  const cats = useCategories();
+  const overBudget = useOverBudgetGuard(spaceId);
   // which segments are folded: this device remembers (user 2026-10-07)
   const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
   const toggleSegmentFold = (kind: PlanSegmentKind) =>
@@ -270,10 +271,19 @@ export function PlanningScreen() {
           kind={s.kind}
           views={views.filter((v) => v.subject.segment === s.kind)}
           editable={editable}
-          canFill={canFill && model.toAllocateOf(plan) > 0}
+          canFill={canFill}
           fmt={fmt}
           currency={currency}
-          onFill={() => void ops.fillSegment(plan, s.kind)}
+          onFill={() =>
+            overBudget.guard(
+              model.toAllocateOf(plan),
+              views.filter((v) => v.subject.segment === s.kind && v.subject.snoozed !== 1).reduce((sum, v) => sum + shortfallCents(v), 0),
+              () => void ops.fundSegment(plan, s.kind),
+            )
+          }
+          onFundToTarget={(view) =>
+            overBudget.guard(model.toAllocateOf(plan), shortfallCents(view), () => void ops.fund(view.subject.id, view.fundedCents + shortfallCents(view)))
+          }
           onAdd={() => (s.kind === 'expenses' ? setEditing({ subject: null }) : setAdding(s.kind))}
           onOpen={(view) => setOpenSubjectId(view.subject.id)}
           folded={folds.has(s.kind)}
@@ -348,7 +358,7 @@ export function PlanningScreen() {
         )}
         {segmentBlocks()}
         {plan.kind !== 'blueprint' && viewBack >= 0 && (
-          <UnplannedSection rows={model.unplannedOf(plan)} editable={editable} fmt={fmt} currency={currency} onPlan={(preset) => setEditing({ subject: null, preset })} />
+          <UnplannedSection rows={model.unplannedOf(plan)} fmt={fmt} currency={currency} onOpen={setUnplannedOpen} />
         )}
       </>
     );
@@ -413,6 +423,27 @@ export function PlanningScreen() {
           <InsightsSheet open={sheet === 'insights'} onOpenChange={(next) => !next && setSheet(null)} model={model} fmt={fmt} currency={currency} />
           <ReorderSheet segment={reorderSegment} model={model} plan={plan} ops={ops} onClose={() => setReorderSegment(null)} />
           <AddSourceSheet segment={adding} model={model} plan={plan} ops={ops} onClose={() => setAdding(null)} />
+          <UnplannedSheet
+            row={editable ? unplannedOpen : null}
+            left={model.toAllocateOf(plan)}
+            guard={overBudget}
+            fmt={fmt}
+            currency={currency}
+            onFund={async (row, cents) => {
+              const main = cats.byId(row.mainId);
+              // born funded by what the period already paid; anything above that is what the pool gives (user 2026-10-07)
+              const id = await ops.addExpense(plan.id, { name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: 0 });
+              if (cents > row.cents) await ops.fund(id, cents);
+              setUnplannedOpen(null);
+            }}
+            onPlan={(row) => {
+              const main = cats.byId(row.mainId);
+              setUnplannedOpen(null);
+              setEditing({ subject: null, preset: { name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: row.cents } });
+            }}
+            onClose={() => setUnplannedOpen(null)}
+          />
+          <OverBudgetSheet guard={overBudget} fmt={fmt} currency={currency} />
           {openView && (
             <SubjectSheet
               view={openView}
