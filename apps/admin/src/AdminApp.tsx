@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './config';
 import bundledCatalog from './generated/bundledCatalog.json';
+import { InvitationsScreen, type InvitationsDoc, type InviteResult } from './InvitationsScreen';
 
 interface UserDiagnosis {
   userId: string;
@@ -42,8 +43,15 @@ function connectorSessionsLine(sessions: UserDiagnosis['connectorSessions']): st
     .join(' | ');
 }
 
-type Screen = 'overview' | 'users' | 'connectors' | 'catalog';
-const SCREENS: Screen[] = ['overview', 'users', 'connectors', 'catalog'];
+/** the invitations as the API lists them, or the one line that says why it could not (Logto down, an older API) */
+async function readInvitations(res: Response | null): Promise<InvitationsDoc | string> {
+  if (res?.ok) return (await res.json()) as InvitationsDoc;
+  const body = (await res?.json().catch(() => null)) as { error?: string } | null;
+  return body?.error ?? (res ? `HTTP ${res.status}` : 'network');
+}
+
+type Screen = 'overview' | 'users' | 'invitations' | 'connectors' | 'catalog';
+const SCREENS: Screen[] = ['overview', 'users', 'invitations', 'connectors', 'catalog'];
 
 /** the operator-published catalog document (admin-catalog design AC2) */
 interface CatalogCategory {
@@ -144,6 +152,8 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
+  // the invitations as last listed; a string says why they could not be (the screen shows it, never an empty table)
+  const [invitations, setInvitations] = useState<InvitationsDoc | string | null>(null);
   // 'denied' = the api really said 403; 'unreachable' = the ping never
   // got an answer (network/CORS/5xx) — one shared message made a blocked
   // request read as "not an admin" (found live 2026-08-28, control twin)
@@ -189,9 +199,13 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
-    const catalogRes = await call('/catalog').catch(() => null);
+    const [catalogRes, invitesRes] = await Promise.all([
+      call('/catalog').catch(() => null),
+      call('/admin/invitations').catch(() => null),
+    ]);
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
+    setInvitations(await readInvitations(invitesRes));
   }, [call, config.apiUrl]);
 
   useEffect(() => {
@@ -210,6 +224,8 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     }
     await reload();
     setBusy(false);
+    // the answer rides along for the few acts that mint something (an invitation's link)
+    return res;
   };
 
   // pickProvider retired (#175): both providers are offered to the END
@@ -228,6 +244,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
             [
               ['overview', 'Overview'],
               ['users', 'Users'],
+              ['invitations', 'Invitations'],
               ['connectors', 'Connectors'],
               ['catalog', 'Catalog'],
             ] as [Screen, string][]
@@ -289,6 +306,18 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
         {!blocked && screen === 'connectors' && <LabHandoverScreen labUrl={config.labUrl} />}
+        {!blocked && screen === 'invitations' && (
+          <InvitationsScreen
+            doc={invitations}
+            inviteOnlyFallback={health?.capabilities?.inviteOnly === true}
+            busy={busy}
+            onInvite={async (email) => {
+              const res = await act(() => call('/admin/invitations', { method: 'POST', body: JSON.stringify({ email }) }));
+              return res?.ok ? ((await res.json()) as InviteResult) : null;
+            }}
+            onRevoke={(id) => void act(() => call(`/admin/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' }))}
+          />
+        )}
         {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}

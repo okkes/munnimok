@@ -41,12 +41,27 @@ const CATALOG = {
   keywords: [{ catId: 'hobby', keywords: ['padel'] }],
 };
 
+/** the invitations out on this environment — the magic links sign their people up */
+const INVITATIONS = {
+  inviteOnly: true,
+  invitations: [
+    { id: 'inv-1', email: 'dana@x.nl', status: 'pending', createdAt: '2026-10-01T10:00:00Z', expiresAt: '2026-10-08T10:00:00Z', link: 'https://app.test/invite/one' },
+    { id: 'inv-2', email: 'erik@x.nl', status: 'pending', createdAt: '2026-10-02T10:00:00Z', expiresAt: '2026-10-09T10:00:00Z', link: 'https://app.test/invite/two' },
+  ],
+};
+
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
   'GET /admin/users': () => ({ body: USERS }),
   'GET /health': () => ({ body: HEALTH }),
+  'GET /admin/invitations': () => ({ body: INVITATIONS }),
 });
+
+/** the clipboard as a test wants it: granted, or refused (an insecure origin, a denied permission) */
+function stubClipboard(writeText: (text: string) => Promise<void>) {
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+}
 
 function renderAdmin() {
   localStorage.setItem('munni_admin_sub', 'sub-alice');
@@ -353,5 +368,128 @@ describe('AdminApp (OIDC token mode)', () => {
     expect(doc.categories.map((c) => c.id)).toEqual(['groceries', 'padelClub']);
     expect(doc.keywords.at(-1)).toEqual({ catId: 'padelClub', keywords: ['padelbaan', 'padel club'] });
     expect(doc.stores).toEqual([{ id: 'ah', patterns: ['albert heijn', 'AH to go'] }]);
+  });
+});
+
+describe('AdminApp (invitations)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  /** the screen open — its list (and with it the mode line) lands on the first reload */
+  const openInvitations = async () => {
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-invitations'));
+    return screen.findByTestId('invitations-screen');
+  };
+
+  it('lists the active invitations and says whether sign-up is by invitation', async () => {
+    scriptFetch(HAPPY_ROUTES());
+    await openInvitations();
+    const row = await screen.findByTestId('invite-row-inv-1');
+    expect(row.textContent).toContain('dana@x.nl');
+    expect(screen.getByTestId('invite-row-inv-2').textContent).toContain('erik@x.nl');
+    expect((screen.getByTestId('invite-link-inv-1') as HTMLInputElement).value).toBe('https://app.test/invite/one');
+    expect(screen.getByTestId('invite-mode').textContent).toContain('by invitation');
+
+    // an environment with open registration says so — the links still work there
+    cleanup();
+    scriptFetch({ ...HAPPY_ROUTES(), 'GET /admin/invitations': () => ({ body: { ...INVITATIONS, inviteOnly: false } }) });
+    await openInvitations();
+    await screen.findByTestId('invite-row-inv-1');
+    expect(screen.getByTestId('invite-mode').textContent).toContain('Registration is open');
+  });
+
+  it('inviting posts the lower-cased e-mail, shows the link to hand over and copies it', async () => {
+    let posted: unknown = null;
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+    const calls = scriptFetch({
+      ...HAPPY_ROUTES(),
+      'POST /admin/invitations': (init) => {
+        posted = JSON.parse(String(init?.body));
+        return { status: 201, body: { id: 'inv-3', email: 'fay@x.nl', expiresAt: '2026-10-14T10:00:00Z', link: 'https://app.test/invite/three' } };
+      },
+    });
+    await openInvitations();
+    await screen.findByTestId('invite-row-inv-1');
+
+    // the button arms only for something that reads as an address
+    fireEvent.change(screen.getByTestId('invite-email'), { target: { value: 'fay' } });
+    expect((screen.getByTestId('invite-send') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('invite-email'), { target: { value: 'Fay@X.nl' } });
+    fireEvent.click(screen.getByTestId('invite-send'));
+
+    const link = (await screen.findByTestId('invite-link')) as HTMLInputElement;
+    expect(posted).toEqual({ email: 'fay@x.nl' });
+    expect(link.value).toBe('https://app.test/invite/three');
+    expect(screen.getByText(/Send this link to the person yourself/)).toBeTruthy();
+    expect((screen.getByTestId('invite-email') as HTMLInputElement).value).toBe('');
+    // the list reloads after the mint
+    const post = calls.indexOf('POST /admin/invitations');
+    expect(calls.indexOf('GET /admin/invitations', post)).toBeGreaterThan(post);
+
+    fireEvent.click(screen.getByTestId('invite-copy'));
+    await waitFor(() => expect(screen.getByTestId('invite-copy').textContent).toBe('Copied'));
+    expect(writeText).toHaveBeenCalledWith('https://app.test/invite/three');
+  });
+
+  it('copy link falls back to selecting the text when the clipboard is unavailable', async () => {
+    stubClipboard(async () => {
+      throw new Error('clipboard denied');
+    });
+    scriptFetch(HAPPY_ROUTES());
+    await openInvitations();
+    await screen.findByTestId('invite-row-inv-2');
+    fireEvent.click(screen.getByTestId('invite-copy-inv-2'));
+    await waitFor(() => expect(screen.getByTestId('invite-copy-inv-2').textContent).toContain('Ctrl+C'));
+    expect((screen.getByTestId('invite-link-inv-2') as HTMLInputElement).selectionEnd).toBe('https://app.test/invite/two'.length);
+  });
+
+  it('revoke calls DELETE and reloads the list', async () => {
+    let revoked = false;
+    const calls = scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/invitations': () => ({
+        body: { ...INVITATIONS, invitations: INVITATIONS.invitations.filter((i) => !revoked || i.id !== 'inv-1') },
+      }),
+      'DELETE /admin/invitations/inv-1': () => {
+        revoked = true;
+        return {};
+      },
+    });
+    await openInvitations();
+    await screen.findByTestId('invite-row-inv-1');
+    fireEvent.click(screen.getByTestId('invite-revoke-inv-1'));
+    await waitFor(() => expect(screen.queryByTestId('invite-row-inv-1')).toBeNull());
+    expect(screen.getByTestId('invite-row-inv-2')).toBeTruthy();
+    const del = calls.indexOf('DELETE /admin/invitations/inv-1');
+    expect(del).toBeGreaterThan(-1);
+    expect(calls.indexOf('GET /admin/invitations', del)).toBeGreaterThan(del);
+  });
+
+  it('a refused invite (503 logto-refused) surfaces the error text and keeps the address for a retry', async () => {
+    scriptFetch({ ...HAPPY_ROUTES(), 'POST /admin/invitations': () => ({ status: 503, body: { error: 'logto-refused' } }) });
+    await openInvitations();
+    await screen.findByTestId('invite-row-inv-1');
+    fireEvent.change(screen.getByTestId('invite-email'), { target: { value: 'gus@x.nl' } });
+    fireEvent.click(screen.getByTestId('invite-send'));
+    await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('logto-refused'));
+    expect(screen.queryByTestId('invite-link')).toBeNull();
+    expect((screen.getByTestId('invite-email') as HTMLInputElement).value).toBe('gus@x.nl');
+  });
+
+  it('a list the API cannot give says why instead of posing as empty; the mode line falls back to /health', async () => {
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /health': () => ({ body: { ...HEALTH, capabilities: { ...HEALTH.capabilities, inviteOnly: true } } }),
+      'GET /admin/invitations': () => ({ status: 503, body: { error: 'logto-unavailable' } }),
+    });
+    await openInvitations();
+    const note = await screen.findByTestId('invitations-unavailable');
+    expect(note.textContent).toContain('logto-unavailable');
+    expect(screen.queryByTestId('invitations-table')).toBeNull();
+    expect(screen.getByTestId('invite-mode').textContent).toContain('by invitation');
   });
 });
