@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.17.0](https://github.com/okkes/munnimok/compare/v5.16.0...v5.17.0) (2026-10-07)
+
+
+### ✨ Features
+
+* **admin:** an Invitations page - mint an invitation link for an e-mail, copy it, see the active ones, revoke ([a71675c](https://github.com/okkes/munnimok/commit/a71675c3e1630fbfdf17d487fa0e1f6238e94769))
+* **api:** invitations on Logto one-time tokens - mint, list and revoke under the admin scope with the magic link, one cached Management API session shared with account deletion, inviteOnly on /health ([12e57ac](https://github.com/okkes/munnimok/commit/12e57ac18b24c0671f39d4faa763946062d6cf67))
+* **auth:** the invitation landing - /invite?token&email accepts a Logto one-time token on a tap, the login says when sign-up is by invitation, the path is a universal link ([6f96f3a](https://github.com/okkes/munnimok/commit/6f96f3a43923f7dfc5d0545390078c19f386ad0c))
+* **infra:** the api is told the web app's url (the invitation link's base) instead of guessing it from the first CORS origin ([d19e3cb](https://github.com/okkes/munnimok/commit/d19e3cb7515242ec0d7067061f6f773dac409a1f))
+* **infra:** the invitation-only flag per environment - Bootstrap closes Logto's registration with automatic account linking, reopens it when off, and gives the API's machine app the Management API role ([d48b0b0](https://github.com/okkes/munnimok/commit/d48b0b0a86ae2c7f8d603e2f643e7c7ebc668767))
+* **planning:** a Needs chip funds with one tap, Fund all per segment, beyond the pool asks once a day, the Unplanned sheet sets money aside, Skip this period only where nothing is due, the add pick per segment ([7261c2f](https://github.com/okkes/munnimok/commit/7261c2f6c7d6a9e15988b2ddabb46d0a6d392834))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** bol reads a page that carries field errors beside its orders - a partial result, noted, never a refusal ([7d86e93](https://github.com/okkes/munnimok/commit/7d86e93923685af712e2126b3282bee87ee17861))
+
 ## [5.16.0](https://github.com/okkes/munnimok/compare/v5.15.0...v5.16.0) (2026-10-07)
 
 
