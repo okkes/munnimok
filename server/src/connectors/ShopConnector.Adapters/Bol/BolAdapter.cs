@@ -473,7 +473,7 @@ public sealed class BolAdapter : IProviderAdapter
             // The call's options rather than the adapter's: a refusal names
             // the hash and the body actually in use, which are the learned
             // ones when the session has them (2026-10-07, prod).
-            var orders = shape.Parse(body, call.Options, zone, request.WantsRaw);
+            var orders = shape.Parse(body, call.Options, zone, request.WantsRaw, ctx.Note);
             if (orders.Count == 0)
             {
                 budgetRanOut = false;

@@ -128,22 +128,26 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
             },
         }.ToJsonString();
 
-    public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false)
+    public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false, Action<string>? warn = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         using var document = Parse(body);
         var root = document.RootElement;
 
-        // GraphQL reports failure in the body with a 200, so the errors array
-        // is read before the data is trusted at all. A hash bol has forgotten
-        // arrives here, not as a status code.
-        Refuse(root, options);
-
+        // GraphQL reports failure in the body with a 200. But an errors array
+        // BESIDE data is a partial result - one field failed, the rest is
+        // there - not a refusal: 2026-10-07 (prod) "Error(s) redacted." came
+        // with data.me.orders of a signed-in customer, and refusing the page
+        // kept every sync on "the party changed its site". So the orders are
+        // looked for first; only a page WITHOUT them is refused, and the
+        // errors beside a read page are noted for the operator.
+        var errors = root.Items("errors").ToList();
         var me = root.Child("data").Child("me");
 
         if (me.ValueKind == JsonValueKind.Undefined)
         {
+            Refuse(root, errors, options);
             throw ConnectorException.ProviderChanged(
                 $"{BolAdapter.ProviderId}: the response carries no data.me.orders; {ConfigHint}");
         }
@@ -156,6 +160,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         if (string.Equals(
                 JsonAccess.StrOf(me, "__typename"), options.AnonymousTypeName, StringComparison.Ordinal))
         {
+            Refuse(root, errors, options); // beside errors: the detail names what bol left
             throw ConnectorException.SessionExpired(
                 $"{BolAdapter.ProviderId}: bol answered as {options.AnonymousTypeName}, so the stored session " +
                 "is no longer signed in. bol issues no refresh token, so this needs a new login.");
@@ -163,8 +168,10 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
 
         var orders = me.Child("orders");
 
-        if (orders.ValueKind == JsonValueKind.Undefined)
+        // a null orders field is an empty history - unless errors stand beside it, which is the field having failed
+        if (orders.ValueKind == JsonValueKind.Undefined || (orders.ValueKind == JsonValueKind.Null && errors.Count > 0))
         {
+            Refuse(root, errors, options);
             throw ConnectorException.ProviderChanged(
                 $"{BolAdapter.ProviderId}: the response carries no data.me.orders; {ConfigHint}");
         }
@@ -177,6 +184,13 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         {
             throw ConnectorException.ProviderChanged(
                 $"{BolAdapter.ProviderId}: data.me.orders is a {orders.ValueKind}, not a list");
+        }
+
+        if (errors.Count > 0)
+        {
+            warn?.Invoke(
+                $"{BolAdapter.ProviderId}: bol answered the orders with {errors.Count} error(s) beside them - a field that " +
+                $"failed, read as a partial page ({BolRefusal.Describe(root, errors, options)})");
         }
 
         var parsed = new List<BolOrder>();
@@ -282,9 +296,8 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
     /// the errors is the session being over, not a change: the verdict the
     /// signed-out answer without errors gets below.
     /// </summary>
-    private static void Refuse(JsonElement root, BolOptions options)
+    private static void Refuse(JsonElement root, IReadOnlyList<JsonElement> errors, BolOptions options)
     {
-        var errors = root.Items("errors").ToList();
         if (errors.Count == 0) return;
 
         var detail = BolRefusal.Describe(root, errors, options);

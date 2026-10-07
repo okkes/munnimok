@@ -109,7 +109,11 @@ internal interface IBolOrdersShape
     /// somebody's purchase in full, and a shape that cannot produce one simply
     /// leaves it null.
     /// </param>
-    IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false);
+    /// <param name="warn">
+    /// Where a shape's remarks go that are NOT a failure - a field error bol
+    /// reports beside orders it did deliver (2026-10-07, prod). Null drops them.
+    /// </param>
+    IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false, Action<string>? warn = null);
 }
 
 internal static class BolShapes

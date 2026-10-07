@@ -851,6 +851,25 @@ public sealed class BolAdapterTests
     /// sign-in learns the hash from bol's own page and seals it into the
     /// session; a fetch holding one sends it instead of the option's.
     /// </summary>
+    /// <summary>
+    /// 2026-10-07 (prod, the user's phone): a signed-in page with its orders AND
+    /// an errors array beside them is read, and the errors are noted.
+    /// </summary>
+    [Fact]
+    public async Task A_page_with_errors_beside_its_orders_is_read_and_the_errors_are_noted()
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(FixtureCatalog.Read("bol/orders-graphql.json"))!.AsObject();
+        node["errors"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["message"] = "Error(s) redacted." });
+        var partial = node.ToJsonString();
+        var handler = new StubHttpHandler((_, _) => Stub.Json(partial));
+        using var ctx = FetchContext(handler);
+
+        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        Assert.NotEmpty(result.Receipts);
+        Assert.Contains(ctx.Notes, n => n.Contains("partial page", StringComparison.Ordinal) && n.Contains("errors=1", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task A_hash_the_sign_in_learned_is_the_one_the_fetch_sends()
     {
