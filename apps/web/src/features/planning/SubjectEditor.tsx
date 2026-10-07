@@ -12,11 +12,11 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { SUBJECT_COLORS, SUBJECT_ICONS } from './planningUi';
 import type { MoneyFmt } from './SegmentSection';
+import { AmountSuggestions } from './AmountSuggestions';
 
 type TickState = 'checked' | 'half' | 'off';
 const TICK_BOX: Record<TickState, string> = {
@@ -53,7 +53,7 @@ const draftOf = (subject: PlanSubjectRow | null, preset: EditorPreset | null): D
     color: seed?.color ?? SUBJECT_COLORS[0],
     catIds: new Set(seed?.catIds ?? []),
     excludeIds: new Set(subject?.excludeCatIds ?? []),
-    target: seed?.targetCents ? (seed.targetCents / 100).toFixed(2) : '',
+    target: seed?.targetCents == null ? '' : (seed.targetCents / 100).toFixed(2),
   };
 };
 
@@ -213,7 +213,8 @@ type Blocker = 'name' | 'cats' | 'target' | null;
 const blockerOf = (draft: Draft, target: number | null): Blocker => {
   if (!draft.name.trim()) return 'name';
   if (draft.catIds.size === 0) return 'cats';
-  if (target === null || target <= 0) return 'target';
+  // 0 is an answer (user 2026-10-07): "I don't know yet what this will take"
+  if (target === null || target < 0) return 'target';
   return null;
 };
 const BLOCKER_KEY = { name: 'plan.subject.blockerName', cats: 'plan.subject.blockerCats', target: 'plan.subject.blockerTarget' } as const;
@@ -350,21 +351,20 @@ export function SubjectEditor({
           placeholder="0.00"
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && blocker === 'target')}`}
         />
-        <FormBlockerNote show={attempted && blocker === 'target'} text={t(BLOCKER_KEY.target)} testId="plan-editor-blocker" />
-        {(estimate.lastCents !== null || estimate.averageCents !== null) && (
-          <div className="flex flex-wrap gap-2" data-testid="plan-editor-chips">
-            {estimate.lastCents !== null && (
-              <Chip selected={false} testId="plan-editor-chip-last" onClick={() => patch({ target: (estimate.lastCents! / 100).toFixed(2) })}>
-                {t('plan.subject.estimateLast', { amount: fmt(estimate.lastCents, currency) })}
-              </Chip>
-            )}
-            {estimate.averageCents !== null && (
-              <Chip selected={false} testId="plan-editor-chip-avg" onClick={() => patch({ target: (estimate.averageCents! / 100).toFixed(2) })}>
-                {t('plan.subject.estimateAvg', { amount: fmt(estimate.averageCents, currency) })}
-              </Chip>
-            )}
-          </div>
-        )}
+        {/* the note keeps its room (user 2026-10-07): when it went away the field jumped under the caret */}
+        <div className="min-h-[18px]">
+          <FormBlockerNote show={attempted && blocker === 'target'} text={t(BLOCKER_KEY.target)} testId="plan-editor-blocker" />
+        </div>
+        <AmountSuggestions
+          items={[
+            ...(estimate.lastCents === null ? [] : [{ id: 'last', label: t('plan.subject.estimateLast'), cents: estimate.lastCents }]),
+            ...(estimate.averageCents === null ? [] : [{ id: 'avg', label: t('plan.subject.estimateAvg'), cents: estimate.averageCents }]),
+          ]}
+          fmt={fmt}
+          currency={currency}
+          testIdPrefix="plan-editor-chip"
+          onPick={(cents) => patch({ target: (cents / 100).toFixed(2) })}
+        />
         <p className="px-1 text-[11px] text-ink-4">{t('plan.targetHint')}</p>
       </div>
     </Sheet>

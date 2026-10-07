@@ -1,8 +1,12 @@
+import { useMemo, useState } from 'react';
 import { useLang } from '@/i18n';
 import type { PlanRow, PlanSegmentKind } from '@/db/types';
 import type { MirroredSource, PlanningModel, PlanningOps } from '@/application/planning';
 import { isDebtTracked } from '@/domain/debts';
-import { Row, Tile } from '@/ui/primitives';
+import { Icon } from '@/ui/Icon';
+import { Button } from '@/ui/Button';
+import { Tile } from '@/ui/primitives';
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { Sheet } from '@/ui/Sheet';
 import { SEGMENT_COLOR, SEGMENT_META, softOf } from './planningUi';
 
@@ -24,7 +28,11 @@ export function mirrorCandidates(model: PlanningModel, plan: PlanRow, segment: P
   }
 }
 
-/** add a budget, recurring cost, loan or goal to the plan: it mirrors the source row */
+/**
+ * Add budgets, recurring costs, loans or goals to the plan — each mirrors its
+ * source row. Several at once (user 2026-10-07): a tap ticks a row, the header
+ * row ticks them all, one button adds the pick.
+ */
 export function AddSourceSheet({
   segment,
   model,
@@ -33,27 +41,75 @@ export function AddSourceSheet({
   onClose,
 }: Readonly<{ segment: Exclude<PlanSegmentKind, 'expenses'> | null; model: PlanningModel; plan: PlanRow; ops: PlanningOps; onClose: () => void }>) {
   const { t } = useLang();
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const candidates = useMemo(() => (segment ? mirrorCandidates(model, plan, segment) : []), [model, plan, segment]);
   if (!segment) return null;
-  const candidates = mirrorCandidates(model, plan, segment);
   const meta = SEGMENT_META[segment];
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const add = async () => {
+    const sources = candidates.filter((c) => picked.has(c.id));
+    if (sources.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      for (const source of sources) await ops.addMirrored(plan.id, segment, source);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <Sheet open onOpenChange={(next) => !next && onClose()} title={t(meta.addKey)} size="tall">
-      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-add-source">
+    <Sheet
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title={t(meta.addKey)}
+      size="tall"
+      footer={
+        <Button className="w-full" data-testid="plan-add-source-save" disabled={picked.size === 0 || busy} onClick={() => void add()}>
+          {t('plan.addSourceCount', { n: picked.size })}
+        </Button>
+      }
+    >
+      <div data-testid="plan-add-source">
         {candidates.length === 0 && <p className="px-4 py-4 text-center text-[13px] text-ink-4">{t('plan.addSourceNone')}</p>}
-        {candidates.map((source) => {
-          const color = source.color ?? SEGMENT_COLOR[segment];
-          return (
-            <Row
-              key={source.id}
-              kind="data"
-              testId={`plan-add-source-${source.id}`}
-              leading={<Tile icon={source.icon ?? meta.icon} bg={softOf(color)} color={color} />}
-              title={source.name}
-              chevron={false}
-              onClick={() => void ops.addMirrored(plan.id, segment, source).then(onClose)}
-            />
-          );
-        })}
+        {candidates.length > 0 && (
+          <SelectAllRow
+            total={candidates.length}
+            selected={picked.size}
+            testId="plan-add-source-all"
+            onChange={(all) => setPicked(all ? new Set(candidates.map((c) => c.id)) : new Set())}
+          />
+        )}
+        <div className="mt-2 overflow-hidden rounded-card border border-line bg-surface">
+          {candidates.map((source) => {
+            const color = source.color ?? SEGMENT_COLOR[segment];
+            const on = picked.has(source.id);
+            return (
+              <button
+                type="button"
+                key={source.id}
+                data-testid={`plan-add-source-${source.id}`}
+                aria-pressed={on}
+                onClick={() => toggle(source.id)}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+              >
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${on ? 'border-accent bg-accent text-white' : 'border-line bg-surface'}`}
+                >
+                  {on && <Icon name="check" size={12} />}
+                </span>
+                <Tile icon={source.icon ?? meta.icon} bg={softOf(color)} color={color} />
+                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{source.name}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </Sheet>
   );

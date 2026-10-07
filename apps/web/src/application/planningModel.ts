@@ -19,7 +19,7 @@ import type { CatalogDoc } from '@/domain/catalogDoc';
 import { isDebtTracked } from '@/domain/debts';
 import { periodHistory } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
-import {
+import { slackCents,
   OPTIONAL_SEGMENTS,
   SEGMENT_ORDER,
   aheadSuggested,
@@ -295,14 +295,20 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     });
   const aheadFundedCents = ahead.reduce((sum, a) => sum + a.fundedCents, 0);
   const pool = poolCents(data.accounts, data.space);
-  const fundedOf = (p: PlanRow): number => subjectsOf(p).reduce((sum, s) => sum + s.fundedCents, 0);
+  // what a plan still HOLDS of the pool: its funding net of what the period already
+  // spent — the balance dropped with every payment, so money that went out is not
+  // reserved a second time (user 2026-10-07: funding a bill already paid made the
+  // pool look emptier than it is); a period ahead has spent nothing yet, so its
+  // whole funding is held, and a plan never counts its own ahead funding twice
+  const heldOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + slackCents(v), 0);
+  const aheadHeldExcept = (p: PlanRow): number => ahead.filter((a) => a.plan.id !== p.id).reduce((sum, a) => sum + a.fundedCents, 0);
 
   const taken = new Set(ahead.map((a) => a.period.start));
   const candidates = periodsAhead(space, AHEAD_SEARCH, parseLocalDate(today));
   const nextAheadPeriod = candidates.find((candidate) => !taken.has(candidate.start)) ?? candidates[0];
 
   const currentViews = plan ? viewsOf(plan) : [];
-  const reservedCents = currentViews.reduce((sum, v) => sum + Math.max(0, v.fundedCents - v.realizedCents), 0) + aheadFundedCents;
+  const reservedCents = currentViews.reduce((sum, v) => sum + slackCents(v), 0) + aheadFundedCents;
 
   const editabilityOf = (p: PlanRow): PlanEditability => {
     if (p.kind !== 'actual' || !p.periodStart || p.periodStart >= period.start) return 'full';
@@ -333,7 +339,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     subjectsOf,
     viewsOf,
     segmentsOf: (p) => segmentsOf(p),
-    toAllocateOf: (p) => pool - fundedOf(p) - aheadFundedCents,
+    toAllocateOf: (p) => pool - heldOf(p) - aheadHeldExcept(p),
     reservationsOf: (p) => categoryReservations(subjectsOf(p), budgetsById, data.catalog),
     unplannedOf: (p) => {
       const covered = new Set<string>();
