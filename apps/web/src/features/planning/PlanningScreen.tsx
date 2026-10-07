@@ -260,6 +260,20 @@ export function PlanningScreen() {
     setSheet(item);
   };
 
+  // the one-tap funding doors (user 2026-10-07): a segment to its targets, a subject to its target —
+  // each through the beyond-the-pool guard with what the pool would still have to give
+  const needOf = (kind: PlanSegmentKind): number =>
+    views.filter((v) => v.subject.segment === kind && v.subject.snoozed !== 1).reduce((sum, v) => sum + shortfallCents(v), 0);
+  const fundSegment = (kind: PlanSegmentKind) => {
+    if (!model || !plan) return;
+    overBudget.guard(model.toAllocateOf(plan), needOf(kind), () => void ops.fundSegment(plan, kind));
+  };
+  const fundToTarget = (view: SubjectView) => {
+    if (!model || !plan) return;
+    const need = shortfallCents(view);
+    overBudget.guard(model.toAllocateOf(plan), need, () => void ops.fund(view.subject.id, view.fundedCents + need));
+  };
+
   const segmentBlocks = () => {
     if (!model || !plan) return null;
     return model
@@ -274,16 +288,8 @@ export function PlanningScreen() {
           canFill={canFill}
           fmt={fmt}
           currency={currency}
-          onFill={() =>
-            overBudget.guard(
-              model.toAllocateOf(plan),
-              views.filter((v) => v.subject.segment === s.kind && v.subject.snoozed !== 1).reduce((sum, v) => sum + shortfallCents(v), 0),
-              () => void ops.fundSegment(plan, s.kind),
-            )
-          }
-          onFundToTarget={(view) =>
-            overBudget.guard(model.toAllocateOf(plan), shortfallCents(view), () => void ops.fund(view.subject.id, view.fundedCents + shortfallCents(view)))
-          }
+          onFill={() => fundSegment(s.kind)}
+          onFundToTarget={fundToTarget}
           onAdd={() => (s.kind === 'expenses' ? setEditing({ subject: null }) : setAdding(s.kind))}
           onOpen={(view) => setOpenSubjectId(view.subject.id)}
           folded={folds.has(s.kind)}

@@ -37,7 +37,14 @@ export function SubjectRow({
   return (
     <button
       data-testid={`plan-subject-${subject.id}`}
-      onClick={onClick}
+      onClick={(e) => {
+        // a Needs chip funds with one tap (user 2026-10-07); the rest of the row
+        // stays the sheet's door — one button, so the markup keeps no button
+        // inside a button, and the sheet's "Fill to target" is the keyboard's road
+        const chip = (e.target as HTMLElement).closest('[data-testid^="plan-subject-need-"]');
+        if (chip && onFundToTarget) onFundToTarget();
+        else onClick();
+      }}
       data-skipped={subject.snoozed === 1}
       className={`m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0${subject.snoozed === 1 ? ' opacity-55' : ''}`}
     >
@@ -45,26 +52,8 @@ export function SubjectRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{subject.name}</span>
-          {/* a Needs chip funds with one tap (user 2026-10-07): the row stays the sheet's door */}
           {view.status === 'underfunded' && onFundToTarget ? (
-            <span
-              role="button"
-              tabIndex={0}
-              data-testid={`plan-subject-need-${subject.id}`}
-              aria-label={t('plan.fund.fill')}
-              onClick={(e) => {
-                e.stopPropagation();
-                onFundToTarget();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onFundToTarget();
-                }
-              }}
-              className="m-tap shrink-0 rounded-full"
-            >
+            <span data-testid={`plan-subject-need-${subject.id}`} title={t('plan.fund.fill')} className="shrink-0 rounded-full">
               <Pill tone={tone} testId={`plan-subject-status-${subject.id}`}>
                 {statusLine(view, t, fmt, currency)}
               </Pill>
