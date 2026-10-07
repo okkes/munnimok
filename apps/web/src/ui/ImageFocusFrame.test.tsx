@@ -21,7 +21,7 @@ describe('ImageFocusFrame (#446: drag the picture to choose what shows)', () => 
     render(<ImageFocusFrame src="data:image/jpeg;base64,ZmFrZQ==" focus={{ x: 20, y: 50 }} onFocus={() => undefined} hint="Drag" testId="frame" />);
     const frame = screen.getByTestId('frame');
     expect(frame.hasAttribute('data-sheet-own-gesture')).toBe(true);
-    expect(frame.textContent).toContain('Drag');
+    expect(screen.getByTestId('frame-hint').textContent).toContain('Drag');
     expect((screen.getByTestId('frame-img') as HTMLElement).style.objectPosition).toBe('20% 50%');
   });
 
