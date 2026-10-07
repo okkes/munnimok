@@ -22,9 +22,15 @@ export interface InviteResult {
   link: string;
 }
 
-/** enough shape to spare the API a pointless round trip — the API stays the judge */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-export const looksLikeEmail = (s: string): boolean => EMAIL_SHAPE.test(s.trim());
+/** enough shape to spare the API a pointless round trip — the API stays the judge (no regex: Sonar S5852 backtracking) */
+export const looksLikeEmail = (s: string): boolean => {
+  const value = s.trim();
+  const at = value.indexOf('@');
+  if (at < 1 || at !== value.lastIndexOf('@') || /\s/.test(value)) return false;
+  const domain = value.slice(at + 1);
+  const dot = domain.indexOf('.');
+  return dot > 0 && dot < domain.length - 1;
+};
 
 const when = (iso: string) => new Date(iso).toLocaleString();
 
