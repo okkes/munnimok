@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Connector.Kit.Errors;
@@ -32,6 +34,14 @@ namespace ShopConnector.Adapters.Bol;
 /// </summary>
 internal sealed class BolGraphQlShape : IBolOrdersShape
 {
+    /// <summary>
+    /// What a refusal's detail starts with, after the provider id. The
+    /// adapter tells a refused operation from any other shape change by it.
+    /// </summary>
+    public const string RefusedMarker = "graphql refused";
+
+    private const string VariablesKey = "variables";
+
     public string Name => "graphql";
 
     public string ConfigHint =>
@@ -69,14 +79,44 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var after = Math.Max(0, page - 1) * Math.Max(1, options.OrdersPageSize);
+        var after = (Math.Max(0, page - 1) * Math.Max(1, options.OrdersPageSize)).ToString(CultureInfo.InvariantCulture);
 
-        return new JsonObject
+        return Replayed(options, after) ?? Rebuilt(options, after);
+    }
+
+    /// <summary>
+    /// The page's own body with only the cursor rewritten - 2026-10-07
+    /// (prod), see <see cref="BolOptions.OrdersRequestTemplate"/> - or null
+    /// for a session that learned none. A template that is not a body with
+    /// variables in it falls back to the rebuilt shape too, rather than
+    /// sending bol something no page ever sent.
+    /// </summary>
+    private static string? Replayed(BolOptions options, string after)
+    {
+        if (string.IsNullOrWhiteSpace(options.OrdersRequestTemplate)) return null;
+
+        try
+        {
+            if (JsonNode.Parse(options.OrdersRequestTemplate) is not JsonObject body) return null;
+            if (body[VariablesKey] is not JsonObject variables) return null;
+
+            variables[options.AfterVariable] = after;
+            return body.ToJsonString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The operation from the settings alone: the shape every fetch sent before a sign-in learned the page's own.</summary>
+    private static string Rebuilt(BolOptions options, string after) =>
+        new JsonObject
         {
             ["operationName"] = options.OrdersOperationName,
-            ["variables"] = new JsonObject
+            [VariablesKey] = new JsonObject
             {
-                [options.AfterVariable] = after.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                [options.AfterVariable] = after,
             },
             ["extensions"] = new JsonObject
             {
@@ -87,7 +127,6 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
                 },
             },
         }.ToJsonString();
-    }
 
     public IReadOnlyList<BolOrder> Parse(string body, BolOptions options, TimeZoneInfo zone, bool keepRaw = false)
     {
@@ -99,7 +138,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         // GraphQL reports failure in the body with a 200, so the errors array
         // is read before the data is trusted at all. A hash bol has forgotten
         // arrives here, not as a status code.
-        Refuse(root);
+        Refuse(root, options);
 
         var me = root.Child("data").Child("me");
 
@@ -230,16 +269,34 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         return true;
     }
 
-    private static void Refuse(JsonElement root)
+    /// <summary>
+    /// The errors array, read before the data is trusted - GraphQL reports
+    /// failure in the body with a 200, and a hash bol has forgotten arrives
+    /// here rather than as a status code.
+    ///
+    /// 2026-10-07 (prod): the old reading kept the message and threw the
+    /// rest away, and "Error(s) redacted." told nobody whether bol had
+    /// refused the hash, the variables or the session. The detail now
+    /// carries what tells those apart, as tokens and never as free text -
+    /// see <see cref="BolRefusal"/>. And an anonymous <c>data.me</c> beside
+    /// the errors is the session being over, not a change: the verdict the
+    /// signed-out answer without errors gets below.
+    /// </summary>
+    private static void Refuse(JsonElement root, BolOptions options)
     {
-        if (root.Items("errors").FirstOrDefault() is not { ValueKind: not JsonValueKind.Undefined } first) return;
+        var errors = root.Items("errors").ToList();
+        if (errors.Count == 0) return;
 
-        var message = JsonAccess.StrOf(first, "message") ?? "the operation was refused";
+        var detail = BolRefusal.Describe(root, errors, options);
 
-        throw ConnectorException.ProviderChanged(
-            $"{BolAdapter.ProviderId}: graphql refused OrdersOverviewClient: {message}. " +
-            "A persisted-query hash bol no longer knows reports itself here; " +
-            "see BolOptions.OrdersPersistedQueryHash");
+        if (string.Equals(BolRefusal.Typename(root), options.AnonymousTypeName, StringComparison.Ordinal))
+        {
+            throw ConnectorException.SessionExpired(
+                $"{BolAdapter.ProviderId}: bol answered as {options.AnonymousTypeName} beside the refusal, so the " +
+                $"stored session is no longer signed in. bol issues no refresh token, so this needs a new login ({detail})");
+        }
+
+        throw ConnectorException.ProviderChanged(detail);
     }
 
     private static JsonDocument Parse(string body)
@@ -253,5 +310,101 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
             throw ConnectorException.ProviderChanged(
                 $"{BolAdapter.ProviderId}: the orders response is not JSON ({ex.Message})");
         }
+    }
+}
+
+/// <summary>
+/// A refusal's detail, self-explaining and safe to log.
+///
+/// One <c>name=value</c> token per fact, every value identifier-like -
+/// letters, digits and <c>_.:-</c>, at most <see cref="MaxTokenLength"/>
+/// characters - so the detail can be read, grouped and logged without ever
+/// carrying a party's free text. The facts are the ones that tell the cases
+/// apart (2026-10-07, prod): how many errors, their code, the extension
+/// keys, the path, whether <c>data</c> was there at all, what <c>data.me</c>
+/// says it is, which hash was in use and whether the body was the page's own
+/// replay or the rebuilt shape. Per the GraphQL spec a request refused
+/// before running has no <c>data</c> entry - an unknown hash, variables it
+/// no longer takes - while one that ran carries it, null or not; that one
+/// distinction is what "Error(s) redacted." withheld.
+/// </summary>
+internal static class BolRefusal
+{
+    public const int MaxTokenLength = 64;
+
+    private const string Absent = "absent";
+
+    /// <summary>The detail, with the reading of the <c>data</c> entry spelled out after the tokens.</summary>
+    public static string Describe(JsonElement root, IReadOnlyList<JsonElement> errors, BolOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+        ArgumentNullException.ThrowIfNull(options);
+
+        var first = errors.Count > 0 ? errors[0] : default;
+        var extensions = first.Child("extensions");
+        var data = Data(root);
+
+        var tokens = string.Join(' ',
+            $"message={Token(JsonAccess.StrOf(first, "message"))}",
+            $"errors={errors.Count}",
+            $"code={Token(JsonAccess.StrOf(extensions, "code", "classification", "errorType"))}",
+            $"extensions={Keys(extensions)}",
+            $"path={Path(first)}",
+            $"data={data}",
+            $"me={Token(Typename(root))}",
+            $"hash={Token(BolPersistedQuery.Prefix(options.OrdersPersistedQueryHash))}",
+            $"body={(options.OrdersRequestTemplate is null ? "rebuilt" : "replay")}");
+
+        var reading = data == Absent
+            ? "absent data means bol refused the request before running it - a hash it does not know, or variables it no longer takes"
+            : "data means the operation ran, so bol knew the hash and the refusal is about the request itself or the session";
+
+        return $"{BolAdapter.ProviderId}: {BolGraphQlShape.RefusedMarker} {options.OrdersOperationName}: {tokens}; " +
+               $"{reading}; see BolOptions.OrdersPersistedQueryHash";
+    }
+
+    /// <summary>What <c>data.me</c> says it is, or null.</summary>
+    public static string? Typename(JsonElement root) => JsonAccess.StrOf(root.Child("data").Child("me"), "__typename");
+
+    /// <summary>
+    /// A party's value as a token: letters, digits and <c>_.:-</c> survive,
+    /// anything else becomes <c>-</c>, and it is cut at <see cref="MaxTokenLength"/>.
+    /// </summary>
+    public static string Token(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return BolPersistedQuery.None;
+
+        var kept = new StringBuilder(Math.Min(value.Length, MaxTokenLength));
+        foreach (var c in value)
+        {
+            if (kept.Length == MaxTokenLength) break;
+            kept.Append(char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or ':' or '-' ? c : '-');
+        }
+
+        return kept.ToString();
+    }
+
+    /// <summary>absent, null or present - the one fact "Error(s) redacted." withheld.</summary>
+    private static string Data(JsonElement root)
+    {
+        var data = root.Child("data");
+        if (data.ValueKind == JsonValueKind.Undefined) return Absent;
+
+        return data.ValueKind == JsonValueKind.Null ? "null" : "present";
+    }
+
+    /// <summary>The extension KEYS, never their values: the keys say what bol states about an error, the values could say anything.</summary>
+    private static string Keys(JsonElement extensions)
+    {
+        if (extensions.ValueKind != JsonValueKind.Object) return BolPersistedQuery.None;
+
+        var names = extensions.EnumerateObject().Select(property => Token(property.Name)).ToList();
+        return names.Count == 0 ? BolPersistedQuery.None : string.Join(',', names);
+    }
+
+    private static string Path(JsonElement error)
+    {
+        var segments = error.Items("path").Select(segment => Token(JsonAccess.Str(segment))).ToList();
+        return segments.Count == 0 ? BolPersistedQuery.None : string.Join('.', segments);
     }
 }

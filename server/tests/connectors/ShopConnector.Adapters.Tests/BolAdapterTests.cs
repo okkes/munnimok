@@ -82,6 +82,12 @@ public sealed class BolAdapterTests
     // the language chooser bol raises behind the cookie wall since 2026-10-07
     private const string LanguageContinue = "[role='dialog'][data-state='open'] button:has-text('Doorgaan')";
 
+    // what bol's own page sent on 2026-10-07 (prod), as the sign-in's listener sees it: its hash, its body, its browser's user agent
+    private const string PageHash = "sha256:0123456789abcdef0123456789abcdef";
+    private const string PageUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+    private const string PageBody =
+        """{"operationName":"OrdersOverviewClient","variables":{"after":"5","locale":"nl-NL"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"sha256:0123456789abcdef0123456789abcdef"}}}""";
+
     /// <summary>The one code that sends a consumer back through the login.</summary>
     private static readonly string[] SessionExpiredOnly = ["session_expired"];
 
@@ -601,6 +607,79 @@ public sealed class BolAdapterTests
         Assert.Contains("neither completed nor stated", error.Detail, StringComparison.Ordinal);
     }
 
+    // ---- what the sign-in seals beyond the jar ------------------------------
+
+    /// <summary>
+    /// 2026-10-07 (prod): the jar had been sealed BEFORE the probe opened the
+    /// overview and pressed "Toon meer", so whatever bol set on those visits
+    /// never reached a fetch. The jar read after the probe is the one sealed,
+    /// and the page's own request rides beside the hash - with its header
+    /// NAMES on the job's notes and never a value.
+    /// </summary>
+    [Fact]
+    public async Task The_jar_sealed_is_the_one_read_after_the_probe_and_the_page_s_request_rides_beside_the_hash()
+    {
+        var before = FixtureCatalog.Read("bol/storage-state.json");
+        var after = before.Replace("fixture-xsrf-token", "probe-xsrf-token", StringComparison.Ordinal);
+        var page = StubLoginPage.Showing();
+        using var ctx = LoginContext(page, storageState: after);
+        var signedIn = new LoginResult { Material = new SessionMaterial { StorageState = before } };
+        var request = new BolPageRequest(PageBody, new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["user-agent"] = PageUserAgent,
+            ["accept"] = "*/*",
+        });
+
+        var sealed_ = await Adapter().SealAsync(
+            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(request), CancellationToken.None);
+
+        Assert.Contains("probe-xsrf-token", sealed_.Material.StorageState, StringComparison.Ordinal);
+        Assert.Equal(PageHash, BolPersistedQuery.Learned(sealed_.Material));
+
+        var learned = BolPersistedQuery.LearnedRequest(sealed_.Material);
+        Assert.NotNull(learned);
+        Assert.Equal(PageBody, learned.Body);
+        Assert.Equal(PageUserAgent, learned.Headers["user-agent"]);
+
+        var note = Assert.Single(ctx.Notes, n => n.Contains("sealed into the session", StringComparison.Ordinal));
+        Assert.Contains("sha256:0123456789ab)", note, StringComparison.Ordinal);
+        Assert.Contains("[accept, user-agent]", note, StringComparison.Ordinal);
+        Assert.DoesNotContain(PageUserAgent, note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_jar_that_lost_its_orders_cookies_during_the_probe_never_replaces_the_one_the_login_checked()
+    {
+        // a lease that answers an empty state once its browser is gone, or a jar bol emptied on the way: the checked jar stands
+        var page = StubLoginPage.Showing();
+        using var ctx = LoginContext(page, storageState: LoginHostOnlyState);
+        var signedIn = new LoginResult { Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") } };
+        var quick = Options with { HashProbeMs = 20, ProbeMs = 1 };
+
+        var sealed_ = await Adapter(quick).SealAsync(
+            ctx, page, signedIn, new TaskCompletionSource<string>().Task, _ => Task.FromResult<BolPageRequest?>(null), CancellationToken.None);
+
+        Assert.Contains("fixture-xsrf-token", sealed_.Material.StorageState, StringComparison.Ordinal);
+        Assert.Null(BolPersistedQuery.Learned(sealed_.Material));
+        Assert.Null(BolPersistedQuery.LearnedRequest(sealed_.Material));
+        Assert.Contains(ctx.Notes, n => n.Contains("the jar sealed at sign-in stands", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_hash_whose_request_could_not_be_read_is_still_sealed_and_says_so()
+    {
+        var page = StubLoginPage.Showing();
+        using var ctx = LoginContext(page);
+        var signedIn = new LoginResult { Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") } };
+
+        var sealed_ = await Adapter().SealAsync(
+            ctx, page, signedIn, Task.FromResult(PageHash), _ => Task.FromResult<BolPageRequest?>(null), CancellationToken.None);
+
+        Assert.Equal(PageHash, BolPersistedQuery.Learned(sealed_.Material));
+        Assert.Null(BolPersistedQuery.LearnedRequest(sealed_.Material));
+        Assert.Contains(ctx.Notes, n => n.Contains("could not be read", StringComparison.Ordinal));
+    }
+
     // ---- "are we in yet?" ---------------------------------------------------
 
     [Fact]
@@ -828,6 +907,108 @@ public sealed class BolAdapterTests
 
         // the page said this hash today and bol refuses it: a real change, an operator's job
         Assert.Equal(ErrorCode.ProviderChanged, ex.Code);
+    }
+
+    /// <summary>
+    /// 2026-10-07 (prod): the sign-in learned the page's hash, the fetch sent
+    /// it thirty seconds later, and bol answered "Error(s) redacted.". The
+    /// hash was bol's own, so what bol refused was the request rebuilt
+    /// around it. A session that learned the page's request replays it: the
+    /// body with only the cursor rewritten, the page's headers over the
+    /// fetch's defaults - and the jar, the referer and the CSRF echo the
+    /// fetch's own, read off the stored session.
+    /// </summary>
+    [Fact]
+    public async Task The_page_s_own_request_is_replayed_with_only_the_cursor_rewritten_and_its_headers_added()
+    {
+        var handler = new StubHttpHandler((_, i) => i == 0
+            ? Stub.Fixture("bol/orders-graphql.json")
+            : Stub.Json("""{"data":{"me":{"orders":[]}}}"""));
+
+        using var ctx = new FakeJobContext(handler) { Material = ReplayMaterial() };
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
+
+        var request = handler.Requests[0];
+        using var sent = JsonDocument.Parse(request.Body!);
+        var root = sent.RootElement;
+
+        // the page's body: its cursor rewritten for page one, its other variable and its own hash kept
+        Assert.Equal("0", root.GetProperty("variables").GetProperty("after").GetString());
+        Assert.Equal("nl-NL", root.GetProperty("variables").GetProperty("locale").GetString());
+        Assert.Equal(PageHash, root.GetProperty("extensions").GetProperty("persistedQuery").GetProperty("sha256Hash").GetString());
+
+        // the page's headers over the defaults rather than beside them: one User-Agent, the page's
+        Assert.Equal(PageUserAgent, request.Header("User-Agent"));
+        Assert.Equal("7.3.1", request.Header("bol-app-version"));
+        Assert.Equal("https://www.bol.com", request.Header("Origin"));
+        Assert.Equal("same-origin", request.Header("sec-fetch-site"));
+        Assert.Equal("application/json", request.Header("Content-Type"));
+        Assert.Equal("OrdersOverviewClient", request.Header("bol-app-operation-name"));
+
+        // and the fetch's own: the stored jar, the stored CSRF echo, the account page as referer
+        Assert.Contains("XSC=fixture-xsc-value", request.Header("Cookie"), StringComparison.Ordinal);
+        Assert.DoesNotContain("stale", request.Header("Cookie"), StringComparison.Ordinal);
+        Assert.Equal("fixture-xsrf-token", request.Header("x-xsrf-token"));
+        Assert.Equal("https://www.bol.com/nl/nl/account/bestellingen/overzicht/", request.Header("Referer"));
+
+        // page two is the same body with the next cursor
+        using var second = JsonDocument.Parse(handler.Requests[1].Body!);
+        Assert.Equal("5", second.RootElement.GetProperty("variables").GetProperty("after").GetString());
+
+        Assert.Contains(ctx.Notes, n => n.Contains("learned", StringComparison.Ordinal) && n.Contains("replaying", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The refusal's detail travels whole through the fetch: an operator
+    /// reads which code, which path and whether bol ran the operation, under
+    /// a learned hash and under the configured one alike.
+    /// </summary>
+    [Fact]
+    public async Task A_refusal_s_detail_names_the_code_the_path_and_whether_the_operation_ran()
+    {
+        const string refused = """{"errors":[{"message":"Error(s) redacted.","path":["me"],"extensions":{"code":"INTERNAL_ERROR"}}]}""";
+        var handler = new StubHttpHandler((_, _) => Stub.Json(refused));
+
+        using var learned = new FakeJobContext(handler) { Material = ReplayMaterial() };
+        var change = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(learned, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.ProviderChanged, change.Code);
+        Assert.Contains("code=INTERNAL_ERROR", change.Detail, StringComparison.Ordinal);
+        Assert.Contains("path=me", change.Detail, StringComparison.Ordinal);
+        Assert.Contains("data=absent", change.Detail, StringComparison.Ordinal);
+        Assert.Contains("hash=sha256:0123456789ab ", change.Detail, StringComparison.Ordinal);
+        Assert.Contains("body=replay", change.Detail, StringComparison.Ordinal);
+
+        // the configured hash refused: the sign-in that learns one is asked for, with the same facts inside
+        using var configured = FetchContext(handler);
+        var expired = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(configured, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.SessionExpired, expired.Code);
+        Assert.Contains("code=INTERNAL_ERROR", expired.Detail, StringComparison.Ordinal);
+        Assert.Contains("body=rebuilt", expired.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An anonymous data.me beside the errors is the session being over -
+    /// even under a learned hash, where a refusal is otherwise a change.
+    /// </summary>
+    [Fact]
+    public async Task An_anonymous_answer_beside_errors_asks_for_a_login_even_under_a_learned_hash()
+    {
+        const string anonymous =
+            """{"errors":[{"message":"Unauthenticated","extensions":{"code":"UNAUTHENTICATED"}}],"data":{"me":{"__typename":"AnonymousCustomer"}}}""";
+        var handler = new StubHttpHandler((_, _) => Stub.Json(anonymous));
+        using var ctx = new FakeJobContext(handler) { Material = ReplayMaterial() };
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.SessionExpired, error.Code);
+        Assert.Contains("AnonymousCustomer", error.Detail, StringComparison.Ordinal);
+        Assert.Contains("code=UNAUTHENTICATED", error.Detail, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1226,6 +1407,29 @@ public sealed class BolAdapterTests
         {
             Material = new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") },
         };
+
+    /// <summary>
+    /// A session that learned the page's request at sign-in: its body, and
+    /// its headers as the browser sent them - the jar, the CSRF echo and the
+    /// referer included, which a replay must leave to the fetch.
+    /// </summary>
+    private static SessionMaterial ReplayMaterial() =>
+        BolPersistedQuery.WithRequest(
+            BolPersistedQuery.WithHash(
+                new SessionMaterial { StorageState = FixtureCatalog.Read("bol/storage-state.json") }, PageHash),
+            new BolPageRequest(PageBody, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["user-agent"] = PageUserAgent,
+                ["accept"] = "*/*",
+                ["content-type"] = "application/json",
+                ["bol-app-operation-name"] = "OrdersOverviewClient",
+                ["bol-app-version"] = "7.3.1",
+                ["origin"] = "https://www.bol.com",
+                ["sec-fetch-site"] = "same-origin",
+                ["cookie"] = "XSC=stale",
+                ["x-xsrf-token"] = "stale-token",
+                ["referer"] = "https://www.bol.com/somewhere/else",
+            }));
 
     private static HttpResponseMessage Html(string body) =>
         new(HttpStatusCode.OK)

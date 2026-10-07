@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using Microsoft.Playwright;
 using Connector.Kit.Adapters;
 using Connector.Kit.Challenges;
@@ -41,6 +42,9 @@ public sealed class BolAdapter : IProviderAdapter
 {
     public const string ProviderId = "bol";
     public const string ReceiptsResource = "receipts";
+
+    /// <summary>The header the stored jar goes out in; a learned header never takes its place.</summary>
+    private const string CookieHeader = "Cookie";
 
     private static readonly ProviderManifest Manifest = BolManifest.Build();
 
@@ -89,13 +93,20 @@ public sealed class BolAdapter : IProviderAdapter
         // The hash bol pins its orders operation to, read off the request
         // bol's own page makes once the sign-in lands on the orders overview
         // (see BolPersistedQuery). Listened for from before the first
-        // navigation, so a page that fires early is not missed.
+        // navigation, so a page that fires early is not missed. The request
+        // itself is kept beside the hash: on 2026-10-07 (prod) bol refused
+        // the fetch rebuilt around a learned hash, so the fetch now replays
+        // the page's own body and headers, read off it once the probe is done.
         var learned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IRequest? fired = null;
         void OnRequest(object? _, IRequest request)
         {
             if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase)) return;
             if (!request.Url.Contains(_options.GraphQlUrl, StringComparison.OrdinalIgnoreCase)) return;
-            if (BolPersistedQuery.TryReadHash(request.PostData, _options.OrdersOperationName, out var hash)) learned.TrySetResult(hash);
+            if (!BolPersistedQuery.TryReadHash(request.PostData, _options.OrdersOperationName, out var hash)) return;
+
+            fired ??= request;
+            learned.TrySetResult(hash);
         }
 
         browserPage.Request += OnRequest;
@@ -104,20 +115,122 @@ public sealed class BolAdapter : IProviderAdapter
             var result = await LoginAsync(ctx, page, new BolSessionWatcher(ctx, page, _options, _time), ct)
                 .ConfigureAwait(false);
 
-            // The page the sign-in landed on, then the overview itself, then
-            // the overview with "Toon meer" pressed: three chances for bol's
-            // own page to say the hash. A page that never says it costs the
-            // waits and nothing else - the option's hash still stands.
-            var hash = await new BolHashProbe(_options).LearnAsync(ctx, page, learned.Task, ct).ConfigureAwait(false);
-            if (hash is null) return result;
-
-            ctx.Note($"{ProviderId}: the orders operation's persisted-query hash was learned from the page and sealed into the session");
-            return result with { Material = BolPersistedQuery.WithHash(result.Material, hash) };
+            return await SealAsync(ctx, page, result, learned.Task, token => ReplayAsync(fired, token), ct)
+                .ConfigureAwait(false);
         }
         finally
         {
             browserPage.Request -= OnRequest;
         }
+    }
+
+    /// <summary>
+    /// What the sign-in seals beyond the jar: the hash bol's own page said
+    /// (the probe makes it say it), the page's request around that hash, and
+    /// the jar read AGAIN once the probe is done.
+    ///
+    /// Internal so the offline suite can drive it with a stub page and a
+    /// stub lease; the Playwright listener above it is the one part a test
+    /// cannot reach. <paramref name="capture"/> reads the page's request
+    /// once the hash is known, and answers null when it cannot be read.
+    /// </summary>
+    internal async Task<LoginResult> SealAsync(
+        IJobContext ctx, ILoginPage page, LoginResult result, Task<string> learned,
+        Func<CancellationToken, Task<BolPageRequest?>> capture, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(capture);
+
+        // The page the sign-in landed on, then the overview itself, then
+        // the overview with "Toon meer" pressed: three chances for bol's
+        // own page to say the hash. A page that never says it costs the
+        // waits and nothing else - the option's hash still stands.
+        var hash = await new BolHashProbe(_options).LearnAsync(ctx, page, learned, ct).ConfigureAwait(false);
+
+        // 2026-10-07 (prod): the jar had been sealed BEFORE the probe opened
+        // the overview and pressed "Toon meer", so whatever bol set on those
+        // visits never reached a fetch. Read again now that they are done.
+        result = await ResealJarAsync(ctx, result, ct).ConfigureAwait(false);
+        if (hash is null) return result;
+
+        var request = await capture(ct).ConfigureAwait(false);
+        ctx.Note(LearnedNote(hash, request));
+
+        var material = BolPersistedQuery.WithHash(result.Material, hash);
+        return result with { Material = BolPersistedQuery.WithRequest(material, request) };
+    }
+
+    /// <summary>
+    /// The result with the jar as it is NOW, or as it was when the browser
+    /// has nothing better. A fresh read carrying no cookie for the orders
+    /// host (a lease answers an empty state once its browser is gone) must
+    /// not trade a jar the login checked for an empty one, and a read that
+    /// fails must not take a sign-in that succeeded down with it.
+    /// </summary>
+    private async Task<LoginResult> ResealJarAsync(IJobContext ctx, LoginResult result, CancellationToken ct)
+    {
+        try
+        {
+            var fresh = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false);
+
+            if (BolCookies.For(fresh, _options.OrdersHost).Count > 0)
+            {
+                return result with { Material = result.Material with { StorageState = fresh } };
+            }
+
+            ctx.Note($"{ProviderId}: the session read after the probe carries no cookies for '{_options.OrdersHost}'; " +
+                     "the jar sealed at sign-in stands");
+        }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException or InvalidOperationException or ConnectorException)
+        {
+            ctx.Note($"{ProviderId}: the session could not be read again after the probe ({ex.GetType().Name}); " +
+                     "the jar sealed at sign-in stands");
+        }
+
+        return result;
+    }
+
+    /// <summary>The sign-in's note: the hash's prefix, and WHICH headers were learned - their names, never a value.</summary>
+    private static string LearnedNote(string hash, BolPageRequest? request)
+    {
+        var learned = request is null
+            ? "the page's own request could not be read, so a fetch rebuilds it"
+            : $"the page's own request body and {request.Headers.Count} header(s) " +
+              $"[{string.Join(", ", request.Headers.Keys.OrderBy(name => name, StringComparer.Ordinal))}] were learned with it";
+
+        return $"{ProviderId}: the orders operation's persisted-query hash ({BolPersistedQuery.Prefix(hash)}) was learned " +
+               $"from the page and sealed into the session; {learned}";
+    }
+
+    /// <summary>
+    /// The request the listener kept, read for the replay: its body as the
+    /// page posted it and the headers it went out with. AllHeadersAsync
+    /// rather than Headers - the synchronous view is documented to withhold
+    /// security-related headers, and ING's portal met that live - but
+    /// bounded, because a request the page has moved on from may never
+    /// answer it, and then the provisional view is what there is.
+    /// </summary>
+    private async Task<BolPageRequest?> ReplayAsync(IRequest? fired, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (fired?.PostData is not { Length: > 0 } body) return null;
+
+        IEnumerable<KeyValuePair<string, string>> headers = fired.Headers;
+        try
+        {
+            var all = fired.AllHeadersAsync();
+            if (await Task.WhenAny(all, Task.Delay(_options.HashProbeMs, ct)).ConfigureAwait(false) == all)
+            {
+                headers = await all.ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+        {
+            // The provisional view stands; it carries what the page set itself.
+        }
+
+        return new BolPageRequest(body, BolPersistedQuery.CarryHeaders(headers));
     }
 
     /// <summary>
@@ -244,10 +357,12 @@ public sealed class BolAdapter : IProviderAdapter
 
         // The hash the sign-in learned from bol's own page beats the
         // configured one: bol moves it with every front-end release, and the
-        // one its page sent that day is the one it knows.
-        var learnedHash = BolPersistedQuery.Learned(ctx.Material);
-        var options = learnedHash is null ? _options : _options with { OrdersPersistedQueryHash = learnedHash };
-        if (learnedHash is not null) ctx.Note($"{ProviderId}: fetching with the persisted-query hash the sign-in learned");
+        // one its page sent that day is the one it knows. Since 2026-10-07
+        // (prod) the page's own request rides with it - bol refused the
+        // request rebuilt around a hash its page had sent moments before.
+        var learned = Learned(ctx.Material);
+        var options = learned.Options;
+        if (learned.Any) ctx.Note(FetchNote(learned));
 
         ctx.Progress(JobStep.Downloading);
 
@@ -258,7 +373,7 @@ public sealed class BolAdapter : IProviderAdapter
             (collected, walkWasComplete) = await WalkAsync(ctx, new BolCall(shape, options, cookies, xsrf), request, cap, ct)
                 .ConfigureAwait(false);
         }
-        catch (ConnectorException ex) when (learnedHash is null && IsRefusedOperation(ex))
+        catch (ConnectorException ex) when (learned.Hash is null && IsRefusedOperation(ex))
         {
             // The CONFIGURED hash was refused and this session never learned
             // bol's current one: a fresh sign-in learns it from bol's own page
@@ -295,10 +410,43 @@ public sealed class BolAdapter : IProviderAdapter
     /// </summary>
     /// <summary>The GraphQL shape's refusal of the operation (a hash bol no longer knows reports itself there).</summary>
     private static bool IsRefusedOperation(ConnectorException ex) =>
-        ex.Code == ErrorCode.ProviderChanged && (ex.Detail ?? string.Empty).Contains("graphql refused", StringComparison.Ordinal);
+        ex.Code == ErrorCode.ProviderChanged && (ex.Detail ?? string.Empty).Contains(BolGraphQlShape.RefusedMarker, StringComparison.Ordinal);
 
-    /// <summary>What one orders request needs beyond its page number: the shape, the options it reads (the learned hash included), the jar and the token.</summary>
+    /// <summary>What one orders request needs beyond its page number: the shape, the options it reads (the learned hash and request included), the jar and the token.</summary>
     private sealed record BolCall(IBolOrdersShape Shape, BolOptions Options, string Cookies, string? Xsrf);
+
+    /// <summary>
+    /// What a session learned at sign-in, laid over the configured options:
+    /// the page's hash, and since 2026-10-07 (prod) the page's own request.
+    /// </summary>
+    private sealed record BolLearned(BolOptions Options, string? Hash, BolPageRequest? Replay)
+    {
+        public bool Any => Hash is not null || Replay is not null;
+    }
+
+    private BolLearned Learned(SessionMaterial? material)
+    {
+        var hash = BolPersistedQuery.Learned(material);
+        var replay = BolPersistedQuery.LearnedRequest(material);
+
+        var options = hash is null ? _options : _options with { OrdersPersistedQueryHash = hash };
+        if (replay is not null)
+        {
+            options = options with { OrdersRequestTemplate = replay.Body, OrdersRequestHeaders = replay.Headers };
+        }
+
+        return new BolLearned(options, hash, replay);
+    }
+
+    /// <summary>The fetch's note: which hash it sends, and whether the body is the page's own or the rebuilt shape.</summary>
+    private static string FetchNote(BolLearned learned)
+    {
+        var body = learned.Replay is null
+            ? "rebuilding the request around it"
+            : "replaying the page's own request body with its headers";
+
+        return $"{ProviderId}: fetching with the persisted-query hash the sign-in learned ({BolPersistedQuery.Prefix(learned.Hash)}), {body}";
+    }
 
     private async Task<(List<BolOrder> Orders, bool Complete)> WalkAsync(
         IJobContext ctx, BolCall call, ResourceRequest request, int cap, CancellationToken ct)
@@ -322,7 +470,10 @@ public sealed class BolAdapter : IProviderAdapter
 
             ctx.Progress(JobStep.Parsing);
 
-            var orders = shape.Parse(body, _options, zone, request.WantsRaw);
+            // The call's options rather than the adapter's: a refusal names
+            // the hash and the body actually in use, which are the learned
+            // ones when the session has them (2026-10-07, prod).
+            var orders = shape.Parse(body, call.Options, zone, request.WantsRaw);
             if (orders.Count == 0)
             {
                 budgetRanOut = false;
@@ -504,7 +655,7 @@ public sealed class BolAdapter : IProviderAdapter
             request.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
         }
 
-        request.Headers.TryAddWithoutValidation("Cookie", cookies);
+        request.Headers.TryAddWithoutValidation(CookieHeader, cookies);
         request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent);
         request.Headers.TryAddWithoutValidation("Accept", shape.Accept);
         request.Headers.TryAddWithoutValidation("Accept-Language", _options.AcceptLanguage);
@@ -543,6 +694,13 @@ public sealed class BolAdapter : IProviderAdapter
             request.Headers.Referrer = referrer;
         }
 
+        // 2026-10-07 (prod): the page's own headers over the defaults above,
+        // for a session that learned them. They are the headers of the
+        // operation's POST, so a page shape's GET never wears them. The jar,
+        // the referer and the CSRF echo stay the fetch's own: the token has
+        // to match the cookie beside it, and both come off the stored session.
+        if (payload is not null) Replay(request, options);
+
         using var response = await ProviderHttp.SendAsync(ctx.Http, request, ProviderId, ct).ConfigureAwait(false);
 
         await RefuseStaleTokenAsync(response, ct).ConfigureAwait(false);
@@ -559,6 +717,41 @@ public sealed class BolAdapter : IProviderAdapter
 
         Guard(body, what);
         return body;
+    }
+
+    /// <summary>
+    /// The page's own headers laid over the fetch's. Replaced rather than
+    /// added: TryAddWithoutValidation appends a second value, and two
+    /// User-Agents is a request no browser sends. A content header (the
+    /// page's content-type) belongs to the body, and the request's own
+    /// collection refuses it rather than holding it.
+    /// </summary>
+    private static void Replay(HttpRequestMessage request, BolOptions options)
+    {
+        foreach (var (name, value) in options.OrdersRequestHeaders)
+        {
+            if (!BolPersistedQuery.MayCarry(name) || IsFetchOwn(name, options)) continue;
+            if (Put(request.Headers, name, value)) continue;
+
+            if (request.Content is { } content) Put(content.Headers, name, value);
+        }
+    }
+
+    /// <summary>The headers the fetch reads off the stored session itself; a learned one never overrides them.</summary>
+    private static bool IsFetchOwn(string name, BolOptions options) =>
+        string.Equals(name, CookieHeader, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "Referer", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, options.XsrfHeader, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One header, replaced. False when this collection may not hold the
+    /// name at all - TryGetValues answers that quietly, where Remove and
+    /// Contains throw on a content header asked of the request's own.
+    /// </summary>
+    private static bool Put(HttpHeaders headers, string name, string value)
+    {
+        if (headers.TryGetValues(name, out _)) headers.Remove(name);
+        return headers.TryAddWithoutValidation(name, value);
     }
 
     /// <summary>
@@ -725,7 +918,7 @@ public sealed class BolAdapter : IProviderAdapter
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-        request.Headers.TryAddWithoutValidation("Cookie", cookies);
+        request.Headers.TryAddWithoutValidation(CookieHeader, cookies);
         request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent);
         request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
         request.Headers.TryAddWithoutValidation("Accept-Language", _options.AcceptLanguage);
@@ -763,7 +956,7 @@ public sealed class BolAdapter : IProviderAdapter
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-        request.Headers.TryAddWithoutValidation("Cookie", cookies);
+        request.Headers.TryAddWithoutValidation(CookieHeader, cookies);
         request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent);
         request.Headers.TryAddWithoutValidation("Accept", "application/pdf,*/*");
         request.Headers.TryAddWithoutValidation("Accept-Language", _options.AcceptLanguage);

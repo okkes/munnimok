@@ -352,6 +352,38 @@ public sealed record BolOptions
     public int HashProbeMs { get; init; } = 4_000;
 
     /// <summary>
+    /// The orders request exactly as bol's own page sent it, when the sign-in
+    /// learned one; null is the shape this adapter rebuilds from the settings
+    /// around it. NEVER configured: the fetch lays it over these options from
+    /// the session material (<see cref="BolPersistedQuery"/>), the way it
+    /// lays the learned hash over <see cref="OrdersPersistedQueryHash"/>.
+    /// </summary>
+    /// <remarks>
+    /// 2026-10-07 (prod): the sign-in learned the page's hash, the fetch sent
+    /// it thirty seconds later, and bol answered "Error(s) redacted.". The
+    /// hash was bol's own, sent by its page moments earlier, so what bol
+    /// refuses is the REQUEST rebuilt around it: a first-page cursor the page
+    /// never sends (its first page is rendered on the server - the capture
+    /// only ever saw "5", "10", "15"), and headers the page sends that the
+    /// rebuild does not. A replay sends the page's body with only
+    /// <see cref="AfterVariable"/> rewritten - every other variable and the
+    /// extensions exactly as the page had them.
+    /// </remarks>
+    public string? OrdersRequestTemplate { get; init; }
+
+    /// <summary>
+    /// The headers the page sent with that request, laid over the fetch's
+    /// own defaults; empty is the fetch's own set. Never the jar, the referer
+    /// or the CSRF echo - those stay the fetch's, read off the stored
+    /// session, because the double-submitted token has to match the cookie
+    /// beside it. Filled from the session material like the template; what a
+    /// replay never carries is <see cref="BolPersistedQuery.CarryHeaders"/>'s
+    /// to say.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> OrdersRequestHeaders { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// What the sign-in presses when the overview stays silent: bol's
     /// "Toon meer" fetches the next page through the very operation the
     /// adapter needs, so one press makes the page fire it. 2026-10-05: the
