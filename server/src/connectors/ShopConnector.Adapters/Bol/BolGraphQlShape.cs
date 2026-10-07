@@ -296,7 +296,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
     /// the errors is the session being over, not a change: the verdict the
     /// signed-out answer without errors gets below.
     /// </summary>
-    private static void Refuse(JsonElement root, IReadOnlyList<JsonElement> errors, BolOptions options)
+    private static void Refuse(JsonElement root, List<JsonElement> errors, BolOptions options)
     {
         if (errors.Count == 0) return;
 
