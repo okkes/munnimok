@@ -1,5 +1,27 @@
 # Changelog
 
+## [5.16.0](https://github.com/okkes/munnimok/compare/v5.15.0...v5.16.0) (2026-10-07)
+
+
+### ✨ Features
+
+* **auth:** the account step before Logto - continue as the account this device used last, or use another account with credentials asked again ([a229460](https://github.com/okkes/munnimok/commit/a229460c0227ee02e1fecc6eb8e200f46672eddb))
+* **connectors:** a failed sign-in keeps what was typed and always offers a retry, "Sign in again" takes a new password, and the report question honours "always" and waits under the card ([c1b3376](https://github.com/okkes/munnimok/commit/c1b33769e3fb607162a5880c24e33474e25c8513))
+* **planning:** money already spent is not charged to the pool twice, a target of 0, friendlier suggestion chips, several sources at once, foldable segments ([4f63fba](https://github.com/okkes/munnimok/commit/4f63fba255f6d65477f4601e51fac314b44f0a23))
+* **receipts:** the review card's receipt sheet is the transaction detail's too - suggestions, a search over every receipt with the shops' chips, the attached receipt shown and swappable ([e953ea4](https://github.com/okkes/munnimok/commit/e953ea473a9dcefc46a3611b155383cbae8115de))
+* **transactions:** the link screen quieter - the suggested rows drop their reason line, the category impact folds into one card per side ([7570fe9](https://github.com/okkes/munnimok/commit/7570fe9a733211a9c125d0b2510517ee4b299cad))
+
+
+### 🐞 Bug Fixes
+
+* **auth:** no "Offline" right after a sign-in, a party's 401 never spends the munni session, and an expired mark is re-probed when the device comes back ([6ed584f](https://github.com/okkes/munnimok/commit/6ed584f40c3798107a6761f01a3fc73231095d07))
+* **connectors:** a derived ING id no longer carries the login session - the ingest reconciles such rows by their facts and a one-time repair takes the copies back out ([fe8f1e9](https://github.com/okkes/munnimok/commit/fe8f1e9e65b47e0192c4a6f60f5b057b3c2139fa))
+* **connectors:** bol's fetch replays the page's own request, the cookies are read after the probe, and a refusal names what bol left ([3377c61](https://github.com/okkes/munnimok/commit/3377c61c14e86d276f522f20c003605b923845bb))
+* **connectors:** bol's language chooser behind the cookie wall is carried through - the walls go down in rounds ([c2b5d76](https://github.com/okkes/munnimok/commit/c2b5d762b46fba1a76de1a2d3d30cb9b1cfbe4e4))
+* **sync:** the bootstrap fails closed on the round reaching its end, not on the status - a refused token leaves it idle; Sonar S6353 and S5906 ([43173bf](https://github.com/okkes/munnimok/commit/43173bf5c1dfefb846d423a8a44c02b06b823be6))
+* **transactions:** the counterparty picker offers the mirror row, takes the full height, and the detail names the counter account as the space does with its number underneath ([ca253b9](https://github.com/okkes/munnimok/commit/ca253b966d63bb12296108de5c841ebc44a13ce0))
+* **ui:** the focus frame hint reads under the picture instead of over it ([a8440d5](https://github.com/okkes/munnimok/commit/a8440d5e331ff0b0c9405efa60e8be459891ed75))
+
 ## [5.15.0](https://github.com/okkes/munnimok/compare/v5.14.0...v5.15.0) (2026-10-06)
 
 
