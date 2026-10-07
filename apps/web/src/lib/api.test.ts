@@ -154,7 +154,7 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     const { apiFetch } = await import('./api');
     const res = await apiFetch('/connectors/ing-nl/sync', {}, { partyAuth: true });
     expect(res.status).toBe(401);
-    expect(calls.length).toBe(1); // a bank login is never retried behind the person's back
+    expect(calls).toHaveLength(1); // a bank login is never retried behind the person's back
     expect(isSessionExpired()).toBe(false);
     setAccessTokenGetter(null);
     resetSessionExpiryForTests();

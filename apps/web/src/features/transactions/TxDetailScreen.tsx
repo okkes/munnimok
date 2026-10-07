@@ -67,7 +67,7 @@ function counterAccountFace(
 ): { name: string; number: string | null } {
   const display = spaceAccounts?.find((a) => a.id === account.id)?.name ?? account.name;
   const bankName = account.name.replaceAll(' ', '');
-  const looksLikeNumber = /^[0-9*]{6,}$/.test(bankName) || /^[A-Z]{2}[0-9]{2}[A-Z0-9]{8,}$/i.test(bankName);
+  const looksLikeNumber = /^[\d*]{6,}$/.test(bankName) || /^[A-Z]{2}\d{2}[A-Z\d]{8,}$/i.test(bankName);
   const number = account.maskedNumber ?? account.iban ?? (looksLikeNumber && display !== account.name ? account.name : null);
   return { name: display, number: number === display ? null : number };
 }

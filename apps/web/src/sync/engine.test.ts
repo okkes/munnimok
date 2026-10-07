@@ -115,11 +115,13 @@ describe('SyncEngine', () => {
     server.pullStatus = 401;
     await a.engine.syncAll();
     expect(statuses.at(-1)).toBe('idle');
+    expect(a.engine.lastRoundOk()).toBe(false); // idle to look at, but the round did not reach its end
     expect(reportError).not.toHaveBeenCalled();
 
     server.pullStatus = null;
     await a.engine.syncAll();
     expect(statuses.at(-1)).toBe('idle');
+    expect(a.engine.lastRoundOk()).toBe(true);
     off();
   });
 

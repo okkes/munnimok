@@ -47,7 +47,10 @@ export async function bootstrapUserSpaces(
 
   for (let attempt = 0; ; attempt++) {
     await engine.syncAll().catch(() => undefined);
-    if (engine.getStatus() !== 'error' && engine.getStatus() !== 'offline') break; // server confirmed our spaces
+    // the ROUND, not the status: a refused token leaves the status idle
+    // (user ss 2026-10-07, no "Offline" at sign-in) while the server has
+    // confirmed nothing yet — fail closed on the round reaching its end
+    if (engine.lastRoundOk()) break; // server confirmed our spaces
     if (await hasLocalSpaces()) return; // offline but usable — local-first
     // brand-new device with nothing local: keep trying, capped backoff —
     // and tell the UI, so a broken server/proxy is visible, not a spinner
