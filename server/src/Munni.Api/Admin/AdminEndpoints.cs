@@ -39,6 +39,9 @@ public static class AdminEndpoints
         // DELETE /me (account-deletion design)
         group.MapDelete("/users/{sub}", DeleteUser);
         group.MapGet("/users/{sub}/diagnosis", UserDiagnosis);
+
+        // user 2026-10-07: invitation-only sign-up — the portal's invitations ride the group's scope gate and route guard
+        AdminInvitationEndpoints.Map(group);
     }
 
     private static async Task<IResult> ListUsers(AppDbContext db)

@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using System.Text.RegularExpressions;
 using FluentValidation;
 using Munni.Api.Accounts;
@@ -251,5 +252,30 @@ public sealed class ConnectionCipherRequestValidator : AbstractValidator<Connect
     public ConnectionCipherRequestValidator()
     {
         RuleFor(r => r.Cipher).NotEmpty().MaximumLength(16384);
+    }
+}
+
+/// <summary>
+/// user 2026-10-07: invitation-only sign-up — the operator types an address
+/// into the admin portal: one real address, no display-name form, no
+/// whitespace inside, 254 characters at most (RFC 5321's path limit). The
+/// handler trims and lower-cases it; Logto keys the magic link on the exact string.
+/// </summary>
+public sealed class CreateInvitationRequestValidator : AbstractValidator<Admin.CreateInvitationRequest>
+{
+    public CreateInvitationRequestValidator()
+    {
+        RuleFor(r => r.Email).NotEmpty().MaximumLength(254)
+            .Must(BeOneAddress).WithMessage("email must be a single valid address");
+    }
+
+    /// <summary>MailAddress parses display-name forms too ("Ann &lt;ann@x.y&gt;"): the parsed address has to be the whole trimmed input</summary>
+    private static bool BeOneAddress(string? email)
+    {
+        var address = email?.Trim();
+        return address is { Length: > 0 }
+               && !address.Any(char.IsWhiteSpace)
+               && MailAddress.TryCreate(address, out var parsed)
+               && string.Equals(parsed.Address, address, StringComparison.OrdinalIgnoreCase);
     }
 }

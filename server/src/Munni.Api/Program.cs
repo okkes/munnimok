@@ -4,6 +4,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Scalar.AspNetCore;
 using Munni.Api;
 using Munni.Api.Accounts;
@@ -74,8 +75,12 @@ var connectorsEnabled = connectors == ConnectorPresence.Enabled;
 // the service exits immediately when ImportWatch:* is unconfigured
 builder.Services.AddHostedService<WatchFolderService>();
 
-// Logto Management API (account deletion): activates with Logto:M2m* config
-builder.Services.AddHttpClient("logto-m2m", client => client.Timeout = TimeSpan.FromSeconds(10));
+// Logto Management API (account deletion, the admin portal's invitations —
+// user 2026-10-07: invitation-only sign-up): one minting path with a cached
+// token; activates with Logto:M2m* config, and the routes say so when absent
+builder.Services.AddHttpClient(LogtoManagement.ClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ILogtoManagement, LogtoManagement>();
 builder.Services.AddHttpClient("geo", client => client.Timeout = TimeSpan.FromSeconds(4));
 
 // receipt OCR via the Tesseract sidecar — enabled when the container is configured
@@ -258,6 +263,8 @@ app.MapGet("/health", () => Results.Ok(new
         quotes = true,
         // the Connections hub's "connect a party" door (#367)
         connectors = connectorsEnabled,
+        // user 2026-10-07: invitation-only sign-up — the web app closes its own sign-up door and points at the invitation
+        inviteOnly = app.Configuration.GetValue<bool>(AdminInvitationEndpoints.InviteOnlyKey),
     },
 }));
 app.MapSync();
