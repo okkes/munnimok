@@ -26,8 +26,9 @@ vi.mock('@/app/config', async (importOriginal) => {
 // controllable OIDC surface: signIn rejections must SHOW on the login
 // screen (iOS report 2026-09-08: an untrusted family cert made the
 // discovery fetch die and the button looked simply dead)
-const mockSignIn = vi.fn(() => Promise.resolve());
+const mockSignIn = vi.fn((_options?: unknown) => Promise.resolve());
 vi.mock('@logto/react', () => ({
+  Prompt: { None: 'none', Consent: 'consent', Login: 'login' },
   LogtoProvider: ({ children }: { children: unknown }) => children,
   useLogto: () => ({
     signIn: mockSignIn,
@@ -202,5 +203,41 @@ describe('LoginScreen', () => {
     fireEvent.click(profileBtn.closest('button')!);
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     await waitFor(() => expect(readSessionIdentity()).toEqual(identity));
+  });
+});
+
+describe('the account step (user 2026-10-07)', () => {
+  beforeEach(() => {
+    mockLogto.value = true;
+    mockSignIn.mockClear();
+  });
+
+  it('with a remembered name the button continues as them, and "another account" asks Logto for credentials again', async () => {
+    const { rememberLastAccount, forgetLastAccount } = await import('./lastAccount');
+    rememberLastAccount('Okkes');
+    try {
+      renderApp('/login', { signedIn: false });
+      const continueAs = await screen.findByTestId('login-signin-btn');
+      expect(continueAs.textContent).toContain('Continue as Okkes');
+      fireEvent.click(continueAs);
+      await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
+      expect(typeof mockSignIn.mock.calls[0][0]).toBe('string'); // the silent sign-in: the callback uri alone
+
+      fireEvent.click(screen.getByTestId('login-another-account'));
+      await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(2));
+      const fresh = mockSignIn.mock.calls[1][0] as { prompt?: string[] };
+      expect(fresh.prompt).toEqual(['login', 'consent']);
+    } finally {
+      forgetLastAccount();
+    }
+  });
+
+  it('without a remembered name the plain sign-in stays', async () => {
+    const { forgetLastAccount } = await import('./lastAccount');
+    forgetLastAccount();
+    renderApp('/login', { signedIn: false });
+    const button = await screen.findByTestId('login-signin-btn');
+    expect(button.textContent).not.toContain('Continue as');
+    expect(screen.queryByTestId('login-another-account')).toBeNull();
   });
 });

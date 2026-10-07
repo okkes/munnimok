@@ -1,7 +1,7 @@
 import { clearStaleLogtoState } from '@/lib/authState';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
+import { LogtoProvider, useHandleSignInCallback, useLogto, Prompt } from '@logto/react';
 import * as Sentry from '@sentry/react';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
@@ -17,6 +17,7 @@ import {
   watchForRevival,
 } from '@/app/sessionExpiry';
 import { useSession } from '@/app/session';
+import { rememberLastAccount } from './lastAccount';
 import { Logo } from '@/ui/Logo';
 
 /**
@@ -60,7 +61,10 @@ function TokenBridge() {
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
     // the 401 self-heal (data.tsx) re-enters the OIDC flow from outside React
-    setOidcSignIn((uri) => signIn(uri));
+    // "use another account" (user 2026-10-07): prompt=login makes Logto ask
+    // for credentials even with its session alive; consent keeps the refresh
+    // token (login alone issues none)
+    setOidcSignIn((uri, fresh) => (fresh ? signIn({ redirectUri: uri, prompt: [Prompt.Login, Prompt.Consent] }) : signIn(uri)));
     return () => {
       setOidcSignOut(null);
       setOidcSignIn(null);
@@ -129,6 +133,7 @@ function useFinishSignIn(): () => Promise<boolean> {
     // bouncing a session-less user into the app shell
     if (!claims?.sub) return false;
     login({ kind: 'user', sub: claims.sub });
+    rememberLastAccount(claims.name ?? claims.username ?? claims.email);
     // best-effort display name for friends/space members. AWAITED (with a
     // cap): fire-and-forget raced the /#/home navigation — iOS WebKit
     // cancels the in-flight fetch ('Load failed'), which set the shared

@@ -126,6 +126,8 @@ describe('offline banner + home indicator', () => {
       expect(banner.getAttribute('data-reason')).toBe('session-expired');
       expect(banner.textContent).toContain('session has expired');
       expect(screen.getByTestId('offline-banner-signin')).toBeTruthy();
+      // user 2026-10-07: a way to another account from a half-working app
+      expect(screen.getByTestId('offline-banner-another')).toBeTruthy();
     } finally {
       resetSessionExpiryForTests();
     }
