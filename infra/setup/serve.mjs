@@ -279,7 +279,8 @@ async function vaultAccountEndpoint(req, res) {
 }
 
 /* ── platform config as code (infra/platforms) ────────────────────── */
-const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors'];
+// inviteOnly: invitation-only sign-up — a Bootstrap applies it to the environment's Logto (user 2026-10-07)
+const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors', 'inviteOnly'];
 const BANKING = ['gocardless', 'enablebanking'];
 const SIGNIN = ['google', 'apple'];
 function normalizeFeatures(raw = {}) {

@@ -8,7 +8,8 @@ import { loadStack } from './stack.mjs';
  * Logto (infra/platforms/README.md), reached through the machine
  * credential the environment's first deploy seeded into Logto's database
  * (LOGTO_INFRA_M2M_ID/SECRET). Apps, the API resource with its `admin`
- * scope, the `munni admin` role, social connectors, branding, the
+ * scope, the `munni admin` role, social connectors, branding, the sign-up
+ * policy (invitation-only), the api's Management API access, the
  * console's first admin — all idempotent upserts by name.
  */
 
@@ -222,6 +223,62 @@ async function brandingImages(stack, fetchImpl) {
   if (!res.ok) throw new Error(`icon fetch ${web}/icon-192.png failed (${res.status})`);
   const logo = `data:${res.headers.get('content-type') ?? 'image/png'};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;
   return { logoUrl: logo, favicon: logo };
+}
+
+/** Logto's built-in machine role over its own Management API — the seed makes it per tenant (the wizard's seed SQL links the infra credential to it the same way) */
+export const MANAGEMENT_ROLE = 'Logto Management API access';
+
+/**
+ * The api reaches the Management API as code (user 2026-10-07): account
+ * deletion removes the Logto user, and an invitation-only environment
+ * mints its invitation links (one-time tokens) — both need the api's
+ * machine app behind Logto's built-in role above. The role and the app
+ * are found by name, never created here (the seed makes the role,
+ * applyApps the app); the grant happens once. Returns
+ * {role, roleId, appId, granted}.
+ */
+export async function ensureManagementAccess(stack, creds, { fetchImpl = localAwareFetch } = {}) {
+  const call = await client(stack, creds, fetchImpl);
+  const roles = await call('/roles?page_size=100');
+  const role = roles.find((r) => r.name === MANAGEMENT_ROLE);
+  if (!role) throw new Error(`Logto carries no role "${MANAGEMENT_ROLE}" — its seed makes it; nothing to grant`);
+  const name = appDefinitions(stack).m2m.name;
+  const apps = await call('/applications?page_size=100');
+  const app = apps.find((a) => a.name === name);
+  if (!app) throw new Error(`Logto carries no application "${name}" yet — applyApps makes it`);
+  const held = await call(`/roles/${role.id}/applications?page_size=100`);
+  const granted = !held.some((a) => a.id === app.id);
+  if (granted) await call(`/roles/${role.id}/applications`, { method: 'POST', body: JSON.stringify({ applicationIds: [app.id] }) });
+  return { role: role.name, roleId: role.id, appId: app.id, granted };
+}
+
+/**
+ * Invitation-only sign-up as code (user 2026-10-07): with
+ * features.inviteOnly the environment's sign-in experience is sign-in
+ * only — nobody registers at the door; the admin portal mints an
+ * invitation link (a Logto one-time token) that registers the invitee,
+ * whom Logto's own "complete your profile" screens then ask for whatever
+ * the tenant's sign-up wants (a username tenant stays a username
+ * tenant), and social sign-in links itself to the matching verified
+ * e-mail afterwards. The sign-up identifiers and sign-in methods are
+ * left EXACTLY as they are: the tenants carry no e-mail connector, and
+ * Logto's validator refuses an e-mail identifier or e-mail code method
+ * without one (enabled_connector_not_found) — that connector is a later
+ * step. Off: registration opens again (SignInAndRegister). One PATCH,
+ * only when something differs. Returns {inviteOnly, changed}.
+ */
+export async function applySignUpPolicy(stack, creds, { fetchImpl = localAwareFetch } = {}) {
+  const call = await client(stack, creds, fetchImpl);
+  const exp = (await call('/sign-in-exp')) ?? {};
+  const inviteOnly = Boolean(stack.features?.inviteOnly);
+  if (!inviteOnly) {
+    if (exp.signInMode !== 'SignIn') return { inviteOnly, changed: false };
+    await call('/sign-in-exp', { method: 'PATCH', body: JSON.stringify({ signInMode: 'SignInAndRegister' }) });
+    return { inviteOnly, changed: true };
+  }
+  if (exp.signInMode === 'SignIn' && exp.socialSignIn?.automaticAccountLinking === true) return { inviteOnly, changed: false };
+  await call('/sign-in-exp', { method: 'PATCH', body: JSON.stringify({ signInMode: 'SignIn', socialSignIn: { ...(exp.socialSignIn ?? {}), automaticAccountLinking: true } }) });
+  return { inviteOnly, changed: true };
 }
 
 export const CONNECTOR_SCOPE = 'connector:admin';

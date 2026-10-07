@@ -1,14 +1,15 @@
 // Logto as code for ONE environment: apps, the API resource with its
-// admin scope + role, users, social connectors, branding, the console's
-// first admin — against a Logto Management API in a box (fetch fakes).
+// admin scope + role, users, social connectors, branding, the sign-up
+// policy + the api's Management API access, the console's first admin —
+// against a Logto Management API in a box (fetch fakes).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scratchPlatforms, fakeGh, DOMAIN } from './fixture.mjs';
 
 const fx = scratchPlatforms();
 const {
-  appDefinitions, applyApps, ensureAdminRole, listUsers, setAdmin, applySocialConnectors, applyBranding, claimConsole, logtoAnswers, removeApps, writeBack, writeBackConnector, MACHINE_SECRET_NAME,
-  ADMIN_RESOURCE, ADMIN_SCOPE, ADMIN_ROLE,
+  appDefinitions, applyApps, ensureAdminRole, listUsers, setAdmin, applySocialConnectors, applyBranding, applySignUpPolicy, ensureManagementAccess, claimConsole, logtoAnswers, removeApps, writeBack, writeBackConnector, MACHINE_SECRET_NAME,
+  ADMIN_RESOURCE, ADMIN_SCOPE, ADMIN_ROLE, MANAGEMENT_ROLE,
 } = await import('../modules/logto.mjs');
 const { loadStack } = await import('../modules/stack.mjs');
 test.after(() => fx.cleanup());
@@ -17,9 +18,9 @@ const creds = { m2mId: 'infra1', m2mSecret: 's' };
 const ok = (body = {}) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
 const gone = () => ({ ok: true, status: 204, json: async () => null, text: async () => '' });
 
-/** a Logto Management API in a box: applications, resources + scopes, roles + their scopes/users, users */
-function fakeLogto({ users = [], apps = [], roles = [], resources = [] } = {}) {
-  const state = { apps, resources, scopes: {}, roles, roleScopes: {}, roleUsers: {}, users, tokens: [], secrets: {} };
+/** a Logto Management API in a box: applications, resources + scopes, roles + their scopes/users/applications, users, the sign-in experience (an open username tenant unless told otherwise) */
+function fakeLogto({ users = [], apps = [], roles = [], resources = [], signInExp = { signInMode: 'SignInAndRegister', signUp: { identifiers: ['username'], password: true, verify: false }, signIn: { methods: [{ identifier: 'username', password: true, verificationCode: false, isPasswordPrimary: true }] }, socialSignIn: {} } } = {}) {
+  const state = { apps, resources, scopes: {}, roles, roleScopes: {}, roleUsers: {}, roleApps: {}, users, tokens: [], secrets: {}, signInExp };
   let n = 0;
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -61,6 +62,13 @@ function fakeLogto({ users = [], apps = [], roles = [], resources = [] } = {}) {
       state.roleUsers[m[1]].push(...body.userIds); return ok({});
     }
     if ((m = /^\/api\/roles\/([^/]+)\/users\/([^/]+)$/.exec(pathname)) && method === 'DELETE') { state.roleUsers[m[1]] = (state.roleUsers[m[1]] ?? []).filter((id) => id !== m[2]); return gone(); }
+    if ((m = /^\/api\/roles\/([^/]+)\/applications$/.exec(pathname))) {
+      state.roleApps[m[1]] ??= [];
+      if (method === 'GET') return ok(state.roleApps[m[1]].map((id) => ({ id })));
+      state.roleApps[m[1]].push(...body.applicationIds); return { ok: true, status: 201, json: async () => ({}), text: async () => 'Created' };
+    }
+    // the sign-in experience: one row, a PATCH replaces the keys it carries (as Logto does)
+    if (pathname === '/api/sign-in-exp') { if (method === 'PATCH') state.signInExp = { ...state.signInExp, ...body }; return ok(state.signInExp); }
     if (pathname === '/api/users') return ok(state.users);
     return { ok: false, status: 404, json: async () => ({}), text: async () => `unhandled ${method} ${pathname}` };
   };
@@ -218,6 +226,63 @@ test('applyBranding: an https web origin serves the logo by url; a plain-http on
   const local = await applyBranding(loadStack('munni-lcl-prod'), creds, { fetchImpl });
   assert.equal(local.logoUrl, `data:image/png;base64,${Buffer.from([137, 80, 78, 71]).toString('base64')}`);
   assert.ok(calls.some((c) => c.url === 'http://localhost:8380/icon-192.png'));
+});
+
+const MGMT_ROLE_ROW = () => ({ id: 'role-mgmt', name: 'Logto Management API access', type: 'MachineToMachine' });
+
+test('ensureManagementAccess: the api\'s machine app is put behind Logto\'s built-in Management API role once (account deletion + invitations need it); a second run grants nothing; a missing role or app says so instead of making one', async () => {
+  const prod = loadStack('munni-nas-prod');
+  const logto = fakeLogto({ roles: [MGMT_ROLE_ROW()] });
+  await assert.rejects(ensureManagementAccess(prod, creds, { fetchImpl: logto.fetchImpl }), /no application "munni-nas-prod api m2m" yet/);
+  const apps = await applyApps(prod, creds, { fetchImpl: logto.fetchImpl });
+  const first = await ensureManagementAccess(prod, creds, { fetchImpl: logto.fetchImpl });
+  assert.deepEqual(first, { role: MANAGEMENT_ROLE, roleId: 'role-mgmt', appId: apps.m2m.id, granted: true });
+  assert.equal(MANAGEMENT_ROLE, 'Logto Management API access', 'the seed\'s name — the wizard\'s seed SQL links the infra credential to the same role');
+  assert.deepEqual(logto.state.roleApps['role-mgmt'], [apps.m2m.id]);
+  const grants = () => logto.calls.filter((c) => c.method === 'POST' && c.url.endsWith('/roles/role-mgmt/applications'));
+  assert.deepEqual(grants().map((c) => c.body), [{ applicationIds: [apps.m2m.id] }]);
+  assert.deepEqual(await ensureManagementAccess(prod, creds, { fetchImpl: logto.fetchImpl }), { ...first, granted: false }, 'already held: nothing sent');
+  assert.equal(grants().length, 1);
+  assert.equal(logto.state.roles.length, 1, 'the built-in role is never recreated');
+  await assert.rejects(ensureManagementAccess(prod, creds, { fetchImpl: fakeLogto().fetchImpl }), /no role "Logto Management API access"/);
+});
+
+const USERNAME_SIGN_UP = { identifiers: ['username'], password: true, verify: false };
+const USERNAME_METHOD = { identifier: 'username', password: true, verificationCode: false, isPasswordPrimary: true };
+
+test('applySignUpPolicy: invitation-only is ONE connector-free patch — sign-in only + social sign-in linking on the verified e-mail; the tenant\'s sign-up identifiers and sign-in methods are left exactly as they are (no e-mail connector today: Logto refuses an e-mail identifier or code method without one); the next run sends nothing', async () => {
+  const prod = loadStack('munni-nas-prod');
+  const invited = { ...prod, features: { ...prod.features, inviteOnly: true } };
+  const logto = fakeLogto();
+  assert.deepEqual(await applySignUpPolicy(invited, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: true, changed: true });
+  const patches = () => logto.calls.filter((c) => c.method === 'PATCH' && c.url.endsWith('/api/sign-in-exp'));
+  assert.equal(patches().length, 1);
+  assert.deepEqual(patches()[0].body, { signInMode: 'SignIn', socialSignIn: { automaticAccountLinking: true } }, 'neither signUp nor signIn in the patch — enabled_connector_not_found otherwise');
+  assert.equal(logto.state.signInExp.signInMode, 'SignIn');
+  assert.deepEqual(logto.state.signInExp.signUp, USERNAME_SIGN_UP, 'a username tenant stays a username tenant — the invitee completes a username + password on Logto\'s own screens');
+  assert.deepEqual(logto.state.signInExp.signIn.methods, [USERNAME_METHOD]);
+  assert.deepEqual(await applySignUpPolicy(invited, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: true, changed: false }, 'converged: nothing differs');
+  assert.equal(patches().length, 1, 'idempotent');
+  // linking switched off by hand → switched on again; the other keys of socialSignIn ride along, the mode is sent with it
+  logto.state.signInExp = { ...logto.state.signInExp, socialSignIn: { automaticAccountLinking: false, other: 'kept' } };
+  assert.deepEqual(await applySignUpPolicy(invited, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: true, changed: true });
+  assert.deepEqual(patches()[1].body, { signInMode: 'SignIn', socialSignIn: { automaticAccountLinking: true, other: 'kept' } });
+  assert.deepEqual(logto.state.signInExp.signUp, USERNAME_SIGN_UP, 'still untouched');
+});
+
+test('applySignUpPolicy: with the flag off (the default) a sign-in-only tenant opens registration again with a mode-only patch — identifiers, methods and the social linking untouched; an open tenant is left alone', async () => {
+  const prod = loadStack('munni-nas-prod');
+  assert.equal(prod.features.inviteOnly, false, 'the default');
+  const logto = fakeLogto({ signInExp: { signInMode: 'SignIn', signUp: USERNAME_SIGN_UP, signIn: { methods: [USERNAME_METHOD] }, socialSignIn: { automaticAccountLinking: true } } });
+  assert.deepEqual(await applySignUpPolicy(prod, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: false, changed: true });
+  const patches = () => logto.calls.filter((c) => c.method === 'PATCH' && c.url.endsWith('/api/sign-in-exp'));
+  assert.deepEqual(patches().map((c) => c.body), [{ signInMode: 'SignInAndRegister' }], 'the mode alone');
+  assert.deepEqual(logto.state.signInExp, { signInMode: 'SignInAndRegister', signUp: USERNAME_SIGN_UP, signIn: { methods: [USERNAME_METHOD] }, socialSignIn: { automaticAccountLinking: true } });
+  assert.deepEqual(await applySignUpPolicy(prod, creds, { fetchImpl: logto.fetchImpl }), { inviteOnly: false, changed: false });
+  assert.equal(patches().length, 1);
+  const open = fakeLogto();
+  assert.deepEqual(await applySignUpPolicy(prod, creds, { fetchImpl: open.fetchImpl }), { inviteOnly: false, changed: false });
+  assert.deepEqual(open.calls.map((c) => c.method), ['POST', 'GET'], 'the token, one look — nothing written');
 });
 
 test('logtoAnswers: a token for the infra credential means the seed landed; a refusal or no answer means not yet', async () => {

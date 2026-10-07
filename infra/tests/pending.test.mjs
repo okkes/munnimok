@@ -7,7 +7,7 @@ import { configChanges, describeChange, flattenConfig, needsFor, pendingFrom } f
 
 const env = (over = {}) => ({
   env: 'prod', slot: 0, channel: 'latest', appChannel: 'production', label: 'munni prod-nas',
-  features: { android: true, ios: false, push: false, logos: true, telemetry: true, pgadmin: true, connectors: false, banking: ['gocardless'], signin: ['google'] },
+  features: { android: true, ios: false, push: false, logos: true, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: ['gocardless'], signin: ['google'] },
   store: { androidPackage: 'app.munni.nas.prod', iosBundleId: 'app.munni.nas.prod', androidCertSha256: null },
   platform: { platform: 'nas', label: 'Synology NAS', sharedChannel: 'latest', browserAgent: false, agentEgress: { country: 'NL', kind: 'residential' } },
   ...over,

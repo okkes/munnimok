@@ -2533,6 +2533,8 @@ function setMasterBusy(busy) {
 const featuresFromToggles = () => ({
   android: Boolean(S.features.android), ios: Boolean(S.features.ios), push: Boolean(S.features.push), logos: Boolean(S.features.logos), telemetry: true, pgadmin: true,
   connectors: Boolean(S.features.connectors),
+  // invitation-only sign-up is never a platform tile: a new environment starts open, its Settings switch it on (user 2026-10-07)
+  inviteOnly: false,
   banking: ['gocardless', 'enablebanking'].filter((b) => S.features[b]),
   signin: ['google', 'apple'].filter((s) => S.features[s]),
 });
@@ -2930,9 +2932,10 @@ const ENV_FEATURES = [
   ['Extras', [['logos', 'merchant logos'], ['telemetry', 'crash reports'], ['pgadmin', 'pgAdmin entry']]],
   ['Banking', [['gocardless', 'GoCardless'], ['enablebanking', 'Enable Banking']]],
   ['Connectors', [['connectors', 'connector control plane (shops, banks, registries)']]],
-  ['Sign-in', [['google', 'Google'], ['apple', 'Apple']]],
+  ['Sign-in', [['google', 'Google'], ['apple', 'Apple'], ['inviteOnly', 'invitation-only sign-up']]],
 ];
-const FEATURE_FLAGS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors'];
+// inviteOnly: a Bootstrap applies it to the environment's Logto — sign-in only, new accounts by the admin portal's invitation (user 2026-10-07)
+const FEATURE_FLAGS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors', 'inviteOnly'];
 /** the form's checkboxes follow the feature tiles (defaults); a typed form is never reset */
 function renderEnvAddFeatures() {
   const box = document.getElementById('env-add-features');

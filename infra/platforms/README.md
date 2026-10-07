@@ -117,3 +117,22 @@ agents dial from outside (its API answers nobody without a machine token
 or an agent's own token). The api gets the relay settings
 (`Connectors:*`); the seal key, enrollment key and subject salt are minted
 by the bootstrap, the api's machine app in Logto is written back by it.
+
+`features.inviteOnly: true` — invitation-only sign-up: Logto's sign-in
+experience is set to sign-in only; new accounts come only through an
+invitation link the admin portal mints (a Logto one-time token), which
+registers the invitee — Logto's own "complete your profile" screens then
+ask for what the tenant's sign-up wants (a username and a password on a
+username tenant: the sign-up identifiers and sign-in methods are left
+exactly as they are), and Google/Apple sign-in auto-link on the matching
+verified e-mail afterwards. Off (the default): registration open again
+(`signInMode` back to `SignInAndRegister`). Applied by Bootstrap; the
+api learns the flag as `Auth:InviteOnly` with the Deploy and reports it
+in its `/health` capabilities. An e-mail connector in Logto is a later
+step — it would also unlock e-mail-code sign-in and password reset by
+mail; until then Logto's validator refuses an e-mail sign-up identifier
+or e-mail code method (`enabled_connector_not_found`), which is why the
+policy never touches them. Either way the bootstrap puts the api's
+machine app behind Logto's built-in `Logto Management API access` role —
+account deletion removes the Logto user, and the invitations are minted
+through it.
