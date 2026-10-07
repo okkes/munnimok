@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { LOCALES, useLang } from '@/i18n';
+import { useLang } from '@/i18n';
 import { useLgViewport } from '@/lib/viewport';
 import { useReceiptOps } from '@/application/receipts';
+import type { ReceiptOps } from '@/application/receipts';
 import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
+import type { ReceiptEntry } from '@/application/receiptLinks';
 import { useUnmatchedReceipts } from '@/application/connections';
 import { partyName } from '@/features/connectors/logos';
 import type { ReceiptRow } from '@/db/types';
@@ -12,30 +14,107 @@ import { fmtCents } from '@/lib/money';
 import { isNativeApp, takeNativePhoto } from '@/lib/platform';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
+import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
+import { rankForTx } from './receiptPick';
 
-const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
+// the ranking lives in receiptPick.ts (user 2026-10-07: the review's helpers
+// share it without importing this component); its old door stays open
+export { rankForTx };
 
-/** best receipt candidates for THIS transaction: amount first, then date */
-export function rankForTx(tx: Pick<SpaceTx, 'date' | 'amountCents'>, receipts: readonly ReceiptRow[]): ReceiptRow[] {
-  const target = Math.abs(tx.amountCents);
-  return [...receipts].sort((a, b) => {
-    const amountGap = Math.abs(a.totalCents - target) - Math.abs(b.totalCents - target);
-    if (amountGap !== 0) return amountGap;
-    return dayDiff(a.date, tx.date) - dayDiff(b.date, tx.date);
-  });
+/** the attached receipt lets go: a photo is gone for good, a store receipt is unmatched again */
+async function dropAttached(ops: ReceiptOps, attached: ReceiptEntry): Promise<void> {
+  if (!attached.linkId) return;
+  if (attached.data.source === 'photo') await ops.remove(attached.linkId);
+  else await ops.unlinkReceipt(attached.linkId);
+}
+
+/** what a tap in the sheet does: a receipt attaches (in the attached one's place when there is one), None lets it go */
+async function applyPick(ops: ReceiptOps, txId: string, attached: ReceiptEntry | null, row: ReceiptRow | null): Promise<void> {
+  if (row?.id === attached?.data.id) return; // the attached one again, or None with nothing attached: nothing changes
+  if (row && attached?.linkId) await ops.swapReceipt(attached.linkId, row, txId);
+  else if (row) await ops.linkReceipt(row, txId);
+  else if (attached) await dropAttached(ops, attached);
+}
+
+/** the attached receipt (user 2026-10-07: "see which one is attached and change it"):
+ *  the card opens it, Change opens the picker with it marked */
+function AttachedReceiptCard({
+  receipt,
+  currency,
+  onOpen,
+  onChange,
+}: Readonly<{ receipt: ReceiptRow; currency: string; onOpen: () => void; onChange: () => void }>) {
+  const { t, lang } = useLang();
+  const photo = receipt.source === 'photo';
+  const who = photo ? t('receipt.sourcePhoto') : (receipt.merchant ?? partyName(receipt.source));
+  const items = receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : '';
+  return (
+    <div className="overflow-hidden rounded-card border border-line bg-surface">
+      <button data-testid="receipt-card" onClick={onOpen} className="m-tap block w-full border-none bg-transparent p-0 text-left">
+        {receipt.image && <img src={receipt.image} alt={t('receipt.title')} className="max-h-40 w-full object-cover" />}
+        <span className="flex items-center gap-2 px-4 py-2.5">
+          <Icon name={photo ? 'camera-outline' : 'storefront-outline'} size={15} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">{`${who}${items}`}</span>
+          <span className="m-num text-[12px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>
+        </span>
+      </button>
+      <button
+        data-testid="receipt-change"
+        onClick={onChange}
+        className="m-tap flex w-full items-center justify-center gap-1.5 border-0 border-t border-line-2 bg-transparent py-2 text-[12px] font-medium text-accent-deep"
+      >
+        <Icon name="swap-horizontal" size={14} />
+        {t('receipt.change')}
+      </button>
+    </div>
+  );
+}
+
+/** the sheet's own rungs under the suggestions: capture or upload, the desktop webcam (#160), the stores door */
+function AttachRungs({
+  busy,
+  webcam,
+  onTakePhoto,
+  onWebcam,
+  onConnections,
+}: Readonly<{ busy: boolean; webcam: boolean; onTakePhoto: () => void; onWebcam: () => void; onConnections: () => void }>) {
+  const { t } = useLang();
+  const panes = useLgViewport();
+  return (
+    <>
+      <Button variant="outline" className="w-full" data-testid="receipt-take-photo" disabled={busy} onClick={onTakePhoto}>
+        <Icon name={panes ? 'upload-outline' : 'camera-outline'} size={16} />
+        {panes ? t('receipt.upload') : t('receipt.takePhoto')}
+      </Button>
+      {/* #160: desktop webcam snapshot — same attach path as a file */}
+      {webcam && (
+        <Button variant="outline" className="w-full" data-testid="receipt-webcam" disabled={busy} onClick={onWebcam}>
+          <Icon name="camera-outline" size={16} />
+          {t('webcam.use')}
+        </Button>
+      )}
+      <button
+        data-testid="receipt-connections"
+        onClick={onConnections}
+        className="m-tap border-none bg-transparent py-1 text-center text-[12px] font-medium text-accent-deep"
+      >
+        {t('conn.title')}
+      </button>
+    </>
+  );
 }
 
 /**
  * The transaction's line-item proof (receipts v3, R8 redesign): the
  * empty state opens ONE attach sheet — best-matching unlinked store
  * receipts first, camera/upload and the connections door as the
- * fallback rungs — instead of the old scattered buttons.
+ * fallback rungs, then every receipt behind a search (user 2026-10-07:
+ * the review's picker, shared) — and an attached receipt leads that
+ * same sheet, marked, so it can be changed.
  */
 export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
-  const { t, lang } = useLang();
-  const panes = useLgViewport();
+  const { t } = useLang();
   const navigate = useNavigate();
   const entry = useTxReceiptEntry(tx.id);
   const unmatched = useUnmatchedReceipts();
@@ -49,14 +128,27 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
 
-  const candidates = useMemo(() => rankForTx(tx, unmatched ?? []).slice(0, 6), [tx, unmatched]);
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+  const receipt = entry?.data ?? null;
+  // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
+  const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
+  // the receipts on offer: never the attached one twice (it leads the lists, marked)
+  const others = useMemo(() => (unmatched ?? []).filter((r) => r.id !== receipt?.id), [unmatched, receipt?.id]);
+  // the proposal's receipt asks on its own card, not among the suggestions (the review's rule)
+  const candidates = useMemo(
+    () => rankForTx(tx, others.filter((r) => r.id !== proposal?.receiptId)).slice(0, 6),
+    [tx, others, proposal?.receiptId],
+  );
+
+  /** the receipt screen, back here on return — the card's own door and the sheet's eye alike */
+  const openReceipt = (receiptId: string) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
     try {
       await receiptOps.attachPhoto(tx, file);
+      // taken from Change, the photo replaces the attached receipt — its link is in before the old one goes
+      if (entry) await dropAttached(receiptOps, entry);
       setAttachOpen(false);
     } finally {
       setBusy(false);
@@ -71,34 +163,21 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   };
 
   if (entry === undefined) return null;
-  const receipt = entry?.data ?? null;
-  // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
-  const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
+  const suggested = receipt ? [receipt, ...candidates] : candidates;
+  const all = receipt ? [receipt, ...others] : others;
 
   return (
     <>
       <div className="m-cap mt-5 mb-1 px-1">{t('receipt.title')}</div>
       {proposal && (
-        <div className="mb-2 rounded-card border border-line bg-surface px-4 py-3" data-testid="receipt-proposal">
-          <div className="flex items-center gap-3">
-            <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-ink">{proposal.merchant ?? partyName(proposal.source)}</span>
-              <span className="block text-[11px] text-ink-4">
-                {t('receipts.proposedBadge')} · {fmtDate(proposal.date)}
-              </span>
-            </span>
-            <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(proposal.totalCents, tx.currency, lang)}</span>
-          </div>
-          <div className="mt-2 flex gap-2 pl-8">
-            <Button size="sm" data-testid="receipt-proposal-accept" onClick={() => void receiptOps.acceptMatch(proposal)}>
-              {t('receipts.accept')}
-            </Button>
-            <Button size="sm" variant="outline" data-testid="receipt-proposal-reject" onClick={() => void receiptOps.rejectMatch(proposal)}>
-              {t('receipts.reject')}
-            </Button>
-          </div>
-        </div>
+        <ReceiptProposalCard
+          className="mb-2"
+          link={proposal}
+          currency={tx.currency}
+          ids={{ card: 'receipt-proposal', accept: 'receipt-proposal-accept', reject: 'receipt-proposal-reject' }}
+          onAccept={(link) => void receiptOps.acceptMatch(link)}
+          onReject={(link) => void receiptOps.rejectMatch(link)}
+        />
       )}
       <input
         ref={fileRef}
@@ -124,75 +203,49 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           )}
         </button>
       ) : (
-        <button
-          data-testid="receipt-card"
-          onClick={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: receipt.id }, search: { from: tx.id } })}
-          className="m-tap w-full overflow-hidden rounded-card border border-line bg-surface p-0 text-left"
-        >
-          {receipt.image && <img src={receipt.image} alt={t('receipt.title')} className="max-h-40 w-full object-cover" />}
-          <span className="flex items-center gap-2 px-4 py-2.5">
-            <Icon name={receipt.source === 'photo' ? 'camera-outline' : 'storefront-outline'} size={15} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
-              {receipt.items?.length ? `${receipt.items.length} · ${t('receipt.items')}` : t('receipt.sourcePhoto')}
-            </span>
-            <span className="m-num text-[12px] font-semibold text-ink">{fmtCents(receipt.totalCents, tx.currency, lang)}</span>
-          </span>
-        </button>
+        <AttachedReceiptCard receipt={receipt} currency={tx.currency} onOpen={() => openReceipt(receipt.id)} onChange={() => setAttachOpen(true)} />
       )}
 
-      {/* ONE attach flow (user: the old scatter felt odd): suggested
-          receipts lead, capture and the stores door follow */}
-      <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('receipt.attach')} size="tall">
-        <div className="flex flex-col gap-3 pt-1">
-          {candidates.length > 0 && (
-            <>
-              <div className="m-cap px-1">{t('receipt.suggested')}</div>
-              <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="receipt-pick-list">
-                {candidates.map((row) => (
-                  <button
-                    key={row.id}
-                    data-testid={`receipt-pick-${row.id}`}
-                    onClick={() => {
-                      void receiptOps.linkReceipt(row, tx.id);
-                      setAttachOpen(false);
-                    }}
-                    className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
-                  >
-                    <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-ink">{row.merchant ?? row.source}</span>
-                      <span className="block text-[11px] text-ink-4">{fmtDate(row.date)}</span>
-                    </span>
-                    <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(row.totalCents, tx.currency, lang)}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-          <Button variant="outline" className="w-full" data-testid="receipt-take-photo" disabled={busy} onClick={takePhoto}>
-            <Icon name={panes ? 'upload-outline' : 'camera-outline'} size={16} />
-            {panes ? t('receipt.upload') : t('receipt.takePhoto')}
-          </Button>
-          {/* #160: desktop webcam snapshot — same attach path as a file */}
-          {webcamDoor && (
-            <Button variant="outline" className="w-full" data-testid="receipt-webcam" disabled={busy} onClick={() => setWebcamOpen(true)}>
-              <Icon name="camera-outline" size={16} />
-              {t('webcam.use')}
-            </Button>
-          )}
-          <button
-            data-testid="receipt-connections"
-            onClick={() => void navigate({ to: '/connections' })}
-            className="m-tap border-none bg-transparent py-1 text-center text-[12px] font-medium text-accent-deep"
-          >
-            {t('conn.title')}
-          </button>
-        </div>
-      </Sheet>
+      {/* ONE attach flow (user: the old scatter felt odd): the attached receipt and the
+          suggestions lead, capture and the stores door follow, every receipt sits behind
+          the search — the review card's sheet, shared (user 2026-10-07) */}
+      <ReceiptPickSheet
+        open={attachOpen}
+        onOpenChange={setAttachOpen}
+        title={t('receipt.attach')}
+        testIdPrefix="receipt-pick"
+        pickTestIdPrefix="receipt-pick"
+        proposal={proposal}
+        candidates={suggested}
+        all={all}
+        selectedId={receipt?.id ?? null}
+        showNone={receipt !== null}
+        currency={tx.currency}
+        onAccept={(link) => {
+          void receiptOps.acceptMatch(link);
+          setAttachOpen(false);
+        }}
+        onReject={(link) => {
+          void receiptOps.rejectMatch(link);
+          setAttachOpen(false);
+        }}
+        onPick={(row) => {
+          setAttachOpen(false);
+          void applyPick(receiptOps, tx.id, entry, row);
+        }}
+        onView={openReceipt}
+      >
+        <AttachRungs
+          busy={busy}
+          webcam={webcamDoor}
+          onTakePhoto={takePhoto}
+          onWebcam={() => setWebcamOpen(true)}
+          onConnections={() => void navigate({ to: '/connections' })}
+        />
+      </ReceiptPickSheet>
 
       {/* #160: snapshot rides the same attach pipeline as a picked file */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onFile(file)} />
-
     </>
   );
 }

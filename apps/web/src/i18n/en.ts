@@ -2029,6 +2029,7 @@ export const en = {
   'tour.budgets.3b': 'Green is fine, amber is getting close, red is over — Home surfaces the three most urgent.',
   'tour.budgets.4t': 'Leftovers can roll',
   'tour.budgets.4b': 'Carry-over moves unused money into the next period, up to a cap if you want one.',
+  'receipt.change': 'Change',
   'receipt.title': 'Receipt',
   'receipt.attach': 'Attach a receipt',
   'receipt.suggested': 'Suggested receipts',

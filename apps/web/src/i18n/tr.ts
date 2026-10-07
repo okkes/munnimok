@@ -2031,6 +2031,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.budgets.3b': 'Yeşil iyi, sarı yaklaşıyor, kırmızı aşıldı — Ana sayfa en acil üçünü gösterir.',
   'tour.budgets.4t': 'Kalanlar devredebilir',
   'tour.budgets.4b': 'Devretme, kullanılmayan parayı bir sonraki döneme taşır; istersen bir tavanla.',
+  'receipt.change': 'Değiştir',
   'receipt.title': 'Fiş',
   'receipt.attach': 'Fiş ekle',
   'receipt.suggested': 'Önerilen fişler',

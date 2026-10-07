@@ -292,4 +292,70 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('receipt-proposal-open-rlink-compare', {}, { timeout: 5000 }));
     await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
   }, 20_000);
+
+  const AMAZON = 'rcpt:amazon-nl:demo_conn_amz:a1';
+  const COOLBLUE = 'rcpt:coolblue:demo_conn_cb:c1';
+
+  /** two shops in the space with an unlinked receipt each (the review's seeding, on the detail's demo handle) */
+  async function seedTwoShopReceipts() {
+    const { db, repo } = await demoRepo();
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    const { storeConnLinkId } = await import('@/domain/feedIds');
+    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_amz'), { instanceId: 'demo_conn_amz', store: 'amazon-nl', displayName: 'Amazon' });
+    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_cb'), { instanceId: 'demo_conn_cb', store: 'coolblue', displayName: 'Coolblue' });
+    await repo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl' });
+    await repo.upsert('receipt', DEMO_STORE_FEED_ID, COOLBLUE, { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
+    db.close();
+    // the shops' receipts reach the empty state's badge
+    await waitFor(() => expect(screen.getByTestId('receipt-candidate-count').textContent).toBe('2'), { timeout: 5000 });
+  }
+
+  it('the attach sheet searches every receipt behind the parties’ chips; a pick from the whole list attaches it (user 2026-10-07)', async () => {
+    await openFirstTx();
+    await seedTwoShopReceipts();
+    fireEvent.click(screen.getByTestId('receipt-empty'));
+    await screen.findByTestId('receipt-pick-sheet');
+    // nothing attached: no None option; the suggestions and the whole list are both there
+    expect(screen.queryByTestId('receipt-pick-none')).toBeNull();
+    expect(screen.getByTestId('receipt-pick-list').textContent).toContain('Amazon.nl');
+    expect(screen.getByTestId('receipt-pick-all-list').textContent).toContain('Coolblue');
+    fireEvent.click(screen.getByTestId('receipt-pick-party-coolblue'));
+    expect(screen.queryByTestId(`receipt-pick-all-${AMAZON}`)).toBeNull();
+    fireEvent.change(screen.getByTestId('receipt-pick-search'), { target: { value: '57,98' } });
+    fireEvent.click(screen.getByTestId(`receipt-pick-all-${COOLBLUE}`));
+    const card = await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('Coolblue');
+    expect(card.textContent).toMatch(/€[1-9]/);
+  }, 20_000);
+
+  it('Change on the attached receipt opens the sheet with it marked; another pick swaps the link, No receipt lets it go', async () => {
+    const txId = await openFirstTx();
+    await seedTwoShopReceipts();
+    fireEvent.click(screen.getByTestId('receipt-empty'));
+    fireEvent.click(await screen.findByTestId(`receipt-pick-${AMAZON}`));
+    await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('Amazon.nl'), { timeout: 5000 });
+
+    // Change: the attached receipt leads the suggestions, marked, and None is on offer now
+    fireEvent.click(screen.getByTestId('receipt-change'));
+    await waitFor(() => expect(screen.getByTestId(`receipt-pick-${AMAZON}`).getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.getByTestId('receipt-pick-none')).toBeTruthy();
+    fireEvent.click(screen.getByTestId(`receipt-pick-${COOLBLUE}`));
+    await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('Coolblue'), { timeout: 5000 });
+
+    // the swap: the Coolblue link holds the transaction, the Amazon link is gone (its receipt is unmatched again)
+    const { db } = await demoRepo();
+    await waitFor(async () => {
+      const links = await db.receiptLinks.toArray();
+      expect(links.find((l) => l.receiptId === COOLBLUE)?.txId).toBe(txId);
+      expect(links.find((l) => l.receiptId === AMAZON)?.deleted).toBeTruthy();
+    }, { timeout: 5000 });
+    db.close();
+    fireEvent.click(screen.getByTestId('receipt-change'));
+    await waitFor(() => expect(screen.getByTestId(`receipt-pick-${COOLBLUE}`).getAttribute('aria-pressed')).toBe('true'));
+    expect(screen.getByTestId(`receipt-pick-${AMAZON}`).getAttribute('aria-pressed')).toBe('false');
+
+    // No receipt: the transaction is bare again
+    fireEvent.click(screen.getByTestId('receipt-pick-none'));
+    await screen.findByTestId('receipt-empty', {}, { timeout: 5000 });
+  }, 25_000);
 });
