@@ -79,6 +79,8 @@ public sealed class BolAdapterTests
     // the cookie wall as bol serves it on 2026-10-06: a Radix dialog with both answers
     private const string ConsentRefuse = "[role='dialog'][data-state='open'] button:has-text('Weigeren')";
     private const string ConsentAccept = "[role='dialog'][data-state='open'] button:has-text('Alles accepteren')";
+    // the language chooser bol raises behind the cookie wall since 2026-10-07
+    private const string LanguageContinue = "[role='dialog'][data-state='open'] button:has-text('Doorgaan')";
 
     /// <summary>The one code that sends a consumer back through the login.</summary>
     private static readonly string[] SessionExpiredOnly = ["session_expired"];
@@ -350,6 +352,31 @@ public sealed class BolAdapterTests
         using var ctx2 = LoginContext(acceptOnly);
         await Adapter().LoginAsync(ctx2, acceptOnly, Arrives(), CancellationToken.None);
         Assert.Equal(ConsentAccept, acceptOnly.Clicked[0]);
+    }
+
+    [Fact]
+    public async Task The_language_chooser_behind_the_cookie_wall_is_carried_through_before_the_form_is_touched()
+    {
+        // 2026-10-07 (prod, the user's lab link): the wall went, a second
+        // full-screen dialog asked for a language, and the login's click
+        // timed out on it exactly as it had on the wall the day before
+        var page = StubLoginPage.Showing(ConsentRefuse, LanguageContinue, Username, PasswordBox, Submit);
+        using var ctx = LoginContext(page);
+
+        await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
+
+        Assert.Equal(ConsentRefuse, page.Clicked[0]);
+        Assert.Equal(LanguageContinue, page.Clicked[1]);
+        var calls = page.Calls.ToList();
+        Assert.True(calls.LastIndexOf("click", calls.IndexOf("fill")) >= 0, "both walls go before the form is filled");
+        Assert.Contains(ctx.Notes, n => n.Contains("the language chooser was dismissed", StringComparison.Ordinal));
+
+        // alone, without a cookie wall in front of it, it is pressed just the same
+        var chooserOnly = StubLoginPage.Showing(LanguageContinue, Username, PasswordBox, Submit);
+        using var ctx2 = LoginContext(chooserOnly);
+        await Adapter().LoginAsync(ctx2, chooserOnly, Arrives(), CancellationToken.None);
+        Assert.Equal(LanguageContinue, chooserOnly.Clicked[0]);
+        Assert.Equal(Submit, chooserOnly.Clicked[^1]);
     }
 
     [Fact]

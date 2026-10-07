@@ -168,6 +168,23 @@ public sealed record BolOptions
     public int ConsentMs { get; init; } = 2_000;
 
     /// <summary>
+    /// The second wall (2026-10-07, prod): a full-screen language chooser,
+    /// another Radix dialog, with "Doorgaan" (carry on) as its one way
+    /// through - it kept the login's click from its button exactly as the
+    /// cookie wall had. The open-state form first, the bare dialog as the
+    /// fallback, and "Continue" for a session bol serves in English.
+    /// </summary>
+    public IReadOnlyList<string> ContinueSelectors { get; init; } =
+    [
+        "[role='dialog'][data-state='open'] button:has-text('Doorgaan')",
+        "[role='dialog'] button:has-text('Doorgaan')",
+        "[role='dialog'][data-state='open'] button:has-text('Continue')",
+    ];
+
+    /// <summary>How long the language chooser gets to appear behind the cookie wall; most sessions never see it.</summary>
+    public int ContinueMs { get; init; } = 1_500;
+
+    /// <summary>
     /// UNCONFIRMED, and the most dangerous list in this file after the money
     /// units.
     ///
