@@ -42,7 +42,7 @@ public class DerivedRowsTests : IClassFixture<FeedsApiFactory>
     private static SyncOpDto Meta(string spaceId, string txId, string hlc, params (string Name, object Value)[] fields) =>
         new(Guid.NewGuid().ToString("N"), spaceId, "txMeta", ImportIds.TxMetaId(spaceId, txId), Fields(fields), hlc);
 
-    private async Task PushAsync(HttpClient client, string spaceId, params SyncOpDto[] ops)
+    private static async Task PushAsync(HttpClient client, string spaceId, params SyncOpDto[] ops)
     {
         var response = await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [.. ops]));
         response.EnsureSuccessStatusCode();

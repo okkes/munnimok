@@ -126,14 +126,14 @@ public static class DerivedDuplicateRepair
         var keep = 0;
         var cluster = 0;
         long clusterStart = long.MinValue;
-        foreach (var copy in ordered)
+        foreach (var bornMs in ordered.Select(copy => copy.BornMs))
         {
-            if (cluster > 0 && copy.BornMs - clusterStart > SameFetch.TotalMilliseconds)
+            if (cluster > 0 && bornMs - clusterStart > SameFetch.TotalMilliseconds)
             {
                 keep = Math.Max(keep, cluster);
                 cluster = 0;
             }
-            if (cluster == 0) clusterStart = copy.BornMs;
+            if (cluster == 0) clusterStart = bornMs;
             cluster++;
         }
         return Math.Max(keep, cluster);
@@ -154,18 +154,24 @@ public static class DerivedDuplicateRepair
                 .ToListAsync(ct);
             foreach (var meta in metas)
             {
-                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(meta.DataJson) ?? new();
-                var versions = JsonSerializer.Deserialize<Dictionary<string, string>>(meta.FieldVersionsJson) ?? new();
-                var weight = 0;
-                if (Text(data, "transferPeerId") is { Length: > 0 }) weight += 4;
-                if (data.TryGetValue("reimbursements", out var reimb) && reimb.ValueKind == JsonValueKind.Array && reimb.GetArrayLength() > 0) weight += 4;
-                if (data.ContainsKey("catId") && versions.TryGetValue("catId", out var catClock) && catClock != ServerHlc.Floor) weight += 2;
-                if (Text(data, "linkedAccountId") is { Length: > 0 }) weight += 1;
                 var id = metaIds[meta.EntityId];
-                touched[id] = touched.GetValueOrDefault(id) + weight;
+                touched[id] = touched.GetValueOrDefault(id) + Weight(meta.DataJson, meta.FieldVersionsJson);
             }
         }
         return touched;
+    }
+
+    /// <summary>What one space's overlay row says the person did with the transaction: a pairing or a reimbursement weigh most, a filed category next, a one-way link least.</summary>
+    private static int Weight(string dataJson, string fieldVersionsJson)
+    {
+        var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(dataJson) ?? new();
+        var versions = JsonSerializer.Deserialize<Dictionary<string, string>>(fieldVersionsJson) ?? new();
+        var weight = 0;
+        if (Text(data, "transferPeerId") is { Length: > 0 }) weight += 4;
+        if (data.TryGetValue("reimbursements", out var reimb) && reimb.ValueKind == JsonValueKind.Array && reimb.GetArrayLength() > 0) weight += 4;
+        if (data.ContainsKey("catId") && versions.TryGetValue("catId", out var catClock) && catClock != ServerHlc.Floor) weight += 2;
+        if (Text(data, "linkedAccountId") is { Length: > 0 }) weight += 1;
+        return weight;
     }
 
     /// <summary>The wall-clock milliseconds inside a stamp (its first, base36 part), or 0 when there is none.</summary>
