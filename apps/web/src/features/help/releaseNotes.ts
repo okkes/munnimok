@@ -18,6 +18,32 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.17.0',
+    date: '2026-10-07',
+    items: [
+      {
+        en: 'Planning funds faster: tap a "Needs" chip to fund that subject to its target in one go, or "Fund all" in a segment’s header for every subject at once. Going beyond what the pool holds asks once a day. An unplanned main opens its own sheet: set money aside for it right there (it becomes an expense subject, already funded by what you spent) or plan it with a target.',
+        nl: 'Plannen vult sneller: tik op een "Nodig"-chip om dat onderwerp in één keer tot zijn doel te vullen, of "Alles vullen" in de kop van een segment voor elk onderwerp tegelijk. Verder gaan dan de pot heeft vraagt één keer per dag. Een ongeplande hoofdcategorie opent haar eigen paneel: zet er ter plekke geld voor apart (het wordt een uitgavenonderwerp, al gevuld met wat je uitgaf) of plan het met een doel.',
+        tr: 'Planlama daha hızlı ayırıyor: bir "Gerekli" çipine dokunarak o konuyu tek seferde hedefine kadar ayırın ya da bir bölümün başlığındaki "Tümünü ayır" ile her konuyu birden. Havuzda olanın ötesine geçmek günde bir kez sorulur. Planlanmamış bir ana kategori kendi panelini açar: orada hemen para ayırın (harcadığınız kadarı ayrılmış bir gider konusu olur) ya da bir hedefle planlayın.',
+      },
+      {
+        en: '"Skip this period" replaces "Not this period" and shows only where nothing is actually due this period — a yearly cost spread over months, a goal far off; a skipped row reads dimmed but stays tappable. The add-source sheet keeps its pick per segment.',
+        nl: '"Deze periode overslaan" vervangt "Niet deze periode" en verschijnt alleen waar deze periode echt niets vervalt — een jaarlijkse last gespreid over maanden, een doel ver weg; een overgeslagen rij leest gedimd maar blijft aantikbaar. Het toevoegpaneel houdt zijn keuze per segment.',
+        tr: '"Bu dönemi atla", "Bu dönem değil"in yerini alıyor ve yalnızca bu dönem gerçekten hiçbir şeyin düşmediği yerde görünüyor — aylara yayılmış yıllık bir gider, uzak bir hedef; atlanan satır soluk okunur ama dokunulabilir kalır. Ekleme paneli seçimini bölüme göre tutar.',
+      },
+      {
+        en: 'Invitation-only sign-up: an environment can close registration — new people come in through an invitation link the admin mints; opening it creates their account, and afterwards Google, Apple or e-mail sign-in all work.',
+        nl: 'Aanmelden op uitnodiging: een omgeving kan de registratie sluiten — nieuwe mensen komen binnen via een uitnodigingslink die de beheerder aanmaakt; die openen maakt hun account aan, en daarna werkt inloggen met Google, Apple of e-mail.',
+        tr: 'Davetle kayıt: bir ortam kaydı kapatabilir — yeni kişiler yöneticinin oluşturduğu bir davet bağlantısıyla gelir; açmak hesaplarını oluşturur ve sonra Google, Apple ya da e-posta ile giriş çalışır.',
+      },
+      {
+        en: 'bol.com: a page that carries one failed field beside its orders is read instead of refused — the "party changed its site" after every sync on the phone is gone.',
+        nl: 'bol.com: een pagina met één mislukt veld naast de bestellingen wordt gelezen in plaats van geweigerd — het "de partij veranderde zijn site" na elke sync op de telefoon is weg.',
+        tr: 'bol.com: siparişlerin yanında tek bir hatalı alan taşıyan sayfa reddedilmek yerine okunuyor — telefondaki her eşitlemeden sonra çıkan "taraf sitesini değiştirdi" gitti.',
+      },
+    ],
+  },
+  {
     version: '5.16.0',
     date: '2026-10-07',
     items: [
