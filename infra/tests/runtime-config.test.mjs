@@ -28,7 +28,7 @@ test('40-runtime-config: the overlay carries the MUNNI_* values; the app-link fi
   assert.match(r.config, /"NATIVE_SCHEME":"munni-prod-nas"/);
   assert.deepEqual(r.assetlinks, [{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: 'app.munni.nas.prod', sha256_cert_fingerprints: ['AA:BB:CC', 'DD:EE:FF'] } }]);
   assert.deepEqual(r.aasa.applinks.details[0].appIDs, ['TEAM123456.app.munni.nas.prod']);
-  assert.deepEqual(r.aasa.applinks.details[0].components.map((c) => c['/']), ['/gc-callback*', '/splits/join/*', '/native-auth*', '/native-signed-out*']);
+  assert.deepEqual(r.aasa.applinks.details[0].components.map((c) => c['/']), ['/gc-callback*', '/splits/join/*', '/invite*', '/native-auth*', '/native-signed-out*']);
   assert.match(r.out, /assetlinks\.json claims app\.munni\.nas\.prod/);
 });
 

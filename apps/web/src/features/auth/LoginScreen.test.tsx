@@ -210,6 +210,7 @@ describe('the account step (user 2026-10-07)', () => {
   beforeEach(() => {
     mockLogto.value = true;
     mockSignIn.mockClear();
+    vi.stubGlobal('fetch', fetchSpy); // the sign-in button asks /health for the sign-up policy — never the real network here
   });
 
   it('with a remembered name the button continues as them, and "another account" asks Logto for credentials again', async () => {
