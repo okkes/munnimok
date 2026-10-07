@@ -61,7 +61,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<{ status: 
   headers.set('X-Device-Class', deviceClass());
   // a party that cannot be reached answers 503 by design — the choke
   // point must not file it as an unexpected server answer
-  const response = await apiFetch(`${BASE}${path}`, { ...init, headers }, { expectStatuses: [503] });
+  const response = await apiFetch(`${BASE}${path}`, { ...init, headers }, { expectStatuses: [503], partyAuth: true });
   const body = (await response.json().catch(() => null)) as T;
   if (!response.ok) throw new ConnectorError(response.status, envelopeOf(response.status, body));
   return { status: response.status, body };

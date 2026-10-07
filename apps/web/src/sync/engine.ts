@@ -190,6 +190,14 @@ export class SyncEngine {
     const transient = err instanceof SyncHttpError && TRANSIENT_STATUSES.has(err.status);
     if (transient) console.warn(`sync paused: ${String(err)} — retrying on the next tick`);
     else if (!offline && !authState) reportError('sync', err);
+    // a 401 is the session's business, not the network's: the banner names an
+    // expired session on its own (sessionExpiry), and a request that simply
+    // carried no token yet (the token is being minted right after a sign-in)
+    // is tried again on the next tick without a word (user ss 2026-10-07)
+    if (authState) {
+      this.setStatus('idle');
+      return;
+    }
     this.setStatus(offline || transient ? 'offline' : 'error');
   }
 

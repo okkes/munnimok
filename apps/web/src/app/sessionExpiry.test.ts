@@ -7,8 +7,10 @@ import {
   isInvalidGrantError,
   isSessionExpired,
   markSessionExpired,
+  resetRevivalProbeForTests,
   resetSessionExpiryForTests,
   subscribeSessionExpiry,
+  watchForRevival,
 } from './sessionExpiry';
 
 describe('sessionExpiry (#222)', () => {
@@ -83,5 +85,45 @@ describe('sessionExpiry (#222)', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     expect(await attemptSilentReentry(signIn)).toBe(false);
     expect(signIn).not.toHaveBeenCalled();
+  });
+});
+
+describe('watchForRevival (user 2026-10-07: a mark set by a passing refusal should lift by itself)', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    resetSessionExpiryForTests();
+    resetRevivalProbeForTests();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a token that mints again lifts the mark when the device comes back; silence keeps it', async () => {
+    markSessionExpired();
+    const silent = watchForRevival(async () => undefined);
+    window.dispatchEvent(new Event('online'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(isSessionExpired()).toBe(true);
+    silent();
+
+    resetRevivalProbeForTests();
+    const minting = watchForRevival(async () => 'fresh-token');
+    window.dispatchEvent(new Event('online'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(isSessionExpired()).toBe(false);
+    minting();
+  });
+
+  it('asks at most once a minute', async () => {
+    markSessionExpired();
+    const mint = vi.fn(async () => undefined);
+    const stop = watchForRevival(mint);
+    window.dispatchEvent(new Event('online'));
+    window.dispatchEvent(new Event('online'));
+    await Promise.resolve();
+    expect(mint).toHaveBeenCalledTimes(1);
+    stop();
   });
 });

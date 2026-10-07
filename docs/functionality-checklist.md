@@ -12,6 +12,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Fresh signup walks onboarding (name, avatar, country) and an interrupted one resumes
 - [ ] Session survives restarts; an expired session recovers or says so honestly
 - [ ] App lock: set up, unlock with PIN and passkey, disable; a refresh honors the configured auto-lock delay
+- [ ] No "Offline" right after a sign-in (2026-10-07, user ss): the token getter stays registered while the SDK flips isLoading for its own token fetch (TokenBridge), and a sync call that went out without a bearer (a 401 while the first token is minted) leaves the engine idle for the next tick instead of marking an outage; a party's 401 through the relay (a bank's lapsed 15-minute session, invalid credentials, a failed MFA) is never munni's session — apiFetch partyAuth: no retry, no expiry mark (the "random session expired" banners); an expired mark is re-probed once a minute when the device comes back online or visible — a token that mints again lifts it (sessionExpiry watchForRevival).
 
 ## Spaces & sharing
 - [ ] Invitations, 2026-09-29 (#391): the members page carries the invitation switch (owner only; closed = no invite door; opening on a PIN-locked device asks the PIN first) — the setting left the space settings; an event that already has payments offers a quiet "Find more (n)" beside its payments header instead of the loud attach card, which stays for the first attach only (#379); the second leg of a same-day linked pair gets its own row edge (#352)

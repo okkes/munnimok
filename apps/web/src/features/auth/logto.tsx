@@ -14,6 +14,7 @@ import {
   isInvalidGrantError,
   isSessionExpired,
   markSessionExpired,
+  watchForRevival,
 } from '@/app/sessionExpiry';
 import { useSession } from '@/app/session';
 import { Logo } from '@/ui/Logo';
@@ -84,7 +85,12 @@ function TokenBridge() {
     }
   }, [error, signIn]);
   useEffect(() => {
-    if (isLoading) return; // session still restoring — keep sync waiting
+    // the SDK flips isLoading for EVERY call it runs, its own getAccessToken
+    // included (user ss 2026-10-07: "Offline" for the first seconds after a
+    // sign-in — the sync's first call went out without a bearer while the
+    // token was being minted). Only the initial restore keeps sync waiting;
+    // once signed in, the getter stays put through those flips.
+    if (isLoading && !isAuthenticated) return; // session still restoring — keep sync waiting
     if (isAuthenticated) {
       setAccessTokenGetter(async () => {
         // a spent grant never mints again — stop hammering the IdP
@@ -106,6 +112,10 @@ function TokenBridge() {
     signalAuthReady(); // restore finished (either outcome) — sync may start
     return () => setAccessTokenGetter(null);
   }, [getAccessToken, isAuthenticated, isLoading]);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return watchForRevival(async () => (await getAccessToken(config.logto.resource || undefined)) ?? undefined);
+  }, [getAccessToken, isAuthenticated]);
   return null;
 }
 

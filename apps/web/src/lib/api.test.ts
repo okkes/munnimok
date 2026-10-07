@@ -134,6 +134,32 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     resetSessionExpiryForTests();
   });
 
+  it('a party\'s 401 through the relay (partyAuth) is neither retried nor marks the session expired (user 2026-10-07: "random expired issues" were a bank\'s lapsed session)', async () => {
+    const { resetAuthExpiryGuard } = await import('./api');
+    resetAuthExpiryGuard();
+    const { isSessionExpired, resetSessionExpiryForTests } = await import('@/app/sessionExpiry');
+    resetSessionExpiryForTests();
+    const { setAccessTokenGetter, signalAuthReady } = await import('@/app/authToken');
+    signalAuthReady();
+    setAccessTokenGetter(async () => 'a-real-token');
+    const { useSession } = await import('@/app/session');
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'party-user' }));
+    useSession.setState({ identity: { kind: 'user', sub: 'party-user' } });
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls.push('call');
+      return new Response('{"error":{"code":"session_expired"}}', { status: 401 });
+    }));
+
+    const { apiFetch } = await import('./api');
+    const res = await apiFetch('/connectors/ing-nl/sync', {}, { partyAuth: true });
+    expect(res.status).toBe(401);
+    expect(calls.length).toBe(1); // a bank login is never retried behind the person's back
+    expect(isSessionExpired()).toBe(false);
+    setAccessTokenGetter(null);
+    resetSessionExpiryForTests();
+  });
+
   it('a 401 without a bearer never forces a logout (cold-start boot race)', async () => {
     // an app update always cold-starts: requests fired before the token
     // getter exists carry no bearer — those 401s prove nothing about the
