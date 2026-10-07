@@ -115,13 +115,23 @@ export function OfflineBanner() {
         {t(OFFLINE_REASON_KEYS[reason])}
       </span>
       {expired && (
-        <button
-          data-testid="offline-banner-signin"
-          onClick={() => void oidcSignIn(callbackUri())}
-          className="m-tap shrink-0 rounded-full bg-brand px-3 py-1.5 text-[12px] font-semibold text-on-brand"
-        >
-          {t('sync.signInAgain')}
-        </button>
+        <span className="flex shrink-0 flex-col items-end gap-1">
+          <button
+            data-testid="offline-banner-signin"
+            onClick={() => void oidcSignIn(callbackUri())}
+            className="m-tap shrink-0 rounded-full bg-brand px-3 py-1.5 text-[12px] font-semibold text-on-brand"
+          >
+            {t('sync.signInAgain')}
+          </button>
+          {/* user 2026-10-07: a way to another account from a half-working app */}
+          <button
+            data-testid="offline-banner-another"
+            onClick={() => void oidcSignIn(callbackUri(), true)}
+            className="m-tap border-none bg-transparent p-0 text-[11px] font-medium text-accent-deep underline"
+          >
+            {t('sync.anotherAccount')}
+          </button>
+        </span>
       )}
       <button
         aria-label={t('action.dismiss')}

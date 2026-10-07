@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.16.0',
+    date: '2026-10-07',
+    items: [
+      {
+        en: 'Planning counts money you already spent only once: a subject you plan mid-period starts funded by what the period already paid for it, and the pool is asked only for what is still held — a bill already paid reads Funded, not "Over by". A target of 0 is fine while you do not know yet, the suggestions read as a label over the amount, several recurring costs, loans or goals are added at once, and every segment folds into one line that this device remembers.',
+        nl: 'Plannen telt geld dat je al uitgaf maar één keer: een onderwerp dat je midden in de periode plant begint gevuld met wat de periode er al aan betaalde, en de pot wordt alleen gevraagd om wat nog vastgehouden wordt — een al betaalde rekening leest Gevuld, niet "Over met". Een doel van 0 mag zolang je het nog niet weet, de suggesties lezen als een label boven het bedrag, meerdere vaste lasten, leningen of doelen voeg je in één keer toe, en elk segment klapt dicht tot één regel die dit apparaat onthoudt.',
+        tr: 'Planlama, zaten harcadığınız parayı yalnızca bir kez sayar: dönem ortasında planladığınız bir konu, dönemin ona zaten ödediği kadar ayrılmış olarak başlar ve havuzdan yalnızca hâlâ tutulan kısım istenir — ödenmiş bir fatura "Aşıldı" değil, Ayrıldı okunur. Henüz bilmiyorken 0 hedef olabilir, öneriler tutarın üstünde bir etiket olarak okunur, birkaç sabit gider, borç ya da hedef tek seferde eklenir ve her bölüm bu cihazın hatırladığı tek bir satıra katlanır.',
+      },
+      {
+        en: 'ING: the card’s repayments and the loan and savings movements no longer land a second time after a new sign-in — the copies that were already there are taken back out, the one you paired or categorised stays. The counterparty picker now finds the repayment that already points at your checking account, takes the full height, and the detail names the counter account the way your space does, with its number underneath.',
+        nl: 'ING: de aflossingen van de kaart en de bewegingen op lening en spaarrekening landen niet meer een tweede keer na een nieuwe inlog — de kopieën die er al waren worden weggehaald, degene die je koppelde of categoriseerde blijft. De tegenpartijkiezer vindt nu de aflossing die al naar je betaalrekening wijst, neemt de volle hoogte, en het detail noemt de tegenrekening zoals je space dat doet, met het nummer eronder.',
+        tr: 'ING: kartın geri ödemeleri ile kredi ve tasarruf hareketleri yeni bir girişten sonra artık ikinci kez düşmüyor — zaten var olan kopyalar kaldırılıyor, eşleştirdiğiniz ya da kategorilediğiniz kalıyor. Karşı taraf seçici artık vadesiz hesabınızı zaten gösteren geri ödemeyi buluyor, tam yüksekliği alıyor ve ayrıntı, karşı hesabı alanınızın adlandırdığı gibi, numarası altında olacak şekilde gösteriyor.',
+      },
+      {
+        en: 'Signing in: no more "Offline" for the first seconds after a sign-in, a bank whose own login lapsed no longer reads as your munni session expiring, and an expired session heals by itself once the device is back. Before Logto you now choose: continue as the account this device used last, or use another account.',
+        nl: 'Inloggen: geen "Offline" meer in de eerste seconden na het inloggen, een bank waarvan de eigen login verliep leest niet meer als een verlopen munni-sessie, en een verlopen sessie herstelt vanzelf zodra het apparaat terug is. Vóór Logto kies je nu: doorgaan als het account dat dit apparaat het laatst gebruikte, of een ander account gebruiken.',
+        tr: 'Giriş: girişten sonraki ilk saniyelerde artık "Çevrimdışı" yok, kendi oturumu dolan bir banka artık munni oturumunuzun bittiği gibi okunmuyor ve süresi dolan oturum cihaz geri gelince kendiliğinden toparlanıyor. Logto’dan önce artık seçiyorsunuz: bu cihazın son kullandığı hesapla devam et ya da başka hesap kullan.',
+      },
+      {
+        en: 'Connections: a sign-in that failed keeps what you typed and offers Try again; "Sign in again" in a connection’s menu takes a new password without removing the connection; "Always report failures" is honoured everywhere and a question you closed waits under the connection’s card. bol.com gets past its language chooser.',
+        nl: 'Koppelingen: een mislukte inlog houdt wat je typte en biedt Opnieuw proberen; "Opnieuw inloggen" in het menu van een koppeling neemt een nieuw wachtwoord zonder de koppeling te verwijderen; "Fouten altijd melden" geldt overal en een vraag die je sloot wacht onder de kaart van de koppeling. bol.com komt langs zijn taalkeuze.',
+        tr: 'Bağlantılar: başarısız bir giriş yazdıklarınızı tutuyor ve Yeniden dene sunuyor; bir bağlantının menüsündeki "Yeniden giriş yap" bağlantıyı kaldırmadan yeni şifre alıyor; "Hataları her zaman bildir" her yerde geçerli ve kapattığınız soru bağlantının kartının altında bekliyor. bol.com dil seçimini geçiyor.',
+      },
+      {
+        en: 'Receipts: the search you got on the review card — suggestions first, then every receipt behind a search and the shops’ chips — is on the transaction detail too, and it shows which receipt is attached so you can change it.',
+        nl: 'Bonnen: het zoeken dat je op de beoordelingskaart kreeg — eerst suggesties, dan elke bon achter een zoekveld en de winkelchips — zit nu ook op het transactiedetail, en het laat zien welke bon gekoppeld is zodat je die kunt wisselen.',
+        tr: 'Fişler: inceleme kartındaki arama — önce öneriler, sonra arama ve mağaza çipleri arkasındaki tüm fişler — artık işlem ayrıntısında da var ve hangi fişin bağlı olduğunu gösteriyor, böylece değiştirebilirsiniz.',
+      },
+      {
+        en: 'Small things: the reimbursement link screen lost its squeezed "looks like the match" line and folds the category impact under the bar, with each transaction in its own card; the "drag to frame" hint reads under the picture instead of over it.',
+        nl: 'Kleine dingen: het koppelscherm voor vergoedingen verloor zijn platgedrukte regel "lijkt de match" en klapt de categorie-impact dicht onder de balk, met elke transactie in een eigen kaart; de hint "sleep om te kadreren" staat onder de foto in plaats van erover.',
+        tr: 'Küçük şeyler: geri ödeme bağlama ekranı sıkışık "eşleşme gibi" satırını kaybetti ve kategori etkisini çubuğun altına, her işlem kendi kartında olacak şekilde katlıyor; "çerçevelemek için sürükle" ipucu resmin üstünde değil altında okunuyor.',
+      },
+    ],
+  },
+  {
     version: '5.15.0',
     date: '2026-10-06',
     items: [

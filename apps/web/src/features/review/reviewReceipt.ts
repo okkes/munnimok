@@ -1,7 +1,6 @@
 import type { SpaceTx } from '@/application/transactions';
 import type { ReceiptRow } from '@/db/types';
-import { partyName } from '@/features/connectors/logos';
-import { rankForTx } from '@/features/shopping/ReceiptSection';
+import { rankForTx } from '@/features/shopping/receiptPick';
 
 /**
  * User 2026-10-06: "automatically select the best matching receipt during
@@ -36,30 +35,4 @@ export function autoReceiptFor(tx: Pick<SpaceTx, 'date' | 'amountCents'>, candid
   const tolerance = Math.max(100, Math.round(target * 0.01));
   const fits = Math.abs(best.totalCents - target) <= tolerance && Math.abs(dayOf(best.date) - dayOf(tx.date)) <= AUTO_DAYS;
   return fits ? best : null;
-}
-
-/** the parties behind a set of receipts, for the filter chips — each once, by name */
-export function receiptParties(rows: readonly ReceiptRow[]): { source: string; label: string }[] {
-  const seen = new Map<string, string>();
-  for (const row of rows) {
-    if (!seen.has(row.source)) seen.set(row.source, row.merchant ?? partyName(row.source));
-  }
-  return [...seen].map(([source, label]) => ({ source, label })).sort((a, b) => a.label.localeCompare(b.label));
-}
-
-/** merchant, item names and the amount's digits are all searchable (the Fetched receipts screen's rule) */
-function receiptMatches(receipt: ReceiptRow, q: string, amountQ: string | null): boolean {
-  const text = `${receipt.merchant ?? ''} ${partyName(receipt.source)} ${(receipt.items ?? []).map((i) => i.name).join(' ')}`.toLowerCase();
-  if (text.includes(q)) return true;
-  return !!amountQ && String(Math.abs(receipt.totalCents)).includes(amountQ);
-}
-
-/** every receipt the sheet lists: narrowed by a party and by text, newest first */
-export function filterReceipts(rows: readonly ReceiptRow[], query: string, source: string | null): ReceiptRow[] {
-  const q = query.trim().toLowerCase();
-  const digits = q.replaceAll(/[\s.,€+-]/g, '');
-  const amountQ = /^\d+$/.test(digits) && digits.length > 0 ? digits : null;
-  return rows
-    .filter((row) => (source === null || row.source === source) && (!q || receiptMatches(row, q, amountQ)))
-    .sort((a, b) => b.date.localeCompare(a.date));
 }

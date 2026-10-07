@@ -767,7 +767,7 @@ public sealed class IngAdapter : IProviderAdapter
             {
                 ct.ThrowIfCancellationRequested();
 
-                var page = IngTransactions.Read(document, ctx.SessionId, account.Id);
+                var page = IngTransactions.Read(document, ctx.SessionId, account.Id, account.ExternalId);
                 Absorb(ctx, walk, page, limits.Window);
 
                 // The oldest row on this page is already before the window, so

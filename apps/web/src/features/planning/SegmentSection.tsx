@@ -85,6 +85,8 @@ export function SegmentSection({
   onFill,
   onAdd,
   onOpen,
+  folded = false,
+  onToggleFold,
 }: Readonly<{
   kind: PlanSegmentKind;
   views: SubjectView[];
@@ -97,21 +99,33 @@ export function SegmentSection({
   onFill: () => void;
   onAdd: () => void;
   onOpen: (view: SubjectView) => void;
+  /** folded (user 2026-10-07): the list gives way to one summary line */
+  folded?: boolean;
+  onToggleFold?: () => void;
 }>) {
   const { t } = useLang();
   const meta = SEGMENT_META[kind];
   const funded = views.reduce((sum, v) => sum + v.fundedCents, 0);
+  const spent = views.reduce((sum, v) => sum + v.realizedCents, 0);
   const need = views.reduce((sum, v) => sum + shortfallCents(v), 0);
+  const attention = views.filter((v) => v.status === 'overspent' || v.status === 'underfunded').length;
   return (
-    <section data-testid={`plan-segment-${kind}`} className="mt-5">
+    <section data-testid={`plan-segment-${kind}`} className="mt-5" data-folded={folded}>
       <div className="m-cap mb-1 flex items-center justify-between gap-2 px-1">
-        <span className="flex min-w-0 items-center gap-1.5">
+        <button
+          type="button"
+          data-testid={`plan-segment-fold-${kind}`}
+          aria-expanded={!folded}
+          onClick={onToggleFold}
+          className="m-tap flex min-w-0 items-center gap-1.5 border-none bg-transparent p-0 text-left text-inherit"
+        >
+          <Icon name={folded ? 'chevron-right' : 'chevron-down'} size={14} />
           <Icon name={meta.icon} size={14} />
           <span className="truncate">{t(meta.labelKey)}</span>
           <span className="m-num font-normal normal-case text-ink-4" data-testid={`plan-segment-total-${kind}`}>
             {fmt(funded, currency)}
           </span>
-        </span>
+        </button>
         <span className="flex shrink-0 items-center gap-1">
           {canFill && need > 0 && (
             <button
@@ -134,6 +148,17 @@ export function SegmentSection({
           )}
         </span>
       </div>
+      {folded ? (
+        <button
+          type="button"
+          data-testid={`plan-segment-summary-${kind}`}
+          onClick={onToggleFold}
+          className="m-tap flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 rounded-card border border-line bg-surface px-4 py-2.5 text-left text-[12px] text-ink-3"
+        >
+          <span>{t('plan.foldSummary', { n: views.length, funded: fmt(funded, currency), spent: fmt(spent, currency) })}</span>
+          {attention > 0 && <span className="font-medium text-warning">{t('plan.foldAttention', { n: attention })}</span>}
+        </button>
+      ) : (
       <div className="overflow-hidden rounded-card border border-line bg-surface">
         {views.length === 0 ? (
           <p className="px-4 py-3 text-[12px] text-ink-4" data-testid={`plan-segment-empty-${kind}`}>
@@ -143,6 +168,7 @@ export function SegmentSection({
           views.map((view) => <SubjectRow key={view.subject.id} view={view} fmt={fmt} currency={currency} onClick={() => onOpen(view)} />)
         )}
       </div>
+      )}
     </section>
   );
 }

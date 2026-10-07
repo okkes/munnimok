@@ -156,9 +156,25 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
   const act = (kind: string) => void logActivity(store, repo, spaceId, kind);
   const write = (id: string, fields: Partial<SubjectFields>) => repo.upsert('planSubject', spaceId, id, fields);
 
+  /**
+   * What the period already paid for a subject that is only now planned: it starts
+   * funded by that much (user 2026-10-07) — the balance dropped with those payments,
+   * so the pool is not asked for them a second time. A period ahead has spent
+   * nothing, so nothing changes there.
+   */
+  const paidAlready = (model: PlanningModel, planId: string, id: string, fields: SubjectFields): number => {
+    const plan = model.data.plans.find((p) => p.id === planId);
+    if (!plan) return 0;
+    const row = { ...fields, id, spaceId, hlc: '', deleted: 0, fieldVersions: {} } as unknown as PlanSubjectRow;
+    return Math.max(0, subjectView(row, model.contextFor(model.periodOf(plan))).realizedCents);
+  };
+
   const copyShapes = async (planId: string, shapes: readonly SubjectShape[], funded?: (shape: SubjectShape) => number) => {
+    const model = await fresh();
     for (const shape of shapes) {
-      await write(idForShape(repo, planId, shape), shapeFields(shape, planId, funded?.(shape) ?? 0));
+      const id = idForShape(repo, planId, shape);
+      const fields = shapeFields(shape, planId, funded?.(shape) ?? 0);
+      await write(id, { ...fields, fundedCents: Math.max(fields.fundedCents, paidAlready(model, planId, id, fields)) });
     }
   };
 
@@ -254,7 +270,7 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
     addExpense: async (plan, shape) => {
       const model = await fresh();
       const id = repo.newId();
-      await write(id, {
+      const fields: SubjectFields = {
         planId: plan,
         segment: 'expenses',
         order: nextOrder(model, plan, 'expenses'),
@@ -265,7 +281,8 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
         excludeCatIds: shape.excludeCatIds?.length ? shape.excludeCatIds : undefined,
         targetCents: shape.targetCents,
         fundedCents: 0,
-      });
+      };
+      await write(id, { ...fields, fundedCents: paidAlready(model, plan, id, fields) });
       act('planEdit');
       return id;
     },
@@ -284,7 +301,8 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
     addMirrored: async (plan, segment, source) => {
       const model = await fresh();
       const id = mirroredSubjectId(plan, segment, source.id);
-      await write(id, { planId: plan, segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id, fundedCents: 0 });
+      const fields: SubjectFields = { planId: plan, segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id, fundedCents: 0 };
+      await write(id, { ...fields, fundedCents: paidAlready(model, plan, id, fields) });
       act('planEdit');
       return id;
     },

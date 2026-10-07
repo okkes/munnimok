@@ -102,6 +102,29 @@ describe('SyncEngine', () => {
     while (dbs.length) await dbs.pop()!.delete();
   });
 
+  it('a refused token (401) leaves the engine idle — the session\'s business, never an outage (user ss 2026-10-07: "Offline" right after a sign-in)', async () => {
+    let w = 2_000_000;
+    const a = device('devAuth', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Paced', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+    const statuses: string[] = [];
+    const off = a.engine.onStatus((s) => statuses.push(s));
+    vi.mocked(reportError).mockClear();
+
+    server.pullStatus = 401;
+    await a.engine.syncAll();
+    expect(statuses.at(-1)).toBe('idle');
+    expect(a.engine.lastRoundOk()).toBe(false); // idle to look at, but the round did not reach its end
+    expect(reportError).not.toHaveBeenCalled();
+
+    server.pullStatus = null;
+    await a.engine.syncAll();
+    expect(statuses.at(-1)).toBe('idle');
+    expect(a.engine.lastRoundOk()).toBe(true);
+    off();
+  });
+
   it('a pause the server asked for (429) or a gateway answer (502/503/504) is the next tick\'s business — no report, status offline; a 500 is a fault and reports (user rule 2026-10-05)', async () => {
     let w = 1_000_000;
     const a = device('devA', () => ++w, server);

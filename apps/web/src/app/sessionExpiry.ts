@@ -94,6 +94,44 @@ export function clearReentryMark(): void {
   sessionStorage.removeItem(REENTRY_KEY);
 }
 
+const REPROBE_EVERY_MS = 60_000;
+let lastProbeAt = 0;
+
+/**
+ * The expired mark is sticky by design (a spent grant must not be hammered),
+ * but a mark set by a passing refusal — the IdP restarting, a token refused
+ * once — would otherwise stand until a sign-in. So whenever the device comes
+ * back (online, visible) the SDK is asked ONCE a minute whether it still
+ * mints: a token means the session lives and the mark is lifted; silence
+ * keeps it (user 2026-10-07: "I would expect the refresh to just happen").
+ */
+export function watchForRevival(mint: () => Promise<string | undefined>): () => void {
+  const probe = () => {
+    if (!isSessionExpired() || !navigator.onLine) return;
+    if (Date.now() - lastProbeAt < REPROBE_EVERY_MS) return;
+    lastProbeAt = Date.now();
+    void mint()
+      .then((token) => {
+        if (token) clearSessionExpired();
+      })
+      .catch(() => undefined);
+  };
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') probe();
+  };
+  window.addEventListener('online', probe);
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    window.removeEventListener('online', probe);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
+}
+
+/** test seam: the next probe is allowed right away */
+export function resetRevivalProbeForTests(): void {
+  lastProbeAt = 0;
+}
+
 /** test seam — module state must not leak between specs */
 export function resetSessionExpiryForTests(): void {
   expired = false;

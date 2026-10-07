@@ -73,14 +73,15 @@ export async function oidcSignOut(postLogoutRedirectUri: string): Promise<boolea
  * (evicted/wiped client keys while the IdP session cookie survives: the
  * round-trip is silent and re-mints tokens).
  */
-let signInHandler: ((redirectUri: string) => Promise<void>) | null = null;
+let signInHandler: ((redirectUri: string, fresh?: boolean) => Promise<void>) | null = null;
 
-export function setOidcSignIn(fn: ((uri: string) => Promise<void>) | null): void {
+export function setOidcSignIn(fn: ((uri: string, fresh?: boolean) => Promise<void>) | null): void {
   signInHandler = fn;
 }
 
-export async function oidcSignIn(redirectUri: string): Promise<boolean> {
+/** @param fresh asks Logto for credentials again (prompt=login consent): "use another account" */
+export async function oidcSignIn(redirectUri: string, fresh = false): Promise<boolean> {
   if (!signInHandler) return false;
-  await signInHandler(redirectUri);
+  await signInHandler(redirectUri, fresh);
   return true;
 }

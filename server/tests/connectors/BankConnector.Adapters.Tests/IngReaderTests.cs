@@ -34,7 +34,7 @@ public sealed class IngReaderTests
     private static IngTransactionPage Page(string fixture)
     {
         using var document = Fixture(fixture);
-        return IngTransactions.Read(document, SessionId, AccountId);
+        return IngTransactions.Read(document, SessionId, AccountId, Iban);
     }
 
     // ---- the amounts, which is what everything else is worth nothing without --
@@ -231,7 +231,7 @@ public sealed class IngReaderTests
         using var document = JsonDocument.Parse(Payload);
 
         var transaction = Assert.Single(
-            IngTransactions.Read(document, SessionId, AccountId).Transactions);
+            IngTransactions.Read(document, SessionId, AccountId, Iban).Transactions);
 
         Assert.Equal(TransactionKind.DirectDebit, transaction.Kind);
     }
@@ -324,7 +324,7 @@ public sealed class IngReaderTests
         using var document = JsonDocument.Parse(Payload);
 
         var transaction = Assert.Single(
-            IngTransactions.Read(document, SessionId, AccountId).Transactions);
+            IngTransactions.Read(document, SessionId, AccountId, Iban).Transactions);
 
         Assert.Equal("WINKEL 0003", transaction.Counterparty!.Name);
         Assert.Null(transaction.Counterparty.Iban);
@@ -413,7 +413,7 @@ public sealed class IngReaderTests
         using var document = JsonDocument.Parse("""{"somethingElse":[]}""");
 
         var refused = Assert.Throws<ConnectorException>(
-            () => IngTransactions.Read(document, SessionId, AccountId));
+            () => IngTransactions.Read(document, SessionId, AccountId, Iban));
 
         Assert.Equal(ErrorCode.ProviderChanged, refused.Code);
     }
@@ -526,7 +526,7 @@ public sealed class IngReaderTests
     {
         using var document = Fixture(BankFixtures.IngCardTransactions);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         // Three, not four: the reservation is skipped as it is everywhere else.
         Assert.Equal(3, page.Transactions.Count);
@@ -583,7 +583,7 @@ public sealed class IngReaderTests
 
         using var document = JsonDocument.Parse(payload);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.Equal(expected, Assert.Single(page.Transactions).Kind);
     }
@@ -616,7 +616,7 @@ public sealed class IngReaderTests
 
         using var document = JsonDocument.Parse(WithAHole);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.Equal(["a", "b"], page.Transactions.Select(t => t.ExternalId));
         Assert.Equal(-100, page.Transactions[0].Amount.Value);
@@ -633,7 +633,7 @@ public sealed class IngReaderTests
         using var document = JsonDocument.Parse("""{"_links":[]}""");
 
         var refusal = Assert.Throws<ConnectorException>(
-            () => IngTransactions.Read(document, SessionId, AccountId));
+            () => IngTransactions.Read(document, SessionId, AccountId, Iban));
 
         Assert.Equal(ErrorCode.ProviderChanged, refusal.Code);
     }
@@ -653,7 +653,7 @@ public sealed class IngReaderTests
     {
         using var document = Fixture(BankFixtures.IngCardTransactions);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         // Three, not four. The reservation is skipped before its link is ever
         // read, which is right: it is not a row anybody receives.
@@ -773,7 +773,7 @@ public sealed class IngReaderTests
 
         using var document = JsonDocument.Parse(payload);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.DoesNotContain(page.Transactions, IngTransactions.IsDerived);
         Assert.Empty(page.DetailIds);
@@ -797,7 +797,7 @@ public sealed class IngReaderTests
 
         using var document = JsonDocument.Parse(payload);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.Equal(["8f21", "2", "3"], page.DetailIds);
     }
@@ -817,7 +817,7 @@ public sealed class IngReaderTests
     {
         using var document = Fixture(BankFixtures.IngCardTransactions);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         var first = page.Transactions[0];
         var second = page.Transactions[1];
@@ -844,6 +844,29 @@ public sealed class IngReaderTests
     /// <c>CRD-debit</c> with the Dutch <c>CRD-afschrijving</c>.
     /// </remarks>
     [Fact]
+    public void A_derived_id_does_not_move_when_the_login_session_does()
+    {
+        // 2026-10-07 (prod): the card's repayments - the rows ING states no id
+        // for - landed a second time after a new sign-in, because the derived
+        // id was seeded on the session-tied account record. Two sessions, one
+        // page: the same ids.
+        const string otherSession = "ses_fedcba9876543210fedcba9876543210";
+        using var first = Fixture(BankFixtures.IngLoanTransactions);
+        using var second = Fixture(BankFixtures.IngLoanTransactions);
+
+        var one = IngTransactions.Read(first, SessionId, AccountId, Iban);
+        var two = IngTransactions.Read(second, otherSession, BankRecords.AccountId(otherSession, Iban), Iban);
+
+        Assert.NotEmpty(one.Transactions);
+        Assert.All(one.Transactions, t => Assert.True(t.IdIsDerived));
+        Assert.Equal(
+            one.Transactions.Select(t => t.ExternalId),
+            two.Transactions.Select(t => t.ExternalId));
+        // and the account record each row names still follows its session
+        Assert.NotEqual(one.Transactions[0].AccountId, two.Transactions[0].AccountId);
+    }
+
+    [Fact]
     public void A_derived_id_does_not_move_when_ings_own_wording_does()
     {
         var dutch = BankFixtures.Read(BankFixtures.IngLoanTransactions);
@@ -856,8 +879,8 @@ public sealed class IngReaderTests
         using var before = JsonDocument.Parse(dutch);
         using var after = JsonDocument.Parse(english);
 
-        var one = IngTransactions.Read(before, SessionId, AccountId);
-        var two = IngTransactions.Read(after, SessionId, AccountId);
+        var one = IngTransactions.Read(before, SessionId, AccountId, Iban);
+        var two = IngTransactions.Read(after, SessionId, AccountId, Iban);
 
         Assert.NotEmpty(one.Transactions);
         Assert.Equal(
@@ -900,7 +923,7 @@ public sealed class IngReaderTests
             """{"transactions":[{"iconId":"ICON","executionDate":"2026-08-11","amount":{"currency":"EUR","value":"-1.00"}}]}"""
                 .Replace("ICON", icon, StringComparison.Ordinal));
 
-        var transaction = Assert.Single(IngTransactions.Read(document, SessionId, AccountId).Transactions);
+        var transaction = Assert.Single(IngTransactions.Read(document, SessionId, AccountId, Iban).Transactions);
 
         Assert.Equal(expected, transaction.Kind);
     }
@@ -931,7 +954,7 @@ public sealed class IngReaderTests
               "amount":{"currency":"EUR","value":"-8.09"}}]}
             """);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.Equal(TransactionKind.Other, page.Transactions[0].Kind);
         Assert.Equal(["DV", "INT-debit"], page.Unclassified);
@@ -951,7 +974,7 @@ public sealed class IngReaderTests
     {
         using var document = Fixture(BankFixtures.IngCardTransactions);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.All(page.Transactions, t => Assert.NotEqual(TransactionKind.Other, t.Kind));
         Assert.Empty(page.Unclassified);
@@ -975,7 +998,7 @@ public sealed class IngReaderTests
               "amount":{"currency":"EUR","value":"-1.00"}}]}
             """);
 
-        var transaction = Assert.Single(IngTransactions.Read(document, SessionId, AccountId).Transactions);
+        var transaction = Assert.Single(IngTransactions.Read(document, SessionId, AccountId, Iban).Transactions);
 
         Assert.Equal(TransactionKind.DirectDebit, transaction.Kind);
     }
@@ -991,7 +1014,7 @@ public sealed class IngReaderTests
     {
         using var document = Fixture(fixture);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.NotEmpty(page.Transactions);
         Assert.All(page.Transactions, t => Assert.Null(t.ResultingBalance));
@@ -1009,7 +1032,7 @@ public sealed class IngReaderTests
     {
         using var document = Fixture(BankFixtures.IngTransactionsDutch);
 
-        var page = IngTransactions.Read(document, SessionId, AccountId);
+        var page = IngTransactions.Read(document, SessionId, AccountId, Iban);
 
         Assert.DoesNotContain(page.Transactions, IngTransactions.IsDerived);
         Assert.DoesNotContain(page.Transactions, t => t.ExternalId.StartsWith("ing-d-", StringComparison.Ordinal));

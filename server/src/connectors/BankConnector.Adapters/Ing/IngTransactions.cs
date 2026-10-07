@@ -174,11 +174,22 @@ internal static partial class IngTransactions
     /// against ING's field rather than against an observed row.
     /// </para>
     /// </remarks>
-    public static IngTransactionPage Read(JsonDocument payload, string sessionId, string accountId)
+    /// <param name="payload">one page of ING's transactions call</param>
+    /// <param name="sessionId">the login session the rows belong to (their record ids are per session)</param>
+    /// <param name="accountId">the account's record id, which the rows name as theirs</param>
+    /// <param name="accountKey">
+    /// the account's OWN key - its IBAN, or the agreement id of a card or a
+    /// loan - which a derived id is seeded on. NEVER the record id: that one
+    /// carries the login session, and a derived id that carried it changed on
+    /// every sign-in (2026-10-07, prod: every card repayment of the fetched
+    /// window landed a second time after the next login).
+    /// </param>
+    public static IngTransactionPage Read(JsonDocument payload, string sessionId, string accountId, string accountKey)
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountKey);
 
         var transactions = new List<Transaction>();
         var reservations = 0;
@@ -198,7 +209,7 @@ internal static partial class IngTransactions
                 continue;
             }
 
-            var transaction = One(row, sessionId, accountId, seen);
+            var transaction = One(row, sessionId, accountId, accountKey, seen);
 
             transactions.Add(transaction);
 
@@ -375,7 +386,7 @@ internal static partial class IngTransactions
     }
 
     private static Transaction One(
-        JsonElement row, string sessionId, string accountId, Dictionary<string, int> seen)
+        JsonElement row, string sessionId, string accountId, string accountKey, Dictionary<string, int> seen)
     {
         // Text() rejects an empty string, which is what a credit card's `id`
         // actually is - the field is present and blank on every row of it.
@@ -391,13 +402,14 @@ internal static partial class IngTransactions
                         $"{IngAdapter.ProviderId}: a transaction on {bookedAt:yyyy-MM-dd} states no amount");
 
         var money = new Money(MoneyParser.ToMinor(value, Unit, "amount"), currency);
-        var id = stated ?? DerivedId(accountId, bookedAt, money, row, seen);
+        var id = stated ?? DerivedId(accountKey, bookedAt, money, row, seen);
 
         var ending = row.Child("endingBalance");
 
         return BankRecords.NewTransaction(sessionId, accountId, new TransactionDraft
         {
             ExternalId = id,
+            IdIsDerived = stated is null,
             BookedAt = bookedAt,
             Amount = money,
             // NO VALUE DATE, and this is a decision rather than an omission.
@@ -518,7 +530,7 @@ internal static partial class IngTransactions
     /// </para>
     /// </remarks>
     private static string DerivedId(
-        string accountId, DateOnly bookedAt, Money amount, JsonElement row, Dictionary<string, int> seen)
+        string accountKey, DateOnly bookedAt, Money amount, JsonElement row, Dictionary<string, int> seen)
     {
         var merchant = row.Child("merchant");
 
@@ -532,7 +544,7 @@ internal static partial class IngTransactions
 
         var seed = string.Create(
             CultureInfo.InvariantCulture,
-            $"{accountId}|{bookedAt:yyyy-MM-dd}|{amount.Value}|{amount.Currency}|"
+            $"{accountKey}|{bookedAt:yyyy-MM-dd}|{amount.Value}|{amount.Currency}|"
             + $"{string.Join('|', parts.Where(p => p is not null))}");
 
         seen.TryGetValue(seed, out var occurrence);

@@ -161,11 +161,12 @@ export function ImageFocusFrame({
             className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_0_200px_rgba(0,0,0,0.45)]"
           />
         )}
-        <span className="pointer-events-none absolute right-2 bottom-2 flex items-center gap-1 rounded-lg bg-black/45 px-2 py-0.5 text-[10px] text-white backdrop-blur-sm">
-          <Icon name="cursor-move" size={12} />
-          {hint}
-        </span>
       </div>
+      {/* the hint stands under the picture (user 2026-10-07): on it, it hid the face being framed */}
+      <p className="flex items-center justify-center gap-1 px-1 text-center text-[11px] text-ink-3" data-testid={`${testId}-hint`}>
+        <Icon name="cursor-move" size={12} color="var(--m-ink-4)" />
+        {hint}
+      </p>
       {zoom && (
         <label className="flex items-center gap-2 px-1 text-[11px] text-ink-3">
           <Icon name="magnify-minus-outline" size={14} color="var(--m-ink-4)" />

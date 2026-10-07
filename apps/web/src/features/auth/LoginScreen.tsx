@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
-import { useLogto } from '@logto/react';
+import { useLogto, Prompt } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
 import { localCaUrl, logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
@@ -54,6 +54,7 @@ function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () 
     document.body,
   );
 }
+import { readLastAccount } from './lastAccount';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 // re-encoded from the provided PNG (2.2MB) — the login screen is precached
@@ -82,29 +83,34 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { signIn } = useLogto();
   const [failed, setFailed] = useState<string | null>(null);
   const caUrl = localCaUrl();
+  // the account step (user 2026-10-07): the name this device signed in with
+  // last — continue as them (Logto's silent session), or ask for another
+  const last = readLastAccount();
+  const start = (fresh: boolean) => {
+    setFailed(null);
+    // a rejected signIn used to vanish (iOS report 2026-09-08:
+    // "nothing happens" — the in-webview OIDC discovery fetch died
+    // on the not-yet-trusted family certificate). Name it on
+    // screen AND report it — a native user has no devtools.
+    const started = fresh ? signIn({ redirectUri: callbackUri(), prompt: [Prompt.Login, Prompt.Consent] }) : signIn(callbackUri());
+    started.catch((err: unknown) => {
+      const e = err instanceof Error ? err : new Error(String(err));
+      void import('@/lib/report')
+        .then(({ reportError }) => reportError('auth', e))
+        .catch(() => {});
+      setFailed(e.message || e.name);
+    });
+  };
   return (
     <>
-      <Button
-        variant="primary"
-        data-testid="login-signin-btn"
-        disabled={!onLine}
-        onClick={() => {
-          setFailed(null);
-          // a rejected signIn used to vanish (iOS report 2026-09-08:
-          // "nothing happens" — the in-webview OIDC discovery fetch died
-          // on the not-yet-trusted family certificate). Name it on
-          // screen AND report it — a native user has no devtools.
-          signIn(callbackUri()).catch((err: unknown) => {
-            const e = err instanceof Error ? err : new Error(String(err));
-            void import('@/lib/report')
-              .then(({ reportError }) => reportError('auth', e))
-              .catch(() => {});
-            setFailed(e.message || e.name);
-          });
-        }}
-      >
-        {t('login.signIn')}
+      <Button variant="primary" data-testid="login-signin-btn" disabled={!onLine} onClick={() => start(false)}>
+        {last ? t('login.continueAs', { name: last.name }) : t('login.signIn')}
       </Button>
+      {last && (
+        <Button variant="outline" data-testid="login-another-account" disabled={!onLine} onClick={() => start(true)}>
+          {t('login.anotherAccount')}
+        </Button>
+      )}
       {!onLine && (
         <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-ink-3" data-testid="login-offline-note">
           <Icon name="wifi-off" size={13} color="var(--m-warning)" />

@@ -8,7 +8,8 @@ import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
 import { useUnmatchedReceipts } from '@/application/connections';
 import { useReceiptOps } from '@/application/receipts';
-import { rankForTx } from '@/features/shopping/ReceiptSection';
+import { rankForTx } from '@/features/shopping/receiptPick';
+import { ReceiptPickSheet } from '@/features/shopping/ReceiptPickSheet';
 import { partyName } from '@/features/connectors/logos';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
@@ -33,7 +34,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, ReceiptLinkRow, ReceiptRow, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
@@ -61,9 +62,8 @@ import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVis
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
 import { BulkCounterQueue, CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
 import { setReviewReturn, takeReviewReturn } from './reviewReturn';
-import { AUTO_STAGE, autoReceiptFor, filterReceipts, receiptParties } from './reviewReceipt';
+import { AUTO_STAGE, autoReceiptFor } from './reviewReceipt';
 import type { ReceiptStage } from './reviewReceipt';
-import { SearchField } from '@/ui/SearchField';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -453,137 +453,6 @@ const stagedReceiptId = (stage: ReceiptStage, autoId: string | null): string | n
   if (stage.kind === 'picked') return stage.receipt.id;
   return stage.kind === 'auto' ? autoId : null;
 };
-
-/** the receipt sheet (user 2026-10-06): the proposal's yes / no, the suggestions, and every receipt behind a search
- *  and the parties' chips — a tap stages the pick for the confirm, the eye opens the receipt, None leaves it */
-function ReviewReceiptSheet({
-  open,
-  onOpenChange,
-  proposal,
-  candidates,
-  all,
-  stage,
-  autoId,
-  currency,
-  onAccept,
-  onReject,
-  onPick,
-  onView,
-}: Readonly<{
-  open: boolean;
-  onOpenChange: (next: boolean) => void;
-  proposal: ReceiptLinkRow | undefined;
-  candidates: readonly ReceiptRow[];
-  all: readonly ReceiptRow[];
-  stage: ReceiptStage;
-  autoId: string | null;
-  currency: string;
-  onAccept: (link: ReceiptLinkRow) => void;
-  onReject: (link: ReceiptLinkRow) => void;
-  onPick: (row: ReceiptRow | null) => void;
-  onView: (receiptId: string) => void;
-}>) {
-  const { t, lang } = useLang();
-  const [query, setQuery] = useState('');
-  const [party, setParty] = useState<string | null>(null);
-  const parties = useMemo(() => receiptParties(all), [all]);
-  const listed = useMemo(() => filterReceipts(all, query, party).slice(0, 100), [all, query, party]);
-  const stagedId = stagedReceiptId(stage, autoId);
-  const row = (r: ReceiptRow, prefix: string) => {
-    const on = stagedId === r.id;
-    return (
-      <div key={r.id} className="flex items-center border-b border-line-2 last:border-0">
-        <button data-testid={`${prefix}-${r.id}`} aria-pressed={on} onClick={() => onPick(r)} className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left">
-          <Icon name={on ? 'check-circle' : 'storefront-outline'} size={16} color={on ? 'var(--m-accent)' : 'var(--m-ink-3)'} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-medium text-ink">{r.merchant ?? partyName(r.source)}</span>
-            <span className="block text-[11px] text-ink-4">
-              {r.date}
-              {r.items?.length ? ` · ${r.items.length} ${t('receipt.items')}` : ''}
-            </span>
-          </span>
-          <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(r.totalCents, currency, lang)}</span>
-        </button>
-        <button
-          data-testid={`review-receipt-view-${r.id}`}
-          aria-label={t('review.receiptView')}
-          onClick={() => onView(r.id)}
-          className="m-tap flex h-10 w-10 shrink-0 items-center justify-center border-none bg-transparent"
-        >
-          <Icon name="eye-outline" size={16} color="var(--m-ink-4)" />
-        </button>
-      </div>
-    );
-  };
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('receipt.title')} size="full">
-      <div className="flex flex-col gap-3 pt-1" data-testid="review-receipt-sheet">
-        {proposal && (
-          <div className="rounded-card border border-line bg-surface px-4 py-3" data-testid="review-receipt-proposal">
-            <div className="flex items-center gap-3">
-              <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-ink">{proposal.merchant ?? partyName(proposal.source)}</span>
-                <span className="block text-[11px] text-ink-4">{t('receipts.proposedBadge')} · {proposal.date}</span>
-              </span>
-              <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(proposal.totalCents, currency, lang)}</span>
-            </div>
-            <div className="mt-2 flex gap-2 pl-8">
-              <Button size="sm" data-testid="review-receipt-accept" onClick={() => onAccept(proposal)}>
-                {t('receipts.accept')}
-              </Button>
-              <Button size="sm" variant="outline" data-testid="review-receipt-reject" onClick={() => onReject(proposal)}>
-                {t('receipts.reject')}
-              </Button>
-            </div>
-          </div>
-        )}
-        <button
-          data-testid="review-receipt-none"
-          aria-pressed={stage.kind === 'none'}
-          onClick={() => onPick(null)}
-          className="m-tap flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-left text-[13px] text-ink-2"
-        >
-          <Icon name={stage.kind === 'none' ? 'check-circle' : 'close-circle-outline'} size={16} color={stage.kind === 'none' ? 'var(--m-accent)' : 'var(--m-ink-4)'} />
-          {t('review.receiptNoneOption')}
-        </button>
-        {candidates.length > 0 && (
-          <>
-            <div className="m-cap px-1">{proposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-pick-list">
-              {candidates.map((r) => row(r, 'review-receipt-pick'))}
-            </div>
-          </>
-        )}
-        <div className="m-cap px-1">
-          {t('review.receiptAll')} · {listed.length}
-        </div>
-        <SearchField testId="review-receipt-search" value={query} onChange={setQuery} placeholder={t('review.receiptSearch')} />
-        {parties.length > 1 && (
-          <div className="flex flex-wrap gap-2" data-testid="review-receipt-parties">
-            <Chip testId="review-receipt-party-all" selected={party === null} onClick={() => setParty(null)}>
-              {t('review.receiptEvery')}
-            </Chip>
-            {parties.map((p) => (
-              <Chip key={p.source} testId={`review-receipt-party-${p.source}`} selected={party === p.source} onClick={() => setParty((v) => (v === p.source ? null : p.source))}>
-                {p.label}
-              </Chip>
-            ))}
-          </div>
-        )}
-        {listed.length > 0 ? (
-          <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="review-receipt-all-list">
-            {listed.map((r) => row(r, 'review-receipt-all'))}
-          </div>
-        ) : (
-          <p className="px-1 py-4 text-center text-[12px] text-ink-4" data-testid="review-receipt-all-empty">
-            {t('review.receiptNoneFound')}
-          </p>
-        )}
-      </div>
-    </Sheet>
-  );
-}
 
 /** the card's Receipt row: the attached receipt (a door to it), the person's pick, the proposal (a question), the best match (suggested), or None — null hides the row */
 function receiptRowFor(
@@ -2918,16 +2787,19 @@ export function ReviewScreen() {
           onDetach={counterRowDoors.onDetach}
         />
       )}
-      {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one */}
+      {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one
+          (user 2026-10-07: the picker is shared with the transaction detail; a tap here stages the pick for the confirm) */}
       {tx && (
-        <ReviewReceiptSheet
+        <ReceiptPickSheet
           open={receiptPickOpen}
           onOpenChange={setReceiptPickOpen}
+          title={t('receipt.title')}
+          testIdPrefix="review-receipt"
           proposal={receiptProposal}
           candidates={receiptCandidates}
           all={unmatchedReceipts ?? []}
-          stage={receiptStage}
-          autoId={autoReceipt?.id ?? null}
+          selectedId={stagedReceiptId(receiptStage, autoReceipt?.id ?? null)}
+          noneSelected={receiptStage.kind === 'none'}
           currency={tx.currency}
           onAccept={(link) => { void receiptOps.acceptMatch(link); setReceiptPickOpen(false); }}
           onReject={(link) => { void receiptOps.rejectMatch(link); setReceiptPickOpen(false); }}

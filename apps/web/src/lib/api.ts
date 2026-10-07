@@ -58,6 +58,11 @@ export async function apiFetch(
     /** #281: statuses a caller HANDLES as a designed branch (e.g. the
      *  /feeds 409 → personal-feed fallback) — expected, so not reported */
     expectStatuses?: readonly number[];
+    /** the relay speaks for a PARTY: its 401 is the party's lapsed login
+     *  (invalid_credentials, session_expired, mfa_failed), never munni's
+     *  session — no retry, no expiry mark (user 2026-10-07: "random
+     *  expired issues" were a bank's 15-minute session, not ours) */
+    partyAuth?: boolean;
   },
 ): Promise<Response> {
   assertNetworkAllowed();
@@ -86,7 +91,7 @@ export async function apiFetch(
   };
   let response = await attempt();
   await noticeDeviceRevoked(response);
-  if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth) {
+  if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth && !opts?.partyAuth) {
     // maybe just an expired access token — the SDK mints a fresh one
     response = await attempt();
     // a 401 WITHOUT a bearer proves nothing about the refresh token —

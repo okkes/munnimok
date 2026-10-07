@@ -37,6 +37,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export class SyncEngine {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private roundOk = false;
   private readonly listeners = new Set<(status: SyncStatus) => void>();
   private status: SyncStatus = 'idle';
   private eventsAbort: AbortController | null = null;
@@ -128,6 +129,7 @@ export class SyncEngine {
   async syncAll(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.roundOk = false;
     this.setStatus('syncing');
     try {
       // version handshake FIRST (lib/protocol.ts): native apps and the
@@ -166,12 +168,22 @@ export class SyncEngine {
       await this.purgeOrphanFeeds(serverSpaces);
       if (firstError) throw firstError;
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
+      this.roundOk = true;
       this.setStatus('idle');
     } catch (err) {
       this.settleFailure(err);
     } finally {
       this.running = false;
     }
+  }
+
+  /**
+   * Whether the LAST round reached the end: the bootstrap fails closed on
+   * this, not on the status — a refused token leaves the status idle
+   * (nothing to show the person) yet the server has confirmed nothing.
+   */
+  lastRoundOk(): boolean {
+    return this.roundOk;
   }
 
   /**
@@ -190,6 +202,14 @@ export class SyncEngine {
     const transient = err instanceof SyncHttpError && TRANSIENT_STATUSES.has(err.status);
     if (transient) console.warn(`sync paused: ${String(err)} — retrying on the next tick`);
     else if (!offline && !authState) reportError('sync', err);
+    // a 401 is the session's business, not the network's: the banner names an
+    // expired session on its own (sessionExpiry), and a request that simply
+    // carried no token yet (the token is being minted right after a sign-in)
+    // is tried again on the next tick without a word (user ss 2026-10-07)
+    if (authState) {
+      this.setStatus('idle');
+      return;
+    }
     this.setStatus(offline || transient ? 'offline' : 'error');
   }
 

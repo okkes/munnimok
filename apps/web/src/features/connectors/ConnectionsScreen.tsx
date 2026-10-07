@@ -20,7 +20,7 @@ import { Sheet } from '@/ui/Sheet';
 import { CatalogueSheet } from './CatalogueSheet';
 import { takeCatalogueIntent } from './catalogueIntent';
 import { ChallengeCard } from './ChallengeCard';
-import { ConnectFlowSheet } from './ConnectFlowSheet';
+import { ConnectFlowSheet, forgetTypedValues } from './ConnectFlowSheet';
 import type { ResumeLogin } from './ConnectFlowSheet';
 import { connectorApi } from './api';
 import { usePendingLoginFollower, usePendingLogins } from './pendingLogins';
@@ -142,6 +142,14 @@ interface JobAsk {
 const accountTail = (account: ConnectorAccountView['account']): string =>
   account.iban ? `…${account.iban.slice(-4)}` : (account.maskedNumber ?? '');
 
+/** #441 L1: the failed job whose picture still waits on the person's word — this device's, else the relay's */
+const pendingQuestionOf = (view: ConnectionView, binding: BindingView | undefined): string | undefined =>
+  view.device?.lastError?.artifactsJobId ?? binding?.artifactsJobId ?? undefined;
+
+/** the questions a standing "always report" answered this page load — once per job, so a row that
+ *  keeps its id a moment longer (the relay's copy stays until the next load) never shares twice */
+const autoAnswered = new Set<string>();
+
 /**
  * Settings → Connections (#367, the hub): every party the user connected,
  * as cards with the party's status and the connection's state, one
@@ -196,6 +204,21 @@ export function ConnectionsScreen() {
   }, [activity]);
 
   const signedIn = connectorsAvailable();
+
+  // user 2026-10-07: "Always report" means never asked — a question under a card whose
+  // connection carries the standing answer is answered yes here, the moment it lands
+  useEffect(() => {
+    if (!signedIn) return;
+    for (const view of connections ?? []) {
+      const jobId = pendingQuestionOf(view, bindings.get(view.meta.id));
+      if (!jobId || !view.device?.reportFailures || autoAnswered.has(jobId)) continue;
+      autoAnswered.add(jobId);
+      setReportAnswers((s) => ({ ...s, [jobId]: 'yes' }));
+      void ops.answerReport(view.meta.id, jobId, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rows and the relay's word are the inputs; ops is rebuilt every render
+  }, [connections, bindings, signedIn]);
+
   // #445: party-fed accounts no live connection fetches, whose party has no card to sit under
   const orphaned = (bankAccounts ?? [])
     .map(({ account }) => ({ account, since: liveIds ? uncoveredSince(account, liveIds) : null }))
@@ -249,6 +272,13 @@ export function ConnectionsScreen() {
     setFlow({ manifest, reconnectId });
   };
 
+  /** user 2026-10-07: the manage sheet's "Sign in again" — the card's own reconnect door, for any connection not mid-sign-in */
+  const signInAgainFor = (view: ConnectionView): (() => void) | undefined => {
+    const manifest = catalogue.byId.get(view.meta.store);
+    if (!signedIn || !manifest || pendingLogins[view.meta.id]) return undefined;
+    return () => openFlow(manifest, view.meta.id);
+  };
+
   // #445: an accounts sheet's "Reconnect <party>" door arrives with the party
   // named in the URL - the flow opens for it at once, and the name leaves the URL
   useEffect(() => {
@@ -280,6 +310,7 @@ export function ConnectionsScreen() {
       if (!manifest) return;
       const full = view.bundle ? view : await connectorApi.login(login.provider, view.sessionId);
       const result = await ops.adopt({ manifest, view: full, connectionId: login.connectionId, reconnect: login.reconnect });
+      forgetTypedValues(login.reconnect ? login.connectionId : null, login.provider);
       await afterConnect(result, login.reconnect);
     },
   });
@@ -452,13 +483,15 @@ export function ConnectionsScreen() {
 
   /** #441 L1: a failed run left a picture that waits on the person's word — asked once, under the card */
   const reportAsk = (view: ConnectionView) => {
-    const jobId = view.device?.lastError?.artifactsJobId ?? bindings.get(view.meta.id)?.artifactsJobId ?? undefined;
+    const jobId = pendingQuestionOf(view, bindings.get(view.meta.id));
     if (!jobId || !signedIn) return null;
+    // a standing "always report" reads as answered from the first paint — the effect above sends it
+    const answered = reportAnswers[jobId] ?? (view.device?.reportFailures ? 'yes' : null);
     return (
       <div className="mt-2 pl-9">
         <ReportAsk
           testId={`conn-report-${view.meta.id}`}
-          answered={reportAnswers[jobId] ?? null}
+          answered={answered}
           busy={false}
           onAnswer={(share) => {
             setReportAnswers((s) => ({ ...s, [jobId]: share ? 'yes' : 'no' }));
@@ -743,6 +776,7 @@ export function ConnectionsScreen() {
           kind={kindOf(managed)}
           allSpaces={allSpaces ?? []}
           includedSpaceIds={(links ?? []).filter((l) => l.instanceId === managed.meta.id).map((l) => l.spaceId)}
+          onSignInAgain={signInAgainFor(managed)}
           onClose={() => setManageId(null)}
         />
       )}

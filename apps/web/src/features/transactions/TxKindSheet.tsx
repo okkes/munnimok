@@ -354,7 +354,8 @@ export function CounterMatchSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   target: { id: string; name: string } | null;
-  anchor: { id: string; amountCents: number; date: string };
+  /** the row looking for its other leg; its accountId lets the mirror row on the counter side qualify */
+  anchor: { id: string; amountCents: number; date: string; accountId?: string };
   rows: readonly TransactionRow[];
   /** the explicit mint door — manual, non-funding counters only */
   onCreate?: () => void;
@@ -377,7 +378,7 @@ export function CounterMatchSheet({
   // 1–3 suggestions (user sizing) — everything else scrolls below
   const allSuggested = [...near, ...sameSign].slice(0, 3);
   const listed = new Set(allSuggested.map((row) => row.id));
-  const allRest = target ? counterOpenRows(rows, target.id, anchor.id, 50).filter((row) => !listed.has(row.id)) : [];
+  const allRest = target ? counterOpenRows(rows, target.id, anchor, 50).filter((row) => !listed.has(row.id)) : [];
   const matches = (row: TransactionRow): boolean => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
@@ -392,9 +393,10 @@ export function CounterMatchSheet({
   };
   const suggested = allSuggested.filter(matches);
   const rest = allRest.filter(matches);
-  // #255: the height fits the content — doors + a few suggestions never
-  // earned the tall shape's white void (locked at open, unfiltered counts)
-  const size = allRest.length > 0 ? 'tall' : 'form';
+  // #255 sized the sheet to its content; the user (ss 2026-10-07) wants the
+  // browse view at full height with its list reaching the bottom, so the
+  // short shape stays only for a sheet with nothing to browse
+  const size = allRest.length > 0 ? 'full' : 'form';
   const pick = (txId: string) => {
     onPick(txId);
     onOpenChange(false);
@@ -430,7 +432,7 @@ export function CounterMatchSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size={size}>
       {target && (
-        <div className="flex flex-col pt-1" data-testid="counter-fork">
+        <div className="flex h-full min-h-0 flex-col pt-1" data-testid="counter-fork">
           {/* #268 (user): while a bulk queue walks the siblings, the sheet
               says exactly WHICH transaction it is matching right now */}
           {contextRow && (
@@ -485,8 +487,8 @@ export function CounterMatchSheet({
           {rest.length > 0 && (
             <>
               <div className="m-cap mt-3 mb-1 px-1">{t('tx.counterAllRows')}</div>
-              {/* fixed px so the browse list scrolls INSIDE the sheet (sheet rules) */}
-              <div className="max-h-[280px] overflow-y-auto overscroll-contain" data-testid="counter-all-list">
+              {/* the browse list fills what is left of the sheet and scrolls INSIDE it (sheet rules) */}
+              <div className="min-h-[200px] flex-1 overflow-y-auto overscroll-contain pb-2" data-testid="counter-all-list" data-sheet-no-drag>
                 {rowList(rest, 'counter-open')}
               </div>
             </>

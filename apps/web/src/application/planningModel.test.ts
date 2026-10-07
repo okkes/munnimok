@@ -39,7 +39,7 @@ describe('planning model (#128)', () => {
     for (const s of stores.splice(0)) await s.destroy();
   });
 
-  it('the pool is the checking and cash money; what is left is the pool minus everything funded, ahead included', async () => {
+  it('the pool is the checking and cash money; what is left is the pool minus what the plans still hold (funding net of spending), ahead included', async () => {
     const { store, repo } = await fixture();
     stores.push(store);
     await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
@@ -51,7 +51,10 @@ describe('planning model (#128)', () => {
     const model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
     expect(model.poolCents).toBe(205_000);
     expect(model.plan?.id).toBe(march);
-    expect(model.toAllocateOf(model.plan!)).toBe(205_000 - 110_000 - 50_000);
+    // March holds nothing any more: groceries spent its 10k (and 1k over), the rent was paid — only April's 50k is held
+    expect(model.toAllocateOf(model.plan!)).toBe(205_000 - 50_000);
+    // a period ahead never counts its own funding twice
+    expect(model.toAllocateOf(model.ahead[0].plan)).toBe(205_000 - 50_000);
     expect(model.ahead).toHaveLength(1);
     expect(model.aheadCount).toBeCloseTo(0.5, 5);
     expect(model.nextAheadPeriod.start).toBe('2026-05-01');

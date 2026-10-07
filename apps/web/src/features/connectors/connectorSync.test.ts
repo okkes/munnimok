@@ -9,7 +9,7 @@ import { storeConnLinkId } from '@/domain/feedIds';
 import { NO_INGEST } from '@/test/connectorFixtures';
 import { ConnectorError, connectorApi } from './api';
 import { readBundle } from './bundles';
-import { syncConnection, syncTuning } from './connectorSync';
+import { noteSignInFailure, settleQuestion, syncConnection, syncTuning } from './connectorSync';
 import { publishConnectorFrame, resetConnectorFrames, subscribeConnectorFrames } from './events';
 import type { ErrorEnvelope, JobView } from './types';
 
@@ -206,6 +206,27 @@ describe('syncConnection — one pass through the relay', () => {
     await syncConnection(backend, repo, CONN);
     expect(share).toHaveBeenCalledWith(PROVIDER, 'job_1');
     expect((await backend.connectorConnGet(CONN))?.lastError?.artifactsJobId).toBeUndefined();
+  });
+
+  it('user 2026-10-07: a sign-in that failed in the sheet leaves its question on the row — shared at once where the person said "always"; a connection without a row keeps it in the sheet', async () => {
+    const failure = envelope('provider_changed');
+    expect(await noteSignInFailure(backend, 'conn-new', failure, 'job_n')).toBe('none');
+    expect(await noteSignInFailure(backend, CONN, failure, 'job_1')).toBe('asked');
+    expect((await backend.connectorConnGet(CONN))?.lastError).toMatchObject({ code: 'provider_changed', artifactsJobId: 'job_1' });
+    // answered: the id leaves the row, the failure itself stays
+    await settleQuestion(backend, CONN, 'job_1');
+    const settled = (await backend.connectorConnGet(CONN))?.lastError;
+    expect(settled?.code).toBe('provider_changed');
+    expect(settled?.artifactsJobId).toBeUndefined();
+
+    // the standing answer: shared here, nothing left to ask; a failure without a picture asks nothing either
+    await backend.connectorConnPut({ ...(await backend.connectorConnGet(CONN))!, reportFailures: true });
+    const share = vi.spyOn(connectorApi, 'shareArtifacts').mockResolvedValue();
+    expect(await noteSignInFailure(backend, CONN, failure, 'job_2')).toBe('shared');
+    expect(share).toHaveBeenCalledWith(PROVIDER, 'job_2');
+    expect((await backend.connectorConnGet(CONN))?.lastError?.artifactsJobId).toBeUndefined();
+    expect(await noteSignInFailure(backend, CONN, failure)).toBe('none');
+    expect(share).toHaveBeenCalledTimes(1);
   });
 });
 

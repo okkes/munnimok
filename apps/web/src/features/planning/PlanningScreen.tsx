@@ -28,6 +28,7 @@ import { PlanHeader } from './PlanHeader';
 import { PoolSheet } from './PoolSheet';
 import { ReorderSheet } from './ReorderSheet';
 import { SegmentSection } from './SegmentSection';
+import { readFolds, toggleFold, writeFolds } from './segmentFolds';
 import { SegmentsSheet } from './SegmentsSheet';
 import { StartPlanCard } from './StartPlanCard';
 import { SubjectEditor } from './SubjectEditor';
@@ -232,6 +233,14 @@ export function PlanningScreen() {
   const [openSubjectId, setOpenSubjectId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ subject: PlanSubjectRow | null; preset?: EditorPreset } | null>(null);
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
+  // which segments are folded: this device remembers (user 2026-10-07)
+  const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
+  const toggleSegmentFold = (kind: PlanSegmentKind) =>
+    setFolds((prev) => {
+      const next = toggleFold(prev, kind);
+      writeFolds(spaceId, next);
+      return next;
+    });
 
   const plan = useMemo(() => (model ? viewedPlan(model, viewBack, sandboxMode) : null), [model, viewBack, sandboxMode]);
   const views = useMemo(() => (model && plan ? model.viewsOf(plan) : []), [model, plan]);
@@ -267,6 +276,8 @@ export function PlanningScreen() {
           onFill={() => void ops.fillSegment(plan, s.kind)}
           onAdd={() => (s.kind === 'expenses' ? setEditing({ subject: null }) : setAdding(s.kind))}
           onOpen={(view) => setOpenSubjectId(view.subject.id)}
+          folded={folds.has(s.kind)}
+          onToggleFold={() => toggleSegmentFold(s.kind)}
         />
       ));
   };

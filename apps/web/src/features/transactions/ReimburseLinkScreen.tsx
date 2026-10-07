@@ -123,6 +123,8 @@ export function ReimburseLinkScreen() {
   const { linkMany, giveableCents } = useReimburseLinks(allTxs);
 
   const [query, setQuery] = useState('');
+  /** the category impact starts folded (user 2026-10-07): open, it ate half the screen under the list */
+  const [impactOpen, setImpactOpen] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [error, setError] = useState<{ key?: string; text: string } | null>(null);
   const cats = useCategories();
@@ -315,7 +317,7 @@ export function ReimburseLinkScreen() {
     );
   };
 
-  const rowFor = (row: SpaceTx, testId: string, segment: 'suggested' | 'list', hint?: string) => {
+  const rowFor = (row: SpaceTx, testId: string, segment: 'suggested' | 'list') => {
     const withInput = segment === (suggestedIds.has(row.id) ? 'suggested' : 'list');
     // #197 (both directions): a split row offers its PARTS, never the
     // root — expenses their still-expected parts, credits their
@@ -336,7 +338,6 @@ export function ReimburseLinkScreen() {
               <TxPartRow tx={row} part={e.part} index={ordinal} showDate amountText={money(sign * open)} onClick={() => toggle(row, e.part)} highlight={query} />,
             );
           })}
-          {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
         </div>
       );
     }
@@ -356,7 +357,6 @@ export function ReimburseLinkScreen() {
             onClick={() => toggle(row)}
           />,
         )}
-        {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
       </Fragment>
     );
   };
@@ -401,7 +401,7 @@ export function ReimburseLinkScreen() {
               {t('reimb.suggested')}
             </div>
             <div className="mb-3 divide-y divide-line-2 overflow-hidden rounded-card border border-accent/40 bg-surface px-1" data-testid="reimb-link-suggested">
-              {suggested.map(({ tx: row }) => rowFor(row, 'reimb-suggest', 'suggested', t('reimb.suggestedWhy')))}
+              {suggested.map(({ tx: row }) => rowFor(row, 'reimb-suggest', 'suggested'))}
             </div>
           </>
         )}
@@ -424,10 +424,22 @@ export function ReimburseLinkScreen() {
           </div>
           <FormBlockerNote show={!!error} text={error?.text ?? ''} testId="reimb-amount-error" />
           {impact && (
-            <div className="mt-2 max-h-40 overflow-y-auto rounded-input bg-surface px-3 py-2.5" data-testid="reimb-impact" data-sheet-no-drag>
-              <p className="pb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-4">{t('reimb.impactCaption')}</p>
+            <button
+              type="button"
+              data-testid="reimb-impact-toggle"
+              aria-expanded={impactOpen}
+              onClick={() => setImpactOpen((v) => !v)}
+              className="m-tap mt-2 flex w-full items-center gap-2 border-none bg-transparent px-1 py-1 text-left"
+            >
+              <span className="text-[11px] font-medium uppercase tracking-wide text-ink-4">{t('reimb.impactCaption')}</span>
+              <span className="min-w-0 flex-1 truncate text-[11px] text-ink-4">{t('reimb.impactCount', { n: impact.length })}</span>
+              <Icon name={impactOpen ? 'chevron-up' : 'chevron-down'} size={16} color="var(--m-ink-4)" />
+            </button>
+          )}
+          {impact && impactOpen && (
+            <div className="flex max-h-44 flex-col gap-1.5 overflow-y-auto" data-testid="reimb-impact" data-sheet-no-drag>
               {impact.map((side) => (
-                <div key={side.title} className="pt-2 first:pt-0">
+                <div key={side.title} className="rounded-input border border-line-2 bg-surface px-3 py-2" data-testid="reimb-impact-side">
                   <p className="truncate pb-1 text-[11px] font-medium text-ink-3">{side.title}</p>
                   {/* #233 r3 (user): icon + name, amounts in aligned
                       columns — the whole diff readable at a glance */}

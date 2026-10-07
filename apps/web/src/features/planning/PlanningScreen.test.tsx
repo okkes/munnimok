@@ -61,6 +61,12 @@ describe('Planning (demo identity)', () => {
     fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: '1' } });
     fireEvent.click(screen.getByTestId('plan-editor-save'));
     await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+    // 2026-10-07 (user): a subject planned mid-period starts funded by what the
+    // period already paid for it — so Food is NOT in the red yet; taking all
+    // funding back puts it there
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).not.toMatch(/Over by/));
+    fireEvent.click(screen.getByTestId('plan-withdraw-all'));
+    fireEvent.click(await screen.findByTestId('plan-withdraw-confirm-confirm'));
     await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Over by/));
     // the sidebar and the bottom bar both carry the tab, so both wear the dot
     await waitFor(() => expect(screen.getAllByTestId('tab-planning-dot').length).toBeGreaterThan(0));

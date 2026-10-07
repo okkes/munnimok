@@ -103,6 +103,49 @@ public sealed class BolGraphQlShapeTests
         Assert.Equal("40", body.RootElement.GetProperty("variables").GetProperty("after").GetString());
     }
 
+    /// <summary>
+    /// 2026-10-07 (prod): bol refused the request rebuilt around the hash its
+    /// own page had sent moments before - so a session that learned the
+    /// page's request replays it, with only the cursor rewritten.
+    /// </summary>
+    [Fact]
+    public void A_learned_request_is_replayed_with_only_the_cursor_rewritten()
+    {
+        const string template =
+            """{"operationName":"OrdersOverviewClient","variables":{"after":"5","locale":"nl-NL"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"sha256:page"}}}""";
+        var options = Options with { OrdersRequestTemplate = template };
+
+        using var first = JsonDocument.Parse(Shape.Body(options, page: 1)!);
+        var root = first.RootElement;
+
+        // the cursor is this page's; everything else is the page's own, the hash included - not the option's
+        Assert.Equal("0", root.GetProperty("variables").GetProperty("after").GetString());
+        Assert.Equal("nl-NL", root.GetProperty("variables").GetProperty("locale").GetString());
+        Assert.Equal("sha256:page", root.GetProperty("extensions").GetProperty("persistedQuery").GetProperty("sha256Hash").GetString());
+
+        using var third = JsonDocument.Parse(Shape.Body(options, page: 3)!);
+        Assert.Equal("10", third.RootElement.GetProperty("variables").GetProperty("after").GetString());
+    }
+
+    /// <summary>A template no page could have sent - not JSON, not an object, no variables to put a cursor in - is the rebuilt shape, never a guess at bol's.</summary>
+    [Theory]
+    [InlineData("not json at all")]
+    [InlineData("[]")]
+    [InlineData("""{"operationName":"OrdersOverviewClient","variables":"5"}""")]
+    [InlineData("""{"operationName":"OrdersOverviewClient"}""")]
+    public void A_template_that_is_not_a_body_with_variables_falls_back_to_the_rebuilt_shape(string template)
+    {
+        var options = Options with { OrdersRequestTemplate = template };
+
+        using var body = JsonDocument.Parse(Shape.Body(options, page: 2)!);
+        var root = body.RootElement;
+
+        Assert.Equal("5", root.GetProperty("variables").GetProperty("after").GetString());
+        Assert.Equal(
+            Options.OrdersPersistedQueryHash,
+            root.GetProperty("extensions").GetProperty("persistedQuery").GetProperty("sha256Hash").GetString());
+    }
+
     // ---- the money ----------------------------------------------------------
 
     /// <summary>
@@ -247,6 +290,99 @@ public sealed class BolGraphQlShapeTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Contains("PersistedQueryNotFound", error.Detail, StringComparison.Ordinal);
         Assert.Contains("OrdersPersistedQueryHash", error.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 2026-10-07 (prod): "Error(s) redacted." under the hash bol's own page
+    /// had just sent, and the old detail threw away everything that would
+    /// have told an unknown hash from refused variables from a dead session.
+    /// The detail now says it all, as tokens a log can group on and never as
+    /// the party's free text.
+    /// </summary>
+    [Fact]
+    public void A_refusal_says_what_bol_said_and_whether_the_operation_ran()
+    {
+        const string refused =
+            """{"errors":[{"message":"Error(s) redacted.","path":["me","orders"],"extensions":{"code":"PERSISTED_QUERY_NOT_FOUND","classification":"DataFetchingException"}}]}""";
+
+        var error = Assert.Throws<ConnectorException>(() => Shape.Parse(refused, Options, Zone));
+
+        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
+        Assert.StartsWith("bol: graphql refused OrdersOverviewClient: ", error.Detail, StringComparison.Ordinal);
+
+        var tokens = Tokens(error.Detail);
+        Assert.Equal("Error-s--redacted.", tokens["message"]);
+        Assert.Equal("1", tokens["errors"]);
+        Assert.Equal("PERSISTED_QUERY_NOT_FOUND", tokens["code"]);
+        Assert.Equal("code,classification", tokens["extensions"]);
+        Assert.Equal("me.orders", tokens["path"]);
+        Assert.Equal("absent", tokens["data"]);
+        Assert.Equal("-", tokens["me"]);
+        Assert.Equal("sha256:d195253b815a", tokens["hash"]);
+        Assert.Equal("rebuilt", tokens["body"]);
+        Assert.Contains("refused the request before running it", error.Detail, StringComparison.Ordinal);
+
+        // the page's own body in use says so, and a hash shorter than the quoted prefix is quoted whole
+        var replaying = Options with { OrdersRequestTemplate = Shape.Body(Options, page: 1), OrdersPersistedQueryHash = "sha256:short" };
+        var again = Tokens(Assert.Throws<ConnectorException>(() => Shape.Parse(refused, replaying, Zone)).Detail);
+        Assert.Equal("replay", again["body"]);
+        Assert.Equal("sha256:short", again["hash"]);
+    }
+
+    /// <summary>A refusal that came with a data entry - null or not - is one bol ran, so the hash was known and the fault lies elsewhere.</summary>
+    [Theory]
+    [InlineData("""{"errors":[{"message":"x"}],"data":null}""", "null")]
+    [InlineData("""{"errors":[{"message":"x"}],"data":{"me":{"__typename":"IdentifiedCustomer"}}}""", "present")]
+    public void A_refusal_beside_data_is_one_that_ran_so_bol_knew_the_hash(string body, string data)
+    {
+        var error = Assert.Throws<ConnectorException>(() => Shape.Parse(body, Options, Zone));
+
+        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
+        Assert.Equal(data, Tokens(error.Detail)["data"]);
+        Assert.Contains("the operation ran, so bol knew the hash", error.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_anonymous_answer_beside_errors_is_a_dead_session_and_not_a_change()
+    {
+        const string anonymous =
+            """{"errors":[{"message":"Unauthenticated","extensions":{"code":"UNAUTHENTICATED"}}],"data":{"me":{"__typename":"AnonymousCustomer"}}}""";
+
+        var error = Assert.Throws<ConnectorException>(() => Shape.Parse(anonymous, Options, Zone));
+
+        Assert.Equal(ErrorCode.SessionExpired, error.Code);
+        Assert.Contains("AnonymousCustomer", error.Detail, StringComparison.Ordinal);
+        Assert.Contains("code=UNAUTHENTICATED", error.Detail, StringComparison.Ordinal);
+        Assert.Contains("me=AnonymousCustomer", error.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>Every value in the refusal is identifier-like: nothing a party says reaches a log as free text, however long or strange.</summary>
+    [Fact]
+    public void A_refusal_s_values_are_tokens_and_never_the_party_s_free_text()
+    {
+        var message = "a \"quoted\" message, with spaces; ünïcode and " + new string('x', 100);
+        var body = JsonSerializer.Serialize(new
+        {
+            errors = new[] { new { message, extensions = new { code = "some code!" }, path = new object[] { "me", 0, "a b" } } },
+        });
+
+        var tokens = Tokens(Assert.Throws<ConnectorException>(() => Shape.Parse(body, Options, Zone)).Detail);
+
+        foreach (var value in tokens.Values)
+        {
+            Assert.Matches("^[A-Za-z0-9_.:,-]{1,64}$", value);
+        }
+
+        Assert.Equal("some-code-", tokens["code"]);
+        Assert.Equal("me.0.a-b", tokens["path"]);
+        Assert.Equal(64, tokens["message"].Length);
+    }
+
+    /// <summary>The <c>name=value</c> tokens between the refusal's prefix and its reading.</summary>
+    private static Dictionary<string, string> Tokens(string? detail)
+    {
+        var run = detail!.Split(": ", 3)[2].Split(';')[0];
+        return run.Split(' ').Select(token => token.Split('=', 2)).ToDictionary(pair => pair[0], pair => pair[1], StringComparer.Ordinal);
     }
 
     [Fact]

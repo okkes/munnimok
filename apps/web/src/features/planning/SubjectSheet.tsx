@@ -9,10 +9,12 @@ import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Chip, Pill, Row, Tile } from '@/ui/primitives';
+import { Pill, Row, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SEGMENT_COLOR, SEGMENT_META, STATUS_TONE, softOf } from './planningUi';
 import { statusLine } from './SegmentSection';
+import { AmountSuggestions } from './AmountSuggestions';
+import type { AmountSuggestion } from './AmountSuggestions';
 import type { MoneyFmt } from './SegmentSection';
 
 /** the source rows' detail screens, per mirrored segment */
@@ -51,24 +53,15 @@ function AmountChips({
   onPick,
 }: Readonly<{ view: SubjectView; model: PlanningModel; fmt: MoneyFmt; currency: string; onPick: (cents: number) => void }>) {
   const { t } = useLang();
-  const chips: { id: string; label: string; cents: number }[] = [];
-  if (view.targetCents !== null && view.targetCents > 0) chips.push({ id: 'target', label: t('plan.fund.chipTarget', { amount: fmt(view.targetCents, currency) }), cents: view.targetCents });
-  if (view.realizedCents > view.fundedCents) chips.push({ id: 'spent', label: t('plan.fund.chipSpent', { amount: fmt(view.realizedCents, currency) }), cents: view.realizedCents });
+  const chips: AmountSuggestion[] = [];
+  if (view.targetCents !== null && view.targetCents > 0) chips.push({ id: 'target', label: t('plan.fund.chipTarget'), cents: view.targetCents });
+  if (view.realizedCents > view.fundedCents) chips.push({ id: 'spent', label: t('plan.fund.chipSpent'), cents: view.realizedCents });
   if (view.subject.segment === 'expenses') {
     const estimate = model.estimate(subjectFamily(view.subject, model.data.catalog));
-    if (estimate.lastCents !== null) chips.push({ id: 'last', label: t('plan.subject.estimateLast', { amount: fmt(estimate.lastCents, currency) }), cents: estimate.lastCents });
-    if (estimate.averageCents !== null) chips.push({ id: 'avg', label: t('plan.subject.estimateAvg', { amount: fmt(estimate.averageCents, currency) }), cents: estimate.averageCents });
+    if (estimate.lastCents !== null) chips.push({ id: 'last', label: t('plan.subject.estimateLast'), cents: estimate.lastCents });
+    if (estimate.averageCents !== null) chips.push({ id: 'avg', label: t('plan.subject.estimateAvg'), cents: estimate.averageCents });
   }
-  if (chips.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-2" data-testid="plan-fund-chips">
-      {chips.map((chip) => (
-        <Chip key={chip.id} selected={false} testId={`plan-fund-chip-${chip.id}`} onClick={() => onPick(chip.cents)}>
-          {chip.label}
-        </Chip>
-      ))}
-    </div>
-  );
+  return <AmountSuggestions items={chips} fmt={fmt} currency={currency} testIdPrefix="plan-fund-chip" onPick={onPick} />;
 }
 
 /** where to take money from: munni's picks first, then everybody with room */

@@ -11,6 +11,27 @@ const base = (over: Partial<TransactionRow>): TransactionRow =>
 
 const anchor = { id: 'src', amountCents: -5240, date: '2026-03-10' };
 
+describe('the mirror row (user ss 2026-10-07: the card repayment filed as a transfer from checking never showed in the checking row\'s picker)', () => {
+  const rows: TransactionRow[] = [
+    base({ id: 'loose' }),
+    base({ id: 'mirror', linkedAccountId: 'src-account' }), // points back at the anchor's own account, no peer yet
+    base({ id: 'linked-elsewhere', linkedAccountId: 'somewhere' }),
+    base({ id: 'mirror-paired', linkedAccountId: 'src-account', transferPeerId: 'p' }),
+  ];
+
+  it('a row pointing back at the anchor\'s account without a peer is offered, and first', () => {
+    const near = counterDuplicates(rows, 'counter', { ...anchor, accountId: 'src-account' });
+    expect(near.map((row) => row.id)).toEqual(['mirror', 'loose']);
+    const open = counterOpenRows(rows, 'counter', { id: anchor.id, accountId: 'src-account' });
+    expect(open.map((row) => row.id)).toEqual(['mirror', 'loose']);
+  });
+
+  it('without the anchor\'s account a linked row stays out, as before', () => {
+    expect(counterDuplicates(rows, 'counter', anchor).map((row) => row.id)).toEqual(['loose']);
+    expect(counterOpenRows(rows, 'counter', anchor.id).map((row) => row.id)).toEqual(['loose']);
+  });
+});
+
 describe('counterDuplicates (#133 B pick-existing)', () => {
   it('offers only opposite-sign, unlinked, close-in-amount-and-date rows on the counter account', () => {
     const rows: TransactionRow[] = [

@@ -1,5 +1,6 @@
 import { useData } from '@/app/data';
 import { downscaleImage } from '@/lib/image';
+import { receiptLinkId } from '@/domain/feedIds';
 import { logActivity } from './activity';
 import { acceptProposal, rejectProposal, writeReceiptLink } from './receiptLinks';
 import { myStoreFeedId } from './storeFeed';
@@ -23,6 +24,10 @@ export interface ReceiptOps {
   /** manual attach from the picker: snapshot-link a global receipt into the space */
   linkReceipt: (receipt: ReceiptRow, txId: string) => Promise<void>;
   unlinkReceipt: (linkId: string) => Promise<void>;
+  /** user 2026-10-07 (Change on the transaction): another receipt takes the attached one's place — the new link
+   *  lands first so the transaction never shows empty in between; the old link goes the way an unlink does
+   *  (a photo is gone for good, a store receipt is unmatched again) */
+  swapReceipt: (currentLinkId: string, receipt: ReceiptRow, txId: string) => Promise<void>;
   /** delete an unmatched receipt from the owner's global store feed */
   removeGlobalReceipt: (receiptId: string) => Promise<void>;
   /** "Matches to check" (§5.7): the human's yes or no on a proposal */
@@ -62,6 +67,14 @@ export function useReceiptOps(): ReceiptOps {
     unlinkReceipt: async (linkId) => {
       await repo.remove('receiptLink', spaceId, linkId);
       void logActivity(store, repo, spaceId, 'receiptRemove');
+    },
+    swapReceipt: async (currentLinkId, receipt, txId) => {
+      if (receiptLinkId(spaceId, receipt.id) === currentLinkId) return; // the attached one again: nothing to swap
+      const current = await store.get('receiptLink', currentLinkId);
+      await writeReceiptLink(repo, spaceId, receipt, txId, false);
+      await repo.remove('receiptLink', spaceId, currentLinkId);
+      void logActivity(store, repo, spaceId, 'receiptRemove', current?.merchant);
+      void logActivity(store, repo, spaceId, 'receiptAdd', receipt.merchant);
     },
     removeGlobalReceipt: async (receiptId) => {
       const feedId = myStoreFeedId();

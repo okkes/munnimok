@@ -1002,6 +1002,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     // link a partial 20,00 instead
     fireEvent.change(amountInput, { target: { value: '20,00' } });
     // #233 r2: both sides preview their category shift before saving
+    fireEvent.click(screen.getByTestId('reimb-impact-toggle'));
     const impact = screen.getByTestId('reimb-impact');
     expect(impact.textContent).toContain('€52.40 → €32.40');
     expect(impact.textContent).toContain('€0.00 → €20.00');
@@ -1084,6 +1085,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('reimb-footer-line').textContent).toContain('€20.00');
     expect(screen.getByTestId('reimb-save').textContent).toContain('2');
     // the expense side previews the sum, each credit its own
+    fireEvent.click(await screen.findByTestId('reimb-impact-toggle'));
     const impact = await screen.findByTestId('reimb-impact');
     expect(impact.textContent).toContain('€90.00 → €20.00');
     expect(impact.textContent).toContain('€0.00 → €40.00');
@@ -1177,6 +1179,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(picker.querySelector('[data-testid="reimb-pick-imp2"] [data-testid^="tx-row-"]')!);
     const amountInput = (await screen.findByTestId(/^reimb-amount-/)) as HTMLInputElement;
     fireEvent.change(amountInput, { target: { value: '30,00' } });
+    fireEvent.click(await screen.findByTestId('reimb-impact-toggle'));
     const impact = await screen.findByTestId('reimb-impact');
     // expense side: hotel shrinks, reimbursed grows — groceries silent
     expect(impact.textContent).toContain('€60.00 → €30.00');

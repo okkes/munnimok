@@ -55,6 +55,23 @@ import type { AccountRow, RecurringRow, TxSplit, TxSplitCat } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
+/**
+ * How the counterparty account reads on the detail (user ss 2026-10-07): the
+ * name the SPACE gave it (the display name the accounts list shows), and its
+ * number underneath — the masked card number, the IBAN, or the bank's own
+ * name when that is a number and the space renamed it.
+ */
+function counterAccountFace(
+  account: Pick<AccountRow, 'id' | 'name' | 'iban' | 'maskedNumber'>,
+  spaceAccounts: readonly { id: string; name: string }[] | undefined,
+): { name: string; number: string | null } {
+  const display = spaceAccounts?.find((a) => a.id === account.id)?.name ?? account.name;
+  const bankName = account.name.replaceAll(' ', '');
+  const looksLikeNumber = /^[\d*]{6,}$/.test(bankName) || /^[A-Z]{2}\d{2}[A-Z\d]{8,}$/i.test(bankName);
+  const number = account.maskedNumber ?? account.iban ?? (looksLikeNumber && display !== account.name ? account.name : null);
+  return { name: display, number: number === display ? null : number };
+}
+
 /** #200: the part id a container row navigates to — the settled
  *  Reimbursed slice and id-less legacy parts return null and keep the
  *  editor. Module-level for S3776. */
@@ -1797,6 +1814,7 @@ function DetailAccountBlock({
   tx,
   account,
   linkedAccount,
+  spaceAccounts,
   pairState,
   peer,
   peerAccountName,
@@ -1810,6 +1828,8 @@ function DetailAccountBlock({
   tx: SpaceTx;
   account: AccountRow | undefined;
   linkedAccount: AccountRow | undefined;
+  /** the accounts as the space names them (#239) — the counterparty row speaks that name */
+  spaceAccounts: readonly { id: string; name: string }[] | undefined;
   pairState: ReturnType<typeof transferPairState>;
   /** #237 r2: the other leg as the space sees it (feeds the rich row) —
    *  #255 r4: already recut to the exact LEG when that leg is a part */
@@ -1857,8 +1877,15 @@ function DetailAccountBlock({
                 className="m-tap block w-full border-none bg-transparent p-0 text-left"
               >
                 <span className={`block truncate ${linkedAccount ? '' : 'text-ink-4'}`} data-testid="tx-detail-linked-account">
-                  {linkedAccount?.name ?? t('tx.counterNone')}
+                  {linkedAccount ? counterAccountFace(linkedAccount, spaceAccounts).name : t('tx.counterNone')}
                 </span>
+                {/* the account's number under its name (user ss 2026-10-07): a renamed card
+                    read as its masked number here while the sheet called it by its name */}
+                {linkedAccount && counterAccountFace(linkedAccount, spaceAccounts).number && (
+                  <span className="block truncate font-mono text-[11px] text-ink-4" data-testid="tx-detail-linked-number">
+                    {counterAccountFace(linkedAccount, spaceAccounts).number}
+                  </span>
+                )}
                 {linkedAccount && ['loan', 'mortgage'].includes(linkedAccount.type) && (
                   <span className="block truncate text-[11px] text-accent-deep" data-testid="tx-detail-pays-debt">
                     {t('tx.paysDebt', { name: linkedAccount.name })}
@@ -2036,6 +2063,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     async () => (tx?.linkedAccountId ? store.get('account', tx.linkedAccountId) : undefined),
     [tx?.linkedAccountId],
   );
+  const spaceAccounts = useSpaceAccounts();
   // a transfer into a loan account IS a payment on that loan (v2: the
   // account is the debt) — say so, matching the review card's debt row
   // read-time join (user request): the moment an account with this IBAN
@@ -2514,6 +2542,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           tx={tx}
           account={account}
           linkedAccount={linkedAccount}
+          spaceAccounts={spaceAccounts}
           pairState={pairState}
           peer={resolvedPeer ? pairPeerFace(resolvedPeer, t) : undefined}
           peerAccountName={peerAccount?.deleted === 0 ? peerAccount.name : undefined}
@@ -2703,8 +2732,8 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         <CounterMatchSheet
           open={matchOpen}
           onOpenChange={setMatchOpen}
-          target={{ id: linkedAccount.id, name: linkedAccount.name }}
-          anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
+          target={{ id: linkedAccount.id, name: counterAccountFace(linkedAccount, spaceAccounts).name }}
+          anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date, accountId: tx.accountId }}
           rows={allTxs ?? []}
           onPick={(pickedTxId) => void pairWithPicked(pickedTxId)}
         />
