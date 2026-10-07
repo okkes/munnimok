@@ -37,6 +37,13 @@ const isConnectorReturnPath = window.location.pathname.includes(RETURN_PATH);
 if (window.location.pathname.startsWith('/splits/join/')) {
   window.location.replace(`${window.location.origin}/#${window.location.pathname}`);
 }
+// an invitation mail (Logto's magic link) lands on a REAL path too:
+// /invite?token=…&email=… — bounce into the hash router with the query
+// intact. The single-use token is spent on the person's tap alone
+// (InviteScreen), never by landing here
+if (/^\/invite\/?$/.test(window.location.pathname)) {
+  window.location.replace(`${window.location.origin}/#/invite${window.location.search}`);
+}
 // native auth/logout returns that landed in the BROWSER (universal link
 // not taken — old build, verification pending): bounce into the app via
 // the channel's scheme, carrying the path + query for the code exchange

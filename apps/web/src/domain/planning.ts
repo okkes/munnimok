@@ -450,7 +450,19 @@ export interface SubjectView {
   status: SubjectStatus;
   /** the source row is gone (a deleted budget, loan, goal or recurring cost) */
   orphaned: boolean;
+  /**
+   * Whether the money actually leaves this period (user 2026-10-07): a
+   * recurring cost with an occurrence inside the period, a goal whose date
+   * falls in it, every expense, budget and loan payment. A yearly cost
+   * spread over months, or a goal years away, is NOT due — those are the
+   * only ones a period may skip.
+   */
+  dueThisPeriod: boolean;
 }
+
+/** a subject the period may skip: a mirrored one whose money does not leave this period */
+export const canSkipPeriod = (view: Pick<SubjectView, 'subject' | 'dueThisPeriod'>): boolean =>
+  view.subject.segment !== 'expenses' && view.subject.segment !== 'budgets' && !view.dueThisPeriod;
 
 export interface SubjectContext {
   space: PeriodSpace & Pick<SpaceRow, 'weekStart'>;
@@ -476,6 +488,7 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext): Subje
   let realized = 0;
   let cycles = 1;
   let orphaned = false;
+  let dueThisPeriod = true;
   switch (subject.segment) {
     case 'expenses': {
       target = subject.targetCents ?? 0;
@@ -502,6 +515,7 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext): Subje
       }
       target = recurringTargetCents(rec, ctx.space, ctx.period, carried);
       realized = recurringRealizedCents(rec.id, ctx.txs, ctx.period);
+      dueThisPeriod = rec.active === 1 && occurrencesBetween(rec, ctx.period.start, ctx.period.end).length > 0;
       break;
     }
     case 'debts': {
@@ -522,6 +536,7 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext): Subje
       }
       target = goalTargetCents(goal, ctx.space, ctx.period);
       realized = goalRealizedCents(goal.id, ctx.contributions, ctx.period);
+      dueThisPeriod = !!goal.targetDate && goal.targetDate <= ctx.period.end;
       break;
     }
     default:
@@ -536,6 +551,7 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext): Subje
     cycles,
     status: subjectStatus(subject.segment, target, funded, realized, snoozed),
     orphaned,
+    dueThisPeriod,
   };
 }
 

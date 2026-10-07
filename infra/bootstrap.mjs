@@ -21,7 +21,7 @@ import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from '.
 import { publishPlatform, writeApplied } from './modules/config.mjs';
 import { deleteEnvironment, ensureSecrets, foldFallbacks, satisfiedBy, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
-import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, logtoAnswers, removeApps, writeBack, writeBackConnector } from './modules/logto.mjs';
+import { applyApps, applyBranding, applySignUpPolicy, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, ensureManagementAccess, logtoAnswers, removeApps, writeBack, writeBackConnector } from './modules/logto.mjs';
 import { vaultPlatformValues, vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
@@ -207,6 +207,27 @@ async function applyLogto(values, write, fresh) {
   foldFallbacks(process.env, values); // the manifest's fallbacks: LOGTO_APPLE_TEAM_ID ← APPLE_TEAM_ID (one Apple membership)
   const social = await applySocialConnectors(stack, creds).catch((e) => ({ applied: [], error: e.message }));
   console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]${social.renamed?.length ? ` — moved under their fixed ids (${social.renamed.join(', ')})` : ''}` : `  logto: no social connector credentials — skipped${social.error ? ` (${social.error})` : ''}`);
+  // the api's reach over the Management API (user 2026-10-07): account deletion removes the Logto user and an invitation-only
+  // environment mints its invitation links — Logto's built-in M2M role, granted once; never a reason to fail the bootstrap
+  try {
+    const mgmt = await ensureManagementAccess(stack, creds);
+    state.managementAccess = true;
+    console.log(`  logto: the api's machine app ${mgmt.appId} holds "${mgmt.role}"${mgmt.granted ? ' — granted now' : ''} (account deletion + invitations)`);
+  } catch (e) {
+    state.managementAccess = false;
+    console.log(`  logto: Management API access not ensured (${e.message}) — retried next run`);
+  }
+  // invitation-only sign-up (features.inviteOnly): applied on EVERY run, so switching the flag off opens registration again
+  try {
+    const policy = await applySignUpPolicy(stack, creds);
+    state.inviteOnly = policy.inviteOnly;
+    console.log(policy.inviteOnly
+      ? `  logto: invitation-only sign-up ${policy.changed ? 'applied' : 'in place'} — sign-in only; new accounts by the admin portal's invitation (e-mail), social sign-in links on the verified e-mail`
+      : `  logto: registration open${policy.changed ? ' again — sign-in only switched off' : ''}`);
+  } catch (e) {
+    state.inviteOnly = null;
+    console.log(`  logto: sign-up policy not applied (${e.message}) — retried next run`);
+  }
   const brand = await applyBranding(stack, creds).catch((e) => ({ error: e.message }));
   console.log(brand.error ? `  logto: branding failed (${brand.error})` : '  logto: sign-in branded (munni logo + colors)');
   const adminCreds = { adminId: values.LOGTO_ADMIN_M2M_ID, adminSecret: values.LOGTO_ADMIN_M2M_SECRET };

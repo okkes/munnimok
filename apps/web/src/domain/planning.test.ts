@@ -29,6 +29,7 @@ import {
   subjectFamily,
   subjectStatus,
   subjectView,
+  canSkipPeriod,
 } from './planning';
 import type { SubjectContext, SubjectView } from './planning';
 
@@ -230,6 +231,25 @@ describe('the subject view', () => {
     expect(view).toMatchObject({ targetCents: 50_00, fundedCents: 30_00, realizedCents: 20_00, status: 'underfunded', orphaned: false });
   });
 
+  it('dueThisPeriod: a yearly cost spread over months and a goal far off may be skipped; a monthly cost and a goal due now may not', () => {
+    const yearly = { id: 'ins', name: 'Insurance', kind: 'fixed', amountCents: 1200_00, every: 'year', dueDay: 15, dueMonth: 2, active: 1, ...envelope } as RecurringRow;
+    const monthly = { id: 'rent', name: 'Rent', kind: 'fixed', amountCents: 900_00, every: 'month', dueDay: 25, active: 1, ...envelope } as RecurringRow;
+    const recurrings = new Map([['ins', yearly], ['rent', monthly]]);
+    const skippable = subjectView(subject({ segment: 'recurring', sourceId: 'ins' }), ctx({ recurringsById: recurrings }));
+    const due = subjectView(subject({ segment: 'recurring', sourceId: 'rent' }), ctx({ recurringsById: recurrings }));
+    expect(skippable.dueThisPeriod).toBe(false);
+    expect(canSkipPeriod(skippable)).toBe(true);
+    expect(due.dueThisPeriod).toBe(true);
+    expect(canSkipPeriod(due)).toBe(false);
+    const far = { id: 'g1', name: 'Car', targetCents: 1000_00, allocatedCents: 0, targetDate: '2027-12-31', ...envelope } as GoalRow;
+    const soon = { id: 'g2', name: 'Trip', targetCents: 100_00, allocatedCents: 0, targetDate: '2026-10-20', ...envelope } as GoalRow;
+    const goals = new Map([['g1', far], ['g2', soon]]);
+    expect(canSkipPeriod(subjectView(subject({ segment: 'goals', sourceId: 'g1' }), ctx({ goalsById: goals })))).toBe(true);
+    expect(canSkipPeriod(subjectView(subject({ segment: 'goals', sourceId: 'g2' }), ctx({ goalsById: goals })))).toBe(false);
+    // an expense is never skipped: its money leaves whenever it is spent
+    expect(canSkipPeriod(subjectView(subject({ catIds: ['sub_food_a'], targetCents: 50_00 }), ctx()))).toBe(false);
+  });
+
   it('a recurring subject carries what earlier periods set aside; a goal counts its contributions; a vanished source is orphaned', () => {
     const rec = { id: 'rec', name: 'Insurance', kind: 'fixed', amountCents: 1200_00, every: 'year', dueDay: 15, dueMonth: 2, active: 1, ...envelope } as RecurringRow;
     const recurring = subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: 0 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) }));
@@ -255,6 +275,7 @@ describe('ahead, cover, fill', () => {
     cycles: 1,
     status: 'neutral',
     orphaned: false,
+    dueThisPeriod: true,
     ...over,
   });
 

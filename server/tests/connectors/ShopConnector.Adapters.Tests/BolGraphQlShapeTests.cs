@@ -34,6 +34,42 @@ public sealed class BolGraphQlShapeTests
 
     private static IReadOnlyList<BolOrder> Parse() => Shape.Parse(Fixture(), Options, Zone);
 
+    /// <summary>
+    /// 2026-10-07 (prod): "Error(s) redacted." arrived BESIDE data.me.orders of
+    /// a signed-in customer - a field that failed, the orders all there - and
+    /// the page was refused as "the party changed its site" on every sync.
+    /// </summary>
+    [Fact]
+    public void Errors_beside_the_orders_are_a_partial_page_that_is_read_and_noted()
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(Fixture())!.AsObject();
+        node["errors"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject { ["message"] = "Error(s) redacted." });
+        var partial = node.ToJsonString();
+        var warnings = new List<string>();
+
+        var orders = Shape.Parse(partial, Options, Zone, warn: warnings.Add);
+
+        Assert.Equal(Parse().Count, orders.Count);
+        var note = Assert.Single(warnings);
+        Assert.Contains("partial page", note, StringComparison.Ordinal);
+        Assert.Contains("errors=1", note, StringComparison.Ordinal);
+        Assert.Contains("data=present", note, StringComparison.Ordinal);
+        // nobody listening is fine too
+        Assert.Equal(orders.Count, Shape.Parse(partial, Options, Zone).Count);
+    }
+
+    [Fact]
+    public void Errors_without_readable_orders_are_still_a_refusal_that_says_the_operation_ran()
+    {
+        const string body = """{"errors":[{"message":"Error(s) redacted."}],"data":{"me":{"__typename":"IdentifiedCustomer","orders":null}}}""";
+
+        var error = Assert.Throws<ConnectorException>(() => Shape.Parse(body, Options, Zone));
+
+        Assert.Equal(ErrorCode.ProviderChanged, error.Code);
+        Assert.Contains("data=present", error.Detail, StringComparison.Ordinal);
+        Assert.Contains("me=IdentifiedCustomer", error.Detail, StringComparison.Ordinal);
+    }
+
     // ---- the request --------------------------------------------------------
 
     [Fact]

@@ -138,6 +138,8 @@ export interface ApiCapabilities {
   vapidPublicKey?: string;
   /** logo.dev brand search proxy configured server-side */
   logos?: boolean;
+  /** sign-up is closed: accounts come from invitation links (Logto's magic link, /invite) */
+  inviteOnly?: boolean;
 }
 
 let capabilities: ApiCapabilities | null = null;

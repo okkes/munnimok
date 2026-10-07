@@ -167,7 +167,9 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   const api = envOf(block(compose, 'api-prod'));
   assert.equal(api.Auth__Authority, `https://munni-prod-nas-logto.${DOMAIN}/oidc`);
   assert.equal(api.Auth__Audience, `https://munni-prod-nas-api.${DOMAIN}`);
-  assert.deepEqual(Object.keys(api).filter((k) => k.startsWith('Auth__')), ['Auth__Authority', 'Auth__Audience'], 'hosted: https-strict, metadata from the authority itself');
+  assert.deepEqual(Object.keys(api).filter((k) => k.startsWith('Auth__')), ['Auth__Authority', 'Auth__Audience', 'Auth__InviteOnly'], 'hosted: https-strict, metadata from the authority itself');
+  assert.equal(api.Auth__InviteOnly, '"false"', 'registration open unless features.inviteOnly says otherwise — the api reports the flag in /health capabilities (user 2026-10-07)');
+  assert.equal(api.Web__Url, api.Cors__Origins__0, 'the api knows the web app by its own setting (the invitation link) - the first CORS origin');
   assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://munni-prod-nas-lab.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.equal(api.ConnectionStrings__Db, 'Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}');
   assert.equal(api.Ocr__BaseUrl, 'http://ocr:8884');
@@ -197,6 +199,15 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.equal(envOf(block(staging.compose, 'web-staging')).MUNNI_CHANNEL, 'staging');
   assert.deepEqual(corsOf(block(staging.compose, 'api-staging')), [`https://munni-staging-nas.${DOMAIN}`, `https://munni-staging-nas-admin.${DOMAIN}`, `https://munni-staging-nas-lab.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.match(staging.env, /^TAG=dev$/m);
+});
+
+test('environment stack: features.inviteOnly reaches the api as Auth__InviteOnly — the policy itself lives in Logto (Bootstrap), the api only reports it (user 2026-10-07)', () => {
+  fx.writeEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true, inviteOnly: true } });
+  try {
+    assert.equal(envOf(block(render('munni-nas-staging').compose, 'api-staging')).Auth__InviteOnly, '"true"');
+  } finally {
+    fx.writeEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true } });
+  }
 });
 
 test('environment stack on lcl: in-network Logto metadata over http, CORS with the localhost twins and the control cockpit in LAN mode, real values in the env file', () => {

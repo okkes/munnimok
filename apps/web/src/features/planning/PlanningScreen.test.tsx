@@ -45,9 +45,80 @@ describe('Planning (demo identity)', () => {
     expect(row).toBeTruthy();
     // no housing spending this month: the subject only needs its target
     await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Needs/));
-    fireEvent.click(screen.getByTestId('plan-segment-fill-expenses'));
+    fireEvent.click(screen.getByTestId('plan-segment-fundall-expenses'));
     await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Funded/));
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
+  }, 20_000);
+
+  // round 30 (user 2026-10-07 pm): one-tap funding, Fund all, beyond the pool once a day, the pick per segment, the Unplanned sheet
+
+  it('a Needs chip funds its subject to the target with one tap; beyond the pool it asks once, then not again today', async () => {
+    await startEmptyPlan();
+    await addHousingSubject('500');
+    const chip = (await screen.findAllByTestId(/^plan-subject-need-/))[0];
+    fireEvent.click(chip);
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Funded/));
+    expect(screen.queryByTestId('plan-overbudget-confirm')).toBeNull(); // the demo pool covers 500
+
+    // a target the pool cannot cover: the question comes once, confirmed it funds, and the same day it no longer asks
+    fireEvent.click(screen.getByTestId('plan-segment-add-expenses'));
+    await screen.findByTestId('plan-editor');
+    fireEvent.change(screen.getByTestId('plan-editor-name'), { target: { value: 'Moon trip' } });
+    fireEvent.click(screen.getByTestId('plan-editor-cat-consumption'));
+    fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: '9999999' } });
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+    fireEvent.click((await screen.findAllByTestId(/^plan-subject-need-/))[0]);
+    await screen.findByTestId('plan-overbudget-confirm');
+    fireEvent.click(screen.getByTestId('plan-overbudget-confirm'));
+    await waitFor(() => expect(screen.queryByTestId(/^plan-subject-need-/)).toBeNull());
+    expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/-/); // beyond the pool now
+    // withdraw everything and fund again: no question the same day
+    fireEvent.click(screen.getByTestId('plan-withdraw-all'));
+    fireEvent.click(await screen.findByTestId('plan-withdraw-confirm-confirm'));
+    // the header says the pool is whole again: the model re-emitted for every row
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toMatch(/-/));
+    const before = screen.getAllByTestId(/^plan-subject-need-/).length;
+    expect(before).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByTestId(/^plan-subject-need-/)[0]);
+    // the chip went without a confirm click: nothing asked this time (a closed Sheet keeps its children, so the
+    // button's absence cannot be the proof — the funding going through is)
+    await waitFor(() => expect(screen.queryAllByTestId(/^plan-subject-need-/)).toHaveLength(before - 1));
+  }, 30_000);
+
+  it('Fund all funds every subject of the segment to its target', async () => {
+    await startEmptyPlan();
+    await addHousingSubject('500');
+    fireEvent.click(screen.getByTestId('plan-segment-add-expenses'));
+    await screen.findByTestId('plan-editor');
+    fireEvent.change(screen.getByTestId('plan-editor-name'), { target: { value: 'Food' } });
+    fireEvent.click(screen.getByTestId('plan-editor-cat-consumption'));
+    fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: '400' } });
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+    // a subject born funded by its spending may hold money already; take it back when there is any
+    const withdraw = screen.queryByTestId('plan-withdraw-all');
+    if (withdraw) {
+      fireEvent.click(withdraw);
+      fireEvent.click(await screen.findByTestId('plan-withdraw-confirm-confirm'));
+    }
+    await screen.findByTestId('plan-segment-fundall-expenses');
+    fireEvent.click(screen.getByTestId('plan-segment-fundall-expenses'));
+    await waitFor(() => expect(screen.queryByTestId(/^plan-subject-need-/)).toBeNull());
+    expect(screen.getByTestId('plan-segment-expenses').textContent).not.toMatch(/Needs/);
+  }, 20_000);
+
+  it('an unplanned main opens its sheet; setting money aside makes it an expense subject born funded', async () => {
+    await startEmptyPlan();
+    const row = (await screen.findAllByTestId(/^plan-unplanned-(?!sheet|input|fund|plan|chip)/))[0];
+    const mainId = row.getAttribute('data-testid')!.replace('plan-unplanned-', '');
+    fireEvent.click(row);
+    await screen.findByTestId('plan-unplanned-sheet');
+    expect(screen.getByTestId('plan-unplanned-sheet-spent').textContent).toMatch(/€[1-9]/);
+    fireEvent.click(screen.getByTestId('plan-unplanned-fund'));
+    await waitFor(() => expect(screen.queryByTestId('plan-unplanned-sheet')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId(`plan-unplanned-${mainId}`)).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Funded|No target/));
   }, 20_000);
 
   it('a subject in the red is covered from one with room; the tab wears the dot', async () => {

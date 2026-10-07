@@ -107,7 +107,7 @@ export async function ensurePersistentStorage(): Promise<void> {
  *  login screen (nas prod, 2026-09-28). */
 /** the https paths a verified App Link / universal link may hand us —
  *  a tight allowlist so nothing else ever routes into the shell */
-const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/native-auth', '/native-signed-out'];
+const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/native-auth', '/native-signed-out', '/invite'];
 
 export function deepLinkToPath(url: string): string | null {
   const match = /^munni(?:-[\w-]+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);

@@ -41,7 +41,7 @@ else
   echo "40-runtime-config: assetlinks.json claims no app (package or certificate fingerprint not set)"
 fi
 if [ -n "${MUNNI_APPLE_TEAM_ID:-}" ] && [ -n "${MUNNI_IOS_BUNDLE_ID:-}" ]; then
-  printf '{"applinks":{"details":[{"appIDs":["%s.%s"],"components":[{"/":"/gc-callback*"},{"/":"/splits/join/*"},{"/":"/native-auth*"},{"/":"/native-signed-out*"}]}]}}\n' "$MUNNI_APPLE_TEAM_ID" "$MUNNI_IOS_BUNDLE_ID" > "$WK/apple-app-site-association"
+  printf '{"applinks":{"details":[{"appIDs":["%s.%s"],"components":[{"/":"/gc-callback*"},{"/":"/splits/join/*"},{"/":"/invite*"},{"/":"/native-auth*"},{"/":"/native-signed-out*"}]}]}}\n' "$MUNNI_APPLE_TEAM_ID" "$MUNNI_IOS_BUNDLE_ID" > "$WK/apple-app-site-association"
   echo "40-runtime-config: apple-app-site-association claims $MUNNI_APPLE_TEAM_ID.$MUNNI_IOS_BUNDLE_ID"
 else
   printf '{"applinks":{"details":[]}}\n' > "$WK/apple-app-site-association"

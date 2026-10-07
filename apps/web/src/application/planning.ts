@@ -6,7 +6,7 @@ import type { PlanRow, PlanSegmentConfig, PlanSegmentKind, PlanSubjectRow } from
 import { useQuery } from '@/db/useQuery';
 import { isDebtTracked } from '@/domain/debts';
 import type { Period } from '@/domain/periods';
-import { brokenSubjects, fillInOrder, mirroredSubjectId, planId, recommendSubjects, sameSubjects, subjectShape, subjectView } from '@/domain/planning';
+import { brokenSubjects, fillInOrder, mirroredSubjectId, planId, recommendSubjects, sameSubjects, subjectShape, subjectView, shortfallCents } from '@/domain/planning';
 import type { SubjectShape, SubjectView } from '@/domain/planning';
 import { logActivity } from './activity';
 import { availabilityByCat, buildPlanning, loadPlanningData, planOverspentCount, sortSubjects } from './planningModel';
@@ -83,6 +83,8 @@ export interface PlanningOps {
   fund: (subjectId: string, cents: number) => Promise<void>;
   fillSubject: (plan: PlanRow, subjectId: string) => Promise<void>;
   fillSegment: (plan: PlanRow, segment: PlanSegmentKind) => Promise<void>;
+  /** every subject of a segment to its target, pool or no pool (user 2026-10-07; the beyond-the-pool guard asks first) */
+  fundSegment: (plan: PlanRow, segment: PlanSegmentKind) => Promise<void>;
   fillAll: (plan: PlanRow) => Promise<void>;
   withdrawAll: (plan: PlanRow) => Promise<void>;
   cover: (fromId: string, toId: string, cents: number) => Promise<void>;
@@ -315,6 +317,16 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
     fillSubject: (plan, subjectId) => fillViews(plan, (views) => views.filter((v) => v.subject.id === subjectId)),
 
     fillSegment: (plan, segment) => fillViews(plan, (views) => views.filter((v) => v.subject.segment === segment)),
+
+    fundSegment: async (plan, segment) => {
+      const model = await fresh();
+      for (const view of model.viewsOf(planIn(model, plan))) {
+        if (view.subject.segment !== segment || view.subject.snoozed === 1) continue;
+        const need = shortfallCents(view);
+        if (need > 0) await write(view.subject.id, { fundedCents: view.fundedCents + need });
+      }
+      act('planFund');
+    },
 
     fillAll: (plan) => fillViews(plan, (views) => views),
 

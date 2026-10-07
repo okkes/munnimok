@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLang } from '@/i18n';
 import type { PlanRow, PlanSegmentKind } from '@/db/types';
 import type { MirroredSource, PlanningModel, PlanningOps } from '@/application/planning';
@@ -44,6 +44,9 @@ export function AddSourceSheet({
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const candidates = useMemo(() => (segment ? mirrorCandidates(model, plan, segment) : []), [model, plan, segment]);
+  // the pick is the segment's (user ss 2026-10-07: "4 of 1" — four recurring costs ticked earlier counted on the goals sheet)
+  useEffect(() => setPicked(new Set()), [segment]);
+  const pickedHere = candidates.filter((c) => picked.has(c.id)).length;
   if (!segment) return null;
   const meta = SEGMENT_META[segment];
   const toggle = (id: string) =>
@@ -71,8 +74,8 @@ export function AddSourceSheet({
       title={t(meta.addKey)}
       size="tall"
       footer={
-        <Button className="w-full" data-testid="plan-add-source-save" disabled={picked.size === 0 || busy} onClick={() => void add()}>
-          {t('plan.addSourceCount', { n: picked.size })}
+        <Button className="w-full" data-testid="plan-add-source-save" disabled={pickedHere === 0 || busy} onClick={() => void add()}>
+          {t('plan.addSourceCount', { n: pickedHere })}
         </Button>
       }
     >
@@ -81,7 +84,7 @@ export function AddSourceSheet({
         {candidates.length > 0 && (
           <SelectAllRow
             total={candidates.length}
-            selected={picked.size}
+            selected={pickedHere}
             testId="plan-add-source-all"
             onChange={(all) => setPicked(all ? new Set(candidates.map((c) => c.id)) : new Set())}
           />

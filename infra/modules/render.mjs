@@ -472,6 +472,9 @@ services:
       Auth__MetadataAddress: http://logto:${p.logto}/oidc/.well-known/openid-configuration
       Auth__RequireHttps: "false"` : ''}
       Auth__Audience: ${s.urls.api}
+      # invitation-only sign-up (features.inviteOnly, user 2026-10-07): the api reports it in /health capabilities; the policy itself lives in Logto (Bootstrap)
+      Auth__InviteOnly: "${s.features.inviteOnly ? 'true' : 'false'}"
+      Web__Url: ${s.urls.web}
 ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       Push__VapidPublicKey: \${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: \${PUSH_VAPID_PRIVATE_KEY:-}

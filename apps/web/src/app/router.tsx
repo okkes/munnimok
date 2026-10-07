@@ -12,6 +12,7 @@ import { MasterDetailLayout } from '@/ui/SplitPane';
 import { AppLayout } from './AppLayout';
 import { readSessionIdentity } from './session';
 import { LoginScreen } from '@/features/auth/LoginScreen';
+import { InviteScreen } from '@/features/auth/InviteScreen';
 import { HomeScreen } from '@/features/home/HomeScreen';
 import { HomeCustomizeScreen } from '@/features/home/HomeCustomizeScreen';
 import { TxDetailCustomizeScreen } from '@/features/transactions/TxDetailCustomizeScreen';
@@ -84,6 +85,26 @@ const loginRoute = createRoute({
     if (readSessionIdentity()) throw redirect({ to: '/home' });
   },
   component: LoginScreen,
+});
+
+/** the invitation's query as the mail carried it: the search parser reads an
+ *  all-digit value as a number, which is still the same text */
+function searchText(value: unknown): string | undefined {
+  if (typeof value === 'number') return String(value);
+  return typeof value === 'string' && value ? value : undefined;
+}
+// an invitation link (Logto's magic link, bounced in by main.tsx) is public —
+// the invitee has no account yet — so a sibling of /login outside the app
+// layout. No signed-in redirect on purpose: accepting is a fresh sign-in
+// whoever is signed in on this device (the SDK clears its tokens first)
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/invite',
+  component: InviteScreen,
+  validateSearch: (search: Record<string, unknown>): { token?: string; email?: string } => ({
+    token: searchText(search.token),
+    email: searchText(search.email),
+  }),
 });
 
 // everything behind the login gate lives under this pathless layout
@@ -319,6 +340,7 @@ const overviewTxRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
+  inviteRoute,
   appRoute.addChildren([
     indexRoute,
     homeRoute,

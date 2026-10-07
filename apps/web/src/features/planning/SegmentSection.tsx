@@ -18,7 +18,13 @@ export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency:
 }
 
 /** one subject: its face, what it holds against what it needs, how far it is spent */
-export function SubjectRow({ view, fmt, currency, onClick }: Readonly<{ view: SubjectView; fmt: MoneyFmt; currency: string; onClick: () => void }>) {
+export function SubjectRow({
+  view,
+  fmt,
+  currency,
+  onClick,
+  onFundToTarget,
+}: Readonly<{ view: SubjectView; fmt: MoneyFmt; currency: string; onClick: () => void; onFundToTarget?: () => void }>) {
   const { t } = useLang();
   const { subject } = view;
   const color = subject.color ?? SEGMENT_COLOR[subject.segment];
@@ -31,16 +37,32 @@ export function SubjectRow({ view, fmt, currency, onClick }: Readonly<{ view: Su
   return (
     <button
       data-testid={`plan-subject-${subject.id}`}
-      onClick={onClick}
-      className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
+      onClick={(e) => {
+        // a Needs chip funds with one tap (user 2026-10-07); the rest of the row
+        // stays the sheet's door — one button, so the markup keeps no button
+        // inside a button, and the sheet's "Fill to target" is the keyboard's road
+        const chip = (e.target as HTMLElement).closest('[data-testid^="plan-subject-need-"]');
+        if (chip && onFundToTarget) onFundToTarget();
+        else onClick();
+      }}
+      data-skipped={subject.snoozed === 1}
+      className={`m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0${subject.snoozed === 1 ? ' opacity-55' : ''}`}
     >
       <Tile icon={subject.icon ?? SEGMENT_META[subject.segment].icon} bg={softOf(color)} color={color} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{subject.name}</span>
-          <Pill tone={tone} testId={`plan-subject-status-${subject.id}`}>
-            {statusLine(view, t, fmt, currency)}
-          </Pill>
+          {view.status === 'underfunded' && onFundToTarget ? (
+            <span data-testid={`plan-subject-need-${subject.id}`} title={t('plan.fund.fill')} className="shrink-0 rounded-full">
+              <Pill tone={tone} testId={`plan-subject-status-${subject.id}`}>
+                {statusLine(view, t, fmt, currency)}
+              </Pill>
+            </span>
+          ) : (
+            <Pill tone={tone} testId={`plan-subject-status-${subject.id}`}>
+              {statusLine(view, t, fmt, currency)}
+            </Pill>
+          )}
         </span>
         <span className="mt-1 block">
           <ProgressBar
@@ -83,6 +105,7 @@ export function SegmentSection({
   fmt,
   currency,
   onFill,
+  onFundToTarget,
   onAdd,
   onOpen,
   folded = false,
@@ -96,7 +119,10 @@ export function SegmentSection({
   canFill: boolean;
   fmt: MoneyFmt;
   currency: string;
+  /** Fund all (user 2026-10-07): every subject of the segment to its target */
   onFill: () => void;
+  /** one subject to its target, from its Needs chip */
+  onFundToTarget: (view: SubjectView) => void;
   onAdd: () => void;
   onOpen: (view: SubjectView) => void;
   /** folded (user 2026-10-07): the list gives way to one summary line */
@@ -129,11 +155,11 @@ export function SegmentSection({
         <span className="flex shrink-0 items-center gap-1">
           {canFill && need > 0 && (
             <button
-              data-testid={`plan-segment-fill-${kind}`}
+              data-testid={`plan-segment-fundall-${kind}`}
               onClick={onFill}
               className="m-tap border-none bg-transparent text-[11px] font-semibold normal-case text-accent-deep"
             >
-              {t('plan.fillSegment', { amount: fmt(need, currency) })}
+              {t('plan.fundSegment', { amount: fmt(need, currency) })}
             </button>
           )}
           {editable && (
@@ -165,7 +191,16 @@ export function SegmentSection({
             {t('plan.segmentEmpty')}
           </p>
         ) : (
-          views.map((view) => <SubjectRow key={view.subject.id} view={view} fmt={fmt} currency={currency} onClick={() => onOpen(view)} />)
+          views.map((view) => (
+            <SubjectRow
+              key={view.subject.id}
+              view={view}
+              fmt={fmt}
+              currency={currency}
+              onClick={() => onOpen(view)}
+              onFundToTarget={canFill ? () => onFundToTarget(view) : undefined}
+            />
+          ))
         )}
       </div>
       )}

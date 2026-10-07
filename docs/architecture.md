@@ -405,7 +405,7 @@ flowchart TB
 * Same web bundle, packaged; no additional business logic.
 * OS integration only: push token registration (FCM/APNs), biometric app
   lock, haptics, camera (receipts), universal links
-  (`/gc-callback`, `/splits/join/*`, `/native-auth*`).
+  (`/gc-callback`, `/splits/join/*`, `/invite*`, `/native-auth*`).
 * Keyboard resizes the WebView natively; the webview origin is
   `capacitor://localhost` — cookies/storage are app-sandboxed.
 

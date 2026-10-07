@@ -5,6 +5,7 @@ import { useLogto, Prompt } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
 import { localCaUrl, logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
+import { getApiCapabilities } from '@/lib/api';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
@@ -75,6 +76,26 @@ function useOnLine(): boolean {
   return onLine;
 }
 
+/** the server's sign-up policy: an invitation-only munni says so under the
+ *  button (the /health capability, cached per page load). Asked only from
+ *  the sign-in button, i.e. with Logto configured — demo/offline builds
+ *  stay zero-network. */
+function useInviteOnly(): boolean {
+  const [inviteOnly, setInviteOnly] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getApiCapabilities()
+      .then((caps) => {
+        if (live && caps.inviteOnly) setInviteOnly(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return inviteOnly;
+}
+
 /** real OIDC sign-in — only rendered when Logto is configured. Disabled
  *  without connectivity, with a line saying why (the silent dead button
  *  cost real head-scratching). */
@@ -83,6 +104,7 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { signIn } = useLogto();
   const [failed, setFailed] = useState<string | null>(null);
   const caUrl = localCaUrl();
+  const inviteOnly = useInviteOnly();
   // the account step (user 2026-10-07): the name this device signed in with
   // last — continue as them (Logto's silent session), or ask for another
   const last = readLastAccount();
@@ -121,6 +143,11 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
         <p className="text-center text-[12px] leading-relaxed text-ink-3" data-testid="login-signin-error">
           <Icon name="alert-circle-outline" size={13} color="var(--m-warning)" /> {t('login.signInFailed')} {failed}
           {caUrl ? ` — ${t('login.signInFailedCaHint')}` : ''}
+        </p>
+      )}
+      {inviteOnly && (
+        <p className="text-center text-[12px] leading-relaxed text-ink-3" data-testid="login-invite-only">
+          {t('login.inviteOnly')}
         </p>
       )}
     </>

@@ -3,9 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Accounts;
+using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Push;
 using Munni.Api.Social;
+using Munni.Api.Tests.Admin;
 
 namespace Munni.Api.Tests;
 
@@ -30,15 +32,26 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         return client;
     }
 
-    private sealed class CountingHttpFactory : IHttpClientFactory
+    private sealed class CountingHttpFactory(HttpMessageHandler? handler = null) : IHttpClientFactory
     {
         public int Created;
         public HttpClient CreateClient(string name)
         {
             Created++;
-            return new HttpClient();
+            return new HttpClient(handler ?? new HttpClientHandler(), disposeHandler: false);
         }
     }
+
+    private static IConfiguration LogtoSettings(bool deleteIdentity = true) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Logto:DeleteIdentityOnAccountDeletion"] = deleteIdentity ? "true" : "false",
+                ["Logto:M2mAppId"] = "m2m-app",
+                ["Logto:M2mAppSecret"] = "m2m-secret",
+                ["Auth:Authority"] = "https://logto.test/oidc",
+            })
+            .Build();
 
     [Fact]
     public async Task Identity_deletion_can_be_disabled_per_environment()
@@ -46,18 +59,26 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         // staging shares Logto with production — with the knob off, the
         // Logto Management API must never even be contacted
         var factory = new CountingHttpFactory();
-        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Logto:DeleteIdentityOnAccountDeletion"] = "false",
-                ["Logto:M2mAppId"] = "m2m-app",
-                ["Logto:M2mAppSecret"] = "m2m-secret",
-                ["Auth:Authority"] = "https://logto.test/oidc",
-            })
-            .Build();
+        var config = LogtoSettings(deleteIdentity: false);
+        var logto = new LogtoManagement(factory, config, TimeProvider.System);
         await AccountDeletion.DeleteLogtoUserAsync(
-            factory, config, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, "sub-shared");
+            logto, config, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, "sub-shared");
         Assert.Equal(0, factory.Created);
+    }
+
+    [Fact]
+    public async Task The_identity_goes_through_the_shared_Logto_session_minted_once()
+    {
+        // one minting path with the admin portal's invitations (user
+        // 2026-10-07): two deletions ride one token
+        var logto = new FakeLogtoHandler();
+        var config = LogtoSettings();
+        var management = new LogtoManagement(new CountingHttpFactory(logto), config, TimeProvider.System);
+        await AccountDeletion.DeleteLogtoUserAsync(management, config, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, "sub-gone");
+        await AccountDeletion.DeleteLogtoUserAsync(management, config, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, "sub-gone-too");
+        Assert.Equal(1, logto.TokenMints);
+        Assert.Contains(logto.Requests, r => r.Method == HttpMethod.Delete && r.Path == "/api/users/sub-gone" && r.Bearer == "tok-1");
+        Assert.Contains(logto.Requests, r => r.Method == HttpMethod.Delete && r.Path == "/api/users/sub-gone-too" && r.Bearer == "tok-1");
     }
 
     private async Task<(Guid LeaverId, Guid FriendId)> SeedWorldAsync(string leaverSub, string friendSub, string prefix)

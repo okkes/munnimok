@@ -30,7 +30,7 @@ the platform's dedicated auth session API.
 |---|---|---|---|
 | Login / logout | `ASWebAuthenticationSession` (system auth sheet, shares Safari cookies, callback scheme handed straight back — no end-of-flow popup; one system consent alert at start is the sanctioned trade) | Chrome Custom Tabs (`androidx.browser`) + scheme callback — no confirm dialogs at all | Full-page same-tab OIDC redirect (no popups — popup flows fight blockers and mobile browsers) |
 | Bank consent (GoCardless / EnableBanking) | System browser via `openUrl` — NOT the auth session: PSD2 app-to-app requires the bank page to be able to hand off to the bank's own app, which auth-session sheets suppress. Return = universal link `/gc-callback` (the bank's "return to munni" is a real user tap, so it opens the app directly) | Same: external browser / bank app, return via App Link `/gc-callback` | Same-tab redirect out, same-tab return to `/gc-callback` inside the PWA scope |
-| Invite / join links (`/splits/join`) | Universal link (external tap — exactly what ULs are for) | App Link | Normal navigation |
+| Invite / join links (`/splits/join`, `/invite` — the invitation magic link) | Universal link (external tap — exactly what ULs are for) | App Link | Normal navigation |
 
 Principles the matrix encodes:
 - **Auth session APIs for first-party auth, external browser for

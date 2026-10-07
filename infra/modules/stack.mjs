@@ -114,7 +114,8 @@ export function normalizeEnv(platform, raw, fromFile) {
   const env = raw.env ?? fromFile;
   if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) throw new Error(`environment name "${env}" is invalid (2-12 lowercase letters/digits, not ${[...RESERVED_ENV_NAMES].join('/')})`);
   if (!Number.isInteger(raw.slot) || raw.slot < 0) throw new Error(`environment "${env}" on ${platform} has no integer slot`);
-  const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, banking: [], signin: [], ...(raw.features ?? {}) };
+  // inviteOnly: invitation-only sign-up — the environment's Logto admits new accounts through the admin portal's invitation alone; a Bootstrap applies it (user 2026-10-07)
+  const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: [], signin: [], ...(raw.features ?? {}) };
   // #420: the environment's own browser agents — pooled replicas (jobs at once each) and private slots, rendered beside its control plane
   const agents = normalizeAgents(raw.agents);
   return {

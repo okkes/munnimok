@@ -1,4 +1,6 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.Auth;
 using Munni.Api.Data;
 
 namespace Munni.Api.Social;
@@ -14,7 +16,7 @@ namespace Munni.Api.Social;
 /// </summary>
 public sealed class AccountDeletion(
     AppDbContext db,
-    IHttpClientFactory httpFactory,
+    ILogtoManagement logto,
     IConfiguration config,
     ILogger<AccountDeletion> logger,
     Connectors.ConnectorDisconnector? connectors = null)
@@ -45,7 +47,7 @@ public sealed class AccountDeletion(
         //     Go-offline conversions KEEP the identity in every environment
         //     (deleteIdentity=false): the login survives, the data is gone,
         //     and a later online sign-in provisions a fresh account.
-        if (deleteIdentity) await DeleteLogtoUserAsync(httpFactory, config, logger, user.Sub);
+        if (deleteIdentity) await DeleteLogtoUserAsync(logto, config, logger, user.Sub);
 
         // 7 · the user row last — a retry after any partial failure can re-enter
         db.Users.Remove(user);
@@ -108,12 +110,13 @@ public sealed class AccountDeletion(
     }
 
     /// <summary>
-    /// Logto Management API: client-credentials token for the M2M app,
-    /// then DELETE /api/users/{sub} (Logto's user id IS the OIDC sub).
-    /// Config: Logto:M2mAppId + Logto:M2mAppSecret; the endpoint derives
-    /// from Auth:Authority (…/oidc).
+    /// Logto Management API through the shared session (ILogtoManagement:
+    /// one minting path with the admin portal's invitations, user
+    /// 2026-10-07): DELETE /api/users/{sub} — Logto's user id IS the OIDC
+    /// sub. Config: Logto:M2mAppId + Logto:M2mAppSecret; the endpoint
+    /// derives from Auth:Authority (…/oidc).
     /// </summary>
-    internal static async Task DeleteLogtoUserAsync(IHttpClientFactory httpFactory, IConfiguration config, ILogger logger, string sub)
+    internal static async Task DeleteLogtoUserAsync(ILogtoManagement logto, IConfiguration config, ILogger logger, string sub)
     {
         // staging shares the Logto instance with production: a staging
         // deletion removes staging DATA only — destroying the identity
@@ -124,43 +127,24 @@ public sealed class AccountDeletion(
                 logger.LogInformation("account deletion: identity deletion disabled in this environment — {Sub} kept at Logto", sub);
             return;
         }
-        var appId = config["Logto:M2mAppId"];
-        var appSecret = config["Logto:M2mAppSecret"];
-        var authority = config["Auth:Authority"]; // https://logto.…/oidc
-        if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret) || string.IsNullOrEmpty(authority))
-        {
-            if (logger.IsEnabled(LogLevel.Information))
-                logger.LogInformation("account deletion: Logto M2M not configured — identity {Sub} left for manual cleanup", sub);
-            return;
-        }
         try
         {
-            var endpoint = authority.TrimEnd('/');
-            if (endpoint.EndsWith("/oidc")) endpoint = endpoint[..^"/oidc".Length];
-            var http = httpFactory.CreateClient("logto-m2m");
-
-            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}/oidc/token");
-            tokenRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
-                "Basic", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{appId}:{appSecret}")));
-            tokenRequest.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            var session = await logto.ConnectAsync(CancellationToken.None);
+            if (session is null)
             {
-                ["grant_type"] = "client_credentials",
-                ["resource"] = "https://default.logto.app/api",
-                ["scope"] = "all",
-            });
-            var tokenResponse = await http.SendAsync(tokenRequest);
-            tokenResponse.EnsureSuccessStatusCode();
-            using var tokenJson = System.Text.Json.JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
-            var accessToken = tokenJson.RootElement.GetProperty("access_token").GetString();
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("account deletion: Logto M2M not configured — identity {Sub} left for manual cleanup", sub);
+                return;
+            }
 
-            using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, $"{endpoint}/api/users/{Uri.EscapeDataString(sub)}");
-            deleteRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-            var deleteResponse = await http.SendAsync(deleteRequest);
-            if (!deleteResponse.IsSuccessStatusCode && deleteResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+            using var deleteRequest = session.Request(HttpMethod.Delete, $"/api/users/{Uri.EscapeDataString(sub)}");
+            using var deleteResponse = await session.Http.SendAsync(deleteRequest);
+            if (!deleteResponse.IsSuccessStatusCode && deleteResponse.StatusCode != HttpStatusCode.NotFound)
                 logger.LogWarning("account deletion: Logto delete for {Sub} answered {Status}", sub, deleteResponse.StatusCode);
         }
         catch (Exception ex)
         {
+            // never blocks the deletion: the server data is gone either way, the identity is cleaned up by hand
             logger.LogWarning(ex, "account deletion: Logto delete failed for {Sub}", sub);
         }
     }

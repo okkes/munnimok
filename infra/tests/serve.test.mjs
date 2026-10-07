@@ -182,7 +182,7 @@ test('envs: an unknown platform, a bad or reserved name and a duplicate are refu
 
 test('envs: an lcl environment takes the next slot, normalized features, and is rendered right away (bootstrap --stack)', async () => {
   runs.length = 0;
-  const res = await post(app, '/api/envs', { platform: 'lcl', env: 'test', channel: 'latest', appChannel: 'staging', label: ' Test ', features: { android: true, telemetry: false, connectors: true, banking: ['gocardless', 'bogus'], signin: ['apple'], nope: true }, androidPackage: 'app.munni.lcl.testing' });
+  const res = await post(app, '/api/envs', { platform: 'lcl', env: 'test', channel: 'latest', appChannel: 'staging', label: ' Test ', features: { android: true, telemetry: false, connectors: true, inviteOnly: true, banking: ['gocardless', 'bogus'], signin: ['apple'], nope: true }, androidPackage: 'app.munni.lcl.testing' });
   assert.equal(res.statusCode, 200);
   assert.equal(runs.length, 1, 'the render runs at once');
   assert.equal(runs[0].cmd, process.execPath);
@@ -196,6 +196,7 @@ test('envs: an lcl environment takes the next slot, normalized features, and is 
   assert.equal(env.features.telemetry, false);
   assert.deepEqual(env.features.banking, ['gocardless']);
   assert.deepEqual(env.features.signin, ['apple']);
+  assert.equal(env.features.inviteOnly, true, 'invitation-only sign-up is a feature the helper knows (user 2026-10-07)');
   assert.equal(env.features.nope, undefined);
   assert.equal(env.store.androidPackage, 'app.munni.lcl.testing');
   assert.equal(env.store.iosBundleId, 'app.munni.lcl.testing', 'the iOS id follows the Android package until named');
@@ -212,6 +213,7 @@ test('envs: a nas environment answers with its stack + GitHub environment names 
   assert.equal(body.environment, 'nas-prod');
   assert.equal(body.file, 'infra/platforms/nas/envs/prod.json');
   assert.equal(body.env.appChannel, 'production', 'prod defaults to production');
+  assert.equal(body.env.features.inviteOnly, false, 'registration stays open until an environment switches invitation-only sign-up on');
   assert.equal(runs.length, 0, 'nothing rendered locally');
   assert.ok(existsSync(join(PLATFORMS, 'nas', 'envs', 'prod.json')));
 });
