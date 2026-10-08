@@ -55,6 +55,11 @@ export interface SpaceRow extends SyncEnvelope {
   goalPoolAccountIds?: string[];
   /** #128: the accounts whose balances make the planning pool; absent = every checking and cash account */
   planPoolAccountIds?: string[];
+  /** user 2026-10-08: the space's custom trend graphs — a name and the
+   *  (sub)categories each one charts (a main id covers its subs). One
+   *  field under LWW on the space row like homeBlocks: small, rarely
+   *  edited, the whole list travels with every write. */
+  trendGraphs?: { id: string; name: string; catIds: string[] }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';

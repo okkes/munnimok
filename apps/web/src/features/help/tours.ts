@@ -276,9 +276,11 @@ export const TOURS: Tour[] = [
     icon: 'chart-bar',
     screen: '/trends',
     steps: [
-      { titleKey: 'tour.trends.1t', bodyKey: 'tour.trends.1b', illustration: '📊', anchor: 'trends-view-categories' },
-      { titleKey: 'tour.trends.2t', bodyKey: 'tour.trends.2b', illustration: '🌊', anchor: 'trends-view-cashflow' },
-      { titleKey: 'tour.trends.3t', bodyKey: 'tour.trends.3b', illustration: '📈', anchor: 'trends-view-networth' },
+      { titleKey: 'tour.trends.1t', bodyKey: 'tour.trends.1b', illustration: '📊', anchor: 'trends-cat-chart' },
+      { titleKey: 'tour.trends.2t', bodyKey: 'tour.trends.2b', illustration: '✏️', anchor: 'trends-graph-new' },
+      { titleKey: 'tour.trends.3t', bodyKey: 'tour.trends.3b', illustration: '🔀', anchor: 'trends-graph-view-compare-all' },
+      { titleKey: 'tour.trends.4t', bodyKey: 'tour.trends.4b', illustration: '🌊', anchor: 'trends-view-cashflow' },
+      { titleKey: 'tour.trends.5t', bodyKey: 'tour.trends.5b', illustration: '📈', anchor: 'trends-view-networth' },
     ],
   },
   {
