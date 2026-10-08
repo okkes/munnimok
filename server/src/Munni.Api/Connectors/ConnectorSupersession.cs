@@ -56,7 +56,10 @@ public sealed class ConnectorSupersession(AppDbContext db, ConnectorClient clien
 
         foreach (var session in superseded)
         {
-            logger.LogInformation("connector session {Old} of {Provider} superseded by {New}: it reached the same accounts", session.Id, provider, successor);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("connector session {Old} of {Provider} superseded by {New}: it reached the same accounts", session.Id, provider, successor);
+            }
             await EndAsync(session, ct);
             db.ConnectorSessions.Remove(session);
         }

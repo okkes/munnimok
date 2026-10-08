@@ -290,7 +290,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
       <main className="content">
         {session?.expired && (
           <p className="denied" data-testid="admin-session-expired">
-            Your session expired — sign in again.
+            Your session expired — sign in again.{' '}
             <button className="btn" data-testid="admin-session-signin" style={{ marginLeft: 12 }} onClick={session.signIn}>
               Sign in
             </button>
