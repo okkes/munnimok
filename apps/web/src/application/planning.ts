@@ -78,6 +78,8 @@ export interface PlanningOps {
   addExpense: (planId: string, shape: ExpenseShape) => Promise<string>;
   updateSubject: (subjectId: string, fields: Partial<Pick<PlanSubjectRow, 'name' | 'icon' | 'color' | 'catIds' | 'excludeCatIds' | 'targetCents'>>) => Promise<void>;
   removeSubject: (subjectId: string) => Promise<void>;
+  /** start over (user 2026-10-08): every subject of the plan goes — the money back to the pool, the spending back under Unplanned */
+  clearPlan: (plan: PlanRow) => Promise<void>;
   addMirrored: (planId: string, segment: PlanSegmentKind, source: MirroredSource) => Promise<string>;
   /** set the funding of one subject */
   fund: (subjectId: string, cents: number) => Promise<void>;
@@ -159,24 +161,15 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
   const write = (id: string, fields: Partial<SubjectFields>) => repo.upsert('planSubject', spaceId, id, fields);
 
   /**
-   * What the period already paid for a subject that is only now planned: it starts
-   * funded by that much (user 2026-10-07) — the balance dropped with those payments,
-   * so the pool is not asked for them a second time. A period ahead has spent
-   * nothing, so nothing changes there.
+   * A subject is born with nothing funded (user 2026-10-08) — what the period
+   * already paid for it is NOT funded by itself: the pool reads as what the
+   * period started with (the balance plus what already left), so the person
+   * assigns that money by hand, or leaves the subject in the red. A copy keeps
+   * its twin's funding where the caller passes one.
    */
-  const paidAlready = (model: PlanningModel, planId: string, id: string, fields: SubjectFields): number => {
-    const plan = model.data.plans.find((p) => p.id === planId);
-    if (!plan) return 0;
-    const row = { ...fields, id, spaceId, hlc: '', deleted: 0, fieldVersions: {} } as unknown as PlanSubjectRow;
-    return Math.max(0, subjectView(row, model.contextFor(model.periodOf(plan))).realizedCents);
-  };
-
   const copyShapes = async (planId: string, shapes: readonly SubjectShape[], funded?: (shape: SubjectShape) => number) => {
-    const model = await fresh();
     for (const shape of shapes) {
-      const id = idForShape(repo, planId, shape);
-      const fields = shapeFields(shape, planId, funded?.(shape) ?? 0);
-      await write(id, { ...fields, fundedCents: Math.max(fields.fundedCents, paidAlready(model, planId, id, fields)) });
+      await write(idForShape(repo, planId, shape), shapeFields(shape, planId, funded?.(shape) ?? 0));
     }
   };
 
@@ -272,7 +265,8 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
     addExpense: async (plan, shape) => {
       const model = await fresh();
       const id = repo.newId();
-      const fields: SubjectFields = {
+      // born unfunded (user 2026-10-08): its spending so far reads "Over by" until the person funds it
+      await write(id, {
         planId: plan,
         segment: 'expenses',
         order: nextOrder(model, plan, 'expenses'),
@@ -283,8 +277,7 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
         excludeCatIds: shape.excludeCatIds?.length ? shape.excludeCatIds : undefined,
         targetCents: shape.targetCents,
         fundedCents: 0,
-      };
-      await write(id, { ...fields, fundedCents: paidAlready(model, plan, id, fields) });
+      });
       act('planEdit');
       return id;
     },
@@ -300,11 +293,19 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
       act('planEdit');
     },
 
+    clearPlan: async (plan) => {
+      // start over (user 2026-10-08): the subjects go, and with them their funding (back to
+      // the pool by their absence) and their claim on the period's spending (back under
+      // Unplanned); the segments, the blueprints and the periods ahead are not touched
+      const model = await fresh();
+      await removeSubjects(model.subjectsOf(planIn(model, plan)));
+      act('planEdit');
+    },
+
     addMirrored: async (plan, segment, source) => {
       const model = await fresh();
       const id = mirroredSubjectId(plan, segment, source.id);
-      const fields: SubjectFields = { planId: plan, segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id, fundedCents: 0 };
-      await write(id, { ...fields, fundedCents: paidAlready(model, plan, id, fields) });
+      await write(id, { planId: plan, segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id, fundedCents: 0 });
       act('planEdit');
       return id;
     },

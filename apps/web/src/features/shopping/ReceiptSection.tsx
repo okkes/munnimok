@@ -6,7 +6,8 @@ import { useReceiptOps } from '@/application/receipts';
 import type { ReceiptOps } from '@/application/receipts';
 import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
 import type { ReceiptEntry } from '@/application/receiptLinks';
-import { useUnmatchedReceipts } from '@/application/connections';
+import { useAttachableReceipts } from '@/application/connections';
+import { useSpaceTransactions } from '@/application/transactions';
 import { partyName } from '@/features/connectors/logos';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
@@ -16,25 +17,27 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
-import { rankForTx } from './receiptPick';
+import { attachedElsewhere, describeTxFor, rankForTx } from './receiptPick';
 
 // the ranking lives in receiptPick.ts (user 2026-10-07: the review's helpers
 // share it without importing this component); its old door stays open
 export { rankForTx };
 
-/** the attached receipt lets go: a photo is gone for good, a store receipt is unmatched again */
-async function dropAttached(ops: ReceiptOps, attached: ReceiptEntry): Promise<void> {
+/** the attached receipt lets go of THIS transaction: a photo nobody else holds is gone for good, a store receipt
+ *  nobody else holds is unmatched again — another transaction holding it keeps it (user 2026-10-08) */
+async function dropAttached(ops: ReceiptOps, attached: ReceiptEntry, txId: string): Promise<void> {
   if (!attached.linkId) return;
-  if (attached.data.source === 'photo') await ops.remove(attached.linkId);
-  else await ops.unlinkReceipt(attached.linkId);
+  if (attached.data.source === 'photo') await ops.remove(attached.linkId, txId);
+  else await ops.unlinkReceipt(attached.linkId, txId);
 }
 
-/** what a tap in the sheet does: a receipt attaches (in the attached one's place when there is one), None lets it go */
+/** what a tap in the sheet does: a receipt attaches (in the attached one's place when there is one; one attached
+ *  elsewhere is attached here as well — user 2026-10-08), None lets it go */
 async function applyPick(ops: ReceiptOps, txId: string, attached: ReceiptEntry | null, row: ReceiptRow | null): Promise<void> {
   if (row?.id === attached?.data.id) return; // the attached one again, or None with nothing attached: nothing changes
   if (row && attached?.linkId) await ops.swapReceipt(attached.linkId, row, txId);
   else if (row) await ops.linkReceipt(row, txId);
-  else if (attached) await dropAttached(ops, attached);
+  else if (attached) await dropAttached(ops, attached, txId);
 }
 
 /** the attached receipt (user 2026-10-07: "see which one is attached and change it"):
@@ -114,10 +117,11 @@ function AttachRungs({
  * same sheet, marked, so it can be changed.
  */
 export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const navigate = useNavigate();
   const entry = useTxReceiptEntry(tx.id);
-  const unmatched = useUnmatchedReceipts();
+  const attachable = useAttachableReceipts();
+  const txs = useSpaceTransactions();
   const proposals = useProposedMatches();
   const receiptOps = useReceiptOps();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -131,13 +135,17 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const receipt = entry?.data ?? null;
   // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
   const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
-  // the receipts on offer: never the attached one twice (it leads the lists, marked)
-  const others = useMemo(() => (unmatched ?? []).filter((r) => r.id !== receipt?.id), [unmatched, receipt?.id]);
-  // the proposal's receipt asks on its own card, not among the suggestions (the review's rule)
+  // the receipts on offer: every receipt of the included shops, the attached one never twice (it leads the lists,
+  // marked); user 2026-10-08: one attached elsewhere stays on offer — its row says where it already sits
+  const others = useMemo(() => (attachable?.rows ?? []).filter((r) => r.id !== receipt?.id), [attachable, receipt?.id]);
+  // the suggestions: the unmatched receipts that fit; the proposal's receipt asks on its own card, not among them
+  // (the review's rule)
   const candidates = useMemo(
-    () => rankForTx(tx, others.filter((r) => r.id !== proposal?.receiptId)).slice(0, 6),
-    [tx, others, proposal?.receiptId],
+    () => rankForTx(tx, others.filter((r) => !attachable?.attachedTo.has(r.id) && r.id !== proposal?.receiptId)).slice(0, 6),
+    [tx, others, attachable, proposal?.receiptId],
   );
+  const elsewhere = useMemo(() => attachedElsewhere(attachable?.attachedTo, tx.id), [attachable, tx.id]);
+  const describeTx = useMemo(() => describeTxFor(txs, lang, tx.currency), [txs, lang, tx.currency]);
 
   /** the receipt screen, back here on return — the card's own door and the sheet's eye alike */
   const openReceipt = (receiptId: string) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
@@ -148,7 +156,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
     try {
       await receiptOps.attachPhoto(tx, file);
       // taken from Change, the photo replaces the attached receipt — its link is in before the old one goes
-      if (entry) await dropAttached(receiptOps, entry);
+      if (entry) await dropAttached(receiptOps, entry, tx.id);
       setAttachOpen(false);
     } finally {
       setBusy(false);
@@ -221,6 +229,8 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         selectedId={receipt?.id ?? null}
         showNone={receipt !== null}
         currency={tx.currency}
+        attachedTo={elsewhere}
+        describeTx={describeTx}
         onAccept={(link) => {
           void receiptOps.acceptMatch(link);
           setAttachOpen(false);

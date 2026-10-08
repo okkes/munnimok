@@ -86,6 +86,21 @@ describe('sessionExpiry (#222)', () => {
     expect(await attemptSilentReentry(signIn)).toBe(false);
     expect(signIn).not.toHaveBeenCalled();
   });
+
+  it('never redirects on the phone — the auth session pops the OS prompt by itself (user ss 2026-10-08); the banner is the door', async () => {
+    const g = globalThis as { Capacitor?: unknown };
+    g.Capacitor = { isNativePlatform: () => true };
+    try {
+      const signIn = vi.fn(async () => undefined);
+      expect(await attemptSilentReentry(signIn)).toBe(false);
+      expect(signIn).not.toHaveBeenCalled();
+      // no attempt was spent: nothing marked, the web's rules untouched
+      expect(sessionStorage.getItem('munni_grant_reheal')).toBeNull();
+      expect(localStorage.getItem('munni_grant_reheal_at')).toBeNull();
+    } finally {
+      delete g.Capacitor;
+    }
+  });
 });
 
 describe('watchForRevival (user 2026-10-07: a mark set by a passing refusal should lift by itself)', () => {

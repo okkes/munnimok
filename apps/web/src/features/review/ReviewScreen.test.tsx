@@ -1781,4 +1781,31 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('Albert Heijn'));
     expect((screen.getByTestId('review-notes') as HTMLTextAreaElement).value).toBe('checked the items');
   }, 25_000);
+
+  it('a receipt attached to another payment stays on the list and says where it sits (user 2026-10-08: several payments, one receipt)', async () => {
+    await seedShopsAndCard();
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revmulti'), { trackOutbox: false });
+    const { receiptLinkId } = await import('@/domain/feedIds');
+    const COOLBLUE = 'rcpt:coolblue:demo_conn_cb:c1';
+    // a reviewed payment already holds the Coolblue receipt
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rx0', { accountId: 'demo_main', date: '2026-01-06', amountCents: -5798, currency: 'EUR', merchant: 'Coolblue', catId: 'groceries', needsReview: 0 });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, receiptLinkId(DEMO_SPACE_ID, COOLBLUE), {
+      receiptId: COOLBLUE, source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue', txId: 'rx0', auto: 0,
+    });
+    seed.close();
+
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Amazon.nl'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('review-receipt-row'));
+    await screen.findByTestId('review-receipt-sheet');
+    // no suggestion (it is attached), but in the whole list with the note — and still pickable for this card
+    expect(screen.queryByTestId(`review-receipt-pick-${COOLBLUE}`)).toBeNull();
+    const note = await screen.findByTestId(`review-receipt-all-${COOLBLUE}-attached`);
+    expect(note.textContent).toContain('Attached to');
+    expect(note.textContent).toContain('Coolblue');
+    fireEvent.click(screen.getByTestId(`review-receipt-all-${COOLBLUE}`));
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Coolblue'));
+  }, 25_000);
 });

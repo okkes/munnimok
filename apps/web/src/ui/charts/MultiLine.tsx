@@ -31,6 +31,29 @@ function nonNullRuns(values: readonly (number | null)[]): Run[] {
   return runs;
 }
 
+/** the closed outline between two series over the first stretch where
+ *  both have a value (user 2026-10-08: the range view's low–high band) */
+function bandPath(
+  a: readonly (number | null)[],
+  b: readonly (number | null)[],
+  x: (i: number) => number,
+  y: (value: number) => number,
+): string {
+  const shared: number[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const both = typeof a[i] === 'number' && typeof b[i] === 'number';
+    if (!both) {
+      if (shared.length > 0) break;
+      continue;
+    }
+    shared.push(i);
+  }
+  if (shared.length < 2) return '';
+  const top = monotonePath(shared.map((i) => ({ x: x(i), y: y(a[i] as number) })));
+  const back = monotonePath([...shared].reverse().map((i) => ({ x: x(i), y: y(b[i] as number) })));
+  return `${top} L${back.slice(1)} Z`;
+}
+
 /** one tappable point (S2004: the handlers live outside the render
  *  nesting) */
 function ChartDot({
@@ -81,6 +104,7 @@ export function MultiLine({
   markerIndex,
   onPointClick,
   selected,
+  bandBetween,
 }: Readonly<{
   series: readonly {
     values: readonly (number | null)[];
@@ -100,6 +124,10 @@ export function MultiLine({
   /** interactive mode: every non-null point becomes a tappable dot */
   onPointClick?: (seriesIndex: number, pointIndex: number) => void;
   selected?: { seriesIndex: number; pointIndex: number } | null;
+  /** user 2026-10-08: a light wash between two series (indices into
+   *  `series`, the first one's colour) — the range view's low–high band;
+   *  testid `<testId>-band` */
+  bandBetween?: readonly [number, number];
 }>) {
   const n = Math.max(0, ...series.map((s) => s.values.length));
   const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
@@ -139,6 +167,10 @@ export function MultiLine({
     if (!last) return null;
     return <circle cx={x(last.start + last.points.length - 1)} cy={y(last.points.at(-1)!)} r={3} fill={color} />;
   };
+  const band =
+    bandBetween && series[bandBetween[0]] && series[bandBetween[1]]
+      ? bandPath(series[bandBetween[0]].values, series[bandBetween[1]].values, x, y)
+      : '';
 
   return (
     // without interaction the surrounding card carries the numbers in text
@@ -158,6 +190,16 @@ export function MultiLine({
           strokeWidth={1}
           strokeDasharray="2 3"
           data-testid={testId ? `${testId}-start` : undefined}
+        />
+      )}
+      {band && bandBetween && (
+        <path
+          d={band}
+          fill={series[bandBetween[0]].color}
+          fillOpacity={0.12}
+          stroke="none"
+          pointerEvents="none"
+          data-testid={testId ? `${testId}-band` : undefined}
         />
       )}
       {series.map((s, si) => {

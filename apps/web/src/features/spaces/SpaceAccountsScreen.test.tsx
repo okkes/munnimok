@@ -210,6 +210,69 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     expect(screen.queryByText(/Something went wrong/)).toBeNull();
   }, 15_000);
 
+  it('#445: an account a friend shared into the space never reads "not fetched any more" here — their connection lives on their phone (user ss 2026-10-08)', async () => {
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t3'), { trackOutbox: false });
+    // Elo's ING account, fetched by Elo's connection — an id this device has no row for
+    await repo.upsert('account', 'feed-elo', 'feedacct-elo', {
+      name: 'ING Elo',
+      type: 'checking',
+      source: 'connector',
+      provider: 'gocardless',
+      connectionId: 'conn-elo',
+      lastSyncedAt: '2026-09-30T08:00:00Z',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-elo', { feedSpaceId: 'feed-elo', accountId: 'feedacct-elo', type: 'checking', attachedBy: 'elo-sub', attachedByName: 'Elo' });
+    // my own account, fetched by a connection that is gone from this device: that one says so
+    await repo.upsert('account', 'feed-mine', 'feedacct-mine', {
+      name: 'ING mine',
+      type: 'checking',
+      source: 'connector',
+      provider: 'gocardless',
+      connectionId: 'conn-gone',
+      lastSyncedAt: '2026-09-30T08:00:00Z',
+      currency: 'EUR',
+      balanceCents: 100,
+      iban: 'NL13BUNQ2025000001',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-mine', { feedSpaceId: 'feed-mine', accountId: 'feedacct-mine', type: 'checking', attachedBy: USER_TEST_SUB, attachedByName: 'Me' });
+    db.close();
+
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/spaces': () => ['s-user', 'feed-elo', 'feed-mine'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-mine' }],
+        'GET /spaces/s-user/members': () => [member(ME, 'Me', 'owner'), member(BOB, 'Elo', 'contributor')],
+        'GET /spaces/s-user/accounts': () => [
+          { id: 'srv-elo', feedSpaceId: 'feed-elo', accountId: 'feedacct-elo' },
+          { id: 'srv-mine', feedSpaceId: 'feed-mine', accountId: 'feedacct-mine' },
+        ],
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('space-account-link-elo', {}, { timeout: 5000 }));
+    const sheet = await screen.findByTestId('space-account-info');
+    expect(sheet.textContent).toContain('Elo');
+    expect(screen.queryByTestId('space-account-uncovered')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('space-account-info')).toBeNull());
+
+    fireEvent.click(await screen.findByTestId('space-account-link-mine'));
+    await screen.findByTestId('space-account-info');
+    expect((await screen.findByTestId('space-account-uncovered')).textContent).toContain('Not fetched any more');
+  }, 20_000);
+
   it('#305: an attachment on someone ELSE\'s feed wears the shared badge; space-owned rows do not', async () => {
     await seedRows();
     renderAppAsUser('/spaces/s-user/accounts', {

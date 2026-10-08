@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.18.0',
+    date: '2026-10-08',
+    items: [
+      {
+        en: 'Trends, rebuilt: spending cards with the amount on every bar, your own graphs over any mix of categories, a "vs last period" view that compares today with the same day of the previous periods, a breakdown by sub-category, and the transactions behind every chart. The periods follow your space’s period dates. Cash flow is a filled balance line with the expected path to the end of the period and a range view of each period’s high and low — drag over any chart to read a value. Trends has a block on Home.',
+        nl: 'Trends, opnieuw gebouwd: uitgavenkaarten met het bedrag op elke balk, je eigen grafieken over elke mix van categorieën, een "t.o.v. vorige periode"-weergave die vandaag vergelijkt met dezelfde dag van vorige periodes, een uitsplitsing per subcategorie en de transacties achter elke grafiek. De periodes volgen de periodedata van je space. Cashflow is een gevulde saldolijn met het verwachte pad tot het einde van de periode en een bereikweergave van het hoogste en laagste punt per periode — sleep over een grafiek om een waarde te lezen. Trends heeft een blok op Home.',
+        tr: 'Trendler yeniden kuruldu: her çubukta tutarıyla harcama kartları, istediğiniz kategori karışımı üzerinde kendi grafikleriniz, bugünü önceki dönemlerin aynı günüyle karşılaştıran "önceki döneme göre" görünümü, alt kategoriye göre dağılım ve her grafiğin arkasındaki işlemler. Dönemler alanınızın dönem tarihlerini izler. Nakit akışı, dönem sonuna kadar beklenen yolu gösteren dolgulu bir bakiye çizgisi ve her dönemin en yüksek ve en düşük noktasını gösteren bir aralık görünümüdür — bir değeri okumak için grafiğin üzerinde sürükleyin. Trendlerin Ana sayfada bir bloğu var.',
+      },
+      {
+        en: 'Payoff planner: a chart per debt beside the total, an extra per month for one specific debt (its chart and the total move together), a horizon that fits your plan instead of the thirty-year minimums line, readable year labels, and a Debts entry that reads as a tool rather than another loan.',
+        nl: 'Aflosplanner: een grafiek per schuld naast het totaal, een extra per maand voor één specifieke schuld (haar grafiek en het totaal bewegen samen), een horizon die bij je plan past in plaats van de dertigjarige minimumlijn, leesbare jaarlabels en een ingang op Schulden die leest als gereedschap in plaats van als nog een lening.',
+        tr: 'Ödeme planlayıcı: toplamın yanında borç başına bir grafik, belirli bir borç için aylık ek (grafiği ve toplam birlikte hareket eder), otuz yıllık asgari çizgisi yerine planınıza uyan bir ufuk, okunabilir yıl etiketleri ve başka bir kredi gibi değil bir araç gibi okunan bir Borçlar girişi.',
+      },
+      {
+        en: 'Planning: the pool now counts what the period already spent — a plan made mid-period shows your balance plus what went out, and you decide which already-paid subjects to fund. Nothing is funded by itself any more. The unplanned sheet just plans; the suggestion amounts say they can be tapped; "Start over" in the menu removes every subject and returns the money and the spending to where they came from.',
+        nl: 'Plannen: de pot telt nu mee wat de periode al uitgaf — een plan halverwege de periode toont je saldo plus wat eruit ging, en jij bepaalt welke al betaalde onderwerpen je vult. Niets wordt meer vanzelf gevuld. Het ongeplande paneel plant alleen nog; de voorgestelde bedragen zeggen dat je erop kunt tikken; "Opnieuw beginnen" in het menu verwijdert elk onderwerp en zet het geld en de uitgaven terug waar ze vandaan kwamen.',
+        tr: 'Planlama: havuz artık dönemin zaten harcadığını da sayıyor — dönem ortasında yapılan bir plan bakiyenizi artı çıkanı gösterir ve zaten ödenmiş hangi konuları ayıracağınıza siz karar verirsiniz. Artık hiçbir şey kendiliğinden ayrılmıyor. Planlanmamış paneli yalnızca planlar; önerilen tutarlar dokunulabildiklerini söyler; menüdeki "Baştan başla" her konuyu kaldırır ve parayı ve harcamayı geldikleri yere geri koyar.',
+      },
+      {
+        en: 'Receipts: one receipt can prove several payments — the picker says where a receipt is already attached and still lets you pick it; detaching it from one transaction leaves the others.',
+        nl: 'Bonnen: één bon kan meerdere betalingen bewijzen — de kiezer zegt waar een bon al aan hangt en laat je hem toch kiezen; losmaken van één transactie laat de andere staan.',
+        tr: 'Fişler: tek bir fiş birkaç ödemeyi kanıtlayabilir — seçici bir fişin zaten nereye bağlı olduğunu söyler ve yine de seçmenize izin verir; bir işlemden ayırmak diğerlerini korur.',
+      },
+      {
+        en: 'Sign-in: the phone no longer loses its session once a day (its refresh token stops rotating; the operator applies it with a Bootstrap), the phone never opens the system sign-in prompt by itself, and "Use another account" with Google now shows Google’s account chooser.',
+        nl: 'Inloggen: de telefoon verliest zijn sessie niet meer dagelijks (zijn vernieuwingstoken roteert niet meer; de beheerder past het toe met een Bootstrap), de telefoon opent nooit meer uit zichzelf het systeeminlogvenster, en "Een ander account" met Google toont nu Googles accountkeuze.',
+        tr: 'Giriş: telefon oturumunu artık günde bir kaybetmiyor (yenileme belirteci artık dönmüyor; operatör bunu bir Bootstrap ile uygular), telefon sistem giriş istemini kendiliğinden açmıyor ve Google ile "Başka bir hesap" artık Google’ın hesap seçicisini gösteriyor.',
+      },
+      {
+        en: 'Bank feeds: a bank’s daily request limit no longer ends a connection — the night sync stands down and tries again; a missed night catches up the same day; reconnecting replaces the old connection instead of running beside it; an account a friend shares no longer reads "not fetched any more" on your device.',
+        nl: 'Bankfeeds: de daglimiet van een bank beëindigt een verbinding niet meer — de nachtsync wacht en probeert opnieuw; een gemiste nacht haalt dezelfde dag in; opnieuw verbinden vervangt de oude verbinding in plaats van ernaast te draaien; een rekening die een vriend deelt leest op jouw toestel niet meer als "niet meer opgehaald".',
+        tr: 'Banka akışları: bir bankanın günlük istek sınırı artık bir bağlantıyı bitirmiyor — gece eşitlemesi bekler ve yeniden dener; kaçırılan bir gece aynı gün telafi edilir; yeniden bağlanmak eskisinin yanında çalışmak yerine onu değiştirir; bir arkadaşın paylaştığı hesap cihazınızda artık "artık alınmıyor" diye okunmuyor.',
+      },
+    ],
+  },
+  {
     version: '5.17.0',
     date: '2026-10-07',
     items: [

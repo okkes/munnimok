@@ -35,7 +35,8 @@ import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { safeToSpend } from '@/domain/cashflow';
 import { BAND_MODES, bandEditable, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
-import { minIso, netWorthSeries } from '@/domain/trends';
+import { expenseSeries, finishedAverage, minIso, netWorthSeries } from '@/domain/trends';
+import { Bars } from '@/ui/charts/Bars';
 import { Line } from '@/ui/charts/Line';
 import { cleanBankText } from '@/lib/text';
 import { Sheet } from '@/ui/Sheet';
@@ -398,6 +399,7 @@ export function HomeScreen() {
     events: renderEventsBlock,
     splits: renderSplitsBlock,
     insights: renderInsightsBlock,
+    trends: renderTrendsBlock,
   };
   const layout = resolveHomeBlocks(space);
   const visibleBlocks = layout.filter((entry) => !entry.hidden);
@@ -1261,6 +1263,37 @@ export function HomeScreen() {
                 ? t('debts.perMonth', { amount: fmt(debtTotals.totalMonthlyCents, currency) })
                 : t('debts.count', { n: activeDebts.length })}
             </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      </>
+    );
+  }
+
+  function renderTrendsBlock() {
+    // user 2026-10-08: a door to the trends like the debts block — the
+    // last six periods' spending as a sparkline, this period against the
+    // average of the finished ones; the card IS the whole door
+    const periods6 = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 6);
+    const spend = expenseSeries(allTxs ?? [], periods6, null);
+    const current = spend.at(-1) ?? 0;
+    const average = finishedAverage(spend);
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('trends.title')}</span>
+        </div>
+        <button
+          data-testid="home-trends"
+          onClick={() => void navigate({ to: '/trends' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="w-24 shrink-0">
+            <Bars values={spend} height={36} color="var(--m-accent)" hollowLast decorative />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold text-ink">{t('trends.thisPeriod', { amount: fmt(current, currency) })}</span>
+            <span className="block text-[11px] text-ink-4">{t('trends.avgShort', { amount: fmt(average, currency) })}</span>
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>

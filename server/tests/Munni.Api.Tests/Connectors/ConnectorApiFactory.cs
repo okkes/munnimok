@@ -90,6 +90,14 @@ public sealed class ControlPlaneHost : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
+    /// <summary>The control plane's own word on a session, for what the relay did to it on its own (a supersede, 2026-10-08).</summary>
+    public async Task<Connector.Kit.Sessions.SessionState> SessionStateAsync(string sessionId)
+    {
+        using var scope = _app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Connector.Kit.Hosting.Data.ConnectorDbContext>();
+        return (await db.Sessions.SingleAsync(s => s.Id == sessionId)).State;
+    }
+
     public static async Task<ControlPlaneHost> StartAsync(int fetchWaitSeconds = 1)
     {
         var root = Path.Combine(Path.GetTempPath(), "munni-relay-tests", Guid.NewGuid().ToString("N"));

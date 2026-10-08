@@ -37,6 +37,8 @@ describe('applyReconcile (linked is the truth)', () => {
     // the space's edits on the matched import + a receipt + a reimb link
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'I1'), { txId: 'I1', catId: 'transport', needsReview: 0, notes: 'tank beurt' });
     await repo.upsert('receiptLink', SPACE, 'rcpt-1', { txId: 'I1', source: 'photo', date: '2026-06-10', totalCents: 1200, merchant: 'Shell' });
+    // user 2026-10-08: one receipt on two payments — the import is this one's SECOND holder
+    await repo.upsert('receiptLink', SPACE, 'rcpt-2', { txId: 'L1', alsoTxIds: ['I1'], source: 'photo', date: '2026-06-10', totalCents: 6200, merchant: 'Shell' });
     // an expense in the space claims the MISMATCHED import as its refund
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'L3'), { txId: 'L3', catId: 'salary', needsReview: 0, reimbursements: [{ txId: 'I2', amountCents: 500 }, { txId: 'I1', amountCents: 100 }] });
     return { store, repo };
@@ -55,8 +57,9 @@ describe('applyReconcile (linked is the truth)', () => {
     // the truth row inherited the edits in the attaching space
     const meta = await store.get('txMeta', txMetaId(SPACE, 'L2'));
     expect(meta).toMatchObject({ txId: 'L2', catId: 'transport', notes: 'tank beurt' });
-    // the receipt follows
+    // the receipt follows — as its first attachment and as a further one alike (user 2026-10-08)
     expect((await store.get('receiptLink', 'rcpt-1'))?.txId).toBe('L2');
+    expect(await store.get('receiptLink', 'rcpt-2')).toMatchObject({ txId: 'L1', alsoTxIds: ['L2'] });
     // judged imports are gone, history survives
     expect((await store.get('transaction', 'I1'))?.deleted).toBe(1);
     expect((await store.get('transaction', 'I2'))?.deleted).toBe(1);

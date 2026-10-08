@@ -89,3 +89,60 @@ plain redirects everywhere.
   `…://signed-out`). The hosted `/native-auth` bounce stays for builds that
   predate this (NA4's retirement waits for them to age out).
 - The Play fingerprint pending item above is superseded by the card.
+
+## Refresh tokens on the phone (2026-10-08)
+
+**The finding (prod Logto logs, masked).** The native app got
+`invalid_grant` on a refresh once a day (2026-10-07 16:20, 2026-10-08
+10:41); the user's screenshot at 12:41 shows the "session expired" banner
+and, popping up by itself, the iOS "wants to use <domain> to sign in"
+prompt — the "silent" re-entry had opened an ASWebAuthenticationSession.
+Logto 1.43 rotates the refresh token of a PUBLIC client (native and SPA,
+token endpoint auth `none`) on every refresh: oidc-provider's default
+policy, and Logto consults only `customClientMetadata.rotateRefreshToken`
+to switch it off. The webview sometimes loses the rotated token (its
+localStorage is not flushed when iOS suspends or kills the app), presents
+the previous one, and Logto's reuse detection destroys the whole grant:
+sign in again. Nothing in our code can make localStorage durable on the
+phone, so the policy is the lever.
+
+**The policy.** The native application carries `rotateRefreshToken: false`
+and `refreshTokenTtlInDays: 90` (the longest Logto allows). A refresh
+token that never rotates cannot die to reuse detection when the phone
+loses a write. The SPAs (web, admin, lab, control) keep rotation: a
+browser keeps localStorage, and the cross-tab Web Lock in
+`app/authToken.ts` serialises their refreshes.
+
+**The trade-off.** With rotation the phone's session slid along (every
+refresh minted a new 14-day token, up to oidc-provider's one-year cap) and
+could die at any moment to a lost write; without it the session is a fixed
+90-day window, then a sign-in through the auth session — the Logto session
+cookie usually survives in Safari's store, so it is one tap (credentials
+once when it did not). Rotation exists to detect a stolen refresh token
+(OAuth 2.1 for public clients); on the phone the token lives in the app's
+own storage — a copy needs the unlocked device — and the account's
+logged-in devices still disconnect a device the person does not recognise.
+Accepted for the phone only.
+
+**What applies it.** Bootstrap (`infra/modules/logto.mjs`: appDefinitions
+→ applyApps). An existing application is PATCHed with its whole
+metadata, so the policy converges on every environment's next Bootstrap —
+one run per environment (dev, staging, prod). The Google connector gains
+`prompts: ['select_account']` in the same run (Google's own session
+continued the same account after "Use another account"; the chooser is one
+tap on a normal sign-in and the only way to switch).
+
+**Existing phone sessions.** The moment Bootstrap ran, their refresh
+tokens stop rotating — but the token each phone holds keeps the TTL it was
+issued with (14 days from its last rotation); the 90-day window starts
+with the next sign-in. Until then an expiry shows the banner, whose Sign
+in button is the door.
+
+**The app's side (the same day).** The "silent" re-entry never runs on
+the phone (`attemptSilentReentry` answers false under the shell — the auth
+session is never silent); the token getter marks the session expired on an
+`invalid_grant` it sees itself and backs off 15 s after any failed refresh
+(`REFRESH_RETRY_AFTER_MS`, `app/authToken.ts`), so no page can hammer a
+dead grant; the admin portal, which refreshed a dead grant 669 times in
+three minutes on 2026-10-06, got the same guard (`apps/admin/src/auth.tsx`)
+with its own "Your session expired — sign in again" note.

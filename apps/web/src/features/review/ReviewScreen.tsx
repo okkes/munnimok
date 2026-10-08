@@ -6,9 +6,9 @@ import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/applic
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
-import { useUnmatchedReceipts } from '@/application/connections';
+import { useAttachableReceipts } from '@/application/connections';
 import { useReceiptOps } from '@/application/receipts';
-import { rankForTx } from '@/features/shopping/receiptPick';
+import { attachedElsewhere, describeTxFor, rankForTx } from '@/features/shopping/receiptPick';
 import { ReceiptPickSheet } from '@/features/shopping/ReceiptPickSheet';
 import { partyName } from '@/features/connectors/logos';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
@@ -1894,7 +1894,15 @@ export function ReviewScreen() {
   // the person decides here is decided on the Receipts screen as well
   const receiptEntry = useTxReceiptEntry(tx?.id);
   const receiptProposals = useProposedMatches();
-  const unmatchedReceipts = useUnmatchedReceipts();
+  const attachableReceipts = useAttachableReceipts();
+  // the suggestions come from the unmatched receipts; the search reaches every receipt, and one attached elsewhere
+  // says so under its row and stays pickable (user 2026-10-08: several payments, one receipt)
+  const unmatchedReceipts = useMemo(
+    () => (attachableReceipts?.rows ?? []).filter((r) => !attachableReceipts?.attachedTo.has(r.id)),
+    [attachableReceipts],
+  );
+  const receiptElsewhere = useMemo(() => attachedElsewhere(attachableReceipts?.attachedTo, tx?.id ?? ''), [attachableReceipts, tx?.id]);
+  const describeReceiptTx = useMemo(() => describeTxFor(allTxs, lang, tx?.currency ?? 'EUR'), [allTxs, lang, tx?.currency]);
   const receiptOps = useReceiptOps();
   const [receiptPickOpen, setReceiptPickOpen] = useState(false);
   // user 2026-10-06: the receipt the card attaches on confirm — the best
@@ -1902,7 +1910,7 @@ export function ReviewScreen() {
   const [receiptStage, setReceiptStage] = useState<ReceiptStage>(AUTO_STAGE);
   const receiptProposal = useMemo(() => (receiptProposals ?? []).find((l) => l.proposedTxId === tx?.id), [receiptProposals, tx?.id]);
   const receiptCandidates = useMemo(
-    () => (tx ? rankForTx(tx, (unmatchedReceipts ?? []).filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
+    () => (tx ? rankForTx(tx, unmatchedReceipts.filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
     [tx, unmatchedReceipts, receiptProposal?.receiptId],
   );
   const autoReceipt = useMemo(() => (tx && !receiptProposal ? autoReceiptFor(tx, receiptCandidates) : null), [tx, receiptProposal, receiptCandidates]);
@@ -2797,10 +2805,12 @@ export function ReviewScreen() {
           testIdPrefix="review-receipt"
           proposal={receiptProposal}
           candidates={receiptCandidates}
-          all={unmatchedReceipts ?? []}
+          all={attachableReceipts?.rows ?? []}
           selectedId={stagedReceiptId(receiptStage, autoReceipt?.id ?? null)}
           noneSelected={receiptStage.kind === 'none'}
           currency={tx.currency}
+          attachedTo={receiptElsewhere}
+          describeTx={describeReceiptTx}
           onAccept={(link) => { void receiptOps.acceptMatch(link); setReceiptPickOpen(false); }}
           onReject={(link) => { void receiptOps.rejectMatch(link); setReceiptPickOpen(false); }}
           onPick={(row) => { setReceiptStage(row ? { kind: 'picked', receipt: row } : { kind: 'none' }); setReceiptPickOpen(false); }}

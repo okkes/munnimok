@@ -5,6 +5,7 @@ import { readSessionIdentity } from '@/app/session';
 import { pullConnections, pushAllConnections, pushConnection, removeConnectionCipher } from './connectionSync';
 import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
 import { reevaluateSpace } from './receiptMatching';
+import { linkedTxIds } from './receiptLinks';
 import { logActivity } from './activity';
 import { storeConnLinkId } from '@/domain/feedIds';
 import { ConnectorError, connectorApi } from '@/features/connectors/api';
@@ -91,7 +92,8 @@ export function useConnections(): ConnectionView[] | undefined {
 /** a bank account the connector platform fetched, with the spaces it is attached to */
 export interface ConnectorAccountView {
   account: AccountRow;
-  attachedTo: { spaceId: string; name: string }[];
+  /** the spaces it is attached to, each with who attached it (whose connection feeds it, 2026-10-08) */
+  attachedTo: { spaceId: string; name: string; attachedBy?: string }[];
 }
 
 /**
@@ -113,12 +115,33 @@ export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
           account,
           attachedTo: links
             .filter((l) => l.accountId === account.id && spaces.has(l.spaceId))
-            .map((l) => ({ spaceId: l.spaceId, name: spaces.get(l.spaceId)! })),
+            .map((l) => ({ spaceId: l.spaceId, name: spaces.get(l.spaceId)!, attachedBy: l.attachedBy })),
         }))
         .sort((a, b) => a.account.name.localeCompare(b.account.name));
     },
     [],
   );
+}
+
+/** the connections a space includes (storeConnLink) */
+const includedConnections = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
+  new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
+
+/** the owner's global receipts the space may attach: every receipt of its included connections, newest first */
+async function attachableRows(store: StorageBackend, spaceId: string, feedId: string): Promise<ReceiptRow[]> {
+  const included = await includedConnections(store, spaceId);
+  const rows = (await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0 && r.instanceId != null && included.has(r.instanceId));
+  rows.sort((a, b) => b.date.localeCompare(a.date));
+  return rows;
+}
+
+/** per global receipt, the transactions its link in the space is attached to (an attached link only) */
+async function attachedTxIds(store: StorageBackend, spaceId: string): Promise<Map<string, string[]>> {
+  const attachedTo = new Map<string, string[]>();
+  for (const link of await store.bySpace('receiptLink', spaceId)) {
+    if (link.deleted === 0 && link.receiptId && link.txId) attachedTo.set(link.receiptId, linkedTxIds(link));
+  }
+  return attachedTo;
 }
 
 /**
@@ -132,19 +155,35 @@ export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
     async () => {
       const feedId = myStoreFeedId();
       if (!feedId) return [];
-      const included = new Set(
-        (await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId),
-      );
-      const linked = new Set(
-        (await store.bySpace('receiptLink', spaceId))
-          .filter((l) => l.deleted === 0 && l.receiptId && l.txId)
-          .map((l) => l.receiptId!),
-      );
-      const rows = (await store.bySpace('receipt', feedId)).filter(
-        (r) => r.deleted === 0 && r.instanceId != null && included.has(r.instanceId) && !linked.has(r.id),
-      );
-      rows.sort((a, b) => b.date.localeCompare(a.date));
-      return rows;
+      const linked = await attachedTxIds(store, spaceId);
+      return (await attachableRows(store, spaceId, feedId)).filter((r) => !linked.has(r.id));
+    },
+    [spaceId],
+  );
+}
+
+/** the picker's inventory (user 2026-10-08: a receipt attached elsewhere is still on offer, and says where it is) */
+export interface AttachableReceipts {
+  /** every receipt of the included connections, attached or not, newest first */
+  rows: ReceiptRow[];
+  /** the transactions each receipt is attached to in this space, by receipt id — absent = not attached */
+  attachedTo: Map<string, string[]>;
+}
+
+/**
+ * Owner view: every global receipt the active space may attach — the
+ * unmatched ones and the ones already proving a transaction alike
+ * (user 2026-10-08: several payments can end up with one receipt, so the
+ * picker lists it under each of them and says where it already sits).
+ */
+export function useAttachableReceipts(): AttachableReceipts | undefined {
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const feedId = myStoreFeedId();
+      if (!feedId) return { rows: [], attachedTo: new Map<string, string[]>() };
+      return { rows: await attachableRows(store, spaceId, feedId), attachedTo: await attachedTxIds(store, spaceId) };
     },
     [spaceId],
   );

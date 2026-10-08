@@ -157,7 +157,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         }
     }
 
-    /// <summary>Details once per account for the life of the consent (handed back as refreshed material when learned); balances every time.</summary>
+    /// <summary>Details once per account for the life of the consent (handed back as refreshed material when learned); balances every time the party's budget allows.</summary>
     private async Task<(List<Account> Accounts, SessionMaterial? Refreshed)> AccountsAsync(
         IJobContext ctx, ConsentMaterial consent, DateOnly today, CancellationToken ct)
     {
@@ -169,11 +169,39 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
             var account = known.Detailed ? known : await DetailedAsync(ctx, known, ct).ConfigureAwait(false);
             learned |= !known.Detailed && account.Detailed;
             detailed.Add(account);
-            var balances = await BalancesAsync(ctx.Http, account.Id, ct).ConfigureAwait(false);
             accounts.Add(BankRecords.NewAccount(ctx.SessionId,
-                OpenBankingRecords.ToAccount(account, consent, OpenBankingRecords.PickBalance(balances, today))));
+                OpenBankingRecords.ToAccount(account, consent, await BalanceAsync(ctx, account, today, ct).ConfigureAwait(false))));
         }
         return (accounts, learned ? (consent with { Accounts = detailed }).ToMaterial() : null);
+    }
+
+    /// <summary>
+    /// The account's balance now — or none when the party's budget refused
+    /// it, which is a fact about the day, not about the consent.
+    /// </summary>
+    /// <remarks>
+    /// The aggregators budget every endpoint on its own, and a bank like ING
+    /// allows a handful of balance reads per account per day. A refusal here
+    /// used to fail the whole pass (prod 2026-10-08: the second accounts pass
+    /// of one minute — the reconnect's and the scheduler's — hit the budget,
+    /// the session was ended for it, and the transactions, whose budget was
+    /// untouched, were never asked for). An account without a balance is
+    /// emitted without one: the consumer keeps the last balance it had, the
+    /// pass goes on to the next account and to the transactions, and the
+    /// note says why the figure did not move.
+    /// </remarks>
+    private async Task<Balance?> BalanceAsync(IJobContext ctx, ConsentAccount account, DateOnly today, CancellationToken ct)
+    {
+        try
+        {
+            var balances = await BalancesAsync(ctx.Http, account.Id, ct).ConfigureAwait(false);
+            return OpenBankingRecords.PickBalance(balances, today);
+        }
+        catch (ConnectorException ex) when (ex.Code == ErrorCode.RateLimited)
+        {
+            ctx.Note($"{account.Id}: the party's budget refused the balance for now; the last one known stands");
+            return null;
+        }
     }
 
     /// <summary>One account's rows over the window; a pending row is kept whatever its day, and what the party said about its budget is reported.</summary>

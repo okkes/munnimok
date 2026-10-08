@@ -74,6 +74,18 @@ describe('Home balance band (demo identity)', () => {
     expect(await screen.findByTestId('screen-goals')).toBeTruthy();
   }, 15_000);
 
+  it('the Trends block shows this period against the average and opens the trends (user 2026-10-08)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const block = await screen.findByTestId('home-trends', {}, { timeout: 5000 });
+    await waitFor(() => expect(block.textContent).toMatch(/This period €[1-9]/));
+    expect(block.textContent).toMatch(/avg €[1-9]/);
+    // six period bars, the running one outlined
+    expect(block.querySelectorAll('svg rect')).toHaveLength(6);
+    fireEvent.click(block);
+    await screen.findByTestId('screen-trends');
+  }, 15_000);
+
   it('Explore is a first-class block: it appears in Customize Home like any other (#121 v2)', async () => {
     renderApp('/home/customize');
     const rows = await screen.findAllByText('Explore');

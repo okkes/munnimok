@@ -55,6 +55,11 @@ export interface SpaceRow extends SyncEnvelope {
   goalPoolAccountIds?: string[];
   /** #128: the accounts whose balances make the planning pool; absent = every checking and cash account */
   planPoolAccountIds?: string[];
+  /** user 2026-10-08: the space's custom trend graphs — a name and the
+   *  (sub)categories each one charts (a main id covers its subs). One
+   *  field under LWW on the space row like homeBlocks: small, rarely
+   *  edited, the whole list travels with every write. */
+  trendGraphs?: { id: string; name: string; catIds: string[] }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
@@ -673,6 +678,9 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   receiptId?: string;
   /** absent = the receipt is present in the space but not attached yet */
   txId?: string;
+  /** the other transactions this receipt proves (user 2026-10-08: several payments, one receipt); `txId` stays
+   *  the first attachment so every existing reader keeps working; absent = attached to txId alone */
+  alsoTxIds?: string[];
   /** 'photo', or the connector provider id that fetched it */
   source: string;
   instanceId?: string;

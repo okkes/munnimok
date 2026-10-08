@@ -48,6 +48,14 @@ export interface PlanOptions {
   extraMonthlyCents?: number;
   /** paid in the first month, once */
   lumpSumCents?: number;
+  /**
+   * an extra per month aimed at ONE debt, by id (user 2026-10-08: "if I
+   * finetune the payment of a specific debt, I want to see the impact"):
+   * paid to that debt right after its minimum every month while it owes,
+   * outside the order; once the debt is gone it feeds the pool like a
+   * freed minimum (with the rollover)
+   */
+  extraByDebtCents?: Record<string, number>;
   /** freed minimums and the extra feed the next debt (the planner); off = minimums only (the baseline) */
   rollover?: boolean;
   maxMonths?: number;
@@ -72,6 +80,12 @@ export interface PlanResult {
   totalPaidCents: number;
   /** total owed after each month; index 0 is today */
   balances: number[];
+  /**
+   * every debt's balance after each month, by id, index 0 today — the
+   * per-debt charts and the total chart read the same walk, so a change
+   * to one debt shows on both (user 2026-10-08)
+   */
+  balancesByDebt: Record<string, number[]>;
   /** in payoff order */
   debts: DebtOutcome[];
   /** the minimums alone, per month */
@@ -101,27 +115,34 @@ interface Live {
   interest: number;
   paid: number;
   paidOffMonth: number | null;
+  /** the extra per month aimed at this debt alone, on top of its minimum */
+  extra: number;
 }
 
 const monthlyInterest = (balance: number, aprPct: number) => Math.round((balance * aprPct) / 100 / 12);
 
-/** one month's interest on the opening balances and every live debt's own minimum; returns what the minimums leave for the pool */
+/**
+ * one month's interest on the opening balances, then every live debt's
+ * own payment — its minimum and the extra aimed at it; returns what those
+ * payments leave for the pool (a capped payment's remainder, and the
+ * whole payment of a debt already gone)
+ */
 function accrueAndPayMinimums(live: Live[], rollover: boolean): number {
   let freed = 0;
   for (const l of live) {
-    const minimum = Math.max(0, l.debt.minMonthlyCents);
+    const own = Math.max(0, l.debt.minMonthlyCents) + l.extra;
     if (l.balance <= 0) {
-      // a debt already gone: its minimum keeps flowing into the plan
-      if (rollover) freed += minimum;
+      // a debt already gone: its minimum and its own extra keep flowing into the plan
+      if (rollover) freed += own;
       continue;
     }
     const accrued = monthlyInterest(l.balance, l.debt.aprPct);
     l.balance += accrued;
     l.interest += accrued;
-    const pay = Math.min(l.balance, minimum);
+    const pay = Math.min(l.balance, own);
     l.balance -= pay;
     l.paid += pay;
-    if (rollover) freed += minimum - pay;
+    if (rollover) freed += own - pay;
   }
   return freed;
 }
@@ -151,8 +172,11 @@ const outcomeOf = (l: Live, index: number): DebtOutcome => ({
   interestCents: l.interest,
   paidCents: l.paid,
   order: index + 1,
-  stuck: l.paidOffMonth === null && Math.max(0, l.debt.minMonthlyCents) <= monthlyInterest(l.debt.balanceCents, l.debt.aprPct),
+  stuck: l.paidOffMonth === null && Math.max(0, l.debt.minMonthlyCents) + l.extra <= monthlyInterest(l.debt.balanceCents, l.debt.aprPct),
 });
+
+/** the extra aimed at one debt, as cents or nothing */
+const ownExtra = (extras: Record<string, number> | undefined, id: string): number => Math.max(0, Math.round(extras?.[id] ?? 0));
 
 /** walk the months */
 export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): PlanResult {
@@ -161,10 +185,18 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
   const lump = Math.max(0, Math.round(options.lumpSumCents ?? 0));
   const horizon = Math.max(1, options.maxMonths ?? DEFAULT_HORIZON);
   const ordered = orderDebts(debts.filter((d) => d.balanceCents > 0), options.strategy);
-  const live: Live[] = ordered.map((debt) => ({ debt, balance: debt.balanceCents, interest: 0, paid: 0, paidOffMonth: null }));
+  const live: Live[] = ordered.map((debt) => ({
+    debt,
+    balance: debt.balanceCents,
+    interest: 0,
+    paid: 0,
+    paidOffMonth: null,
+    extra: ownExtra(options.extraByDebtCents, debt.id),
+  }));
   const minimums = ordered.reduce((sum, d) => sum + Math.max(0, d.minMonthlyCents), 0);
   const total = () => live.reduce((sum, l) => sum + l.balance, 0);
   const balances = [total()];
+  const balancesByDebt: Record<string, number[]> = Object.fromEntries(live.map((l) => [l.debt.id, [l.balance]]));
   let month = 0;
   let flat = 0;
   while (total() > 0 && month < horizon) {
@@ -175,6 +207,7 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
     markPaidOff(live, month);
     const after = total();
     balances.push(after);
+    for (const l of live) balancesByDebt[l.debt.id].push(l.balance);
     // nothing shrinks for a year: the payments do not beat the interest — stop pretending
     flat = after >= before ? flat + 1 : 0;
     if (flat >= 12) break;
@@ -184,6 +217,7 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
     totalInterestCents: live.reduce((sum, l) => sum + l.interest, 0),
     totalPaidCents: live.reduce((sum, l) => sum + l.paid, 0),
     balances,
+    balancesByDebt,
     debts: live.map((l, i) => outcomeOf(l, i)),
     minimumsCents: minimums,
   };
@@ -193,7 +227,7 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
 export const simulateBaseline = (debts: readonly PlanDebt[], maxMonths?: number): PlanResult =>
   simulatePlan(debts, { strategy: 'avalanche', rollover: false, maxMonths });
 
-/** the three orders side by side, same extra */
+/** the three orders side by side, same extras (the per-debt ones included) */
 export function compareStrategies(debts: readonly PlanDebt[], options: Omit<PlanOptions, 'strategy'>): Record<PayoffStrategy, PlanResult> {
   return {
     avalanche: simulatePlan(debts, { ...options, strategy: 'avalanche' }),
@@ -209,7 +243,7 @@ export interface LadderStep {
   totalInterestCents: number;
 }
 
-/** what a little more per month buys, relative to the plan as it stands */
+/** what a little more per month buys, relative to the plan as it stands (its per-debt extras stay in) */
 export function extraLadder(debts: readonly PlanDebt[], options: PlanOptions, moreCents: readonly number[]): LadderStep[] {
   const base = Math.max(0, options.extraMonthlyCents ?? 0);
   return moreCents.map((more) => {
@@ -223,6 +257,94 @@ export function monthAfter(today: string, n: number): string {
   const [y, m] = today.split('-').map(Number);
   const end = new Date(y, m - 1 + n, 1);
   return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/* ── the chart's grid ──────────────────────────────────────────────── */
+
+/** at most this many points per line: the chart stays light, the paths short */
+const CHART_POINTS = 120;
+/** the months past the plan's end, so the landing reads as a landing and not a wall */
+const HORIZON_ROOM = 6;
+/** the year strides a chart may label by — the smallest that keeps the labels apart wins */
+const YEAR_STRIDES: readonly number[] = [1, 2, 5, 10, 20, 50];
+/** the month strides for a horizon too short for years */
+const MONTH_STRIDES: readonly number[] = [1, 2, 3, 6];
+/** under this many months a chart labels months, not years */
+export const MONTH_TICKS_BELOW = 24;
+
+/**
+ * the months a payoff chart spans (user 2026-10-08: "if I drag to the
+ * max" the plan was a cliff at the left edge, because the x-axis still
+ * spanned the thirty-year minimums-only walk): the plan's own length
+ * with room — six months past its end at least, up to three times its
+ * length when the minimums run that long — never past the longer walk
+ */
+export function chartHorizon(planMonths: number, baselineMonths: number): number {
+  const plan = Math.max(0, planMonths);
+  const base = Math.max(0, baselineMonths);
+  const wanted = Math.max(plan + HORIZON_ROOM, Math.min(base, plan * 3));
+  return Math.max(1, Math.min(wanted, Math.max(base, plan)));
+}
+
+/** the months between two chart samples, so a horizon fits the point budget */
+export const sampleStep = (horizonMonths: number): number => Math.max(1, Math.ceil(horizonMonths / CHART_POINTS));
+
+/**
+ * a walk on the chart's grid: one value every `step` months from today up
+ * to the horizon; past the walk's end its last value holds — a paid-off
+ * debt stays at zero, a stalled one where it stalled
+ */
+export function sampleMonths(values: readonly number[], step: number, horizonMonths: number): number[] {
+  if (values.length === 0) return [];
+  const grid = Math.max(1, step);
+  const last = values.at(-1) ?? 0;
+  const out: number[] = [];
+  for (let month = 0; month <= horizonMonths; month += grid) out.push(month < values.length ? values[month] : last);
+  return out;
+}
+
+export interface ChartTick {
+  /** the grid index (the sample) the label sits under */
+  index: number;
+  label: string;
+}
+
+/** the marks every `stride` months from the start, each at its nearest sample; never two within an eighth of the width of each other */
+function marksEvery(totalMonths: number, step: number, stride: number, maxTicks: number, label: (month: number) => string): ChartTick[] {
+  const grid = Math.max(1, step);
+  const minGap = Math.max(1, Math.ceil(Math.floor(totalMonths / grid) / 8));
+  const ticks: ChartTick[] = [];
+  for (let month = 0; month <= totalMonths && ticks.length < maxTicks; month += stride) {
+    const index = Math.round(month / grid);
+    const prev = ticks.at(-1);
+    if (prev && index - prev.index < minGap) continue;
+    ticks.push({ index, label: label(month) });
+  }
+  return ticks;
+}
+
+/**
+ * year marks on the sampled grid (user 2026-10-08: every sampled year got
+ * a label and they overlapped): the start, then every 1, 2, 5 or 10 years
+ * from it — the smallest stride that keeps at most `maxTicks` labels; the
+ * label is the year of that mark
+ */
+export function yearTicks(totalMonths: number, step: number, today: string, maxTicks = 6): ChartTick[] {
+  const months = Math.max(0, totalMonths);
+  const stride = YEAR_STRIDES.find((years) => Math.floor(months / (12 * years)) + 1 <= maxTicks) ?? YEAR_STRIDES.at(-1) ?? 1;
+  const year = Number(today.slice(0, 4));
+  return marksEvery(months, step, 12 * stride, maxTicks, (month) => String(year + month / 12));
+}
+
+/**
+ * month marks for a short horizon (a year mark or two says nothing about
+ * a nine-month plan): every 1, 2, 3 or 6 months from the start; the label
+ * is that month as yyyy-mm, for the screen to word in the person's language
+ */
+export function monthTicks(totalMonths: number, step: number, today: string, maxTicks = 6): ChartTick[] {
+  const months = Math.max(0, totalMonths);
+  const stride = MONTH_STRIDES.find((n) => Math.floor(months / n) + 1 <= maxTicks) ?? MONTH_STRIDES.at(-1) ?? 1;
+  return marksEvery(months, step, stride, maxTicks, (month) => monthAfter(today, month));
 }
 
 /** the debts the planner works with: the active tracked loans, as the engine sees them */

@@ -120,6 +120,28 @@ describe('MultiLine', () => {
     expect(Number(marker.getAttribute('x2'))).toBe(Number(marked.getAttribute('cx')));
   });
 
+  it('bandBetween washes the stretch where both series have a value (user 2026-10-08: the range band)', () => {
+    render(
+      <MultiLine
+        series={[
+          { values: [100, 120, null, 90], color: 'teal' },
+          { values: [40, 60, null, 30], color: 'grey' },
+        ]}
+        height={120}
+        testId="band"
+        bandBetween={[0, 1]}
+      />,
+    );
+    const band = screen.getByTestId('band-band');
+    expect(band.getAttribute('fill')).toBe('teal');
+    expect(band.getAttribute('fill-opacity')).toBe('0.12');
+    // a closed outline: out along the high line, back along the low one
+    const d = band.getAttribute('d')!;
+    expect(d.startsWith('M')).toBe(true);
+    expect(d.endsWith('Z')).toBe(true);
+    expect(d.split(' C')).toHaveLength(3); // one segment out, one back — the gap at index 2 ends the band
+  });
+
   it('skipDotAt suppresses exactly that series-point dot; the path still passes through it', () => {
     render(
       <MultiLine

@@ -52,7 +52,7 @@ public sealed record ConnectorIngestResult(
 /// between fetch and ack costs nothing. Attaching to a space stays the
 /// user's explicit step — ingest never writes a link.
 /// </summary>
-public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<ConnectorIngest> logger)
+public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ConnectorSupersession supersession, ILogger<ConnectorIngest> logger)
 {
     /// <summary>The account-row source every connector-fed row carries (apps/web AccountSource gains it in M3).</summary>
     public const string Source = "connector";
@@ -255,16 +255,29 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         var written = 0;
         var dropped = 0;
         var now = time.GetUtcNow();
+        var reached = new List<string>(records.Count);
 
         foreach (var account in records)
         {
-            var accepted = await AccountAsync(user, provider, connectionId, account, now, touched, ct);
-            if (accepted is null) dropped++;
-            else written += accepted.Value;
+            var landed = await AccountAsync(user, provider, connectionId, account, now, touched, ct);
+            if (landed is null)
+            {
+                dropped++;
+                continue;
+            }
+            written += landed.Accepted;
+            if (landed.AccountRef is { } accountRef) reached.Add(accountRef);
         }
+
+        // the accounts this connection reaches: another session of the same party that
+        // reached them is the one a reconnect left behind (prod 2026-10-08), and goes
+        if (reached.Count > 0) await supersession.RetireAsync(user.Id, provider, connectionId, reached, ct);
 
         return new ConnectorIngestCounts(0, written, 0, 0, dropped);
     }
+
+    /// <summary>What one account record left: how many ops landed, and the reference it is filed under (null when the party still lists an account the person dropped).</summary>
+    private sealed record AccountLanding(int Accepted, string? AccountRef);
 
     /// <summary>
     /// One account: its feed, its row, and the reference the transactions
@@ -272,14 +285,14 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     /// many ops landed — zero when this minute already wrote the same row,
     /// which is what a transactions pass carrying its accounts does.
     /// </summary>
-    private async Task<int?> AccountAsync(
+    private async Task<AccountLanding?> AccountAsync(
         User user, string provider, string connectionId, JsonObject account, DateTimeOffset now, HashSet<string> touched, CancellationToken ct)
     {
         var id = account.Text("id");
         var externalId = account.Text(ExternalIdField);
         if (id is null || externalId is null) return null;
         // an account the person dropped while its consent lives on: the party still lists it, the relay leaves it alone
-        if (await db.ConnectorAccountRefs.AnyAsync(a => a.Id == id && a.Excluded, ct)) return 0;
+        if (await db.ConnectorAccountRefs.AnyAsync(a => a.Id == id && a.Excluded, ct)) return new AccountLanding(0, null);
 
         var iban = account.Text("iban");
         var accountRef = string.IsNullOrWhiteSpace(iban) ? $"CONN:{provider}:{externalId}" : ImportIds.Normalize(iban);
@@ -310,7 +323,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         var accepted = await ApplyAsync(feed, [op], touched);
 
         await RememberAccountAsync(reference, ct);
-        return accepted;
+        return new AccountLanding(accepted, accountRef);
     }
 
     /// <summary>The feed account row's fields: the party's facts, the seed-only name and type, the balance when stated.</summary>

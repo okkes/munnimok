@@ -194,7 +194,7 @@ public sealed class JobOutcomeService(
         var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == job.SessionId, ct);
         if (session is not null)
         {
-            await sessions.TransitionOrTerminateAsync(session, SessionStateFor(code, session.State), ct);
+            await sessions.TransitionOrTerminateAsync(session, SessionStateFor(code, session.State, job.Kind), ct);
         }
 
         // 2026-10-05 (user rule): a failure that needs a developer is an error
@@ -239,16 +239,44 @@ public sealed class JobOutcomeService(
             .ExecuteUpdateAsync(s => s.SetProperty(c => c.AnswerValue, (string?)null), ct);
 
     /// <summary>
+    /// The codes that say the provider no longer honours what the session
+    /// holds — a credential refused, a session or consent ended, a code
+    /// wrong, the one machine that held the profile de-authorised. Only a
+    /// person signing in again mends any of them.
+    /// </summary>
+    internal static readonly IReadOnlySet<ErrorCode> SignInCodes = new HashSet<ErrorCode>
+    {
+        ErrorCode.InvalidCredentials, ErrorCode.SessionExpired, ErrorCode.MfaFailed, ErrorCode.ConsentExpired, ErrorCode.AgentRevoked,
+    };
+
+    /// <summary>
     /// Each terminal code has a user-facing meaning, and the meaning is the
     /// point: "sign in again", "the provider is refusing us", "this is
     /// broken". A single generic failure state would make all three
     /// indistinguishable to the consumer.
     /// </summary>
-    public static SessionState SessionStateFor(ErrorCode code, SessionState current) => code switch
+    /// <remarks>
+    /// A failure that is not the session's — the party's budget, the party
+    /// down, no agent to run it, a question nobody answered, a shape that
+    /// moved, a request we got wrong, a run that did not add up — leaves a
+    /// working session working. Every one of them used to end it (prod
+    /// 2026-10-08): an ING consent through GoCardless answered
+    /// <c>rate_limited</c> on the second balances call of a minute, the
+    /// session went <c>failed</c> — terminal — so every later resume of a
+    /// perfectly valid consent was refused as <c>session_expired</c>, the
+    /// person reconnected into a SECOND session beside the first, and the
+    /// two then burnt the bank's daily budget between them, night after
+    /// night. A session that never became usable — a login that failed —
+    /// still fails: there is no material to keep working with. A run on a
+    /// working session the machine shows as running goes back to active,
+    /// the edge the state machine keeps for exactly that.
+    /// </remarks>
+    public static SessionState SessionStateFor(ErrorCode code, SessionState current, JobKind kind) => code switch
     {
         ErrorCode.BlockedByProvider => SessionState.Blocked,
-        ErrorCode.InvalidCredentials or ErrorCode.SessionExpired or ErrorCode.MfaFailed or ErrorCode.ConsentExpired =>
-            current == SessionState.Active ? SessionState.NeedsReauth : SessionState.Failed,
+        _ when SignInCodes.Contains(code) => current == SessionState.Active ? SessionState.NeedsReauth : SessionState.Failed,
+        _ when current == SessionState.Active => SessionState.Active,
+        _ when current == SessionState.Running && kind != JobKind.Login => SessionState.Active,
         _ => SessionState.Failed,
     };
 

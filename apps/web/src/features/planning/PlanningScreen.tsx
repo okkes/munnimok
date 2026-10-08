@@ -38,14 +38,20 @@ import { SubjectSheet } from './SubjectSheet';
 import { UnplannedSheet } from './UnplannedSheet';
 import { SEGMENT_META } from './planningUi';
 
-type MenuItem = 'blueprints' | 'sandbox' | 'segments' | 'reorder' | 'pool' | 'insights';
-const MENU: { id: MenuItem; icon: string; key: 'plan.menu.blueprints' | 'plan.menu.sandbox' | 'plan.menu.segments' | 'plan.menu.reorder' | 'plan.menu.pool' | 'plan.menu.insights' }[] = [
+type MenuItem = 'blueprints' | 'sandbox' | 'segments' | 'reorder' | 'pool' | 'insights' | 'startOver';
+const MENU: {
+  id: MenuItem;
+  icon: string;
+  key: 'plan.menu.blueprints' | 'plan.menu.sandbox' | 'plan.menu.segments' | 'plan.menu.reorder' | 'plan.menu.pool' | 'plan.menu.insights' | 'plan.menu.startOver';
+}[] = [
   { id: 'blueprints', icon: 'content-copy', key: 'plan.menu.blueprints' },
   { id: 'sandbox', icon: 'flask-outline', key: 'plan.menu.sandbox' },
   { id: 'segments', icon: 'view-sequential-outline', key: 'plan.menu.segments' },
   { id: 'reorder', icon: 'sort-variant', key: 'plan.menu.reorder' },
   { id: 'pool', icon: 'bank-outline', key: 'plan.menu.pool' },
   { id: 'insights', icon: 'chart-line', key: 'plan.menu.insights' },
+  // start over (user 2026-10-08): only a plan that can still be edited in full offers it
+  { id: 'startOver', icon: 'restart', key: 'plan.menu.startOver' },
 ];
 
 /** how far the pager walks into the future (the funded periods ahead and the empty ones after them) */
@@ -70,7 +76,7 @@ function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean
   return model.ahead.find((a) => a.period.start === period.start)?.plan ?? null;
 }
 
-/** the spending no subject answers for, by main — a row opens the sheet that funds it or plans it (user 2026-10-07) */
+/** the spending no subject answers for, by main — a row opens the sheet that plans it (user 2026-10-07; the set-aside door went 2026-10-08) */
 function UnplannedSection({
   rows,
   fmt,
@@ -232,6 +238,7 @@ export function PlanningScreen() {
   const [editing, setEditing] = useState<{ subject: PlanSubjectRow | null; preset?: EditorPreset } | null>(null);
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
   const [unplannedOpen, setUnplannedOpen] = useState<UnplannedMain | null>(null);
+  const [startOverOpen, setStartOverOpen] = useState(false);
   const cats = useCategories();
   const overBudget = useOverBudgetGuard(spaceId);
   // which segments are folded: this device remembers (user 2026-10-07)
@@ -255,6 +262,10 @@ export function PlanningScreen() {
     if (item === 'sandbox') {
       if (model?.sandbox) setSandboxMode(true);
       else void ops.createSandbox().then(() => setSandboxMode(true));
+      return;
+    }
+    if (item === 'startOver') {
+      setStartOverOpen(true);
       return;
     }
     setSheet(item);
@@ -394,7 +405,7 @@ export function PlanningScreen() {
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title={t('plan.menu.title')} size="form">
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-menu-sheet">
-          {MENU.map((item) => (
+          {MENU.filter((item) => item.id !== 'startOver' || editable).map((item) => (
             <Row key={item.id} icon={item.icon} title={t(item.key)} testId={`plan-menu-${item.id}`} onClick={() => pick(item.id)} />
           ))}
         </div>
@@ -431,17 +442,8 @@ export function PlanningScreen() {
           <AddSourceSheet segment={adding} model={model} plan={plan} ops={ops} onClose={() => setAdding(null)} />
           <UnplannedSheet
             row={editable ? unplannedOpen : null}
-            left={model.toAllocateOf(plan)}
-            guard={overBudget}
             fmt={fmt}
             currency={currency}
-            onFund={async (row, cents) => {
-              const main = cats.byId(row.mainId);
-              // born funded by what the period already paid; anything above that is what the pool gives (user 2026-10-07)
-              const id = await ops.addExpense(plan.id, { name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: 0 });
-              if (cents > row.cents) await ops.fund(id, cents);
-              setUnplannedOpen(null);
-            }}
             onPlan={(row) => {
               const main = cats.byId(row.mainId);
               setUnplannedOpen(null);
@@ -450,6 +452,19 @@ export function PlanningScreen() {
             onClose={() => setUnplannedOpen(null)}
           />
           <OverBudgetSheet guard={overBudget} fmt={fmt} currency={currency} />
+          {/* start over (user 2026-10-08): every subject goes — a big move, so it asks first, with no countdown */}
+          <DangerConfirmSheet
+            open={startOverOpen}
+            onOpenChange={setStartOverOpen}
+            title={t('plan.startOver.title')}
+            body={t('plan.startOver.body')}
+            confirmLabel={t('plan.startOver.confirm')}
+            cooldown={0}
+            testId="plan-startover-confirm"
+            onConfirm={() => {
+              void ops.clearPlan(plan).then(() => setStartOverOpen(false));
+            }}
+          />
           {openView && (
             <SubjectSheet
               view={openView}

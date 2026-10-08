@@ -88,6 +88,8 @@ export function ReceiptsScreen() {
 
   const renderRow = (entry: ReceiptEntry) => {
     const receipt = entry.data;
+    // user 2026-10-08: one receipt can prove several payments — the row counts them
+    const holders = entry.txIds?.length ?? 0;
     return (
       <button
         key={receipt.id}
@@ -108,6 +110,15 @@ export function ReceiptsScreen() {
         {!entry.txId && (
           <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-semibold text-warning" data-testid={`receipt-unmatched-${receipt.id}`}>
             {t('receipts.unmatched')}
+          </span>
+        )}
+        {holders > 1 && (
+          <span
+            className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent-deep"
+            data-testid={`receipt-multi-${receipt.id}`}
+            title={t('receipt.attachedToN', { n: holders })}
+          >
+            {`× ${holders}`}
           </span>
         )}
         <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>

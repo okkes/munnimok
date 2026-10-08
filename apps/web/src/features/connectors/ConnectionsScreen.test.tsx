@@ -234,6 +234,62 @@ describe('Connections hub (signed-in user)', () => {
     expect((await screen.findByTestId('connect-notes', {}, { timeout: 5000 })).textContent).toContain('stand-in');
   }, 15_000);
 
+  it('the reconnect door names the connection: the sign-in runs as that connection while it exists here, so the server replaces its session (prod 2026-10-08)', async () => {
+    await seedConnection('c-door', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    let request: { connectionId?: string } = {};
+    renderAppAsUser(`/connections?connect=${PROVIDER}&reconnect=c-door`, {
+      api: {
+        ...catalogue,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: (body) => {
+          request = body as typeof request;
+          return { sessionId: 'ses_door', state: 'active', bundle: 'sb_v1.door', providerAccount: { displayName: 'Tester', externalId: '777' }, custody: 'ephemeral', notes: [] };
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    expect((await screen.findByTestId('connect-notes', {}, { timeout: 5000 })).textContent).toContain('stand-in');
+    fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await waitFor(() => expect(screen.queryByTestId('connect-form')).toBeNull(), { timeout: 5000 });
+    expect(request).toMatchObject({ connectionId: 'c-door' });
+    // the connection exists: no naming step, and still one row — with the new session
+    expect(screen.queryByTestId('conn-name-input')).toBeNull();
+    await waitFor(async () => {
+      const db = await userDb();
+      const rows = (await db.storeConns.toArray()).filter((c) => c.deleted === 0);
+      const device = await db.connectorConns.get('c-door');
+      db.close();
+      expect(rows).toHaveLength(1);
+      expect(device?.sessionId).toBe('ses_door');
+    });
+  }, 20_000);
+
+  it('a reconnect naming a connection this device no longer has is a fresh connect', async () => {
+    let request: { connectionId?: string } = {};
+    renderAppAsUser(`/connections?connect=${PROVIDER}&reconnect=c-forgotten`, {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: (body) => {
+          request = body as typeof request;
+          return { sessionId: 'ses_fresh', state: 'active', bundle: 'sb_v1.fresh', providerAccount: { displayName: 'Tester', externalId: '778' }, custody: 'ephemeral', notes: [] };
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    expect((await screen.findByTestId('connect-notes', {}, { timeout: 5000 })).textContent).toContain('stand-in');
+    fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    // a fresh connection: its own id, and the naming step that follows a first connect
+    await screen.findByTestId('conn-name-input', {}, { timeout: 5000 });
+    expect(request.connectionId).toBeTruthy();
+    expect(request.connectionId).not.toBe('c-forgotten');
+  }, 20_000);
+
   it('#445: an account whose connection is gone is listed as not fetched any more, with the way back', async () => {
     renderAppAsUser('/connections', { api: { ...catalogue } });
     await screen.findByTestId('screen-connections');

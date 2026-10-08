@@ -97,6 +97,28 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     expect(links).toHaveLength(1);
   });
 
+  it('a transaction holding a receipt as one of several (user 2026-10-08) is spoken for: no other receipt is proposed for it', async () => {
+    await seedTx('tx-first', 'Albert Heijn', 0, { date: '2026-07-04' });
+    await seedTx('tx-held', 'Albert Heijn', 1);
+    await seedReceipt('t-500');
+    const sharedId = `rcpt:ah:${CONN}:t-500`;
+    await repo.upsert('receiptLink', SPACE, receiptLinkId(SPACE, sharedId), {
+      receiptId: sharedId,
+      source: 'ah',
+      instanceId: CONN,
+      date: '2026-07-05',
+      totalCents: 2350,
+      merchant: 'Albert Heijn',
+      txId: 'tx-first',
+      alsoTxIds: ['tx-held'],
+      auto: 0,
+    });
+    // a second receipt that fits tx-held to the cent finds it taken
+    await seedReceipt('t-501');
+    expect(await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts())).toEqual({ linked: 0, proposed: 0 });
+    expect((await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId)).toHaveLength(0);
+  });
+
   it('reevaluateSpace walks every store feed and narrows to one connection', async () => {
     await seedTx('tx-a', 'Albert Heijn', 1);
     await seedReceipt('t-400');

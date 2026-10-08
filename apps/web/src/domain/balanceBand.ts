@@ -12,7 +12,8 @@ export type BalanceBandMode = 'networth' | 'cash' | 'spendable' | 'custom';
 
 export const BAND_MODES: readonly BalanceBandMode[] = ['networth', 'cash', 'spendable', 'custom'];
 
-const LIQUID_TYPES = new Set<AccountRow['type']>(['checking', 'savings', 'cash']);
+/** the account types that are money in hand — the balance trend reads the same set (user 2026-10-08) */
+export const LIQUID_TYPES: ReadonlySet<AccountRow['type']> = new Set<AccountRow['type']>(['checking', 'savings', 'cash']);
 
 type BandSpace = Pick<SpaceRow, 'balanceBandMode' | 'balanceBandAccounts'>;
 

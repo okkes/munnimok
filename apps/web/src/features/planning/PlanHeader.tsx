@@ -9,7 +9,10 @@ import { AheadCircle } from './AheadCircle';
 /**
  * The plan's head: what is left to give a job (green at zero, amber while
  * money idles, red when more was given than the pool holds), the one-tap
- * fill and take-back, and the circle of periods funded ahead.
+ * fill and take-back, and the circle of periods funded ahead. The small
+ * line under the number says what it is made of (user 2026-10-08): what
+ * the period started with — the balances plus what already left — once
+ * anything was spent, the plain pool before that.
  */
 export function PlanHeader({
   model,
@@ -43,6 +46,12 @@ export function PlanHeader({
     line = t('plan.overGiven');
   }
   const hasFunding = model.subjectsOf(plan).some((s) => s.fundedCents > 0);
+  const started = model.startedWithOf(plan);
+  const spent = started - model.poolCents;
+  const poolLine =
+    spent > 0
+      ? t('plan.startedLine', { started: fmt(started, currency), pool: fmt(model.poolCents, currency), spent: fmt(spent, currency) })
+      : t('plan.poolLine', { amount: fmt(model.poolCents, currency) });
   return (
     <div className="flex items-center gap-4 rounded-card border border-line bg-surface p-4" data-testid="plan-header">
       <div className="min-w-0 flex-1">
@@ -51,7 +60,7 @@ export function PlanHeader({
         </div>
         <div className="text-[12px] text-ink-3">{line}</div>
         <div className="mt-1 text-[11px] text-ink-4" data-testid="plan-pool-line">
-          {t('plan.poolLine', { amount: fmt(model.poolCents, currency) })}
+          {poolLine}
         </div>
         {editable && (
           <div className="mt-3 flex flex-wrap gap-2">
