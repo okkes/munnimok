@@ -203,7 +203,7 @@ export function AreaLine({
     ...future.map((point) => ({ ...point, projected: true })),
   ];
   const first = points[0].date;
-  const totalDays = Math.max(1, dayDiff(first, all[all.length - 1].date));
+  const totalDays = Math.max(1, dayDiff(first, all.at(-1)?.date ?? first));
   const offsets = all.map((point) => dayDiff(first, point.date));
   const x = (date: string) => (dayDiff(first, date) / totalDays) * WIDTH;
   const values = all.map((point) => point.cents);
@@ -238,7 +238,6 @@ export function AreaLine({
       className="w-full outline-none"
       style={{ touchAction: 'none', cursor: 'crosshair' }}
       tabIndex={0}
-      role="group"
       aria-label={ariaLabel}
       data-testid={testId}
       onPointerDown={(e) => {

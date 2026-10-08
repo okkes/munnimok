@@ -85,7 +85,7 @@ export async function writeReceiptLink(
 export async function attachReceiptTo(repo: Repo, spaceId: string, receipt: ReceiptRow, txId: string): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
   const link = await repo.store.get('receiptLink', id);
-  if (!link || link.deleted !== 0 || !link.txId) return writeReceiptLink(repo, spaceId, receipt, txId, false);
+  if (link?.deleted !== 0 || !link.txId) return writeReceiptLink(repo, spaceId, receipt, txId, false);
   if (isLinkedTo(link, txId)) return id;
   await repo.upsert('receiptLink', spaceId, id, {
     alsoTxIds: [...linkedTxIds(link).filter((other) => other !== link.txId), txId],

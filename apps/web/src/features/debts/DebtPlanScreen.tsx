@@ -380,7 +380,10 @@ export function DebtPlanScreen() {
   const fmtMonth = (months: number) =>
     new Date(`${monthAfter(today, months)}-01`).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' });
   /** a month tick on a short chart: "Jan ’27" */
-  const wordMonth = (yyyymm: string) => `${new Date(`${yyyymm}-01`).toLocaleDateString(LOCALES[lang], { month: 'short' })} ’${yyyymm.slice(2, 4)}`;
+  const wordMonth = (yyyymm: string) => {
+    const month = new Date(`${yyyymm}-01`).toLocaleDateString(LOCALES[lang], { month: 'short' });
+    return `${month} ’${yyyymm.slice(2, 4)}`;
+  };
   const freeLabel = (r: PlanResult) => (r.months === null ? t('debtplan.freeNever') : t('debtplan.freeIn', { date: fmtMonth(r.months) }));
   /** where the dashed line really ends — it is drawn to the chart's edge, which may be sooner */
   const baseLegend = (months: number | null) => (months === null ? t('debtplan.baselineNever') : t('debtplan.baselineFree', { date: fmtMonth(months) }));

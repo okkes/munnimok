@@ -166,7 +166,7 @@ export function SpaceAccountsScreen() {
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
   // #445: only the person whose connection feeds the account can tell whether it still does —
   // a friend's attachment reads nothing here (user ss 2026-10-08: "shared by Elo" under a reconnect banner)
-  const infoUncovered = info?.account && liveIds ? uncoveredSince(info.account, liveIds, ownsLink(info.link, mySub)) : null;
+  const infoUncovered = uncoveredOf(info, liveIds, mySub);
 
   // #305: whose attachment is this? my own feeds come from /me/feeds —
   // anything else in the list was shared INTO the space by someone else
@@ -647,4 +647,10 @@ export function SpaceAccountsScreen() {
       />
     </div>
   );
+}
+
+/** #445: the info sheet's "not fetched any more" reading — only when the viewer's own connection feeds the account (S3776: out of the component) */
+function uncoveredOf(info: AttachedAccountEntry | null, liveIds: ReadonlySet<string> | undefined, mySub: string | undefined): string | null {
+  if (!info?.account || !liveIds) return null;
+  return uncoveredSince(info.account, liveIds, ownsLink(info.link, mySub));
 }

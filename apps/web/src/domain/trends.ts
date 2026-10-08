@@ -339,6 +339,21 @@ const recurringIsIncome = (rec: Pick<RecurringRow, 'catId'>): boolean => mainCat
  * already lands that day, so the salary is never counted twice) — and ends
  * flat at the period end. Nothing beyond those rows is guessed.
  */
+/** what the active recurring rows put in or take out per day of the window, and the days an income row lands on */
+function recurringDeltas(recurrings: readonly RecurringRow[], from: string, to: string): { deltas: Map<string, number>; incomeDays: Set<string> } {
+  const deltas = new Map<string, number>();
+  const incomeDays = new Set<string>();
+  for (const rec of recurrings) {
+    if (rec.deleted !== 0 || rec.active !== 1) continue;
+    const income = recurringIsIncome(rec);
+    for (const date of occurrencesBetween(rec, from, to)) {
+      deltas.set(date, (deltas.get(date) ?? 0) + (income ? Math.abs(rec.amountCents) : -Math.abs(rec.amountCents)));
+      if (income) incomeDays.add(date);
+    }
+  }
+  return { deltas, incomeDays };
+}
+
 export function balanceProjection(
   todayCents: number,
   today: string,
@@ -349,19 +364,9 @@ export function balanceProjection(
   const out: ProjectionPoint[] = [{ date: today, cents: todayCents }];
   if (periodEnd <= today) return out;
   const from = addDays(today, 1);
-  const deltas = new Map<string, number>();
-  const incomeDays = new Set<string>();
-  const add = (date: string, cents: number) => deltas.set(date, (deltas.get(date) ?? 0) + cents);
-  for (const rec of recurrings) {
-    if (rec.deleted !== 0 || rec.active !== 1) continue;
-    const income = recurringIsIncome(rec);
-    for (const date of occurrencesBetween(rec, from, periodEnd)) {
-      add(date, income ? Math.abs(rec.amountCents) : -Math.abs(rec.amountCents));
-      if (income) incomeDays.add(date);
-    }
-  }
+  const { deltas, incomeDays } = recurringDeltas(recurrings, from, periodEnd);
   if (payday && payday.date >= from && payday.date <= periodEnd && !incomeDays.has(payday.date)) {
-    add(payday.date, payday.amountCents);
+    deltas.set(payday.date, (deltas.get(payday.date) ?? 0) + payday.amountCents);
   }
   let running = todayCents;
   for (const date of [...deltas.keys()].sort((a, b) => a.localeCompare(b))) {

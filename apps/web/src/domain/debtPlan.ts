@@ -297,7 +297,7 @@ export const sampleStep = (horizonMonths: number): number => Math.max(1, Math.ce
 export function sampleMonths(values: readonly number[], step: number, horizonMonths: number): number[] {
   if (values.length === 0) return [];
   const grid = Math.max(1, step);
-  const last = values[values.length - 1];
+  const last = values.at(-1) ?? 0;
   const out: number[] = [];
   for (let month = 0; month <= horizonMonths; month += grid) out.push(month < values.length ? values[month] : last);
   return out;
@@ -331,7 +331,7 @@ function marksEvery(totalMonths: number, step: number, stride: number, maxTicks:
  */
 export function yearTicks(totalMonths: number, step: number, today: string, maxTicks = 6): ChartTick[] {
   const months = Math.max(0, totalMonths);
-  const stride = YEAR_STRIDES.find((years) => Math.floor(months / (12 * years)) + 1 <= maxTicks) ?? YEAR_STRIDES[YEAR_STRIDES.length - 1];
+  const stride = YEAR_STRIDES.find((years) => Math.floor(months / (12 * years)) + 1 <= maxTicks) ?? YEAR_STRIDES.at(-1) ?? 1;
   const year = Number(today.slice(0, 4));
   return marksEvery(months, step, 12 * stride, maxTicks, (month) => String(year + month / 12));
 }
@@ -343,7 +343,7 @@ export function yearTicks(totalMonths: number, step: number, today: string, maxT
  */
 export function monthTicks(totalMonths: number, step: number, today: string, maxTicks = 6): ChartTick[] {
   const months = Math.max(0, totalMonths);
-  const stride = MONTH_STRIDES.find((n) => Math.floor(months / n) + 1 <= maxTicks) ?? MONTH_STRIDES[MONTH_STRIDES.length - 1];
+  const stride = MONTH_STRIDES.find((n) => Math.floor(months / n) + 1 <= maxTicks) ?? MONTH_STRIDES.at(-1) ?? 1;
   return marksEvery(months, step, stride, maxTicks, (month) => monthAfter(today, month));
 }
 
