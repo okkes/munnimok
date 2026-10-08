@@ -1,5 +1,24 @@
 # Changelog
 
+## [5.18.0](https://github.com/okkes/munnimok/compare/v5.17.0...v5.18.0) (2026-10-08)
+
+
+### ✨ Features
+
+* **web:** one receipt proves several transactions ([2a16226](https://github.com/okkes/munnimok/commit/2a162262b9637e6ea998fba9e50456d3adb89128))
+* **web:** the payoff planner plans each debt - per-debt extras and charts, a horizon that fits the plan, year ticks that never overlap ([486d398](https://github.com/okkes/munnimok/commit/486d398f1b6c7598fe5d3c8a0fcd785a4eab0584))
+* **web:** the planning pool counts what the period already spent - nothing is funded by itself, a plain unplanned sheet, tappable suggestions, start over ([cb128ea](https://github.com/okkes/munnimok/commit/cb128ea7d1e555ddada8637d882bbacdde79cc5a))
+* **web:** trends rebuilt on the space's periods - spending cards with custom graphs, compare and breakdown views, a balance line with a scrubber ([88e913f](https://github.com/okkes/munnimok/commit/88e913fbe6656d8bbbae3dc2f569cd130609395e))
+
+
+### 🐞 Bug Fixes
+
+* **auth:** the phone keeps its session - no refresh-token rotation on the native app, a refresh cooldown, no self-opening sign-in prompt, Google's account chooser ([2282bcf](https://github.com/okkes/munnimok/commit/2282bcf87ab69dd9ac1650cf2bfb353bdc188c98))
+* **connectors:** a bank's daily limit no longer ends a connection - transient failures keep the session, balances degrade, the night sync catches up, a reconnect supersedes the old session ([534832a](https://github.com/okkes/munnimok/commit/534832a60c748746c3378682e11af9fabf803b9f))
+* **sonar:** the supersession log line checks its level first; the admin's expired-session note spaces its button explicitly ([6f005e3](https://github.com/okkes/munnimok/commit/6f005e30b8e002dcd54ca14c6142819e3edcb85a))
+* **sonar:** the web scan's nine notes - optional chains, .at(), two functions a notch under the complexity limit, no nested template, no group role on the chart ([ebdea4f](https://github.com/okkes/munnimok/commit/ebdea4fbfdc3be01f1d3568209c7d4b723557835))
+* **web:** trends polish from the gallery - income words never print on top of each other, empty periods carry no amount ([d07a726](https://github.com/okkes/munnimok/commit/d07a72610106d2164fdcc61cf012143f62c0ee52))
+
 ## [5.17.0](https://github.com/okkes/munnimok/compare/v5.16.0...v5.17.0) (2026-10-07)
 
 
