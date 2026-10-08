@@ -10,6 +10,7 @@ import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions, us
 import type { SpaceTx } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import { monthAfter, simulateBaseline, toPlanDebts } from '@/domain/debtPlan';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import { looksLikeDebtCreditor } from '@/domain/detectDebts';
@@ -181,6 +182,16 @@ export function DebtsScreen() {
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
   // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
   const totalMonthly = active.reduce((sum, s) => sum + monthlyPaymentCents(s.account), 0);
+  // the planner's teaser: where the minimums alone land — cheap (one walk), and it
+  // reads as a tool's promise rather than another loan's figure (user 2026-10-08)
+  const planPreview = useMemo(() => {
+    const debts = toPlanDebts(statuses ?? []);
+    if (debts.length === 0) return '';
+    const base = simulateBaseline(debts);
+    if (base.months === null) return t('debtplan.previewNever');
+    const date = new Date(`${monthAfter(today, base.months)}-01`).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' });
+    return t('debtplan.previewFree', { date });
+  }, [statuses, today, t, lang]);
 
   const renderCard = (status: LoanStatus) => {
     const { account, remainingCents, progress } = status;
@@ -305,19 +316,29 @@ export function DebtsScreen() {
             </div>
           </div>
         )}
-        {/* #413: the payoff planner — which debt first, what a little extra does, when each one ends */}
+        {/* #413: the payoff planner — which debt first, what a little extra does, when each
+            one ends. It is a TOOL, not another loan (user 2026-10-08: "it looks as if its just
+            another debt"): accent-tinted, a Tool badge, no progress bar, and a teaser line
+            from the minimums alone instead of a loan's figures */}
         {active.length > 0 && (
           <button
             data-testid="debts-plan"
             onClick={() => void navigate({ to: '/debts/plan' })}
-            className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface p-4 text-left"
+            className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-accent/30 bg-accent-soft/40 p-4 text-left"
           >
-            <Tile icon="chart-timeline-variant" />
+            <Tile icon="chart-timeline-variant" bg="var(--m-surface)" color="var(--m-accent-deep)" />
             <span className="min-w-0 flex-1">
-              <span className="block text-[15px] font-semibold text-ink">{t('debtplan.card')}</span>
-              <span className="block text-[11px] text-ink-4">{t('debtplan.cardSub')}</span>
+              <span className="flex items-center gap-2">
+                <span className="truncate text-[15px] font-semibold text-accent-deep">{t('debtplan.card')}</span>
+                <span className="shrink-0 rounded-full border border-accent/30 bg-surface px-2 py-0.5 text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
+                  {t('debtplan.toolBadge')}
+                </span>
+              </span>
+              <span className="block text-[11px] text-ink-3" data-testid="debts-plan-preview">
+                {planPreview}
+              </span>
             </span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            <Icon name="chevron-right" size={18} color="var(--m-accent-deep)" />
           </button>
         )}
         <UnassignedPaymentsCard bare={bare} loans={(statuses ?? []).map((s) => s.account)} currency={currency} />
