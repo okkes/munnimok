@@ -58,6 +58,10 @@ export function PoolSheet({
     >
       <div className="flex flex-col gap-3" data-testid="plan-pool">
         <p className="text-[12px] text-ink-3">{t('plan.poolHint')}</p>
+        {/* the pool rule (user 2026-10-08): the plan's number is what the period STARTED with, not the balance alone */}
+        <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] text-ink-2" data-testid="plan-pool-rule">
+          {t('plan.poolRule')}
+        </p>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {candidates.map((account) => {
             const on = ticks.has(account.id);

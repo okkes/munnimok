@@ -45,14 +45,15 @@ function useOpenSource() {
 }
 
 
-/** the amount chips: the target, the shortfall, the estimates (expenses) */
+/** the amount chips: the target, the shortfall, the estimates (expenses) — the one the field holds reads pressed */
 function AmountChips({
   view,
   model,
   fmt,
   currency,
+  selectedCents,
   onPick,
-}: Readonly<{ view: SubjectView; model: PlanningModel; fmt: MoneyFmt; currency: string; onPick: (cents: number) => void }>) {
+}: Readonly<{ view: SubjectView; model: PlanningModel; fmt: MoneyFmt; currency: string; selectedCents: number | null; onPick: (cents: number) => void }>) {
   const { t } = useLang();
   const chips: AmountSuggestion[] = [];
   if (view.targetCents !== null && view.targetCents > 0) chips.push({ id: 'target', label: t('plan.fund.chipTarget'), cents: view.targetCents });
@@ -62,7 +63,7 @@ function AmountChips({
     if (estimate.lastCents !== null) chips.push({ id: 'last', label: t('plan.subject.estimateLast'), cents: estimate.lastCents });
     if (estimate.averageCents !== null) chips.push({ id: 'avg', label: t('plan.subject.estimateAvg'), cents: estimate.averageCents });
   }
-  return <AmountSuggestions items={chips} fmt={fmt} currency={currency} testIdPrefix="plan-fund-chip" onPick={onPick} />;
+  return <AmountSuggestions items={chips} fmt={fmt} currency={currency} testIdPrefix="plan-fund-chip" selectedCents={selectedCents} onPick={onPick} />;
 }
 
 /** where to take money from: munni's picks first, then everybody with room */
@@ -224,7 +225,7 @@ export function SubjectSheet({
                 onChange={(e) => setDraft(e.target.value)}
                 className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none"
               />
-              <AmountChips view={view} model={model} fmt={fmt} currency={currency} onPick={(cents) => setDraft((cents / 100).toFixed(2))} />
+              <AmountChips view={view} model={model} fmt={fmt} currency={currency} selectedCents={typed} onPick={(cents) => setDraft((cents / 100).toFixed(2))} />
               <div className="flex flex-wrap gap-2">
                 {shortfallCents(view) > 0 && model.toAllocateOf(plan) > 0 && (
                   <Button size="sm" variant="outline" data-testid="plan-fund-fill" onClick={() => void ops.fillSubject(plan, subject.id).then(onClose)}>

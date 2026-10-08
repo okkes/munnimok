@@ -147,6 +147,9 @@ export interface PlanningModel {
   subjectsOf: (plan: PlanRow) => PlanSubjectRow[];
   viewsOf: (plan: PlanRow) => SubjectView[];
   segmentsOf: (plan: PlanRow) => PlanSegmentConfig[];
+  /** what the plan's period STARTED with: the pool now plus what the period already spent (see toAllocateOf) */
+  startedWithOf: (plan: PlanRow) => number;
+  /** what is left to give a job: what the period started with minus the subjects' funding and the other periods ahead */
   toAllocateOf: (plan: PlanRow) => number;
   reservationsOf: (plan: PlanRow) => Map<string, Reservation>;
   /** the period's spending outside every subject, by main category */
@@ -295,12 +298,33 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     });
   const aheadFundedCents = ahead.reduce((sum, a) => sum + a.fundedCents, 0);
   const pool = poolCents(data.accounts, data.space);
-  // what a plan still HOLDS of the pool: its funding net of what the period already
-  // spent — the balance dropped with every payment, so money that went out is not
-  // reserved a second time (user 2026-10-07: funding a bill already paid made the
-  // pool look emptier than it is); a period ahead has spent nothing yet, so its
-  // whole funding is held, and a plan never counts its own ahead funding twice
-  const heldOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + slackCents(v), 0);
+
+  const unplanned = new Map<string, UnplannedMain[]>();
+  const unplannedOf = (p: PlanRow): UnplannedMain[] => {
+    const cached = unplanned.get(p.id);
+    if (cached) return cached;
+    const covered = new Set<string>();
+    for (const subject of subjectsOf(p)) for (const id of familyOf(subject, data, budgetsById)) covered.add(id);
+    const list = unplannedByCategory(data.txs, periodOf(p), covered, data.catalog);
+    unplanned.set(p.id, list);
+    return list;
+  };
+
+  // THE POOL RULE (user 2026-10-08): the pool reads as what the period STARTED
+  // with — the balance now plus what the period already spent, inside the
+  // subjects and outside them — so money that already left is assigned by hand
+  // instead of being funded by itself. A mid-period plan over a €1,500 balance
+  // with €1,000 spent shows €2,500 to allocate; funding a subject for what it
+  // spent brings it back down. The subjects' funding comes off UNCLAMPED
+  // against their spending (an overspent subject hands its overspend back as
+  // money still to assign), and so does what the OTHER periods ahead hold — a
+  // plan never counts its own ahead funding twice. A period ahead has spent
+  // nothing, so its reading is the pool minus funding, as before. The sandbox
+  // and a past plan read their own subjects over their own period the same way.
+  // Home's safe-to-spend keeps reading funded-and-not-yet-spent (reservedCents).
+  const startedWithOf = (p: PlanRow): number =>
+    pool + viewsOf(p).reduce((sum, v) => sum + v.realizedCents, 0) + unplannedOf(p).reduce((sum, m) => sum + m.cents, 0);
+  const fundedOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + v.fundedCents, 0);
   const aheadHeldExcept = (p: PlanRow): number => ahead.filter((a) => a.plan.id !== p.id).reduce((sum, a) => sum + a.fundedCents, 0);
 
   const taken = new Set(ahead.map((a) => a.period.start));
@@ -339,13 +363,11 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     subjectsOf,
     viewsOf,
     segmentsOf: (p) => segmentsOf(p),
-    toAllocateOf: (p) => pool - heldOf(p) - aheadHeldExcept(p),
+    startedWithOf,
+    toAllocateOf: (p) => startedWithOf(p) - fundedOf(p) - aheadHeldExcept(p),
     reservationsOf: (p) => categoryReservations(subjectsOf(p), budgetsById, data.catalog),
-    unplannedOf: (p) => {
-      const covered = new Set<string>();
-      for (const subject of subjectsOf(p)) for (const id of familyOf(subject, data, budgetsById)) covered.add(id);
-      return unplannedByCategory(data.txs, periodOf(p), covered, data.catalog);
-    },    estimate: (family) => estimateTarget(family, data.txs, pastPeriods),
+    unplannedOf,
+    estimate: (family) => estimateTarget(family, data.txs, pastPeriods),
     contextFor,
     attention: currentViews.filter((v) => v.status === 'overspent'),
   };

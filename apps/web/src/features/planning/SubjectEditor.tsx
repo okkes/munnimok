@@ -363,6 +363,7 @@ export function SubjectEditor({
           fmt={fmt}
           currency={currency}
           testIdPrefix="plan-editor-chip"
+          selectedCents={target}
           onPick={(cents) => patch({ target: (cents / 100).toFixed(2) })}
         />
         <p className="px-1 text-[11px] text-ink-4">{t('plan.targetHint')}</p>
