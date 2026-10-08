@@ -6,7 +6,14 @@ import * as Sentry from '@sentry/react';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
 import { NativeLogtoClient, nativeCallbackUri } from './nativeAuth';
-import { setAccessTokenGetter, setOidcSignIn, setOidcSignOut, signalAuthReady } from '@/app/authToken';
+import {
+  noteRefreshFailed,
+  noteRefreshSucceeded,
+  setAccessTokenGetter,
+  setOidcSignIn,
+  setOidcSignOut,
+  signalAuthReady,
+} from '@/app/authToken';
 import {
   attemptSilentReentry,
   clearReentryMark,
@@ -104,9 +111,24 @@ function TokenBridge() {
           if (token) {
             clearSessionExpired();
             clearReentryMark();
+            noteRefreshSucceeded();
+            return token;
           }
-          return token;
-        } catch {
+          // the SDK (4.x) swallows a failed refresh into its shared context
+          // error and answers undefined — the error effect above reads the
+          // verdict; here the attempt counts as failed, so the callers of
+          // the next 15 s ask nobody (prod Logto logs 2026-10-08)
+          noteRefreshFailed();
+          return undefined;
+        } catch (err) {
+          noteRefreshFailed();
+          // a client that throws instead: the verdict is read HERE too, so
+          // the SDK's shared error state is not the only thing that stops
+          // the hammering — a breadcrumb, not an event (user rule 2026-10-05)
+          if (isInvalidGrantError(err) && markSessionExpired()) {
+            console.warn('refresh grant dead: invalid_grant from the token getter — asking for a sign-in');
+            void attemptSilentReentry(() => signIn(callbackUri())).catch(() => undefined);
+          }
           return undefined;
         }
       });
@@ -115,10 +137,14 @@ function TokenBridge() {
     }
     signalAuthReady(); // restore finished (either outcome) — sync may start
     return () => setAccessTokenGetter(null);
-  }, [getAccessToken, isAuthenticated, isLoading]);
+  }, [getAccessToken, isAuthenticated, isLoading, signIn]);
   useEffect(() => {
     if (!isAuthenticated) return;
-    return watchForRevival(async () => (await getAccessToken(config.logto.resource || undefined)) ?? undefined);
+    return watchForRevival(async () => {
+      const token = (await getAccessToken(config.logto.resource || undefined)) ?? undefined;
+      if (token) noteRefreshSucceeded(); // the probe minted — the bridge's cooldown ends with the mark
+      return token;
+    });
   }, [getAccessToken, isAuthenticated]);
   return null;
 }

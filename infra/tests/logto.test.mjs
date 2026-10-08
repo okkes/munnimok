@@ -87,8 +87,14 @@ test('appDefinitions: web/admin SPAs, the native shell, the api\'s m2m app — a
   assert.deepEqual(defs.native, {
     name: 'munni-nas-prod native', type: 'Native',
     oidcClientMetadata: { redirectUris: [`https://munni-prod-nas.${DOMAIN}/native-auth`, 'munni-prod-nas://auth-callback'], postLogoutRedirectUris: [`https://munni-prod-nas.${DOMAIN}/native-signed-out`, 'munni-prod-nas://signed-out'] },
-    customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] },
+    // the phone's refresh token never rotates and lives 90 days (prod Logto logs 2026-10-08: a rotated token the webview lost
+    // was presented again and the reuse detection killed the grant); the SPAs keep Logto's rotation
+    customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'], rotateRefreshToken: false, refreshTokenTtlInDays: 90 },
   });
+  for (const key of ['web', 'admin', 'lab', 'control']) {
+    assert.equal(defs[key].customClientMetadata.rotateRefreshToken, undefined, `${key}: a browser keeps localStorage and the cross-tab lock serialises its refreshes — rotation stays`);
+    assert.equal(defs[key].customClientMetadata.refreshTokenTtlInDays, undefined, `${key}: Logto's default TTL`);
+  }
   assert.deepEqual(defs.m2m, { name: 'munni-nas-prod api m2m', type: 'MachineToMachine' });
   assert.deepEqual(defs.control.oidcClientMetadata.redirectUris, [`https://control-nas.${DOMAIN}/auth-callback`], 'the cockpit lives on the shared stack\'s host');
   assert.deepEqual(Object.keys(appDefinitions(loadStack('munni-nas-staging'))), ['web', 'admin', 'lab', 'native', 'm2m'], 'staging does not power the cockpit');
@@ -125,6 +131,22 @@ test('applyApps: upsert by name — the first run creates the five apps and the 
   assert.equal(logto.state.secrets[m2m.id].length, 2, "Default secret + the module's own — read back, not minted again");
   assert.ok(logto.calls.filter((c) => c.method === 'PATCH').every((c) => c.body.oidcClientMetadata || c.body.type === 'MachineToMachine'));
   await assert.rejects(applyApps(prod, creds, { fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'bad credential' }) }), /401.*bad credential/);
+});
+
+test('applyApps: an application that already exists converges on the token policy — the PATCH carries the whole customClientMetadata, so the native app created before 2026-10-08 (rotation on, 14-day TTL) stops rotating on the next Bootstrap', async () => {
+  const prod = loadStack('munni-nas-prod');
+  // the live shape before the policy: the native app with its CORS origins only, the web app the same
+  const logto = fakeLogto({ apps: [
+    { id: 'native-old', name: 'munni-nas-prod native', type: 'Native', oidcClientMetadata: { redirectUris: ['munni-prod-nas://auth-callback'], postLogoutRedirectUris: [] }, customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] } },
+    { id: 'web-old', name: 'munni-nas-prod web', type: 'SPA', oidcClientMetadata: { redirectUris: [], postLogoutRedirectUris: [] }, customClientMetadata: { corsAllowedOrigins: [`https://munni-prod-nas.${DOMAIN}`] } },
+  ] });
+  const apps = await applyApps(prod, creds, { fetchImpl: logto.fetchImpl });
+  assert.equal(apps.native.id, 'native-old', 'the same application — the phones keep their app id');
+  const patch = logto.calls.find((c) => c.method === 'PATCH' && c.url.endsWith('/api/applications/native-old'));
+  assert.deepEqual(patch.body.customClientMetadata, { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'], rotateRefreshToken: false, refreshTokenTtlInDays: 90 });
+  assert.deepEqual(logto.state.apps.find((a) => a.id === 'native-old').customClientMetadata, patch.body.customClientMetadata, 'what Logto holds afterwards');
+  const web = logto.calls.find((c) => c.method === 'PATCH' && c.url.endsWith('/api/applications/web-old'));
+  assert.deepEqual(web.body.customClientMetadata, { corsAllowedOrigins: [`https://munni-prod-nas.${DOMAIN}`] }, 'the SPA is patched too and carries no rotation key — Logto keeps rotating its tokens');
 });
 
 test('ensureAdminRole: the API resource carries the `admin` scope and the role "munni admin" grants it — created once, a role that lost the scope gets it back', async () => {
@@ -337,6 +359,8 @@ test('social connectors live under their FIXED ids — a generated-id instance i
     assert.equal(post.body.id, 'google-universal', 'the proposed id IS the factory id');
     assert.equal(post.body.connectorId, 'google-universal');
     assert.equal(post.body.config.clientId, 'cid');
+    // Google's own session continued the same account after "Use another account" (user 2026-10-08) — the chooser is asked for
+    assert.deepEqual(post.body.config.prompts, ['select_account']);
     const exp = stale.calls.find((c) => c.method === 'PATCH' && c.url.endsWith('/sign-in-exp'));
     assert.deepEqual(exp.body.socialSignInConnectorTargets, ['google']);
 
@@ -347,6 +371,7 @@ test('social connectors live under their FIXED ids — a generated-id instance i
     assert.deepEqual(fine.calls.filter((c) => c.method !== 'GET').map((c) => c.method), ['POST', 'PATCH', 'PATCH'], 'the token, the config refresh, the sign-in experience');
     const patch = fine.calls.find((c) => c.method === 'PATCH' && c.url.endsWith('/api/connectors/google-universal'));
     assert.equal(patch.body.config.clientSecret, 'sec');
+    assert.deepEqual(patch.body.config.prompts, ['select_account'], 'an instance from before the prompt converges on the next Bootstrap');
 
     // nothing configured → nothing touched
     const none = fakeConnectors([]);

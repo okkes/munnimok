@@ -45,8 +45,38 @@ let inflight: Promise<string | undefined> | null = null;
 const withCrossTabLock = (fn: TokenGetter): Promise<string | undefined> =>
   typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('munni:oidc-token', fn) : fn();
 
+// The single-flight folds CONCURRENT callers only: the very next call after
+// a refresh that FAILED ran its own refresh again (prod Logto logs
+// 2026-10-08: the admin portal hammered a dead grant 669 times in three
+// minutes — the web app has the expiry mark, but a transient failure or a
+// verdict the SDK swallowed left the same hole). After a failed attempt
+// nobody asks Logto again for 15 s: callers get "no bearer" (the request
+// goes out without one — a 401 that proves nothing, lib/api.ts) and the
+// expiry handling or the revival probe decide what comes next. A minted
+// token lifts the cooldown at once. The getter (features/auth/logto.tsx)
+// is the attempt site, so only a real attempt arms it — never the
+// expired-mark short-circuit.
+export const REFRESH_RETRY_AFTER_MS = 15_000;
+let retryAfter = 0;
+
+export function noteRefreshFailed(): void {
+  retryAfter = Date.now() + REFRESH_RETRY_AFTER_MS;
+}
+
+export function noteRefreshSucceeded(): void {
+  retryAfter = 0;
+}
+
+export const isRefreshBackedOff = (): boolean => Date.now() < retryAfter;
+
+/** test seam — the cooldown is module state and must not leak between specs */
+export function resetRefreshBackoffForTests(): void {
+  retryAfter = 0;
+}
+
 export async function getAccessToken(): Promise<string | undefined> {
   if (!getter) return undefined;
+  if (isRefreshBackedOff()) return undefined;
   const current = getter;
   inflight ??= withCrossTabLock(current).finally(() => {
     inflight = null;

@@ -8,6 +8,8 @@
  * the UI says "sign in again", and the token bridge stops hammering
  * the dead grant.
  */
+import { isNativeApp } from '@/lib/platform';
+
 let expired = false;
 const listeners = new Set<() => void>();
 
@@ -76,8 +78,13 @@ const inQuietWindow = (): boolean => {
  * re-mints tokens without the user typing anything. Mid-use we show the
  * banner instead — a surprise redirect would eat unsaved sheet state.
  * A cross-tab cooldown keeps a dead IdP session from redirect-looping.
+ * Never on the phone: the platform auth session is not silent — it pops
+ * the OS "wants to use <domain> to sign in" prompt by itself (user ss
+ * 2026-10-08, a dead grant's re-entry near app open); there the banner's
+ * Sign in button is the door.
  */
 export async function attemptSilentReentry(signIn: () => Promise<void>): Promise<boolean> {
+  if (isNativeApp()) return false;
   if (!navigator.onLine) return false;
   if (!inQuietWindow()) return false;
   if (sessionStorage.getItem(REENTRY_KEY)) return false;

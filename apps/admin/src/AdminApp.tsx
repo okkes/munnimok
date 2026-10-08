@@ -129,6 +129,8 @@ interface AdminAppProps {
   getToken: (() => Promise<string | undefined>) | null;
   /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
   signOut?: () => void;
+  /** the OIDC session's state (absent in test-auth mode): a dead refresh grant, and the way back in */
+  session?: { expired: boolean; signIn: () => void };
 }
 
 /**
@@ -137,7 +139,7 @@ interface AdminAppProps {
  * upkeep. Talks to the same API (/admin/* gated server-side); it
  * deliberately shares no code with the member app.
  */
-export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>) {
+export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminAppProps>) {
   // survives the full page reload a Logto re-auth causes (else every token
   // hiccup dumps the operator back on Overview mid-task)
   const [screen, setScreen] = useState<Screen>(() => {
@@ -182,8 +184,14 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     [config.apiUrl, getToken, sub],
   );
 
-  const blocked = denied || unreachable || disconnected;
+  const sessionExpired = session?.expired === true;
+  // blocked: nothing loaded — the empty screens would only mislead (a dead session included)
+  const blocked = denied || unreachable || disconnected || sessionExpired;
   const reload = useCallback(async () => {
+    // a dead refresh grant (prod Logto logs 2026-10-08): no call would carry a
+    // bearer, so none goes out — the note below says why instead of "did not
+    // answer", and nothing hammers the api with 401s meanwhile
+    if (sessionExpired) return;
     const ping = await call('/admin/ping').catch(() => null);
     if (ping?.status === 410) {
       forgetDevice();
@@ -206,7 +214,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
     setInvitations(await readInvitations(invitesRes));
-  }, [call, config.apiUrl]);
+  }, [call, config.apiUrl, sessionExpired]);
 
   useEffect(() => {
     if (getToken || sub) void reload();
@@ -280,6 +288,14 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
       </aside>
 
       <main className="content">
+        {session?.expired && (
+          <p className="denied" data-testid="admin-session-expired">
+            Your session expired — sign in again.
+            <button className="btn" data-testid="admin-session-signin" style={{ marginLeft: 12 }} onClick={session.signIn}>
+              Sign in
+            </button>
+          </p>
+        )}
         {denied && (
           <p className="denied">
             This account has no admin access yet — its sign-in carries no admin scope. An operator switches admin on for it in the setup wizard

@@ -73,7 +73,23 @@ export function appDefinitions(stack) {
         redirectUris: [`${stack.urls.web}/native-auth`, `${stack.native.scheme}://auth-callback`],
         postLogoutRedirectUris: [`${stack.urls.web}/native-signed-out`, `${stack.native.scheme}://signed-out`],
       },
-      customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] },
+      customClientMetadata: {
+        corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'],
+        // The phone's refresh token never rotates (prod Logto logs 2026-10-08: one
+        // invalid_grant on a refresh a day). Logto 1.43 rotates the refresh token of
+        // a public client on EVERY refresh (oidc-provider's default policy — this
+        // key is the only thing Logto consults to switch it off); the webview
+        // sometimes loses the rotated token (its storage is not flushed when iOS
+        // suspends or kills the app), presents the previous one, and Logto's reuse
+        // detection destroys the whole grant → sign in again. A token that never
+        // rotates cannot die to reuse detection when the phone loses a write.
+        rotateRefreshToken: false,
+        // 90 days is the longest Logto allows; then a sign-in through the auth
+        // session (the Logto session cookie usually survives, so it is one tap).
+        // The SPAs keep rotation: browsers keep localStorage and the cross-tab
+        // lock serialises their refreshes (authToken.ts).
+        refreshTokenTtlInDays: 90,
+      },
     },
     m2m: { name: `${stack.stack} api m2m`, type: 'MachineToMachine' },
   };
@@ -111,7 +127,14 @@ const credential = (name, value) => {
   return value;
 };
 
-/** upsert-by-name; returns {web, admin, lab, native, m2m, control?, resource} */
+/**
+ * upsert-by-name; returns {web, admin, lab, native, m2m, control?, resource}.
+ * An existing application is PATCHed with its WHOLE definition — redirect
+ * URIs and customClientMetadata alike (Logto replaces the jsonb column with
+ * what the patch carries) — so a policy change such as the native app's
+ * refresh-token rotation lands on every environment's next Bootstrap, never
+ * only on the apps a first run creates.
+ */
 export async function applyApps(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const existing = await call('/applications?page_size=100');
@@ -187,7 +210,10 @@ export async function applySocialConnectors(stack, creds, { fetchImpl = localAwa
   const call = await client(stack, creds, fetchImpl);
   const wanted = [];
   const { LOGTO_GOOGLE_CLIENT_ID, LOGTO_GOOGLE_CLIENT_SECRET, LOGTO_APPLE_CLIENT_ID, LOGTO_APPLE_TEAM_ID, LOGTO_APPLE_KEY_ID, LOGTO_APPLE_PRIVATE_KEY } = process.env;
-  if (LOGTO_GOOGLE_CLIENT_ID && LOGTO_GOOGLE_CLIENT_SECRET) wanted.push({ target: 'google', connectorId: 'google-universal', config: { clientId: LOGTO_GOOGLE_CLIENT_ID, clientSecret: LOGTO_GOOGLE_CLIENT_SECRET, scope: 'openid profile email' } });
+  // prompts: Google's own session continued the same account after "Use another account" (user 2026-10-08: "when I select
+  // google to login, it just automatically logs into my account") — prompt=select_account makes Google show its chooser;
+  // the chooser is one tap on a normal sign-in and the only way to switch
+  if (LOGTO_GOOGLE_CLIENT_ID && LOGTO_GOOGLE_CLIENT_SECRET) wanted.push({ target: 'google', connectorId: 'google-universal', config: { clientId: LOGTO_GOOGLE_CLIENT_ID, clientSecret: LOGTO_GOOGLE_CLIENT_SECRET, scope: 'openid profile email', prompts: ['select_account'] } });
   if (LOGTO_APPLE_CLIENT_ID && LOGTO_APPLE_TEAM_ID && LOGTO_APPLE_KEY_ID && LOGTO_APPLE_PRIVATE_KEY) wanted.push({ target: 'apple', connectorId: 'apple-universal', config: { clientId: LOGTO_APPLE_CLIENT_ID, teamId: LOGTO_APPLE_TEAM_ID, keyId: LOGTO_APPLE_KEY_ID, privateKey: LOGTO_APPLE_PRIVATE_KEY, scope: 'name email' } });
   if (!wanted.length) return { applied: [] };
   const existing = await call('/connectors?page_size=100');

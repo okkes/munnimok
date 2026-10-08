@@ -100,6 +100,18 @@ describe('AdminApp (test-auth mode)', () => {
     expect(signOut).toHaveBeenCalledTimes(2);
   });
 
+  it('a dead refresh grant (prod Logto logs 2026-10-08): the note offers Sign in, and no call goes out without a bearer', async () => {
+    const calls = scriptFetch(HAPPY_ROUTES());
+    const signIn = vi.fn();
+    render(<AdminApp config={CONFIG} getToken={async () => undefined} signOut={vi.fn()} session={{ expired: true, signIn }} />);
+    fireEvent.click(screen.getByTestId('admin-session-signin'));
+    expect(signIn).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toEqual([]);
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+    expect(screen.queryByTestId('overview-tiles')).toBeNull();
+  });
+
   it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
     scriptFetch({ 'GET /admin/ping': () => ({ status: 500 }) });
     render(<AdminApp config={CONFIG} getToken={null} />);
