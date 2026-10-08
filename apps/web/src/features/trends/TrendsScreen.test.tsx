@@ -33,7 +33,11 @@ describe('TrendsScreen (demo identity)', () => {
     // the Periods view: bars with their amounts on top, the current period picked
     const chart = await screen.findByTestId('trends-cat-chart');
     await waitFor(() => expect(screen.getByTestId('trends-cat-current').textContent).toMatch(/€[1-9]/));
-    expect(within(chart).getAllByText(/€/).length).toBe(12);
+    // an amount on every bar that has one; an empty period carries no "€0" (gallery 2026-10-08)
+    const amounts = within(chart).getAllByText(/€/);
+    expect(amounts.length).toBeGreaterThan(0);
+    expect(amounts.length).toBeLessThanOrEqual(12);
+    expect(amounts.every((node) => /€[1-9]/.test(node.textContent ?? ''))).toBe(true);
     expect(screen.getByTestId('trends-cat-chart-selected')).toBeTruthy();
     // tapping a bar picks that period: the footer names its range and the door follows
     fireEvent.click(screen.getByTestId('trends-cat-chart-bar-10'));

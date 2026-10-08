@@ -161,7 +161,8 @@ export function SpendingCard({
               testId={chartTestId}
               values={values}
               labels={[...labels]}
-              valueLabels={values.map((cents) => compactMoney(cents, currency, lang))}
+              // an empty period says nothing — a row of "€0" under the bars read as noise (gallery 2026-10-08)
+              valueLabels={values.map((cents) => (cents > 0 ? compactMoney(cents, currency, lang) : ''))}
               ariaLabels={values.map((cents, i) => periodAria(i, cents))}
               color={graph.color}
               hollowLast

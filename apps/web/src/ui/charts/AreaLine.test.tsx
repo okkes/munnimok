@@ -54,6 +54,32 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(screen.queryByTestId('al-tip')).toBeNull();
   });
 
+  it('two paydays close together keep both dots but only the first word (gallery 2026-10-08: the words printed on top of each other)', () => {
+    // ten days on 320 units: a day is ~36 units, under the 48 a word needs
+    const dense = Array.from({ length: 10 }, (_, i) => ({ date: `2026-06-${String(i + 1).padStart(2, '0')}`, cents: 100_000 + i * 1_000 }));
+    render(
+      <AreaLine
+        testId="al2"
+        points={dense}
+        markers={[
+          { date: '2026-06-01', text: 'Demo Corp' },
+          { date: '2026-06-02', text: 'Demo Corp' },
+          { date: '2026-06-04', text: 'Side job' },
+        ]}
+        todayLabel="Today"
+        projectedLabel="expected"
+        formatValue={(cents) => `€${cents / 100}`}
+        formatDate={(date) => date}
+      />,
+    );
+    // a day apart the second word would land on the first: its dot stays, its word goes
+    expect(screen.getByTestId('al2-marker-0').textContent).toBe('Demo Corp');
+    expect(screen.getByTestId('al2-marker-1').querySelector('circle')).toBeTruthy();
+    expect(screen.getByTestId('al2-marker-1').textContent).toBe('');
+    // three days further there is room again
+    expect(screen.getByTestId('al2-marker-2').textContent).toBe('Side job');
+  });
+
   it('a pointer over the chart scrubs the nearest day, into the expectation too, and lifts clean', () => {
     const { svg, onScrub } = renderChart();
     fireEvent.pointerDown(svg, { pointerId: 1, clientX: 0 });

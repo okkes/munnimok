@@ -102,6 +102,24 @@ function ScrubLayer({
   );
 }
 
+/** a word needs this much of the viewBox to itself — two paydays a week apart used to print on top of each other (gallery 2026-10-08) */
+const MARKER_LABEL_GAP = 48;
+
+/** the markers whose word is drawn: every dot stays, a word only where the previous one sits far enough left */
+function labelledMarkers(markers: readonly AreaLabel[], points: readonly AreaPoint[], x: (date: string) => number): Set<string> {
+  const shown = new Set<string>();
+  let lastX = Number.NEGATIVE_INFINITY;
+  for (const marker of markers) {
+    const point = points.find((candidate) => candidate.date === marker.date);
+    if (!point) continue;
+    const mx = x(point.date);
+    if (mx - lastX < MARKER_LABEL_GAP) continue;
+    shown.add(marker.date);
+    lastX = mx;
+  }
+  return shown;
+}
+
 /** the words above the line where money came in */
 function Markers({
   markers,
@@ -118,6 +136,7 @@ function Markers({
   color: string;
   testId?: string;
 }>) {
+  const labelled = labelledMarkers(markers, points, x);
   return (
     <>
       {markers.map((marker, i) => {
@@ -127,9 +146,11 @@ function Markers({
         return (
           <g key={marker.date} data-testid={suffixed(testId, `marker-${i}`)}>
             <circle cx={mx} cy={y(point.cents)} r={2.5} fill={color} />
-            <text x={mx} y={Math.max(y(point.cents) - 7, 10)} textAnchor={edgeAnchor(mx)} fontSize={8.5} fill="var(--m-ink-3)">
-              {marker.text}
-            </text>
+            {labelled.has(marker.date) && (
+              <text x={mx} y={Math.max(y(point.cents) - 7, 10)} textAnchor={edgeAnchor(mx)} fontSize={8.5} fill="var(--m-ink-3)">
+                {marker.text}
+              </text>
+            )}
           </g>
         );
       })}
