@@ -2834,6 +2834,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'receipt.itemsTitle': 'Kalemler',
   'receipt.linkedTitle': 'İşlem',
   'receipt.unreconciled': 'Tarafın kalemleri toplamına eşit değil.',
+  // user 2026-10-08: one receipt, several payments — the picker says where a receipt already sits
+  'receipt.attachedTo': '{tx} işlemine bağlı',
+  'receipt.attachedToN': '{n} işleme bağlı',
+  'receipt.linkedTitleN': 'İşlemler',
+  'receipt.detachOne': 'Bu işlemden ayır',
   'tour.conn.7t': 'Alınan fişler',
   'tour.conn.7b': 'Mağazalarının verdiği her şey, bağlantı başına, kapsanan tarihlerle — ve alım sürerken artan bir sayaç. Bir mağaza, ancak sen seçince bir alana ulaşır.',
   // ── connector failure reports + the debt drill's linked view (2026-10-06) ──

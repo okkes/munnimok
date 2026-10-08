@@ -2834,6 +2834,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'receipt.itemsTitle': 'Artikelen',
   'receipt.linkedTitle': 'Transactie',
   'receipt.unreconciled': 'De regels van de partij tellen niet op tot het totaal.',
+  // user 2026-10-08: one receipt, several payments — the picker says where a receipt already sits
+  'receipt.attachedTo': 'Gekoppeld aan {tx}',
+  'receipt.attachedToN': 'Gekoppeld aan {n} transacties',
+  'receipt.linkedTitleN': 'Transacties',
+  'receipt.detachOne': 'Van deze transactie loskoppelen',
   'tour.conn.7t': 'Opgehaalde bonnen',
   'tour.conn.7b': 'Alles wat je winkels hebben aangeleverd, per koppeling, met de gedekte datums — en een teller die oploopt terwijl het ophalen loopt. Een winkel bereikt een space pas als jij die kiest.',
   // ── connector failure reports + the debt drill's linked view (2026-10-06) ──

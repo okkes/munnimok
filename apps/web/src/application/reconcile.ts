@@ -1,10 +1,11 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { TransactionRow, TxMetaRow } from '@/db/types';
+import type { ReceiptLinkRow, TransactionRow, TxMetaRow } from '@/db/types';
 import { txMetaId } from '@/domain/feedIds';
 import { reconcilePlan } from '@/domain/reconcile';
 import type { ReconcileMatch, ReconcilePlan } from '@/domain/reconcile';
 import { logActivity } from './activity';
+import { isLinkedTo, linkedTxIds } from './receiptLinks';
 
 /**
  * Applies an imported-vs-linked reconciliation (master plan requirement
@@ -88,11 +89,18 @@ async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileM
         await repo.upsert('txMeta', spaceId, txMetaId(spaceId, match.linked.id), { txId: match.linked.id, needsReview: 1 });
       }
     }
-    // receipts follow the surviving row
-    for (const link of (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0 && l.txId === match.imported.id)) {
-      await repo.upsert('receiptLink', spaceId, link.id, { txId: match.linked.id });
+    // receipts follow the surviving row — as their first attachment or as one of the further ones (user 2026-10-08)
+    for (const link of (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0 && isLinkedTo(l, match.imported.id))) {
+      await repo.upsert('receiptLink', spaceId, link.id, repointedLink(link, match.imported.id, match.linked.id));
     }
   }
+}
+
+/** a receipt link's attachments with one transaction replaced by its surviving twin — `txId` stays the first,
+ *  the rest ride `alsoTxIds` (dropped when nothing is left of them) */
+function repointedLink(link: ReceiptLinkRow, from: string, to: string): Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'> {
+  const [txId, ...alsoTxIds] = [...new Set(linkedTxIds(link).map((id) => (id === from ? to : id)))];
+  return { txId, alsoTxIds: alsoTxIds.length > 0 ? alsoTxIds : (null as never) };
 }
 
 type ReimbLink = { txId: string; amountCents: number };

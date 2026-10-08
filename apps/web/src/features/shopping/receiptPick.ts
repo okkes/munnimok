@@ -1,6 +1,10 @@
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
+import { LOCALES } from '@/i18n';
+import type { Lang } from '@/i18n';
 import { partyName } from '@/features/connectors/logos';
+import { fmtCents } from '@/lib/money';
+import { txTitle } from '@/lib/text';
 
 /**
  * The receipt-picking rules the review card and the transaction detail
@@ -19,6 +23,35 @@ export function rankForTx(tx: Pick<SpaceTx, 'date' | 'amountCents'>, receipts: r
     if (amountGap !== 0) return amountGap;
     return dayDiff(a.date, tx.date) - dayDiff(b.date, tx.date);
   });
+}
+
+/**
+ * "29 May · bol.com · €157.33" — the transaction a receipt already sits on,
+ * as the picker's note under the row tells it (user 2026-10-08: the same
+ * receipt may be picked again, but it must be clear where it already is).
+ * Unknown here (another space's row) = nothing, the note counts instead.
+ */
+export function describeTxFor(
+  txs: readonly SpaceTx[] | undefined,
+  lang: Lang,
+  currency: string,
+): (txId: string) => string | undefined {
+  return (txId) => {
+    const tx = txs?.find((row) => row.id === txId);
+    if (!tx) return undefined;
+    const day = new Date(tx.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+    return `${day} · ${txTitle(tx)} · ${fmtCents(tx.amountCents, tx.currency || currency, lang)}`;
+  };
+}
+
+/** the transactions OTHER than this one each receipt is attached to — the picker notes those under a row */
+export function attachedElsewhere(attachedTo: ReadonlyMap<string, readonly string[]> | undefined, txId: string): Map<string, string[]> {
+  const elsewhere = new Map<string, string[]>();
+  for (const [receiptId, txIds] of attachedTo ?? []) {
+    const others = txIds.filter((id) => id !== txId);
+    if (others.length > 0) elsewhere.set(receiptId, others);
+  }
+  return elsewhere;
 }
 
 /** the parties behind a set of receipts, for the filter chips — each once, by name */

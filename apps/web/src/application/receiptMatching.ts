@@ -5,7 +5,7 @@ import { bestMatch } from '@/domain/storeReceipts';
 import type { AccountTailOf } from '@/domain/storeReceipts';
 import { receiptLinkId } from '@/domain/feedIds';
 import { visibleTransactions } from '@/db/joined';
-import { writeProposedLink } from './receiptLinks';
+import { linkedTxIds, writeProposedLink } from './receiptLinks';
 
 /**
  * Receipts v3 matching, per space: fetched receipts live ONCE in the
@@ -57,8 +57,9 @@ export async function matchReceiptsIntoSpace(
   // types telling expenses from movements
   const [txs, links] = await Promise.all([visibleTransactions(storage, spaceId), storage.bySpace('receiptLink', spaceId)]);
   const linkById = new Map(links.filter((l) => l.deleted === 0).map((l) => [l.id, l]));
-  // a transaction that carries a receipt, or is already asked about one, is spoken for
-  const taken = new Set([...linkById.values()].flatMap((l) => [l.txId, l.proposedTxId]).filter((id): id is string => !!id));
+  // a transaction that carries a receipt (as its first holder or a further one — user 2026-10-08), or is already
+  // asked about one, is spoken for
+  const taken = new Set([...linkById.values()].flatMap((l) => [...linkedTxIds(l), l.proposedTxId]).filter((id): id is string => !!id));
   const tailOf = await accountTailResolver(storage);
 
   const outcome: MatchOutcome = { linked: 0, proposed: 0 };

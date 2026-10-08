@@ -358,4 +358,91 @@ describe('Receipts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('receipt-pick-none'));
     await screen.findByTestId('receipt-empty', {}, { timeout: 5000 });
   }, 25_000);
+
+  const BOL = 'rcpt:bol:demo_conn_bol:b1';
+
+  /** one bol.com receipt and the two demo-space payments it covers (user 2026-10-08); the link when asked for */
+  async function seedOneReceiptTwoPayments(linked: boolean) {
+    const { db, repo } = await demoRepo();
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    const { receiptLinkId, storeConnLinkId } = await import('@/domain/feedIds');
+    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_bol'), { instanceId: 'demo_conn_bol', store: 'bol', displayName: 'bol.com' });
+    await repo.upsert('receipt', DEMO_STORE_FEED_ID, BOL, { source: 'bol', instanceId: 'demo_conn_bol', date: '2026-05-29', totalCents: 15733, merchant: 'bol.com' });
+    await repo.upsert('transaction', 'demo_space', 'pay1', { accountId: 'demo_main', date: '2026-05-29', amountCents: -10000, currency: 'EUR', merchant: 'bol.com', catId: 'groceries', needsReview: 0 });
+    await repo.upsert('transaction', 'demo_space', 'pay2', { accountId: 'demo_main', date: '2026-05-30', amountCents: -5733, currency: 'EUR', merchant: 'bol.com', catId: 'groceries', needsReview: 0 });
+    if (linked) {
+      await repo.upsert('receiptLink', 'demo_space', receiptLinkId('demo_space', BOL), {
+        receiptId: BOL, source: 'bol', instanceId: 'demo_conn_bol', date: '2026-05-29', totalCents: 15733, merchant: 'bol.com', txId: 'pay1', alsoTxIds: ['pay2'], auto: 0,
+      });
+    }
+    db.close();
+  }
+
+  it('one receipt, two payments (user 2026-10-08): the sheet says where a receipt already sits, picking it there too keeps it on both', async () => {
+    await openFirstTx();
+    await seedOneReceiptTwoPayments(false);
+    cleanup();
+    renderApp('/transactions/pay1');
+    fireEvent.click(await screen.findByTestId('receipt-empty', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId(`receipt-pick-${BOL}`));
+    await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('bol.com'), { timeout: 5000 });
+
+    // the second payment: no suggestion any more (it is attached), but in the whole list with the note — still pickable
+    cleanup();
+    renderApp('/transactions/pay2');
+    fireEvent.click(await screen.findByTestId('receipt-empty', {}, { timeout: 5000 }));
+    await screen.findByTestId('receipt-pick-sheet');
+    expect(screen.queryByTestId(`receipt-pick-${BOL}`)).toBeNull();
+    const note = await screen.findByTestId(`receipt-pick-all-${BOL}-attached`);
+    expect(note.textContent).toContain('Attached to');
+    expect(note.textContent).toContain('bol.com');
+    expect(note.textContent).toMatch(/€[1-9]/);
+    fireEvent.click(screen.getByTestId(`receipt-pick-all-${BOL}`));
+    await waitFor(() => expect(screen.getByTestId('receipt-card').textContent).toContain('bol.com'), { timeout: 5000 });
+
+    // ONE link, both payments on it — the first stays the first
+    const { db } = await demoRepo();
+    await waitFor(async () => {
+      const link = (await db.receiptLinks.toArray()).find((l) => l.receiptId === BOL);
+      expect(link?.txId).toBe('pay1');
+      expect(link?.alsoTxIds).toEqual(['pay2']);
+    }, { timeout: 5000 });
+    db.close();
+
+    // the Receipts screen counts the holders; the receipt screen lists both payments
+    cleanup();
+    renderApp('/receipts');
+    await screen.findByTestId('screen-receipts');
+    expect((await screen.findByTestId(`receipt-multi-${BOL}`, {}, { timeout: 5000 })).textContent).toContain('2');
+    fireEvent.click(screen.getByTestId(`receipt-row-${BOL}`));
+    await screen.findByTestId('screen-receipt');
+    await screen.findByTestId('receipt-linked-pay1', {}, { timeout: 5000 });
+    expect(screen.getByTestId('receipt-linked-pay2')).toBeTruthy();
+    expect(screen.getByTestId('receipt-delete').textContent).toBe('Unlink receipt');
+  }, 30_000);
+
+  it('opened from one of its payments, the receipt detaches from that one only — the other keeps it', async () => {
+    await openFirstTx();
+    await seedOneReceiptTwoPayments(true);
+    cleanup();
+    renderApp('/transactions/pay2');
+    fireEvent.click(await screen.findByTestId('receipt-card', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-receipt');
+    // the list points at the OTHER payment only; the button names the one hold it lets go of
+    await screen.findByTestId('receipt-linked-pay1', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('receipt-linked-pay2')).toBeNull();
+    expect(screen.getByTestId('receipt-delete').textContent).toBe('Detach from this transaction');
+    fireEvent.click(screen.getByTestId('receipt-delete'));
+    fireEvent.click(screen.getByTestId('receipt-delete'));
+    await screen.findByTestId('receipt-empty', {}, { timeout: 5000 });
+
+    const { db } = await demoRepo();
+    await waitFor(async () => {
+      const link = (await db.receiptLinks.toArray()).find((l) => l.receiptId === BOL);
+      expect(link?.deleted).toBe(0);
+      expect(link?.txId).toBe('pay1');
+      expect(link?.alsoTxIds ?? null).toBeNull();
+    }, { timeout: 5000 });
+    db.close();
+  }, 25_000);
 });

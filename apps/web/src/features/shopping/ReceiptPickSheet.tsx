@@ -37,6 +37,11 @@ export interface ReceiptPickSheetProps {
   /** the None option is on offer at all (the detail hides it until a receipt is attached) */
   showNone?: boolean;
   currency: string;
+  /** user 2026-10-08: the OTHER transactions a receipt is attached to, by receipt id — the row says so and stays
+   *  pickable (several payments, one receipt) */
+  attachedTo?: ReadonlyMap<string, readonly string[]>;
+  /** names a transaction for that note ("29 May · bol.com · €157.33"); unnamed = the count alone */
+  describeTx?: (txId: string) => string | undefined;
   onAccept: (link: ReceiptLinkRow) => void;
   onReject: (link: ReceiptLinkRow) => void;
   onPick: (row: ReceiptRow | null) => void;
@@ -94,11 +99,12 @@ export function ReceiptProposalCard({
   );
 }
 
-/** one receipt in a list: the tap picks it, the eye opens it */
+/** one receipt in a list: the tap picks it, the eye opens it; a note says where it is attached already */
 function ReceiptPickRow({
   receipt,
   selected,
   currency,
+  note,
   pickTestId,
   viewTestId,
   onPick,
@@ -107,6 +113,8 @@ function ReceiptPickRow({
   receipt: ReceiptRow;
   selected: boolean;
   currency: string;
+  /** "Attached to …" (user 2026-10-08) — the receipt proves another transaction already */
+  note?: string;
   pickTestId: string;
   viewTestId: string;
   onPick: () => void;
@@ -126,6 +134,12 @@ function ReceiptPickRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-ink">{receipt.merchant ?? partyName(receipt.source)}</span>
           <span className="block text-[11px] text-ink-4">{`${fmtReceiptDay(receipt.date, lang)}${items}`}</span>
+          {note && (
+            <span className="mt-0.5 flex items-center gap-1 text-[11px] text-warning" data-testid={`${pickTestId}-attached`}>
+              <Icon name="link-variant" size={11} />
+              <span className="min-w-0 truncate">{note}</span>
+            </span>
+          )}
         </span>
         <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>
       </button>
@@ -170,6 +184,8 @@ export function ReceiptPickSheet({
   noneSelected = false,
   showNone = true,
   currency,
+  attachedTo,
+  describeTx,
   onAccept,
   onReject,
   onPick,
@@ -183,6 +199,13 @@ export function ReceiptPickSheet({
   const listed = useMemo(() => filterReceipts(all, query, party).slice(0, 100), [all, query, party]);
   const id = (suffix: string): string => `${testIdPrefix}-${suffix}`;
   const pickPrefix = pickTestIdPrefix ?? id('pick');
+  /** "Attached to 29 May · bol.com · €157.33" for one named transaction, the count otherwise (user 2026-10-08) */
+  const attachedNote = (receiptId: string): string | undefined => {
+    const others = attachedTo?.get(receiptId);
+    if (!others?.length) return undefined;
+    const face = others.length === 1 ? describeTx?.(others[0]) : undefined;
+    return face ? t('receipt.attachedTo', { tx: face }) : t('receipt.attachedToN', { n: others.length });
+  };
   // a receipt sits in the suggestions AND the full list: each list's rows and eyes carry their own prefix
   const rows = (list: readonly ReceiptRow[], rowPrefix: string, viewPrefix: string) =>
     list.map((r) => (
@@ -191,6 +214,7 @@ export function ReceiptPickSheet({
         receipt={r}
         selected={selectedId === r.id}
         currency={currency}
+        note={attachedNote(r.id)}
         pickTestId={`${rowPrefix}-${r.id}`}
         viewTestId={`${viewPrefix}-${r.id}`}
         onPick={() => onPick(r)}

@@ -2832,6 +2832,11 @@ export const en = {
   'receipt.itemsTitle': 'Items',
   'receipt.linkedTitle': 'Transaction',
   'receipt.unreconciled': 'The party’s line items do not add up to its total.',
+  // user 2026-10-08: one receipt, several payments — the picker says where a receipt already sits
+  'receipt.attachedTo': 'Attached to {tx}',
+  'receipt.attachedToN': 'Attached to {n} transactions',
+  'receipt.linkedTitleN': 'Transactions',
+  'receipt.detachOne': 'Detach from this transaction',
   'tour.conn.7t': 'Fetched receipts',
   'tour.conn.7b': 'Everything your shops handed over, per connection, with the dates covered — and a counter climbing while a fetch runs. A shop reaches a space only once you pick it.',
   // ── connector failure reports + the debt drill's linked view (2026-10-06) ──

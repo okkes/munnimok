@@ -678,6 +678,9 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   receiptId?: string;
   /** absent = the receipt is present in the space but not attached yet */
   txId?: string;
+  /** the other transactions this receipt proves (user 2026-10-08: several payments, one receipt); `txId` stays
+   *  the first attachment so every existing reader keeps working; absent = attached to txId alone */
+  alsoTxIds?: string[];
   /** 'photo', or the connector provider id that fetched it */
   source: string;
   instanceId?: string;

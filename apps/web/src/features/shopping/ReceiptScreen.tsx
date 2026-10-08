@@ -9,6 +9,7 @@ import { globalAsEntry, linkAsEntry, spaceReceipts } from '@/application/receipt
 import type { ReceiptEntry } from '@/application/receiptLinks';
 import { myStoreFeedId } from '@/application/storeFeed';
 import { useSpaceTransactions } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
 import { partyName } from '@/features/connectors/logos';
 import { apiFetch } from '@/lib/api';
@@ -134,8 +135,16 @@ export function ReceiptScreen({
     else void navigate({ to: scope === 'global' ? '/connections/receipts' : '/receipts' });
   };
 
-  const linkedTxId = scope === 'space' ? entry?.txId : undefined;
-  const linkedTx = linkedTxId ? txs?.find((tx) => tx.id === linkedTxId) : undefined;
+  // every transaction the receipt proves (user 2026-10-08: several payments, one receipt); the one the screen was
+  // opened FROM stays out of the list — pointing back at it is noise
+  const linkedIds = scope === 'space' ? (entry?.txIds ?? []) : [];
+  const linkedTxId = linkedIds[0];
+  const linkedTxs = linkedIds
+    .filter((id) => id !== contextTxId)
+    .map((id) => txs?.find((tx) => tx.id === id))
+    .filter((tx): tx is SpaceTx => !!tx);
+  // opened from one of its transactions while others hold it too: the delete lets go of that one only
+  const detachOne = !!contextTxId && linkedIds.length > 1 && linkedIds.includes(contextTxId);
   const ladder = receipt && scope === 'space' ? candidateLadder(receipt, txs ?? []) : { primary: [], more: [] };
   const candidates = () => (showMore ? [...ladder.primary, ...ladder.more] : ladder.primary);
   const photoBorn = entry?.kind === 'link' && entry.data.source === 'photo';
@@ -163,8 +172,13 @@ export function ReceiptScreen({
     }
   };
 
-  // a store receipt's link "deletes" by unlinking — the wording must say so
-  const deleteLabel = entry?.kind === 'link' && !photoBorn ? t('receipt.unlink') : t('action.delete');
+  /** the delete button's word: one transaction's hold, a store receipt's unlink, or a delete */
+  const deleteLabel = (): string => {
+    if (detachOne) return t('receipt.detachOne');
+    // a store receipt's link "deletes" by unlinking — the wording must say so
+    if (entry?.kind === 'link' && !photoBorn) return t('receipt.unlink');
+    return t('action.delete');
+  };
 
   const removeReceipt = async () => {
     if (!entry) return;
@@ -173,9 +187,13 @@ export function ReceiptScreen({
       return;
     }
     // each kind deletes in its own store: drop the photo, unlink the
-    // store snapshot, or drop the global receipt
+    // store snapshot, or drop the global receipt — from ONE transaction
+    // when others hold the receipt too (user 2026-10-08)
     if (entry.kind === 'global') await receiptOps.removeGlobalReceipt(entry.data.id);
-    else if (entry.linkId) await (photoBorn ? receiptOps.remove(entry.linkId) : receiptOps.unlinkReceipt(entry.linkId));
+    else if (entry.linkId) {
+      const txId = detachOne ? contextTxId : undefined;
+      await (photoBorn ? receiptOps.remove(entry.linkId, txId) : receiptOps.unlinkReceipt(entry.linkId, txId));
+    }
     leave();
   };
 
@@ -277,13 +295,17 @@ export function ReceiptScreen({
 
             {scope === 'space' ? (
               <>
-                {/* the transaction this receipt proves — hidden when the screen
-                    was opened from that very transaction (self-reference) */}
-                {linkedTx && linkedTx.id !== contextTxId && (
+                {/* the transactions this receipt proves — the one the screen was opened
+                    from left out (self-reference); each row opens its transaction */}
+                {linkedTxs.length > 0 && (
                   <div>
-                    <div className="m-cap mb-1 px-1">{t('receipt.linkedTitle')}</div>
+                    <div className="m-cap mb-1 px-1">{t(linkedTxs.length > 1 ? 'receipt.linkedTitleN' : 'receipt.linkedTitle')}</div>
                     <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
-                      <TxRow tx={linkedTx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkedTx.id } })} />
+                      {linkedTxs.map((tx) => (
+                        <div key={tx.id} data-testid={`receipt-linked-${tx.id}`}>
+                          <TxRow tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -339,7 +361,7 @@ export function ReceiptScreen({
             )}
 
             <Button variant="danger" className="w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
-              {confirmDelete ? t('action.confirm') : deleteLabel}
+              {confirmDelete ? t('action.confirm') : deleteLabel()}
             </Button>
           </div>
         )}
