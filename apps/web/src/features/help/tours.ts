@@ -275,6 +275,8 @@ export const TOURS: Tour[] = [
     titleKey: 'trends.title',
     icon: 'chart-bar',
     screen: '/trends',
+    // user 2026-10-08: the Spending cards (bars with numbers, custom
+    // graphs, three views), the balance line and the net-worth line
     steps: [
       { titleKey: 'tour.trends.1t', bodyKey: 'tour.trends.1b', illustration: '📊', anchor: 'trends-cat-chart' },
       { titleKey: 'tour.trends.2t', bodyKey: 'tour.trends.2b', illustration: '✏️', anchor: 'trends-graph-new' },

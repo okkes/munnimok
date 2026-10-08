@@ -123,7 +123,6 @@ export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
   );
 }
 
-/**
 /** the connections a space includes (storeConnLink) */
 const includedConnections = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
   new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
@@ -145,6 +144,7 @@ async function attachedTxIds(store: StorageBackend, spaceId: string): Promise<Ma
   return attachedTo;
 }
 
+/**
  * Owner view: global receipts of connections included in the active
  * space that are not yet linked into it — the manual-attach inventory.
  */
