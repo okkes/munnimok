@@ -302,6 +302,36 @@ public sealed class GoCardlessAdapterTests
         Assert.Null(partial.RefreshedMaterial);
     }
 
+    /// <summary>
+    /// Prod 2026-10-08: ING allows a handful of balance reads per account a
+    /// day, and the second accounts pass of one minute hit the budget. The
+    /// refusal is a fact about the day, not about the consent: the account
+    /// comes back without a balance (the consumer keeps the last one it had),
+    /// the pass goes on, and the transactions — a budget of their own — are
+    /// fetched as ever.
+    /// </summary>
+    [Fact]
+    public async Task A_balances_budget_refusal_keeps_the_account_without_a_fresh_balance_and_the_transactions_still_come()
+    {
+        var limited = Wire(req => req.Path.EndsWith("/accounts/acc1/balances/", StringComparison.Ordinal)
+            ? WithQuota(Stub.Status(HttpStatusCode.TooManyRequests), 4, 0, 1800) : null);
+        var adapter = Adapter();
+
+        using var ctx = new FakeJobContext(limited) { Material = Consent(detailed: true) };
+        var accounts = await adapter.FetchAsync(ctx, new ResourceRequest { ResourceId = "accounts" }, CancellationToken.None);
+        var account = Assert.Single(accounts.Accounts);
+        Assert.Equal("NL91ABNA0417164300", account.Iban);
+        Assert.Null(account.Balance);
+        Assert.Contains(ctx.Notes, n => n.Contains("budget refused the balance", StringComparison.Ordinal));
+
+        using var next = new FakeJobContext(limited) { Material = Consent(detailed: true) };
+        var transactions = await adapter.FetchAsync(next, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 1) }, CancellationToken.None);
+        Assert.Equal(["int2", "txid1", "pending:p1"], transactions.Transactions.Select(t => t.ExternalId));
+        Assert.Null(Assert.Single(transactions.Accounts).Balance);
+        Assert.True(transactions.Complete);
+        Assert.Equal(2, limited.Count("GET", "/accounts/acc1/balances/"));   // asked each time; refused each time, and never fatal
+    }
+
     [Fact]
     public async Task Logout_revokes_the_consent_and_the_inventory_lists_what_the_aggregator_account_holds()
     {

@@ -13,7 +13,8 @@ namespace Munni.Api.Connectors;
 /// due when <c>unattended_fetch</c> is on, its <c>min_interval_seconds</c>
 /// have passed, any <c>retry_after</c> a rate-limited refusal set has
 /// passed, and — when the party names a <c>preferred_fetch_hour_local</c>
-/// — it is that hour in the bank's zone (from the IBAN's country). A fetch
+/// — it is that hour in the bank's zone (from the IBAN's country), or a
+/// later hour of a day that hour's tick was missed on. A fetch
 /// that became a job is followed for ten minutes and collected; a question
 /// is left to the person; a refusal that needs a sign-in drops the kept
 /// bundle, every other one is remembered and retried next time.
@@ -112,21 +113,33 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
     /// <summary>
     /// Due when the party fetches unattended, no retry-after stands, the
     /// party's interval has passed, and — when the party prefers an hour —
-    /// it is that hour in <paramref name="zone"/>. A session that never ran
-    /// is due at once: the connect's own fetch was the person's, not the
+    /// it is that hour in <paramref name="zone"/>, or a later hour of a
+    /// day the schedule has not run on yet. A session that never ran is
+    /// due at once: the connect's own fetch was the person's, not the
     /// schedule's.
     /// </summary>
+    /// <remarks>
+    /// The catch-up: the tick that lands in the preferred hour is one of
+    /// twenty-four, and a deploy or a restart during that hour used to cost
+    /// a whole night — the next chance was the next night (prod 2026-10-08).
+    /// Later the same local day is still that day's run; the interval keeps
+    /// it to one, and the next night's tick lands in the preferred hour as
+    /// before.
+    /// </remarks>
     internal bool IsDue(ConnectorSession row, JsonObject manifest, TimeZoneInfo? zone = null)
     {
         if (manifest["unattended_fetch"]?.GetValue<bool>() != true) return false;
         var now = time.GetUtcNow();
         if (row.ScheduleNotBefore is { } notBefore && now < notBefore) return false;
-        if (row.LastScheduledSyncAt is null) return true;
+        if (row.LastScheduledSyncAt is not { } last) return true;
         var limits = manifest["limits"] as JsonObject;
         var interval = limits?["min_interval_seconds"]?.GetValue<int>() ?? 0;
-        if (now - row.LastScheduledSyncAt.Value < TimeSpan.FromSeconds(interval)) return false;
+        if (now - last < TimeSpan.FromSeconds(interval)) return false;
         var hour = limits?["preferred_fetch_hour_local"]?.GetValue<int>();
-        return hour is null || TimeZoneInfo.ConvertTime(now, zone ?? TimeZoneInfo.Utc).Hour == hour;
+        if (hour is null) return true;
+        var local = TimeZoneInfo.ConvertTime(now, zone ?? TimeZoneInfo.Utc);
+        if (local.Hour == hour) return true;
+        return local.Hour > hour && TimeZoneInfo.ConvertTime(last, zone ?? TimeZoneInfo.Utc).Date != local.Date;
     }
 
     /// <summary>The bank's zone: the first IBAN the connection reaches, else the party's home country.</summary>

@@ -5,8 +5,9 @@ import type { Lang, TranslationKey } from '@/i18n';
 import type { ConnectorConnRow } from '@/db/types';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
+import { useSession } from '@/app/session';
 import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges, useLiveConnectionIds } from '@/application/connections';
-import { uncoveredSince } from '@/domain/accountCoverage';
+import { ownsAccount, uncoveredSince } from '@/domain/accountCoverage';
 import { uncoveredDateText } from '@/features/accounts/coverage';
 import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
 import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
@@ -166,9 +167,12 @@ export function ConnectionsScreen() {
   const ops = useConnectionOps();
   const catalogue = useCatalogue();
   const bindings = useRelayBindings();
-  // #445: which connections still exist - an account stamped with a gone one is not fetched any more
+  // #445: which connections still exist - an account stamped with a gone one is not fetched any more;
+  // only for accounts the viewer's own connection feeds (a friend's ids are not in this device's set)
   const liveIds = useLiveConnectionIds();
-  const { connect: connectParam } = useSearch({ strict: false }) as { connect?: string };
+  const identity = useSession((s) => s.identity);
+  const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+  const { connect: connectParam, reconnect: reconnectParam } = useSearch({ strict: false }) as { connect?: string; reconnect?: string };
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
 
@@ -221,7 +225,7 @@ export function ConnectionsScreen() {
 
   // #445: party-fed accounts no live connection fetches, whose party has no card to sit under
   const orphaned = (bankAccounts ?? [])
-    .map(({ account }) => ({ account, since: liveIds ? uncoveredSince(account, liveIds) : null }))
+    .map(({ account, attachedTo }) => ({ account, since: liveIds ? uncoveredSince(account, liveIds, ownsAccount(attachedTo, mySub)) : null }))
     .filter((entry): entry is { account: typeof entry.account; since: string } => entry.since !== null)
     .filter(({ account }) => !(connections ?? []).some((view) => view.meta.store === (account.provider ?? account.source)));
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
@@ -280,15 +284,21 @@ export function ConnectionsScreen() {
   };
 
   // #445: an accounts sheet's "Reconnect <party>" door arrives with the party
-  // named in the URL - the flow opens for it at once, and the name leaves the URL
+  // named in the URL - the flow opens for it at once, and the name leaves the URL.
+  // Prod 2026-10-08: it also names the connection the account was fetched by; while
+  // that connection still exists here the sign-in runs AS it, so the server replaces
+  // its session instead of scheduling a second one beside it (two sessions on one
+  // consent shared the bank's daily budget, and the nightly sync "kept stopping")
   useEffect(() => {
     if (!connectParam || !signedIn) return;
     const manifest = catalogue.byId.get(connectParam);
     if (!manifest) return;
-    openFlow(manifest, null);
+    // the ids load a beat after the screen: a named connection waits for them rather than opening a fresh connect
+    if (reconnectParam && liveIds === undefined) return;
+    openFlow(manifest, reconnectParam && liveIds?.has(reconnectParam) ? reconnectParam : null);
     void navigate({ to: '/connections', replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the manifest map is the only input that changes
-  }, [connectParam, catalogue.byId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the manifest map and the live ids are the inputs that change
+  }, [connectParam, reconnectParam, catalogue.byId, liveIds]);
 
   /** back into a sign-in that was closed mid-way */
   const continueLogin = (login: PendingLogin) => {
@@ -411,7 +421,7 @@ export function ConnectionsScreen() {
         ) : (
           mine.map(({ account, attachedTo }) => {
             const here = attachedTo.some((s) => s.spaceId === spaceId);
-            const since = liveIds ? uncoveredSince(account, liveIds) : null;
+            const since = liveIds ? uncoveredSince(account, liveIds, ownsAccount(attachedTo, mySub)) : null;
             return (
               <div key={account.id} className="flex items-center gap-2 py-1" data-testid={`conn-account-${account.id}`}>
                 <Icon name="bank-outline" size={14} color="var(--m-ink-4)" />

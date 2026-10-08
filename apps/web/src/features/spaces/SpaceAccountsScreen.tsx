@@ -11,7 +11,7 @@ import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { fetchesItself, sourceKeyFor, sourceParamsFor } from '@/features/accounts/AttachSheet';
 import { uncoveredDateText } from '@/features/accounts/coverage';
 import { useLiveConnectionIds } from '@/application/connections';
-import { uncoveredSince } from '@/domain/accountCoverage';
+import { ownsLink, uncoveredSince } from '@/domain/accountCoverage';
 import { partyName } from '@/features/connectors/logos';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
@@ -164,6 +164,9 @@ export function SpaceAccountsScreen() {
   );
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+  // #445: only the person whose connection feeds the account can tell whether it still does —
+  // a friend's attachment reads nothing here (user ss 2026-10-08: "shared by Elo" under a reconnect banner)
+  const infoUncovered = info?.account && liveIds ? uncoveredSince(info.account, liveIds, ownsLink(info.link, mySub)) : null;
 
   // #305: whose attachment is this? my own feeds come from /me/feeds —
   // anything else in the list was shared INTO the space by someone else
@@ -409,15 +412,17 @@ export function SpaceAccountsScreen() {
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
               {info.account ? t(sourceKeyFor(info.account), sourceParamsFor(info.account)) : t('acct.bank')}
             </div>
-            {info.account && liveIds && uncoveredSince(info.account, liveIds) !== null && (
+            {/* the reconnect names the connection, so the sign-in reuses it and the server
+                retires the old session instead of scheduling two (prod 2026-10-08) */}
+            {info.account && infoUncovered !== null && (
               <div className="rounded-card border border-line bg-bg-2 px-4 py-3 text-[13px] text-ink-2" data-testid="space-account-uncovered">
-                {t('acct.uncovered', { date: uncoveredDateText(uncoveredSince(info.account, liveIds) ?? '', lang), party: partyName(info.account.provider ?? info.account.source) })}
+                {t('acct.uncovered', { date: uncoveredDateText(infoUncovered, lang), party: partyName(info.account.provider ?? info.account.source) })}
                 <Button
                   size="sm"
                   variant="outline"
                   className="mt-2"
                   data-testid="space-account-reconnect"
-                  onClick={() => void navigate({ to: '/connections', search: { connect: info.account!.provider ?? info.account!.source } })}
+                  onClick={() => void navigate({ to: '/connections', search: { connect: info.account!.provider ?? info.account!.source, reconnect: info.account!.connectionId } })}
                 >
                   {t('acct.reconnect', { party: partyName(info.account.provider ?? info.account.source) })}
                 </Button>

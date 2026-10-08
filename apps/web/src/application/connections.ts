@@ -92,7 +92,8 @@ export function useConnections(): ConnectionView[] | undefined {
 /** a bank account the connector platform fetched, with the spaces it is attached to */
 export interface ConnectorAccountView {
   account: AccountRow;
-  attachedTo: { spaceId: string; name: string }[];
+  /** the spaces it is attached to, each with who attached it (whose connection feeds it, 2026-10-08) */
+  attachedTo: { spaceId: string; name: string; attachedBy?: string }[];
 }
 
 /**
@@ -114,7 +115,7 @@ export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
           account,
           attachedTo: links
             .filter((l) => l.accountId === account.id && spaces.has(l.spaceId))
-            .map((l) => ({ spaceId: l.spaceId, name: spaces.get(l.spaceId)! })),
+            .map((l) => ({ spaceId: l.spaceId, name: spaces.get(l.spaceId)!, attachedBy: l.attachedBy })),
         }))
         .sort((a, b) => a.account.name.localeCompare(b.account.name));
     },

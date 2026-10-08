@@ -100,6 +100,11 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
             // for nothing but the address is what separates a failure about
             // egress from a failure about a human at the browser.
             services.AddSingleton<IProviderAdapter>(new ResidentialStoreAdapter());
+
+            // The budget shape (prod 2026-10-08): a fetch the party refuses
+            // with rate_limited on a session that is perfectly valid, which
+            // no shipped mock does and which used to end the session for good.
+            services.AddSingleton<IProviderAdapter>(new BudgetStoreAdapter());
         });
     }
 

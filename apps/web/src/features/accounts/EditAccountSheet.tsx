@@ -100,13 +100,17 @@ const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
   manual && (!defaultFor || defaultFor === 'cash');
 
 /** #445 (prod 2026-10-04): the connection that fetched this row is gone - say
- *  so, and offer the way back: a new consent that reaches it lands on this
- *  same row, history included. Nothing while a live connection covers it. */
+ *  so, and offer the way back: a sign-in again as that same connection, so
+ *  the new consent lands on this row, history included, and the server
+ *  retires the old session instead of keeping two (prod 2026-10-08). Nothing
+ *  while a live connection covers it. A row this editor opens is the space's
+ *  own (a friend's feed account opens the info sheet instead), so it is the
+ *  viewer's to tell. */
 function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onClose: () => void }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const liveIds = useLiveConnectionIds();
-  const uncovered = liveIds ? uncoveredSince(account, liveIds) : null;
+  const uncovered = liveIds ? uncoveredSince(account, liveIds, true) : null;
   if (uncovered === null) return null;
   const party = partyName(account.provider ?? account.source);
   return (
@@ -119,7 +123,7 @@ function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onCl
         data-testid="acctedit-reconnect"
         onClick={() => {
           onClose();
-          void navigate({ to: '/connections', search: { connect: account.provider ?? account.source } });
+          void navigate({ to: '/connections', search: { connect: account.provider ?? account.source, reconnect: account.connectionId } });
         }}
       >
         {t('acct.reconnect', { party })}

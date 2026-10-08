@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Munni.Api.Connectors;
 using Munni.Api.Data;
 using Munni.Api.Accounts;
@@ -89,6 +90,41 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
         Assert.Null(row.KeptBundle);
         // and nothing runs for it again until a person signs in
         Assert.Equal(0, await service.RunOnceAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The preferred hour's tick is one of twenty-four, and a deploy or a
+    /// restart during it used to cost a whole night (prod 2026-10-08): a
+    /// later hour of a day without a run is still that day's run — once —
+    /// and the next night lands in the preferred hour as before.
+    /// </summary>
+    [Fact]
+    public void A_missed_preferred_hour_is_caught_up_later_the_same_day_and_only_once()
+    {
+        var manifest = new JsonObject
+        {
+            ["unattended_fetch"] = true,
+            ["limits"] = new JsonObject { ["min_interval_seconds"] = 20 * 3600, ["preferred_fetch_hour_local"] = 3 },
+        };
+        var amsterdam = BankZones.ZoneFor("NL18MOCK0123456789");
+        // 2026-10-06 01:10Z is 03:10 in Amsterdam (summer time until the 25th)
+        var clock = new ConnectorUnitTests.TestClock(new DateTimeOffset(2026, 10, 6, 1, 10, 0, TimeSpan.Zero));
+        var service = new ConnectorScheduleService(factory.Services.GetRequiredService<IServiceScopeFactory>(), clock, NullLogger<ConnectorScheduleService>.Instance);
+        var row = new ConnectorSession { Id = "ses_catchup", Provider = MockStore, ConnectionId = "c", State = "active", LastScheduledSyncAt = clock.GetUtcNow().AddDays(-1) };
+
+        Assert.True(service.IsDue(row, manifest, amsterdam));          // the preferred hour, as ever
+        clock.Advance(TimeSpan.FromHours(2));                           // 05:10: that hour's tick never came — still due, nothing ran today
+        Assert.True(service.IsDue(row, manifest, amsterdam));
+        row.LastScheduledSyncAt = clock.GetUtcNow();                    // it ran at 05:10
+        clock.Advance(TimeSpan.FromHours(1));                           // 06:10: no second run today
+        Assert.False(service.IsDue(row, manifest, amsterdam));
+        clock.Advance(TimeSpan.FromHours(17));                          // 23:10: the interval has passed, the day has not
+        Assert.False(service.IsDue(row, manifest, amsterdam));
+        clock.Advance(TimeSpan.FromHours(4));                           // 03:10 the next night: the preferred hour again
+        Assert.True(service.IsDue(row, manifest, amsterdam));
+        row.LastScheduledSyncAt = clock.GetUtcNow();
+        clock.Advance(TimeSpan.FromHours(22));                          // 01:10 the day after: before the hour, so not yet
+        Assert.False(service.IsDue(row, manifest, amsterdam));
     }
 
     private async Task<(string SessionId, string Bundle)> LoginAsync(string sub, string connectionId)

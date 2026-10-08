@@ -254,6 +254,8 @@ subscribed.
   relay may keep such a bundle (it is not a credential) and a `ConnectorScheduleService`
   (`GcFetchService` shape, hourly tick, the provider's `min_interval_seconds` respected) runs
   unattended syncs; a run that stops for input is surfaced as a *needs you* card at the next open.
+  A preferred hour whose tick was missed (a deploy, a restart) is caught up later the same
+  bank-local day, once — the interval keeps it to one run a day (prod 2026-10-08).
 
 ### 5.6 Ingest — into the model munni has
 
@@ -1019,7 +1021,10 @@ banking stays on its own door" are superseded by this section.
    additions any bank party may use: `limits.preferred_fetch_hour_local` (the scheduler waits for that
    hour in the bank's zone, from the IBAN's country as `GcSchedule` did, once a day) and a
    `rate_limited` refusal's `retry_after_seconds` becoming a not-before on the session. The first fetch
-   follows the connect, user-triggered, as for every party.
+   follows the connect, user-triggered, as for every party. A budget refusal on the balances leaves
+   the account without a fresh balance and the pass goes on (the budgets are per endpoint), a
+   transient refusal never ends the session, and a new session that reaches the accounts an older
+   one of the same party reached supersedes it at the relay (prod 2026-10-08).
 5. **Ingest parity.** The adapters emit `external_id` = the reference the old ingest keyed on
    (`transactionId ?? internalTransactionId`; `pending:` + it for a pending row) and the account's IBAN, so
    `ImportIds.TransactionId(iban, external_id)` and the feed space are the ids users already hold — a

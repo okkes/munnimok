@@ -140,7 +140,7 @@ public sealed class ExpiryService(
             // failure can leave one behind.
             if (last is null || last.State is not (JobState.Failed or JobState.Expired)) continue;
 
-            var next = JobOutcomeService.SessionStateFor(last.ErrorCode ?? ErrorCode.Internal, session.State);
+            var next = JobOutcomeService.SessionStateFor(last.ErrorCode ?? ErrorCode.Internal, session.State, last.Kind);
             await sessions.TransitionOrTerminateAsync(session, next, ct);
         }
     }

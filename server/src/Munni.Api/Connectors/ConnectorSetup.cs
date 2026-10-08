@@ -42,6 +42,7 @@ public static class ConnectorSetup
         services.AddSingleton<ConnectorEventBridge>();
         services.AddSingleton<ConnectorCatalogue>();
         services.AddScoped<ConnectorRelay>();
+        services.AddScoped<ConnectorSupersession>();
         services.AddScoped<ConnectorIngest>();
         services.AddScoped<ConnectorSyncService>();
         services.AddScoped<ConnectorDisconnector>();

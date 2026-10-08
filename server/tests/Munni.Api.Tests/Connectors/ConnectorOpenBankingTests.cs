@@ -67,7 +67,8 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var probe = new ConnectorSession { Id = "ses_probe", Provider = Consent, ConnectionId = "c", State = "active", LastScheduledSyncAt = clock.GetUtcNow().AddHours(-21) };
         var amsterdam = BankZones.ZoneFor(MockBankLedger.CurrentIban);
         Assert.True(timed.IsDue(probe, manifest, amsterdam));
-        clock.Advance(TimeSpan.FromHours(2));                                   // 05:00 local: not the hour
+        probe.LastScheduledSyncAt = clock.GetUtcNow();                          // it ran in the hour
+        clock.Advance(TimeSpan.FromHours(2));                                   // 05:00 local: not the hour, and today's run is done
         Assert.False(timed.IsDue(probe, manifest, amsterdam));
         clock.Advance(TimeSpan.FromHours(22));                                  // 03:00 local, the next day
         Assert.True(timed.IsDue(probe, manifest, amsterdam));
@@ -288,6 +289,108 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Empty(remaining);
         using var gone = await client.GetAsync($"/connectors/{Consent}/login/{sessionId}");
         Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+    }
+
+    /// <summary>
+    /// Prod 2026-10-08: a reconnect that made a new connection left the old
+    /// session bound and scheduled beside it, and the two burnt the bank's
+    /// daily budget between them. The new session's accounts pass retires
+    /// every other session of the party that reached the same accounts: its
+    /// binding and its references go, the control plane ends it, and the
+    /// scheduler never runs it again.
+    /// </summary>
+    [Fact]
+    public async Task A_reconnect_into_a_new_session_supersedes_the_old_one_that_reached_the_same_accounts()
+    {
+        const string sub = "consent-reconnector";
+        var (first, userId) = await ConnectAsync(sub, "conn-first");
+        var service = factory.Services.GetRequiredService<ConnectorScheduleService>();
+        Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));   // the first consent's accounts land
+        var currentIban = ImportIds.Normalize(MockBankLedger.CurrentIban);
+        Assert.Equal("conn-first", factory.Read(db => db.ConnectorAccountRefs.Single(a => a.UserId == userId && a.AccountRef == currentIban).ConnectionId));
+
+        // the person connects the same bank again as a NEW connection (the app's door before 2026-10-08),
+        // and the connect's own first sync — the person's, as the app runs it — reaches the same IBANs
+        var (second, _) = await ConnectAsync(sub, "conn-second");
+        Assert.Equal(2, factory.Read(db => db.ConnectorSessions.Count(s => s.UserId == userId)));
+        using var client = factory.ClientFor(sub);
+        var bundle = factory.Read(db => db.ConnectorSessions.Single(s => s.Id == second).KeptBundle);
+        Assert.NotNull(bundle);
+        await SyncToTheEndAsync(client, "conn-second", bundle);
+
+        // the old session is gone from the relay — the scheduler reads this table — and so is nothing of the new one
+        Assert.Equal([second], factory.Read(db => db.ConnectorSessions.Where(s => s.UserId == userId).Select(s => s.Id).ToList()));
+        var refs = factory.Read(db => db.ConnectorAccountRefs.Where(a => a.UserId == userId).ToList());
+        var ibans = refs.Where(r => !r.AccountRef.StartsWith("CONN:", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(ibans);
+        Assert.All(ibans, r => Assert.Equal("conn-second", r.ConnectionId));
+        Assert.Single(ibans, r => r.AccountRef == currentIban);
+        // the ledger's card without an IBAN is keyed per session and proves nothing: its old reference is left where it was
+        Assert.Contains(refs, r => r.AccountRef.StartsWith("CONN:", StringComparison.Ordinal) && r.ConnectionId == "conn-first");
+        var listed = await client.GetFromJsonAsync<JsonArray>("/connectors/sessions");
+        Assert.Equal([second], listed!.OfType<JsonObject>().Select(s => s["sessionId"]!.GetValue<string>()));
+        // the new session is the scheduler's only one now
+        Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));
+        // the control plane was told to end the old one — without touching the consent at the party — and the new one is untouched
+        Assert.Equal(Connector.Kit.Sessions.SessionState.Disabled, await factory.ControlPlane.SessionStateAsync(first));
+        Assert.Equal(Connector.Kit.Sessions.SessionState.Active, await factory.ControlPlane.SessionStateAsync(second));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/connectors/{Consent}/login/{first}")).StatusCode);
+    }
+
+    /// <summary>A person's sync of a connection, followed and collected through every pass that became a job, to its 200.</summary>
+    private static async Task SyncToTheEndAsync(HttpClient client, string connectionId, string bundle)
+    {
+        using var sync = await client.PostAsJsonAsync($"/connectors/{Consent}/sync", new { connectionId, bundle });
+        var status = sync.StatusCode;
+        var body = await sync.Content.ReadFromJsonAsync<JsonObject>();
+        while (status == HttpStatusCode.Accepted)
+        {
+            var jobId = body!["jobId"]!.GetValue<string>();
+            for (var i = 0; i < 300 && body["state"]?.GetValue<string>() != "succeeded"; i++)
+            {
+                await Task.Delay(100);
+                body = await client.GetFromJsonAsync<JsonObject>($"/connectors/{Consent}/jobs/{jobId}");
+                Assert.False(body!["state"]?.GetValue<string>() is "failed" or "expired", body.ToJsonString());
+            }
+            using var collect = await client.PostAsJsonAsync($"/connectors/{Consent}/jobs/{jobId}/collect", new { bundle });
+            status = collect.StatusCode;
+            body = await collect.Content.ReadFromJsonAsync<JsonObject>();
+        }
+        Assert.True(status == HttpStatusCode.OK, body!.ToJsonString());
+    }
+
+    [Fact]
+    public async Task A_session_that_reaches_other_accounts_keeps_its_place_and_a_card_without_an_iban_proves_nothing()
+    {
+        const string sub = "consent-sibling";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);   // provisions the user
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        factory.Write(db => db.ConnectorSessions.AddRange(
+            new ConnectorSession { Id = "ses_sib_a", UserId = userId, Provider = Consent, ConnectionId = "conn-sib-a", State = "active" },
+            new ConnectorSession { Id = "ses_sib_b", UserId = userId, Provider = Consent, ConnectionId = "conn-sib-b", State = "active" }));
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        static JsonObject Account(string id, string iban) => new() { ["id"] = id, ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current" };
+        static JsonObject Card(string id) => new() { ["id"] = id, ["external_id"] = "card-1", ["display_name"] = "Card", ["currency"] = "EUR", ["type"] = "credit_card" };
+        List<string> Sessions() => factory.Read(db => db.ConnectorSessions.Where(s => s.UserId == userId).OrderBy(s => s.Id).Select(s => s.Id).ToList());
+
+        // two consents reaching different accounts: both stay
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-a", "account", [Account("acc_sib_a", "NL91MOCK0000000781")], ct);
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-b", "account", [Account("acc_sib_b", "NL91MOCK0000000782")], ct);
+        Assert.Equal(["ses_sib_a", "ses_sib_b"], Sessions());
+
+        // the same card without an IBAN under both: keyed per session, it says nothing about the sessions
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-a", "account", [Card("acc_sib_card_a")], ct);
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-b", "account", [Card("acc_sib_card_b")], ct);
+        Assert.Equal(["ses_sib_a", "ses_sib_b"], Sessions());
+
+        // the second consent now reaches the first one's IBAN: the first is superseded, its references for it gone
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-b", "account", [Account("acc_sib_b2", "NL91MOCK0000000781")], ct);
+        Assert.Equal(["ses_sib_b"], Sessions());
+        var refs = factory.Read(db => db.ConnectorAccountRefs.Where(a => a.UserId == userId).Select(a => a.Id).OrderBy(id => id).ToList());
+        Assert.Equal(["acc_sib_b", "acc_sib_b2", "acc_sib_card_a", "acc_sib_card_b"], refs);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────

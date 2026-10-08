@@ -268,9 +268,12 @@ const connectionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/connections',
   component: ConnectionsScreen,
-  // #445: an accounts sheet's Reconnect door names the party; the hub opens the flow for it
-  validateSearch: (search: Record<string, unknown>): { connect?: string } =>
-    typeof search.connect === 'string' && search.connect ? { connect: search.connect } : {},
+  // #445: an accounts sheet's Reconnect door names the party; the hub opens the flow for it —
+  // and the connection to sign in again as, so the sign-in reuses it instead of making a second one (prod 2026-10-08)
+  validateSearch: (search: Record<string, unknown>): { connect?: string; reconnect?: string } => {
+    if (typeof search.connect !== 'string' || !search.connect) return {};
+    return typeof search.reconnect === 'string' && search.reconnect ? { connect: search.connect, reconnect: search.reconnect } : { connect: search.connect };
+  },
 });
 const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
