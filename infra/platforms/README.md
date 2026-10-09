@@ -108,6 +108,16 @@ with a Deploy, except the FIRST private slot, which mints the
 environment's `CONNECTOR_PRIVATE_CODE` with a Bootstrap. Every
 environment mints its own `CONNECTOR_FLEET_CODE`.
 
+`tracing` (2026-10-09, docs/observability.md): `{ "sampleRate": 0.2 }` —
+the share of traces (0..1) the environment's web app, api, connector
+control plane and browser agents send to GlitchTip's Performance view
+beside their errors: pageloads, navigations and sync rounds on the web,
+requests with their database queries and party calls on the servers.
+Default: a fifth on a `production` app channel, every trace on a staging
+one (the test ground); `0` = errors only. Rendered into every container
+of the environment (`Sentry__TracesSampleRate`, `MUNNI_TRACES_SAMPLE_RATE`),
+applied by a Deploy.
+
 `features.connectors: true` adds the connector control plane (#367) to the
 environment: one more container beside the api (`connector-<env>`, image
 `munni-connector-api`) with its own database on the environment's

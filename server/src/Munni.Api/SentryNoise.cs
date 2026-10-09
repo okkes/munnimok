@@ -1,3 +1,4 @@
+using System.Globalization;
 using Npgsql;
 using Sentry;
 
@@ -54,5 +55,39 @@ public static class SentryNoise
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Performance tracing (user 2026-10-09, docs/observability.md): the share
+    /// of requests that become transactions, read from
+    /// <c>Sentry:TracesSampleRate</c> — a number in 0..1; unset or unreadable
+    /// is the platform default of a fifth, 0 means errors only.
+    /// </summary>
+    public static double TracesSampleRate(string? configured, double fallback = 0.2) =>
+        double.TryParse(configured, NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate is >= 0 and <= 1
+            ? rate
+            : fallback;
+
+    /// <summary>
+    /// Requests that are never a transaction: the health probes (docker's
+    /// wget every 10 s, the web's handshake every round), the SSE stream (open
+    /// for an hour, it would read as the slowest request on the platform) and
+    /// the agents' heartbeats.
+    /// </summary>
+    private static readonly string[] HeartbeatPaths = ["/health", "/sync/events", "/heartbeat"];
+
+    public static bool IsHeartbeat(string? transactionName) =>
+        transactionName is not null && HeartbeatPaths.Any(p => transactionName.Contains(p, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The sampler: heartbeats never; a trace the web app started keeps its
+    /// decision (a slow Confirm shows its sync push end to end); everything
+    /// else at <paramref name="rate"/>.
+    /// </summary>
+    public static double SampleTrace(ITransactionContext context, double rate)
+    {
+        if (rate <= 0 || IsHeartbeat(context.Name)) return 0;
+        if (context.IsParentSampled is { } parentSampled) return parentSampled ? 1 : 0;
+        return rate;
     }
 }

@@ -178,6 +178,9 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://munni-prod-nas-lab.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.equal(api.ConnectionStrings__Db, 'Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}');
   assert.equal(api.Ocr__BaseUrl, 'http://ocr:8884');
+  // performance tracing (2026-10-09): the environment's share rides beside the DSN — a fifth on production by default
+  assert.equal(api.Sentry__Dsn, '${API_SENTRY_DSN:-}');
+  assert.equal(api.Sentry__TracesSampleRate, '"0.2"');
   assert.deepEqual(portsOf(block(compose, 'api-prod')), ['8382:8080']);
   assert.deepEqual(under(block(compose, 'api-prod'), 'depends_on'), ['postgres-prod:', 'logto-prod:']);
   const logto = envOf(block(compose, 'logto-prod'));
@@ -202,6 +205,9 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.deepEqual(portsOf(block(staging.compose, 'web-staging')), ['8480:80']);
   assert.deepEqual(portsOf(block(staging.compose, 'logto-staging')), ['3301:3301', '3302:3302']);
   assert.equal(envOf(block(staging.compose, 'web-staging')).MUNNI_CHANNEL, 'staging');
+  // a staging environment is the test ground: every trace, on the web app and the api alike
+  assert.equal(envOf(block(staging.compose, 'web-staging')).MUNNI_TRACES_SAMPLE_RATE, '"1"');
+  assert.equal(envOf(block(staging.compose, 'api-staging')).Sentry__TracesSampleRate, '"1"');
   assert.deepEqual(corsOf(block(staging.compose, 'api-staging')), [`https://munni-staging-nas.${DOMAIN}`, `https://munni-staging-nas-admin.${DOMAIN}`, `https://munni-staging-nas-lab.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.match(staging.env, /^TAG=dev$/m);
 });

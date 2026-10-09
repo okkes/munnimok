@@ -9,6 +9,21 @@ import { SyncHttpError } from './backend';
 import { reportError } from '@/lib/report';
 
 vi.mock('@/lib/report', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
+// the round's spans (user 2026-10-09): a pass-through measure that keeps
+// every span's attributes by name, so a test reads what a round reported
+const perfSpans = vi.hoisted(() => ({ attrs: new Map<string, Record<string, unknown>>() }));
+vi.mock('@/lib/perf', () => ({
+  measure: (name: string, fn: (span: unknown) => unknown) => {
+    const attrs: Record<string, unknown> = {};
+    perfSpans.attrs.set(name, attrs);
+    return fn({
+      setAttribute: (key: string, value: unknown) => {
+        attrs[key] = value;
+      },
+      setAttributes: (values: Record<string, unknown>) => Object.assign(attrs, values),
+    });
+  },
+}));
 import { SyncEngine } from './engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
@@ -480,5 +495,43 @@ describe('SyncEngine', () => {
     dbs.push(c.db);
     await c.engine.syncAll();
     expect((await c.db.categories.toArray()).filter((row) => row.deleted === 0)).toHaveLength(25);
+  });
+});
+
+describe('the sync round span (user 2026-10-09)', () => {
+  beforeEach(() => {
+    dbCounter++;
+    perfSpans.attrs.clear();
+    vi.stubGlobal('fetch', async () =>
+      new Response(JSON.stringify({ capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 })),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('carries what moved as counts — spaces, ops pushed, rows pulled — never contents', async () => {
+    const server = new InMemoryServer();
+    let w = 4_000_000;
+    const a = device('spanA', () => ++w, server);
+    const b = device('spanB', () => ++w, server);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Spanned', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.repo.upsert('account', 's1', 'acc1', { name: 'Main', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+
+    await a.engine.syncAll();
+    // two ops out; the pull after it reads them back (own ops merge as no-ops, they still count as rows pulled)
+    expect(perfSpans.attrs.get('sync.round')).toEqual({ 'sync.spaces': 1, 'sync.ops_pushed': 2, 'sync.rows_pulled': 2, 'sync.ok': true });
+    expect(perfSpans.attrs.get('sync.push')).toEqual({ 'sync.ops': 2 });
+    expect(perfSpans.attrs.get('sync.pull')).toEqual({ 'sync.rows': 2 });
+    expect(perfSpans.attrs.has('sync.handshake')).toBe(true);
+    expect(perfSpans.attrs.has('sync.spaces')).toBe(true);
+
+    await b.engine.syncAll();
+    expect(perfSpans.attrs.get('sync.round')).toEqual({ 'sync.spaces': 1, 'sync.ops_pushed': 0, 'sync.rows_pulled': 2, 'sync.ok': true });
+
+    // a round that did not reach its end says so
+    server.pullStatus = 500;
+    await b.engine.syncAll();
+    expect(perfSpans.attrs.get('sync.round')).toMatchObject({ 'sync.ok': false });
+    await a.db.delete();
+    await b.db.delete();
   });
 });

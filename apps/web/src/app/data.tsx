@@ -14,6 +14,7 @@ import { SyncEngine } from '@/sync/engine';
 import { config } from './config';
 import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
+import { measure, tagSpacePeriod } from '@/lib/perf';
 import { ensurePersistentStorage } from '@/lib/platform';
 import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
 import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
@@ -187,12 +188,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // must never seed a screen with the last user's rows
     clearQueryCache();
 
-    void (async () => {
+    // the boot span (user 2026-10-09, docs/observability.md): the store
+    // open, the demo seed, the first queries and — on a brand-new device —
+    // the server's confirmation, up to the first screen; the kind of
+    // identity and the number of spaces ride along, never an id
+    void measure('app.boot', async (boot) => {
+      boot.setAttribute('boot.identity', identity.kind);
       // E2: the backend is chosen here — Dexie, or SQLCipher when the
       // native dev flag is on (openStore.ts) — hence the async open
-      const store = await openStorageBackend(identityDbName(identityKey(identity)));
+      const store = await measure('app.boot.open', () => openStorageBackend(identityDbName(identityKey(identity))), undefined, { parent: boot });
       if (cancelled) {
         store.close();
+        boot.setAttribute('boot.cancelled', true);
         return;
       }
       openedStore = store;
@@ -240,10 +247,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
-      if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
+      if (identity.kind === 'demo') await measure('app.boot.seed', () => seedDemoIfNeeded(repo), undefined, { parent: boot });
       // boot maintenance chain: the every-boot heals (ALL identities —
-      // demo/offline data too); each is idempotent and cheap
-      const bootChain = (async () => {
+      // demo/offline data too); each is idempotent and cheap — timed as
+      // its own transaction (parent null), since it outlives the boot span
+      const bootChain = measure('app.boot.heal', async () => {
         // #228: reimbursement on a SPLIT transaction stays on the split.
         // Every boot: links name their parts (a row split after it was
         // linked) and each side's settle bookkeeping is recomputed
@@ -267,7 +275,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');
         await linkTransferPairs(store, repo);
-      })().catch(() => undefined);
+      }, undefined, { parent: null }).catch(() => undefined);
       // test seam: the chain writes fire-and-forget, and a test that
       // deletes the database while a PREVIOUS boot's chain still holds
       // the connection boots the next app on a dying handle (its live
@@ -303,15 +311,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } else {
           // brand-new device: nothing to show — wait for the server to
           // confirm the account state (fail-closed bootstrap)
+          boot.setAttribute('boot.waited_for_server', true);
           await finishSync();
         }
       }
       const stored = (await store.metaGet(ACTIVE_SPACE_KEY))?.value as string | undefined;
       const spaces = await liveSpaces(store);
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
+      boot.setAttribute('boot.spaces', spaces.length);
+      tagSpacePeriod(spaces.find((s) => s.id === spaceId)?.periodType);
       if (!spaceId && !(await minaOwnsFirstRun(store))) throw new Error('no space available after seed');
       if (!cancelled) setState({ store, repo, spaceId: spaceId ?? '', engine });
-    })().catch((err) => {
+    }).catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
       if (!cancelled) throw err;
     });
@@ -327,6 +338,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     async (spaceId: string) => {
       if (!state) return;
       await state.store.metaPut(ACTIVE_SPACE_KEY, spaceId);
+      tagSpacePeriod((await state.store.get('space', spaceId))?.periodType);
       setState((prev) => (prev ? { ...prev, spaceId } : prev));
     },
     [state],

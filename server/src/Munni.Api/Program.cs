@@ -32,8 +32,21 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
 {
     // explicit empty string = SDK disabled (unset would throw at boot)
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
-    options.TracesSampleRate = 0; // errors only, no performance tracing
     options.SendDefaultPii = false;
+    // performance tracing (user 2026-10-09, docs/observability.md): the
+    // sampled requests become transactions named by their route template
+    // (GET /sync/{spaceId}/push), with their EF queries and outgoing calls
+    // as spans — Sentry__TracesSampleRate from the environment's
+    // tracing.sampleRate (0..1, a fifth unless it says otherwise, 0 = errors
+    // only); health probes and the SSE stream never count, and a trace the
+    // web app started keeps its decision
+    var tracesSampleRate = SentryNoise.TracesSampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
+    options.TracesSampler = context => SentryNoise.SampleTrace(context.TransactionContext, tracesSampleRate);
+    // our trace headers travel only to the connector control plane, which
+    // continues them; Logto, the aggregators, logo.dev, FCM, the OCR and
+    // every other party the api calls see no sentry-trace/baggage header
+    options.TracePropagationTargets.Clear();
+    if (builder.Configuration["Connectors:BaseUrl"] is { Length: > 0 } relay) options.TracePropagationTargets.Add(relay);
     // handled races are not incidents: parallel first requests DELIBERATELY
     // race their inserts (Users / UserDevices JIT-provision, attach links)
     // and the losers adopt the winner. EF still logs the failed command at

@@ -15,6 +15,7 @@ type RuntimeKey =
   | 'LOGTO_APP_ID'
   | 'LOGTO_RESOURCE'
   | 'GLITCHTIP_DSN'
+  | 'TRACES_SAMPLE_RATE'
   | 'CHANNEL'
   | 'NATIVE_SCHEME'
   | 'PUBLIC_ORIGIN';
@@ -28,6 +29,12 @@ const runtime = (key: RuntimeKey): string | undefined => {
 /** 'production' | 'staging' | '' (local dev) — shown in the Settings footer */
 const channel = runtime('CHANNEL') ?? (import.meta.env.VITE_CHANNEL as string | undefined) ?? '';
 
+/** a share in 0..1, or the fallback when the value is absent or not one */
+const sampleRate = (raw: string | undefined, fallback: number): number => {
+  const parsed = Number(raw);
+  return raw !== undefined && raw !== '' && Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
+};
+
 export const config = {
   /** sync/API base URL; dev default matches deploy/docker-compose.test.yml */
   apiUrl:
@@ -39,6 +46,15 @@ export const config = {
     resource: runtime('LOGTO_RESOURCE') ?? (import.meta.env.VITE_LOGTO_RESOURCE as string | undefined) ?? '',
   },
   glitchtipDsn: runtime('GLITCHTIP_DSN') ?? (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '',
+  /** performance tracing (user 2026-10-09): the share of pageloads,
+   *  navigations and sync rounds that reach GlitchTip's Performance view
+   *  (0 = errors only). The environment's `tracing.sampleRate` arrives
+   *  through the overlay; without one, production samples a fifth and
+   *  staging/local every trace — the test ground wants them all. */
+  tracesSampleRate: sampleRate(
+    runtime('TRACES_SAMPLE_RATE') ?? (import.meta.env.VITE_TRACES_SAMPLE_RATE as string | undefined),
+    channel === 'production' ? 0.2 : 1,
+  ),
   channel,
   /** deep-link scheme of the app this bundle belongs to: 'munni' for
    *  production, 'munni-dev' for staging (app.munni.dev). Native shells

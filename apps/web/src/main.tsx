@@ -19,7 +19,8 @@ import { installViewportGuard } from '@/lib/viewportGuard';
 import { installKeyboardDismiss } from '@/lib/keyboardDismiss';
 import { installKeyboardReveal } from '@/lib/keyboardReveal';
 import { installMemWatch } from '@/lib/memWatch';
-import { reportWarning } from '@/lib/report';
+import { installWebVitals, scrubEvent, transactionFilter } from '@/lib/perf';
+import { gateTransport, reportWarning } from '@/lib/report';
 import { initPressFeedback } from '@/app/pressFeedback';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
@@ -60,20 +61,36 @@ const isZeroNetworkIdentity = () => {
   return kind === 'demo' || kind === 'offline';
 };
 
-// error monitoring: GlitchTip speaks the Sentry protocol; no-op when unset
+// error AND performance monitoring (docs/observability.md): GlitchTip
+// speaks the Sentry protocol; no-op when unset
 if (config.glitchtipDsn) {
   Sentry.init({
     dsn: config.glitchtipDsn,
     release: `munni-web@${String(__BUILD_NUMBER__)}`,
+    environment: config.channel || 'local',
     // financial app: never send request/response bodies or user input
     sendDefaultPii: false,
-    // errors only: the session ping (fires at init, before any identity
-    // check could run) and outcome client reports would break the
-    // zero-network promise, and we don't use release health anyway
-    integrations: (defaults) => defaults.filter((integration) => integration.name !== 'BrowserSession'),
+    // the session ping (fires at init, before any identity check could
+    // run) and outcome client reports would break the zero-network
+    // promise, and we don't use release health anyway
+    integrations: (defaults) => [
+      ...defaults.filter((integration) => integration.name !== 'BrowserSession'),
+      // performance (user 2026-10-09): pageload + navigation transactions
+      // named by the route PATTERN (/transactions/$txId, never the id) with
+      // the fetches, long animation frames (and their script) and the
+      // interaction-to-next-paint under them; the gates below decide who sends
+      Sentry.tanstackRouterBrowserTracingIntegration(router, { enableInp: true, enableLongAnimationFrame: true }),
+    ],
+    tracesSampleRate: config.tracesSampleRate,
+    // the sync api continues our traces (a slow Confirm shows its push end
+    // to end; its CORS allows any header) — Logto, logo.dev and every
+    // other origin see no sentry-trace/baggage header
+    tracePropagationTargets: config.apiUrl ? [config.apiUrl] : [],
     sendClientReports: false,
-    // no connectivity ≠ no telemetry: queue in IndexedDB, flush when online
-    transport: Sentry.makeBrowserOfflineTransport(Sentry.makeFetchTransport),
+    // no connectivity ≠ no telemetry: queue in IndexedDB, flush when online.
+    // The gate under it is the zero-network promise for what no hook sees
+    // (standalone INP spans): a demo/offline identity sends nothing, ever.
+    transport: Sentry.makeBrowserOfflineTransport(gateTransport(Sentry.makeFetchTransport, isZeroNetworkIdentity)),
     // the offline transport reads OfflineTransportOptions, which the init
     // options type doesn't surface — hence the widened literal
     transportOptions: { flushAtStartup: true } as Partial<Parameters<typeof Sentry.makeFetchTransport>[0]>,
@@ -92,8 +109,15 @@ if (config.glitchtipDsn) {
       /Connection to munni_\w+ not available/,
       /No available connection for database munni_\w+/,
     ],
-    beforeSend: (event) => (isZeroNetworkIdentity() ? null : event),
+    // routes, never rows: every url an event carries loses its ids,
+    // query and fragment (lib/perf scrubEvent); idle sync rounds stay home
+    beforeSend: (event) => (isZeroNetworkIdentity() ? null : scrubEvent(event)),
+    beforeSendTransaction: (event) => (isZeroNetworkIdentity() ? null : transactionFilter(event)),
   });
+  // the interaction the person felt: a poor INP (> 500 ms tap-to-paint)
+  // files one warning per element with its phases and longest script —
+  // through reportWarning, so the same zero-network gate applies
+  installWebVitals();
 }
 
 initPwa();

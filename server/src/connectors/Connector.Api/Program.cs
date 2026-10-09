@@ -1,5 +1,7 @@
+using System.Globalization;
 using BankConnector.Adapters;
 using Connector.Kit.Hosting;
+using Sentry;
 using Sentry.AspNetCore;
 using RegistryConnector.Adapters;
 using ShopConnector.Adapters;
@@ -14,9 +16,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
 {
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
-    options.TracesSampleRate = 0;
     options.SendDefaultPii = false;
     options.CaptureFailedRequests = false;
+    // performance tracing (user 2026-10-09, docs/observability.md): the relay's
+    // calls as transactions with their database and party spans —
+    // Sentry__TracesSampleRate (0..1, a fifth by default, 0 = errors only);
+    // docker's health probe and the agents' heartbeats never count, and a
+    // trace the api continued from the web app keeps its decision. No trace
+    // header leaves this process: a party's site is nobody's tracing peer.
+    var tracesSampleRate = TracesSampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
+    options.TracesSampler = context => SampleTrace(context.TransactionContext, tracesSampleRate);
+    options.TracePropagationTargets.Clear();
     options.Release = builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } tag ? $"munni-connector@{tag}" : null;
     options.SetBeforeSend((e, _) => { e.SetTag("role", "control-plane"); return e; });
 });
@@ -63,3 +73,15 @@ app.MapConnectorApi();
 app.MapAgentApi();
 
 await app.RunAsync();
+
+// a number in 0..1, else the platform default of a fifth
+static double TracesSampleRate(string? configured) =>
+    double.TryParse(configured, NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate is >= 0 and <= 1 ? rate : 0.2;
+
+// /v1/health (docker every 10 s), the operator's /health and the agents' /heartbeat are never a transaction
+static double SampleTrace(ITransactionContext context, double rate)
+{
+    if (rate <= 0 || context.Name.Contains("/health", StringComparison.OrdinalIgnoreCase) || context.Name.Contains("/heartbeat", StringComparison.OrdinalIgnoreCase)) return 0;
+    if (context.IsParentSampled is { } parentSampled) return parentSampled ? 1 : 0;
+    return rate;
+}

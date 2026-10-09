@@ -1,4 +1,6 @@
+import type { Span } from '@sentry/react';
 import { getApiCapabilities, getProtocolIssue, resetApiCapabilitiesCache } from '@/lib/api';
+import { measure } from '@/lib/perf';
 import { reportError } from '@/lib/report';
 import { reportEviction } from '@/app/evicted';
 import type { StorageBackend } from '@/db/backend';
@@ -126,18 +128,34 @@ export class SyncEngine {
     this.debounceTimer = setTimeout(() => void this.syncAll(), 2_000);
   }
 
+  /** the round's counts for its span (user 2026-10-09): how much moved, never what */
+  private pushed = 0;
+  private pulled = 0;
+
   async syncAll(): Promise<void> {
     if (this.running) return;
     this.running = true;
     this.roundOk = false;
+    this.pushed = 0;
+    this.pulled = 0;
     this.setStatus('syncing');
+    // one span per round (user 2026-10-09, docs/observability.md): its
+    // handshake and per-space push/pull children, with the fetches under
+    // them, show where a slow sync spent its time; an idle round that
+    // stayed under budget never leaves the device (lib/perf). Always a
+    // root of its own: the first round starts inside the boot span and
+    // usually outlives it
+    await measure('sync.round', (round) => this.runRound(round), undefined, { parent: null });
+  }
+
+  private async runRound(round: Span): Promise<void> {
     try {
       // version handshake FIRST (lib/protocol.ts): native apps and the
       // API deploy separately — a contract mismatch must refuse to sync
       // instead of exchanging ops both sides half-understand. Fresh
       // check each cycle: an updated server lifts the block by itself.
       resetApiCapabilitiesCache();
-      await getApiCapabilities();
+      await measure('sync.handshake', () => getApiCapabilities(), undefined, { parent: round });
       if (getProtocolIssue()) {
         this.lastError = `protocol mismatch: ${getProtocolIssue()}`;
         this.setStatus('error');
@@ -147,8 +165,9 @@ export class SyncEngine {
       // also flush outbox ops for spaces we no longer have rows for
       const outboxSpaces = (await this.store.outboxAll()).map((o) => o.spaceId);
       // and pull spaces the server knows us to be in (fresh device / new invite)
-      const serverSpaces = await this.backend.listSpaces();
+      const serverSpaces = await measure('sync.spaces', () => this.backend.listSpaces(), undefined, { parent: round });
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
+      round.setAttribute('sync.spaces', spaceIds.length);
       // one space's failure must not starve the rest: a single poisoned
       // outbox (one rejected op) used to abort the whole loop, so nothing
       // else on the device synced anymore (user report: store receipts +
@@ -160,7 +179,7 @@ export class SyncEngine {
           // #306 (user): a space we KNOW evicted us stays untouched until
           // the server re-grants it — no request may leave for it
           if (await this.skipKnownEvicted(spaceId, serverSet)) continue;
-          await this.syncSpace(spaceId);
+          await this.syncSpace(spaceId, round);
         } catch (err) {
           firstError ??= err;
         }
@@ -174,6 +193,7 @@ export class SyncEngine {
       this.settleFailure(err);
     } finally {
       this.running = false;
+      round.setAttributes({ 'sync.ops_pushed': this.pushed, 'sync.rows_pulled': this.pulled, 'sync.ok': this.roundOk });
     }
   }
 
@@ -226,6 +246,7 @@ export class SyncEngine {
     try {
       await this.backend.push(spaceId, this.clientId, chunk);
       await this.store.outboxDelete(chunk.map((o) => o.opId));
+      this.pushed += chunk.length;
     } catch (err) {
       if (!(err instanceof SyncHttpError) || err.status !== 400) throw err;
       if (chunk.length === 1) {
@@ -282,6 +303,7 @@ export class SyncEngine {
         return;
       }
       await this.repo.applyRemoteOps(ops);
+      this.pulled += ops.length;
       const next = nextSince ?? since + ops.length;
       if (next <= since) return; // defensive: never spin without progress
       await this.store.metaPut(cursorKey(spaceId), next);
@@ -290,7 +312,8 @@ export class SyncEngine {
     }
   }
 
-  async syncSpace(spaceId: string): Promise<void> {
+  /** `round`: the sync.round span this space's push/pull spans nest under */
+  async syncSpace(spaceId: string, round?: Span): Promise<void> {
     try {
       // 1. push queued local ops (ordered by HLC), CHUNKED: the server
       // caps a push at 1000 ops and proxies cap body size — a store-
@@ -305,11 +328,19 @@ export class SyncEngine {
       // the still-granted pull resurrected the space, looping forever.
       let writeDenied = false;
       try {
-        const outbox = await this.store.outboxBySpace(spaceId);
-        for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
-          const chunk = outbox.slice(i, i + PUSH_CHUNK);
-          await this.pushChunk(spaceId, chunk);
-        }
+        await measure(
+          'sync.push',
+          async (push) => {
+            const outbox = await this.store.outboxBySpace(spaceId);
+            push.setAttribute('sync.ops', outbox.length);
+            for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
+              const chunk = outbox.slice(i, i + PUSH_CHUNK);
+              await this.pushChunk(spaceId, chunk);
+            }
+          },
+          undefined,
+          { parent: round },
+        );
       } catch (err) {
         if (!(err instanceof SyncHttpError) || err.status !== 403) throw err;
         writeDenied = true;
@@ -318,7 +349,16 @@ export class SyncEngine {
       // 2. pull everything after our cursor and merge (own ops no-op) —
       // paged until drained (#305 bug 4; the loop lives in drainPull)
       const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
-      await this.drainPull(spaceId, since);
+      const pulledBefore = this.pulled;
+      await measure(
+        'sync.pull',
+        async (pull) => {
+          await this.drainPull(spaceId, since);
+          pull.setAttribute('sync.rows', this.pulled - pulledBefore);
+        },
+        undefined,
+        { parent: round },
+      );
       if (writeDenied) await this.parkReadOnlyOps(spaceId);
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {

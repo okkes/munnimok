@@ -71,6 +71,17 @@ describe('runtime config overlay', () => {
     expect(emptied.config).toEqual(bare.config);
   });
 
+  it('tracesSampleRate: the overlay first, else a fifth on production and every trace elsewhere (user 2026-10-09)', async () => {
+    expect((await withOverlay({ TRACES_SAMPLE_RATE: '0.5' })).config.tracesSampleRate).toBe(0.5);
+    expect((await withOverlay({ TRACES_SAMPLE_RATE: '0' })).config.tracesSampleRate).toBe(0);
+    // a value that is not a share falls back to the channel's default
+    expect((await withOverlay({ TRACES_SAMPLE_RATE: '7', CHANNEL: 'production' })).config.tracesSampleRate).toBe(0.2);
+    expect((await withOverlay({ TRACES_SAMPLE_RATE: 'all', CHANNEL: 'staging' })).config.tracesSampleRate).toBe(1);
+    const bakedRate = baked('VITE_TRACES_SAMPLE_RATE');
+    expect((await withOverlay({ CHANNEL: 'production' })).config.tracesSampleRate).toBe(bakedRate ? Number(bakedRate) : 0.2);
+    expect((await withOverlay({ CHANNEL: 'staging' })).config.tracesSampleRate).toBe(bakedRate ? Number(bakedRate) : 1);
+  });
+
   it('publicOrigin: runtime overlay first, then bake, then the page origin', async () => {
     const withRuntime = await withOverlay({ PUBLIC_ORIGIN: 'https://munni-iac.example.test' });
     expect(withRuntime.publicOrigin()).toBe('https://munni-iac.example.test');
