@@ -50,6 +50,31 @@ const INVITATIONS = {
   ],
 };
 
+/** one connector session as the API details it (2026-10-09): a GoCardless consent the bank ended */
+const SESSION = {
+  sessionId: 'ses_1',
+  provider: 'gocardless',
+  connectionId: 'conn-1234567890abcdef',
+  state: 'needs_reauth',
+  label: 'ING',
+  createdAt: '2026-09-01T06:00:00Z',
+  lastSeenAt: '2026-09-30T06:00:00Z',
+  keptBundle: false,
+  lastScheduledSyncAt: '2026-09-29T03:00:00Z',
+  lastScheduleError: 'session_expired',
+  scheduleNotBefore: null,
+  accounts: 2,
+  stale: true,
+};
+const outcomeOf = (sessionId: string, party: string, provider = 'gocardless') => ({
+  sessionId,
+  provider,
+  connectionId: 'conn-1234567890abcdef',
+  party,
+  partyError: null,
+  accountsForgotten: 2,
+});
+
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
@@ -182,9 +207,11 @@ describe('AdminApp (test-auth mode)', () => {
 
     fireEvent.click(screen.getByTestId('diagnose-sub-bob'));
     const panel = await screen.findByTestId('user-diagnosis');
+    // an older API without names: the ids stand in, grouped the same way (2026-10-09)
     await waitFor(() => expect(panel.textContent).toContain('space-main'));
-    expect(panel.textContent).toContain('ops 42');
-    expect(panel.textContent).toContain('NONE — feeds never attached');
+    expect(screen.getByTestId('user-diagnosis-feeds').textContent).toContain('42');
+    expect(screen.getByTestId('user-diagnosis-feeds').textContent).toContain('not attached to a space');
+    expect(screen.getByTestId('user-diagnosis-attachments').textContent).toContain('No attachments');
 
     // a dead call must not spin forever — it says what went wrong
     fireEvent.click(screen.getByTestId('diagnose-sub-carol'));
@@ -219,25 +246,62 @@ describe('AdminApp (test-auth mode)', () => {
     expect(screen.getByTestId('connectors-open-lab').getAttribute('href')).toBe('https://lab.test');
   });
 
-  it('a user diagnosis lists the connector sessions the relay binds (#367 M6)', async () => {
+  it('a user diagnosis names the spaces, feeds and attachments and lists the connector sessions as a table; a row disconnects from there (#367 M6 · user 2026-10-09)', async () => {
+    let deleted = 0;
+    let diagnosed = 0;
     scriptFetch({
       ...HAPPY_ROUTES(),
-      'GET /admin/users/sub-alice/diagnosis': () => ({
-        body: {
-          userId: 'u1',
-          memberSpaces: ['space-1'],
-          ownedFeeds: [],
-          attachments: [],
-          connectorSessions: [{ sessionId: 'ses_1', provider: 'mock-store-simple', connectionId: 'conn-1234567890abcdef', state: 'awaiting_input', lastSeenAt: '2026-09-30T06:00:00Z' }],
-        },
-      }),
+      'GET /admin/users/sub-alice/diagnosis': () => {
+        diagnosed += 1;
+        return {
+          body: {
+            userId: 'u1',
+            memberSpaces: ['space-1', 'feed-1'],
+            spaces: [
+              { id: 'space-1', name: 'Household', role: 'owner', feed: false },
+              { id: 'feed-1', name: null, role: 'owner', feed: true },
+            ],
+            ownedFeeds: [{ feedSpaceId: 'feed-1', maxSeq: 7, lastOpAt: '2026-10-08T06:00:00Z', attachedTo: [{ id: 'space-1', name: 'Household' }] }],
+            attachments: [{ spaceId: 'space-1', feedSpaceId: 'feed-1', accountId: 'acct-1', spaceName: 'Household', accountName: 'ING Betaal', ibanTail: '…1234', attachedByName: 'Alice' }],
+            connectorSessions: deleted === 0 ? [SESSION] : [],
+          },
+        };
+      },
+      'DELETE /admin/bank-connections/ses_1': () => {
+        deleted += 1;
+        return { body: outcomeOf('ses_1', 'ended') };
+      },
     });
     renderAdmin();
     fireEvent.click(await screen.findByTestId('nav-users'));
     fireEvent.click(await screen.findByTestId('diagnose-sub-alice'));
-    const line = await screen.findByTestId('user-diagnosis-connectors');
-    expect(line.textContent).toContain('mock-store-simple awaiting_input');
-    expect(line.textContent).toContain('conn-1234567…');
+    const spaces = await screen.findByTestId('user-diagnosis-spaces');
+    expect(spaces.textContent).toContain('Household');
+    expect(spaces.textContent).toContain('owner');
+    // a feed membership is not a space: it sits under Feeds, attached to its space
+    expect(spaces.textContent).not.toContain('feed-1');
+    expect(screen.getByTestId('user-diagnosis-feeds').textContent).toContain('Household');
+    const attachments = screen.getByTestId('user-diagnosis-attachments');
+    expect(attachments.textContent).toContain('ING Betaal');
+    expect(attachments.textContent).toContain('…1234');
+    expect(attachments.textContent).toContain('Alice');
+
+    const sessions = screen.getByTestId('user-diagnosis-connectors');
+    expect(sessions.textContent).toContain('GoCardless');
+    expect(sessions.textContent).toContain('needs_reauth');
+    expect(sessions.textContent).toContain('session_expired');
+    expect(screen.getByTestId('session-stale-ses_1')).toBeTruthy();
+    // the id stays reachable: short in the cell, whole on the title
+    expect(sessions.textContent).toContain('conn-12345…');
+    expect(screen.getByTestId('session-connection-ses_1').getAttribute('title')).toContain('conn-1234567890abcdef');
+
+    // Disconnect asks once, DELETEs, says what the party did and reads the diagnosis again
+    fireEvent.click(screen.getByTestId('session-disconnect-ses_1'));
+    fireEvent.click(await screen.findByTestId('session-disconnect-ses_1-yes'));
+    await waitFor(() => expect(deleted).toBe(1));
+    expect((await screen.findByTestId('admin-notice')).textContent).toContain('ended at the party');
+    await waitFor(() => expect(screen.queryByTestId('session-ses_1')).toBeNull());
+    expect(diagnosed).toBeGreaterThanOrEqual(2);
   });
 
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
@@ -503,5 +567,102 @@ describe('AdminApp (invitations)', () => {
     expect(note.textContent).toContain('logto-unavailable');
     expect(screen.queryByTestId('invitations-table')).toBeNull();
     expect(screen.getByTestId('invite-mode').textContent).toContain('by invitation');
+  });
+});
+
+/** the Bank connections dashboard (user 2026-10-09): every open-banking consent across users, with a disconnect */
+describe('AdminApp (bank connections)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  const ROWS = [
+    { ...SESSION, sessionId: 'ses_a1', userSub: 'sub-alice', userName: 'Alice', connectionId: 'conn-alive-1', state: 'active', keptBundle: true, stale: false, lastScheduleError: null },
+    { ...SESSION, sessionId: 'ses_a2', userSub: 'sub-alice', userName: 'Alice', connectionId: 'conn-dead-1' },
+    { ...SESSION, sessionId: 'ses_a3', userSub: 'sub-alice', userName: 'Alice', connectionId: 'conn-dead-2', state: 'failed' },
+    { ...SESSION, sessionId: 'ses_b1', userSub: 'sub-bob', userName: 'sub-bob', provider: 'enablebanking', state: 'active', keptBundle: true, stale: false, lastScheduleError: null },
+  ];
+
+  it('lists every open-banking session per user with the stale ones marked; the toggle asks for every party; the filter narrows', async () => {
+    const asked: (string | null)[] = [];
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/bank-connections': (_init, url) => {
+        const all = url?.searchParams.get('all') ?? null;
+        asked.push(all);
+        return { body: { all: all === 'true', total: ROWS.length, capped: false, connections: ROWS } };
+      },
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-bank-connections'));
+    const alice = await screen.findByTestId('bank-connections-user-sub-alice');
+    expect(alice.textContent).toContain('Alice');
+    expect(alice.textContent).toContain('3 connections');
+    expect(alice.textContent).toContain('2 stale');
+    expect(screen.getByTestId('session-stale-ses_a2')).toBeTruthy();
+    expect(screen.getByTestId('session-stale-ses_a3')).toBeTruthy();
+    expect(screen.queryByTestId('session-stale-ses_a1')).toBeNull();
+    expect(screen.getByTestId('bank-connections-user-sub-bob').textContent).toContain('Enable Banking');
+    expect(screen.getByTestId('bank-connections-tiles').textContent).toContain('Stale');
+
+    // every party: the list is asked again with ?all=true
+    fireEvent.click(screen.getByTestId('bank-connections-all'));
+    await waitFor(() => expect(asked).toContain('true'));
+
+    // the filter narrows by user or party
+    fireEvent.change(await screen.findByTestId('bank-connections-search'), { target: { value: 'enable' } });
+    await waitFor(() => expect(screen.queryByTestId('bank-connections-user-sub-alice')).toBeNull());
+    expect(screen.getByTestId('bank-connections-user-sub-bob')).toBeTruthy();
+  });
+
+  it('Disconnect asks once and DELETEs; Clean up stale ends every stale row of that person after one confirm', async () => {
+    const deleted: string[] = [];
+    let rows = ROWS;
+    const gone = (id: string, party: string, provider = 'gocardless') => () => {
+      deleted.push(id);
+      rows = rows.filter((row) => row.sessionId !== id);
+      return { body: outcomeOf(id, party, provider) };
+    };
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/bank-connections': () => ({ body: { all: false, total: rows.length, capped: false, connections: rows } }),
+      'DELETE /admin/bank-connections/ses_a2': gone('ses_a2', 'gone'),
+      'DELETE /admin/bank-connections/ses_a3': gone('ses_a3', 'ended'),
+      'DELETE /admin/bank-connections/ses_b1': gone('ses_b1', 'ended', 'enablebanking'),
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-bank-connections'));
+    await screen.findByTestId('bank-connections-user-sub-bob');
+
+    // one row: the question, a way back, then the call and the outcome in the strip
+    fireEvent.click(screen.getByTestId('session-disconnect-ses_b1'));
+    expect(screen.getByTestId('session-disconnect-ses_b1-confirm').textContent).toContain('End it at the party');
+    fireEvent.click(screen.getByTestId('session-disconnect-ses_b1-no'));
+    expect(screen.queryByTestId('session-disconnect-ses_b1-confirm')).toBeNull();
+    expect(deleted).toEqual([]);
+    fireEvent.click(screen.getByTestId('session-disconnect-ses_b1'));
+    fireEvent.click(screen.getByTestId('session-disconnect-ses_b1-yes'));
+    await waitFor(() => expect(deleted).toEqual(['ses_b1']));
+    expect((await screen.findByTestId('admin-notice')).textContent).toContain('Enable Banking');
+    await waitFor(() => expect(screen.queryByTestId('bank-connections-user-sub-bob')).toBeNull());
+
+    // the stale rows of Alice in one go — the live one stays
+    fireEvent.click(screen.getByTestId('bank-connections-cleanup-sub-alice'));
+    fireEvent.click(await screen.findByTestId('bank-connections-cleanup-sub-alice-yes'));
+    await waitFor(() => expect(deleted).toEqual(['ses_b1', 'ses_a2', 'ses_a3']));
+    await waitFor(() => expect(screen.getByTestId('admin-notice').textContent).toContain('2 stale connections disconnected'));
+    await waitFor(() => expect(screen.queryByTestId('session-ses_a2')).toBeNull());
+    expect(screen.getByTestId('session-ses_a1')).toBeTruthy();
+    expect(screen.queryByTestId('bank-connections-cleanup-sub-alice')).toBeNull();
+  });
+
+  it('a list the API cannot give says why instead of posing as empty; the Connectors page points here', async () => {
+    scriptFetch({ ...HAPPY_ROUTES(), 'GET /admin/bank-connections': () => ({ status: 404 }) });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    fireEvent.click(await screen.findByTestId('connectors-open-bank-connections'));
+    expect((await screen.findByTestId('bank-connections-unavailable')).textContent).toContain('HTTP 404');
+    expect(sessionStorage.getItem('munni_admin_screen')).toBe('bank-connections');
   });
 });

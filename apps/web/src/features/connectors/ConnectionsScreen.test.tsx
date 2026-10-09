@@ -291,7 +291,8 @@ describe('Connections hub (signed-in user)', () => {
   }, 20_000);
 
   it('#445: an account whose connection is gone is listed as not fetched any more, with the way back', async () => {
-    renderAppAsUser('/connections', { api: { ...catalogue } });
+    // the feed set says whose the account is (user ss 2026-10-09): this one sits in my own space
+    renderAppAsUser('/connections', { api: { ...catalogue, 'GET /me/feeds': () => [{ feedSpaceId: 's-user' }] } });
     await screen.findByTestId('screen-connections');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -758,6 +759,48 @@ describe('Connections hub (signed-in user)', () => {
       expect(await db.connectorConns.toArray()).toHaveLength(0);
       expect((await db.storeConns.toArray()).every((c) => c.deleted === 1)).toBe(true);
       expect((await db.storeConnLinks.toArray()).every((l) => l.deleted === 1)).toBe(true);
+    });
+    db.close();
+  }, 20_000);
+
+  it('removing a connection made on another device tells the relay through its binding, so no session lingers (user 2026-10-09)', async () => {
+    // the synced rows alone: no device row, no bundle — the way a second device sees a connection
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { storeFeedId } = await import('@/domain/feedIds');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    const seed = await userDb();
+    const repo = new Repo(new DexieBackend(seed), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('storeConn', storeFeedId(USER_TEST_SUB), 'c-elsewhere', { store: PROVIDER, displayName: 'Mock elders', connectedAt: '2026-09-01', status: 'ok' });
+    await repo.upsert('storeConnLink', 's-user', storeConnLinkId('s-user', 'c-elsewhere'), { instanceId: 'c-elsewhere', store: PROVIDER, displayName: 'Mock elders' });
+    seed.close();
+
+    let ended = 0;
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        'GET /connectors/sessions': () => [
+          { sessionId: 'ses_other', provider: PROVIDER, connectionId: 'c-elsewhere', state: 'active', createdAt: '2026-09-01T00:00:00Z', lastSeenAt: '2026-09-01T00:00:00Z', scheduled: false },
+        ],
+        [`DELETE /connectors/${PROVIDER}/sessions/ses_other`]: () => {
+          ended += 1;
+          return { loggedOut: false };
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    expect((await screen.findByTestId('conn-state-c-elsewhere')).textContent).toMatch(/another device/i);
+
+    fireEvent.click(screen.getByTestId('conn-manage-c-elsewhere'));
+    fireEvent.click(await screen.findByTestId('conn-remove'));
+    await screen.findByTestId('conn-remove-body');
+    fireEvent.click(screen.getByTestId('conn-remove-confirm'));
+    await waitFor(() => expect(screen.queryByTestId('conn-card-c-elsewhere')).toBeNull());
+    await waitFor(() => expect(ended).toBe(1));
+    const db = await userDb();
+    await waitFor(async () => {
+      expect((await db.storeConns.toArray()).every((c) => c.deleted === 1)).toBe(true);
     });
     db.close();
   }, 20_000);

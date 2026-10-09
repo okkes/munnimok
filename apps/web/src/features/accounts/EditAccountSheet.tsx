@@ -5,8 +5,8 @@ import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
 import { newestTxDate } from '@/application/accounts';
-import { useLiveConnectionIds } from '@/application/connections';
-import { uncoveredSince } from '@/domain/accountCoverage';
+import { useLiveConnectionIds, useMyFeedIds } from '@/application/connections';
+import { ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
 import { partyName } from '@/features/connectors/logos';
 import { uncoveredDateText } from './coverage';
 import { isDebtTracked } from '@/domain/debts';
@@ -103,14 +103,15 @@ const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
  *  so, and offer the way back: a sign-in again as that same connection, so
  *  the new consent lands on this row, history included, and the server
  *  retires the old session instead of keeping two (prod 2026-10-08). Nothing
- *  while a live connection covers it. A row this editor opens is the space's
- *  own (a friend's feed account opens the info sheet instead), so it is the
- *  viewer's to tell. */
+ *  while a live connection covers it, and only when the row's feed is known
+ *  to be the viewer's own (user ss 2026-10-09: the feed set decides, never a
+ *  default — a friend's row that reaches this editor stays quiet). */
 function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onClose: () => void }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const liveIds = useLiveConnectionIds();
-  const uncovered = liveIds ? uncoveredSince(account, liveIds, true) : null;
+  const myFeeds = useMyFeedIds();
+  const uncovered = liveIds ? uncoveredSince(account, liveIds, ownsFeed(account.spaceId, myFeeds, [], undefined)) : null;
   if (uncovered === null) return null;
   const party = partyName(account.provider ?? account.source);
   return (

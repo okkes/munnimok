@@ -2,15 +2,9 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './config';
 import bundledCatalog from './generated/bundledCatalog.json';
 import { InvitationsScreen, type InvitationsDoc, type InviteResult } from './InvitationsScreen';
-
-interface UserDiagnosis {
-  userId: string;
-  memberSpaces: string[];
-  ownedFeeds: { feedSpaceId: string; maxSeq: number }[];
-  attachments: { spaceId: string; feedSpaceId: string; accountId: string }[];
-  /** #367: the user's connector sessions as the relay binds them — absent where the environment runs no connectors */
-  connectorSessions?: { sessionId: string; provider: string; connectionId: string; state: string; lastSeenAt: string }[] | null;
-}
+import { BankConnectionsScreen, type BankConnectionRow, type BankConnectionsDoc } from './BankConnectionsScreen';
+import { DiagnosisPanel, type UserDiagnosis } from './DiagnosisPanel';
+import { outcomeLine, type DisconnectOutcome, type SessionRow } from './sessionBits';
 
 interface AdminUser {
   id: string;
@@ -34,24 +28,26 @@ function membershipLabel(u: AdminUser): string {
   return `${spaces} · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}`;
 }
 
-/** #367: what the connector relay binds for this user — the session ids, never a bundle */
-function connectorSessionsLine(sessions: UserDiagnosis['connectorSessions']): string {
-  if (!sessions) return 'not offered here';
-  if (sessions.length === 0) return 'NONE';
-  return sessions
-    .map((s) => `${s.provider} ${s.state} · ${s.connectionId.slice(0, 12)}… (seen ${new Date(s.lastSeenAt).toLocaleString()})`)
-    .join(' | ');
-}
-
 /** the invitations as the API lists them, or the one line that says why it could not (Logto down, an older API) */
 async function readInvitations(res: Response | null): Promise<InvitationsDoc | string> {
   if (res?.ok) return (await res.json()) as InvitationsDoc;
+  return failureLine(res);
+}
+
+/** user 2026-10-09: the bank connections as the API lists them, or why it could not (an older API answers 404) */
+async function readBankConnections(res: Response | null): Promise<BankConnectionsDoc | string> {
+  if (res?.ok) return (await res.json()) as BankConnectionsDoc;
+  return failureLine(res);
+}
+
+/** a plain string from this api, else the status, else the network */
+async function failureLine(res: Response | null): Promise<string> {
   const body = (await res?.json().catch(() => null)) as { error?: string } | null;
   return body?.error ?? (res ? `HTTP ${res.status}` : 'network');
 }
 
-type Screen = 'overview' | 'users' | 'invitations' | 'connectors' | 'catalog';
-const SCREENS: Screen[] = ['overview', 'users', 'invitations', 'connectors', 'catalog'];
+type Screen = 'overview' | 'users' | 'invitations' | 'connectors' | 'bank-connections' | 'catalog';
+const SCREENS: Screen[] = ['overview', 'users', 'invitations', 'connectors', 'bank-connections', 'catalog'];
 
 /** the operator-published catalog document (admin-catalog design AC2) */
 interface CatalogCategory {
@@ -156,6 +152,11 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
   // the invitations as last listed; a string says why they could not be (the screen shows it, never an empty table)
   const [invitations, setInvitations] = useState<InvitationsDoc | string | null>(null);
+  // user 2026-10-09: the bank connections as last listed (every party on request), the same way
+  const [bankConnections, setBankConnections] = useState<BankConnectionsDoc | string | null>(null);
+  const [bankAll, setBankAll] = useState(false);
+  // what the last act came to, where it has something to say (a disconnect's outcome at the party)
+  const [notice, setNotice] = useState<string | null>(null);
   // 'denied' = the api really said 403; 'unreachable' = the ping never
   // got an answer (network/CORS/5xx) — one shared message made a blocked
   // request read as "not an admin" (found live 2026-08-28, control twin)
@@ -207,14 +208,16 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
-    const [catalogRes, invitesRes] = await Promise.all([
+    const [catalogRes, invitesRes, bankRes] = await Promise.all([
       call('/catalog').catch(() => null),
       call('/admin/invitations').catch(() => null),
+      call(`/admin/bank-connections${bankAll ? '?all=true' : ''}`).catch(() => null),
     ]);
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
     setInvitations(await readInvitations(invitesRes));
-  }, [call, config.apiUrl, sessionExpired]);
+    setBankConnections(await readBankConnections(bankRes));
+  }, [call, config.apiUrl, sessionExpired, bankAll]);
 
   useEffect(() => {
     if (getToken || sub) void reload();
@@ -241,6 +244,33 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
 
+  // user 2026-10-09: a session ended from the portal — at the party, then forgotten here; the strip says what the party did
+  const disconnectSession = async (row: SessionRow): Promise<DisconnectOutcome | null> => {
+    setNotice(null);
+    const res = await act(() => call(`/admin/bank-connections/${encodeURIComponent(row.sessionId)}`, { method: 'DELETE' }));
+    if (!res?.ok) return null;
+    const outcome = (await res.json()) as DisconnectOutcome;
+    setNotice(outcomeLine(outcome));
+    return outcome;
+  };
+
+  // every stale row of one person after one confirm: one call each, one reload, one line
+  const cleanUpSessions = async (rows: BankConnectionRow[]) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    let ended = 0;
+    for (const row of rows) {
+      const res = await call(`/admin/bank-connections/${encodeURIComponent(row.sessionId)}`, { method: 'DELETE' }).catch(() => null);
+      if (res?.ok) ended += 1;
+    }
+    await reload();
+    setBusy(false);
+    const failed = rows.length - ended;
+    const tail = failed > 0 ? `, ${failed} could not be` : '';
+    setNotice(`${ended} stale connection${ended === 1 ? '' : 's'} disconnected${tail}.`);
+  };
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -254,6 +284,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
               ['users', 'Users'],
               ['invitations', 'Invitations'],
               ['connectors', 'Connectors'],
+              ['bank-connections', 'Bank connections'],
               ['catalog', 'Catalog'],
             ] as [Screen, string][]
           ).map(([id, label]) => (
@@ -315,13 +346,32 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
             {error}
           </p>
         )}
+        {notice && (
+          <p className="notice" data-testid="admin-notice">
+            {notice}
+          </p>
+        )}
         {!blocked && screen === 'overview' && (
           <OverviewScreen users={users} health={health} />
         )}
         {!blocked && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
-        {!blocked && screen === 'connectors' && <LabHandoverScreen labUrl={config.labUrl} />}
+        {!blocked && screen === 'connectors' && (
+          <LabHandoverScreen labUrl={config.labUrl} onOpenBankConnections={() => openScreen('bank-connections')} />
+        )}
+        {!blocked && screen === 'bank-connections' && (
+          <BankConnectionsScreen
+            doc={bankConnections}
+            busy={busy}
+            onToggleAll={(all) => {
+              setBankConnections(null);
+              setBankAll(all);
+            }}
+            onDisconnect={(row) => void disconnectSession(row)}
+            onCleanUp={(rows) => void cleanUpSessions(rows)}
+          />
+        )}
         {!blocked && screen === 'invitations' && (
           <InvitationsScreen
             doc={invitations}
@@ -337,6 +387,8 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
         {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}
+            busy={busy}
+            onDisconnect={disconnectSession}
             onDiagnose={async (sub) => {
               const res = await call(`/admin/users/${encodeURIComponent(sub)}/diagnosis`).catch(() => null);
               if (!res?.ok) {
@@ -353,7 +405,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
 }
 
 /** #441: the connectors are the lab's now — every operator act on a party, an agent or a slot lives there */
-function LabHandoverScreen({ labUrl }: Readonly<{ labUrl: string }>) {
+function LabHandoverScreen({ labUrl, onOpenBankConnections }: Readonly<{ labUrl: string; onOpenBankConnections: () => void }>) {
   return (
     <>
       <h1>Connectors</h1>
@@ -365,6 +417,16 @@ function LabHandoverScreen({ labUrl }: Readonly<{ labUrl: string }>) {
         <a className="btn" data-testid="connectors-open-lab" href={labUrl} target="_blank" rel="noreferrer">
           Open the lab
         </a>
+      </section>
+      {/* user 2026-10-09: the people's own consents stay in this portal — the lab is about the parties, not the persons */}
+      <section className="card">
+        <p className="hint">
+          The bank consents of the users — every GoCardless and Enable Banking connection, with a disconnect per row and a clean-up of the
+          stale ones — have their own page here: Bank connections.
+        </p>
+        <button className="btn" data-testid="connectors-open-bank-connections" type="button" onClick={onOpenBankConnections}>
+          Open Bank connections
+        </button>
       </section>
     </>
   );
@@ -410,21 +472,29 @@ function Tile({ label, value, warn = false }: Readonly<{ label: string; value: s
 
 function UsersScreen({
   users,
+  busy,
   onDiagnose,
+  onDisconnect,
 }: Readonly<{
   users: AdminUser[];
+  busy: boolean;
   /** resolves to the diagnosis, or a human-readable failure line */
   onDiagnose: (sub: string) => Promise<UserDiagnosis | string>;
+  /** user 2026-10-09: a session row's Disconnect — the diagnosis is read again once it settles */
+  onDisconnect: (row: SessionRow) => Promise<unknown>;
 }>) {
   const [query, setQuery] = useState('');
   const [diag, setDiag] = useState<{ sub: string; data: UserDiagnosis | string | null } | null>(null);
+  const loadDiagnosis = (sub: string) => {
+    setDiag({ sub, data: null });
+    void onDiagnose(sub).then((data) => setDiag((prev) => (prev?.sub === sub ? { sub, data } : prev)));
+  };
   const toggleDiagnosis = (sub: string) => {
     if (diag?.sub === sub) {
       setDiag(null);
       return;
     }
-    setDiag({ sub, data: null });
-    void onDiagnose(sub).then((data) => setDiag((prev) => (prev?.sub === sub ? { sub, data } : prev)));
+    loadDiagnosis(sub);
   };
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -483,25 +553,14 @@ function UsersScreen({
                   {!diag.data && <span className="sub">loading…</span>}
                   {typeof diag.data === 'string' && <span className="sub">{diag.data}</span>}
                   {diag.data && typeof diag.data !== 'string' && (
-                    <div className="diag">
-                      <div><strong>member spaces</strong> · {diag.data.memberSpaces.length === 0 ? 'NONE' : diag.data.memberSpaces.join(', ')}</div>
-                      <div>
-                        <strong>owned feeds</strong> ·{' '}
-                        {diag.data.ownedFeeds.length === 0
-                          ? 'NONE'
-                          : diag.data.ownedFeeds.map((f) => `${f.feedSpaceId.slice(0, 8)}… (ops ${f.maxSeq})`).join(', ')}
-                      </div>
-                      <div>
-                        <strong>attachments</strong> ·{' '}
-                        {diag.data.attachments.length === 0
-                          ? 'NONE — feeds never attached to a space the user sees'
-                          : diag.data.attachments.map((l) => `${l.feedSpaceId.slice(0, 8)}… → ${l.spaceId.slice(0, 12)}…`).join(', ')}
-                      </div>
-                      {/* #367: what the connector relay binds for this user — the session ids, never a bundle */}
-                      <div data-testid="user-diagnosis-connectors">
-                        <strong>connector sessions</strong> · {connectorSessionsLine(diag.data.connectorSessions)}
-                      </div>
-                    </div>
+                    <DiagnosisPanel
+                      data={diag.data}
+                      busy={busy}
+                      onDisconnect={(row) => {
+                        const { sub } = diag;
+                        void onDisconnect(row).then(() => loadDiagnosis(sub));
+                      }}
+                    />
                   )}
                 </td>
               </tr>

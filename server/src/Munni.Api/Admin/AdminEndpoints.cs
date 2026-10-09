@@ -8,22 +8,14 @@ namespace Munni.Api.Admin;
 /// <summary>SpaceCount = the spaces the user is a member of; FeedCount = the IBAN-keyed feed spaces a bank connection
 /// adds — counted apart, or "3 spaces" reads as three duplicates of one personal space (user report 2026-09-28)</summary>
 public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount, int FeedCount = 0);
-public sealed record AdminFeedDto(string FeedSpaceId, long MaxSeq);
-public sealed record AdminAttachmentDto(string SpaceId, string FeedSpaceId, string AccountId);
-public sealed record AdminUserDiagnosisDto(
-    Guid UserId,
-    List<string> MemberSpaces,
-    List<AdminFeedDto> OwnedFeeds,
-    List<AdminAttachmentDto> Attachments,
-    /// <summary>#367: the user's connector sessions as the relay binds them — ids and state, never a bundle;
-    /// a bank's consent is one of them (§15)</summary>
-    List<Connectors.AdminConnectorSessionDto>? ConnectorSessions = null);
 
 /// <summary>
-/// Admin area: user overview, operator-initiated deletion and the per-user
-/// sync-chain diagnosis. Every route requires the token's `admin` scope
-/// (AdminScope) — who is an admin is decided in Logto, never here. The
-/// parties (banks included, §15) are managed in the lab (/lab, #441).
+/// Admin area: user overview, operator-initiated deletion, the per-user
+/// sync-chain diagnosis (<see cref="AdminDiagnosis"/>) and the Bank
+/// connections dashboard (<see cref="AdminBankConnectionEndpoints"/>).
+/// Every route requires the token's `admin` scope (AdminScope) — who is an
+/// admin is decided in Logto, never here. The parties (banks included,
+/// §15) are managed in the lab (/lab, #441).
 /// </summary>
 public static class AdminEndpoints
 {
@@ -42,6 +34,8 @@ public static class AdminEndpoints
 
         // user 2026-10-07: invitation-only sign-up — the portal's invitations ride the group's scope gate and route guard
         AdminInvitationEndpoints.Map(group);
+        // user 2026-10-09: every open-banking consent across users, with a disconnect — the relay's bindings, read as a dashboard
+        AdminBankConnectionEndpoints.Map(group);
     }
 
     private static async Task<IResult> ListUsers(AppDbContext db)
@@ -59,28 +53,13 @@ public static class AdminEndpoints
 
     /// <summary>the whole account→app chain for one user: memberships,
     /// owned feeds (+ op high-water mark), attachments, connector sessions —
-    /// diagnosing "the consent linked but the app shows nothing"</summary>
+    /// diagnosing "the consent linked but the app shows nothing"; named for
+    /// the operator since 2026-10-09 (<see cref="AdminDiagnosis"/>)</summary>
     private static async Task<IResult> UserDiagnosis(string sub, AppDbContext db)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
         if (user is null) return Results.NotFound();
-        var memberSpaces = await db.SpaceMembers.Where(m => m.UserId == user.Id).Select(m => m.SpaceId).ToListAsync();
-        var ownedFeedIds = await db.FeedSpaces.Where(f => f.OwnerUserId == user.Id).Select(f => f.Id).ToListAsync();
-        var maxSeqs = await db.SyncOps
-            .Where(o => ownedFeedIds.Contains(o.SpaceId))
-            .GroupBy(o => o.SpaceId)
-            .Select(g => new { g.Key, Max = g.Max(o => o.Seq) })
-            .ToDictionaryAsync(g => g.Key, g => g.Max);
-        var attachments = await db.SpaceAccountLinks
-            .Where(l => memberSpaces.Contains(l.SpaceId))
-            .Select(l => new AdminAttachmentDto(l.SpaceId, l.FeedSpaceId, l.AccountId))
-            .ToListAsync();
-        return Results.Ok(new AdminUserDiagnosisDto(
-            user.Id,
-            memberSpaces,
-            ownedFeedIds.Select(id => new AdminFeedDto(id, maxSeqs.GetValueOrDefault(id))).ToList(),
-            attachments,
-            await Connectors.ConnectorLabEndpoints.SessionsOfAsync(db, user.Id)));
+        return Results.Ok(await AdminDiagnosis.BuildAsync(db, user));
     }
 
     private static async Task<IResult> DeleteUser(string sub, HttpContext http, AppDbContext db, Social.AccountDeletion deletion)

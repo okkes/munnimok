@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNCOVERED_AFTER_MS, ownsAccount, ownsLink, uncoveredSince } from './accountCoverage';
+import { UNCOVERED_AFTER_MS, ownsFeed, uncoveredSince } from './accountCoverage';
 
 const NOW = Date.parse('2026-10-04T20:00:00Z');
 const live = new Set(['conn-live']);
@@ -34,16 +34,25 @@ describe('account coverage (#445)', () => {
     expect(uncoveredSince(old, live, false, NOW)).toBeNull();
   });
 
-  it('whose account it is: the attacher’s, or the viewer’s when nothing says', () => {
-    expect(ownsLink({ attachedBy: 'me' }, 'me')).toBe(true);
-    expect(ownsLink({ attachedBy: 'elo' }, 'me')).toBe(false);
-    expect(ownsLink({ attachedBy: 'elo' }, undefined)).toBe(false);
-    expect(ownsLink({}, 'me')).toBe(true);
-    expect(ownsLink(undefined, 'me')).toBe(true);
-    // over every attachment: mine when any is, and an unattached row is mine (a friend's rows only arrive attached)
-    expect(ownsAccount([], 'me')).toBe(true);
-    expect(ownsAccount([{ attachedBy: 'elo' }], 'me')).toBe(false);
-    expect(ownsAccount([{ attachedBy: 'elo' }, { attachedBy: 'me' }], 'me')).toBe(true);
-    expect(ownsAccount([{ attachedBy: 'elo' }, {}], 'me')).toBe(true);
+  it('whose feed it is: the feeds the viewer registered decide; a nameless link never reads as mine (user ss 2026-10-09)', () => {
+    const mine = new Set(['feed-mine']);
+    expect(ownsFeed('feed-mine', mine, [], 'me')).toBe(true);
+    expect(ownsFeed('feed-elo', mine, [], 'me')).toBe(false);
+    // the set is the source of truth: a name on the link neither adds a feed nor takes one away
+    expect(ownsFeed('feed-elo', mine, [{ attachedBy: 'me' }], 'me')).toBe(false);
+    expect(ownsFeed('feed-mine', mine, [{ attachedBy: 'elo' }], 'me')).toBe(true);
+    // the set out of reach (offline): the attacher's name is the next best word, over every attachment
+    expect(ownsFeed('feed-x', undefined, [{ attachedBy: 'me' }], 'me')).toBe(true);
+    expect(ownsFeed('feed-x', undefined, [{ attachedBy: 'elo' }], 'me')).toBe(false);
+    expect(ownsFeed('feed-x', undefined, [{ attachedBy: 'elo' }, { attachedBy: 'me' }], 'me')).toBe(true);
+    expect(ownsFeed('feed-x', undefined, [{ attachedBy: 'elo' }], undefined)).toBe(false);
+    // neither: unknown, and the caller stays quiet
+    expect(ownsFeed('feed-x', undefined, [{}], 'me')).toBeUndefined();
+    expect(ownsFeed('feed-x', undefined, [], 'me')).toBeUndefined();
+  });
+
+  it('an unknown owner is read as not the viewer’s: no banner beats a wrong one', () => {
+    const gone = { source: 'connector', connectionId: 'conn-gone', lastSyncedAt: '2026-09-30T08:00:00Z' } as const;
+    expect(uncoveredSince(gone, live, undefined, NOW)).toBeNull();
   });
 });
