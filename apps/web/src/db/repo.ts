@@ -36,6 +36,19 @@ export class Repo {
     return uuidv7();
   }
 
+  /**
+   * 2026-10-09 (user: Confirm stalled, quick attaches "bottled"): the
+   * writes inside `fn` are one burst — the live queries hold their re-run
+   * until it ends, so a confirm's several writes (the card, its siblings,
+   * the pair, the receipt) reach the screens as ONE update instead of one
+   * per write. Every write still commits on its own (read-your-writes
+   * holds inside); only the screens' refresh is held. A backend without
+   * the notion just runs `fn`.
+   */
+  batch<T>(fn: () => Promise<T>): Promise<T> {
+    return this.store.burst ? this.store.burst(fn) : fn();
+  }
+
   /** Create or partially update a row. `fields` contains only what changed. */
   async upsert<E extends EntityName>(
     entity: E,

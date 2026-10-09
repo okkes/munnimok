@@ -23,7 +23,11 @@ export interface SpaceMemory {
 }
 
 export async function buildSpaceMerchantMemory(store: StorageBackend, spaceId: string): Promise<SpaceMemory> {
-  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  // 2026-10-09 (user: Confirm stalled): only real spaces teach — a bank
+  // feed or the private state space carries no kind and no categorised
+  // row, and joining a feed's whole history for nothing doubled the cost
+  // of every rebuild on a large account
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
   const ownRows = [];
   const otherRows = [];
   for (const space of spaces) {
