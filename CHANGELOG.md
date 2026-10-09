@@ -1,5 +1,28 @@
 # Changelog
 
+## [5.19.0](https://github.com/okkes/munnimok/compare/v5.18.0...v5.19.0) (2026-10-09)
+
+
+### ✨ Features
+
+* **admin:** a readable diagnosis, a bank-connections dashboard with disconnect, and the uncovered banner only for feeds the viewer owns ([b92ba3d](https://github.com/okkes/munnimok/commit/b92ba3d53a60852feafd5e1bb60181b53a08e89f))
+* **debts:** the planner shows its numbers, each loan on its own, a slider with Apply, and a switch that explains the rollover ([89d0770](https://github.com/okkes/munnimok/commit/89d0770270ce0c167384aecd3cab81e0f3545fa2))
+* **infra:** the config diff before Publish, shared-service links, the vault writes Vaultwarden 1.37 refuses, a weekly TestFlight renewal ([62c171b](https://github.com/okkes/munnimok/commit/62c171b6cf4e8a318545212aba3f06579e6f7674))
+* **observability:** performance tracing from the app, the api and the connector into GlitchTip, budgets that warn in development, a perf harness ([95acac0](https://github.com/okkes/munnimok/commit/95acac08fbaffe14b1e6a411912822b34d459dab))
+* **planning:** unplanned recurring costs, loan payments and goal contributions show as their kind, the pool never moves when a subject is added, a re-added subject starts clean, logos ([f076c87](https://github.com/okkes/munnimok/commit/f076c87b20b06f4c829203bb3e83e7c9fb3d22f9))
+* **receipts:** the match card shows the transaction as its own row, answers fold away, a peek sheet over the picker, matching after every sync ([05f57e6](https://github.com/okkes/munnimok/commit/05f57e6ffc37688c8e38f084d2fa399230338c0f))
+* **review:** every transaction passes through the person's review - a guess fills the category, never ticks the row off ([559e38e](https://github.com/okkes/munnimok/commit/559e38e99d0374979ea6d4f826a28ee2bdf4cdb8))
+
+
+### 🐞 Bug Fixes
+
+* **security:** the CodeQL findings fixed or triaged, the lease renewal observes its disposal, bol's page clicks get a real timeout ([8b7f5fe](https://github.com/okkes/munnimok/commit/8b7f5fe1b5065de9d82a0c600df9ba693d02d3b8))
+
+
+### ⚡ Performance
+
+* **web:** a confirm no longer re-runs every live query per write - coalesced subscriptions, one burst per tap, the memory off the feed spaces ([a026cb6](https://github.com/okkes/munnimok/commit/a026cb6b9f9a5b52b3d40439fdb33a0091f7088c))
+
 ## [5.18.0](https://github.com/okkes/munnimok/compare/v5.17.0...v5.18.0) (2026-10-08)
 
 
