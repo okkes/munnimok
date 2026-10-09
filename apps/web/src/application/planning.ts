@@ -8,6 +8,7 @@ import { isDebtTracked } from '@/domain/debts';
 import type { Period } from '@/domain/periods';
 import { brokenSubjects, fillInOrder, mirroredSubjectId, planId, recommendSubjects, sameSubjects, subjectShape, subjectView, shortfallCents } from '@/domain/planning';
 import type { SubjectShape, SubjectView } from '@/domain/planning';
+import { measure } from '@/lib/perf';
 import { logActivity } from './activity';
 import { availabilityByCat, buildPlanning, loadPlanningData, planOverspentCount, sortSubjects } from './planningModel';
 import type { CategoryAvailability, PlanningModel } from './planningModel';
@@ -24,8 +25,9 @@ export { segmentsOf, isMandatorySegment } from './planningModel';
 /** the live model of the active space */
 export function usePlanning(): PlanningModel | undefined {
   const { store, spaceId } = useData();
-  const data = useQuery(store, () => loadPlanningData(store, spaceId), [spaceId], undefined, `planning:${spaceId}`);
-  return useMemo(() => (data ? buildPlanning(data) : undefined), [data]);
+  // two spans (2026-10-09): the rows read and the model built — the tab's cost is measured, never guessed
+  const data = useQuery(store, () => measure('planning.load', () => loadPlanningData(store, spaceId)), [spaceId], undefined, `planning:${spaceId}`);
+  return useMemo(() => (data ? measure('planning.build', () => buildPlanning(data)) : undefined), [data]);
 }
 
 /** the tab's dot: does the current plan hold a subject in the red? */
@@ -113,18 +115,31 @@ export interface PlanningOps {
 
 type SubjectFields = Omit<PlanSubjectRow, 'id' | 'spaceId' | 'hlc' | 'deleted' | 'fieldVersions'>;
 
+/** an absent optional field is written as an explicit null: the merge then clears it on every device instead of keeping what the row held before */
+const orNull = <T>(value: T | undefined): T => value ?? (null as never);
+
+/**
+ * THE RESET RULE (user 2026-10-09): a mirrored subject keeps its deterministic
+ * id, so "Start over" tombstones the row and adding the source again revives
+ * that same row — and the per-field merge keeps every field the add does not
+ * write (a skip, old funding). So every add writes the WHOLE field set,
+ * absent ones as null: a revived row starts over too — nothing funded, not
+ * skipped — whatever it held before it was removed. The ops never write a
+ * partial row for a new subject.
+ */
 const shapeFields = (shape: SubjectShape, planId: string, fundedCents = 0): SubjectFields => ({
   planId,
   segment: shape.segment,
   order: shape.order,
   name: shape.name,
-  icon: shape.icon,
-  color: shape.color,
-  catIds: shape.catIds,
-  excludeCatIds: shape.excludeCatIds,
-  targetCents: shape.targetCents,
-  sourceId: shape.sourceId,
+  icon: orNull(shape.icon),
+  color: orNull(shape.color),
+  catIds: orNull(shape.catIds),
+  excludeCatIds: orNull(shape.excludeCatIds?.length ? shape.excludeCatIds : undefined),
+  targetCents: orNull(shape.targetCents),
+  sourceId: orNull(shape.sourceId),
   fundedCents,
+  snoozed: 0,
 });
 
 /** mirrored subjects keep their deterministic id across copies; expense subjects get a fresh one */
@@ -155,7 +170,8 @@ export function usePlanningOps(): PlanningOps {
   return useMemo(() => buildOps(store, repo, spaceId), [store, repo, spaceId]);
 }
 
-function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningOps {
+/** the commands over a store and repo — the hook's body, exported so a test drives them without React */
+export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningOps {
   const fresh = async (): Promise<PlanningModel> => buildPlanning(await loadPlanningData(store, spaceId));
   const act = (kind: string) => void logActivity(store, repo, spaceId, kind);
   const write = (id: string, fields: Partial<SubjectFields>) => repo.upsert('planSubject', spaceId, id, fields);
@@ -266,18 +282,7 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
       const model = await fresh();
       const id = repo.newId();
       // born unfunded (user 2026-10-08): its spending so far reads "Over by" until the person funds it
-      await write(id, {
-        planId: plan,
-        segment: 'expenses',
-        order: nextOrder(model, plan, 'expenses'),
-        name: shape.name,
-        icon: shape.icon,
-        color: shape.color,
-        catIds: shape.catIds,
-        excludeCatIds: shape.excludeCatIds?.length ? shape.excludeCatIds : undefined,
-        targetCents: shape.targetCents,
-        fundedCents: 0,
-      });
+      await write(id, shapeFields({ ...shape, segment: 'expenses', order: nextOrder(model, plan, 'expenses') }, plan));
       act('planEdit');
       return id;
     },
@@ -305,7 +310,8 @@ function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningO
     addMirrored: async (plan, segment, source) => {
       const model = await fresh();
       const id = mirroredSubjectId(plan, segment, source.id);
-      await write(id, { planId: plan, segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id, fundedCents: 0 });
+      // the whole field set (the reset rule above): a source removed by Start over and added again starts clean
+      await write(id, shapeFields({ segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id }, plan));
       act('planEdit');
       return id;
     },

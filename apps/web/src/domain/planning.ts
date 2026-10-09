@@ -264,17 +264,56 @@ function unplannedKeyOf(
 
 /** one main category spent on without a subject answering for it, its subs broken out */
 export interface UnplannedMain {
+  kind: 'category';
   mainId: string;
   cents: number;
   subs: { catId: string; cents: number }[];
 }
+
+/** an active recurring cost paid this period with no recurring subject in the plan */
+export interface UnplannedRecurring {
+  kind: 'recurring';
+  sourceId: string;
+  name: string;
+  icon?: string;
+  cents: number;
+}
+
+/** a tracked loan paid this period with no debt subject in the plan */
+export interface UnplannedDebt {
+  kind: 'debt';
+  sourceId: string;
+  name: string;
+  color?: string;
+  cents: number;
+}
+
+/** a goal given money this period with no goal subject in the plan */
+export interface UnplannedGoal {
+  kind: 'goal';
+  sourceId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  cents: number;
+}
+
+/**
+ * One row of the Unplanned segment (user 2026-10-09): money that left this
+ * period and answers to no subject — a category, or a source the plan does
+ * not mirror yet. A slice linked to a recurring cost is a recurring row and
+ * never a category row, a transfer to a loan is a debt row, a goal
+ * contribution a goal row: the source wins over the category, so "Plan it"
+ * adds the mirrored subject instead of an expense subject on the side.
+ */
+export type UnplannedRow = UnplannedMain | UnplannedRecurring | UnplannedDebt | UnplannedGoal;
 
 /**
  * What the period spent outside every subject (user request 2026-10-02):
  * expense slices whose category no expense or budget subject answers for,
  * grouped under their main — the "unplanned" segment, derived afresh each
  * period. Recurring-linked and transfer slices answer to their own
- * segments; munni's locked families are not spending.
+ * segments (see unplannedSources); munni's locked families are not spending.
  */
 export function unplannedByCategory(
   txs: readonly TxView[],
@@ -292,12 +331,81 @@ export function unplannedByCategory(
   }
   return [...byMain]
     .map(([mainId, subs]) => ({
+      kind: 'category' as const,
       mainId,
       cents: [...subs.values()].reduce((sum, v) => sum + v, 0),
       subs: [...subs].map(([catId, cents]) => ({ catId, cents })).sort((a, b) => b.cents - a.cents),
     }))
     .filter((main) => main.cents > 0)
     .sort((a, b) => b.cents - a.cents);
+}
+
+export interface UnplannedSources {
+  recurrings: readonly RecurringRow[];
+  /** every account the space sees; the tracked loans are picked out here */
+  accounts: readonly AccountRow[];
+  goals: readonly GoalRow[];
+  contributions: readonly GoalContributionRow[];
+}
+
+/** the mirrored sources a plan already answers for, per segment */
+const mirroredIds = (subjects: readonly PlanSubjectRow[], segment: PlanSegmentKind): Set<string> =>
+  new Set(subjects.filter((s) => s.deleted === 0 && s.segment === segment && s.sourceId).map((s) => s.sourceId!));
+
+const byCents = <R extends { cents: number }>(rows: R[]): R[] => rows.filter((r) => r.cents > 0).sort((a, b) => b.cents - a.cents);
+
+/**
+ * The sources the period paid for that the plan does not mirror (user
+ * 2026-10-09): the active recurring costs with linked rows in the period,
+ * the tracked loans that received a transfer, the goals that were given
+ * money — each with what it took, unless the plan already holds its
+ * subject (then the subject's realized counts it). A payment to a source
+ * is never category spending, so these rows and the category rows never
+ * count the same money twice.
+ */
+export function unplannedSources(
+  subjects: readonly PlanSubjectRow[],
+  sources: UnplannedSources,
+  txs: readonly TxView[],
+  period: Period,
+): (UnplannedRecurring | UnplannedDebt | UnplannedGoal)[] {
+  const recurringHeld = mirroredIds(subjects, 'recurring');
+  const recurring = byCents(
+    sources.recurrings
+      .filter((r) => r.deleted === 0 && r.active === 1 && !recurringHeld.has(r.id))
+      .map((r): UnplannedRecurring => ({ kind: 'recurring', sourceId: r.id, name: r.name, icon: r.icon, cents: recurringRealizedCents(r.id, txs, period) })),
+  );
+  const debtHeld = mirroredIds(subjects, 'debts');
+  const debts = byCents(
+    sources.accounts
+      .filter((a) => a.deleted === 0 && a.archived !== 1 && !a.defaultFor && isDebtTracked(a) && !debtHeld.has(a.id))
+      .map((a): UnplannedDebt => ({ kind: 'debt', sourceId: a.id, name: a.name, color: a.color, cents: debtRealizedCents(a.id, txs, period) })),
+  );
+  const goalHeld = mirroredIds(subjects, 'goals');
+  const goals = byCents(
+    sources.goals
+      .filter((g) => g.deleted === 0 && g.archived !== 1 && !goalHeld.has(g.id))
+      .map((g): UnplannedGoal => ({ kind: 'goal', sourceId: g.id, name: g.name, icon: g.icon, color: g.color, cents: goalRealizedCents(g.id, sources.contributions, period) })),
+  );
+  return [...recurring, ...debts, ...goals];
+}
+
+/**
+ * The whole Unplanned segment in the plan's own reading order — what must
+ * be paid first (recurring costs, loans), then the categories, then the
+ * goals — so the list reads like the plan it feeds.
+ */
+export function unplannedRows(
+  subjects: readonly PlanSubjectRow[],
+  sources: UnplannedSources,
+  txs: readonly TxView[],
+  period: Period,
+  covered: ReadonlySet<string>,
+  catalog: CatalogLookup,
+): UnplannedRow[] {
+  const mirrored = unplannedSources(subjects, sources, txs, period);
+  const categories = unplannedByCategory(txs, period, covered, catalog);
+  return [...mirrored.filter((r) => r.kind !== 'goal'), ...categories, ...mirrored.filter((r) => r.kind === 'goal')];
 }
 
 /** a budget's own rule: everything its family spent, recurring-linked rows included */

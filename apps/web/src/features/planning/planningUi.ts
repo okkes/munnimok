@@ -59,6 +59,15 @@ export const SUBJECT_ICONS = [
 
 export const SUBJECT_COLORS = ['#16A085', '#2980B9', '#9B59B6', '#E91E63', '#E67E22', '#27AE60', '#C0392B', '#F39C12', '#34495E', '#1ABC9C'] as const;
 
+/** an Unplanned source row's kind (user 2026-10-09): the segment "Plan it" adds it to, and the label under its name */
+export type UnplannedSourceKind = 'recurring' | 'debt' | 'goal';
+export const UNPLANNED_SEGMENT: Record<UnplannedSourceKind, PlanSegmentKind> = { recurring: 'recurring', debt: 'debts', goal: 'goals' };
+export const UNPLANNED_KIND_KEY: Record<UnplannedSourceKind, TranslationKey> = {
+  recurring: 'plan.unplannedKind.recurring',
+  debt: 'plan.unplannedKind.debt',
+  goal: 'plan.unplannedKind.goal',
+};
+
 /** the mirrored sources' colours when the source row has none of its own */
 export const SEGMENT_COLOR: Record<PlanSegmentKind, string> = {
   recurring: '#2980B9',

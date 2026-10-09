@@ -5,10 +5,10 @@ import type { MirroredSource, PlanningModel, PlanningOps } from '@/application/p
 import { isDebtTracked } from '@/domain/debts';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/Button';
-import { Tile } from '@/ui/primitives';
 import { SelectAllRow } from '@/ui/SelectAllRow';
 import { Sheet } from '@/ui/Sheet';
-import { SEGMENT_COLOR, SEGMENT_META, softOf } from './planningUi';
+import { SourceTile } from './SourceTile';
+import { SEGMENT_META } from './planningUi';
 
 /** the rows a mirrored segment can still take: every live source not yet in the plan */
 export function mirrorCandidates(model: PlanningModel, plan: PlanRow, segment: PlanSegmentKind): MirroredSource[] {
@@ -91,7 +91,6 @@ export function AddSourceSheet({
         )}
         <div className="mt-2 overflow-hidden rounded-card border border-line bg-surface">
           {candidates.map((source) => {
-            const color = source.color ?? SEGMENT_COLOR[segment];
             const on = picked.has(source.id);
             return (
               <button
@@ -107,7 +106,8 @@ export function AddSourceSheet({
                 >
                   {on && <Icon name="check" size={12} />}
                 </span>
-                <Tile icon={source.icon ?? meta.icon} bg={softOf(color)} color={color} />
+                {/* the source's own face (user 2026-10-09): a recurring cost's logo, a loan's logo, the plan's tile otherwise */}
+                <SourceTile segment={segment} sourceId={source.id} icon={source.icon} color={source.color} model={model} testId={`plan-add-source-logo-${source.id}`} />
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{source.name}</span>
               </button>
             );

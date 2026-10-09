@@ -23,6 +23,8 @@ import {
   recommendSubjects,
   recurringTargetCents,
   unplannedByCategory,
+  unplannedRows,
+  unplannedSources,
   reservationConflicts,
   sameSubjects,
   spreadTargetCents,
@@ -188,6 +190,59 @@ describe('targets', () => {
     const rows = unplannedByCategory(txs, period, new Set(['movie']), catalog);
     expect(rows.map((r) => [r.mainId, r.cents])).toEqual([['consumption', 50_00]]);
     expect(rows[0].subs).toEqual([{ catId: 'groceries', cents: 40_00 }, { catId: 'coffee', cents: 10_00 }]);
+  });
+
+  describe('the Unplanned segment’s kinds (user 2026-10-09)', () => {
+    const flat = {
+      byId: (id: string | undefined) => ({ id: id ?? 'uncategorized', parentId: id === 'groceries' ? 'consumption' : undefined }),
+      childrenOf: () => [],
+    };
+    const netflix = { id: 'rec1', name: 'Netflix', kind: 'subscription', icon: 'television-play', amountCents: 13_99, every: 'month', dueDay: 5, active: 1, ...envelope } as RecurringRow;
+    const stopped = { ...netflix, id: 'rec2', name: 'Gym', active: 0 } as RecurringRow;
+    const loan = account({ id: 'loan', name: 'Car loan', type: 'loan', color: '#C0392B', paymentCents: 250_00, paymentEvery: 'month', paymentDay: 10, balanceCents: -5000_00 });
+    const trip = { id: 'g1', name: 'Trip', icon: 'airplane', color: '#27AE60', targetCents: 1000_00, allocatedCents: 0, ...envelope } as GoalRow;
+    const contributions = [
+      { id: 'c1', goalId: 'g1', amountCents: 100_00, date: '2026-10-05', ...envelope },
+      { id: 'c0', goalId: 'g1', amountCents: 50_00, date: '2026-09-05', ...envelope },
+    ] as GoalContributionRow[];
+    const txs = [
+      tx({ id: 'u1', date: '2026-10-03', amountCents: -40_00, catId: 'groceries' }),
+      // linked to a recurring cost: a recurring row, never groceries (the source wins over the category)
+      tx({ id: 'n1', date: '2026-10-05', amountCents: -13_99, catId: 'groceries', recurringId: 'rec1' }),
+      // a stopped recurring cost cannot be planned, so its last charge is not offered either
+      tx({ id: 'n2', date: '2026-10-06', amountCents: -20_00, catId: 'groceries', recurringId: 'rec2' }),
+      tx({ id: 'l1', date: '2026-10-10', amountCents: -250_00, catId: 'groceries', linkedAccountId: 'loan', txType: 'debtPayment' }),
+    ];
+    const sources = { recurrings: [netflix, stopped], accounts: [loan, account({ id: 'acc' })], goals: [trip], contributions };
+
+    it('a payment to a recurring cost is a recurring row, a transfer to a loan a debt row, a contribution a goal row; the list reads in the plan’s order', () => {
+      const rows = unplannedRows([], sources, txs, period, new Set(), flat);
+      expect(rows.map((r) => [r.kind, r.cents])).toEqual([
+        ['recurring', 13_99],
+        ['debt', 250_00],
+        ['category', 40_00],
+        ['goal', 100_00],
+      ]);
+      expect(rows[0]).toMatchObject({ sourceId: 'rec1', name: 'Netflix', icon: 'television-play' });
+      expect(rows[1]).toMatchObject({ sourceId: 'loan', name: 'Car loan', color: '#C0392B' });
+      expect(rows[2]).toMatchObject({ mainId: 'consumption', subs: [{ catId: 'groceries', cents: 40_00 }] });
+      expect(rows[3]).toMatchObject({ sourceId: 'g1', name: 'Trip', icon: 'airplane', color: '#27AE60' });
+    });
+
+    it('a source the plan mirrors leaves the segment — its subject counts the money from then on; a tombstoned or misfiled subject does not', () => {
+      const mirrored = [
+        subject({ id: 'sr', segment: 'recurring', sourceId: 'rec1' }),
+        subject({ id: 'sd', segment: 'debts', sourceId: 'loan' }),
+        subject({ id: 'sg', segment: 'goals', sourceId: 'g1' }),
+      ];
+      expect(unplannedSources(mirrored, sources, txs, period)).toEqual([]);
+      const gone = [subject({ id: 'sr', segment: 'recurring', sourceId: 'rec1', deleted: 1 })];
+      expect(unplannedSources(gone, sources, txs, period).map((r) => r.sourceId)).toEqual(['rec1', 'loan', 'g1']);
+      const misfiled = [subject({ id: 'x', segment: 'recurring', sourceId: 'g1' })];
+      expect(unplannedSources(misfiled, sources, txs, period).map((r) => r.kind)).toEqual(['recurring', 'debt', 'goal']);
+      // nothing paid: nothing to plan
+      expect(unplannedSources([], sources, [], { start: '2026-11-01', end: '2026-11-30' })).toEqual([]);
+    });
   });
 
   it('a goal spreads what is left over the periods before its date; an undated goal has no target', () => {

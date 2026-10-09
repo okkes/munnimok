@@ -2,7 +2,50 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { DexieBackend } from '@/db/backend';
+import { Repo } from '@/db/repo';
+import { MunniDB } from '@/db/schema';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
 import { renderApp } from '@/test/harness';
+
+/** a day of the current month, clamped so it exists in every month — inside the demo space's monthly period */
+const thisMonth = (day: number): string => {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), Math.min(day, 28));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** a recurring cost with a brand logo, paid this month — the lean demo has no recurring costs of its own */
+async function seedPaidRecurring() {
+  const first = renderApp('/planning');
+  await screen.findByTestId('screen-planning');
+  // the boot chain must settle before this handle's writes (db.close trap)
+  await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+  const db = new MunniDB('munni_demo');
+  const repo = new Repo(new DexieBackend(db), new HlcClock('seed-plan-rec'), { trackOutbox: false });
+  await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_plan', {
+    name: 'Streamo',
+    kind: 'subscription',
+    amountCents: 1599,
+    every: 'month',
+    dueDay: 7,
+    active: 1,
+    logo: 'brands/netflix.svg',
+  });
+  await repo.upsert('transaction', DEMO_SPACE_ID, 'str_plan', {
+    accountId: 'demo_main',
+    date: thisMonth(new Date().getDate()),
+    amountCents: -1599,
+    currency: 'EUR',
+    merchant: 'STREAMO',
+    catId: 'subs',
+    needsReview: 0,
+    recurringId: 'rec_plan',
+  });
+  db.close();
+  first.unmount();
+}
 
 /**
  * Planning (#128) on the lean demo: checking €3,420.55 + the cash wallet
@@ -142,6 +185,38 @@ describe('Planning (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).not.toMatch(/Over by/));
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
   }, 25_000);
+
+  // the Unplanned source rows (user 2026-10-09): a paid recurring cost sits under Unplanned with its logo until Plan it
+  // mirrors it — and the head reads the same before and after, because the money only moves from Unplanned into the subject
+
+  it('a paid recurring cost is an Unplanned row with its logo; Plan it adds the mirrored subject and the head does not move', async () => {
+    await seedPaidRecurring();
+    await startEmptyPlan();
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/€[1-9]/));
+    const row = await screen.findByTestId('plan-unplanned-recurring-rec_plan');
+    expect(row.textContent).toMatch(/Streamo/);
+    expect(row.textContent).toMatch(/Recurring cost/);
+    expect(row.textContent).toMatch(/15\.99/);
+    // the brand logo the recurring list shows, not the segment's icon
+    expect(screen.getByTestId('plan-unplanned-logo-rec_plan').querySelector('img')?.getAttribute('src')).toBe('brands/netflix.svg');
+    const before = screen.getByTestId('plan-toallocate').textContent;
+    const startedBefore = screen.getByTestId('plan-pool-line').textContent;
+    expect(startedBefore).toMatch(/Started with/);
+
+    fireEvent.click(row);
+    await screen.findByTestId('plan-unplanned-sheet');
+    expect(screen.getByTestId('plan-unplanned-sheet-spent').textContent).toMatch(/15\.99/);
+    expect(screen.getByTestId('plan-unplanned-sheet-hint').textContent).toMatch(/Recurring costs segment/);
+    fireEvent.click(screen.getByTestId('plan-unplanned-plan'));
+    // no editor: the subject lands in the recurring segment straight away, wearing the logo, and the row is gone
+    await waitFor(() => expect(screen.queryByTestId('plan-unplanned-recurring-rec_plan')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('plan-segment-recurring').textContent).toMatch(/Streamo/));
+    expect(screen.getAllByTestId(/^plan-subject-logo-/)).toHaveLength(1);
+    // born unfunded, so what it paid reads Over by — and what the period started with did not move
+    expect(screen.getByTestId('plan-segment-recurring').textContent).toMatch(/Over by/);
+    expect(screen.getByTestId('plan-toallocate').textContent).toBe(before);
+    expect(screen.getByTestId('plan-pool-line').textContent).toBe(startedBefore);
+  }, 30_000);
 
   it('Start over removes every subject after a confirm: the money returns to the pool and the spending shows under Unplanned again', async () => {
     await startEmptyPlan();
