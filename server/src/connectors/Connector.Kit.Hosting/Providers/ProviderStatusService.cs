@@ -1,5 +1,6 @@
 using Connector.Kit.Adapters;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Logging;
 using Connector.Kit.Manifests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -75,7 +76,7 @@ public sealed class ProviderStatusService(
         row.ReasonKey = reasonKey;
 
         await db.SaveChangesAsync(ct);
-        logger.LogWarning("provider {Provider} is now {State} ({Reason})", manifest.Id, state, reasonKey ?? "-");
+        logger.LogWarning("provider {Provider} is now {State} ({Reason})", manifest.Id, state, LogSafe.Line(reasonKey ?? "-"));
         return ToStatus(row);
     }
 

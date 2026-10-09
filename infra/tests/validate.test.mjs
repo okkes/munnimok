@@ -128,7 +128,7 @@ test('ascstore: ES256 App Store Connect jwt against /v1/apps; the team\'s iOS de
   assert.equal(verdict.warn, true, 'the key works, but a device-less team cannot archive');
   assert.match(verdict.detail, /no registered iOS device/);
   assert.deepEqual(verdict.devices, { enabled: 0, disabled: 0 });
-  assert.match(calls[0].url, /appstoreconnect\.apple\.com\/v1\/apps/);
+  assert.match(calls[0].url, /^https:\/\/api\.appstoreconnect\.apple\.com\/v1\/apps(\?|$)/);
   assert.match(calls[1].url, /\/v1\/devices\?filter%5Bplatform%5D=IOS/);
   const withDevices = (statuses) => async (url) => ({ ok: true, status: 200, json: async () => ({ data: url.includes('/v1/devices') ? statuses.map((status, i) => ({ id: `d${i}`, attributes: { status } })) : [] }) });
   const allOff = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: p8 }, { fetchImpl: withDevices(['DISABLED', 'DISABLED', 'DISABLED']) });

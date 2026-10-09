@@ -402,6 +402,23 @@ public sealed class BolAdapterTests
     }
 
     [Fact]
+    public async Task A_page_step_the_page_will_not_take_fails_as_provider_unavailable_never_as_internal()
+    {
+        // 2026-10-06/07 (prod, GlitchTip #24-#28, #33-#34): a click Playwright gave up on was reported as
+        // internal - an error event per sign-in, over a page that was merely slow or covered
+        var page = SignedInPage();
+        page.ClickThrows = new TimeoutException("Timeout 15000ms exceeded.\nCall log:\n  - attempting click action\n    - waiting for element to be visible, enabled and stable");
+        using var ctx = LoginContext(page);
+
+        var refused = await Assert.ThrowsAsync<ConnectorException>(() => Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.ProviderUnavailable, refused.Code);
+        Assert.Contains("TimeoutException: Timeout 15000ms exceeded.", refused.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("Call log", refused.Detail, StringComparison.Ordinal);
+        Assert.Empty(page.Clicked);
+    }
+
+    [Fact]
     public async Task The_login_enters_through_the_account_page_and_falls_back_to_the_form_itself()
     {
         var page = SignedInPage();

@@ -127,7 +127,7 @@ export function setEnvVariable(env, name, value) {
 
 /** every GitHub environment a platform-scoped value lives in: the shared one and every environment's */
 export function platformEnvironments(stack) {
-  return [...new Set([stack.sharedStack.replace(/^munni-/, '').replace(/-shared$/, '-shared'), ...platformEnvStacks(stack.platform).map((s) => s.githubEnvironment)])];
+  return [...new Set([stack.sharedStack.replace(/^munni-/, ''), ...platformEnvStacks(stack.platform).map((s) => s.githubEnvironment)])];
 }
 
 /** a platform-scoped write: the same value into every environment of the platform */

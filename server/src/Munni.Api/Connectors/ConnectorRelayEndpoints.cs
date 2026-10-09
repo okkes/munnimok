@@ -656,7 +656,7 @@ internal sealed class ConnectorReplyFilter : IEndpointFilter
     {
         var logger = http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Munni.Api.Connectors.Relay");
         if (!logger.IsEnabled(LogLevel.Warning)) return;
-        logger.LogWarning(ex, "the connector control plane did not answer {Method} {Path}", http.Request.Method, http.Request.Path);
+        logger.LogWarning(ex, "the connector control plane did not answer {Method} {Path}", LogSafe.Line(http.Request.Method), LogSafe.Line(http.Request.Path.Value));
     }
 
     private static IResult Unavailable(HttpContext http) => ConnectorRelayEndpoints.Envelope(

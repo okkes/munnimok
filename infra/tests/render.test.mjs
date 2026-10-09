@@ -34,7 +34,12 @@ const render = (name, values) => {
   return { stack, dir, files: readdirSync(dir).sort(), compose: read(`docker-compose.${name}.yml`), env: read(`.env.${name}`), read };
 };
 const siteAddresses = (caddy) => [...caddy.matchAll(/^(\S+) \{$/gm)].map((m) => m[1]).filter((a) => a !== '{');
-const proxyOf = (caddy, address) => new RegExp(`^${address.replaceAll('.', '\\.')} \\{\\n\\treverse_proxy (\\S+)`, 'm').exec(caddy)?.[1];
+// a line search rather than a regex built from the address (an address is data, not a pattern)
+const proxyOf = (caddy, address) => {
+  const lines = caddy.split('\n');
+  const at = lines.indexOf(`${address} {`);
+  return at < 0 ? undefined : /^\treverse_proxy (\S+)/.exec(lines[at + 1] ?? '')?.[1];
+};
 
 test('shared stack on lcl: glitchtip with its own database, vault, control, pgadmin, ocr, valkey and the family Caddy, joined by the platform\'s shared network; the env renders with real values', () => {
   const { compose, env, files, read, stack } = render('munni-lcl-shared', { POSTGRES_PASSWORD: 'pg-1', GLITCHTIP_SECRET_KEY: 'sk', PGADMIN_PASSWORD: 'pga', GLITCHTIP_ADMIN_PASSWORD: 'gap', GLITCHTIP_API_TOKEN: 'tok', CONTROL_LOGTO_APP_ID: 'ctl' });
@@ -241,7 +246,7 @@ test('environment stack on lcl: in-network Logto metadata over http, CORS with t
     assert.equal(envOf(block(lan.compose, 'logto-prod')).ENDPOINT, `https://munni-prod-lcl-logto.${d}`);
     assert.equal(envOf(block(lan.compose, 'api-prod')).Auth__MetadataAddress, 'http://logto:3201/oidc/.well-known/openid-configuration');
     assert.equal(envOf(block(lan.compose, 'web-prod')).MUNNI_PUBLIC_ORIGIN, `https://munni-prod-lcl.${d}`);
-    assert.match(lan.env, new RegExp(`^PUSH_VAPID_SUBJECT=mailto:admin@${d.replaceAll('.', '\\.')}$`, 'm'));
+    assert.ok(lan.env.split('\n').includes(`PUSH_VAPID_SUBJECT=mailto:admin@${d}`), 'the push subject names the LAN host');
   } finally {
     fx.lanOff();
   }

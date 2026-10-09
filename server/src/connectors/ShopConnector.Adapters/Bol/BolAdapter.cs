@@ -249,6 +249,20 @@ public sealed class BolAdapter : IProviderAdapter
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentNullException.ThrowIfNull(page);
 
+        try
+        {
+            return await SignInAsync(ctx, page, signedIn, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            throw PageRefusal(ex);
+        }
+    }
+
+    /// <summary>The sign-in itself: every page step, through to the sealed jar.</summary>
+    private async Task<LoginResult> SignInAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter signedIn, CancellationToken ct)
+    {
         var username = RequiredInput(ctx, "username");
         var password = RequiredInput(ctx, "password");
 
@@ -411,6 +425,28 @@ public sealed class BolAdapter : IProviderAdapter
     /// <summary>The GraphQL shape's refusal of the operation (a hash bol no longer knows reports itself there).</summary>
     private static bool IsRefusedOperation(ConnectorException ex) =>
         ex.Code == ErrorCode.ProviderChanged && (ex.Detail ?? string.Empty).Contains(BolGraphQlShape.RefusedMarker, StringComparison.Ordinal);
+
+    /// <summary>
+    /// A page step Playwright gave up on - a click the wall took the pointer
+    /// from, a navigation that never settled - is bol's page misbehaving,
+    /// not munni's code: <c>provider_unavailable</c>, which asks for a retry
+    /// and pages nobody. Until 2026-10-09 it escaped as <c>internal</c> with
+    /// an unhandled-exception event per sign-in (prod, GlitchTip #24-#28,
+    /// #33-#34). A selector that is not there at all stays
+    /// <c>provider_changed</c> (see <see cref="Missing"/>); the first line of
+    /// Playwright's message is kept for the operator, its call log is not.
+    /// </summary>
+    private static ConnectorException PageRefusal(Exception ex) =>
+        new(ErrorCode.ProviderUnavailable,
+            $"{ProviderId}: the sign-in's page step did not complete ({ex.GetType().Name}: {FirstLine(ex.Message)}); " +
+            "bol's page was slow or something covered it, and a retry may land",
+            ex);
+
+    private static string FirstLine(string message)
+    {
+        var end = message.IndexOfAny(['\r', '\n']);
+        return (end < 0 ? message : message[..end]).Trim();
+    }
 
     /// <summary>What one orders request needs beyond its page number: the shape, the options it reads (the learned hash and request included), the jar and the token.</summary>
     private sealed record BolCall(IBolOrdersShape Shape, BolOptions Options, string Cookies, string? Xsrf);
@@ -1266,7 +1302,7 @@ internal sealed class BolHashProbe
 
         // A first page rendered on the server fires nothing until the next
         // one is asked for.
-        if (await page.ClickAsync(_options.LoadMoreSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+        if (await PressLoadMoreAsync(ctx, page, ct).ConfigureAwait(false)
             && await ArrivedAsync(learned, ct).ConfigureAwait(false))
         {
             ctx.Note($"{BolAdapter.ProviderId}: 'Toon meer' made the overview fire the operation");
@@ -1280,6 +1316,37 @@ internal sealed class BolHashProbe
 
     private async Task<bool> ArrivedAsync(Task<string> learned, CancellationToken ct) =>
         await Task.WhenAny(learned, Task.Delay(_options.HashProbeMs, ct)).ConfigureAwait(false) == learned;
+
+    /// <summary>Once more after the walls are taken down again; the probe is an optimisation and never the login's verdict.</summary>
+    private const int LoadMoreAttempts = 2;
+
+    /// <summary>
+    /// "Toon meer", pressed with a budget of its own (2026-10-06/07, prod:
+    /// three sign-ins died as `internal` on Playwright's 500 ms click budget -
+    /// the button was found, scrolled to, and bol's second wall took the
+    /// pointer) and once more after the walls are down again. False when the
+    /// button is absent or still will not take the press, which is noted;
+    /// the configured hash then stands.
+    /// </summary>
+    private async Task<bool> PressLoadMoreAsync(IJobContext ctx, ILoginPage page, CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= LoadMoreAttempts; attempt++)
+        {
+            try
+            {
+                return await page.ClickAsync(_options.LoadMoreSelectors, _options.LoadMoreMs, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+            {
+                var next = attempt < LoadMoreAttempts;
+                ctx.Note($"{BolAdapter.ProviderId}: 'Toon meer' did not take the press ({ex.GetType().Name}, attempt {attempt} of {LoadMoreAttempts}); " +
+                         (next ? "the walls are taken down again before the next one" : "the configured hash stands"));
+                if (next) await BolConsent.DismissAsync(ctx, page, _options, ct).ConfigureAwait(false);
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>

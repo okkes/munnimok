@@ -730,6 +730,14 @@ public sealed record BolOptions
     /// <summary>Short probes: these run on a page that is already the right one.</summary>
     public int ProbeMs { get; init; } = 500;
 
+    /// <summary>
+    /// The hash probe's "Toon meer" press: the find AND the click, which
+    /// Playwright keeps retrying while something covers the button. The
+    /// probe's 500 ms was not it (2026-10-06/07, prod: three sign-ins died
+    /// as `internal` on a click bol's second wall took the pointer from).
+    /// </summary>
+    public int LoadMoreMs { get; init; } = 5_000;
+
     public int LoginSettleSeconds { get; init; } = 120;
 
     /// <summary>How long each pass waits before looking at the page again.</summary>

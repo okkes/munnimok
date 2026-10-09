@@ -3,6 +3,7 @@ using Connector.Kit.AgentProtocol;
 using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Jobs;
+using Connector.Kit.Logging;
 using Connector.Kit.Manifests;
 using Connector.Kit.Tracing;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,7 +75,13 @@ public sealed class InlineJobRunner(
         await using var context = new InlineJobContext(
             job, scopes, httpClients.CreateClient(HttpClientName), quotas, logger, budget.Token);
 
-        using var renewal = StartLeaseRenewal(job.JobId, budget.Token);
+        // An inline run holds its own lease exactly as a remote agent does, so
+        // the expiry sweeper treats a wedged in-process job identically to a
+        // dead machine - including the rule that it never comes back twice.
+        // Disposed before the budget is (declaration order), so the loop is
+        // stopped and awaited while every token it holds is still alive.
+        await using var renewal = LeaseRenewal.Start(
+            scopes, job.JobId, AgentId, TimeSpan.FromSeconds(_options.Timeouts.LeaseSeconds), logger, budget.Token);
 
         // A recorded run (#441 L3): the book is open for this asynchronous flow,
         // the named client's handler writes every call into it, and it is kept
@@ -209,60 +216,45 @@ public sealed class InlineJobRunner(
         }
     }
 
-    private async Task ReportSuccessAsync(LeasedJob job, JobResultRequest result, CancellationToken ct)
-    {
-        using var scope = scopes.CreateScope();
-        var outcomes = scope.ServiceProvider.GetRequiredService<JobOutcomeService>();
-        await outcomes.SucceedAsync(job.JobId, AgentId, result, ct);
-    }
+    private Task ReportSuccessAsync(LeasedJob job, JobResultRequest result, CancellationToken ct) =>
+        ReportAsync(job, outcomes => outcomes.SucceedAsync(job.JobId, AgentId, result, ct));
 
     private async Task ReportFailureAsync(
         LeasedJob job, ErrorCode code, string? detail, CancellationToken ct) =>
         await ReportFailureAsync(job, code, detail, [], ct);
 
-    private async Task ReportFailureAsync(
-        LeasedJob job, ErrorCode code, string? detail, IReadOnlyList<string> notes, CancellationToken ct)
-    {
-        using var scope = scopes.CreateScope();
-        var outcomes = scope.ServiceProvider.GetRequiredService<JobOutcomeService>();
-        await outcomes.FailAsync(job.JobId, AgentId, new JobFailRequest
+    private Task ReportFailureAsync(
+        LeasedJob job, ErrorCode code, string? detail, IReadOnlyList<string> notes, CancellationToken ct) =>
+        ReportAsync(job, outcomes => outcomes.FailAsync(job.JobId, AgentId, new JobFailRequest
         {
             Code = ErrorCatalog.Wire(code),
             Detail = detail,
             Notes = notes,
-        }, ct);
-    }
+        }, ct));
 
     /// <summary>
-    /// An inline run holds its own lease exactly as a remote agent does, so
-    /// the expiry sweeper treats a wedged in-process job identically to a dead
-    /// machine - including the rule that it never comes back twice.
+    /// Both reports go through here because of what a refusal means. The
+    /// outcome service answers "not leased to agt_inline" (or "unknown job")
+    /// when the queue has moved on without this run: the lease ran out - a
+    /// restart, a database that did not answer the renewal - and the sweeper
+    /// has re-queued or ended the job on its own. Nothing a developer fixes
+    /// in code, so a warning and never an event (GlitchTip #26, 2026-10-06,
+    /// at an agent restart: the refusal escaped as an unhandled exception).
     /// </summary>
-    private CancellationTokenSource StartLeaseRenewal(string jobId, CancellationToken ct)
+    private async Task ReportAsync(LeasedJob job, Func<JobOutcomeService, Task> report)
     {
-        var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var ttl = TimeSpan.FromSeconds(_options.Timeouts.LeaseSeconds);
-
-        _ = Task.Run(async () =>
+        using var scope = scopes.CreateScope();
+        var outcomes = scope.ServiceProvider.GetRequiredService<JobOutcomeService>();
+        try
         {
-            var interval = ttl / 3;
-            try
-            {
-                while (!stop.IsCancellationRequested)
-                {
-                    await Task.Delay(interval, stop.Token);
-                    using var scope = scopes.CreateScope();
-                    var queue = scope.ServiceProvider.GetRequiredService<ILeasedJobQueue>();
-                    if (await queue.RenewLeaseAsync(jobId, AgentId, ttl, stop.Token) is null) return;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Normal: the job finished.
-            }
-        }, CancellationToken.None);
-
-        return stop;
+            await report(outcomes);
+        }
+        catch (ConnectorException ex) when (ex.Code == ErrorCode.UnsupportedResource)
+        {
+            logger.LogWarning(
+                "job {JobId}: its outcome was refused ({Detail}) - the lease had moved on while the run was still going; the queue re-runs or ends the job itself",
+                job.JobId, LogSafe.Line(ex.Detail ?? "-"));
+        }
     }
 }
 

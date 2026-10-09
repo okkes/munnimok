@@ -8,6 +8,7 @@ using Connector.Kit.Hosting.Providers;
 using Connector.Kit.Hosting.Staging;
 using Connector.Kit.Hosting.Sessions;
 using Connector.Kit.Jobs;
+using Connector.Kit.Logging;
 using Connector.Kit.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -146,7 +147,7 @@ public sealed class JobOutcomeService(
 
         logger.LogInformation("job {JobId} ({Kind}/{Provider}) succeeded with {Count} record(s) via {Via}",
             job.Id, job.Kind, job.ProviderId, result.Accounts.Count + result.Transactions.Count + result.Receipts.Count,
-            result.Via ?? "-");
+            LogSafe.Line(result.Via ?? "-"));
 
         return new JobOutcome(job, session, bundle, cursor, result.Complete);
     }
@@ -203,12 +204,12 @@ public sealed class JobOutcomeService(
         if (PagesTheOperator.Contains(code))
         {
             logger.LogError("job {JobId} ({Kind}/{Provider}) failed: {Code} {Detail}",
-                job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), failure.Detail ?? "-");
+                job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), LogSafe.Line(failure.Detail ?? "-"));
         }
         else
         {
             logger.LogWarning("job {JobId} ({Kind}/{Provider}) failed: {Code} {Detail}",
-                job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), failure.Detail ?? "-");
+                job.Id, job.Kind, job.ProviderId, ErrorCatalog.Wire(code), LogSafe.Line(failure.Detail ?? "-"));
         }
 
         return job;

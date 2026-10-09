@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MANIFEST, entriesFor, featureOn, generateValue, satisfiedBy, vapidPair } from './secrets.mjs';
-import { loadStack } from './stack.mjs';
+import { PLATFORM_IDS, loadStack } from './stack.mjs';
 
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
 const OUT_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
@@ -44,9 +44,19 @@ export function saveWizardStore(store) {
   return writeJson(WIZARD_FILE(), { machine: store.machine ?? {}, platforms: store.platforms ?? {} });
 }
 
+/** the platform's id as the platform list spells it — the list's own string, never the caller's: a store key is only ever one of ours */
 const requirePlatform = (platform, what) => {
   if (typeof platform !== 'string' || !platform) throw new TypeError(`${what}: a platform is required — every value belongs to one platform`);
-  return platform;
+  const known = PLATFORM_IDS.find((id) => id === platform);
+  if (!known) throw new TypeError(`${what}: unknown platform "${platform}" (one of ${PLATFORM_IDS.join(', ')})`);
+  return known;
+};
+
+/** a value's name as GitHub and the manifest spell it: upper-case, digits and underscores — never a path into the store's own prototype */
+const NAME_SHAPE = /^[A-Z][A-Z0-9_]{0,63}$/;
+const requireName = (name, what) => {
+  if (typeof name !== 'string' || !NAME_SHAPE.test(name)) throw new TypeError(`${what}: "${name}" is not a value name (UPPER_SNAKE_CASE)`);
+  return name;
 };
 
 /** the machine-owned values alone (the Apple Development certificate) */
@@ -64,6 +74,7 @@ export function wizardValues(platform) {
 export function setWizardValues(values, platform = null) {
   const store = loadWizardStore();
   for (const [name, value] of Object.entries(values)) {
+    requireName(name, 'setWizardValues');
     if (MACHINE_OWNED.has(name)) { store.machine[name] = value; continue; }
     const p = requirePlatform(platform, `setWizardValues(${name})`);
     store.platforms[p] = { ...(store.platforms[p] ?? {}), [name]: value };
@@ -74,6 +85,7 @@ export function setWizardValues(values, platform = null) {
 export function forgetWizardValues(names, platform = null) {
   const store = loadWizardStore();
   for (const name of names) {
+    requireName(name, 'forgetWizardValues');
     if (MACHINE_OWNED.has(name)) { delete store.machine[name]; continue; }
     const p = requirePlatform(platform, `forgetWizardValues(${name})`);
     if (store.platforms[p]) delete store.platforms[p][name];

@@ -146,13 +146,16 @@ internal sealed class StubLoginPage : ILoginPage
     /// </summary>
     public Exception? ClickThrows { get; set; }
 
+    /// <summary>How many presses <see cref="ClickThrows"/> takes down before the button takes one; a single press by default.</summary>
+    public int ClickThrowsTimes { get; set; } = 1;
+
     public Task<bool> ClickAsync(IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct)
     {
         if (Match(selectors) is not { } hit) return Task.FromResult(false);
 
         if (ClickThrows is { } thrown)
         {
-            ClickThrows = null;
+            if (--ClickThrowsTimes <= 0) ClickThrows = null;
             return Task.FromException<bool>(thrown);
         }
 
