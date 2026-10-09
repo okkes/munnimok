@@ -11,12 +11,31 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { partyName } from '@/features/connectors/logos';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
-import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
 import { SearchField } from '@/ui/SearchField';
+import type { ReactNode } from 'react';
+import { ReceiptProposalCard } from './ReceiptPickSheet';
+import { useLeavingRows } from './leavingRows';
 
 const sourceIcon = (source: string): string => (source === 'photo' ? 'camera-outline' : 'storefront-outline');
+
+/** how long an answered card takes to fold away (user 2026-10-09: "so instantly I'm not sure I clicked") */
+export const PROPOSAL_EXIT_MS = 260;
+
+/** the fold: the row's track collapses and fades over the exit, the card inside clipped by it */
+function ExitRow({ leaving, children }: Readonly<{ leaving: boolean; children: ReactNode }>) {
+  return (
+    <div
+      data-leaving={leaving ? '1' : undefined}
+      className={`grid transition-[grid-template-rows,opacity] duration-[260ms] ease-in ${leaving ? '[grid-template-rows:0fr] opacity-0' : '[grid-template-rows:1fr]'}`}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className="pb-2">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 /** store, merchant, item names and the amount's digits are all searchable */
 function entryMatches(entry: ReceiptEntry, q: string, amountQ: string | null): boolean {
@@ -50,6 +69,8 @@ export function ReceiptsScreen() {
   const receiptOps = useReceiptOps();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
+  // an answered match folds away before it leaves the data (user 2026-10-09)
+  const { rows: toCheck, leave } = useLeavingRows(proposals, PROPOSAL_EXIT_MS);
 
   const entries = useMemo(() => {
     const linked = (links ?? []).map(linkAsEntry);
@@ -170,54 +191,34 @@ export function ReceiptsScreen() {
           </div>
         )}
 
-        {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first */}
-        {!!proposals?.length && (
+        {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first. User ss 2026-10-05: the receipt
+            and the transaction are both doors; user 2026-10-09: two rows of one shape on one card, the answer
+            folds the card away */}
+        {toCheck.length > 0 && (
           <div className="mt-3" data-testid="receipts-to-check">
             <div className="m-cap mb-1 px-1">{t('receipts.toCheckTitle')}</div>
-            <p className="mb-1 px-1 text-[11px] leading-snug text-ink-4">{t('receipts.toCheckSub')}</p>
-            <div className="overflow-hidden rounded-card border border-line bg-surface">
-              {proposals.map((link) => {
-                const proposed = txs?.find((tx) => tx.id === link.proposedTxId);
-                return (
-                  <div key={link.id} className="border-b border-line-2 px-4 py-3 last:border-0" data-testid={`receipt-proposal-${link.id}`}>
-                    {/* user ss 2026-10-05: a match was a guess with nothing to open — the receipt and the transaction are both doors now */}
-                    <button
-                      data-testid={`receipt-proposal-open-${link.id}`}
-                      onClick={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
-                      className="m-tap flex w-full items-center gap-3 border-none bg-transparent p-0 text-left"
-                    >
-                      <Icon name="storefront-outline" size={18} color="var(--m-ink-3)" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-ink">{link.merchant ?? partyName(link.source)}</span>
-                        <span className="block truncate text-[11px] text-ink-4">{fmtDate(link.date)}{link.items?.length ? ` · ${link.items.length} ${t('receipt.items')}` : ''}</span>
-                      </span>
-                      <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(link.totalCents, currency, lang)}</span>
-                      <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
-                    </button>
-                    {proposed && (
-                      <button
-                        data-testid={`receipt-proposal-tx-${link.id}`}
-                        onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: proposed.id } })}
-                        className="m-tap mt-1.5 flex w-full items-center gap-2 border-none bg-transparent py-1 pl-8 text-left"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-4">
-                          {t('receipts.proposedFor')} {proposed.merchant ?? proposed.description ?? '…'} · {fmtCents(proposed.amountCents, proposed.currency || currency, lang)} · {fmtDate(proposed.date)}
-                        </span>
-                        <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
-                      </button>
-                    )}
-                    <div className="mt-2 flex gap-2 pl-8">
-                      <Button size="sm" data-testid={`receipt-proposal-accept-${link.id}`} onClick={() => void receiptOps.acceptMatch(link)}>
-                        {t('receipts.accept')}
-                      </Button>
-                      <Button size="sm" variant="outline" data-testid={`receipt-proposal-reject-${link.id}`} onClick={() => void receiptOps.rejectMatch(link)}>
-                        {t('receipts.reject')}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <p className="mb-2 px-1 text-[11px] leading-snug text-ink-4">{t('receipts.toCheckSub')}</p>
+            {toCheck.map(({ item: link, leaving }, index) => (
+              <ExitRow key={link.id} leaving={leaving}>
+                <ReceiptProposalCard
+                  link={link}
+                  tx={txs?.find((tx) => tx.id === link.proposedTxId)}
+                  currency={currency}
+                  ids={{
+                    card: `receipt-proposal-${link.id}`,
+                    open: `receipt-proposal-open-${link.id}`,
+                    tx: `receipt-proposal-tx-${link.id}`,
+                    accept: `receipt-proposal-accept-${link.id}`,
+                    reject: `receipt-proposal-reject-${link.id}`,
+                  }}
+                  busy={leaving}
+                  onOpenReceipt={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
+                  onOpenTx={(txId) => void navigate({ to: '/transactions/$txId', params: { txId } })}
+                  onAccept={(answered) => leave(answered, index, () => receiptOps.acceptMatch(answered))}
+                  onReject={(answered) => leave(answered, index, () => receiptOps.rejectMatch(answered))}
+                />
+              </ExitRow>
+            ))}
           </div>
         )}
 

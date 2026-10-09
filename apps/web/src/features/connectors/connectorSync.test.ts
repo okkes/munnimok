@@ -63,6 +63,24 @@ describe('syncConnection — one pass through the relay', () => {
     expect(row.lastError).toBeUndefined();
   });
 
+  it("a bank's sync re-reads every space with a shop against the shop's receipts (user 2026-10-09: proposals before the review)", async () => {
+    // the shop's receipt and the reviewed transaction it fits, in a space that includes the shop
+    await repo.upsert('storeConn', 'feed', 'conn-ah', { store: 'ah', kind: 'store', displayName: 'Albert Heijn', connectedAt: '2026-09-01', status: 'ok' });
+    await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-ah'), { instanceId: 'conn-ah', store: 'ah', displayName: 'Albert Heijn' });
+    await repo.upsert('receipt', 'feed', 'rcpt:ah:conn-ah:1', { source: 'ah', instanceId: 'conn-ah', date: '2026-07-05', totalCents: 2350, merchant: 'Albert Heijn', storeRef: 'ah:1' });
+    await repo.upsert('transaction', SPACE, 'tx-ah', { accountId: 'a1', date: '2026-07-05', amountCents: -2350, currency: 'EUR', merchant: 'Albert Heijn', needsReview: 0 });
+    // the bank is included nowhere (its accounts attach, its connection does not): the pass walks the spaces with a shop
+    await repo.upsert('storeConn', 'feed', 'conn-bank', { store: 'mock-bank', kind: 'bank', displayName: 'Mock bank', connectedAt: '2026-09-01', status: 'ok' });
+    await backend.connectorConnPut({ id: 'conn-bank', provider: 'mock-bank', bundle: 'sb_v1.bank', sessionId: 'ses_b', state: 'active', refreshedAt: '2026-09-01T00:00:00Z' });
+    vi.spyOn(connectorApi, 'sync').mockResolvedValue({
+      accepted: false,
+      outcome: { sessionId: 'ses_b', state: 'active', ingested: { ...NO_INGEST, records: 3, transactions: 3 } },
+    });
+    const report = await syncConnection(backend, repo, 'conn-bank');
+    expect(report).toMatchObject({ status: 'ok', transactions: 3, proposed: 1 });
+    expect((await backend.bySpace('receiptLink', SPACE)).find((l) => l.proposedTxId === 'tx-ah')?.instanceId).toBe('conn-ah');
+  });
+
   it('a dead session drops the bundle and asks for a sign-in; a budget refusal asks for patience', async () => {
     vi.spyOn(connectorApi, 'sync').mockRejectedValueOnce(new ConnectorError(401, envelope('session_expired', { userAction: 'reauth' })));
     const refused = await syncConnection(backend, repo, CONN);

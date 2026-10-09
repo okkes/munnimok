@@ -1,5 +1,6 @@
 import { useData } from '@/app/data';
 import { downscaleImage } from '@/lib/image';
+import { measure } from '@/lib/perf';
 import { receiptLinkId } from '@/domain/feedIds';
 import { logActivity } from './activity';
 import { acceptProposal, attachReceiptTo, detachReceiptFrom, rejectProposal } from './receiptLinks';
@@ -72,7 +73,8 @@ export function useReceiptOps(): ReceiptOps {
       await repo.upsert('receiptLink', spaceId, linkId, { items });
     },
     linkReceipt: async (receipt, txId) => {
-      await attachReceiptTo(repo, spaceId, receipt, txId);
+      // a 'receipts.attach' span (2026-10-09): the tap on "Yes, attach" is measured, never guessed
+      await measure('receipts.attach', () => attachReceiptTo(repo, spaceId, receipt, txId));
       void logActivity(store, repo, spaceId, 'receiptAdd', receipt.merchant);
     },
     unlinkReceipt: async (linkId, txId) => {

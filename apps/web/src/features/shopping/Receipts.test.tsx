@@ -27,6 +27,12 @@ vi.mock('@/lib/image', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/image')>()),
   downscaleImage: vi.fn(async () => FAKE_PHOTO),
 }));
+// the proposal's yes, counted: the exit animation must not let a second tap write twice
+vi.mock('@/application/receiptLinks', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/application/receiptLinks')>();
+  return { ...mod, acceptProposal: vi.fn(mod.acceptProposal) };
+});
+import { acceptProposal } from '@/application/receiptLinks';
 
 async function openFirstTx(): Promise<string> {
   renderApp('/transactions');
@@ -282,15 +288,58 @@ describe('Receipts (demo identity)', () => {
     cleanup();
     renderApp('/receipts');
     await screen.findByTestId('receipts-to-check', {}, { timeout: 5000 });
+    // user 2026-10-09: the transaction is a row of the receipt's own shape — its amount on it, a door of its own
     const txDoor = await screen.findByTestId('receipt-proposal-tx-rlink-compare', {}, { timeout: 5000 });
-    expect(txDoor.textContent).toContain('Looks like it belongs to');
-    expect(txDoor.textContent).toMatch(/€/);
+    expect(txDoor.textContent).toMatch(/€[0-9]/);
+    expect(screen.getByTestId('receipt-proposal-open-rlink-compare').textContent).toContain('Albert Heijn');
     fireEvent.click(txDoor);
     await screen.findByTestId('tx-detail-amount', {}, { timeout: 5000 });
     cleanup();
     renderApp('/receipts');
     fireEvent.click(await screen.findByTestId('receipt-proposal-open-rlink-compare', {}, { timeout: 5000 }));
     await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
+  }, 20_000);
+
+  it('an answered match folds away instead of vanishing (user 2026-10-09): the card is marked leaving, its buttons stand down, the write runs once', async () => {
+    renderApp('/receipts');
+    await screen.findByTestId('screen-receipts');
+    const { db, repo } = await demoRepo();
+    await repo.upsert('transaction', 'demo_space', 'pay-exit', { accountId: 'demo_main', date: '2026-07-03', amountCents: -1250, currency: 'EUR', merchant: 'Albert Heijn 1842', catId: 'groceries', needsReview: 0 });
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-exit', {
+      receiptId: 'rcpt:ah:demo_conn_ah:x1',
+      source: 'ah',
+      instanceId: 'demo_conn_ah',
+      date: '2026-07-03',
+      totalCents: 1250,
+      merchant: 'Albert Heijn',
+      items: [{ name: 'HALFVOLLE MELK', totalCents: 125 }],
+      auto: 0,
+      proposedTxId: 'pay-exit',
+    });
+    db.close();
+    const card = await screen.findByTestId('receipt-proposal-rlink-exit', {}, { timeout: 5000 });
+    // the two rows: the receipt (to check, with its items) and the transaction it fits, each with its amount
+    expect(screen.getByTestId('receipt-proposal-open-rlink-exit').textContent).toContain('Receipt to check');
+    expect(screen.getByTestId('receipt-proposal-open-rlink-exit').textContent).toContain('1 items');
+    // the transaction row waits for the transactions' own live query (a separate subscription that may land a beat later under load)
+    const txRow = await screen.findByTestId('receipt-proposal-tx-rlink-exit', {}, { timeout: 5000 });
+    expect(txRow.textContent).toContain('Albert Heijn 1842');
+    expect(txRow.textContent).toMatch(/€[1-9]/);
+    expect(card.closest('[data-leaving]')).toBeNull();
+
+    vi.mocked(acceptProposal).mockClear();
+    const yes = screen.getByTestId('receipt-proposal-accept-rlink-exit') as HTMLButtonElement;
+    fireEvent.click(yes);
+    // the exit: the card wears the leaving state at once, the buttons stand down, a second tap writes nothing
+    expect(card.closest('[data-leaving]')).toBeTruthy();
+    expect(yes.disabled).toBe(true);
+    expect((screen.getByTestId('receipt-proposal-reject-rlink-exit') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(yes);
+    expect(acceptProposal).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId('receipt-proposal-rlink-exit')).toBeNull(), { timeout: 5000 });
+    const { db: check } = await demoRepo();
+    await waitFor(async () => expect((await check.receiptLinks.get('rlink-exit'))?.txId).toBe('pay-exit'), { timeout: 5000 });
+    check.close();
   }, 20_000);
 
   const AMAZON = 'rcpt:amazon-nl:demo_conn_amz:a1';
@@ -303,12 +352,39 @@ describe('Receipts (demo identity)', () => {
     const { storeConnLinkId } = await import('@/domain/feedIds');
     await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_amz'), { instanceId: 'demo_conn_amz', store: 'amazon-nl', displayName: 'Amazon' });
     await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_cb'), { instanceId: 'demo_conn_cb', store: 'coolblue', displayName: 'Coolblue' });
-    await repo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, { source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl' });
+    await repo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, {
+      source: 'amazon-nl', instanceId: 'demo_conn_amz', date: '2026-01-09', totalCents: 5956, merchant: 'Amazon.nl', items: [{ name: 'USB-C kabel', totalCents: 1299 }, { name: 'Muismat', totalCents: 4657 }],
+    });
     await repo.upsert('receipt', DEMO_STORE_FEED_ID, COOLBLUE, { source: 'coolblue', instanceId: 'demo_conn_cb', date: '2026-01-06', totalCents: 5798, merchant: 'Coolblue' });
     db.close();
     // the shops' receipts reach the empty state's badge
     await waitFor(() => expect(screen.getByTestId('receipt-candidate-count').textContent).toBe('2'), { timeout: 5000 });
   }
+
+  it('the eye peeks at a receipt over the list without losing the flow (user 2026-10-09): the row is lit while the peek is open, the search stays, Attach this one picks it', async () => {
+    await openFirstTx();
+    await seedTwoShopReceipts();
+    fireEvent.click(screen.getByTestId('receipt-empty'));
+    await screen.findByTestId('receipt-pick-sheet');
+    fireEvent.change(screen.getByTestId('receipt-pick-search'), { target: { value: 'amazon' } });
+    fireEvent.click(screen.getByTestId(`receipt-pick-all-view-${AMAZON}`));
+    // the peek: the receipt's body in a sheet over the picker, the row it came from lit
+    await screen.findByTestId('receipt-peek-items');
+    expect(screen.getByTestId('receipt-peek-head').textContent).toContain('Amazon.nl');
+    expect(screen.getByTestId('receipt-peek-items').textContent).toContain('USB-C kabel');
+    expect(screen.getByTestId('receipt-peek-view-total').textContent).toMatch(/€[1-9]/);
+    expect(screen.getByTestId(`receipt-pick-all-${AMAZON}-row`).getAttribute('data-peeked')).toBe('1');
+    // closing (Escape reaches the top sheet alone) clears the light; the search underneath is still there
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId(`receipt-pick-all-${AMAZON}-row`).getAttribute('data-peeked')).toBeNull());
+    expect((screen.getByTestId('receipt-pick-search') as HTMLInputElement).value).toBe('amazon');
+    expect(screen.queryByTestId(`receipt-pick-all-${COOLBLUE}`)).toBeNull();
+    // a second look, and the pick from the peek itself attaches it
+    fireEvent.click(screen.getByTestId(`receipt-pick-all-view-${AMAZON}`));
+    fireEvent.click(await screen.findByTestId('receipt-peek-attach'));
+    const card = await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('Amazon.nl');
+  }, 20_000);
 
   it('the attach sheet searches every receipt behind the parties’ chips; a pick from the whole list attaches it (user 2026-10-07)', async () => {
     await openFirstTx();

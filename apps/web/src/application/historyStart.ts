@@ -2,6 +2,7 @@ import { spaceAccountLinks } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { logActivity } from './activity';
+import { requestReceiptMatching } from './receiptMatching';
 
 /**
  * Moving a space's history start (arc 5) is impactful and the numbers
@@ -80,6 +81,9 @@ export async function applyHistoryMove(store: StorageBackend, repo: Repo, spaceI
     for (const tx of own.filter((t) => t.deleted === 0 && t.date < newDate)) {
       await repo.remove('transaction', spaceId, tx.id);
     }
+  } else if (newDate < oldDate) {
+    // older: stored rows surface — the shops' receipts meet them now, not when the review opens (user 2026-10-09)
+    requestReceiptMatching(spaceId);
   }
   void logActivity(store, repo, spaceId, 'spaceEdit', space?.name ?? '');
 }

@@ -16,6 +16,7 @@ import { isNativeApp, takeNativePhoto } from '@/lib/platform';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
+import { ReceiptPeekSheet } from './ReceiptPeekSheet';
 import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
 import { attachedElsewhere, describeTxFor, rankForTx } from './receiptPick';
 
@@ -127,6 +128,10 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // user 2026-10-09: the eye peeks at a receipt in a sheet OVER the picker, so the search, the chips and the
+  // scroll position stay; the receipt outlives the close flag so the sheet never empties mid-slide
+  const [peeked, setPeeked] = useState<ReceiptRow | null>(null);
+  const [peekOpen, setPeekOpen] = useState(false);
   // #160: desktop-only webcam rung under the upload button (hooks stay
   // above the `entry === undefined` early return)
   const webcamDoor = useWebcamDoor();
@@ -147,8 +152,18 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const elsewhere = useMemo(() => attachedElsewhere(attachable?.attachedTo, tx.id), [attachable, tx.id]);
   const describeTx = useMemo(() => describeTxFor(txs, lang, tx.currency), [txs, lang, tx.currency]);
 
-  /** the receipt screen, back here on return — the card's own door and the sheet's eye alike */
+  /** the receipt screen, back here on return — the card's own door */
   const openReceipt = (receiptId: string) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
+  const peek = (row: ReceiptRow) => {
+    setPeeked(row);
+    setPeekOpen(true);
+  };
+  /** "Attach this one" from the peek: both sheets close and the pick lands like a tap on the row */
+  const pickFromPeek = (row: ReceiptRow) => {
+    setPeekOpen(false);
+    setAttachOpen(false);
+    void applyPick(receiptOps, tx.id, entry ?? null, row);
+  };
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -224,6 +239,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         testIdPrefix="receipt-pick"
         pickTestIdPrefix="receipt-pick"
         proposal={proposal}
+        proposalTx={proposal ? tx : undefined}
         candidates={suggested}
         all={all}
         selectedId={receipt?.id ?? null}
@@ -244,6 +260,8 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           void applyPick(receiptOps, tx.id, entry, row);
         }}
         onView={openReceipt}
+        onPeek={peek}
+        peekedId={peekOpen ? (peeked?.id ?? null) : null}
       >
         <AttachRungs
           busy={busy}
@@ -253,6 +271,15 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           onConnections={() => void navigate({ to: '/connections' })}
         />
       </ReceiptPickSheet>
+
+      {/* the peek over the picker (user 2026-10-09); the attached receipt itself offers no second attach */}
+      <ReceiptPeekSheet
+        open={peekOpen}
+        onOpenChange={setPeekOpen}
+        receipt={peeked}
+        currency={tx.currency}
+        onPick={peeked && peeked.id !== receipt?.id ? pickFromPeek : undefined}
+      />
 
       {/* #160: snapshot rides the same attach pipeline as a picked file */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onFile(file)} />

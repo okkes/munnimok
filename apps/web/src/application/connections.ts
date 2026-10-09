@@ -4,7 +4,7 @@ import { useQuery } from '@/db/useQuery';
 import { readSessionIdentity } from '@/app/session';
 import { pullConnections, pushAllConnections, pushConnection, removeConnectionCipher } from './connectionSync';
 import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
-import { reevaluateSpace } from './receiptMatching';
+import { reevaluateSpace, useReceiptMatchTriggers } from './receiptMatching';
 import { linkedTxIds } from './receiptLinks';
 import { logActivity } from './activity';
 import { storeConnLinkId } from '@/domain/feedIds';
@@ -519,3 +519,7 @@ export function useConnectionKeepAlive(): void {
     });
   }, [engine, storage, repo]);
 }
+  // user 2026-10-09: receipts meet the transactions when the rows land — a
+  // sync cycle that brought new ones asks the matcher for a pass, so the
+  // proposals stand before the review opens (the same headless mount)
+  useReceiptMatchTriggers();

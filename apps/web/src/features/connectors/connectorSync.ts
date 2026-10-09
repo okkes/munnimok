@@ -2,7 +2,7 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { ConnectorConnRow, ConnectorLastError, ConnectorSessionState } from '@/db/types';
 import type { SyncEngine } from '@/sync/engine';
-import { includedSpaces, reevaluateSpace } from '@/application/receiptMatching';
+import { includedSpaces, reevaluateSpace, rematchSpaces } from '@/application/receiptMatching';
 import { ConnectorError, connectorApi } from './api';
 import { dropBundle, keepBundle, readBundle } from './bundles';
 import { subscribeConnectorFrames } from './events';
@@ -114,6 +114,11 @@ const empty = (): SyncReport => ({ status: 'error', added: 0, accounts: 0, trans
 /** pull the rows the relay filed, then match them into every included space */
 async function landAndMatch(storage: StorageBackend, repo: Repo, engine: SyncEngine | null | undefined, connectionId: string): Promise<Pick<SyncReport, 'linked' | 'proposed'>> {
   await engine?.syncAll().catch(() => undefined);
+  // a shop's receipts flow into the spaces that include it; a bank's (or a registry's) rows reach a space through
+  // its accounts instead, so every space with a shop re-reads its transactions against the shop's receipts — the
+  // proposals stand before the review opens (user 2026-10-09)
+  const meta = (await storage.allRows('storeConn')).find((c) => c.id === connectionId && c.deleted === 0);
+  if (meta?.kind === 'bank' || meta?.kind === 'registry') return rematchSpaces(storage, repo);
   let linked = 0;
   let proposed = 0;
   for (const spaceId of await includedSpaces(storage, connectionId)) {
