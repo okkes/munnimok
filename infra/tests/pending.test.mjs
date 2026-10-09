@@ -3,7 +3,7 @@
 // that applies them, the line a person reads.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { configChanges, describeChange, flattenConfig, needsFor, pendingFrom } from '../modules/pending.mjs';
+import { configChanges, describeChange, documentDiff, flattenConfig, leafDiff, needsFor, pendingFrom, secretPath } from '../modules/pending.mjs';
 
 const env = (over = {}) => ({
   env: 'prod', slot: 0, channel: 'latest', appChannel: 'production', label: 'munni prod-nas',
@@ -66,4 +66,55 @@ test('pending: platform-level keys read with their prefix and a missing side rea
   assert.deepEqual(configChanges(before, after).map(describeChange), ['platform.agentEgress.kind: residential → datacenter', 'platform.browserAgent: off → on']);
   assert.deepEqual(configChanges(null, { platform: { sharedChannel: 'dev' } }).map(describeChange), ['platform.sharedChannel: none → dev']);
   assert.equal(needsFor(configChanges(before, after)), 'bootstrap');
+});
+
+/* ── the difference the person reads before publishing (user 2026-10-09) ── */
+test('secretPath: a leaf named like a manifest secret or a secret word is masked; the platform domain only when a real name replaced its placeholder; plain config keys are shown', () => {
+  assert.equal(secretPath('platform.ghcrPat', 'x'), true, 'GHCR_PAT by its camelCase twin');
+  assert.equal(secretPath('platform.GLITCHTIP_API_TOKEN', 'x'), true);
+  assert.equal(secretPath('store.signingPassword', 'x'), true);
+  assert.equal(secretPath('platform.domain', '${PLATFORM_DOMAIN}'), false, 'the placeholder is public');
+  assert.equal(secretPath('platform.domain', 'home.synology.me'), true, 'a typed domain is the secret itself');
+  assert.equal(secretPath('features.connectors', true), false);
+  assert.equal(secretPath('store.androidCertSha256', 'D4:78'), false, 'a public fingerprint');
+  assert.equal(secretPath('channel', 'dev'), false);
+});
+
+test('leafDiff: added, removed and changed leaves with their values; a secret-named leaf shows only that it changed', () => {
+  const d = leafDiff(
+    { channel: 'latest', features: { connectors: false, banking: ['gocardless'] }, store: { signingPassword: 'old' }, label: 'munni' },
+    { channel: 'dev', features: { connectors: true, banking: ['gocardless'], push: true }, store: { signingPassword: 'new' }, label: 'munni' },
+  );
+  assert.deepEqual(d.added, [{ key: 'features.push', to: true, secret: false }]);
+  assert.deepEqual(d.removed, []);
+  assert.deepEqual(d.changed, [
+    { key: 'channel', from: 'latest', to: 'dev', secret: false },
+    { key: 'features.connectors', from: false, to: true, secret: false },
+    { key: 'store.signingPassword', from: '(secret)', to: '(secret)', secret: true },
+  ]);
+  assert.deepEqual(leafDiff({ a: 1, b: [1, 2] }, { b: [1, 2] }).removed, [{ key: 'a', from: 1, secret: false }]);
+  assert.deepEqual(leafDiff({ label: 'x' }, { label: 'y' }).changed, [], 'the wizard-only display names never count');
+});
+
+test('documentDiff: nothing published = every environment and the platform are new; a published twin is same; an edit is changed per environment, a platform edit sits under shared; a dropped environment is removed', () => {
+  const platform = { platform: 'nas', label: 'Synology NAS', delivery: 'synology', domain: '${PLATFORM_DOMAIN}', sharedChannel: 'latest', branch: null };
+  const prod = { env: 'prod', slot: 0, channel: 'latest', features: { connectors: true, banking: ['gocardless'] }, store: { androidPackage: 'app.munni.nas.prod' } };
+  const local = { platform, envs: { prod } };
+  const fresh = documentDiff(null, local, 'nas');
+  assert.equal(fresh.published, false);
+  assert.deepEqual(fresh.envs.map((e) => [e.id, e.stack, e.state]), [['shared', 'munni-nas-shared', 'new'], ['prod', 'munni-nas-prod', 'new']]);
+  assert.ok(fresh.envs[1].added.some((a) => a.key === 'features.connectors' && a.to === true));
+  assert.ok(fresh.envs[0].added.some((a) => a.key === 'platform.domain' && a.to === '${PLATFORM_DOMAIN}' && !a.secret));
+  const same = documentDiff({ ...local, publishedAt: '2026-10-09T10:00:00.000Z' }, local, 'nas');
+  assert.equal(same.publishedAt, '2026-10-09T10:00:00.000Z');
+  assert.deepEqual(same.envs.map((e) => e.state), ['same', 'same']);
+  const edited = documentDiff(
+    { platform, envs: { prod, staging: { env: 'staging', slot: 1, channel: 'dev', features: {} } } },
+    { platform: { ...platform, controlEnv: 'prod' }, envs: { prod: { ...prod, channel: 'dev', features: { ...prod.features, connectors: false } } } },
+    'nas',
+  );
+  assert.deepEqual(edited.envs.map((e) => [e.id, e.state]), [['shared', 'changed'], ['prod', 'changed'], ['staging', 'removed']]);
+  assert.deepEqual(edited.envs[0].added, [{ key: 'platform.controlEnv', to: 'prod', secret: false }]);
+  assert.deepEqual(edited.envs[1].changed, [{ key: 'channel', from: 'latest', to: 'dev', secret: false }, { key: 'features.connectors', from: true, to: false, secret: false }]);
+  assert.ok(edited.envs[2].removed.some((r) => r.key === 'env' && r.from === 'staging'));
 });

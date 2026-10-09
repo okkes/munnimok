@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const html = readFileSync(new URL('../setup/index.html', import.meta.url), 'utf8');
-const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
 assert.ok(scripts.length >= 4, 'wizard html lost a script block');
 
 // script 0: tweetnacl UMD — give it a `self` to hang nacl on. In the real

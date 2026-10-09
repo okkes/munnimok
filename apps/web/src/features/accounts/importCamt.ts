@@ -1,7 +1,7 @@
 import { v5 as uuidv5 } from 'uuid';
 import { accountLinkId, canonicalAccountId, feedSpaceId, importAccountId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
-import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
+import { predictTx } from '@/domain/predictCategory';
 import { cachedCatalog } from '@/sync/catalogSync';
 import type { SpaceMemory } from '@/application/prediction';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
@@ -91,9 +91,11 @@ function predictEntry(
   });
   return {
     catId: prediction?.catId ?? UNCATEGORIZED_ID,
-    // only merchant history the user confirmed twice skips review —
-    // keyword hits are guesses and review is the teaching loop
-    needsReview: predictionSkipsReview(prediction) ? 0 : 1,
+    // every imported row waits in the review with its prediction prefilled
+    // (user 2026-10-09: all transactions pass the deck, however sure the
+    // history is — only the person takes one out); the twice-confirmed
+    // shortcut that used to skip the review is gone
+    needsReview: 1,
   };
 }
 

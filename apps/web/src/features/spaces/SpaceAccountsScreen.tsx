@@ -10,8 +10,8 @@ import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { fetchesItself, sourceKeyFor, sourceParamsFor } from '@/features/accounts/AttachSheet';
 import { uncoveredDateText } from '@/features/accounts/coverage';
-import { useLiveConnectionIds } from '@/application/connections';
-import { ownsLink, uncoveredSince } from '@/domain/accountCoverage';
+import { useLiveConnectionIds, useMyFeedIds } from '@/application/connections';
+import { ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
 import { partyName } from '@/features/connectors/logos';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
@@ -164,19 +164,16 @@ export function SpaceAccountsScreen() {
   );
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
-  // #445: only the person whose connection feeds the account can tell whether it still does —
-  // a friend's attachment reads nothing here (user ss 2026-10-08: "shared by Elo" under a reconnect banner)
-  const infoUncovered = uncoveredOf(info, liveIds, mySub);
-
   // #305: whose attachment is this? my own feeds come from /me/feeds —
   // anything else in the list was shared INTO the space by someone else
   // and wears the shared badge (offline the set stays unknown: no badge
   // beats a wrong one)
-  const myFeeds = useQuery(
-    store,
-    async () => (syncing ? fetchMyFeedIds().catch(() => undefined) : undefined),
-    [syncing],
-  );
+  const myFeeds = useMyFeedIds();
+  // #445: only the person whose connection feeds the account can tell whether it still does —
+  // a friend's attachment reads nothing here (user ss 2026-10-08: "shared by Elo" under a reconnect
+  // banner; 2026-10-09: the same banner on a friend's account whose link carried no name — the
+  // feed set decides now, not the link)
+  const infoUncovered = uncoveredOf(info, liveIds, mySub, myFeeds);
 
   const entries = useQuery(store, async () => {
     // reads only — a teardown/closed-db rejection must never escape
@@ -649,8 +646,14 @@ export function SpaceAccountsScreen() {
   );
 }
 
-/** #445: the info sheet's "not fetched any more" reading — only when the viewer's own connection feeds the account (S3776: out of the component) */
-function uncoveredOf(info: AttachedAccountEntry | null, liveIds: ReadonlySet<string> | undefined, mySub: string | undefined): string | null {
+/** #445: the info sheet's "not fetched any more" reading — only when the account's feed is known to be the viewer's own (S3776: out of the component) */
+function uncoveredOf(
+  info: AttachedAccountEntry | null,
+  liveIds: ReadonlySet<string> | undefined,
+  mySub: string | undefined,
+  myFeeds: ReadonlySet<string> | undefined,
+): string | null {
   if (!info?.account || !liveIds) return null;
-  return uncoveredSince(info.account, liveIds, ownsLink(info.link, mySub));
+  const owned = ownsFeed(info.link?.feedSpaceId ?? info.account.spaceId, myFeeds, info.link ? [info.link] : [], mySub);
+  return uncoveredSince(info.account, liveIds, owned);
 }

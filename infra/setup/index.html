@@ -199,6 +199,17 @@ section,.card,.crow,.reg,details.how,.statline,#local-status{scroll-margin-top:7
 .pending.applying{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,transparent)}
 .pending code{font-size:12px}
 .pending .ghost{margin:0 2px;vertical-align:middle}
+/* what Publish would change (user 2026-10-09): a compact table inside the strip */
+.pending-diff{margin-top:8px;padding-top:8px;border-top:1px dashed color-mix(in srgb,var(--warn) 45%,transparent)}
+.pending-diff .why{margin:0 0 6px}
+.difftab{border-collapse:collapse;width:100%;font-size:12px;margin:4px 0 6px}
+.difftab th{text-align:left;font-weight:600;color:var(--muted);padding:2px 8px 2px 0;border-bottom:1px solid var(--line)}
+.difftab td{padding:3px 8px 3px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);vertical-align:top;word-break:break-word}
+.difftab td:first-child{width:14px;font-family:ui-monospace,Consolas,monospace;font-weight:700}
+.difftab tr.add td:first-child{color:var(--ok)}
+.difftab tr.del td:first-child{color:var(--bad)}
+.difftab tr.chg td:first-child{color:var(--warn)}
+.difftab code{font-size:12px}
 .tile-envs{margin-top:6px;font-size:12px}
 button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni-flash-ring 2.4s ease-out 1}
 @media(prefers-reduced-motion:reduce){.flash,button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation-duration:.8s}}
@@ -436,7 +447,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
         <span class="ico" data-ico="layers"></span>
         <div>
           <h3>Shared services <span class="pill" id="local-shared-pill"></span></h3>
-          <p class="why">The platform's common ground, always running — Set up starts it, Stop/Delete everything are the only ways it goes down. <span id="shared-links"><span class="envtag">addresses appear once the platform is set up</span></span> — the control cockpit signs in through the control environment (the platform's lowest slot unless you pick another); pgAdmin is one console over every database server (logins under Reveal secrets, servers preregistered).</p>
+          <p class="why">The platform's common ground, always running — Set up starts it, Stop/Delete everything are the only ways it goes down. <span id="shared-links" data-shared-links><span class="envtag">addresses appear once the platform is set up</span></span> — the control cockpit signs in through the control environment (the platform's lowest slot unless you pick another); pgAdmin is one console over every database server (logins under Reveal secrets, servers preregistered).</p>
         </div>
       </div>
     </div>
@@ -531,6 +542,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
         <div>
           <h3>Set up shared services <span class="pill">one button</span></h3>
           <p class="why">Creates the GitHub environment <code>nas-shared</code>, stores every platform value into it (and into every existing <code>nas-&lt;env&gt;</code>), commits the platform config to the branch and dispatches <b>Bootstrap</b> for <code>munni-nas-shared</code>: it mints the generated secrets, writes the reverse-proxy rules, requests the wildcard certificate through DSM, ensures the live dir and the poller task, renders the stack — and chains <b>Deploy</b>, which uploads the bundle the poller applies within five minutes. Re-pressing is safe; it only fills gaps. The NAS status below tells what is left.</p>
+          <div class="why" data-shared-links><span class="envtag">addresses appear once the domain is saved</span></div>
           <div class="runrow">
             <button id="btn-nas-shared-setup">▶ Set up shared services</button>
             <button class="ghost" id="btn-nas-shared-deploy">Deploy again</button>
@@ -2488,11 +2500,7 @@ function fillDynamicCopy() {
   });
   document.querySelectorAll('[data-gcp-project]').forEach((el) => { el.innerHTML = project ? `the Play service account's project <code>${esc(project)}</code>` : 'any Cloud project'; });
   const urls = stackUrls(sharedStackOf());
-  const links = document.getElementById('shared-links');
-  if (links && urls) {
-    const chip = (label, url) => (url ? `<a class="chiplink" href="${escAttr(url)}" target="_blank" rel="noreferrer"><b>${label}</b> ${esc(url.replace(/^https?:\/\//, ''))}</a>` : '');
-    links.innerHTML = [chip('GlitchTip', urls.glitchtip), chip('Vault', urls.vault), chip('control', urls.control), chip('pgAdmin', urls.pgadmin)].join(' ');
-  }
+  renderSharedLinks();
   document.querySelectorAll('[data-shared-url]').forEach((a) => {
     const url = urls?.[a.dataset.sharedUrl];
     if (url) { a.href = url; a.textContent = url.replace(/^https?:\/\//, ''); }
@@ -3276,8 +3284,23 @@ function envCodeState(env) {
   const ups = probe ? probe.hosts.filter((h) => eff(h) === 'up').length : 0;
   return { signin: Boolean(gh?.vars.has('VITE_LOGTO_APP_ID')), glitchtip: Boolean(gh?.vars.has('VITE_GLITCHTIP_DSN')), minted: Boolean(gh?.secrets.has('POSTGRES_PASSWORD')), up: probe ? ups === probe.hosts.length : false, hostsUp: ups, hosts: probe?.hosts.length ?? 0, logto: state?.logto ?? null, gt: state?.glitchtip ?? null, known: Boolean(gh) };
 }
+/** the shared stack's services as chips with their health dot — the same look as an environment's (user 2026-10-09: "links to shared services like we do for environment specifics") */
+function renderSharedLinks() {
+  const boxes = document.querySelectorAll('[data-shared-links]');
+  if (!boxes.length) return;
+  const stack = sharedStackOf();
+  const urls = stackUrls(stack);
+  if (!urls) { boxes.forEach((b) => { b.innerHTML = `<span class="envtag">${isLcl() ? 'addresses appear once the platform is set up' : 'addresses appear once the domain is saved'}</span>`; }); return; }
+  const st = isLcl() ? S.status?.stacks?.[stack]?.services ?? {} : null;
+  const probe = S.nasProbe?.stacks?.find((x) => x.stack === stack);
+  const upOf = (key) => (isLcl() ? Boolean(st?.[key]) : Boolean(probe?.hosts.find((h) => h.key === key)?.state === 'up'));
+  const link = (label, key) => (urls[key] ? `<a class="chiplink" href="${escAttr(urls[key])}" target="_blank" rel="noreferrer"><span class="dot ${upOf(key) ? 'ok' : 'miss'}"></span> <b>${label}</b> ${esc(urls[key].replace(/^https?:\/\//, ''))}</a>` : '');
+  const html = [link('GlitchTip', 'glitchtip'), link('Vault', 'vault'), link('control', 'control'), link('pgAdmin', 'pgadmin')].join(' ');
+  boxes.forEach((b) => { b.innerHTML = html; });
+}
 /** every workspace's pills, links and lists from the current facts */
 function renderEnvStatus() {
+  renderSharedLinks();
   for (const env of S.envList) {
     const s = env.env;
     const c = envCodeState(env);
@@ -3470,14 +3493,62 @@ function pendingHtml(stack, p) {
   const cta = p.needs === 'publish' && !connected()
     ? `<a class="chiplink" href="#" ${jumpAttr({ href: '#connect-card', spot: '#btn-connect' })}>connect GitHub first</a>`
     : `<button class="ghost" data-pending-act="${p.needs}" ${attrs}>${label}</button>`;
-  return `<div class="pending"><b>Not applied yet</b> (${esc(when)}): ${list || 'the config differs from what runs'} — <b>${label}</b> ${why}${then}. ${cta} <a class="chiplink" href="#" data-pending-show="${p.needs}" ${attrs}>where is it?</a>${stale}</div>`;
+  // what Publish would put on GitHub (user 2026-10-09): a door to the table, and the table under the strip
+  const diff = p.needs === 'publish' ? ` <a class="chiplink" href="#" data-pending-diff="${escAttr(stack)}">What changed?</a>` : '';
+  const panel = p.needs === 'publish' ? `<div class="pending-diff" id="pending-diff-${escAttr(stack)}" hidden></div>` : '';
+  return `<div class="pending"><b>Not applied yet</b> (${esc(when)}): ${list || 'the config differs from what runs'} — <b>${label}</b> ${why}${then}. ${cta}${diff} <a class="chiplink" href="#" data-pending-show="${p.needs}" ${attrs}>where is it?</a>${stale}${panel}</div>`;
 }
 function renderPending() {
   for (const el of document.querySelectorAll('[id^="pending-munni-"]')) {
-    const html = pendingHtml(el.id.slice('pending-'.length), S.pending[el.id.slice('pending-'.length)]);
+    const stack = el.id.slice('pending-'.length);
+    // an opened "What changed?" table survives the poll's re-render
+    const open = el.querySelector('.pending-diff:not([hidden])');
+    const html = pendingHtml(stack, S.pending[stack]);
     el.innerHTML = html;
     el.hidden = !html;
+    const box = open ? el.querySelector('.pending-diff') : null;
+    if (box) { box.hidden = false; box.innerHTML = open.innerHTML; }
   }
+}
+/* ── what Publish would change: the document saved here against GitHub's copy, per environment (user 2026-10-09) ── */
+const diffValue = (v) => {
+  if (v === null || v === undefined || v === '') return 'none';
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (Array.isArray(v)) return v.length ? v.map(String).join(', ') : 'none';
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+};
+function diffTableHtml(d, stack) {
+  // a stack's config is its own keys plus the platform's — the shared entry carries the latter for every stack
+  const own = d.envs.find((e) => e.stack === stack);
+  const shared = d.envs.find((e) => e.id === 'shared');
+  const entries = own?.id === 'shared' ? [own] : [own, shared].filter(Boolean);
+  const rows = [];
+  const cell = (row, v) => (row.secret ? '(secret)' : diffValue(v));
+  for (const e of entries) {
+    for (const a of e.added) rows.push({ kind: 'add', key: a.key, from: '', to: cell(a, a.to), secret: a.secret });
+    for (const r of e.removed) rows.push({ kind: 'del', key: r.key, from: cell(r, r.from), to: '', secret: r.secret });
+    for (const c of e.changed) rows.push({ kind: 'chg', key: c.key, from: cell(c, c.from), to: cell(c, c.to), secret: c.secret });
+  }
+  const published = d.publishedAt ? ` (published ${esc(ago(d.publishedAt))})` : '';
+  if (!rows.length) return `<div class="why">GitHub holds exactly this config for ${esc(stackLabel(stack))}${published} — nothing to publish; the strip clears on the next check.</div>`;
+  const head = d.published ? `against the copy GitHub holds${published}` : 'nothing is on GitHub yet — every key is new';
+  const mark = { add: '+', del: '−', chg: '~' };
+  const body = rows.map((r) => `<tr class="${r.kind}"><td>${mark[r.kind]}</td><td><code>${esc(r.key)}</code>${r.secret ? ' <span class="envtag">secret — never shown</span>' : ''}</td><td>${esc(r.from)}</td><td>${esc(r.to)}</td></tr>`).join('');
+  return `<div class="why">${rows.length} change${rows.length === 1 ? '' : 's'} ${head}</div><table class="difftab"><thead><tr><th></th><th>key</th><th>on GitHub</th><th>saved here</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+/** open (or close) the table under a strip; `confirm` adds the Publish button — the strip's Publish shows what it would do first */
+async function showPendingDiff(stack, { confirm = false } = {}) {
+  const box = document.getElementById(`pending-diff-${stack}`);
+  if (!box) return;
+  if (!box.hidden && !confirm) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  box.innerHTML = '<div class="why">comparing with GitHub…</div>';
+  try {
+    requireConnection();
+    const d = await hjson(`/api/config/diff?platform=${encodeURIComponent(S.platform)}&repo=${encodeURIComponent(S.slug ?? '')}`);
+    const foot = confirm ? `<div class="runrow"><button data-pending-act="publish" data-confirmed="1" data-stack="${escAttr(stack)}">Publish these changes</button><button class="ghost" data-pending-diff="${escAttr(stack)}">Keep editing</button></div>` : '';
+    box.innerHTML = diffTableHtml(d, stack) + foot;
+  } catch (e) { box.innerHTML = `<div class="why">✗ ${esc(e.message)}</div>`; }
 }
 /** the button a strip points at: the environment's own, or the shared card's */
 function pendingButton(stack, needs) {
@@ -3513,9 +3584,13 @@ async function applyPending(stack, needs, btn) {
 document.addEventListener('click', (e) => {
   const show = e.target.closest('[data-pending-show]');
   if (show) { e.preventDefault(); showPendingButton(show.dataset.stack, show.dataset.pendingShow); return; }
+  const diff = e.target.closest('[data-pending-diff]');
+  if (diff) { e.preventDefault(); showPendingDiff(diff.dataset.pendingDiff).catch(() => {}); return; }
   const btn = e.target.closest('[data-pending-act]');
   if (!btn) return;
   e.preventDefault();
+  // Publish shows what it would put on GitHub first (user 2026-10-09); the table's own button is the confirm
+  if (btn.dataset.pendingAct === 'publish' && !btn.dataset.confirmed) { showPendingDiff(btn.dataset.stack, { confirm: true }).catch(() => {}); return; }
   applyPending(btn.dataset.stack, btn.dataset.pendingAct, btn).catch(() => {});
 });
 /* ── #420: how many pooled agents the host affords — the helper asks DSM (nas) or this computer (lcl) ── */

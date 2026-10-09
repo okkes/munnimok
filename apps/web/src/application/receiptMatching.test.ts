@@ -7,7 +7,16 @@ import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { receiptLinkId, storeConnLinkId } from '@/domain/feedIds';
 import { acceptProposal, rejectProposal } from './receiptLinks';
-import { includedSpaces, matchReceiptsIntoSpace, reevaluateSpace } from './receiptMatching';
+import {
+  createMatchScheduler,
+  includedSpaces,
+  matchInputFingerprint,
+  matchReceiptsIntoSpace,
+  reevaluateSpace,
+  rematchSpace,
+  rematchSpaces,
+  requestReceiptMatching,
+} from './receiptMatching';
 
 const FEED = 'feed-stores';
 const SPACE = 's1';
@@ -127,5 +136,76 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     const proposed = (await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId);
     expect(proposed.map((l) => l.instanceId)).toEqual(['conn-other']);
     expect(await includedSpaces(backend, CONN)).toEqual([SPACE]);
+  });
+});
+
+describe('the upfront pass (user 2026-10-09: proposals before the review opens)', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it('rematchSpace reads only the receipts of the connections the space includes; rematchSpaces walks every space with one', async () => {
+    await seedTx('tx-inc', 'Albert Heijn', 0);
+    await seedReceipt('t-600');
+    await seedReceipt('t-601', 'conn-other'); // in the feed, included nowhere yet
+    expect(await rematchSpace(backend, repo, SPACE)).toEqual({ linked: 0, proposed: 1 });
+    expect((await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId).map((l) => l.instanceId)).toEqual([CONN]);
+    // a space without a shop has nothing to match; one that includes the other connection meets its receipt on the walk
+    await repo.upsert('space', 's2', 's2', { name: 'Two', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('transaction', 's2', 'tx-s2', { accountId: 'a2', date: '2026-07-05', amountCents: -2350, currency: 'EUR', merchant: 'Albert Heijn', needsReview: 0 });
+    expect(await rematchSpace(backend, repo, 's2')).toEqual({ linked: 0, proposed: 0 });
+    await repo.upsert('storeConnLink', 's2', storeConnLinkId('s2', 'conn-other'), { instanceId: 'conn-other', store: 'ah', displayName: 'Albert Heijn 2' });
+    expect(await rematchSpaces(backend, repo)).toEqual({ linked: 0, proposed: 1 });
+    expect((await backend.bySpace('receiptLink', 's2')).map((l) => [l.instanceId, l.proposedTxId])).toEqual([['conn-other', 'tx-s2']]);
+    // named spaces narrow the walk
+    expect(await rematchSpaces(backend, repo, [SPACE])).toEqual({ linked: 0, proposed: 0 });
+  });
+
+  it('the fingerprint moves with the rows the matcher reads and with the gates, never with its own proposals', async () => {
+    const before = await matchInputFingerprint(backend);
+    await seedTx('tx-fp', 'Albert Heijn', 1);
+    const withTx = await matchInputFingerprint(backend);
+    expect(withTx).not.toBe(before);
+    await seedReceipt('t-700');
+    const withReceipt = await matchInputFingerprint(backend);
+    expect(withReceipt).not.toBe(withTx);
+    expect(await rematchSpace(backend, repo, SPACE)).toEqual({ linked: 0, proposed: 1 });
+    expect(await matchInputFingerprint(backend)).toBe(withReceipt);
+    await repo.upsert('space', SPACE, SPACE, { historyStartDate: '2026-01-01' });
+    expect(await matchInputFingerprint(backend)).not.toBe(withReceipt);
+  });
+
+  it('the scheduler folds asks into one pass at idle time, serves an ask that lands mid-pass with one more, and drops a waiting one on dispose', async () => {
+    const runs: (readonly string[] | undefined)[] = [];
+    let release: () => void = () => undefined;
+    const scheduler = createMatchScheduler(
+      async (spaceIds) => {
+        runs.push(spaceIds);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+      { delayMs: 5, idle: (callback) => callback() },
+    );
+    scheduler.request('s1');
+    scheduler.request('s2');
+    scheduler.request('s1');
+    await sleep(25);
+    expect(runs).toEqual([['s1', 's2']]);
+    // mid-pass: the ask for everything waits for the running pass and follows it as one more
+    scheduler.request();
+    scheduler.request('s9');
+    await sleep(25);
+    expect(runs).toHaveLength(1);
+    release();
+    await sleep(25);
+    expect(runs).toEqual([['s1', 's2'], undefined]);
+    release();
+    await scheduler.settled();
+    // a waiting ask dies with the scheduler; nothing installed = a landing point's ask is a no-op
+    scheduler.request('s3');
+    scheduler.dispose();
+    await scheduler.settled();
+    await sleep(25);
+    expect(runs).toHaveLength(2);
+    expect(() => requestReceiptMatching('s1')).not.toThrow();
   });
 });

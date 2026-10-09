@@ -234,6 +234,12 @@ whatever screen you're watching refreshes in place.
   header (`X-User-Sub`) so e2e can run without Logto.
 - Errors: Sentry-protocol → GlitchTip; demo/offline identities send
   nothing, signed-in users queue crash reports offline and flush later.
+- Performance (2026-10-09): the same protocol carries sampled traces to
+  GlitchTip's Performance view — route-pattern transactions and sync
+  rounds on the web, route-template transactions with their queries and
+  party calls on the api and the connector — under the same gates, with
+  every id scrubbed; what is traced where, the rates, the dev budgets and
+  how to read a slow Confirm: [observability.md](observability.md).
 
 ## 7b. Connections on your other devices (E2EE, opt-in)
 
@@ -386,8 +392,10 @@ flowchart TB
   with a Keychain/Keystore-held passphrase. Browser storage relies on the
   OS user profile sandbox.
 * **Telemetry discipline**: demo/offline identities have a hard
-  zero-network gate (enforced at the single `apiFetch` choke point and a
-  Sentry `beforeSend` gate). Only signed-in users emit crash reports.
+  zero-network gate (enforced at the single `apiFetch` choke point, the
+  Sentry `beforeSend`/`beforeSendTransaction` gates and a gated
+  transport under the offline queue). Only signed-in users emit crash
+  reports and performance traces (`docs/observability.md`).
 * **Planning (#128)**: a plan is two synced entities — `plan` (one per
   space × period × kind: actual, sandbox, blueprint; deterministic ids so
   two devices starting the same period converge) and `planSubject` (a

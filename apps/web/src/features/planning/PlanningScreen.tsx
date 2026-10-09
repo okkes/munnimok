@@ -6,7 +6,7 @@ import { usePlanning, usePlanningOps } from '@/application/planning';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import type { PlanRow, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
 import { periodsAhead, shortfallCents } from '@/domain/planning';
-import type { SubjectView, UnplannedMain } from '@/domain/planning';
+import type { SubjectView, UnplannedRow } from '@/domain/planning';
 import type { Period } from '@/domain/periods';
 import { parseLocalDate } from '@/application/planningModel';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -29,14 +29,16 @@ import { PoolSheet } from './PoolSheet';
 import { ReorderSheet } from './ReorderSheet';
 import { OverBudgetSheet, useOverBudgetGuard } from './overBudget';
 import { SegmentSection } from './SegmentSection';
+import type { MoneyFmt } from './SegmentSection';
 import { readFolds, toggleFold, writeFolds } from './segmentFolds';
 import { SegmentsSheet } from './SegmentsSheet';
+import { SourceTile } from './SourceTile';
 import { StartPlanCard } from './StartPlanCard';
 import { SubjectEditor } from './SubjectEditor';
 import type { EditorPreset } from './SubjectEditor';
 import { SubjectSheet } from './SubjectSheet';
-import { UnplannedSheet } from './UnplannedSheet';
-import { SEGMENT_META } from './planningUi';
+import { UnplannedSheet, unplannedAmount } from './UnplannedSheet';
+import { SEGMENT_META, UNPLANNED_KIND_KEY, UNPLANNED_SEGMENT } from './planningUi';
 
 type MenuItem = 'blueprints' | 'sandbox' | 'segments' | 'reorder' | 'pool' | 'insights' | 'startOver';
 const MENU: {
@@ -76,15 +78,79 @@ function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean
   return model.ahead.find((a) => a.period.start === period.start)?.plan ?? null;
 }
 
-/** the spending no subject answers for, by main — a row opens the sheet that plans it (user 2026-10-07; the set-aside door went 2026-10-08) */
-function UnplannedSection({
-  rows,
+const UNPLANNED_ROW_CLASS = 'm-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0';
+
+/** an unplanned main: its tile, its name, what it spent, its subs */
+function UnplannedCategoryRow({ row, fmt, currency, onOpen }: Readonly<{ row: Extract<UnplannedRow, { kind: 'category' }>; fmt: MoneyFmt; currency: string; onOpen: () => void }>) {
+  const { t } = useLang();
+  const cats = useCategories();
+  const main = cats.byId(row.mainId);
+  const subs = row.subs.filter((s) => s.catId !== row.mainId);
+  return (
+    <button type="button" onClick={onOpen} className={UNPLANNED_ROW_CLASS} data-testid={`plan-unplanned-${row.mainId}`}>
+      <Tile icon={main.icon} bg={`color-mix(in srgb, ${main.color} 14%, transparent)`} color={main.color} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{catName(main, t)}</span>
+          <Pill tone="negative">{t('plan.unplannedSpent', { amount: fmt(row.cents, currency) })}</Pill>
+        </span>
+        {subs.length > 0 && (
+          <span className="mt-0.5 block truncate text-[11px] text-ink-4">
+            {subs.map((s) => `${catName(cats.byId(s.catId), t)} ${fmt(s.cents, currency)}`).join(' · ')}
+          </span>
+        )}
+      </span>
+      <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
+/** an unplanned source (user 2026-10-09): the source's own face, its kind under the name, what it took */
+function UnplannedSourceRow({
+  row,
+  model,
   fmt,
   currency,
   onOpen,
-}: Readonly<{ rows: UnplannedMain[]; fmt: (cents: number, currency: string) => string; currency: string; onOpen: (row: UnplannedMain) => void }>) {
+}: Readonly<{ row: Exclude<UnplannedRow, { kind: 'category' }>; model: PlanningModel; fmt: MoneyFmt; currency: string; onOpen: () => void }>) {
   const { t } = useLang();
-  const cats = useCategories();
+  return (
+    <button type="button" onClick={onOpen} className={UNPLANNED_ROW_CLASS} data-testid={`plan-unplanned-${row.kind}-${row.sourceId}`}>
+      <SourceTile
+        segment={UNPLANNED_SEGMENT[row.kind]}
+        sourceId={row.sourceId}
+        icon={row.kind === 'debt' ? undefined : row.icon}
+        color={row.kind === 'recurring' ? undefined : row.color}
+        model={model}
+        testId={`plan-unplanned-logo-${row.sourceId}`}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{row.name}</span>
+          <Pill tone="negative">{unplannedAmount(row, t, fmt, currency)}</Pill>
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] text-ink-4">{t(UNPLANNED_KIND_KEY[row.kind])}</span>
+      </span>
+      <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
+/**
+ * The money no subject answers for — a row opens the sheet that plans it
+ * (user 2026-10-07; the set-aside door went 2026-10-08). Since 2026-10-09
+ * the recurring costs, loans and goals the period paid for without a subject
+ * sit here too, each a mirrored subject away, so the head counts them before
+ * and after they are planned alike.
+ */
+function UnplannedSection({
+  rows,
+  model,
+  fmt,
+  currency,
+  onOpen,
+}: Readonly<{ rows: UnplannedRow[]; model: PlanningModel; fmt: MoneyFmt; currency: string; onOpen: (row: UnplannedRow) => void }>) {
+  const { t } = useLang();
   if (rows.length === 0) return null;
   const total = rows.reduce((sum, r) => sum + r.cents, 0);
   return (
@@ -100,33 +166,13 @@ function UnplannedSection({
       </div>
       <p className="mb-1 px-1 text-[11px] text-ink-4">{t('plan.unplannedHint')}</p>
       <div className="overflow-hidden rounded-card border border-line bg-surface">
-        {rows.map((row) => {
-          const main = cats.byId(row.mainId);
-          const subs = row.subs.filter((s) => s.catId !== row.mainId);
-          return (
-            <button
-              type="button"
-              key={row.mainId}
-              onClick={() => onOpen(row)}
-              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
-              data-testid={`plan-unplanned-${row.mainId}`}
-            >
-              <Tile icon={main.icon} bg={`color-mix(in srgb, ${main.color} 14%, transparent)`} color={main.color} />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{catName(main, t)}</span>
-                  <Pill tone="negative">{t('plan.unplannedSpent', { amount: fmt(row.cents, currency) })}</Pill>
-                </span>
-                {subs.length > 0 && (
-                  <span className="mt-0.5 block truncate text-[11px] text-ink-4">
-                    {subs.map((s) => `${catName(cats.byId(s.catId), t)} ${fmt(s.cents, currency)}`).join(' · ')}
-                  </span>
-                )}
-              </span>
-              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-            </button>
-          );
-        })}
+        {rows.map((row) =>
+          row.kind === 'category' ? (
+            <UnplannedCategoryRow key={row.mainId} row={row} fmt={fmt} currency={currency} onOpen={() => onOpen(row)} />
+          ) : (
+            <UnplannedSourceRow key={`${row.kind}:${row.sourceId}`} row={row} model={model} fmt={fmt} currency={currency} onOpen={() => onOpen(row)} />
+          ),
+        )}
       </div>
     </section>
   );
@@ -237,7 +283,7 @@ export function PlanningScreen() {
   const [openSubjectId, setOpenSubjectId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ subject: PlanSubjectRow | null; preset?: EditorPreset } | null>(null);
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
-  const [unplannedOpen, setUnplannedOpen] = useState<UnplannedMain | null>(null);
+  const [unplannedOpen, setUnplannedOpen] = useState<UnplannedRow | null>(null);
   const [startOverOpen, setStartOverOpen] = useState(false);
   const cats = useCategories();
   const overBudget = useOverBudgetGuard(spaceId);
@@ -295,6 +341,7 @@ export function PlanningScreen() {
           key={s.kind}
           kind={s.kind}
           views={views.filter((v) => v.subject.segment === s.kind)}
+          model={model}
           editable={editable}
           canFill={canFill}
           fmt={fmt}
@@ -375,7 +422,7 @@ export function PlanningScreen() {
         )}
         {segmentBlocks()}
         {plan.kind !== 'blueprint' && viewBack >= 0 && (
-          <UnplannedSection rows={model.unplannedOf(plan)} fmt={fmt} currency={currency} onOpen={setUnplannedOpen} />
+          <UnplannedSection rows={model.unplannedOf(plan)} model={model} fmt={fmt} currency={currency} onOpen={setUnplannedOpen} />
         )}
       </>
     );
@@ -442,12 +489,18 @@ export function PlanningScreen() {
           <AddSourceSheet segment={adding} model={model} plan={plan} ops={ops} onClose={() => setAdding(null)} />
           <UnplannedSheet
             row={editable ? unplannedOpen : null}
+            model={model}
             fmt={fmt}
             currency={currency}
             onPlan={(row) => {
               const main = cats.byId(row.mainId);
               setUnplannedOpen(null);
               setEditing({ subject: null, preset: { name: catName(main, t), icon: main.icon, color: main.color, catIds: [row.mainId], targetCents: row.cents } });
+            }}
+            onMirror={(row) => {
+              // a source needs no editor (user 2026-10-09): its subject mirrors the row, born unfunded like every other
+              const source = { id: row.sourceId, name: row.name, icon: row.kind === 'debt' ? undefined : row.icon, color: row.kind === 'recurring' ? undefined : row.color };
+              void ops.addMirrored(plan.id, UNPLANNED_SEGMENT[row.kind], source).then(() => setUnplannedOpen(null));
             }}
             onClose={() => setUnplannedOpen(null)}
           />

@@ -152,7 +152,8 @@ describe('linkTransferPairs (application, per space)', () => {
     const twin = await db.transactions.get('twin');
     expect(twin?.transferPeerId).toBe('out');
     expect(twin?.linkedAccountId).toBe('checking'); // points back
-    expect(twin?.needsReview).toBe(0);
+    // the machine paired it — the twin waits in the review with the pair prefilled (user 2026-10-09)
+    expect(twin?.needsReview).toBe(1);
   });
 
   it('mintMirrorForExistingLink writes the stamped mirror, peers it, moves the manual balance', async () => {

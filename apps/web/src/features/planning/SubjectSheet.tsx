@@ -11,10 +11,11 @@ import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Pill, Row, Tile } from '@/ui/primitives';
+import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
-import { SEGMENT_COLOR, SEGMENT_META, STATUS_TONE, softOf } from './planningUi';
+import { STATUS_TONE } from './planningUi';
 import { statusLine } from './SegmentSection';
+import { SourceTile } from './SourceTile';
 import { AmountSuggestions } from './AmountSuggestions';
 import type { AmountSuggestion } from './AmountSuggestions';
 import type { MoneyFmt } from './SegmentSection';
@@ -94,13 +95,13 @@ export function CoverSheet({
   const others = candidates.all.filter((c) => !picks.has(c.subject.id));
   const row = (candidate: SubjectView) => {
     const spare = slackCents(candidate);
-    const color = candidate.subject.color ?? SEGMENT_COLOR[candidate.subject.segment];
+    const { subject } = candidate;
     return (
       <Row
-        key={candidate.subject.id}
+        key={subject.id}
         kind="data"
-        testId={`plan-cover-${candidate.subject.id}`}
-        leading={<Tile icon={candidate.subject.icon ?? SEGMENT_META[candidate.subject.segment].icon} bg={softOf(color)} color={color} />}
+        testId={`plan-cover-${subject.id}`}
+        leading={<SourceTile segment={subject.segment} sourceId={subject.sourceId} icon={subject.icon} color={subject.color} model={model} />}
         title={candidate.subject.name}
         sub={t('plan.cover.spare', { amount: fmt(spare, currency) })}
         trailing={<span className="m-num text-[13px] font-semibold text-ink">{fmt(Math.min(spare, need), currency)}</span>}
@@ -166,7 +167,6 @@ export function SubjectSheet({
   const { subject } = view;
   const canMove = editability !== 'readOnly';
   const canEdit = editability === 'full';
-  const color = subject.color ?? SEGMENT_COLOR[subject.segment];
   const typed = parseCents(draft);
   const dirty = typed !== null && typed !== view.fundedCents;
   const save = () => {
@@ -196,7 +196,7 @@ export function SubjectSheet({
       >
         <div className="flex flex-col gap-3" data-testid="plan-sheet">
           <div className="flex items-center gap-3">
-            <Tile icon={subject.icon ?? SEGMENT_META[subject.segment].icon} size={48} bg={softOf(color)} color={color} />
+            <SourceTile segment={subject.segment} sourceId={subject.sourceId} icon={subject.icon} color={subject.color} model={model} size={48} />
             <div className="min-w-0 flex-1">
               <Pill tone={STATUS_TONE[view.status]} testId="plan-sheet-status">
                 {statusLine(view, t, fmt, currency)}

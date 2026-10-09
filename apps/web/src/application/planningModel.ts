@@ -34,9 +34,9 @@ import { slackCents,
   recurringRealizedCents,
   subjectFamily,
   subjectView,
-  unplannedByCategory,
+  unplannedRows,
 } from '@/domain/planning';
-import type { Reservation, SubjectContext, SubjectStatus, SubjectView, TargetEstimate, UnplannedMain } from '@/domain/planning';
+import type { Reservation, SubjectContext, SubjectStatus, SubjectView, TargetEstimate, UnplannedRow } from '@/domain/planning';
 import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 
 /**
@@ -152,8 +152,12 @@ export interface PlanningModel {
   /** what is left to give a job: what the period started with minus the subjects' funding and the other periods ahead */
   toAllocateOf: (plan: PlanRow) => number;
   reservationsOf: (plan: PlanRow) => Map<string, Reservation>;
-  /** the period's spending outside every subject, by main category */
-  unplannedOf: (plan: PlanRow) => UnplannedMain[];
+  /**
+   * The period's money outside every subject (user 2026-10-09): the recurring
+   * costs, loans and goals it paid for that the plan does not mirror, and the
+   * category spending no expense or budget subject answers for.
+   */
+  unplannedOf: (plan: PlanRow) => UnplannedRow[];
   estimate: (family: ReadonlySet<string>) => TargetEstimate;
   contextFor: (period: Period) => SubjectContext;
   /** the current actual plan's subjects in the red */
@@ -299,13 +303,21 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   const aheadFundedCents = ahead.reduce((sum, a) => sum + a.fundedCents, 0);
   const pool = poolCents(data.accounts, data.space);
 
-  const unplanned = new Map<string, UnplannedMain[]>();
-  const unplannedOf = (p: PlanRow): UnplannedMain[] => {
+  const unplanned = new Map<string, UnplannedRow[]>();
+  const unplannedOf = (p: PlanRow): UnplannedRow[] => {
     const cached = unplanned.get(p.id);
     if (cached) return cached;
+    const subjects = subjectsOf(p);
     const covered = new Set<string>();
-    for (const subject of subjectsOf(p)) for (const id of familyOf(subject, data, budgetsById)) covered.add(id);
-    const list = unplannedByCategory(data.txs, periodOf(p), covered, data.catalog);
+    for (const subject of subjects) for (const id of familyOf(subject, data, budgetsById)) covered.add(id);
+    const list = unplannedRows(
+      subjects,
+      { recurrings: data.recurrings, accounts: data.accounts, goals: data.goals, contributions: data.contributions },
+      data.txs,
+      periodOf(p),
+      covered,
+      data.catalog,
+    );
     unplanned.set(p.id, list);
     return list;
   };
@@ -322,6 +334,11 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   // nothing, so its reading is the pool minus funding, as before. The sandbox
   // and a past plan read their own subjects over their own period the same way.
   // Home's safe-to-spend keeps reading funded-and-not-yet-spent (reservedCents).
+  // THE INVARIANCE (user 2026-10-09): "what already left" is every Unplanned
+  // row of every kind plus the subjects' realized — a recurring cost, a loan or
+  // a goal the period paid for sits under Unplanned until its subject exists,
+  // and then under the subject; adding the subject moves the money across and
+  // never changes what the period started with.
   const startedWithOf = (p: PlanRow): number =>
     pool + viewsOf(p).reduce((sum, v) => sum + v.realizedCents, 0) + unplannedOf(p).reduce((sum, m) => sum + m.cents, 0);
   const fundedOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + v.fundedCents, 0);

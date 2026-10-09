@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.19.0',
+    date: '2026-10-09',
+    items: [
+      {
+        en: 'Every transaction passes through your review now — a confident guess fills in the category but never ticks the row off; only your own edit on the transaction page does. Rows the guess had ticked off earlier are back in the queue once.',
+        nl: 'Elke transactie gaat nu door je controle — een zekere gok vult de categorie in maar vinkt de rij nooit af; alleen je eigen wijziging op de transactiepagina doet dat. Rijen die de gok eerder afvinkte staan één keer opnieuw in de rij.',
+        tr: 'Artık her işlem sizin incelemenizden geçiyor — emin bir tahmin kategoriyi doldurur ama satırı asla onaylamaz; yalnızca işlem sayfasındaki kendi düzenlemeniz onaylar. Tahminin daha önce onayladığı satırlar bir kez daha sıraya girdi.',
+      },
+      {
+        en: 'Receipts: a match to check shows the receipt and the transaction as two equal rows — tap either to open it; a card slides away when you answer; in the attach sheet the eye opens the receipt in a sheet over the list, the row stays marked, and your search is still there when you come back. Matching runs after every sync, before you review.',
+        nl: 'Bonnen: een te controleren match toont de bon en de transactie als twee gelijke rijen — tik op een van beide om te openen; een kaart schuift weg als je antwoordt; in het koppelpaneel opent het oog de bon in een paneel boven de lijst, de rij blijft gemarkeerd en je zoekopdracht staat er nog als je terugkomt. Het matchen draait na elke sync, vóór je controle.',
+        tr: 'Fişler: kontrol edilecek bir eşleşme fişi ve işlemi iki eşit satır olarak gösterir — açmak için birine dokunun; yanıtladığınızda kart kayıp gider; ekleme panelinde göz, fişi listenin üstünde bir panelde açar, satır işaretli kalır ve döndüğünüzde aramanız hâlâ yerindedir. Eşleştirme her eşitlemeden sonra, incelemeden önce çalışır.',
+      },
+      {
+        en: 'Planning: a recurring cost, a loan payment or a goal contribution paid this period without a subject shows under Unplanned as what it is, with Plan it adding it to its segment — the pool no longer changes when you add subjects. A subject added again after Start over begins clean. Recurring costs carry their logos in the plan.',
+        nl: 'Plannen: een vaste last, een aflossing of een storting op een doel die deze periode zonder onderwerp is betaald staat onder Ongepland als wat het is, met Plan het om het aan zijn segment toe te voegen — de pot verandert niet meer als je onderwerpen toevoegt. Een onderwerp dat je na Opnieuw beginnen weer toevoegt begint schoon. Vaste lasten dragen hun logo in het plan.',
+        tr: 'Planlama: bu dönem konusu olmadan ödenen bir düzenli gider, kredi ödemesi ya da hedef katkısı Planlanmamış altında ne ise o olarak görünür ve Planla onu kendi bölümüne ekler — konu eklediğinizde havuz artık değişmez. Baştan başladıktan sonra yeniden eklenen bir konu temiz başlar. Düzenli giderler planda logolarını taşır.',
+      },
+      {
+        en: 'Payoff planner: numbers beside every chart, each loan on its own (a change on one never moves another), a slider per loan with an Apply button that raises the loan’s payment for real, and a switch that explains why the combined plan ends earlier than the minimums: a loan’s payment moves to the next loan when it ends.',
+        nl: 'Aflosplanner: cijfers naast elke grafiek, elke lening op zichzelf (een wijziging aan de ene beweegt nooit een andere), een schuif per lening met een Toepassen-knop die de betaling echt verhoogt, en een schakelaar die uitlegt waarom het gezamenlijke plan eerder eindigt dan de minima: de betaling van een lening gaat naar de volgende als ze afloopt.',
+        tr: 'Ödeme planlayıcı: her grafiğin yanında sayılar, her kredi kendi başına (birindeki değişiklik diğerini asla oynatmaz), kredi başına bir kaydırıcı ve ödemeyi gerçekten yükselten bir Uygula düğmesi ve birleşik planın neden asgarilerden önce bittiğini açıklayan bir anahtar: bir kredinin ödemesi bitince sonrakine geçer.',
+      },
+      {
+        en: 'Sign-in and feeds: an account a friend shares no longer claims it is not fetched any more on your device; the admin has a bank-connections overview with disconnect; a friend’s diagnosis reads as tables instead of ids.',
+        nl: 'Inloggen en feeds: een rekening die een vriend deelt beweert op jouw toestel niet meer dat ze niet meer wordt opgehaald; de beheerder heeft een overzicht van bankverbindingen met loskoppelen; een diagnose leest als tabellen in plaats van ids.',
+        tr: 'Giriş ve akışlar: bir arkadaşın paylaştığı hesap cihazınızda artık alınmıyor demiyor; yöneticinin bağlantı kesme özellikli bir banka bağlantıları görünümü var; bir tanı artık kimlikler yerine tablolar olarak okunuyor.',
+      },
+      {
+        en: 'Under the hood: the app and the server report how long the slow paths take, so a sluggish Confirm is measured instead of guessed; a review confirm no longer waits for anything but its own write.',
+        nl: 'Onder de motorkap: de app en de server rapporteren hoe lang de trage paden duren, zodat een stroperige Bevestigen wordt gemeten in plaats van gegist; een bevestiging wacht op niets anders dan haar eigen schrijfactie.',
+        tr: 'Kaputun altında: uygulama ve sunucu yavaş yolların ne kadar sürdüğünü bildiriyor, böylece ağır bir Onayla tahmin yerine ölçülüyor; bir inceleme onayı artık kendi yazımından başka hiçbir şeyi beklemiyor.',
+      },
+    ],
+  },
+  {
     version: '5.18.0',
     date: '2026-10-08',
     items: [

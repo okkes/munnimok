@@ -217,6 +217,7 @@ function pooledAgents(s) {
       ConnectorAgent__Connections__0__ControlPlaneBaseUrl: http://connector:8080/
       ConnectorAgent__Connections__0__EnrollmentCode: \${CONNECTOR_FLEET_CODE}
       Sentry__Dsn: \${CONNECTOR_SENTRY_DSN:-}
+      Sentry__TracesSampleRate: "${s.tracing.sampleRate}"
     depends_on:
       connector-${e}:
         condition: service_healthy
@@ -267,6 +268,7 @@ function privateAgents(s) {
       ConnectorAgent__Connections__0__ControlPlaneBaseUrl: http://connector:8080/
       ConnectorAgent__Connections__0__EnrollmentCode: \${CONNECTOR_PRIVATE_CODE}
       Sentry__Dsn: \${CONNECTOR_SENTRY_DSN:-}
+      Sentry__TracesSampleRate: "${s.tracing.sampleRate}"
     depends_on:
       connector-${e}:
         condition: service_healthy
@@ -411,6 +413,8 @@ services:
       MUNNI_LOGTO_APP_ID: \${WEB_LOGTO_APP_ID}
       MUNNI_LOGTO_RESOURCE: ${s.urls.api}
       MUNNI_GLITCHTIP_DSN: \${WEB_GLITCHTIP_DSN}
+      # performance tracing (user 2026-10-09): the environment's share of traces, the same value the api and connector get
+      MUNNI_TRACES_SAMPLE_RATE: "${s.tracing.sampleRate}"
       MUNNI_CHANNEL: ${s.appChannel}
       MUNNI_NATIVE_SCHEME: ${s.native.scheme}
       MUNNI_PUBLIC_ORIGIN: ${s.urls.web}
@@ -483,6 +487,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       Logos__SecretKey: \${LOGODEV_SECRET_KEY:-}
       Logos__PublicToken: \${LOGODEV_PUBLIC_TOKEN:-}
       Sentry__Dsn: \${API_SENTRY_DSN:-}
+      Sentry__TracesSampleRate: "${s.tracing.sampleRate}"
       Logto__M2mAppId: \${LOGTO_M2M_APP_ID:-}
       Logto__M2mAppSecret: \${LOGTO_M2M_APP_SECRET:-}
       BUILD_NUMBER: \${TAG}
@@ -578,6 +583,7 @@ function connectorService(s) {
       BankAdapters__EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       # crash reports (2026-10-05): the connector project of this environment, shared with its agents
       Sentry__Dsn: \${CONNECTOR_SENTRY_DSN:-}
+      Sentry__TracesSampleRate: "${s.tracing.sampleRate}"
       BUILD_NUMBER: \${TAG}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/v1/health >/dev/null || exit 1"]

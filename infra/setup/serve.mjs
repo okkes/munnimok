@@ -32,11 +32,11 @@ import { ensureLocalSecrets, forgetWizardValues, loadLocalValues, loadWizardStor
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
 import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, loadEnv, loadPlatform, loadStack, nextSlot, parseStackName, platformEnvStacks, platformEnvs, removeEnv, saveAutonomy, saveEnv, savePlatform, sharedOf, stackName } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
-import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister } from '../modules/vault.mjs';
+import { buildAccount, buildCipher, encString, syncUserId, userKeysOf, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister, vaultSync } from '../modules/vault.mjs';
 import { zipEntry, zipNames } from '../modules/zip.mjs';
-import { configChanges, pendingFrom } from '../modules/pending.mjs';
+import { configChanges, documentDiff, pendingFrom } from '../modules/pending.mjs';
 import { BRANCH_RE, PLATFORM_IDS, branchFor } from '../modules/stack.mjs';
-import { documentStackConfig, fetchPlatformVariable, publishPlatform, pullPlatform, readApplied } from '../modules/config.mjs';
+import { documentStackConfig, fetchPlatformVariable, platformDocument, publishPlatform, pullPlatform, readApplied } from '../modules/config.mjs';
 import { proxyRules, systemInfo } from '../modules/dsm.mjs';
 import { normalizeAgents, recommendAgents } from '../modules/agents.mjs';
 import { listUsers, setAdmin } from '../modules/logto.mjs';
@@ -461,6 +461,19 @@ async function configPullEndpoint(req, res) {
   }
 }
 
+/** what Publish would change (user 2026-10-09): the platform document saved here against the one GitHub holds, per environment, secrets masked */
+function configDiffEndpoint(res, url) {
+  const platform = String(url.searchParams.get('platform') ?? '');
+  if (!listPlatforms().some((p) => p.platform === platform)) return json(res, 400, { error: `unknown platform "${platform}"` });
+  if (platform === LCL) return json(res, 400, { error: 'this computer keeps its config here — nothing is published' });
+  try {
+    const published = fetchPlatformVariable(platform, { repo: repoOf({ repo: url.searchParams.get('repo') }), env: ghEnvFor(platform) });
+    return json(res, 200, documentDiff(published, platformDocument(platform), platform));
+  } catch (e) {
+    return json(res, 502, { error: e.message });
+  }
+}
+
 /* ── run bootstrap / tools (lcl) ──────────────────────────────────── */
 async function runEndpoint(req, res, runImpl) {
   const body = await readBody(req);
@@ -655,7 +668,13 @@ async function accessCredential(stack, fetchImpl = localAwareFetch) {
   const shared = withPlatformEnv(stack.platform, () => sharedOf(stack));
   const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, fetchImpl);
   const item = items.find((i) => i.name === 'Logto infra M2M');
-  if (!item?.username || !item?.password) throw new Error(`the vault holds no "Logto infra M2M" item in folder ${stack.stack} yet — Bootstrap files it there (the machine credential it mints; the chained Deploy seeds it into Logto): press Bootstrap + Deploy for this environment once, then Reload users`);
+  // the vault is the ONLY readable copy of a nas environment's machine credential (GitHub never hands a secret
+  // back, the platform document carries none): say what the folder holds and where the run that files it
+  // explains itself (user 2026-10-09: "I ran Bootstrap" — the run had refused the vault write, its log said so)
+  if (!item?.username || !item?.password) {
+    const held = items.length ? `holds ${items.length} other item${items.length === 1 ? '' : 's'} but` : 'is empty —';
+    throw new Error(`the vault's folder ${stack.stack} ${held} no "Logto infra M2M" item — the last Bootstrap for this environment could not file it: its log's "vault:" line says why. Press Bootstrap + Deploy for this environment once more (the run files the credential it holds), then Reload users`);
+  }
   return { m2mId: item.username, m2mSecret: item.password };
 }
 
@@ -1850,11 +1869,17 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const token = await vaultEnsureAccount(res, run, base, account, fetchImpl);
   if (!token) return res.end('[exit 1]\n');
   res.write('▶ refresh the secret items (purge + import, one folder per stack)\n');
+  // the account's REAL user key (an account that already existed never has buildAccount's fresh random one — items
+  // written with that key were unreadable in the apps) and its user id: Vaultwarden 1.37+ refuses every cipher that
+  // does not name `encryptedFor` (user 2026-10-09, the same refusal that emptied the nas platform's vault folders)
+  const sync = await vaultSync(base, token, fetchImpl);
+  const keys = userKeysOf(email, password, sync.profile?.key ?? sync.Profile?.Key);
+  const encryptedFor = syncUserId(sync);
   await vaultPurge(base, token, account.hash, fetchImpl);
   const rows = buildVaultItems();
   const folderNames = [...new Set(rows.map((r) => r.folder))];
-  const folders = folderNames.map((name) => ({ name: encString(account.userKeys, name) }));
-  const ciphers = rows.map((r) => buildCipher(account.userKeys, r));
+  const folders = folderNames.map((name) => ({ name: encString(keys, name) }));
+  const ciphers = rows.map((r) => buildCipher(keys, r, { encryptedFor }));
   const folderRelationships = rows.map((r, i) => ({ key: i, value: folderNames.indexOf(r.folder) }));
   const imp = await vaultImport(base, token, { ciphers, folders, folderRelationships }, fetchImpl);
   if (!imp.ok) { res.write(`import failed (${imp.status} ${(await imp.text().catch(() => '')).slice(0, 200)})\n`); return res.end('[exit 1]\n'); }
@@ -2109,6 +2134,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'GET /api/agents/sizing': (req, res) => agentSizingEndpoint(res, url(req), netFetchImpl),
     'POST /api/config/publish': (req, res) => configPublishEndpoint(req, res),
     'POST /api/config/pull': (req, res) => configPullEndpoint(req, res),
+    'GET /api/config/diff': (req, res) => configDiffEndpoint(res, url(req)),
     'POST /api/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
@@ -2162,7 +2188,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     try {
       return await route(req, res);
     } catch (e) {
-      return json(res, 500, { error: String(e.message ?? e) });
+      // the message alone: the error object would carry its stack to the page (CodeQL js/stack-trace-exposure)
+      return json(res, 500, { error: e instanceof Error ? e.message : 'unexpected error' });
     }
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { merchantKey } from './merchantKey';
 import { buildMerchantMemory, predictFromMemory } from './merchantMemory';
 import type { MemoryInput } from './merchantMemory';
-import { predictTx, predictionSkipsReview } from './predictCategory';
+import { predictTx } from './predictCategory';
 
 const confirmed = (over: Partial<MemoryInput>): MemoryInput => ({
   merchant: 'Albert Heijn 1470',
@@ -121,18 +121,16 @@ describe('predictTx layering', () => {
     const history = predictTx({ memory: layered(memory), merchant: 'Albert Heijn 1470', amountCents: -1500 });
     expect(history?.catId).toBe('sport');
     expect(history?.source).toBe('history');
-    expect(predictionSkipsReview(history)).toBe(true);
 
     const cold = predictTx({ memory: layered(buildMerchantMemory([])), merchant: 'Albert Heijn', amountCents: -1500 });
     expect(cold?.source).toBe('keyword');
-    expect(predictionSkipsReview(cold)).toBe(false); // keyword guesses go to review
   });
 
-  it('single-occurrence history predicts but does not skip review', () => {
+  it('single-occurrence history predicts too (2026-10-09: no prediction skips the review any more)', () => {
     const memory = buildMerchantMemory([confirmed({ merchant: 'Padelbaan Zuid', catId: 'sport' })]);
     const p = predictTx({ memory: layered(memory), merchant: 'Padelbaan Zuid', amountCents: -1200 });
     expect(p?.catId).toBe('sport');
-    expect(predictionSkipsReview(p)).toBe(false);
+    expect(p?.source).toBe('history');
   });
 
   it('#161: the OWN space answers first; other spaces only fill silence', () => {

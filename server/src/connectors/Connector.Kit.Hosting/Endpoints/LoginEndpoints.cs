@@ -11,6 +11,7 @@ using Connector.Kit.Hosting.Providers;
 using Connector.Kit.Hosting.Sessions;
 using Connector.Kit.Hosting.Tickets;
 using Connector.Kit.Jobs;
+using Connector.Kit.Logging;
 using Connector.Kit.Manifests;
 using Connector.Kit.Security;
 using Connector.Kit.Sessions;
@@ -605,7 +606,7 @@ internal static class LoginEndpoints
             if (inline.CanRun(manifest)) inline.Dispatch();
 
             logout.LogInformation(
-                "session {SessionId}: an upstream logout was queued for {Provider}", sessionId, manifest.Id);
+                "session {SessionId}: an upstream logout was queued for {Provider}", LogSafe.Line(sessionId), manifest.Id);
 
             logoutJobId = queued.Id;
         }
@@ -614,7 +615,7 @@ internal static class LoginEndpoints
             logout.LogInformation(
                 "session {SessionId}: {Provider} was NOT told about this disconnect ({Reason}); its session "
                 + "will expire on its own",
-                sessionId,
+                LogSafe.Line(sessionId),
                 manifest.Id,
                 reason);
         }

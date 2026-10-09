@@ -29,6 +29,7 @@ import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { matchCounterAccount } from '@/domain/counterClue';
 import type { ClueAccount, ClueTx } from '@/domain/counterClue';
 import { hapticNotify } from '@/lib/platform';
+import { measure } from '@/lib/perf';
 import { TxRow } from '@/ui/TxRow';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
@@ -272,6 +273,17 @@ function queuedCounterBulk(
     note,
     target: { id: linkedId, name: accounts?.find((a) => a.id === linkedId)?.name ?? '' },
   };
+}
+
+/** 2026-10-09 (user: Confirm stalled 3–4 s): the recurring reconcile after
+ *  a confirm is best-effort bookkeeping — the other billing cycles of a
+ *  linked recurring adopt the link — and it reads the whole space again,
+ *  so it runs in an idle moment after the deck has moved on, never on the
+ *  tap's own path. Idempotent, so a later run is as good as an early one. */
+function runWhenIdle(task: () => void): void {
+  const host = globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number };
+  if (typeof host.requestIdleCallback === 'function') host.requestIdleCallback(task, { timeout: 2_000 });
+  else setTimeout(task, 600);
 }
 
 /** the confirm's activity line — the bulk count rides along unless a
@@ -1784,8 +1796,10 @@ export function ReviewScreen() {
   const [eventCreating, setEventCreating] = useState(false);
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
-  // teaching data: what this space (or the user's personal spaces) confirmed before
-  const memory = useQuery(store, async () => buildSpaceMerchantMemory(store, spaceId), [spaceId]);
+  // teaching data: what this space (or the user's personal spaces) confirmed before.
+  // 2026-10-09 (user: Confirm stalled): keyed, so the rebuild is one shared
+  // live query (and a remount shows the last memory at once)
+  const memory = useQuery(store, async () => buildSpaceMerchantMemory(store, spaceId), [spaceId], undefined, `merchantMemory:${spaceId}`);
 
   const queue = useMemo(
     // oldest first (user request): work through the backlog chronologically
@@ -2252,7 +2266,9 @@ export function ReviewScreen() {
     else if (autoReceipt) await receiptOps.linkReceipt(autoReceipt, tx.id);
   };
 
-  const confirm = async () => {
+  // the tap the user feels (2026-10-09): one 'review.confirm' span carries every write below, so a slow
+  // Confirm shows up in GlitchTip's Performance view with its waterfall instead of being guessed at
+  const confirm = () => measure('review.confirm', async () => {
     // #268 r2 (user): a held deck accepts no further confirms
     if (!tx || !draft || counterBulk || confirming.current) return;
     if (!draftReady(draft)) {
@@ -2301,29 +2317,35 @@ export function ReviewScreen() {
       // whose counterparty was dropped lets its peer leg go first — a stale
       // peer would keep collapsing the pair in the list
       const { releasePeer, pairNew } = pairReleasePlan(tx, draft, pickedPeer, releaseStored);
-      if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
-      await writeConfirmation({
-        tx,
-        draft,
-        recurringId,
-        eventId,
-        note,
-        bulk: pickedPeer ? [] : bulk,
-        transform,
-        pairPeerId: pickedPeer?.txId,
-        releasePeer: releasePeer && !pickedPeer,
+      // 2026-10-09 (user: Confirm took 3–4 s): the confirm's writes — the
+      // peer release, the card and its siblings, the picks, the receipt —
+      // are one burst: the screens refresh once when all of it has landed
+      await repo.batch(async () => {
+        if (releasePeer) await releasePeerLeg(store, repo, spaceId, tx, allTxs);
+        await writeConfirmation({
+          tx,
+          draft,
+          recurringId,
+          eventId,
+          note,
+          bulk: pickedPeer ? [] : bulk,
+          transform,
+          pairPeerId: pickedPeer?.txId,
+          releasePeer: releasePeer && !pickedPeer,
+        });
+        await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
+        await settleReceipt();
       });
-      await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
-      await settleReceipt();
       if (queued) setCounterBulk(queued);
-      // other billing cycles of a linked recurring pick up their link here
-      void recurringOps.reconcile().catch(() => undefined);
+      // other billing cycles of a linked recurring pick up their link here —
+      // in an idle moment, off the tap's path (2026-10-09)
+      runWhenIdle(() => void recurringOps.reconcile().catch(() => undefined));
       logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
       hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
     } finally {
       confirming.current = false;
     }
-  };
+  });
 
   // #268: one queue step — the sibling gets the whole decision through
   // the same sibling-field mapper bulk uses, plus its OWN peer on a pick

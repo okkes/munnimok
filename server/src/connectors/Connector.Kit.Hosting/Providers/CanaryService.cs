@@ -1,6 +1,7 @@
 using Connector.Kit.Adapters;
 using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -132,7 +133,7 @@ public sealed class CanaryService(
 
         logger.LogInformation(
             "canary for {Provider} enrolled against {Resource}, every {Minutes} minute(s)",
-            manifest.Id, resourceId, intervalMinutes);
+            manifest.Id, LogSafe.Line(resourceId), intervalMinutes);
 
         return row;
     }
@@ -154,7 +155,7 @@ public sealed class CanaryService(
         db.Canaries.Remove(row);
         await db.SaveChangesAsync(ct);
 
-        logger.LogInformation("canary for {Provider} removed", providerId);
+        logger.LogInformation("canary for {Provider} removed", LogSafe.Line(providerId));
         return true;
     }
 

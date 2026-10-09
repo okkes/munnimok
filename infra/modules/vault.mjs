@@ -47,7 +47,7 @@ export function encString(keys, plaintext) {
 /** test/verification helper: decrypt an EncString type 2 with the keys */
 export function decString(keys, enc) {
   const [type, rest] = [enc.slice(0, 2), enc.slice(2)];
-  if (type !== '2.') throw new Error(`unexpected EncString type: ${enc.slice(0, 2)}`);
+  if (type !== '2.') throw new Error('unexpected EncString type (only type 2 — AES-CBC + HMAC — is written here)');
   const [iv, ct, mac] = rest.split('|').map((p) => Buffer.from(p, 'base64'));
   const expect = createHmac('sha256', keys.mac).update(Buffer.concat([iv, ct])).digest();
   if (!timingSafeEqual(mac, expect)) throw new Error('mac mismatch');
@@ -81,22 +81,43 @@ export function buildAccount(email, password) {
 }
 
 /** {name, username, password, uri, notes} → encrypted Bitwarden cipher */
-/** a login item (type 1) — or, for kind 'note', a secure note (type 2) whose whole text sits in notes */
-export const buildCipher = (userKeys, item) => (item.kind === 'note'
-  ? { type: 2, name: encString(userKeys, item.name), notes: item.notes ? encString(userKeys, item.notes) : null, favorite: false, secureNote: { type: 0 }, fields: null, folderId: null }
-  : {
-  type: 1,
-  name: encString(userKeys, item.name),
-  notes: item.notes ? encString(userKeys, item.notes) : null,
-  favorite: false,
-  login: {
-    username: item.username ? encString(userKeys, item.username) : null,
-    password: item.password ? encString(userKeys, item.password) : null,
-    uris: item.uri ? [{ uri: encString(userKeys, item.uri), match: null }] : null,
-  },
-  fields: null,
-  folderId: null,
+/**
+ * a login item (type 1) — or, for kind 'note', a secure note (type 2) whose whole text sits in notes.
+ * `encryptedFor` is the account's user id: Vaultwarden 1.37+ REQUIRES it on every cipher (serde refuses
+ * the body without it, "Invalid user cipher" refuses another id — both a bare 422) and older servers
+ * ignore it. Without it every item create failed since the shared stack pulled the newer image, and
+ * the platform vault's environment folders were left empty (prod + dev, found 2026-10-09).
+ */
+export const buildCipher = (userKeys, item, { encryptedFor = null } = {}) => ({
+  ...(encryptedFor ? { encryptedFor } : {}),
+  ...(item.kind === 'note'
+    ? { type: 2, name: encString(userKeys, item.name), notes: item.notes ? encString(userKeys, item.notes) : null, favorite: false, secureNote: { type: 0 }, fields: null, folderId: null }
+    : {
+      type: 1,
+      name: encString(userKeys, item.name),
+      notes: item.notes ? encString(userKeys, item.notes) : null,
+      favorite: false,
+      login: {
+        username: item.username ? encString(userKeys, item.username) : null,
+        password: item.password ? encString(userKeys, item.password) : null,
+        uris: item.uri ? [{ uri: encString(userKeys, item.uri), match: null }] : null,
+      },
+      fields: null,
+      folderId: null,
+    }),
 });
+
+/** the account's user id as the sync answer carries it — what every cipher must name as `encryptedFor` */
+export const syncUserId = (sync) => sync?.profile?.id ?? sync?.Profile?.Id ?? null;
+
+/** a refused write, named: the status and whatever message the server gave (never the item's values) */
+export async function refusalText(res) {
+  let text = '';
+  try { text = String(await res.text()).trim(); } catch { /* no body */ }
+  let message = '';
+  try { const body = JSON.parse(text); message = body?.message ?? body?.Message ?? body?.errorModel?.message ?? ''; } catch { message = /<html/i.test(text) ? '' : text; }
+  return message ? `${res.status} ${String(message).slice(0, 120)}` : String(res.status);
+}
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64url');
 
@@ -187,7 +208,8 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
   let registered = false;
   if (!token) {
     const reg = await vaultRegister(base, account.register, fetchImpl);
-    if (!reg.ok) throw new Error(`vault: no account for ${email} and registration refused (${reg.status}) — signups closed (VAULT_SIGNUPS_ALLOWED) or an account with a different master password`);
+    // the platform's vault e-mail is not named here: these messages end up in console output and the wizard page
+    if (!reg.ok) throw new Error(`vault: no account for the platform's vault e-mail and registration refused (${reg.status}) — signups closed (VAULT_SIGNUPS_ALLOWED) or an account with a different master password`);
     registered = true;
     token = await vaultLogin(base, email, account.hash, fetchImpl);
     if (!token) throw new Error('vault: login failed right after registration');
@@ -215,21 +237,36 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
     if (!folderId) throw new Error(`vault: folder ${folder} has no id after creation`);
   }
   const names = new Set(items.map((it) => it.name));
+  // The NEW items go in first and the old ones go only once their replacement exists: the earlier
+  // delete-then-create order wiped a folder whenever the server refused a create (Vaultwarden 1.37's
+  // required `encryptedFor`, 2026-10-09 — "Logto infra M2M" gone from prod's and dev's folders, the
+  // wizard's Access tab empty). A refused item never throws mid-way either: every other item is still
+  // filed, and the refusals are named at the end, with the server's message.
+  const userId = syncUserId(sync);
+  let imported = 0;
+  const refused = [];
+  for (const it of items) {
+    const made = await vaultCreateCipher(base, token, { ...buildCipher(keys, it, { encryptedFor: userId }), folderId }, fetchImpl);
+    if (made.ok) imported++;
+    else refused.push({ name: it.name, why: await refusalText(made) });
+  }
+  const created = new Set(items.filter((it) => !refused.some((r) => r.name === it.name)).map((it) => it.name));
   let replaced = 0;
   let unfiled = 0;
   for (const c of (sync.ciphers ?? sync.Ciphers ?? [])) {
     const inFolder = (c.folderId ?? c.FolderId) === folderId;
+    const name = nameOf(c);
     // our own strays: unfiled items with a name this folder writes — leftovers of the import path, never the operator's
-    const strayOfOurs = !(c.folderId ?? c.FolderId) && names.has(nameOf(c));
+    const strayOfOurs = !(c.folderId ?? c.FolderId) && names.has(name);
     if (!inFolder && !strayOfOurs) continue;
+    // a whole batch accepted replaces the folder; a partial one keeps every old item whose replacement was refused
+    if (refused.length && !created.has(name)) continue;
     const del = await vaultDeleteCipher(base, token, c.id ?? c.Id, fetchImpl);
     if (del.ok) { if (inFolder) replaced++; else unfiled++; }
   }
-  let imported = 0;
-  for (const it of items) {
-    const made = await vaultCreateCipher(base, token, { ...buildCipher(keys, it), folderId }, fetchImpl);
-    if (!made.ok) throw new Error(`vault: creating item "${it.name}" failed (${made.status})`);
-    imported++;
+  if (refused.length) {
+    const list = refused.map((r) => `"${r.name}" (${r.why})`).join(', ');
+    throw new Error(`vault: ${refused.length} of ${items.length} items refused in folder ${folder} — ${list}${imported ? `; the other ${imported} filed` : ''}`);
   }
   return { registered, folder, replaced, unfiled, imported };
 }
@@ -244,7 +281,7 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
 export async function vaultReadFolder(base, { email, password, folder }, fetchImpl = insecureFetch) {
   const account = buildAccount(email, password);
   const token = await vaultLogin(base, email, account.hash, fetchImpl);
-  if (!token) throw new Error(`vault: sign-in as ${email} failed`);
+  if (!token) throw new Error('vault: the sign-in with the platform\'s vault account failed (a different master password, or no account yet)');
   const sync = await vaultSync(base, token, fetchImpl);
   const profileKey = sync.profile?.key ?? sync.Profile?.Key;
   const keys = userKeysOf(email, password, profileKey);

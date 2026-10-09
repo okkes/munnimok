@@ -18,7 +18,7 @@ public sealed class BolHashProbeTests
     private const string Overview = "https://www.bol.com/nl/nl/account/bestellingen/overzicht/";
     private const string LoadMore = "button:has-text(\"Toon meer\")";
 
-    private static readonly BolOptions Quick = new() { HashProbeMs = 20, ProbeMs = 1 };
+    private static readonly BolOptions Quick = new() { HashProbeMs = 20, ProbeMs = 1, LoadMoreMs = 1 };
 
     [Fact]
     public async Task A_landing_page_that_fires_the_operation_needs_no_navigation()
@@ -106,5 +106,42 @@ public sealed class BolHashProbeTests
         Assert.Null(hash);
         Assert.Equal(new[] { Overview }, page.Visited);
         Assert.Contains(ctx.Notes, n => n.Contains("the configured hash stands", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_Toon_meer_press_the_page_will_not_take_is_tried_once_more_after_the_walls()
+    {
+        // 2026-10-06/07 (prod, GlitchTip #25/#27/#33): the button was found, scrolled to, and the second
+        // wall took the pointer - Playwright's click timed out and the whole sign-in died as internal
+        var learned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var page = StubLoginPage.Showing(LoadMore);
+        page.ClickThrows = new TimeoutException("Timeout 5000ms exceeded.\nCall log:\n  - attempting click action");
+        page.WhenClicked = (_, selector) =>
+        {
+            if (selector == LoadMore) learned.TrySetResult("sha256:more");
+        };
+        using var ctx = new FakeJobContext();
+
+        var hash = await new BolHashProbe(Quick).LearnAsync(ctx, page, learned.Task, CancellationToken.None);
+
+        Assert.Equal("sha256:more", hash);
+        Assert.Equal(new[] { LoadMore }, page.Clicked);
+        Assert.Contains(ctx.Notes, n => n.Contains("'Toon meer' did not take the press (TimeoutException, attempt 1 of 2)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_Toon_meer_that_never_takes_a_press_leaves_the_configured_hash_standing_never_a_failed_login()
+    {
+        var never = new TaskCompletionSource<string>();
+        var page = StubLoginPage.Showing(LoadMore);
+        page.ClickThrows = new TimeoutException("Timeout 5000ms exceeded.");
+        page.ClickThrowsTimes = 2;
+        using var ctx = new FakeJobContext();
+
+        var hash = await new BolHashProbe(Quick).LearnAsync(ctx, page, never.Task, CancellationToken.None);
+
+        Assert.Null(hash);
+        Assert.Empty(page.Clicked);
+        Assert.Contains(ctx.Notes, n => n.Contains("attempt 2 of 2); the configured hash stands", StringComparison.Ordinal));
     }
 }

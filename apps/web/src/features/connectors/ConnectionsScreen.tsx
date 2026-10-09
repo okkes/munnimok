@@ -6,8 +6,8 @@ import type { ConnectorConnRow } from '@/db/types';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useSession } from '@/app/session';
-import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges, useLiveConnectionIds } from '@/application/connections';
-import { ownsAccount, uncoveredSince } from '@/domain/accountCoverage';
+import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges, useLiveConnectionIds, useMyFeedIds } from '@/application/connections';
+import { ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
 import { uncoveredDateText } from '@/features/accounts/coverage';
 import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
 import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
@@ -168,10 +168,14 @@ export function ConnectionsScreen() {
   const catalogue = useCatalogue();
   const bindings = useRelayBindings();
   // #445: which connections still exist - an account stamped with a gone one is not fetched any more;
-  // only for accounts the viewer's own connection feeds (a friend's ids are not in this device's set)
+  // only for accounts the viewer's own connection feeds (a friend's ids are not in this device's set) -
+  // the feed set says whose (user ss 2026-10-09), the attacher's name only while that set is out of reach
   const liveIds = useLiveConnectionIds();
+  const myFeeds = useMyFeedIds();
   const identity = useSession((s) => s.identity);
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+  const sinceOf = (view: ConnectorAccountView): string | null =>
+    liveIds ? uncoveredSince(view.account, liveIds, ownsFeed(view.account.spaceId, myFeeds, view.attachedTo, mySub)) : null;
   const { connect: connectParam, reconnect: reconnectParam } = useSearch({ strict: false }) as { connect?: string; reconnect?: string };
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
@@ -225,7 +229,7 @@ export function ConnectionsScreen() {
 
   // #445: party-fed accounts no live connection fetches, whose party has no card to sit under
   const orphaned = (bankAccounts ?? [])
-    .map(({ account, attachedTo }) => ({ account, since: liveIds ? uncoveredSince(account, liveIds, ownsAccount(attachedTo, mySub)) : null }))
+    .map((view) => ({ account: view.account, since: sinceOf(view) }))
     .filter((entry): entry is { account: typeof entry.account; since: string } => entry.since !== null)
     .filter(({ account }) => !(connections ?? []).some((view) => view.meta.store === (account.provider ?? account.source)));
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
@@ -419,9 +423,10 @@ export function ConnectionsScreen() {
         {mine.length === 0 ? (
           <span className="block text-[11px] text-ink-4">{t('conn.noAccountsYet')}</span>
         ) : (
-          mine.map(({ account, attachedTo }) => {
+          mine.map((entry) => {
+            const { account, attachedTo } = entry;
             const here = attachedTo.some((s) => s.spaceId === spaceId);
-            const since = liveIds ? uncoveredSince(account, liveIds, ownsAccount(attachedTo, mySub)) : null;
+            const since = sinceOf(entry);
             return (
               <div key={account.id} className="flex items-center gap-2 py-1" data-testid={`conn-account-${account.id}`}>
                 <Icon name="bank-outline" size={14} color="var(--m-ink-4)" />

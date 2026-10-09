@@ -4,7 +4,7 @@ import { useQuery } from '@/db/useQuery';
 import { readSessionIdentity } from '@/app/session';
 import { pullConnections, pushAllConnections, pushConnection, removeConnectionCipher } from './connectionSync';
 import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
-import { reevaluateSpace } from './receiptMatching';
+import { reevaluateSpace, useReceiptMatchTriggers } from './receiptMatching';
 import { linkedTxIds } from './receiptLinks';
 import { logActivity } from './activity';
 import { storeConnLinkId } from '@/domain/feedIds';
@@ -12,7 +12,8 @@ import { ConnectorError, connectorApi } from '@/features/connectors/api';
 import { forgetConnection, keepBundle, readBundle } from '@/features/connectors/bundles';
 import { settleQuestion, syncConnection } from '@/features/connectors/connectorSync';
 import type { SyncOptions, SyncReport } from '@/features/connectors/connectorSync';
-import type { ProviderManifest, SessionView } from '@/features/connectors/types';
+import type { BindingView, ProviderManifest, SessionView } from '@/features/connectors/types';
+import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow, ConnectorConnRow, ReceiptRow, StoreConnLinkRow, StoreConnRow } from '@/db/types';
@@ -58,6 +59,29 @@ export function useLiveConnectionIds(): ReadonlySet<string> | undefined {
     store,
     async () => new Set((await store.allRows('storeConn')).filter((c) => c.deleted === 0).map((c) => c.id)),
     [],
+  );
+}
+
+/**
+ * The feeds whose accounts are the viewer's own — the ownership source of
+ * truth the coverage reading (#445) and the shared badge (#305) rest on:
+ * /me/feeds for a signed-in user (undefined while the answer is out of
+ * reach — offline — so nothing is told rather than something wrong), and on
+ * a device that syncs nothing (a demo or offline identity holds nobody
+ * else's rows) every space an account sits in. User ss 2026-10-09: a
+ * friend's account attached before links carried a name must never read as
+ * the viewer's own.
+ */
+export function useMyFeedIds(): ReadonlySet<string> | undefined {
+  const { store } = useData();
+  const syncing = connectorsAvailable();
+  return useQuery(
+    store,
+    async () => {
+      if (syncing) return fetchMyFeedIds().catch(() => undefined);
+      return new Set((await store.allRows('account')).map((account) => account.spaceId));
+    },
+    [syncing],
   );
 }
 
@@ -413,6 +437,13 @@ export function useConnectionOps(): ConnectionOps {
         await connectorApi.disconnect(device.provider, device.sessionId, bundle).catch((err: unknown) => {
           if (!(err instanceof ConnectorError)) throw err;
         });
+      } else if (connectorsAvailable()) {
+        // a connection made on another device (user 2026-10-09: sessions nobody could remove lingered at the
+        // relay): the relay's binding is this person's too — found by the connection id, ended without a
+        // bundle, as the other device's custody is not this one's to hand over; a relay that is away or
+        // knows nothing of it leaves the rows here to be removed all the same
+        const binding = (await connectorApi.sessions().catch(() => [] as BindingView[])).find((row) => row.connectionId === connectionId);
+        if (binding) await connectorApi.disconnect(binding.provider, binding.sessionId).catch(() => undefined);
       }
       // ruling 2: the connection's global receipts die with it — space
       // snapshots (linked receipts) live on untouched
@@ -495,6 +526,10 @@ export function useConnectionKeepAlive(): void {
   const { store: storage, repo, engine } = useData();
   const ran = useRef(false);
   const lastAuto = useRef(0);
+  // user 2026-10-09: receipts meet the transactions when the rows land — a
+  // sync cycle that brought new ones asks the matcher for a pass, so the
+  // proposals stand before the review opens (the same headless mount)
+  useReceiptMatchTriggers();
 
   useEffect(() => {
     if (ran.current || !connectorsAvailable() || !navigator.onLine) return;

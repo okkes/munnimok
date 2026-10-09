@@ -131,6 +131,50 @@ describe('planning model (#128)', () => {
     expect(model.reservedCents).toBe(50_000);
   });
 
+  it('what the period started with does not move when a paid recurring cost, loan or goal becomes a subject (user 2026-10-09)', async () => {
+    const { store, repo } = await fixture();
+    stores.push(store);
+    // beside the rent the fixture paid in March: a loan payment and money put towards a goal
+    await repo.upsert('account', SPACE, 'loan', { name: 'Car loan', type: 'loan', currency: 'EUR', balanceCents: -500_000, source: 'manual', paymentCents: 25_000, paymentEvery: 'month', paymentDay: 10 });
+    // the type is derived at the join: a row linked to the loan account is a debt payment
+    await repo.upsert('transaction', SPACE, 'l1', { accountId: 'main', date: '2026-03-10', amountCents: -25_000, currency: 'EUR', merchant: 'bank', linkedAccountId: 'loan', needsReview: 0 });
+    await repo.upsert('goal', SPACE, 'trip', { name: 'Trip', targetCents: 100_000, allocatedCents: 0 });
+    await repo.upsert('goalContribution', SPACE, 'c1', { goalId: 'trip', amountCents: 10_000, date: '2026-03-12' });
+    await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
+
+    let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    // the plan holds nothing: every payment sits under Unplanned, the sources first, in the plan's order
+    expect(model.unplannedOf(model.plan!).map((r) => [r.kind, r.cents])).toEqual([
+      ['recurring', 100_000],
+      ['debt', 25_000],
+      ['category', 11_000],
+      ['goal', 10_000],
+    ]);
+    const started = 205_000 + 100_000 + 25_000 + 11_000 + 10_000;
+    expect(model.startedWithOf(model.plan!)).toBe(started);
+    expect(model.toAllocateOf(model.plan!)).toBe(started);
+
+    // the rent becomes a subject, born unfunded: its payment moves from Unplanned into its spending
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'recurring', 'rent'), { planId: march, segment: 'recurring', order: 0, name: 'Rent', sourceId: 'rent', fundedCents: 0 });
+    model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.unplannedOf(model.plan!).map((r) => r.kind)).toEqual(['debt', 'category', 'goal']);
+    expect(model.viewsOf(model.plan!)[0].realizedCents).toBe(100_000);
+    expect(model.startedWithOf(model.plan!)).toBe(started);
+    expect(model.toAllocateOf(model.plan!)).toBe(started);
+
+    // the loan and the goal too
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'debts', 'loan'), { planId: march, segment: 'debts', order: 0, name: 'Car loan', sourceId: 'loan', fundedCents: 0 });
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'goals', 'trip'), { planId: march, segment: 'goals', order: 0, name: 'Trip', sourceId: 'trip', fundedCents: 0 });
+    model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.unplannedOf(model.plan!).map((r) => r.kind)).toEqual(['category']);
+    expect(model.startedWithOf(model.plan!)).toBe(started);
+    // funding the rent for what it paid is the only thing that brings the head down
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'recurring', 'rent'), { fundedCents: 100_000 });
+    model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.startedWithOf(model.plan!)).toBe(started);
+    expect(model.toAllocateOf(model.plan!)).toBe(started - 100_000);
+  });
+
   it('what an earlier period set aside and never spent carries into the next one', async () => {
     const { store, repo } = await fixture();
     stores.push(store);

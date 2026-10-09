@@ -1,3 +1,4 @@
+using System.Globalization;
 using BankConnector.Adapters;
 using Connector.Kit.Agent;
 using Microsoft.Extensions.Configuration;
@@ -18,7 +19,22 @@ builder.Logging.AddSentry(options =>
 {
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
     options.SendDefaultPii = false;
-    options.TracesSampleRate = 0;
+    // performance tracing (user 2026-10-09, docs/observability.md): a generic
+    // host starts no transaction of its own, so the rate only governs the
+    // spans a job transaction would carry once one exists; the control
+    // plane is the one peer the agent's trace headers may reach — a shop's
+    // or a bank's site, dialled from the same process, gets none
+    options.TracesSampleRate =
+        double.TryParse(builder.Configuration["Sentry:TracesSampleRate"], NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate is >= 0 and <= 1
+            ? rate
+            : 0.2;
+    options.TracePropagationTargets.Clear();
+    foreach (var controlPlane in builder.Configuration.GetSection("ConnectorAgent:Connections").GetChildren()
+                 .Select(connection => connection["ControlPlaneBaseUrl"])
+                 .Where(url => !string.IsNullOrWhiteSpace(url)))
+    {
+        options.TracePropagationTargets.Add(controlPlane!);
+    }
     options.MinimumEventLevel = LogLevel.Error;
     options.MinimumBreadcrumbLevel = LogLevel.Information;
     options.Release = builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } tag ? $"munni-connector-agent@{tag}" : null;

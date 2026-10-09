@@ -1,4 +1,4 @@
-import { liveQuery } from 'dexie';
+import Dexie, { liveQuery } from 'dexie';
 import type { MunniDB } from './schema';
 import type {
   ConnectorConnRow,
@@ -66,6 +66,12 @@ export interface StorageBackend {
   /** run `fn` atomically over the named tables (read-modify-write safety) */
   transact(tables: TableScope[], fn: () => Promise<void>): Promise<void>;
   /**
+   * 2026-10-09: declare `fn`'s writes one burst — the live queries hold
+   * their re-run until it ends (a bulk confirm lands as ONE update, not
+   * one per sibling). Optional: a backend without it just runs `fn`.
+   */
+  burst?<T>(fn: () => Promise<T>): Promise<T>;
+  /**
    * live query: emits now and on every relevant change; returns unsubscribe.
    * `query` must read only through this backend.
    */
@@ -75,9 +81,48 @@ export interface StorageBackend {
   destroy(): Promise<void>;
 }
 
+/**
+ * 2026-10-09 (user: Confirm stalled 3–4 s on the review, a quick run of
+ * attaches "bottled"): a BURST of commits — the review's bulk writes, a
+ * confirm's own several writes, a sync pull — used to re-run every
+ * overlapping live query once PER commit. Dexie aborts the run in flight
+ * and starts the next at once, but the reads it had already issued still
+ * complete, so N writes cost N full joins per subscriber and the main
+ * thread drowned in them (measured: 18 bulk writes → 196 query runs).
+ * A commit that finds the subscription idle still re-runs at once (a lone
+ * write reaches the screen as fast as before — the detail's sheets
+ * snapshot the live row the moment they open). A commit landing while a
+ * run is in flight, or within this quiet window of the last one, is a
+ * burst: Dexie aborts the run and the replacement waits until no write
+ * transaction is open and the window has passed since the last commit
+ * (a slow device commits about as fast as the window, so the window
+ * alone let every other write through); a run superseded meanwhile
+ * skips its reads altogether (Dexie discards an aborted run's value
+ * anyway). So a burst costs a leading run and a trailing one, never one
+ * per write.
+ */
+export const LIVE_QUERY_QUIET_MS = 40;
+const SUPERSEDED = Symbol('live query run superseded');
+
 /** Today's storage: Dexie/IndexedDB, one database per identity. */
 export class DexieBackend implements StorageBackend {
   constructor(readonly db: MunniDB) {}
+
+  /** write transactions open right now, when the last one committed, and the declared bursts open — the signals the live queries wait on */
+  private writesInFlight = 0;
+  private lastCommitAt = 0;
+  private burstDepth = 0;
+
+  async burst<T>(fn: () => Promise<T>): Promise<T> {
+    this.burstDepth += 1;
+    try {
+      return await fn();
+    } finally {
+      this.burstDepth -= 1;
+      // the burst's end counts as a commit: the quiet window starts here
+      this.lastCommitAt = performance.now();
+    }
+  }
 
   get<E extends EntityName>(entity: E, id: string) {
     return this.db.tableFor(entity).get(id) as Promise<EntityRowMap[E] | undefined>;
@@ -176,15 +221,51 @@ export class DexieBackend implements StorageBackend {
     });
     // dexie's zone makes the backend's own reads/writes inside `fn`
     // participate in this transaction automatically
-    await this.db.transaction('rw', dexieTables, fn);
+    this.writesInFlight += 1;
+    try {
+      await this.db.transaction('rw', dexieTables, fn);
+    } finally {
+      this.writesInFlight -= 1;
+      this.lastCommitAt = performance.now();
+    }
   }
 
   subscribe<T>(query: () => Promise<T>, onNext: (value: T) => void, onError?: (err: unknown) => void) {
-    const sub = liveQuery(query).subscribe({
-      next: onNext,
+    let generation = 0;
+    let closed = false;
+    // runs still reading (Dexie aborts a run but its reads complete) and when the last one ended
+    let running = 0;
+    let lastRunEndedAt = Number.NEGATIVE_INFINITY;
+    const coalesced = async (): Promise<T | typeof SUPERSEDED> => {
+      const mine = ++generation;
+      // idle: run at once; a declared burst, a run in flight or one that just ended means a burst — wait it out
+      if (mine > 1 && (this.burstDepth > 0 || running > 0 || performance.now() - lastRunEndedAt < LIVE_QUERY_QUIET_MS)) {
+        for (;;) {
+          // a Dexie promise keeps the observation zone across the timer, so
+          // the reads after it still register what this run depends on
+          await new Dexie.Promise<void>((resolve) => setTimeout(resolve, LIVE_QUERY_QUIET_MS));
+          if (closed || mine !== generation) return SUPERSEDED;
+          if (this.burstDepth === 0 && this.writesInFlight === 0 && performance.now() - this.lastCommitAt >= LIVE_QUERY_QUIET_MS) break;
+        }
+      }
+      running += 1;
+      try {
+        return await query();
+      } finally {
+        running -= 1;
+        lastRunEndedAt = performance.now();
+      }
+    };
+    const sub = liveQuery(coalesced).subscribe({
+      next: (value) => {
+        if (value !== SUPERSEDED) onNext(value);
+      },
       error: onError ?? ((err) => console.error('live query failed', err)),
     });
-    return () => sub.unsubscribe();
+    return () => {
+      closed = true;
+      sub.unsubscribe();
+    };
   }
 
   close() {

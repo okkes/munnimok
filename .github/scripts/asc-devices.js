@@ -20,7 +20,8 @@ function jwt() {
   return `${header}.${payload}.${b64url(sig)}`;
 }
 
-const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${v}\n`); };
+// one line per output: a value with a line break in it would otherwise write a second output of its own
+const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v).replace(/[\r\n]+/g, ' ')}\n`); };
 
 // exitCode instead of process.exit(): exiting while the fetch socket is
 // still closing trips a libuv assertion on Windows (seen 2026-09-09)

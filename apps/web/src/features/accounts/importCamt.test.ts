@@ -112,7 +112,7 @@ describe('importCamtStatements', () => {
     expect(after.every((t) => t.importBatchId === firstBatch)).toBe(true);
   });
 
-  it('twice-confirmed merchant history overrides keywords and skips review', async () => {
+  it('twice-confirmed merchant history overrides keywords — and still waits in the review (user 2026-10-09)', async () => {
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     // the user categorized this merchant twice by hand (reviewed rows)
     for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
@@ -128,9 +128,10 @@ describe('importCamtStatements', () => {
     }
     await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     // REF-001 is an Albert Heijn debit: history (sport) beats the
-    // groceries keyword, and two confirmations mean no review
+    // groceries keyword — prefilled, and the row waits in the review like
+    // every other (two confirmations used to skip it)
     const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'REF-001')!;
-    expect(tx).toMatchObject({ catId: 'sport', needsReview: 0 });
+    expect(tx).toMatchObject({ catId: 'sport', needsReview: 1 });
   });
 
   it('#221: a movement-category prediction imports LINKED to the space default — the counter leg minted', async () => {
@@ -186,8 +187,8 @@ describe('importCamtStatements', () => {
     await repo.upsert('account', 's1', 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
     await importCamtStatements(repo, new DexieBackend(db), 's1', [paypalStatement()]);
     const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'PP-1')!;
-    // the clue-matcher found the PayPal account — the taught skip-review holds
-    expect(tx).toMatchObject({ catId: 'transferOut', linkedAccountId: 'pp', needsReview: 0 });
+    // the clue-matcher found the PayPal account — linked, and waiting in the review like every import (2026-10-09)
+    expect(tx).toMatchObject({ catId: 'transferOut', linkedAccountId: 'pp', needsReview: 1 });
     // bank-fed counter: nothing minted, the real PayPal-side row pairs later
     expect(tx.transferPeerId).toBeUndefined();
   });

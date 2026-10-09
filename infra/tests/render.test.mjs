@@ -34,7 +34,12 @@ const render = (name, values) => {
   return { stack, dir, files: readdirSync(dir).sort(), compose: read(`docker-compose.${name}.yml`), env: read(`.env.${name}`), read };
 };
 const siteAddresses = (caddy) => [...caddy.matchAll(/^(\S+) \{$/gm)].map((m) => m[1]).filter((a) => a !== '{');
-const proxyOf = (caddy, address) => new RegExp(`^${address.replaceAll('.', '\\.')} \\{\\n\\treverse_proxy (\\S+)`, 'm').exec(caddy)?.[1];
+// a line search rather than a regex built from the address (an address is data, not a pattern)
+const proxyOf = (caddy, address) => {
+  const lines = caddy.split('\n');
+  const at = lines.indexOf(`${address} {`);
+  return at < 0 ? undefined : /^\treverse_proxy (\S+)/.exec(lines[at + 1] ?? '')?.[1];
+};
 
 test('shared stack on lcl: glitchtip with its own database, vault, control, pgadmin, ocr, valkey and the family Caddy, joined by the platform\'s shared network; the env renders with real values', () => {
   const { compose, env, files, read, stack } = render('munni-lcl-shared', { POSTGRES_PASSWORD: 'pg-1', GLITCHTIP_SECRET_KEY: 'sk', PGADMIN_PASSWORD: 'pga', GLITCHTIP_ADMIN_PASSWORD: 'gap', GLITCHTIP_API_TOKEN: 'tok', CONTROL_LOGTO_APP_ID: 'ctl' });
@@ -152,7 +157,7 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   const web = envOf(block(compose, 'web-prod'));
   assert.deepEqual(web, {
     MUNNI_API_URL: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`, MUNNI_LOGTO_APP_ID: '${WEB_LOGTO_APP_ID}',
-    MUNNI_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_GLITCHTIP_DSN: '${WEB_GLITCHTIP_DSN}', MUNNI_CHANNEL: 'production', MUNNI_NATIVE_SCHEME: 'munni-prod-nas', MUNNI_PUBLIC_ORIGIN: `https://munni-prod-nas.${DOMAIN}`,
+    MUNNI_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_GLITCHTIP_DSN: '${WEB_GLITCHTIP_DSN}', MUNNI_TRACES_SAMPLE_RATE: '"0.2"', MUNNI_CHANNEL: 'production', MUNNI_NATIVE_SCHEME: 'munni-prod-nas', MUNNI_PUBLIC_ORIGIN: `https://munni-prod-nas.${DOMAIN}`,
     // app links: the container renders the two /.well-known files from these — the team id rides the env file
     MUNNI_ANDROID_PACKAGE: 'app.munni.nas.prod', MUNNI_ANDROID_CERT_SHA256: '', MUNNI_IOS_BUNDLE_ID: 'app.munni.nas.prod', MUNNI_APPLE_TEAM_ID: '${APPLE_TEAM_ID}',
   });
@@ -173,6 +178,9 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.deepEqual(corsOf(block(compose, 'api-prod')), [`https://munni-prod-nas.${DOMAIN}`, `https://munni-prod-nas-admin.${DOMAIN}`, `https://munni-prod-nas-lab.${DOMAIN}`, `https://control-nas.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.equal(api.ConnectionStrings__Db, 'Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}');
   assert.equal(api.Ocr__BaseUrl, 'http://ocr:8884');
+  // performance tracing (2026-10-09): the environment's share rides beside the DSN — a fifth on production by default
+  assert.equal(api.Sentry__Dsn, '${API_SENTRY_DSN:-}');
+  assert.equal(api.Sentry__TracesSampleRate, '"0.2"');
   assert.deepEqual(portsOf(block(compose, 'api-prod')), ['8382:8080']);
   assert.deepEqual(under(block(compose, 'api-prod'), 'depends_on'), ['postgres-prod:', 'logto-prod:']);
   const logto = envOf(block(compose, 'logto-prod'));
@@ -197,6 +205,9 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   assert.deepEqual(portsOf(block(staging.compose, 'web-staging')), ['8480:80']);
   assert.deepEqual(portsOf(block(staging.compose, 'logto-staging')), ['3301:3301', '3302:3302']);
   assert.equal(envOf(block(staging.compose, 'web-staging')).MUNNI_CHANNEL, 'staging');
+  // a staging environment is the test ground: every trace, on the web app and the api alike
+  assert.equal(envOf(block(staging.compose, 'web-staging')).MUNNI_TRACES_SAMPLE_RATE, '"1"');
+  assert.equal(envOf(block(staging.compose, 'api-staging')).Sentry__TracesSampleRate, '"1"');
   assert.deepEqual(corsOf(block(staging.compose, 'api-staging')), [`https://munni-staging-nas.${DOMAIN}`, `https://munni-staging-nas-admin.${DOMAIN}`, `https://munni-staging-nas-lab.${DOMAIN}`, 'https://localhost', 'capacitor://localhost']);
   assert.match(staging.env, /^TAG=dev$/m);
 });
@@ -241,7 +252,7 @@ test('environment stack on lcl: in-network Logto metadata over http, CORS with t
     assert.equal(envOf(block(lan.compose, 'logto-prod')).ENDPOINT, `https://munni-prod-lcl-logto.${d}`);
     assert.equal(envOf(block(lan.compose, 'api-prod')).Auth__MetadataAddress, 'http://logto:3201/oidc/.well-known/openid-configuration');
     assert.equal(envOf(block(lan.compose, 'web-prod')).MUNNI_PUBLIC_ORIGIN, `https://munni-prod-lcl.${d}`);
-    assert.match(lan.env, new RegExp(`^PUSH_VAPID_SUBJECT=mailto:admin@${d.replaceAll('.', '\\.')}$`, 'm'));
+    assert.ok(lan.env.split('\n').includes(`PUSH_VAPID_SUBJECT=mailto:admin@${d}`), 'the push subject names the LAN host');
   } finally {
     fx.lanOff();
   }

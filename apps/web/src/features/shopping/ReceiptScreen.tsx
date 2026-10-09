@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { LOCALES, useLang } from '@/i18n';
+import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useReceiptOps } from '@/application/receipts';
@@ -11,62 +11,17 @@ import { myStoreFeedId } from '@/application/storeFeed';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
-import { partyName } from '@/features/connectors/logos';
 import { apiFetch } from '@/lib/api';
-import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Sheet } from '@/ui/Sheet';
-import { PdfView } from './PdfView';
 import { TxRow } from '@/ui/TxRow';
-import type { ReceiptDocument, ReceiptRow } from '@/db/types';
+import { ReceiptBody, receiptTitle } from './ReceiptBody';
+import type { ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
 
 /** where a receipt is looked at from: a space (links, matching) or the connections hub (the party's own list) */
 export type ReceiptScope = 'space' | 'global';
-
-type Translate = ReturnType<typeof useLang>['t'];
-
-/** what the screen is called after: the merchant or the party, Photo for a snapped one */
-const titleOf = (receipt: ReceiptRow | null, t: Translate): string => {
-  if (!receipt) return t('receipt.title');
-  if (receipt.source === 'photo') return t('receipt.sourcePhoto');
-  return receipt.merchant ?? partyName(receipt.source);
-};
-
-/** an invoice the party issued, shown in place — a PDF or a picture, from
- *  its data URL. User 2026-10-06: the sheet takes the whole height (the
- *  wide dialog on a desktop) and a PDF is drawn by pdf.js at the frame's
- *  width with zoom on top — the browser's own plugin fit the page instead,
- *  zoomed as it pleased, and Android had none. */
-function InvoiceSheet({ document, onClose }: Readonly<{ document: ReceiptDocument | null; onClose: () => void }>) {
-  const { t } = useLang();
-  return (
-    <Sheet open={document !== null} onOpenChange={(open) => !open && onClose()} title={t('receipts.invoice')} size="full" wide>
-      {document && (
-        <div className="flex flex-col gap-2" data-testid="receipt-invoice-view">
-          {document.mime.startsWith('image/') ? (
-            <div className="h-[calc(100dvh-250px)] overflow-auto rounded-card border border-line bg-bg-2 lg:h-[min(calc(92dvh-250px),760px)]" data-sheet-no-drag>
-              <img src={document.dataUrl} alt={t('receipts.invoice')} className="w-full" />
-            </div>
-          ) : (
-            <PdfView dataUrl={document.dataUrl} testId="receipt-pdf" />
-          )}
-          <a
-            data-testid="receipt-invoice-download"
-            href={document.dataUrl}
-            download={document.filename ?? 'invoice'}
-            className="m-tap flex items-center justify-center gap-2 rounded-input border border-line bg-surface px-4 py-3 text-[14px] font-medium text-accent-deep no-underline"
-          >
-            <Icon name="download-outline" size={16} />
-            {document.filename ?? t('receipts.invoice')}
-          </a>
-        </div>
-      )}
-    </Sheet>
-  );
-}
 
 const globalRow = async (store: StorageBackend, receiptId: string): Promise<ReceiptRow | undefined> => {
   const feedId = myStoreFeedId();
@@ -101,7 +56,7 @@ export function ReceiptScreen({
   /** the transaction the screen was opened FROM — its own row is noise there */
   contextTxId?: string;
 }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
   const txs = useSpaceTransactions();
@@ -113,7 +68,6 @@ export function ReceiptScreen({
   const [picking, setPicking] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
-  const [invoice, setInvoice] = useState<ReceiptDocument | null>(null);
 
   const receipt = entry?.data ?? null;
 
@@ -122,12 +76,9 @@ export function ReceiptScreen({
     setPicking(false);
     setShowMore(false);
     setOcrState('idle');
-    setInvoice(null);
   }, [receipt?.id]);
 
   const currency = receipt?.currency ?? space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
   const back = () => window.history.back();
   /** after a delete there is nothing to come back to: the place the receipt was opened from, by name */
   const leave = () => {
@@ -197,7 +148,7 @@ export function ReceiptScreen({
     leave();
   };
 
-  const title = titleOf(receipt, t);
+  const title = receipt ? receiptTitle(receipt, t) : t('receipt.title');
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-receipt">
@@ -218,80 +169,9 @@ export function ReceiptScreen({
         )}
         {entry && receipt && (
           <div className="flex flex-col gap-3 pt-1">
-            {/* the headline: who, when, how much */}
-            <div className="rounded-card border border-line bg-surface px-4 py-4" data-testid="receipt-head">
-              <div className="flex items-start gap-3">
-                <Icon name={receipt.source === 'photo' ? 'camera-outline' : 'storefront-outline'} size={22} color="var(--m-accent-deep)" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] font-medium text-ink">{title}</span>
-                  <span className="block text-[12px] text-ink-3" data-testid="receipt-view-date">
-                    {fmtDate(receipt.date)}
-                  </span>
-                  {connection && (
-                    <span className="block text-[11px] text-ink-4" data-testid="receipt-connection">
-                      {t('receipt.fromConnection', { name: connection.displayName })}
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="mt-3 flex items-baseline justify-between">
-                <span className="text-[12px] text-ink-3">{t('receipt.total')}</span>
-                <span className="m-num text-[24px] font-semibold text-ink" data-testid="receipt-view-total">
-                  {money(receipt.totalCents)}
-                </span>
-              </div>
-              {receipt.payment?.method && (
-                <p className="mt-1 text-right text-[11px] text-ink-4" data-testid="receipt-payment">
-                  {receipt.payment.method}
-                  {receipt.payment.accountTail ? ` · …${receipt.payment.accountTail}` : ''}
-                </p>
-              )}
-            </div>
-
-            {receipt.image && <img src={receipt.image} alt={t('receipt.title')} className="w-full rounded-card object-contain" style={{ maxHeight: 520 }} />}
-
-            {!!receipt.items?.length && (
-              <div>
-                <div className="m-cap mb-1 px-1">
-                  {t('receipt.itemsTitle')} · {receipt.items.length}
-                </div>
-                <div className="rounded-card border border-line bg-surface px-4 py-1" data-testid="receipt-items">
-                  {receipt.items.map((item) => (
-                    <div key={`${item.name}-${item.totalCents}`} className="flex items-baseline gap-2 border-b border-line-2 py-2.5 text-[13px] last:border-0">
-                      <span className="min-w-0 flex-1 text-ink">{item.name}</span>
-                      {item.qty !== undefined && <span className="text-[11px] text-ink-4">×{item.qty}</span>}
-                      <span className="m-num text-ink">{money(item.totalCents)}</span>
-                    </div>
-                  ))}
-                </div>
-                {receipt.reconciled === false && (
-                  <p className="mt-1 px-1 text-[11px] text-ink-4" data-testid="receipt-unreconciled">
-                    {t('receipt.unreconciled')}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* #367: the invoices the party issued for this purchase */}
-            {!!receipt.documents?.length && (
-              <div>
-                <div className="m-cap mb-1 px-1">{t('receipts.invoice')}</div>
-                <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="receipt-documents">
-                  {receipt.documents.map((document, index) => (
-                    <button
-                      key={`${document.filename ?? document.kind}-${index}`}
-                      data-testid={`receipt-document-${index}`}
-                      onClick={() => setInvoice(document)}
-                      className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
-                    >
-                      <Icon name="file-pdf-box" size={18} color="var(--m-ink-3)" />
-                      <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{document.filename ?? t('receipts.invoice')}</span>
-                      <span className="text-[12px] font-medium text-accent-deep">{t('receipts.openInvoice')}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* the head, the picture, the items and the invoices — shared with the picker's peek (user 2026-10-09);
+                keyed so another receipt under the same screen starts with its invoice sheet closed */}
+            <ReceiptBody key={receipt.id} receipt={receipt} currency={currency} connectionName={connection?.displayName} />
 
             {scope === 'space' ? (
               <>
@@ -366,7 +246,6 @@ export function ReceiptScreen({
           </div>
         )}
       </div>
-      <InvoiceSheet document={invoice} onClose={() => setInvoice(null)} />
     </div>
   );
 }

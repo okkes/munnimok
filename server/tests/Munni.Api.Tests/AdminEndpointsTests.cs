@@ -111,17 +111,34 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
                 Id = Guid.NewGuid(), SpaceId = "space-diag", FeedSpaceId = "feed-diag", AccountId = "acct-1", AttachedBy = userId,
                 HistoryFrom = "2026-01-01", Type = "checking",
             });
+            // the materialized rows the operator's labels are read from (user 2026-10-09): the space's name, the account's name and IBAN
+            db.EntityRows.Add(new EntityRow { SpaceId = "space-diag", Entity = "space", EntityId = "space-diag", DataJson = """{"name":"Diag space","kind":"personal"}""", FieldVersionsJson = "{}" });
+            db.EntityRows.Add(new EntityRow { SpaceId = "feed-diag", Entity = "account", EntityId = "acct-1", DataJson = """{"name":"ING Betaal","iban":"NL01TEST0000001234"}""", FieldVersionsJson = "{}" });
             await db.SaveChangesAsync();
         }
 
         var res = await admin.GetAsync("/admin/users/diag-user/diagnosis");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        var body = JsonDocument.Parse(await res.Content.ReadAsStringAsync()).RootElement;
+        var raw = await res.Content.ReadAsStringAsync();
+        var body = JsonDocument.Parse(raw).RootElement;
         Assert.Contains("space-diag", body.GetProperty("memberSpaces").EnumerateArray().Select(e => e.GetString()));
         Assert.Equal("feed-diag", body.GetProperty("ownedFeeds")[0].GetProperty("feedSpaceId").GetString());
         Assert.Equal("feed-diag", body.GetProperty("attachments")[0].GetProperty("feedSpaceId").GetString());
         // a bank's consent is a connector session like any other party's (§15): the list is there, empty here
         Assert.Equal(JsonValueKind.Array, body.GetProperty("connectorSessions").ValueKind);
+
+        // user 2026-10-09: the same chain, labelled — the space by name and role, the account by name and IBAN tail, never the IBAN
+        var space = body.GetProperty("spaces").EnumerateArray().Single(s => s.GetProperty("id").GetString() == "space-diag");
+        Assert.Equal("Diag space", space.GetProperty("name").GetString());
+        Assert.Equal(Social.SpaceRoles.Owner, space.GetProperty("role").GetString());
+        Assert.False(space.GetProperty("feed").GetBoolean());
+        var attachment = body.GetProperty("attachments")[0];
+        Assert.Equal("Diag space", attachment.GetProperty("spaceName").GetString());
+        Assert.Equal("ING Betaal", attachment.GetProperty("accountName").GetString());
+        Assert.Equal("…1234", attachment.GetProperty("ibanTail").GetString());
+        Assert.DoesNotContain("NL01TEST0000001234", raw, StringComparison.Ordinal);
+        var feed = body.GetProperty("ownedFeeds")[0];
+        Assert.Equal("Diag space", feed.GetProperty("attachedTo")[0].GetProperty("name").GetString());
 
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/users/nobody/diagnosis")).StatusCode);
     }

@@ -1,11 +1,13 @@
 import { useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import type { PlanSegmentKind } from '@/db/types';
+import type { PlanningModel } from '@/application/planning';
 import type { SubjectView } from '@/domain/planning';
 import { shortfallCents } from '@/domain/planning';
 import { Icon } from '@/ui/Icon';
-import { Pill, ProgressBar, Tile } from '@/ui/primitives';
-import { SEGMENT_COLOR, SEGMENT_META, STATUS_KEY, STATUS_TONE, softOf } from './planningUi';
+import { Pill, ProgressBar } from '@/ui/primitives';
+import { SourceTile } from './SourceTile';
+import { SEGMENT_COLOR, SEGMENT_META, STATUS_KEY, STATUS_TONE } from './planningUi';
 
 export type MoneyFmt = (cents: number, currency: string) => string;
 
@@ -20,11 +22,12 @@ export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency:
 /** one subject: its face, what it holds against what it needs, how far it is spent */
 export function SubjectRow({
   view,
+  model,
   fmt,
   currency,
   onClick,
   onFundToTarget,
-}: Readonly<{ view: SubjectView; fmt: MoneyFmt; currency: string; onClick: () => void; onFundToTarget?: () => void }>) {
+}: Readonly<{ view: SubjectView; model?: PlanningModel; fmt: MoneyFmt; currency: string; onClick: () => void; onFundToTarget?: () => void }>) {
   const { t } = useLang();
   const { subject } = view;
   const color = subject.color ?? SEGMENT_COLOR[subject.segment];
@@ -48,7 +51,8 @@ export function SubjectRow({
       data-skipped={subject.snoozed === 1}
       className={`m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0${subject.snoozed === 1 ? ' opacity-55' : ''}`}
     >
-      <Tile icon={subject.icon ?? SEGMENT_META[subject.segment].icon} bg={softOf(color)} color={color} />
+      {/* a mirrored source wears its logo here too (user 2026-10-09), so the plan reads like the recurring list */}
+      <SourceTile segment={subject.segment} sourceId={subject.sourceId} icon={subject.icon} color={subject.color} model={model} testId={`plan-subject-logo-${subject.id}`} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{subject.name}</span>
@@ -100,6 +104,7 @@ export function SubjectRow({
 export function SegmentSection({
   kind,
   views,
+  model,
   editable,
   canFill,
   fmt,
@@ -113,6 +118,8 @@ export function SegmentSection({
 }: Readonly<{
   kind: PlanSegmentKind;
   views: SubjectView[];
+  /** the source rows behind the mirrored subjects — their logos */
+  model?: PlanningModel;
   /** adding and editing subjects is allowed */
   editable: boolean;
   /** money can be moved (the previous period allows that much) */
@@ -195,6 +202,7 @@ export function SegmentSection({
             <SubjectRow
               key={view.subject.id}
               view={view}
+              model={model}
               fmt={fmt}
               currency={currency}
               onClick={() => onOpen(view)}

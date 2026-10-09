@@ -118,14 +118,19 @@ export function normalizeEnv(platform, raw, fromFile) {
   const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: [], signin: [], ...(raw.features ?? {}) };
   // #420: the environment's own browser agents — pooled replicas (jobs at once each) and private slots, rendered beside its control plane
   const agents = normalizeAgents(raw.agents);
+  const appChannel = raw.appChannel ?? (env === 'prod' ? 'production' : 'staging');
   return {
     env,
     slot: raw.slot,
     channel: raw.channel === 'dev' ? 'dev' : 'latest',
-    appChannel: raw.appChannel ?? (env === 'prod' ? 'production' : 'staging'),
+    appChannel,
     label: raw.label ?? `munni ${env}-${platform}`,
     features,
     agents,
+    // performance tracing (user 2026-10-09, docs/observability.md): the share of traces the environment's web app,
+    // api, connector and agents send to GlitchTip — a fifth on production, every one on a staging environment (the
+    // test ground), 0 = errors only; one value, four containers, applied by a Deploy
+    tracing: normalizeTracing(raw.tracing, env, appChannel),
     store: {
       androidPackage: raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
       iosBundleId: raw.store?.iosBundleId ?? raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
@@ -134,6 +139,14 @@ export function normalizeEnv(platform, raw, fromFile) {
       androidCertSha256: raw.store?.androidCertSha256 ?? null,
     },
   };
+}
+
+function normalizeTracing(raw, env, appChannel) {
+  const sampleRate = raw?.sampleRate ?? (appChannel === 'production' ? 0.2 : 1);
+  if (typeof sampleRate !== 'number' || !Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) {
+    throw new Error(`environment "${env}" has a tracing.sampleRate that is not a number between 0 and 1`);
+  }
+  return { sampleRate };
 }
 
 export function loadEnv(platform, env) {
@@ -247,6 +260,7 @@ export function loadStack(name, { lenient = false } = {}) {
     features: shared ? { telemetry: true } : envCfg.features,
     // #420: the environment's pooled browser agents (and private slots), rendered beside its control plane with the platform's egress claim
     agents: shared ? null : { ...envCfg.agents, egress: p.agentEgress },
+    tracing: shared ? null : envCfg.tracing,
     store: shared ? null : envCfg.store,
     label: shared ? `munni shared (${p.label})` : envCfg.label,
     native: shared ? null : {

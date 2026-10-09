@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Logging;
 using Connector.Kit.Tracing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -35,7 +36,7 @@ public sealed class JobTraceService(
         var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct);
         if (job is null)
         {
-            logger.LogWarning("a recording arrived for unknown job {JobId}; dropped", jobId);
+            logger.LogWarning("a recording arrived for unknown job {JobId}; dropped", LogSafe.Line(jobId));
             return null;
         }
 

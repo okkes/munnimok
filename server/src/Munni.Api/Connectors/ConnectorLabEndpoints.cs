@@ -322,7 +322,7 @@ public static partial class ConnectorLabEndpoints
 
         if (logger.IsEnabled(LogLevel.Information))
         {
-            logger.LogInformation("operator {Operator} scaffolded {Name} ({Provider}, {Product}) from connector job {Job}: {Files} files", OperatorOf(http), name, provider, product, jobId, files.Count);
+            logger.LogInformation("operator {Operator} scaffolded {Name} ({Provider}, {Product}) from connector job {Job}: {Files} files", OperatorOf(http), LogSafe.Line(name), LogSafe.Line(provider), LogSafe.Line(product), jobId, files.Count);
         }
         http.Response.Headers.CacheControl = "no-store";
         return Results.File(packed, "application/zip", $"{provider}-scaffold.zip");

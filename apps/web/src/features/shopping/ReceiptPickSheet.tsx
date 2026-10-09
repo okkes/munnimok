@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LOCALES, useLang } from '@/i18n';
+import { linkAsEntry } from '@/application/receiptLinks';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { partyName } from '@/features/connectors/logos';
 import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
+import { txTitle } from '@/lib/text';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
@@ -28,6 +32,9 @@ export interface ReceiptPickSheetProps {
   /** the suggestion rows' own prefix when it is not `<testIdPrefix>-pick` (the detail's rows stay `receipt-pick-<id>`) */
   pickTestIdPrefix?: string;
   proposal?: ReceiptLinkRow;
+  /** the transaction the proposal fits, when the host has it: the card shows both rows (user 2026-10-09) — behind a
+   *  full-height sheet the transaction is out of sight, so the comparison must sit on the card */
+  proposalTx?: SpaceTx;
   candidates: readonly ReceiptRow[];
   all: readonly ReceiptRow[];
   /** the receipt wearing the check: the attached one on the detail, the staged one on the review card */
@@ -46,6 +53,11 @@ export interface ReceiptPickSheetProps {
   onReject: (link: ReceiptLinkRow) => void;
   onPick: (row: ReceiptRow | null) => void;
   onView: (receiptId: string) => void;
+  /** user 2026-10-09: the eye opens the receipt in a sheet OVER this one and the list keeps its place; a host
+   *  without it (the review, whose detour restores the card) keeps the eye on `onView` */
+  onPeek?: (receipt: ReceiptRow) => void;
+  /** the receipt whose row stays lit while its peek is open */
+  peekedId?: string | null;
   /** the screen's own rungs (the detail's capture, upload and connections doors), between the suggestions and the search */
   children?: ReactNode;
 }
@@ -58,40 +70,123 @@ const fmtReceiptDay = (iso: string, lang: Lang): string =>
 
 const sourceIcon = (receipt: Pick<ReceiptRow, 'source'>): string => (receipt.source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
-/** the proposal's ask (#367 §5.7) — the detail's own card and the sheet's head are the same block */
+/** one of the proposal card's two rows: the receipt and the transaction wear the same shape (icon, name, date,
+ *  amount, a chevron where it opens), so the eye compares them line by line (user 2026-10-09) */
+function ProposalRow({
+  icon,
+  color,
+  title,
+  sub,
+  amount,
+  testId,
+  onOpen,
+}: Readonly<{ icon: string; color: string; title: string; sub: string; amount: string; testId: string; onOpen?: () => void }>) {
+  const inner = (
+    <>
+      <Icon name={icon} size={18} color={color} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium text-ink">{title}</span>
+        <span className="block truncate text-[11px] text-ink-4">{sub}</span>
+      </span>
+      <span className="m-num shrink-0 text-[13px] font-semibold text-ink">{amount}</span>
+      {onOpen && <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />}
+    </>
+  );
+  const shape = 'flex w-full items-center gap-3 px-4 py-3 text-left';
+  if (!onOpen) {
+    return (
+      <div className={shape} data-testid={testId}>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <button data-testid={testId} onClick={onOpen} className={`m-tap ${shape} border-none bg-transparent`}>
+      {inner}
+    </button>
+  );
+}
+
+/** the transaction's row on the card: its category's icon and colour, its title, day and amount */
+function TxProposalRow({ tx, currency, testId, onOpen }: Readonly<{ tx: SpaceTx; currency: string; testId: string; onOpen?: (txId: string) => void }>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  const cat = cats.byId(tx.catId);
+  const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
+  return (
+    <ProposalRow
+      icon={cat.icon}
+      color={cat.color ?? parent?.color ?? 'var(--m-ink-3)'}
+      title={txTitle(tx)}
+      sub={`${fmtReceiptDay(tx.date, lang)} · ${catName(cat, t)}`}
+      amount={fmtCents(tx.amountCents, tx.currency || currency, lang)}
+      testId={testId}
+      onOpen={onOpen && (() => onOpen(tx.id))}
+    />
+  );
+}
+
+/**
+ * The proposal's ask (#367 §5.7) — the detail's own card, the Receipts
+ * screen's list and the sheet's head are the same block. User 2026-10-09:
+ * the receipt and the transaction it fits stand as two rows of one shape
+ * with a line between them that stops short of the edges — the comparison
+ * is one glance and each row is a door of its own.
+ */
 export function ReceiptProposalCard({
   link,
+  tx,
   currency,
   ids,
   onAccept,
   onReject,
+  onOpenReceipt,
+  onOpenTx,
+  busy = false,
   className = '',
 }: Readonly<{
   link: ReceiptLinkRow;
+  /** the transaction the receipt fits, when the host has it — absent, the card is the receipt's row and the ask alone */
+  tx?: SpaceTx;
   currency: string;
-  ids: { card: string; accept: string; reject: string };
+  /** the card's testids; `open` and `tx` default to `<card>-open` / `<card>-tx` */
+  ids: { card: string; accept: string; reject: string; open?: string; tx?: string };
   onAccept: (link: ReceiptLinkRow) => void;
   onReject: (link: ReceiptLinkRow) => void;
+  /** the receipt row is a door when the host offers one */
+  onOpenReceipt?: () => void;
+  /** the transaction row is a door when the host offers one */
+  onOpenTx?: (txId: string) => void;
+  /** the answer is on its way (the card is leaving): the buttons stand down */
+  busy?: boolean;
   className?: string;
 }>) {
   const { t, lang } = useLang();
+  const items = link.items?.length ? ` · ${link.items.length} ${t('receipt.items')}` : '';
   return (
-    <div className={`rounded-card border border-line bg-surface px-4 py-3 ${className}`} data-testid={ids.card}>
-      <div className="flex items-center gap-3">
-        <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-ink">{link.merchant ?? partyName(link.source)}</span>
-          <span className="block text-[11px] text-ink-4">
-            {t('receipts.proposedBadge')} · {fmtReceiptDay(link.date, lang)}
-          </span>
-        </span>
-        <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(link.totalCents, currency, lang)}</span>
-      </div>
-      <div className="mt-2 flex gap-2 pl-8">
-        <Button size="sm" data-testid={ids.accept} onClick={() => onAccept(link)}>
+    <div className={`overflow-hidden rounded-card border border-line bg-surface ${className}`} data-testid={ids.card}>
+      <ProposalRow
+        icon="storefront-outline"
+        color="var(--m-accent-deep)"
+        title={link.merchant ?? partyName(link.source)}
+        sub={`${t('receipts.proposedBadge')} · ${fmtReceiptDay(link.date, lang)}${items}`}
+        amount={fmtCents(link.totalCents, currency, lang)}
+        testId={ids.open ?? `${ids.card}-open`}
+        onOpen={onOpenReceipt}
+      />
+      {tx && (
+        <>
+          {/* the line between the two sits inside the card's edges (user 2026-10-09: subtle, not edge to edge) */}
+          <div className="mx-4 border-t border-line-2" />
+          <TxProposalRow tx={tx} currency={currency} testId={ids.tx ?? `${ids.card}-tx`} onOpen={onOpenTx} />
+        </>
+      )}
+      {/* the buttons start under the rows' text (the padding, the icon and its gap) */}
+      <div className="flex gap-2 px-4 pb-3 pl-[46px]">
+        <Button size="sm" data-testid={ids.accept} disabled={busy} onClick={() => onAccept(link)}>
           {t('receipts.accept')}
         </Button>
-        <Button size="sm" variant="outline" data-testid={ids.reject} onClick={() => onReject(link)}>
+        <Button size="sm" variant="outline" data-testid={ids.reject} disabled={busy} onClick={() => onReject(link)}>
           {t('receipts.reject')}
         </Button>
       </div>
@@ -103,6 +198,7 @@ export function ReceiptProposalCard({
 function ReceiptPickRow({
   receipt,
   selected,
+  peeked,
   currency,
   note,
   pickTestId,
@@ -112,6 +208,8 @@ function ReceiptPickRow({
 }: Readonly<{
   receipt: ReceiptRow;
   selected: boolean;
+  /** lit while its peek sheet is open; the light fades out over 600 ms once that closes (user 2026-10-09) */
+  peeked: boolean;
   currency: string;
   /** "Attached to …" (user 2026-10-08) — the receipt proves another transaction already */
   note?: string;
@@ -123,7 +221,11 @@ function ReceiptPickRow({
   const { t, lang } = useLang();
   const items = receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : '';
   return (
-    <div className="flex items-center border-b border-line-2 last:border-0">
+    <div
+      data-testid={`${pickTestId}-row`}
+      data-peeked={peeked ? '1' : undefined}
+      className={`flex items-center border-b border-line-2 transition-colors last:border-0 ${peeked ? 'bg-accent-soft duration-0' : 'duration-[600ms]'}`}
+    >
       <button
         data-testid={pickTestId}
         aria-pressed={selected}
@@ -178,6 +280,7 @@ export function ReceiptPickSheet({
   testIdPrefix,
   pickTestIdPrefix,
   proposal,
+  proposalTx,
   candidates,
   all,
   selectedId,
@@ -190,6 +293,8 @@ export function ReceiptPickSheet({
   onReject,
   onPick,
   onView,
+  onPeek,
+  peekedId = null,
   children,
 }: Readonly<ReceiptPickSheetProps>) {
   const { t } = useLang();
@@ -206,6 +311,8 @@ export function ReceiptPickSheet({
     const face = others.length === 1 ? describeTx?.(others[0]) : undefined;
     return face ? t('receipt.attachedTo', { tx: face }) : t('receipt.attachedToN', { n: others.length });
   };
+  /** the eye: a peek over this sheet where the host offers one, the receipt screen otherwise */
+  const look = (row: ReceiptRow) => (onPeek ? onPeek(row) : onView(row.id));
   // a receipt sits in the suggestions AND the full list: each list's rows and eyes carry their own prefix
   const rows = (list: readonly ReceiptRow[], rowPrefix: string, viewPrefix: string) =>
     list.map((r) => (
@@ -213,12 +320,13 @@ export function ReceiptPickSheet({
         key={r.id}
         receipt={r}
         selected={selectedId === r.id}
+        peeked={peekedId === r.id}
         currency={currency}
         note={attachedNote(r.id)}
         pickTestId={`${rowPrefix}-${r.id}`}
         viewTestId={`${viewPrefix}-${r.id}`}
         onPick={() => onPick(r)}
-        onView={() => onView(r.id)}
+        onView={() => look(r)}
       />
     ));
   return (
@@ -227,10 +335,12 @@ export function ReceiptPickSheet({
         {proposal && (
           <ReceiptProposalCard
             link={proposal}
+            tx={proposalTx}
             currency={currency}
             ids={{ card: id('proposal'), accept: id('accept'), reject: id('reject') }}
             onAccept={onAccept}
             onReject={onReject}
+            onOpenReceipt={() => look(linkAsEntry(proposal).data)}
           />
         )}
         {showNone && <ReceiptNoneOption testId={id('none')} selected={noneSelected} onPick={() => onPick(null)} />}

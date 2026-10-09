@@ -16,28 +16,44 @@ export type CoverageAccount = Pick<AccountRow, 'source' | 'connectionId' | 'last
 export type CoverageLink = Pick<AccountLinkRow, 'attachedBy'>;
 
 /**
- * Whether the viewer is the one whose connection feeds the account: the
- * person who attached it, or — a link without a name on it — the viewer by
- * default. Only the owner's device holds the live connection ids the row's
- * stamp is read against (user ss 2026-10-08: an account a friend shared into
- * the space read "not fetched any more — reconnect" on the viewer's phone,
- * while the friend's connection was alive and well).
+ * Whose feed an account sits in — the one fact that says whether this
+ * device's connection ids may be read against the row at all: only the
+ * owner's device holds the ids the row's stamp names. `myFeeds` is what
+ * /me/feeds answered (the ownership source of truth: the feeds the viewer
+ * registered; a device that syncs nothing counts every feed on it, see
+ * useMyFeedIds). While that answer is out of reach (offline) the attacher's
+ * name on a link is the next best word; with neither, nothing can be told
+ * and the caller stays quiet. User ss 2026-10-09: a friend's ING account,
+ * attached before links carried a name, read "not fetched any more —
+ * reconnect" on the viewer's desktop while the friend's consent was alive
+ * and syncing — a nameless link had defaulted to "mine".
  */
-export const ownsLink = (link: CoverageLink | null | undefined, mySub: string | undefined): boolean =>
-  link?.attachedBy ? link.attachedBy === mySub : true;
-
-/** The same, over every attachment of an account: mine when any of them is, or when nothing says whose it is. */
-export const ownsAccount = (links: readonly CoverageLink[], mySub: string | undefined): boolean =>
-  links.length === 0 || links.some((link) => ownsLink(link, mySub));
+export function ownsFeed(
+  feedSpaceId: string,
+  myFeeds: ReadonlySet<string> | undefined,
+  links: readonly CoverageLink[],
+  mySub: string | undefined,
+): boolean | undefined {
+  if (myFeeds) return myFeeds.has(feedSpaceId);
+  const named = links.filter((link) => link.attachedBy);
+  if (named.length === 0) return undefined;
+  return named.some((link) => link.attachedBy === mySub);
+}
 
 /**
  * When the account stopped being fetched: its last sync, or '' when it
  * never synced at all; null while a live connection covers it, when the
- * row is not a party's to begin with, or when it is not the viewer's to
- * tell (a friend's connection is nowhere in this device's ids).
+ * row is not a party's to begin with, or when it is not known to be the
+ * viewer's to tell (a friend's connection is nowhere in this device's ids;
+ * an unknown owner is read the same way — no banner beats a wrong one).
  */
-export function uncoveredSince(account: CoverageAccount, liveConnectionIds: ReadonlySet<string>, owned: boolean, now = Date.now()): string | null {
-  if (!owned || account.source !== 'connector') return null;
+export function uncoveredSince(
+  account: CoverageAccount,
+  liveConnectionIds: ReadonlySet<string>,
+  owned: boolean | undefined,
+  now = Date.now(),
+): string | null {
+  if (owned !== true || account.source !== 'connector') return null;
   if (account.connectionId) return liveConnectionIds.has(account.connectionId) ? null : (account.lastSyncedAt ?? '');
   if (account.lastSyncedAt && now - Date.parse(account.lastSyncedAt) > UNCOVERED_AFTER_MS) return account.lastSyncedAt;
   return null;

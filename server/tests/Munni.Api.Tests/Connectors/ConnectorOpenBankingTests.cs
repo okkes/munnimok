@@ -211,7 +211,9 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Contains("\"pending\":1", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == pendingId).DataJson));
         var bookedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-1");
         var meta = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == ImportIds.TxMetaId(spaceId, bookedId)));
-        Assert.Contains("\"needsReview\":0", meta.DataJson);   // the keyword rules know Albert Heijn
+        // the keyword rules know Albert Heijn — a suggestion the person still confirms: every fetched row waits in the review (user 2026-10-09)
+        Assert.Contains("\"catId\":\"groceries\"", meta.DataJson);
+        Assert.Contains("\"needsReview\":1", meta.DataJson);
         Assert.DoesNotContain("uncategorized", meta.DataJson);
         Assert.Empty(factory.Read(db => db.EntityRows.Where(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == ImportIds.TxMetaId(spaceId, pendingId)).ToList()));
 

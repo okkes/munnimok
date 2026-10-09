@@ -113,7 +113,7 @@ public static class AdminInvitationEndpoints
         }
         catch (Exception ex) when (ex is (HttpRequestException or TaskCanceledException) && !ct.IsCancellationRequested)
         {
-            LoggerOf(http).LogWarning(ex, "invitations: Logto did not answer {Method} {Path}", http.Request.Method, http.Request.Path);
+            LoggerOf(http).LogWarning(ex, "invitations: Logto did not answer {Method} {Path}", LogSafe.Line(http.Request.Method), LogSafe.Line(http.Request.Path.Value));
             return Unavailable(ErrorUnavailable);
         }
     }

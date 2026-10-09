@@ -1,5 +1,6 @@
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -89,7 +90,7 @@ public sealed class JobArtifactService(
 
         logger.LogInformation(
             "job {JobId} ({Provider}) failure artifacts kept as {Status}: dom {Digest}, screenshot {Bytes} bytes",
-            job.Id, job.ProviderId, row.Status, row.DomDigest ?? "-", row.Screenshot?.Length ?? 0);
+            job.Id, job.ProviderId, row.Status, LogSafe.Line(row.DomDigest ?? "-"), row.Screenshot?.Length ?? 0);
     }
 
     /// <summary>

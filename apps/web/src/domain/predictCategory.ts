@@ -129,10 +129,6 @@ function predictTxRaw(input: PredictInput): TxPrediction | null {
   return { catId, source: 'keyword' };
 }
 
-/**
- * Only predictions the user effectively taught the app skip review:
- * a merchant they confirmed at least twice. Keyword hits and first-time
- * history are applied but flagged — review is the teaching loop.
- */
-export const predictionSkipsReview = (prediction: TxPrediction | null): boolean =>
-  prediction !== null && prediction.source !== 'keyword' && (prediction.evidence ?? 0) >= 2;
+// predictionSkipsReview retired 2026-10-09 (user): no prediction skips the
+// review any more, however well taught — every transaction passes the deck
+// with its prediction prefilled, and only the person takes it out.

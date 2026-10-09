@@ -5,6 +5,8 @@
 // stack was last started with. Both sides are the same normalized shape
 // (saveEnv / loadPlatform write and read it), so a difference is a real one.
 
+import { MANIFEST } from './secrets.mjs';
+
 /** the keys the render alone carries — Deploy republishes them; anything else mints or registers something first (Bootstrap) */
 export const DEPLOY_ONLY = new Set(['store.androidCertSha256', 'agents.pooled', 'agents.concurrency', 'agents.privateSlots']);
 /** display names the wizard keeps for itself — no container reads them */
@@ -56,4 +58,63 @@ export const describeChange = ({ path, from, to }) => `${path}: ${show(path, fro
 export function pendingFrom(applied, current) {
   const changes = configChanges(applied, current);
   return { changes: changes.map(describeChange), needs: needsFor(changes) };
+}
+
+/* ── the difference the person reads BEFORE publishing (user 2026-10-09) ──
+   The strip said "the config differs from what runs — Publish puts it on GitHub" without showing
+   what. This is the platform document saved here against the one GitHub holds (config.mjs knows
+   both: platformDocument / fetchPlatformVariable), per environment and for the platform itself,
+   with every value in the open except what is named like a secret. The platform files carry no
+   secret by design (secrets live in the wizard's store and on GitHub), but a key named like one,
+   or a domain typed in place of its placeholder, is masked anyway — the manifest's names decide. */
+
+/** the manifest's secret names, lower-cased, compared against a leaf's last segment (e.g. `ghcrPat` ↔ GHCR_PAT) */
+const SECRET_NAMES = new Set(MANIFEST.secrets.map((s) => s.name.toLowerCase().replaceAll('_', '')));
+const SECRET_WORD_RE = /(secret|password|passwd|token|privatekey|apikey|masterkey|credential)/i;
+
+/** is this leaf's value one the diff must not show? a secret-named key, or the platform's domain typed in place of its `${PLATFORM_DOMAIN}` placeholder */
+export function secretPath(path, value) {
+  const leaf = String(path).split('.').at(-1) ?? '';
+  if (SECRET_NAMES.has(leaf.toLowerCase().replaceAll('_', '')) || SECRET_WORD_RE.test(leaf)) return true;
+  return path === 'platform.domain' && typeof value === 'string' && value !== '' && !value.startsWith('${');
+}
+
+const MASK = '(secret)';
+const masked = (path, v) => (secretPath(path, v) ? MASK : (v ?? null));
+
+/** the leaves of one config side by side: added (only here), removed (only on GitHub), changed (both, different) — secrets masked, `secret` says so */
+export function leafDiff(published, local) {
+  const changes = configChanges(published ?? {}, local ?? {});
+  const out = { added: [], removed: [], changed: [] };
+  for (const c of changes) {
+    const secret = secretPath(c.path, c.from) || secretPath(c.path, c.to);
+    if (c.from === undefined) out.added.push({ key: c.path, to: masked(c.path, c.to), secret });
+    else if (c.to === undefined) out.removed.push({ key: c.path, from: masked(c.path, c.from), secret });
+    else out.changed.push({ key: c.path, from: masked(c.path, c.from), to: masked(c.path, c.to), secret });
+  }
+  return out;
+}
+
+const emptyDiff = (d) => !d.added.length && !d.removed.length && !d.changed.length;
+
+/**
+ * The platform document saved here (`local`) against the one GitHub holds (`published`, null when
+ * nothing was published yet), as the strip's "What changed?" table reads it: one entry for the
+ * platform's own keys (id `shared`, keys `platform.<key>`, the shared stack's) and one per environment
+ * (its own keys; the platform's are the shared entry's). `state`: new (not on GitHub yet), removed
+ * (GitHub still lists it), changed, same.
+ */
+export function documentDiff(published, local, platform) {
+  const envs = [];
+  const shared = leafDiff({ platform: published?.platform ?? {} }, { platform: local?.platform ?? {} });
+  envs.push({ id: 'shared', stack: `munni-${platform}-shared`, state: published?.platform ? (emptyDiff(shared) ? 'same' : 'changed') : 'new', ...shared });
+  const names = [...new Set([...Object.keys(published?.envs ?? {}), ...Object.keys(local?.envs ?? {})])].sort();
+  for (const name of names) {
+    const before = published?.envs?.[name];
+    const after = local?.envs?.[name];
+    const d = leafDiff(before ?? {}, after ?? {});
+    const state = !before ? 'new' : (!after ? 'removed' : (emptyDiff(d) ? 'same' : 'changed'));
+    envs.push({ id: name, stack: `munni-${platform}-${name}`, state, ...d });
+  }
+  return { platform, published: Boolean(published), publishedAt: published?.publishedAt ?? null, envs };
 }

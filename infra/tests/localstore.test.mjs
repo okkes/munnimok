@@ -36,6 +36,17 @@ test('wizard store: every value belongs to ONE platform — a platform sees its 
   saveWizardStore({ machine: {}, platforms: {} });
 });
 
+test('wizard store keys are ours alone: a platform outside the platform list and a name outside UPPER_SNAKE_CASE are refused before either becomes a key (CodeQL js/remote-property-injection)', () => {
+  assert.throws(() => setWizardValues({ GH_PAT: 'x' }, '__proto__'), /unknown platform/);
+  assert.throws(() => setWizardValues({ GH_PAT: 'x' }, 'constructor'), /unknown platform/);
+  assert.throws(() => wizardValues('rpi2'), /unknown platform/);
+  assert.throws(() => setWizardValues({ ['__proto__']: { polluted: true } }, 'lcl'), /not a value name/);
+  assert.throws(() => setWizardValues({ 'not a name': 'x' }, 'lcl'), /not a value name/);
+  assert.throws(() => forgetWizardValues(['constructor'], 'lcl'), /not a value name/);
+  assert.equal({}.polluted, undefined);
+  assert.deepEqual(loadWizardStore(), { machine: {}, platforms: {} }, 'nothing was written');
+});
+
 test('saveLocalValues routes by ownership: operator values to the wizard, platform-scoped ones to the shared stack\'s store, the rest to the stack\'s own; stackValues merges wizard < shared < own', () => {
   setWizardValues({ GOCARDLESS_SECRET_KEY: 'gc-key' }, 'lcl');
   saveLocalValues(shared(), { ...stackValues(shared()), GLITCHTIP_API_TOKEN: 'tok', CONTROL_LOGTO_APP_ID: 'ctl', POSTGRES_PASSWORD: 'pg-shared', VAULT_SIGNUPS_ALLOWED: 'false' });

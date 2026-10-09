@@ -65,8 +65,13 @@ export async function propagateRecurringCategory(
     const linkField =
       linkedAccountId && tx.linkedAccountId !== linkedAccountId ? { linkedAccountId } : {};
     if (tx.catId === catId && !('linkedAccountId' in linkField)) continue;
-    // #260 r2 (user): the recurring applying its category IS the review
-    await writeTxTransform(repo, tx, { catId, needsReview: 0, ...linkField });
+    // the refile leaves the review flag alone (user 2026-10-09: every
+    // transaction passes the review; only a category change on the
+    // transaction's own detail takes it out). The person edited the
+    // RECURRING here, not these rows: a reviewed row stays reviewed, an
+    // unreviewed one waits in the deck wearing the recurring's category.
+    // (#260 r2 once counted the refile as the review — superseded.)
+    await writeTxTransform(repo, tx, { catId, ...linkField });
     touched++;
   }
   return touched;
@@ -90,8 +95,10 @@ export async function realignRecurringCategories(store: StorageBackend, repo: Re
       const rec = tx.recurringId ? byId.get(tx.recurringId) : undefined;
       if (!rec?.catId || tx.deleted !== 0 || tx.splits?.length || tx.cats?.length) continue;
       if (tx.catId === rec.catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
-      // #260 r2: the recurring applying its category IS the review
-      await writeTxTransform(repo, tx, { catId: rec.catId, needsReview: 0 });
+      // an AUTOMATIC heal: the category comes back, the review flag stays
+      // whatever it was (user 2026-10-09: no machine takes a row out of
+      // the review; #260 r2's "the refile is the review" is superseded)
+      await writeTxTransform(repo, tx, { catId: rec.catId });
       touched++;
     }
   }
@@ -141,7 +148,11 @@ export function useRecurringOps(): RecurringOps {
       // reimbursement or settlement filed it as reimbursed
       const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
       // #260 r2 (user): the refile counts as the review — linked rows
-      // must not keep wearing the unreviewed badge
+      // must not keep wearing the unreviewed badge. Kept under the
+      // 2026-10-09 rule: this is the PERSON linking THIS transaction from
+      // its detail or a link sheet — a category decision on the row
+      // itself, the one thing that takes a row out of the review. The
+      // automatic linker (reconcileRecurringLinks) never writes the flag.
       const refile =
         rec?.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
           ? { catId: rec.catId, needsReview: 0 as const }

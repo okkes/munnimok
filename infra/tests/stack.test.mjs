@@ -131,6 +131,10 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
   assert.equal(staging.githubEnvironment, 'nas-staging');
   assert.deepEqual(staging.features.banking, [], 'features default off');
   assert.equal(staging.features.telemetry, true);
+  // performance tracing (2026-10-09): a fifth on production, every trace on the staging test ground, nothing on the shared stack
+  assert.deepEqual(prod.tracing, { sampleRate: 0.2 });
+  assert.deepEqual(staging.tracing, { sampleRate: 1 });
+  assert.equal(loadStack('munni-nas-shared').tracing, null);
 
   const shared = loadStack('munni-nas-shared');
   assert.deepEqual(shared.urls, { glitchtip: `https://glitchtip-nas.${DOMAIN}`, vault: `https://vault-nas.${DOMAIN}`, control: `https://control-nas.${DOMAIN}`, pgadmin: `https://pgadmin-nas.${DOMAIN}` });
@@ -188,6 +192,7 @@ test('environments as files: nextSlot fills the lowest gap, saveEnv normalizes, 
     env: 'qa', slot: 2, channel: 'dev', appChannel: 'staging', label: 'munni qa-nas',
     features: { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: [], signin: [] },
     agents: { pooled: 1, concurrency: 2, privateSlots: 0 },
+    tracing: { sampleRate: 1 },
     store: { androidPackage: 'app.munni.nas.qa', iosBundleId: 'app.munni.nas.qa', androidCertSha256: null },
   });
   assert.deepEqual(loadEnv('nas', 'qa'), qa, 'what saveEnv returns is what the file loads');
@@ -239,6 +244,22 @@ test('agents (#420): an environment carries its pooled replicas, their jobs at o
     assert.deepEqual(loadEnv('nas', 'prod').agents, { pooled: 1, concurrency: 2, privateSlots: 0 }, 'nonsense falls back to the defaults');
   } finally {
     saveEnv('nas', prod);
+  }
+});
+
+test('tracing (2026-10-09): an environment may set its own share of traces; anything but a number in 0..1 is refused', () => {
+  fx.writeEnv('nas', { env: 'qa', slot: 2, tracing: { sampleRate: 0.5 } });
+  try {
+    assert.deepEqual(loadStack('munni-nas-qa').tracing, { sampleRate: 0.5 });
+    assert.deepEqual(loadEnv('nas', 'qa').tracing, { sampleRate: 0.5 }, 'the file keeps it through a normalizing save');
+    fx.writeEnv('nas', { env: 'qa', slot: 2, tracing: { sampleRate: 0 } });
+    assert.deepEqual(loadEnv('nas', 'qa').tracing, { sampleRate: 0 }, 'zero = errors only');
+    for (const bad of [2, -0.1, '0.5', true]) {
+      fx.writeEnv('nas', { env: 'qa', slot: 2, tracing: { sampleRate: bad } });
+      assert.throws(() => loadEnv('nas', 'qa'), /tracing\.sampleRate/, `${String(bad)} is refused`);
+    }
+  } finally {
+    fx.removeEnv('nas', 'qa');
   }
 });
 

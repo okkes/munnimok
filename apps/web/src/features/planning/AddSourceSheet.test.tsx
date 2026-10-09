@@ -6,13 +6,13 @@ import type { PlanningModel, PlanningOps } from '@/application/planning';
 import { renderWithProviders } from '@/test/harness';
 import { AddSourceSheet } from './AddSourceSheet';
 
-/** a model with two recurring costs and one goal to pick from, and no subjects yet */
+/** a model with two recurring costs (one with a brand logo) and one goal to pick from, and no subjects yet */
 const model = {
   subjectsOf: () => [],
   data: {
     recurrings: [
-      { id: 'r1', name: 'Netflix', active: 1 },
-      { id: 'r2', name: 'Rent', active: 1 },
+      { id: 'r1', name: 'Netflix', kind: 'subscription', active: 1, logo: 'brands/netflix.svg' },
+      { id: 'r2', name: 'Rent', kind: 'fixed', active: 1 },
     ],
     accounts: [],
     budgets: [],
@@ -39,6 +39,14 @@ describe('AddSourceSheet (user ss 2026-10-07: "4 of 1")', () => {
     fireEvent.click(screen.getByTestId('plan-add-source-save'));
     expect(ops.addMirrored).toHaveBeenCalledTimes(1);
     expect(ops.addMirrored).toHaveBeenCalledWith('plan-1', 'goals', expect.objectContaining({ id: 'g1' }));
+  });
+
+  it('a recurring cost with a brand logo wears it in the list the way the recurring list does; one without keeps the plan’s tile (user 2026-10-09)', () => {
+    const ops = { addMirrored: vi.fn(async () => 'id') } as unknown as PlanningOps;
+    renderWithProviders(<AddSourceSheet segment="recurring" model={model} plan={plan} ops={ops} onClose={() => undefined} />);
+    expect(screen.getByTestId('plan-add-source-logo-r1').querySelector('img')?.getAttribute('src')).toBe('brands/netflix.svg');
+    expect(screen.queryByTestId('plan-add-source-logo-r2')).toBeNull();
+    expect(screen.getByTestId('plan-add-source-r2').querySelector('img')).toBeNull();
   });
 
   it('Select all ticks every candidate and the button counts them', () => {

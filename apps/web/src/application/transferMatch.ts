@@ -67,14 +67,16 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     const twin = twins[0];
     paired.add(out.id);
     paired.add(twin.id);
-    // the twin becomes the typed mirror: pointing back, settled, wearing
-    // its own account's STAMP with the forced movement sub (R1/Q8) — an
-    // unstamped twin files by ITS counter's kind (#133 r5 bijection)
+    // the twin becomes the typed mirror: pointing back, wearing its own
+    // account's STAMP with the forced movement sub (R1/Q8) — an unstamped
+    // twin files by ITS counter's kind (#133 r5 bijection). Its review
+    // flag stays as it was (user 2026-10-09): this is the machine pairing
+    // on a boot or an import, so the twin waits in the deck with the pair
+    // prefilled and the person confirms it there.
     const stamp = accountStamp((await store.get('account', twin.accountId))?.type);
     const outType = (await store.get('account', out.accountId))?.type;
     await writePair(store, repo, out, twin, {
       linkedAccountId: out.accountId,
-      needsReview: 0,
       catId:
         (stamp ? stampMovementSub(stamp, twin.amountCents) : undefined) ??
         (outType ? movementCatFor(outType, twin.amountCents) : autoSubFor('transfer', twin.amountCents)),
@@ -93,14 +95,16 @@ async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undef
   // two REAL rows is the pick-existing case by construction. #133 r5:
   // an UNSTAMPED leg whose counter is a special account files the
   // family's movement sub — a checking↔savings pair reads "Set aside",
-  // never "Transfer out"; regular↔regular pairs stay untouched.
+  // never "Transfer out"; regular↔regular pairs stay untouched. Neither
+  // leg's review flag moves (user 2026-10-09): the pairing runs by itself
+  // on boot and after imports — the deck shows the stored pair and the
+  // person confirms each leg there.
   const enrich = async (leg: SpaceTx, other: SpaceTx): Promise<Parameters<typeof writeTxTransform>[2]> => {
     const stamp = accountStamp((await store.get('account', leg.accountId))?.type);
     if (stamp) {
       return {
         ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
         catId: stampMovementSub(stamp, leg.amountCents),
-        needsReview: 0 as const,
       };
     }
     const counterType = (await store.get('account', other.accountId))?.type;

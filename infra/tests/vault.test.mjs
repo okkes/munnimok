@@ -136,6 +136,59 @@ test('vaultReplaceFolder: an existing account is read with its REAL user key; th
   assert.equal(seen.find((x) => x.url.endsWith('/api/ciphers') && x.method === 'POST').body.folderId, 'f-new', 'then the item is filed in it');
 });
 
+test('buildCipher names the account the item is encrypted for when told (Vaultwarden 1.37+ refuses a cipher without it) and leaves it out otherwise', () => {
+  const keys = splitSymKey(Buffer.alloc(64, 5));
+  assert.equal(buildCipher(keys, { name: 'x', password: 'y' }).encryptedFor, undefined);
+  const owned = buildCipher(keys, { name: 'x', password: 'y' }, { encryptedFor: 'user-uuid-1' });
+  assert.equal(owned.encryptedFor, 'user-uuid-1');
+  assert.equal(owned.type, 1);
+  assert.equal(buildCipher(keys, { name: 'n', kind: 'note', notes: 't' }, { encryptedFor: 'user-uuid-1' }).encryptedFor, 'user-uuid-1');
+});
+
+/* a Vaultwarden of 1.37.0 or later (user 2026-10-09): every cipher must name the signed-in account as `encryptedFor` — a bare 422 otherwise */
+test('vaultReplaceFolder on a 1.37+ server: every item carries the account\'s id from the sync profile; an item the server still refuses keeps its OLD copy, the others are replaced, and the error names the refusal with the server\'s message', async () => {
+  const email = 'ops@munni.test';
+  const password = 'master-pw';
+  const sym = rnd64(64);
+  const keys = splitSymKey(sym);
+  const profileKey = encString(stretchKey(masterKey(email, password)), sym);
+  const seen = [];
+  const refuse = new Set();
+  const fetchImpl = async (url, init = {}) => {
+    const body = init.body && String(init.body).startsWith('{') ? JSON.parse(String(init.body)) : null;
+    seen.push({ url, method: init.method ?? 'GET', body });
+    if (url.endsWith('/identity/connect/token')) return { ok: true, status: 200, json: async () => ({ access_token: 'T' }) };
+    if (url.includes('/api/sync')) return { ok: true, status: 200, json: async () => ({ profile: { id: 'user-uuid-9', key: profileKey }, folders: [{ id: 'f-env', name: encString(keys, 'munni-nas-dev') }], ciphers: [
+      { id: 'c-console', folderId: 'f-env', name: encString(keys, 'Logto console') },
+      { id: 'c-m2m', folderId: 'f-env', name: encString(keys, 'Logto infra M2M') },
+    ] }) };
+    if (init.method === 'DELETE') return { ok: true, status: 200 };
+    if (url.endsWith('/api/ciphers')) {
+      if (body.encryptedFor !== 'user-uuid-9') return { ok: false, status: 422, text: async () => '<html>422 Unprocessable Entity</html>' };
+      if (refuse.has(decString(keys, body.name).toString('utf8'))) return { ok: false, status: 422, json: async () => ({}), text: async () => JSON.stringify({ message: 'Invalid user cipher', object: 'error' }) };
+      return { ok: true, status: 200, json: async () => ({ id: 'c-new' }) };
+    }
+    return { ok: false, status: 404 };
+  };
+  const items = [{ name: 'Logto console', username: 'admin', password: 'pw' }, { name: 'Logto infra M2M', username: 'infra1', password: 'secret1' }];
+  const r = await vaultReplaceFolder('http://vault.test', { email, password, folder: 'munni-nas-dev', items }, fetchImpl);
+  assert.deepEqual(r, { registered: false, folder: 'munni-nas-dev', replaced: 2, unfiled: 0, imported: 2 });
+  const creates = seen.filter((x) => x.url.endsWith('/api/ciphers') && x.method === 'POST');
+  assert.equal(creates.length, 2);
+  assert.ok(creates.every((x) => x.body.encryptedFor === 'user-uuid-9'), 'the sync profile\'s id rides on every cipher');
+  const firstDelete = seen.findIndex((x) => x.method === 'DELETE');
+  const lastCreate = seen.map((x) => x.method === 'POST' && x.url.endsWith('/api/ciphers')).lastIndexOf(true);
+  assert.ok(firstDelete > lastCreate, 'the new items exist before any old one goes');
+  // the server refuses the console item alone: its old copy stays, the M2M item is replaced, the error says which and why
+  seen.length = 0;
+  refuse.add('Logto console');
+  await assert.rejects(
+    () => vaultReplaceFolder('http://vault.test', { email, password, folder: 'munni-nas-dev', items }, fetchImpl),
+    (e) => { assert.match(e.message, /1 of 2 items refused in folder munni-nas-dev — "Logto console" \(422 Invalid user cipher\); the other 1 filed/); return true; },
+  );
+  assert.deepEqual(seen.filter((x) => x.method === 'DELETE').map((x) => x.url), ['http://vault.test/api/ciphers/c-m2m'], 'only the item whose replacement exists is deleted — the refused one keeps its old copy');
+});
+
 test('platformValuesFromItems: the shared folder\'s items map to the secret names an environment needs; strangers and empty passwords are ignored', async () => {
   const { platformValuesFromItems } = await import('../modules/vault.mjs');
   assert.deepEqual(platformValuesFromItems([
