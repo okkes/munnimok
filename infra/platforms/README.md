@@ -144,3 +144,26 @@ refresh tokens never rotate and live 90 days (`rotateRefreshToken: false`,
 suspends the app and Logto's reuse detection then kills the grant, prod logs
 2026-10-08; docs/native-auth-popupless.md), the SPAs keep Logto's rotation,
 and the Google connector asks which account (`prompts: ['select_account']`).
+## iOS: TestFlight renewal
+
+A TestFlight build expires 90 days after its upload, so an environment whose
+app saw no code change for three months stops installing on the testers'
+phones. `.github/workflows/testflight-renew.yml` runs every Monday 06:00 UTC
+(and by hand, with a `stack`, a `renew_under_days` and a `dry_run` input): for
+every environment with the iOS app whose GitHub environment exists, it asks App
+Store Connect for the newest build of the environment's `store.iosBundleId`
+(`.github/scripts/asc-build-expiry.js`, the ASC key from the stack's GitHub
+environment — `ASC_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, scope env, feature
+ios) and prints one table row (app, version, uploaded, expires, days left,
+verdict). With fewer than 30 days left, an expired build, or no build at all
+while the app record exists, it dispatches `native-ios.yml` for that stack on
+the stack's own branch (`latest` → master, `dev` → dev): the same code rebuilt
+and re-uploaded restarts the 90 days, with a fresh build number (a dispatch
+counts seconds since 2026, never a duplicate). A Native iOS run already going
+for the stack counts as the renewal; an environment without an ASC key, or
+without an app record, is a notice. The job carries `actions: write`, which is
+what lets the repository token create the dispatch. Android needs no twin: a
+Play internal-testing release never expires. A scheduled workflow runs from
+the default branch only, so the file has to be released to master, and GitHub
+pauses schedules after 60 days without a push.
+

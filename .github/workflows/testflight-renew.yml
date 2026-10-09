@@ -1,0 +1,137 @@
+# Keep the iOS apps installable (user 2026-10-09). Apple expires a TestFlight
+# build 90 days after its upload, so an environment whose app saw no code change
+# for three months stops installing on the testers' phones. Every Monday this
+# asks App Store Connect for each iOS environment's newest build and, with fewer
+# than 30 days left (or no live build at all), dispatches native-ios.yml for that
+# stack on the stack's own branch — the same code rebuilt and re-uploaded restarts
+# the 90 days (a dispatch takes a fresh build number: seconds since 2026, so the
+# upload is never refused as a duplicate). The decision is
+# .github/scripts/asc-build-expiry.js; the ASC key lives in the stack's GitHub
+# environment (secrets.manifest.json: scope env, feature ios), so each check runs
+# in that environment, exactly like the build.
+#
+# No Android twin: a Play internal-testing release never expires — it stays
+# installable until the next upload replaces it, so there is nothing to renew.
+#
+# A scheduled workflow runs from the default branch only (master) — the file must
+# be released there; GitHub also pauses schedules after 60 days without a push.
+name: TestFlight renewal
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('TestFlight renewal ({0})', inputs.stack || 'every iOS environment') || 'TestFlight renewal (weekly)' }}
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: 'One environment stack (munni-<platform>-<env>) — empty for every environment with the iOS app'
+        type: string
+        default: ''
+      renew_under_days:
+        description: 'Rebuild when fewer than this many days are left'
+        type: string
+        default: '30'
+      dry_run:
+        description: 'Only report — dispatch nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  stacks:
+    # first-boot latch (MUNNI_INITIALIZED): fresh repo copies skip every run until the wizard marks the repo initialized
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+      count: ${{ steps.m.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: The platform config from GitHub (#416)
+        run: node infra/ci/materialize.mjs
+        env:
+          MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
+          MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
+      - name: Which environments
+        id: m
+        # every environment with the iOS app whose GitHub environment exists (it holds the ASC key); a dispatch may name one
+        run: |
+          if EXISTING=$(gh api "repos/${{ github.repository }}/environments?per_page=100" --jq '[.environments[].name] | join(",")'); then
+            FILTER=(--existing "$EXISTING")
+          else
+            echo "::warning::could not list the GitHub environments — every iOS environment of the config is tried"
+            FILTER=()
+          fi
+          if [ -n "${{ inputs.stack }}" ]; then
+            node infra/ci/matrix.mjs --stack "${{ inputs.stack }}" --role env --feature ios
+          else
+            node infra/ci/matrix.mjs --role env --feature ios "${FILTER[@]}"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  check:
+    needs: stacks
+    if: ${{ needs.stacks.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # dispatches native-ios.yml — GITHUB_TOKEN may create a workflow_dispatch event with this
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.stacks.outputs.include) }}
+    # the stack's GitHub environment holds its App Store Connect key, like the build itself
+    environment: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Restore the App Store Connect API key
+        id: asc
+        run: |
+          if [ -n "$ASC_KEY_B64" ]; then
+            echo "$ASC_KEY_B64" | base64 -d > "$RUNNER_TEMP/asc.p8"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::${{ matrix.stack }}: no ASC_KEY_P8 in environment ${{ matrix.environment }} — this environment never uploads to TestFlight, nothing to keep alive"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          ASC_KEY_B64: ${{ secrets.ASC_KEY_P8 }}
+      - name: Newest TestFlight build and its expiry
+        id: expiry
+        if: steps.asc.outputs.present == 'true'
+        run: |
+          echo "| bundle id | app | version | uploaded | expires | days left | verdict |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          node .github/scripts/asc-build-expiry.js
+        env:
+          BUNDLE_ID: ${{ matrix.iosBundleId }}
+          RENEW_UNDER_DAYS: ${{ inputs.renew_under_days || '30' }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc.p8
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      - name: Rebuild and re-upload — dispatch Native iOS for this stack
+        if: steps.expiry.outputs.renew == 'true' && inputs.dry_run != true
+        run: |
+          # one build at a time per stack: a Native iOS run already going for it IS the renewal
+          if gh run list --workflow native-ios.yml --limit 20 --json displayTitle,status --jq '.[] | select(.status == "in_progress" or .status == "queued") | .displayTitle' | grep -qx "iOS ${{ matrix.stack }}"; then
+            echo "::notice::${{ matrix.stack }}: a Native iOS build is already running — not dispatching another"
+            exit 0
+          fi
+          gh workflow run native-ios.yml --ref "${{ matrix.ref }}" -f stack="${{ matrix.stack }}"
+          echo "::notice::${{ matrix.stack }}: ${{ steps.expiry.outputs.reason }} — Native iOS dispatched on ${{ matrix.ref }} (a fresh upload restarts the 90 days)"
+          echo "dispatched: Native iOS ${{ matrix.stack }} on ${{ matrix.ref }} — ${{ steps.expiry.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+      - name: Dry run — would rebuild
+        if: steps.expiry.outputs.renew == 'true' && inputs.dry_run == true
+        run: |
+          echo "::notice::${{ matrix.stack }}: ${{ steps.expiry.outputs.reason }} — dry run, nothing dispatched"

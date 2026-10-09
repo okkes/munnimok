@@ -138,6 +138,11 @@ test('status: the platforms, the lcl stacks, and the stores by NAME — never a 
   const lcl = body.platforms[0];
   assert.equal(lcl.sharedStack, 'munni-lcl-shared');
   assert.equal(lcl.sharedEnvironment, 'lcl-shared');
+  // the shared card's link chips (user 2026-10-09) read the shared stack's urls and its probed services by the same keys
+  const sharedStack = body.stacks['munni-lcl-shared'];
+  assert.deepEqual(Object.keys(sharedStack.urls).sort(), ['control', 'glitchtip', 'pgadmin', 'vault']);
+  assert.deepEqual(Object.keys(sharedStack.services).sort(), ['control', 'glitchtip', 'pgadmin', 'vault']);
+  assert.equal(sharedStack.urls.vault, 'https://localhost:8384');
   assert.deepEqual(lcl.envs.map((e) => [e.env, e.stack, e.environment, e.slot]), [['prod', 'munni-lcl-prod', 'lcl-prod', 0]]);
   assert.equal(lcl.envs[0].store.androidPackage, 'app.munni.lcl.prod');
   const nas = body.platforms[1];
@@ -335,7 +340,7 @@ test('access/users: an environment stack only; no machine credential → 502 nam
   const vaultDown = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => '' }) });
   const nasVault = await call(vaultDown, { url: '/api/access/users?stack=munni-nas-prod' });
   assert.equal(nasVault.statusCode, 502, nasVault.text());
-  assert.match(nasVault.json().error, /vault: sign-in as vault@munni.nas failed/);
+  assert.match(nasVault.json().error, /vault: the sign-in with the platform's vault account failed/);
   assert.ok(!/PLATFORM_DOMAIN/.test(nasVault.json().error), 'the platform domain comes from the wizard\'s store');
   await post(app, '/api/wizard/values', { values: { VAULT_ADMIN_EMAIL: '', VAULT_MASTER_PASSWORD: '' }, platform: 'nas' });
   saveLocalValues(PROD(), { ...loadLocalValues(PROD()), LOGTO_INFRA_M2M_ID: 'infra0123456789abcdef', LOGTO_INFRA_M2M_SECRET: 'f'.repeat(48) });
@@ -350,6 +355,30 @@ test('access/users: an environment stack only; no machine credential → 502 nam
   ]);
   assert.match(logto.calls[0], /^POST \/oidc\/token/);
   assert.ok(logto.calls.some((c) => c.startsWith('GET /api/roles/r1/users')), 'the role members decide the flag');
+});
+
+test('access/users (nas): a vault folder without the machine credential says what it holds and points at the Bootstrap log\'s vault line — the vault is the only readable copy (user 2026-10-09)', async () => {
+  const { encString, masterKey, splitSymKey, stretchKey } = await import('../modules/vault.mjs');
+  const { randomBytes } = await import('node:crypto');
+  await post(app, '/api/wizard/values', { values: { VAULT_ADMIN_EMAIL: 'vault@munni.nas', VAULT_MASTER_PASSWORD: 'nas-master', PLATFORM_DOMAIN: 'nas.example' }, platform: 'nas' });
+  const sym = randomBytes(64);
+  const keys = splitSymKey(sym);
+  const profileKey = encString(stretchKey(masterKey('vault@munni.nas', 'nas-master')), sym);
+  const folder = (ciphers) => async (url) => {
+    if (url.endsWith('/identity/connect/token')) return jsonRes(200, { access_token: 'T' });
+    if (url.includes('/api/sync')) return jsonRes(200, { profile: { id: 'u1', key: profileKey }, folders: [{ id: 'f-prod', name: encString(keys, 'munni-nas-prod') }], ciphers });
+    return jsonRes(404, {});
+  };
+  try {
+    const oneOther = await call(appWith(folder([{ id: 'c1', folderId: 'f-prod', name: encString(keys, 'Postgres (munni-nas-prod)'), login: { username: encString(keys, 'munni'), password: encString(keys, 'pw') } }])), { url: '/api/access/users?stack=munni-nas-prod' });
+    assert.equal(oneOther.statusCode, 502);
+    assert.match(oneOther.json().error, /folder munni-nas-prod holds 1 other item but no "Logto infra M2M" item/);
+    assert.match(oneOther.json().error, /"vault:" line/);
+    const empty = await call(appWith(folder([])), { url: '/api/access/users?stack=munni-nas-prod' });
+    assert.match(empty.json().error, /folder munni-nas-prod is empty — no "Logto infra M2M" item/);
+  } finally {
+    await post(app, '/api/wizard/values', { values: { VAULT_ADMIN_EMAIL: '', VAULT_MASTER_PASSWORD: '' }, platform: 'nas' });
+  }
 });
 
 test('access/toggle: a bad user id or a shared stack is refused; on adds the user to the role, off removes it', async () => {
@@ -394,6 +423,10 @@ test('nas-probe: refuses a bad domain and a docker platform; every host names th
   assert.deepEqual(body.stacks.map((s) => s.stack), ['munni-nas-shared', 'munni-nas-prod']);
   const shared = Object.fromEntries(body.stacks[0].hosts.map((h) => [h.key, h]));
   const prod = Object.fromEntries(body.stacks[1].hosts.map((h) => [h.key, h]));
+  // the shared card's link chips (user 2026-10-09) read the same probe by key: the four shared services under the domain
+  assert.deepEqual(Object.keys(shared).sort(), ['control', 'glitchtip', 'pgadmin', 'vault']);
+  assert.deepEqual(['glitchtip', 'vault', 'control', 'pgadmin'].map((k) => shared[k].host), ['glitchtip-nas.nas.example', 'vault-nas.nas.example', 'control-nas.nas.example', 'pgadmin-nas.nas.example']);
+  assert.equal(shared.control.state, 'up', 'a host that answers with munni is up — the chip\'s dot');
   assert.equal(prod.web.host, 'munni-prod-nas.nas.example');
   assert.equal(prod.web.state, 'no-rule');
   assert.match(prod.web.detail, /Web Station/);
@@ -482,6 +515,41 @@ test('config/pull: nothing published is 404; a published document writes the fil
     assert.deepEqual(pulled.json().envs, ['prod']);
     assert.equal(loadEnv('nas', 'prod').env, 'prod', 'the environment is back');
   } finally {
+    forgetWizardValues(['GH_PAT'], 'nas');
+    gh.cleanup();
+  }
+});
+
+test('config/diff (user 2026-10-09): what Publish would change — nothing published = everything new; after a publish nothing; an edit saved here = that key with its old and new value; lcl and an unknown platform are refused; no token is 502', async () => {
+  const gh = fakeGh();
+  const current = loadEnv('nas', 'prod');
+  try {
+    assert.equal((await call(app, { url: '/api/config/diff?platform=lcl' })).statusCode, 400);
+    assert.equal((await call(app, { url: '/api/config/diff?platform=moon' })).statusCode, 400);
+    const noToken = await call(app, { url: '/api/config/diff?platform=nas&repo=okkes/munnimok' });
+    assert.equal(noToken.statusCode, 502);
+    assert.match(noToken.json().error, /no GitHub token for platform nas/);
+    await post(app, '/api/local/gh-pat', { pat: 'github_pat_nas', platform: 'nas' });
+    const fresh = (await call(app, { url: '/api/config/diff?platform=nas&repo=okkes/munnimok' })).json();
+    assert.equal(fresh.published, false);
+    assert.deepEqual(fresh.envs.map((e) => [e.id, e.stack, e.state]), [['shared', 'munni-nas-shared', 'new'], ['prod', 'munni-nas-prod', 'new']]);
+    assert.ok(fresh.envs[1].added.some((a) => a.key === 'slot' && a.to === 0));
+    await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    const same = (await call(app, { url: '/api/config/diff?platform=nas&repo=okkes/munnimok' })).json();
+    assert.equal(same.published, true);
+    assert.equal(typeof same.publishedAt, 'string');
+    assert.deepEqual(same.envs.map((e) => e.state), ['same', 'same']);
+    const otherChannel = current.channel === 'dev' ? 'latest' : 'dev';
+    saveEnv('nas', { ...current, channel: otherChannel, features: { ...current.features, connectors: !current.features.connectors } });
+    const edited = (await call(app, { url: '/api/config/diff?platform=nas&repo=okkes/munnimok' })).json();
+    assert.deepEqual(edited.envs.map((e) => e.state), ['same', 'changed']);
+    assert.deepEqual(edited.envs[1].changed, [
+      { key: 'channel', from: current.channel, to: otherChannel, secret: false },
+      { key: 'features.connectors', from: current.features.connectors, to: !current.features.connectors, secret: false },
+    ]);
+    assert.deepEqual(edited.envs[1].added, []);
+  } finally {
+    saveEnv('nas', current);
     forgetWizardValues(['GH_PAT'], 'nas');
     gh.cleanup();
   }
@@ -709,7 +777,7 @@ test('registry + ca-trust: anonymous pulls decide the registry verdict (memoized
   let hits = 0;
   const netFetchImpl = async (url, init = {}) => {
     hits++;
-    if (/ghcr\.io\/token/.test(url)) return jsonRes(200, { token: 'anon' });
+    if (/^https:\/\/ghcr\.io\/token(\?|$)/.test(url)) return jsonRes(200, { token: 'anon' });
     if (init.method === 'HEAD') return jsonRes(200, '');
     throw new Error('unexpected');
   };
