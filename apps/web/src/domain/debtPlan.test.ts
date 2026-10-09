@@ -8,9 +8,11 @@ import {
   monthAfter,
   monthTicks,
   orderDebts,
+  raisedPayment,
   sampleMonths,
   sampleStep,
   simulateBaseline,
+  simulateDebtAlone,
   simulatePlan,
   toPlanDebts,
   yearTicks,
@@ -176,6 +178,89 @@ describe('an extra aimed at one debt (user 2026-10-08)', () => {
     const [step] = extraLadder(three, { strategy: 'avalanche', extraByDebtCents: { car: 20_000 } }, [2_500]);
     expect(step.months!).toBeLessThanOrEqual(aimed.months!);
     expect(step.totalInterestCents).toBeLessThan(aimed.totalInterestCents);
+  });
+});
+
+describe('one debt on its own (user 2026-10-09)', () => {
+  it('walks the debt alone: with no extra it is the baseline walk of that debt, the extra shortens it and cuts its interest', () => {
+    const alone = simulateDebtAlone(car);
+    // the baseline's car walk is the same walk, padded with zeros until the last of the three is gone
+    const inBaseline = simulateBaseline(three).balancesByDebt.car;
+    expect(inBaseline.slice(0, alone.balances.length)).toEqual(alone.balances);
+    expect(inBaseline.slice(alone.balances.length).every((v) => v === 0)).toBe(true);
+    expect(alone.months).toBe(simulateBaseline(three).debts.find((d) => d.id === 'car')!.paidOffMonth);
+    expect(alone.monthlyCents).toBe(25_000);
+    expect(alone.stuck).toBe(false);
+    expect(alone.paidCents).toBe(1_000_000 + alone.interestCents);
+    const more = simulateDebtAlone(car, 20_000);
+    expect(more.months!).toBeLessThan(alone.months!);
+    expect(more.interestCents).toBeLessThan(alone.interestCents);
+    expect(more.monthlyCents).toBe(45_000);
+    // month 1: interest, then the minimum and the extra
+    expect(more.balances[1]).toBe(1_000_000 + Math.round((1_000_000 * 5) / 100 / 12) - 45_000);
+  });
+
+  it('nothing from the other debts reaches it: inside the plan a freed minimum shortens the car, alone it stays what its own payment makes it', () => {
+    const plan = simulatePlan(three, { strategy: 'avalanche', extraByDebtCents: { family: 200_000 } });
+    const carInPlan = plan.debts.find((d) => d.id === 'car')!;
+    expect(carInPlan.paidOffMonth!).toBeLessThan(simulateDebtAlone(car).months!);
+    // the alone walk is a function of the one debt and its own extra, nothing else
+    expect(simulateDebtAlone(car, 0)).toEqual(simulateDebtAlone(car));
+    expect(simulateDebtAlone(car, 5_000).balances).not.toEqual(simulateDebtAlone(car).balances);
+    const cardAlone = simulateDebtAlone(card).balances;
+    expect(simulateBaseline(three).balancesByDebt.card.slice(0, cardAlone.length)).toEqual(cardAlone);
+  });
+
+  it('a payment under its interest is stuck alone, and not with enough extra; the horizon caps the walk', () => {
+    const trap = debt({ id: 'trap', balanceCents: 1_000_000, aprPct: 24, minMonthlyCents: 10_000 });
+    expect(simulateDebtAlone(trap)).toMatchObject({ months: null, stuck: true });
+    expect(simulateDebtAlone(trap, 30_000)).toMatchObject({ stuck: false });
+    expect(simulateDebtAlone(trap, 30_000).months).not.toBeNull();
+    expect(simulateDebtAlone(debt({ id: 'slow', balanceCents: 10_000_000, aprPct: 0, minMonthlyCents: 1_000 }), 0, 24).balances).toHaveLength(25);
+    expect(simulateDebtAlone(debt({ id: 'gone', balanceCents: 0 }))).toMatchObject({ months: 0, stuck: false, balances: [0] });
+  });
+});
+
+describe('the rollover switch (user 2026-10-09)', () => {
+  it('off, with no extra, the plan is the baseline whatever the order; the extra still reaches the first debt of the order', () => {
+    const baseline = simulateBaseline(three);
+    for (const s of STRATEGIES) {
+      const off = simulatePlan(three, { strategy: s, rollover: false });
+      expect(off.balances).toEqual(baseline.balances);
+      expect(off.months).toBe(baseline.months);
+      expect(off.totalInterestCents).toBe(baseline.totalInterestCents);
+    }
+    // the family loan's 5 000 stops with it: the card's walk is the baseline's
+    const off = simulatePlan(three, { strategy: 'avalanche', rollover: false });
+    expect(off.balancesByDebt.card).toEqual(baseline.balancesByDebt.card);
+    // with the switch on the family's freed minimum shortens the card
+    const on = simulatePlan(three, { strategy: 'avalanche', rollover: true });
+    expect(on.debts.find((d) => d.id === 'card')!.paidOffMonth!).toBeLessThan(off.debts.find((d) => d.id === 'card')!.paidOffMonth!);
+    // an extra with the rollover off: avalanche aims it at the card
+    const extra = simulatePlan(three, { strategy: 'avalanche', rollover: false, extraMonthlyCents: 10_000 });
+    expect(extra.balancesByDebt.card[1]).toBe(baseline.balancesByDebt.card[1] - 10_000);
+    expect(extra.balancesByDebt.car[1]).toBe(baseline.balancesByDebt.car[1]);
+  });
+
+  it('the comparison and the ladder carry the switch', () => {
+    const baseline = simulateBaseline(three);
+    const compared = compareStrategies(three, { rollover: false });
+    for (const s of STRATEGIES) expect(compared[s].months).toBe(baseline.months);
+    const [step] = extraLadder(three, { strategy: 'avalanche', rollover: false }, [0]);
+    expect(step.months).toBe(baseline.months);
+    expect(step.totalInterestCents).toBe(baseline.totalInterestCents);
+  });
+});
+
+describe('applying an extra to the loan (user 2026-10-09)', () => {
+  it('a monthly loan adds the extra as it is; a weekly one gets a twelfth of fifty-two; every two weeks half of that; none stored becomes the extra', () => {
+    expect(raisedPayment({ paymentCents: 15_000, paymentEvery: 'month' }, 20_000)).toEqual({ paymentCents: 35_000, extraCents: 20_000, perYear: 12 });
+    expect(raisedPayment({ paymentCents: 15_000 }, 20_000)).toEqual({ paymentCents: 35_000, extraCents: 20_000, perYear: 12 });
+    expect(raisedPayment({ paymentCents: 5_000, paymentEvery: 'week' }, 5_000)).toEqual({ paymentCents: 6_154, extraCents: 1_154, perYear: 52 });
+    expect(raisedPayment({ paymentCents: 5_000, paymentEvery: 'week', paymentEveryN: 2 }, 5_000)).toEqual({ paymentCents: 7_308, extraCents: 2_308, perYear: 26 });
+    expect(raisedPayment({ paymentCents: 120_000, paymentEvery: 'year' }, 5_000)).toEqual({ paymentCents: 180_000, extraCents: 60_000, perYear: 1 });
+    expect(raisedPayment({}, 2_500)).toEqual({ paymentCents: 2_500, extraCents: 2_500, perYear: 12 });
+    expect(raisedPayment({ paymentCents: 1_000 }, -5)).toEqual({ paymentCents: 1_000, extraCents: 0, perYear: 12 });
   });
 });
 

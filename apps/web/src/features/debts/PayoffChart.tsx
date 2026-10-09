@@ -8,8 +8,13 @@ import type { ChartTick } from '@/domain/debtPlan';
  * x labels arrive as ticks on the grid, already thinned by the engine,
  * and the ones near an edge anchor inward so no label ever clips. The
  * solid line wears a dot where it lands on zero (or at its last sample
- * when it never does). Decorative: the card around it carries the dates
- * and amounts in text, so the svg is hidden from assistive tech.
+ * when it never does). With an `amount` formatter the scale gets its two
+ * cues — the top of the scale at the top right, zero at the bottom left,
+ * the corners a falling line leaves empty (user 2026-10-09: "graphs
+ * alone say little … I want to see how much we are talking about") —
+ * each with a surface halo, so a flat line crossing one stays readable.
+ * Decorative: the card around it carries the dates and amounts in text,
+ * so the svg is hidden from assistive tech.
  */
 
 const WIDTH = 320;
@@ -18,6 +23,9 @@ const PAD = 7;
 const LABEL_ZONE = 16;
 /** a label within this share of the width from an edge anchors inward */
 const EDGE = 0.08;
+/** the amount cues' inset from the edge */
+const CUE_INSET = 2;
+const CUE_FONT = 9;
 
 export interface PayoffSeries {
   /** one value per grid sample, index 0 today */
@@ -39,16 +47,38 @@ function anchorFor(x: number): 'start' | 'middle' | 'end' {
   return 'middle';
 }
 
+/** one amount cue on the scale, haloed in the surface colour so a line under it never swallows it */
+function AmountCue({ x, y, anchor, text, testId }: Readonly<{ x: number; y: number; anchor: 'start' | 'end'; text: string; testId?: string }>) {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor={anchor}
+      fontSize={CUE_FONT}
+      fill="var(--m-ink-4)"
+      stroke="var(--m-surface)"
+      strokeWidth={3}
+      paintOrder="stroke"
+      data-testid={testId}
+    >
+      {text}
+    </text>
+  );
+}
+
 export function PayoffChart({
   series,
   ticks,
   height = 120,
   testId,
+  amount,
 }: Readonly<{
   series: readonly PayoffSeries[];
   ticks: readonly ChartTick[];
   height?: number;
   testId?: string;
+  /** words an amount of cents for the scale's two cues; none = no cues */
+  amount?: (cents: number) => string;
 }>) {
   const n = Math.max(0, ...series.map((s) => s.values.length));
   if (n < 2) return null;
@@ -83,6 +113,12 @@ export function PayoffChart({
           </g>
         );
       })}
+      {amount && (
+        <>
+          <AmountCue x={WIDTH - CUE_INSET} y={y(top) + CUE_FONT + 1} anchor="end" text={amount(top)} testId={testId ? `${testId}-top` : undefined} />
+          <AmountCue x={CUE_INSET} y={zero - 3} anchor="start" text={amount(0)} testId={testId ? `${testId}-zero` : undefined} />
+        </>
+      )}
       {ticks.map((tick) => (
         <text
           key={`t${tick.index}`}

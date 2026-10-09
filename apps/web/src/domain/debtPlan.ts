@@ -1,5 +1,5 @@
 import type { AccountRow } from '@/db/types';
-import { monthlyPaymentCents } from './debts';
+import { monthlyPaymentCents, paymentsPerYear } from './debts';
 
 /**
  * The payoff planner's engine (#413, 2026-10-01) — pure, cents, monthly.
@@ -17,7 +17,14 @@ import { monthlyPaymentCents } from './debts';
  * capped minimum left over (the rollover every planner assumes) — goes to
  * the first debt of the order that still owes, then the next. The
  * baseline the planner compares against pays the minimums only, nothing
- * rolls over: what happens when nothing changes.
+ * rolls over: what happens when nothing changes. The rollover is a
+ * switch on the screen (user 2026-10-09: "I haven't made any change and
+ * yet somehow it differs from minimums — why is it being paid
+ * instantly?"): off, with no extras, the plan IS the baseline.
+ *
+ * A single debt's own picture comes from simulateDebtAlone: that debt
+ * walked by itself, nothing from the others (user 2026-10-09: "when I
+ * change one, it impacts the other graphs — that should not happen").
  */
 
 export type PayoffStrategy = 'avalanche' | 'snowball' | 'tsunami';
@@ -81,9 +88,9 @@ export interface PlanResult {
   /** total owed after each month; index 0 is today */
   balances: number[];
   /**
-   * every debt's balance after each month, by id, index 0 today — the
-   * per-debt charts and the total chart read the same walk, so a change
-   * to one debt shows on both (user 2026-10-08)
+   * every debt's balance after each month, by id, index 0 today — how
+   * each debt fares INSIDE the combined plan (the per-debt cards do not
+   * read this since 2026-10-09: they walk their debt alone)
    */
   balancesByDebt: Record<string, number[]>;
   /** in payoff order */
@@ -226,6 +233,63 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
 /** what happens when nothing changes: minimums only, nothing rolls over */
 export const simulateBaseline = (debts: readonly PlanDebt[], maxMonths?: number): PlanResult =>
   simulatePlan(debts, { strategy: 'avalanche', rollover: false, maxMonths });
+
+/** one debt walked by itself */
+export interface AloneResult {
+  /** its balance after each month, index 0 today */
+  balances: number[];
+  /** 1-based month it reached zero; null when it never did */
+  months: number | null;
+  interestCents: number;
+  paidCents: number;
+  /** its payment does not beat its interest — it never shrinks */
+  stuck: boolean;
+  /** what it pays per month: its minimum and the extra aimed at it */
+  monthlyCents: number;
+}
+
+/**
+ * one debt on its own (user 2026-10-09: "the individual loan … should
+ * only focus on itself"): its minimum plus the extra aimed at it, every
+ * month, nothing else — no strategy pool, no freed minimum of another
+ * debt rolling in — so a change on one debt never moves another's card;
+ * the combined plan (simulatePlan) is where the debts meet
+ */
+export function simulateDebtAlone(debt: PlanDebt, extraMonthlyCents = 0, maxMonths?: number): AloneResult {
+  const extra = Math.max(0, Math.round(extraMonthlyCents));
+  const r = simulatePlan([debt], { strategy: 'avalanche', rollover: false, extraByDebtCents: { [debt.id]: extra }, maxMonths });
+  return {
+    balances: r.balances,
+    months: r.months,
+    interestCents: r.totalInterestCents,
+    paidCents: r.totalPaidCents,
+    stuck: r.debts[0]?.stuck ?? false,
+    monthlyCents: Math.max(0, debt.minMonthlyCents) + extra,
+  };
+}
+
+/** a loan's payment raised by a monthly extra, in the loan's own cadence */
+export interface RaisedPayment {
+  /** the payment to store: what it is now plus the extra per payment */
+  paymentCents: number;
+  /** the monthly extra as an amount per payment of the loan's cadence */
+  extraCents: number;
+  /** payments a year — 12 is monthly, where the extra needs no converting */
+  perYear: number;
+}
+
+/**
+ * "Apply to the loan" (user 2026-10-09): the extra the planner counts
+ * per month lands on the loan's stored payment, which is per week, month
+ * or year (paymentEvery × paymentEveryN) — a €50-a-month extra on a
+ * weekly payer is €11.54 a week; a loan without a stored payment gets
+ * the extra as its payment
+ */
+export function raisedPayment(loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN'>, extraMonthlyCents: number): RaisedPayment {
+  const perYear = paymentsPerYear(loan.paymentEvery, loan.paymentEveryN);
+  const extraCents = Math.max(0, Math.round((Math.max(0, extraMonthlyCents) * 12) / perYear));
+  return { paymentCents: Math.max(0, loan.paymentCents ?? 0) + extraCents, extraCents, perYear };
+}
 
 /** the three orders side by side, same extras (the per-debt ones included) */
 export function compareStrategies(debts: readonly PlanDebt[], options: Omit<PlanOptions, 'strategy'>): Record<PayoffStrategy, PlanResult> {
