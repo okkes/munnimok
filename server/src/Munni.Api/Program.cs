@@ -231,6 +231,8 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
     await TxMetaOverlayRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // the 2026-10-07 derived-duplicate repair: the copies a re-keyed ING id left behind, once per database
     await Munni.Api.Connectors.DerivedDuplicateRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
+    // the 2026-10-09 needs-review repair: rows a prediction alone marked reviewed go back to the review, once per database
+    await NeedsReviewRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
 }
 
 // handled errors keep their CORS headers — unhandled exceptions wipe the
@@ -244,8 +246,6 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async http =>
 app.UseCors();
 app.UseAuthentication();
 // after authentication so the partition key is the OIDC sub, not the IP
-    // the 2026-10-09 needs-review repair: rows a prediction alone marked reviewed go back to the review, once per database
-    await NeedsReviewRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
 app.UseRateLimiter();
 app.UseAuthorization();
 app.Use(async (http, next) =>

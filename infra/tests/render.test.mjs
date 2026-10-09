@@ -157,7 +157,7 @@ test('environment stack on nas: env-suffixed services with plain in-stack aliase
   const web = envOf(block(compose, 'web-prod'));
   assert.deepEqual(web, {
     MUNNI_API_URL: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`, MUNNI_LOGTO_APP_ID: '${WEB_LOGTO_APP_ID}',
-    MUNNI_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_GLITCHTIP_DSN: '${WEB_GLITCHTIP_DSN}', MUNNI_CHANNEL: 'production', MUNNI_NATIVE_SCHEME: 'munni-prod-nas', MUNNI_PUBLIC_ORIGIN: `https://munni-prod-nas.${DOMAIN}`,
+    MUNNI_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`, MUNNI_GLITCHTIP_DSN: '${WEB_GLITCHTIP_DSN}', MUNNI_TRACES_SAMPLE_RATE: '"0.2"', MUNNI_CHANNEL: 'production', MUNNI_NATIVE_SCHEME: 'munni-prod-nas', MUNNI_PUBLIC_ORIGIN: `https://munni-prod-nas.${DOMAIN}`,
     // app links: the container renders the two /.well-known files from these — the team id rides the env file
     MUNNI_ANDROID_PACKAGE: 'app.munni.nas.prod', MUNNI_ANDROID_CERT_SHA256: '', MUNNI_IOS_BUNDLE_ID: 'app.munni.nas.prod', MUNNI_APPLE_TEAM_ID: '${APPLE_TEAM_ID}',
   });

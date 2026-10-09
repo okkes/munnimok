@@ -526,6 +526,10 @@ export function useConnectionKeepAlive(): void {
   const { store: storage, repo, engine } = useData();
   const ran = useRef(false);
   const lastAuto = useRef(0);
+  // user 2026-10-09: receipts meet the transactions when the rows land — a
+  // sync cycle that brought new ones asks the matcher for a pass, so the
+  // proposals stand before the review opens (the same headless mount)
+  useReceiptMatchTriggers();
 
   useEffect(() => {
     if (ran.current || !connectorsAvailable() || !navigator.onLine) return;
@@ -550,7 +554,3 @@ export function useConnectionKeepAlive(): void {
     });
   }, [engine, storage, repo]);
 }
-  // user 2026-10-09: receipts meet the transactions when the rows land — a
-  // sync cycle that brought new ones asks the matcher for a pass, so the
-  // proposals stand before the review opens (the same headless mount)
-  useReceiptMatchTriggers();

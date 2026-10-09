@@ -147,13 +147,6 @@ machine app behind Logto's built-in `Logto Management API access` role —
 account deletion removes the Logto user, and the invitations are minted
 through it.
 
-Bootstrap also applies the token policy per application and converges it on
-the existing ones (the PATCH carries the whole metadata): the native app's
-refresh tokens never rotate and live 90 days (`rotateRefreshToken: false`,
-`refreshTokenTtlInDays: 90` — the phone loses a rotated token when iOS
-suspends the app and Logto's reuse detection then kills the grant, prod logs
-2026-10-08; docs/native-auth-popupless.md), the SPAs keep Logto's rotation,
-and the Google connector asks which account (`prompts: ['select_account']`).
 ## iOS: TestFlight renewal
 
 A TestFlight build expires 90 days after its upload, so an environment whose
@@ -177,3 +170,10 @@ Play internal-testing release never expires. A scheduled workflow runs from
 the default branch only, so the file has to be released to master, and GitHub
 pauses schedules after 60 days without a push.
 
+Bootstrap also applies the token policy per application and converges it on
+the existing ones (the PATCH carries the whole metadata): the native app's
+refresh tokens never rotate and live 90 days (`rotateRefreshToken: false`,
+`refreshTokenTtlInDays: 90` — the phone loses a rotated token when iOS
+suspends the app and Logto's reuse detection then kills the grant, prod logs
+2026-10-08; docs/native-auth-popupless.md), the SPAs keep Logto's rotation,
+and the Google connector asks which account (`prompts: ['select_account']`).
