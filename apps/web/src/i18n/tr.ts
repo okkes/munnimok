@@ -1315,7 +1315,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.historyHideCount': '{n} banka/içe aktarılmış işlem gizlenecek — kayıtlı kalırlar ve tarihi geriye alırsan geri gelirler.',
   'space.historyDeleteCount': '{n} elle girilen işlem yeni başlangıçtan ÖNCE ve kalıcı olarak silinecek.',
   'space.historyNoImpact': 'Bu taşımadan hiçbir kayıtlı işlem etkilenmiyor.',
-  'space.historySurfaceCount': '{n} kayıtlı işlem görünür olacak — bazıları yeniden inceleme isteyebilir.',
+  'space.historySurfaceCount': '{n} kayıtlı işlem görünür olacak ve incelemeden geçecek — daha önce onayladıkların onaylı kalır.',
   'space.historyStepHint': 'Büyük sıçramalar inceleme destesini doldurur — ayda bir adım geri gitmeyi düşün.',
   'space.historyApply': 'Yeni başlangıç tarihini uygula',
   'txform.beforeStart': 'Bu tarih alanın başlangıcından ({date}) önce.',

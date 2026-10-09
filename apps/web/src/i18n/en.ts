@@ -1313,7 +1313,7 @@ export const en = {
   'space.historyHideCount': '{n} bank/imported transactions will hide — they stay stored and come back if you move the date older.',
   'space.historyDeleteCount': '{n} manual transactions are BEFORE the new start and will be deleted for good.',
   'space.historyNoImpact': 'No stored transactions are affected by this move.',
-  'space.historySurfaceCount': '{n} stored transactions will surface — some may ask for review again.',
+  'space.historySurfaceCount': '{n} stored transactions will surface and go through the review — the ones you confirmed before stay confirmed.',
   'space.historyStepHint': 'Big jumps flood the review deck — consider stepping back one month at a time.',
   'space.historyApply': 'Apply new start date',
   'txform.beforeStart': 'This date is before the space starts ({date}).',

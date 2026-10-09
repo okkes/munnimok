@@ -83,7 +83,11 @@ export async function pairWithExistingRow(
   const account = await store.get('account', picked.accountId);
   const stamp = account?.deleted === 0 ? accountStamp(account.type) : undefined;
   // #133 r5: an unstamped picked row files by ITS counter's kind (the
-  // source account) — the bijection holds on both sides of the pair
+  // source account) — the bijection holds on both sides of the pair.
+  // The picked row leaves the review (user 2026-10-09 rule kept here):
+  // every caller is the PERSON pointing at this exact row — the review
+  // card's and the detail's counter-transaction pick, the recurring
+  // match sheet — so its category is their decision, not a machine's.
   const sourceType = (await store.get('account', source.accountId))?.type;
   await writeTxTransform(repo, picked, {
     linkedAccountId: source.accountId,

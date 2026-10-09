@@ -157,6 +157,10 @@ export async function planMirrorChange(
             catId:
               (stamp ? stampMovementSub(stamp, mirrorAmount) : undefined) ??
               (sourceType ? movementCatFor(sourceType, mirrorAmount) : autoSubFor('transfer', mirrorAmount)),
+            // the mint is born reviewed (user 2026-10-09 rule weighed): it is
+            // no bank row and nobody predicted it — the app's own counter
+            // leg, its category dictated by the stamp, living and dying with
+            // the SOURCE row's link; the source is what the deck reviews.
             needsReview: 0 as const,
             linkedAccountId: source.accountId,
             transferPeerId: source.id,

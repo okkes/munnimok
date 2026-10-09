@@ -1315,7 +1315,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.historyHideCount': '{n} bank-/geïmporteerde transacties verdwijnen uit beeld — ze blijven opgeslagen en komen terug als je de datum ouder zet.',
   'space.historyDeleteCount': '{n} handmatige transacties liggen VÓÓR de nieuwe start en worden definitief verwijderd.',
   'space.historyNoImpact': 'Geen opgeslagen transacties worden door deze verplaatsing geraakt.',
-  'space.historySurfaceCount': '{n} opgeslagen transacties komen tevoorschijn — sommige vragen mogelijk opnieuw om review.',
+  'space.historySurfaceCount': '{n} opgeslagen transacties komen tevoorschijn en gaan door de review — wat je eerder bevestigde blijft bevestigd.',
   'space.historyStepHint': 'Grote sprongen overspoelen de review-stapel — overweeg één maand per keer terug te stappen.',
   'space.historyApply': 'Nieuwe startdatum toepassen',
   'txform.beforeStart': 'Deze datum ligt vóór de start van de ruimte ({date}).',

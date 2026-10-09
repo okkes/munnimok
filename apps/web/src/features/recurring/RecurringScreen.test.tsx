@@ -157,7 +157,8 @@ describe('RecurringScreen (demo identity)', () => {
       const row = await db.transactions.get('rt1');
       expect(row?.catId).toBe('savingDeposit');
       expect(row?.linkedAccountId).toBe('demo_save');
-      expect(row?.needsReview).toBe(0);
+      // the person edited the RECURRING, not this row: it keeps waiting in the review (user 2026-10-09)
+      expect(row?.needsReview).toBe(1);
       // manual counterparty: the choke minted the pot's own leg
       const mirror = await db.transactions.get(mirrorTxId('rt1'));
       expect(mirror?.accountId).toBe('demo_save');

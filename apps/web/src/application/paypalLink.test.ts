@@ -29,14 +29,15 @@ describe('PayPal funding auto-link (PP1 rung 2)', () => {
     return { store, repo };
   }
 
-  it('pairs the funding debit into a reviewed transfer to the PayPal account', async () => {
+  it('pairs the funding debit into a transfer to the PayPal account that still waits in the review', async () => {
     const { store, repo } = await seeded();
     expect(await linkPaypalFunding(store, repo, SPACE)).toBe(1);
 
-    // counted once: the bank side became a transfer, the PayPal side kept the spend
+    // counted once: the bank side became a transfer, the PayPal side kept the spend;
+    // the machine linked it, so the debit keeps waiting in the deck (user 2026-10-09)
     expect(await store.get('transaction', 'bank-1')).toMatchObject({
       linkedAccountId: 'acc-pp',
-      needsReview: 0,
+      needsReview: 1,
     });
     expect(await store.get('transaction', 'pp-1')).toMatchObject({ needsReview: 1 });
     expect(await store.get('transaction', 'bank-2')).toMatchObject({ needsReview: 0 });

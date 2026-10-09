@@ -532,6 +532,11 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     /// always outranks it. (2026-10-05: with the server's live clock the first
     /// overlay the new op-id scheme wrote buried a whole evening's
     /// categorisations; <see cref="TxMetaOverlayRepair"/> put them back.)
+    /// The prediction is a SUGGESTION: every fetched row waits in the review
+    /// with it prefilled, however sure the keyword rules are — only the person
+    /// takes a row out of the review (user 2026-10-09; a sure prediction used to
+    /// mark the row reviewed and 56 of 105 surfaced rows never reached the deck;
+    /// <see cref="NeedsReviewRepair"/> put the earlier marks back to review).
     /// </summary>
     private static SyncOpDto OverlayOp(string spaceId, TransactionRow row)
     {
@@ -541,7 +546,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             ["txId"] = Json(row.EntityId),
             ["catId"] = Json(predicted?.CatId ?? "uncategorized"),
             ["txType"] = Json(predicted?.TxType ?? (row.Direction == CreditDirection ? "income" : "expense")),
-            ["needsReview"] = Json(predicted is null ? 1 : 0),
+            ["needsReview"] = Json(1),
         };
         return new SyncOpDto(ImportIds.OpId($"connmeta:{spaceId}:{row.EntityId}"), spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, ServerHlc.Floor);
     }

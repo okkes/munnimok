@@ -1327,10 +1327,14 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
   it('#228 feedback (user ss): the settled entry pins READ-ONLY in the editor, and a special still claims the whole', async () => {
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-settled-sx'), { trackOutbox: false });
-    // a settled Set-aside expense: −52.40 with €20.00 reimbursed
+    // a settled Set-aside expense: −52.40 with €20.00 reimbursed, its pot
+    // named (2026-10-09: a bare special used to pass here only by racing
+    // the #221 boot heal that links it to the default pot — the live
+    // queries now let that burst land before the editor opens, so the
+    // row carries its counter from the start, as every Set-aside row does)
     await repo.upsert('transaction', DEMO_SPACE_ID, 'sx1', {
       accountId: 'demo_main', date: '2026-07-03', amountCents: -5240, currency: 'EUR',
-      merchant: 'Vueling', catId: 'savingDeposit', needsReview: 0,
+      merchant: 'Vueling', catId: 'savingDeposit', needsReview: 0, linkedAccountId: 'demo_save',
       reimbursements: [{ txId: 'dm1', amountCents: 2000 }],
       cats: [{ catId: 'savingDeposit', amountCents: 3240 }, { catId: 'reimbursed', amountCents: 2000 }],
     });
@@ -1352,8 +1356,12 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('part-cat-one-special')).toBeTruthy();
 
     // a REGULAR pick frees the add door (regular + reimbursement is the
-    // one legal mix); the picker offers NO specials in the spread
+    // one legal mix); the picker offers NO specials in the spread. The
+    // pot narrows the picker to its family first (#322) — the clear door
+    // in the picker detaches it and the whole catalog appears
+    expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save');
     fireEvent.click(screen.getByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-clear-counter'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
     await waitFor(() => expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-add'));
