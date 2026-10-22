@@ -50,7 +50,7 @@ RUN dotnet publish src/connectors/Connector.Agent/Connector.Agent.csproj \
 # Tag tracks the Microsoft.Playwright version in Directory.Packages.props.
 # The driver and the browser bundles are versioned together; a drift
 # between them fails at launch, not at build.
-FROM mcr.microsoft.com/playwright/dotnet:v1.61.0-noble
+FROM mcr.microsoft.com/playwright/dotnet:v1.64.1-noble
 
 # The section is ConnectorAgent and the properties are the full
 # ...Directory names — a shorter spelling binds to nothing and the agent
