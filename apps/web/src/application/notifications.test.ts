@@ -3,7 +3,17 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
-import { appendNotification, readInbox, stampNotifSeen, unreadNotifCount } from './notifications';
+import { Repo } from '@/db/repo';
+import { HlcClock } from '@/sync/hlc';
+import {
+  appendNotification,
+  clearInboxUpTo,
+  notificationTitle,
+  readInbox,
+  readInboxClearedAt,
+  stampNotifSeen,
+  unreadNotifCount,
+} from './notifications';
 
 describe('notification inbox (arc 6)', () => {
   const stores: DexieBackend[] = [];
@@ -50,5 +60,41 @@ describe('notification inbox (arc 6)', () => {
     await new Promise((r) => setTimeout(r, 5));
     await appendNotification(store, 'debtRate', { name: 'Car loan' });
     expect(await unreadNotifCount(store)).toBe(1);
+  });
+
+  it('#580: a clear drops what came before its moment, keeps what came after, and never moves back', async () => {
+    const store = fresh();
+    await appendNotification(store, 'debtRate', { name: 'Car loan' });
+    await new Promise((r) => setTimeout(r, 5));
+    const moment = new Date().toISOString();
+    await new Promise((r) => setTimeout(r, 5));
+    await appendNotification(store, 'digest', { n: '2' });
+
+    expect(await clearInboxUpTo(store, moment)).toBe(true);
+    expect((await readInbox(store)).map((e) => e.kind)).toEqual(['digest']);
+    expect(await readInboxClearedAt(store)).toBe(moment);
+    // a device reporting an older clear changes nothing
+    expect(await clearInboxUpTo(store, '2020-01-01T00:00:00.000Z')).toBe(false);
+    expect(await readInbox(store)).toHaveLength(1);
+  });
+
+  it('#580: a cleared once-only notice never comes back — a new one still arrives', async () => {
+    const store = fresh();
+    await appendNotification(store, 'whatsnew', { version: '5.20.0' }, 'v5.20.0');
+    await clearInboxUpTo(store, new Date(Date.now() + 1000).toISOString());
+    // the bell asks again on the next open while the release is unseen
+    await appendNotification(store, 'whatsnew', { version: '5.20.0' }, 'v5.20.0');
+    expect(await readInbox(store)).toHaveLength(0);
+    await appendNotification(store, 'whatsnew', { version: '5.21.0' }, 'v5.21.0');
+    expect((await readInbox(store)).map((e) => e.payload?.version)).toEqual(['5.21.0']);
+  });
+
+  it('#551: a notification about a space is titled with its name — munni without one', async () => {
+    const store = fresh();
+    const repo = new Repo(store, new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('space', 's1', 's1', { name: 'Household', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    expect(await notificationTitle(store, 's1')).toBe('Household');
+    expect(await notificationTitle(store, 'gone')).toBe('munni');
+    expect(await notificationTitle(store, undefined)).toBe('munni');
   });
 });

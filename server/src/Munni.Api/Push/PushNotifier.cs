@@ -73,10 +73,13 @@ public sealed class WebPushSender(IConfiguration config) : IPushSender
 /// </summary>
 public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<PushNotifier> logger)
 {
+    /// <summary>"n new transactions arrived" to the members who keep the space's notifications on (#549), the space
+    /// named (#551)</summary>
     public async Task NotifyNewTransactionsAsync(string spaceId, int count, CancellationToken ct)
     {
-        var userIds = await db.SpaceMembers.Where(m => m.SpaceId == spaceId).Select(m => m.UserId).ToListAsync(ct);
-        await SendToUsersAsync(userIds, new { type = "new-transactions", spaceId, count }, ct);
+        var userIds = await db.SpaceMembers.Where(m => m.SpaceId == spaceId && m.Notify).Select(m => m.UserId).ToListAsync(ct);
+        if (userIds.Count == 0) return;
+        await SendToUsersAsync(userIds, new { type = "new-transactions", spaceId, spaceName = await SpaceNameAsync(spaceId, ct), count }, ct);
     }
 
     /// <summary>"{fromName} sent you a friend request"</summary>
@@ -91,22 +94,67 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
     public Task NotifySpaceInviteAsync(Guid toUserId, string? fromName, string? spaceName, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "space-invite", fromName, spaceName }, ct);
 
-    /// <summary>"{fromName} joined {spaceName}" — closes the inviter's loop</summary>
-    public Task NotifySpaceJoinAsync(Guid toUserId, string? fromName, string? spaceName, CancellationToken ct) =>
-        SendToUsersAsync([toUserId], new { type = "space-join", fromName, spaceName }, ct);
+    /// <summary>"{fromName} joined {spaceName}" — closes the inviter's loop, unless the space's notifications are off
+    /// for them (#549); the tap opens that space's members (#551)</summary>
+    public async Task NotifySpaceJoinAsync(Guid toUserId, string? fromName, string spaceId, string? spaceName, CancellationToken ct)
+    {
+        if (!await WantsAsync(toUserId, spaceId, ct)) return;
+        await SendToUsersAsync([toUserId], new { type = "space-join", fromName, spaceId, spaceName }, ct);
+    }
 
-    /// <summary>#172/#173: "You were removed from {spaceName} by {fromName}" — to the removed member</summary>
+    /// <summary>#172/#173: "You were removed from {spaceName} by {fromName}" — to the removed member, whose choice
+    /// for that space left with the membership</summary>
     public Task NotifyMemberRemovedAsync(Guid toUserId, string? spaceName, string? actorName, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "member-removed", fromName = actorName, spaceName }, ct);
 
-    /// <summary>#172: "Your role in {spaceName} is now {role}" — to the affected member</summary>
-    public Task NotifyMemberRoleChangedAsync(Guid toUserId, string? spaceName, string role, CancellationToken ct) =>
-        SendToUsersAsync([toUserId], new { type = "member-role", spaceName, role }, ct);
+    /// <summary>#172: "Your role in {spaceName} is now {role}" — to the affected member, unless the space's
+    /// notifications are off for them (#549)</summary>
+    public async Task NotifyMemberRoleChangedAsync(Guid toUserId, string spaceId, string? spaceName, string role, CancellationToken ct)
+    {
+        if (!await WantsAsync(toUserId, spaceId, ct)) return;
+        await SendToUsersAsync([toUserId], new { type = "member-role", spaceId, spaceName, role }, ct);
+    }
 
     /// <summary>"Test notification" to every device of ONE user — the Settings row that proves push works end to
-    /// end (user request 2026-09-28); returns how many devices were tried</summary>
-    public Task<int> NotifyTestAsync(Guid userId, CancellationToken ct) =>
-        SendToUsersAsync([userId], new { type = "test" }, ct);
+    /// end (user request 2026-09-28); sent from a space's settings it names that space (#551). Returns how many
+    /// devices were tried.</summary>
+    public async Task<int> NotifyTestAsync(Guid userId, string? spaceId, CancellationToken ct)
+    {
+        var member = spaceId is { Length: > 0 and <= 64 }
+            && await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == userId, ct);
+        return member
+            ? await SendToUsersAsync([userId], new { type = "test", spaceId, spaceName = await SpaceNameAsync(spaceId!, ct) }, ct)
+            : await SendToUsersAsync([userId], new { type = "test" }, ct);
+    }
+
+    private Task<bool> WantsAsync(Guid userId, string spaceId, CancellationToken ct) =>
+        db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == userId && m.Notify, ct);
+
+    /// <summary>The name off the space's own materialized row (the server relays it, it never owns one); null when
+    /// the row is missing or unreadable — the device then says "munni".</summary>
+    private async Task<string?> SpaceNameAsync(string spaceId, CancellationToken ct)
+    {
+        var json = await db.EntityRows
+            .Where(r => r.SpaceId == spaceId && r.Entity == "space" && r.EntityId == spaceId && !r.Deleted)
+            .Select(r => r.DataJson)
+            .FirstOrDefaultAsync(ct);
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var name = doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("name", out var value)
+                && value.ValueKind == JsonValueKind.String
+                ? value.GetString()?.Trim()
+                : null;
+            // a push payload is small (web push caps it at 4 kB) — a long name is cut, never the push
+            return string.IsNullOrEmpty(name) ? null : name[..Math.Min(name.Length, 80)];
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private async Task<int> SendToUsersAsync(IReadOnlyCollection<Guid> userIds, object payload, CancellationToken ct)
     {

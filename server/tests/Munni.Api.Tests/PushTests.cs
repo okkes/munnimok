@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -378,5 +379,150 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Contains(spaceId, sent.Payload);
         // dead subscription pruned
         Assert.Empty(await db.PushSubscriptions.Where(s => s.UserId == userB.Id).ToListAsync());
+    }
+
+    private static HttpClient ClientIn(WebApplicationFactory<Program> factory, string sub)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
+        return client;
+    }
+
+    private sealed record OffList(List<string> Off);
+    private sealed record ClearedMoment(DateTimeOffset? ClearedAt);
+
+    [Fact]
+    public async Task Each_member_chooses_a_spaces_notifications_and_the_new_transactions_push_names_the_space()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sender = new FakeSender();
+        using var factory = _factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IPushSender>(sender)));
+        var alice = ClientIn(factory, $"sn-a-{suffix}");
+        var bob = ClientIn(factory, $"sn-b-{suffix}");
+        var aliceId = (await alice.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        await alice.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/alice", "p", "a"));
+        await bob.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/bob", "p", "a"));
+
+        var spaceId = $"space_sn_{suffix}";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = aliceId, Role = SpaceRoles.Owner });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = bobId, Role = SpaceRoles.Reader });
+            db.EntityRows.Add(new EntityRow { SpaceId = spaceId, Entity = "space", EntityId = spaceId, DataJson = """{"name":"Household"}""", FieldVersionsJson = "{}" });
+            await db.SaveChangesAsync();
+        }
+
+        // on unless switched off — and a reader may switch it too: it is their own choice, not the space's data
+        Assert.Empty((await bob.GetFromJsonAsync<OffList>("/me/space-notifications"))!.Off);
+        Assert.True((await bob.PutAsJsonAsync($"/me/space-notifications/{spaceId}", new SpaceNotifyRequest(false))).IsSuccessStatusCode);
+        Assert.Equal(spaceId, Assert.Single((await bob.GetFromJsonAsync<OffList>("/me/space-notifications"))!.Off));
+        Assert.Empty((await alice.GetFromJsonAsync<OffList>("/me/space-notifications"))!.Off);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await new PushNotifier(db, sender, NullLogger<PushNotifier>.Instance).NotifyNewTransactionsAsync(spaceId, 2, CancellationToken.None);
+        }
+        var sent = Assert.Single(sender.Sent);
+        Assert.Equal(aliceId, sent.UserId);
+        Assert.Contains("\"spaceName\":\"Household\"", sent.Payload);
+
+        // switched back on, Bob hears the next one too
+        Assert.True((await bob.PutAsJsonAsync($"/me/space-notifications/{spaceId}", new SpaceNotifyRequest(true))).IsSuccessStatusCode);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await new PushNotifier(db, sender, NullLogger<PushNotifier>.Instance).NotifyNewTransactionsAsync(spaceId, 1, CancellationToken.None);
+        }
+        Assert.Contains(sender.Sent, s => s.UserId == bobId);
+
+        // only one's own memberships: a stranger's space answers 404, a malformed id 400
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PutAsJsonAsync($"/me/space-notifications/space_other_{suffix}", new SpaceNotifyRequest(false))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await bob.PutAsJsonAsync("/me/space-notifications/bad%20id", new SpaceNotifyRequest(false))).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_join_or_a_role_change_stays_quiet_for_a_member_who_switched_the_space_off()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var spaceId = $"space_jr_{suffix}";
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var owner = new User { Id = Guid.NewGuid(), Sub = $"jr-o-{suffix}" };
+        var quiet = new User { Id = Guid.NewGuid(), Sub = $"jr-q-{suffix}" };
+        db.Users.AddRange(owner, quiet);
+        db.Spaces.Add(new Space { Id = spaceId });
+        db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = owner.Id, Role = SpaceRoles.Owner });
+        db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = quiet.Id, Role = SpaceRoles.Contributor, Notify = false });
+        db.PushSubscriptions.Add(new PushSubscriptionRow { Id = Guid.NewGuid(), UserId = owner.Id, Endpoint = $"https://p/{suffix}/o", P256dh = "k", Auth = "a" });
+        db.PushSubscriptions.Add(new PushSubscriptionRow { Id = Guid.NewGuid(), UserId = quiet.Id, Endpoint = $"https://p/{suffix}/q", P256dh = "k", Auth = "a" });
+        await db.SaveChangesAsync();
+
+        var sender = new FakeSender();
+        var notifier = new PushNotifier(db, sender, NullLogger<PushNotifier>.Instance);
+        await notifier.NotifySpaceJoinAsync(quiet.Id, "Bob", spaceId, "Jr Space", CancellationToken.None);
+        await notifier.NotifyMemberRoleChangedAsync(quiet.Id, spaceId, "Jr Space", "reader", CancellationToken.None);
+        Assert.Empty(sender.Sent);
+
+        // the space's id rides along, so a tap opens that space (#551)
+        await notifier.NotifySpaceJoinAsync(owner.Id, "Bob", spaceId, "Jr Space", CancellationToken.None);
+        await notifier.NotifyMemberRoleChangedAsync(owner.Id, spaceId, "Jr Space", "contributor", CancellationToken.None);
+        Assert.Equal(2, sender.Sent.Count);
+        Assert.All(sender.Sent, s => Assert.Contains($"\"spaceId\":\"{spaceId}\"", s.Payload));
+
+        // a removal still reaches them: the choice left with the membership
+        await notifier.NotifyMemberRemovedAsync(quiet.Id, "Jr Space", "Alice", CancellationToken.None);
+        Assert.Contains(sender.Sent, s => s.UserId == quiet.Id && s.Payload.Contains("\"type\":\"member-removed\""));
+    }
+
+    [Fact]
+    public async Task A_test_push_sent_from_a_space_names_it_and_only_ones_own_space()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sender = new FakeSender();
+        using var factory = _factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IPushSender>(sender)));
+        var client = ClientIn(factory, $"tp-{suffix}");
+        var me = (await client.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        await client.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/tp", "p", "a"));
+        var spaceId = $"space_tp_{suffix}";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = me, Role = SpaceRoles.Owner });
+            db.EntityRows.Add(new EntityRow { SpaceId = spaceId, Entity = "space", EntityId = spaceId, DataJson = """{"name":"Trip"}""", FieldVersionsJson = "{}" });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True((await client.PostAsync($"/me/push-subscriptions/test?spaceId={spaceId}", null)).IsSuccessStatusCode);
+        Assert.Contains("\"spaceName\":\"Trip\"", Assert.Single(sender.Sent).Payload);
+
+        // someone else's space is never named
+        Assert.True((await client.PostAsync($"/me/push-subscriptions/test?spaceId=space_x_{suffix}", null)).IsSuccessStatusCode);
+        Assert.DoesNotContain("space_x_", sender.Sent[1].Payload);
+    }
+
+    [Fact]
+    public async Task Clearing_notifications_moves_one_moment_forward_never_back_and_never_past_the_server_clock()
+    {
+        var client = ClientFor($"clr-{Guid.NewGuid():N}");
+        Assert.Null((await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt);
+
+        var first = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(first));
+        Assert.Equal(first, (await put.Content.ReadFromJsonAsync<ClearedMoment>())!.ClearedAt);
+
+        // a device that cleared earlier, reporting late, changes nothing
+        await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(first.AddMinutes(-5)));
+        Assert.Equal(first, (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt);
+
+        // a clock running ahead is held to the server's own
+        await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(DateTimeOffset.UtcNow.AddDays(2)));
+        var held = (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt!.Value;
+        Assert.True(held <= DateTimeOffset.UtcNow && held > first);
     }
 }

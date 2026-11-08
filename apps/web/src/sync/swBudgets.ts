@@ -106,10 +106,11 @@ export async function collectBudgetAlerts(
       ? texts.over.replace('{name}', budget.name).replace('{amount}', fmtCents(-status.leftCents, currency, safeLang))
       : texts.warn.replace('{name}', budget.name).replace('{pct}', String(Math.round(status.ratio * 100)));
     alerts.push({
-      title: texts.title,
+      // #551: the space it happened in is the title, and the tap opens the budget in that space
+      title: space?.name?.trim() || texts.title,
       body,
       tag: `budget-${budget.id}-${status.period.start}`,
-      url: `./#/budgets/${budget.id}`,
+      url: `./#/budgets/${budget.id}?space=${spaceId}`,
     });
   }
   return alerts;

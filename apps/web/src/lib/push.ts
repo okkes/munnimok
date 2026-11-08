@@ -76,9 +76,11 @@ export async function enablePush(vapidPublicKey: string): Promise<boolean> {
   return response.ok;
 }
 
-/** the Settings row's test: the API pushes to every registered device of this user — how many, or null when it failed */
-export async function sendTestPush(): Promise<number | null> {
-  const response = await apiFetch('/me/push-subscriptions/test', { method: 'POST' }).catch(() => null);
+/** the Settings row's test: the API pushes to every registered device of this user — how many, or null when it
+ *  failed. Sent from a space's settings, the notification names that space and its tap returns there (#551). */
+export async function sendTestPush(spaceId?: string): Promise<number | null> {
+  const query = spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : '';
+  const response = await apiFetch(`/me/push-subscriptions/test${query}`, { method: 'POST' }).catch(() => null);
   if (!response?.ok) return null;
   const body = (await response.json().catch(() => ({}))) as { sent?: number };
   return body.sent ?? 0;

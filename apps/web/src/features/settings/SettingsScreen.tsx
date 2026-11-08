@@ -20,6 +20,7 @@ import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
 import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useMyRole } from '@/features/spaces/SpaceSharing';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { PERIOD_KEYS } from '@/features/spaces/PeriodSettingsScreen';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
@@ -27,6 +28,8 @@ import { CURRENCIES } from '@/domain/countries';
 import { LAST_SYNC_KEY } from '@/sync/engine';
 import type { SyncStatus } from '@/sync/engine';
 import type { SpaceRow } from '@/db/types';
+import { SpaceNotificationsCard } from './SpaceNotificationsCard';
+import { disablePush } from '@/lib/push';
 
 const SYNC_STATUS_KEYS = {
   idle: 'sync.synced',
@@ -197,6 +200,11 @@ export function SettingsScreen() {
   };
   const signOut = async () => {
     const current = identity;
+    // #549: the device's own switch is gone — signed out, this device stops receiving the person's
+    // notifications (capped: an unreachable server never holds the sign-out up)
+    if (current?.kind === 'user') {
+      await Promise.race([disablePush().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 2000))]);
+    }
     logout();
     // user identities keep local data (sync is the source of truth);
     // offline profiles keep their data too (this device IS the truth) —
@@ -243,6 +251,8 @@ export function SettingsScreen() {
             {
               capKey: 'settings.groupTrack',
               rows: [
+                // #577: the bar can drop transactions and portfolio — Home and these rows keep their doors
+                { testId: 'settings-transactions-row', icon: 'format-list-bulleted', labelKey: 'tab.transactions', to: '/transactions' },
                 // receipts are a SPACE view (v3 ruling): what you see here
                 // depends on which connections this space includes
                 { testId: 'settings-receipts-row', icon: 'receipt-text-outline', labelKey: 'receipts.title', to: '/receipts' },
@@ -255,6 +265,7 @@ export function SettingsScreen() {
                 { testId: 'settings-splits-row', icon: 'account-cash-outline', labelKey: 'splits.title', to: '/splits', userOnly: true },
                 { testId: 'settings-goals-row', icon: 'flag-outline', labelKey: 'goals.title', to: '/goals' },
                 { testId: 'settings-debts-row', icon: 'hand-coin-outline', labelKey: 'debts.title', to: '/debts' },
+                { testId: 'settings-portfolio-row', icon: 'chart-timeline-variant', labelKey: 'pf.title', to: '/portfolio' },
               ],
             },
             {
@@ -279,6 +290,8 @@ export function SettingsScreen() {
                 { testId: 'settings-period-row', icon: 'calendar-month-outline', labelKey: 'space.periodTitle', to: '/spaces/$spaceId/period' },
                 { testId: 'settings-currency-row', icon: 'cash-100', labelKey: 'space.ledgerCurrency', sheet: 'currency' },
                 { testId: 'settings-history-row', icon: 'history', labelKey: 'space.historyStart', sheet: 'history' },
+                // #577: what the phone's bottom bar holds for this space
+                { testId: 'settings-navigation-row', icon: 'dock-bottom', labelKey: 'nav.title', to: '/spaces/$spaceId/navigation' },
               ],
             },
           ] as const
@@ -311,6 +324,9 @@ export function SettingsScreen() {
             </div>
           </div>
         ))}
+
+        {/* #549: notifications are chosen per space — keyed, so a switch of space starts the card fresh */}
+        <SpaceNotificationsCard key={spaceId} />
 
         <p className="m-cap mt-4 mb-1 px-1" data-testid="settings-scope-global">
           {t('settings.scopeGlobal')}
@@ -352,7 +368,7 @@ export function SettingsScreen() {
               budgets, goals and period totals for every member — how
               amounts READ is the personal display currency on Profile */}
           <p className="text-[12px] text-ink-3">{t('space.ledgerCurrencyInfo')}</p>
-          {readOnly && <p className="text-[12px] text-ink-3">{t('space.readerNote')}</p>}
+          <ReadOnlyNote testId="space-currency-readonly-note" />
           <div className="flex flex-wrap gap-2">
             {CURRENCIES.map((c) => (
               <Chip
@@ -376,7 +392,7 @@ export function SettingsScreen() {
       <Sheet open={historyOpen} onOpenChange={closeHistory} title={t('space.historyStart')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[12px] text-ink-3">{t('space.historyStartSub')}</p>
-          {readOnly && <p className="text-[12px] text-ink-3">{t('space.readerNote')}</p>}
+          <ReadOnlyNote testId="space-history-readonly-note" />
           <input
             data-testid="space-history-start"
             type="date"

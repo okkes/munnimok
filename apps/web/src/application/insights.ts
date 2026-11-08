@@ -3,19 +3,26 @@ import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useBudgets } from './budgets';
-import { appendNotification } from './notifications';
-import { useRecurrings } from './recurring';
+import { appendNotification, notificationTitle } from './notifications';
+import { osNotifyAllowed } from './spaceNotifications';
+import { localToday, useRecurrings } from './recurring';
 import { useSpaceAccounts, useSpaceTransactions } from './transactions';
-import { collectInsights } from '@/domain/insights';
-import type { Insight } from '@/domain/insights';
+import { collectInsights, groupInsights } from '@/domain/insights';
+import type { InsightGroup } from '@/domain/insights';
 import { isDebtTracked } from '@/domain/debts';
 import { periodHistory } from '@/domain/periods';
 import { useCategories } from '@/features/categories/useCategories';
 
-const PERIOD_WINDOW = 6;
+/** six complete periods and the running one — a drift needs six to tell a trend from a spike */
+const PERIOD_WINDOW = 7;
 
-/** the space's live insights, dismissed ones filtered out */
-export function useInsights(): Insight[] | undefined {
+const noonOf = (iso: string): Date => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+};
+
+/** the space's live insight cards: dismissed findings left out, alike ones grouped (#516) */
+export function useInsights(): InsightGroup[] | undefined {
   const { store, spaceId } = useData();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
   const txs = useSpaceTransactions();
@@ -33,9 +40,11 @@ export function useInsights(): Insight[] | undefined {
 
   return useMemo(() => {
     if (!txs || !accounts || !recurrings || !budgets || !dismissals) return undefined;
-    const periods = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_WINDOW);
+    // the LOCAL day: an evening in Amsterdam is still today, whatever UTC says
+    const today = localToday();
+    const periods = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_WINDOW, noonOf(today));
     const dismissed = new Set(dismissals.map((d) => d.insightId));
-    return collectInsights({
+    const findings = collectInsights({
       txs,
       recurrings,
       budgets,
@@ -44,22 +53,28 @@ export function useInsights(): Insight[] | undefined {
       accountsById: new Map(accounts.map((a) => [a.id, a])),
       catalog,
       periods,
-      today: new Date().toISOString().slice(0, 10),
+      today,
+      currency: space?.currency ?? 'EUR',
       space,
-    }).filter((insight) => !dismissed.has(insight.id));
+    });
+    return groupInsights(findings.filter((insight) => !dismissed.has(insight.id)));
   }, [txs, accounts, recurrings, budgets, dismissals, catalog, space]);
 }
 
 export interface InsightOps {
-  /** synced per space (ruling): dismissed once, gone for every member */
-  dismiss: (insightId: string) => Promise<void>;
+  /** synced per space (ruling): dismissed once, gone for every member — a card dismisses every finding it holds */
+  dismiss: (insightIds: readonly string[]) => Promise<void>;
 }
 
 export function useInsightOps(): InsightOps {
   const { repo, spaceId } = useData();
   return {
-    dismiss: async (insightId) => {
-      await repo.upsert('insightDismiss', spaceId, `insdis:${spaceId}:${insightId}`, { insightId });
+    dismiss: async (insightIds) => {
+      await repo.batch(async () => {
+        for (const insightId of insightIds) {
+          await repo.upsert('insightDismiss', spaceId, `insdis:${spaceId}:${insightId}`, { insightId });
+        }
+      });
     },
   };
 }
@@ -77,8 +92,8 @@ const isoWeek = (date: Date): string => {
  * waiting and notifications are granted, one quiet summary that deep-
  * links into the screen. Marker in device meta — never nags twice.
  */
-export function useInsightDigest(insights: Insight[] | undefined): void {
-  const { store } = useData();
+export function useInsightDigest(insights: InsightGroup[] | undefined): void {
+  const { store, spaceId } = useData();
   const { t } = useLang();
   const fired = useRef(false);
   useEffect(() => {
@@ -89,18 +104,20 @@ export function useInsightDigest(insights: Insight[] | undefined): void {
       if (await store.metaGet(markerKey)) return;
       await store.metaPut(markerKey, true);
       // the inbox records the digest for every identity (arc 6); the OS
-      // notification is the optional second outlet, permission allowing
-      await appendNotification(store, 'digest', { n: String(insights.length) }, markerKey);
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      // notification is the optional second outlet, permission and the
+      // space's own choice allowing (#549) — titled with the space and
+      // opening its insights (#551)
+      await appendNotification(store, 'digest', { n: String(insights.length), spaceId }, markerKey);
+      if (!(await osNotifyAllowed(store, spaceId))) return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
-      await registration.showNotification(t('ins.digestTitle'), {
+      await registration.showNotification(await notificationTitle(store, spaceId), {
         body: t('ins.digestBody', { n: insights.length }),
         icon: 'icon-192.png',
         badge: 'icon-192.png',
         tag: markerKey,
-        data: { url: '/insights' },
+        data: { url: `./#/insights?space=${spaceId}` },
       });
     })().catch(() => undefined); // best-effort; a closing db must not throw
-  }, [insights, store, t]);
+  }, [insights, store, spaceId, t]);
 }

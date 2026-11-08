@@ -12,7 +12,7 @@ vi.mock('virtual:pwa-register', () => ({
   }),
 }));
 
-import { handleWorkerMessage, initPwa, usePwa } from './pwa';
+import { handleWorkerMessage, initPwa, notificationHref, usePwa } from './pwa';
 import { router } from '@/app/router';
 import { useSession } from './session';
 
@@ -44,6 +44,31 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     expect(router.state.location.search).toMatchObject({ space: 'sp99' });
   });
 
+  it('#551: every screen a notification names opens in the space it is about', async () => {
+    const opens = async (url: string, path: string, space?: string) => {
+      handleWorkerMessage({ type: 'NAVIGATE', url });
+      await vi.waitFor(() => expect(router.state.location.pathname).toBe(path));
+      expect((router.state.location.search as { space?: string }).space).toBe(space);
+    };
+    await opens('./#/planning?space=sp1', '/planning', 'sp1');
+    await opens('./#/recurring?space=sp2', '/recurring', 'sp2');
+    await opens('./#/debts?space=sp3', '/debts', 'sp3');
+    await opens('./#/insights?space=sp4', '/insights', 'sp4');
+    await opens('./#/settings?space=sp5', '/settings', 'sp5');
+    await opens('./#/budgets/b42?space=sp6', '/budgets/b42', 'sp6');
+    await opens('./#/spaces/sp7/members', '/spaces/sp7/members');
+  });
+
+  it('notificationHref keeps to the whitelist and to id-shaped spaces', () => {
+    expect(notificationHref('./#/planning?space=sp1')).toBe('/planning?space=sp1');
+    // the worker's message names the space on the warm path
+    expect(notificationHref('./#/review', 'sp9')).toBe('/review?space=sp9');
+    expect(notificationHref('./#/review?space=..%2Fx')).toBe('/review');
+    expect(notificationHref('./#/budgets/new')).toBeNull();
+    expect(notificationHref('./#/settings/global')).toBeNull();
+    expect(notificationHref('./#/spaces/a b/members')).toBeNull();
+  });
+
   it('re-broadcasts worker PUSH messages as a window event', () => {
     const seen = vi.fn();
     window.addEventListener('munni-push', seen);
@@ -60,7 +85,7 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     handleWorkerMessage('NAVIGATE');
     handleWorkerMessage({ type: 'SKIP_WAITING' });
     handleWorkerMessage({ type: 'NAVIGATE' }); // no url
-    handleWorkerMessage({ type: 'NAVIGATE', url: './#/settings' }); // not a notification target
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/settings/global' }); // not a notification target
     handleWorkerMessage({ type: 'NAVIGATE', url: 'https://evil.example/#/friends/../../x' });
 
     // nothing above may have moved the router
@@ -90,5 +115,29 @@ describe('pwa update store', () => {
     expect(usePwa.getState().needRefresh).toBe(true);
     usePwa.getState().update();
     expect(updateSpy).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('the phone app opens a tapped notification (#551)', () => {
+  it('routes the tap to its screen in its space — the shell has no service worker, the taps still listen', async () => {
+    useSession.getState().login({ kind: 'demo' });
+    const listeners: Record<string, (data: unknown) => void> = {};
+    (globalThis as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: { PushNotifications: { addListener: (event: string, cb: (data: unknown) => void) => (listeners[event] = cb) } },
+    };
+    try {
+      registered = null;
+      initPwa();
+      expect(registered).toBeNull(); // no service worker in the shell
+      listeners.pushNotificationActionPerformed({
+        notification: { data: { payload: JSON.stringify({ type: 'new-transactions', spaceId: 'sp5', spaceName: 'Home', count: 2 }) } },
+      });
+      await vi.waitFor(() => expect(router.state.location.pathname).toBe('/review'));
+      expect(router.state.location.search).toMatchObject({ space: 'sp5' });
+    } finally {
+      delete (globalThis as { Capacitor?: unknown }).Capacitor;
+    }
   });
 });

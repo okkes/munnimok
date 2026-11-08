@@ -51,7 +51,9 @@ describe('collectBudgetAlerts (budgets design P4)', () => {
     const first = await collectBudgetAlerts(new DexieBackend(db), SPACE, 'en');
     expect(first).toHaveLength(1);
     expect(first[0].body).toBe('Groceries: 85% of the budget used');
-    expect(first[0].url).toBe('./#/budgets/b1');
+    // #551: titled with its space, and the tap opens the budget in that space
+    expect(first[0].title).toBe('P');
+    expect(first[0].url).toBe(`./#/budgets/b1?space=${SPACE}`);
 
     // the marker holds — same period stays quiet
     expect(await collectBudgetAlerts(new DexieBackend(db), SPACE, 'en')).toHaveLength(0);

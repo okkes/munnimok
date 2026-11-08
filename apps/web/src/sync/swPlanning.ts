@@ -1,7 +1,7 @@
 import { MunniDB, identityDbName } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import type { StorageBackend } from '@/db/backend';
-import { appendNotification } from '@/application/notifications';
+import { appendNotification, notificationTitle } from '@/application/notifications';
 import { buildPlanning, hasCurrentPlan, loadPlanningData, localIsoToday } from '@/application/planningModel';
 import type { Lang } from '@/i18n';
 import { readSwSession } from './swSync';
@@ -16,10 +16,10 @@ import { readSwSession } from './swSync';
 
 const LANGS: readonly Lang[] = ['en', 'nl', 'tr'];
 
-const TEXTS: Record<Lang, { title: string; one: string; many: string }> = {
-  en: { title: 'munni', one: '{name} is in the red — cover it in your plan', many: '{n} subjects of your plan are in the red: {names}' },
-  nl: { title: 'munni', one: '{name} staat rood — dek het in je plan', many: '{n} onderwerpen van je plan staan rood: {names}' },
-  tr: { title: 'munni', one: '{name} eksiye düştü — planında karşıla', many: 'Planındaki {n} konu eksiye düştü: {names}' },
+const TEXTS: Record<Lang, { one: string; many: string }> = {
+  en: { one: '{name} is in the red — cover it in your plan', many: '{n} subjects of your plan are in the red: {names}' },
+  nl: { one: '{name} staat rood — dek het in je plan', many: '{n} onderwerpen van je plan staan rood: {names}' },
+  tr: { one: '{name} eksiye düştü — planında karşıla', many: 'Planındaki {n} konu eksiye düştü: {names}' },
 };
 
 export interface PlanAlert {
@@ -52,8 +52,9 @@ export async function collectPlanAlerts(store: StorageBackend, spaceId: string, 
     red.length === 1
       ? texts.one.replace('{name}', names[0])
       : texts.many.replace('{n}', String(red.length)).replace('{names}', names.join(', '));
-  await appendNotification(store, 'planOverspent', { n: String(red.length), names: names.join(', ') }, key);
-  return [{ title: texts.title, body, tag: `plan-${spaceId}-${today}`, url: './#/planning' }];
+  // #551: the row and the notification say which space, and both open the plan in it
+  await appendNotification(store, 'planOverspent', { n: String(red.length), names: names.join(', '), spaceId }, key);
+  return [{ title: await notificationTitle(store, spaceId), body, tag: `plan-${spaceId}-${today}`, url: `./#/planning?space=${spaceId}` }];
 }
 
 /** worker entry: resolve the mirrored session's database, then collect */

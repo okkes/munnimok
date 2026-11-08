@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { useData } from '@/app/data';
 import { usePlanningDot } from '@/application/planning';
+import { osNotifyAllowed } from '@/application/spaceNotifications';
 import { useLang } from '@/i18n';
 import { hapticNotify } from '@/lib/platform';
 import { collectPlanAlerts } from '@/sync/swPlanning';
@@ -35,7 +36,8 @@ export function PlanAttention() {
     void (async () => {
       const alerts = await collectPlanAlerts(store, spaceId, lang);
       if (alerts.length === 0) return;
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      // #549: the inbox row stays; the OS notification only where the space's notifications are on
+      if (!(await osNotifyAllowed(store, spaceId))) return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
       for (const alert of alerts) {
