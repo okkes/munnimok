@@ -57,7 +57,7 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Error 'lab vitest failed - fix tests before analyzing' }
 
     Write-Host "==> sonar-scanner (munni-lab)" -ForegroundColor Cyan
-    docker run --rm -e SONAR_HOST_URL=$sonarHost -e SONAR_TOKEN=$sonarToken -v "${PWD}:/usr/src" sonarsource/sonar-scanner-cli
+    cmd /c "docker run --rm -e SONAR_HOST_URL=http://host.docker.internal:9000 -e SONAR_TOKEN=$token -v `"$PWD`:/usr/src`" sonarsource/sonar-scanner-cli 2>&1"
     if ($LASTEXITCODE -ne 0) { Write-Error 'lab analysis failed' }
 } finally { Pop-Location }
 

@@ -13,6 +13,16 @@ async function leaveAPendingWrite(opId: string) {
   db.close();
 }
 
+/** what waits in the outbox — ours plus the app's own first writes (offline, nothing drains them) */
+async function outboxCount(): Promise<number> {
+  const db = new MunniDB(USER_TEST_DB);
+  try {
+    return await db.outbox.count();
+  } finally {
+    db.close();
+  }
+}
+
 describe('resolveOfflineReason', () => {
   it('is silent for local-only identities (no engine) — offline mode is a choice', () => {
     expect(resolveOfflineReason(false, false, 'offline')).toBeNull();
@@ -76,13 +86,19 @@ describe('offline banner + home indicator', () => {
     await screen.findByTestId('screen-home');
     await screen.findByTestId('home-offline-indicator');
     await leaveAPendingWrite('op-pending-1');
-    await waitFor(() => expect(screen.getByTestId('home-offline-indicator').textContent).toContain('1 to sync'));
+    let waiting = 0;
+    await waitFor(async () => {
+      waiting = await outboxCount();
+      const pill = screen.getByTestId('home-offline-indicator');
+      expect(pill.getAttribute('data-pending')).toBe(String(waiting));
+      expect(pill.textContent).toContain(`${waiting} to sync`);
+    });
+    expect(waiting).toBeGreaterThanOrEqual(1);
     expect(screen.getByTestId('home-offline-indicator').textContent).toContain('Offline');
-    expect(screen.getByTestId('home-offline-indicator').getAttribute('data-pending')).toBe('1');
     // the pill opens Settings, whose sync row spells it out
     fireEvent.click(screen.getByTestId('home-offline-indicator'));
     await screen.findByTestId('settings-sync-row');
-    await waitFor(() => expect(screen.getByTestId('settings-sync-pending').textContent).toContain('not synced yet: 1'));
+    await waitFor(() => expect(screen.getByTestId('settings-sync-pending').textContent).toContain(`not synced yet: ${waiting}`));
   }, 15_000);
 
   it('online with nothing waiting the pill is gone; with a write waiting it counts it', async () => {
@@ -93,7 +109,8 @@ describe('offline banner + home indicator', () => {
     expect(screen.queryByTestId('home-offline-indicator')).toBeNull();
     await leaveAPendingWrite('op-pending-2');
     const pill = await screen.findByTestId('home-sync-indicator');
-    expect(pill.getAttribute('data-pending')).toBe('1');
+    // the app's own first write (the new-transactions baseline) may still be on its way out — it drains, ours stays
+    await waitFor(() => expect(pill.getAttribute('data-pending')).toBe('1'));
   }, 15_000);
 
   it('the pill face: the reason outranks the count, syncing says so, a count alone says how many wait', () => {

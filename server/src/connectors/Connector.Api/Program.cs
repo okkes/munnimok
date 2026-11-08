@@ -1,5 +1,5 @@
-using System.Globalization;
 using BankConnector.Adapters;
+using Connector.Api;
 using Connector.Kit.Hosting;
 using Sentry;
 using Sentry.AspNetCore;
@@ -20,8 +20,8 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     options.CaptureFailedRequests = false;
     // performance tracing (docs/observability.md): health probes and agent heartbeats never count, a trace
     // the api continued keeps its decision, and no trace header leaves this process (a party's site is no peer)
-    var tracesSampleRate = TracesSampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
-    options.TracesSampler = context => SampleTrace(context.TransactionContext, tracesSampleRate);
+    var tracesSampleRate = ConnectorTracing.SampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
+    options.TracesSampler = context => ConnectorTracing.Sample(context.TransactionContext, tracesSampleRate);
     options.TracePropagationTargets.Clear();
     options.Release = builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } tag ? $"munni-connector@{tag}" : null;
     options.SetBeforeSend((e, _) => { e.SetTag("role", "control-plane"); return e; });
@@ -69,15 +69,3 @@ app.MapConnectorApi();
 app.MapAgentApi();
 
 await app.RunAsync();
-
-// a number in 0..1, else the platform default of a fifth
-static double TracesSampleRate(string? configured) =>
-    double.TryParse(configured, NumberStyles.Float, CultureInfo.InvariantCulture, out var rate) && rate is >= 0 and <= 1 ? rate : 0.2;
-
-// /v1/health (docker every 10 s), the operator's /health and the agents' /heartbeat are never a transaction
-static double SampleTrace(ITransactionContext context, double rate)
-{
-    if (rate <= 0 || context.Name.Contains("/health", StringComparison.OrdinalIgnoreCase) || context.Name.Contains("/heartbeat", StringComparison.OrdinalIgnoreCase)) return 0;
-    if (context.IsParentSampled is { } parentSampled) return parentSampled ? 1 : 0;
-    return rate;
-}

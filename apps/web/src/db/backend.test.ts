@@ -68,7 +68,7 @@ describe('DexieBackend.subscribe', () => {
       async () => (await store.bySpace('transaction', 's')).length,
       (n) => seen.push(n),
     );
-    await sleep(LIVE_QUERY_QUIET_MS * 2);
+    await untilSeen(seen, 0);
     // each write is given until the count ARRIVES (a loaded machine stretches a run past the
     // quiet window, which merged two writes into one re-run and failed the shape below), then a
     // quiet beat — a duplicate re-run would still show up as an extra entry
@@ -95,7 +95,7 @@ describe('DexieBackend.subscribe', () => {
       async () => (await store.bySpace('transaction', 's')).length,
       (n) => seen.push(n),
     );
-    await sleep(LIVE_QUERY_QUIET_MS * 2);
+    await untilSeen(seen, 0);
     // the review's confirm: writes spaced wider than the quiet window (a render in between) are still one burst
     await store.burst(async () => {
       for (let i = 1; i <= 4; i++) {
@@ -103,7 +103,8 @@ describe('DexieBackend.subscribe', () => {
         await sleep(LIVE_QUERY_QUIET_MS * 2);
       }
     });
-    await sleep(LIVE_QUERY_QUIET_MS * 4);
+    await untilSeen(seen, 4);
+    await sleep(LIVE_QUERY_QUIET_MS * 2);
     expect(seen).toEqual([0, 4]); // one update, with everything
     off();
   });
@@ -115,7 +116,7 @@ describe('DexieBackend.subscribe', () => {
       async () => (await store.bySpace('transaction', 's')).length,
       (n) => seen.push(n),
     );
-    await sleep(LIVE_QUERY_QUIET_MS * 2);
+    await untilSeen(seen, 0);
     await repo.upsert('transaction', 's', 't1', row(1));
     off(); // inside the quiet window
     await sleep(LIVE_QUERY_QUIET_MS * 4);

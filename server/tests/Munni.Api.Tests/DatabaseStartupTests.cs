@@ -42,7 +42,9 @@ public class DatabaseStartupTests
     public async Task A_provider_without_a_server_does_not_wait()
     {
         using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase("startup-wait").Options);
+        var watch = Stopwatch.StartNew();
         await DatabaseStartup.WaitForServerAsync(db.Database, NullLogger.Instance, TimeSpan.FromMinutes(5));
         await ConnectorStartup.WaitForServerAsync(db.Database, NullLogger.Instance, TimeSpan.FromMinutes(5));
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"waited {watch.Elapsed} for a provider that has no server");
     }
 }
