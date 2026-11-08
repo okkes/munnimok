@@ -605,7 +605,8 @@ export function DebtPlanScreen() {
   const setStress = (debtId: string, value: DebtStress) => {
     const account = accountOf(debtId);
     if (!account) return;
-    void repo.upsert('account', account.spaceId, account.id, { debtStress: account.debtStress === value ? undefined : value });
+    // un-ticking writes null: JSON drops an undefined field, so the clear would never sync
+    void repo.upsert('account', account.spaceId, account.id, { debtStress: account.debtStress === value ? (null as never) : value });
     void logActivity(store, repo, account.spaceId, 'accountEdit', account.name);
   };
   /** Apply on a card: the raised payment becomes the loan's own (user 2026-10-09) */

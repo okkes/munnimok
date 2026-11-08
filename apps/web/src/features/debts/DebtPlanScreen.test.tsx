@@ -85,6 +85,9 @@ describe('Payoff planner (#413)', () => {
     const db = new MunniDB('munni_demo');
     try {
       await waitFor(async () => expect((await db.accounts.get('loan-car'))?.debtStress).toBe(5));
+      // un-ticking clears with null — an undefined field would vanish from the synced op
+      fireEvent.click(screen.getByTestId('debtplan-stress-loan-car-5'));
+      await waitFor(async () => expect((await db.accounts.get('loan-car'))?.debtStress).toBeNull());
     } finally {
       db.close();
     }

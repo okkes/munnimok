@@ -648,7 +648,8 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     },
 
     setPoolAccounts: async (ids) => {
-      await repo.upsert('space', spaceId, spaceId, { planPoolAccountIds: ids ?? undefined });
+      // null, not undefined: JSON drops an undefined field, so "back to all accounts" would never sync
+      await repo.upsert('space', spaceId, spaceId, { planPoolAccountIds: ids ?? (null as never) });
       act('planEdit');
     },
   };
