@@ -18,12 +18,8 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
     options.SendDefaultPii = false;
     options.CaptureFailedRequests = false;
-    // performance tracing (user 2026-10-09, docs/observability.md): the relay's
-    // calls as transactions with their database and party spans —
-    // Sentry__TracesSampleRate (0..1, a fifth by default, 0 = errors only);
-    // docker's health probe and the agents' heartbeats never count, and a
-    // trace the api continued from the web app keeps its decision. No trace
-    // header leaves this process: a party's site is nobody's tracing peer.
+    // performance tracing (docs/observability.md): health probes and agent heartbeats never count, a trace
+    // the api continued keeps its decision, and no trace header leaves this process (a party's site is no peer)
     var tracesSampleRate = TracesSampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
     options.TracesSampler = context => SampleTrace(context.TransactionContext, tracesSampleRate);
     options.TracePropagationTargets.Clear();

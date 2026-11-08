@@ -24,41 +24,8 @@ using Munni.Api.Sync;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// GlitchTip: every unhandled exception + explicit CaptureException calls.
-// Sentry__Dsn env feeds Sentry:Dsn; an empty DSN (local/dev) disables the
-// SDK entirely — the compose file was already passing the DSN, but the
-// SDK was never wired, so the API was invisible while prod broke.
-builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
-{
-    // explicit empty string = SDK disabled (unset would throw at boot)
-    options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
-    options.SendDefaultPii = false;
-    // performance tracing (user 2026-10-09, docs/observability.md): the
-    // sampled requests become transactions named by their route template
-    // (GET /sync/{spaceId}/push), with their EF queries and outgoing calls
-    // as spans — Sentry__TracesSampleRate from the environment's
-    // tracing.sampleRate (0..1, a fifth unless it says otherwise, 0 = errors
-    // only); health probes and the SSE stream never count, and a trace the
-    // web app started keeps its decision
-    var tracesSampleRate = SentryNoise.TracesSampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
-    options.TracesSampler = context => SentryNoise.SampleTrace(context.TransactionContext, tracesSampleRate);
-    // our trace headers travel only to the connector control plane, which
-    // continues them; Logto, the aggregators, logo.dev, FCM, the OCR and
-    // every other party the api calls see no sentry-trace/baggage header
-    options.TracePropagationTargets.Clear();
-    if (builder.Configuration["Connectors:BaseUrl"] is { Length: > 0 } relay) options.TracePropagationTargets.Add(relay);
-    // handled races are not incidents: parallel first requests DELIBERATELY
-    // race their inserts (Users / UserDevices JIT-provision, attach links)
-    // and the losers adopt the winner. EF still logs the failed command at
-    // Error level and the SDK forwarded every one as an event — pure noise
-    // that buried real failures (GlitchTip issues 66–74).
-    options.SetBeforeSend((sentryEvent, _) => SentryNoise.IsHandledRace(sentryEvent) ? null : sentryEvent);
-    // the SDK's failed-HTTP-request handler shipped every upstream 5xx
-    // (GoCardless had a 502 hour → four events, GlitchTip 75–78) even
-    // though the fetch loop handles them and retries next cycle. Real
-    // failures still surface: unhandled exceptions and LogError paths.
-    options.CaptureFailedRequests = false;
-});
+// GlitchTip: every unhandled exception + explicit CaptureException calls (an empty DSN disables the SDK)
+builder.WebHost.UseSentry((SentryAspNetCoreOptions options) => SentryNoise.Configure(options, builder.Configuration));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Db")));

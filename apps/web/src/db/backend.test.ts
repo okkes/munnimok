@@ -26,6 +26,11 @@ describe('DexieBackend.subscribe', () => {
   };
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const row = (i: number) => ({ accountId: 'a', date: '2026-10-09', amountCents: -100 * i, currency: 'EUR', merchant: `M${i}`, needsReview: 1 as const });
+  // a loaded machine (the coverage run) stretches every step: wait for the value, not a fixed time
+  const untilSeen = async (seen: number[], value: number) => {
+    const until = Date.now() + 3000;
+    while (seen.at(-1) !== value && Date.now() < until) await sleep(10);
+  };
 
   it('runs at once the first time, then once per burst of commits — with the final state', async () => {
     const { store, repo } = fresh();
@@ -34,16 +39,25 @@ describe('DexieBackend.subscribe', () => {
       async () => (await store.bySpace('transaction', 's')).length,
       (n) => seen.push(n),
     );
-    await sleep(LIVE_QUERY_QUIET_MS * 2);
+    await untilSeen(seen, 0);
     expect(seen).toEqual([0]); // the first run is not delayed
 
     // a burst: twelve commits back to back, as the review's bulk writes land —
     // a leading run (the first commit found the query idle; Dexie may abort it)
-    // and one trailing run after the burst, never one per write
-    for (let i = 1; i <= 12; i++) await repo.upsert('transaction', 's', `t${i}`, row(i));
-    await sleep(LIVE_QUERY_QUIET_MS * 4);
+    // and one trailing run after the burst, never one per write. Commits a slow
+    // machine spaced wider than the quiet window are separate bursts by design.
+    let wideGaps = 0;
+    let last = performance.now();
+    for (let i = 1; i <= 12; i++) {
+      await repo.upsert('transaction', 's', `t${i}`, row(i));
+      const now = performance.now();
+      if (i > 1 && now - last >= LIVE_QUERY_QUIET_MS) wideGaps += 1;
+      last = now;
+    }
+    await untilSeen(seen, 12);
+    await sleep(LIVE_QUERY_QUIET_MS * 2);
     expect(seen.at(-1)).toBe(12);
-    expect(seen.length).toBeLessThanOrEqual(3);
+    expect(seen.length).toBeLessThanOrEqual(3 + wideGaps);
     off();
   });
 
@@ -59,8 +73,7 @@ describe('DexieBackend.subscribe', () => {
     // quiet window, which merged two writes into one re-run and failed the shape below), then a
     // quiet beat — a duplicate re-run would still show up as an extra entry
     const arrived = async (count: number) => {
-      const until = Date.now() + 3000;
-      while (seen.at(-1) !== count && Date.now() < until) await sleep(10);
+      await untilSeen(seen, count);
       await sleep(LIVE_QUERY_QUIET_MS * 2);
     };
     for (let i = 1; i <= 3; i++) {

@@ -156,7 +156,7 @@ const looksLikeUrl = (token: string): boolean => /^(?:[a-z][a-z0-9+.-]*:\/\/|\/)
 const scrubText = (text: string): string => text.split(' ').map((t) => (looksLikeUrl(t) ? scrubUrl(t) : t)).join(' ');
 
 const URL_KEYS = ['url', 'http.url', 'url.full', 'url.path', 'from', 'to'];
-const DROP_KEYS = ['http.query', 'http.fragment', 'url.query', 'url.fragment', 'query_string'];
+const DROP_KEYS = new Set(['http.query', 'http.fragment', 'url.query', 'url.fragment', 'query_string']);
 /** the router integration's route params (`url.path.params.txId` & co) — the pattern is the point */
 const PARAM_KEY = /^(?:url\.path\.param|params\.)/;
 
@@ -167,7 +167,7 @@ function scrubBag(bag: Record<string, unknown> | undefined): void {
     if (typeof value === 'string') bag[key] = scrubUrl(value);
   }
   for (const key of Object.keys(bag)) {
-    if (DROP_KEYS.includes(key) || PARAM_KEY.test(key)) delete bag[key];
+    if (DROP_KEYS.has(key) || PARAM_KEY.test(key)) delete bag[key];
   }
 }
 

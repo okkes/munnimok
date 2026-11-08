@@ -252,6 +252,7 @@ public sealed class InlineJobRunner(
         catch (ConnectorException ex) when (ex.Code == ErrorCode.UnsupportedResource)
         {
             logger.LogWarning(
+                ex,
                 "job {JobId}: its outcome was refused ({Detail}) - the lease had moved on while the run was still going; the queue re-runs or ends the job itself",
                 job.JobId, LogSafe.Line(ex.Detail ?? "-"));
         }

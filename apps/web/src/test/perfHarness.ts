@@ -182,7 +182,8 @@ export async function timeIt<T>(label: string, fn: () => T | Promise<T>, budget:
   const started = performance.now();
   const result = await fn();
   const ms = performance.now() - started;
-  const verdict = budget === undefined ? '' : ` (budget ${budget} ms${ms > budget ? ' — OVER' : ''})`;
+  const over = budget !== undefined && ms > budget ? ' — OVER' : '';
+  const verdict = budget === undefined ? '' : ` (budget ${budget} ms${over})`;
   console.info(`[perf] ${label}: ${Math.round(ms)} ms${verdict}`);
   return { ms, result };
 }
