@@ -16,6 +16,7 @@ function brokenCount(model: PlanningModel, blueprint: PlanRow): number {
     budgetIds: new Set(model.data.budgets.map((b) => b.id)),
     recurringIds: new Set(model.data.recurrings.map((r) => r.id)),
     loanIds: new Set(model.data.accounts.filter((a) => isDebtTracked(a)).map((a) => a.id)),
+    eventIds: new Set(model.data.events.map((e) => e.id)),
     goalIds: new Set(model.data.goals.map((g) => g.id)),
   }).length;
 }

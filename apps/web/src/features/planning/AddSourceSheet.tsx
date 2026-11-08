@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLang } from '@/i18n';
 import type { PlanRow, PlanSegmentKind } from '@/db/types';
 import type { MirroredSource, PlanningModel, PlanningOps } from '@/application/planning';
+import { budgetFamily } from '@/domain/budgets';
 import { isDebtTracked } from '@/domain/debts';
+import { isEventPast, overlapsOf } from '@/domain/planning';
+import type { Overlap } from '@/domain/planning';
+import { catName } from '@/features/categories/useCategories';
 import { Icon } from '@/ui/Icon';
 import { Button } from '@/ui/Button';
 import { SelectAllRow } from '@/ui/SelectAllRow';
@@ -18,14 +22,47 @@ export function mirrorCandidates(model: PlanningModel, plan: PlanRow, segment: P
     case 'recurring':
       return free(model.data.recurrings.filter((r) => r.active === 1)).map((r) => ({ id: r.id, name: r.name, icon: r.icon }));
     case 'debts':
-      return free(model.data.accounts.filter((a) => a.archived !== 1 && isDebtTracked(a))).map((a) => ({ id: a.id, name: a.name, color: a.color }));
+      // a card in the money pool is the pool's own money (#532), never a debt to plan
+      return free(model.data.accounts.filter((a) => a.archived !== 1 && isDebtTracked(a) && !model.poolIds.has(a.id))).map((a) => ({ id: a.id, name: a.name, color: a.color }));
     case 'budgets':
       return free(model.data.budgets.filter((b) => b.active === 1)).map((b) => ({ id: b.id, name: b.name, icon: b.icon }));
+    case 'events': {
+      // the ones still to come or without a date (#504): an event over before this period is no plan's business
+      const period = model.periodOf(plan);
+      return free(model.data.events.filter((e) => e.archived !== 1 && !isEventPast(e, period))).map((e) => ({ id: e.id, name: e.name, icon: e.icon, color: e.color }));
+    }
     case 'goals':
       return free(model.data.goals.filter((g) => g.archived !== 1)).map((g) => ({ id: g.id, name: g.name, icon: g.icon, color: g.color }));
     default:
       return [];
   }
+}
+
+/** a budget whose categories a subject of the plan already holds (#535): blocked, with who holds what */
+export function budgetOverlaps(model: PlanningModel, plan: PlanRow, budgetId: string): Overlap[] {
+  const budget = model.data.budgets.find((b) => b.id === budgetId);
+  if (!budget) return [];
+  return overlapsOf('', budgetFamily(budget.catIds, model.data.catalog), model.reservationsOf(plan));
+}
+
+/** why a candidate is blocked, and the one tap that frees it right here (user 2026-10-21: no going back and forth) */
+function BlockedNote({ overlap, model, ops }: Readonly<{ overlap: Overlap; model: PlanningModel; ops: PlanningOps }>) {
+  const { t } = useLang();
+  const { holder } = overlap;
+  const names = overlap.catIds.map((id) => catName(model.data.catalog.byId(id), t)).join(', ');
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-warning" data-testid={`plan-add-source-blocked-${holder.subjectId}`}>
+      <span>{t('plan.overlapNote', { name: holder.name, cats: names })}</span>
+      <button
+        type="button"
+        data-testid={`plan-add-source-free-${holder.subjectId}`}
+        onClick={() => void (holder.segment === 'expenses' ? ops.freeCategories(holder.subjectId, overlap.catIds) : ops.removeSubject(holder.subjectId))}
+        className="m-tap border-none bg-transparent p-0 font-semibold text-accent-deep"
+      >
+        {holder.segment === 'expenses' ? t('plan.overlapTake', { name: holder.name }) : t('plan.overlapRemove', { name: holder.name })}
+      </button>
+    </span>
+  );
 }
 
 /**
@@ -44,9 +81,15 @@ export function AddSourceSheet({
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const candidates = useMemo(() => (segment ? mirrorCandidates(model, plan, segment) : []), [model, plan, segment]);
+  // first come keeps its place (#535): a budget whose categories the plan already counts elsewhere cannot be added until freed
+  const blocked = useMemo(
+    () => new Map(segment === 'budgets' ? candidates.map((c) => [c.id, budgetOverlaps(model, plan, c.id)] as const).filter(([, o]) => o.length > 0) : []),
+    [candidates, model, plan, segment],
+  );
+  const open = candidates.filter((c) => !blocked.has(c.id));
   // the pick is the segment's (user ss 2026-10-07: "4 of 1" — four recurring costs ticked earlier counted on the goals sheet)
   useEffect(() => setPicked(new Set()), [segment]);
-  const pickedHere = candidates.filter((c) => picked.has(c.id)).length;
+  const pickedHere = open.filter((c) => picked.has(c.id)).length;
   if (!segment) return null;
   const meta = SEGMENT_META[segment];
   const toggle = (id: string) =>
@@ -57,7 +100,7 @@ export function AddSourceSheet({
       return next;
     });
   const add = async () => {
-    const sources = candidates.filter((c) => picked.has(c.id));
+    const sources = open.filter((c) => picked.has(c.id));
     if (sources.length === 0 || busy) return;
     setBusy(true);
     try {
@@ -81,16 +124,33 @@ export function AddSourceSheet({
     >
       <div data-testid="plan-add-source">
         {candidates.length === 0 && <p className="px-4 py-4 text-center text-[13px] text-ink-4">{t('plan.addSourceNone')}</p>}
-        {candidates.length > 0 && (
+        {open.length > 0 && (
           <SelectAllRow
-            total={candidates.length}
+            total={open.length}
             selected={pickedHere}
             testId="plan-add-source-all"
-            onChange={(all) => setPicked(all ? new Set(candidates.map((c) => c.id)) : new Set())}
+            onChange={(all) => setPicked(all ? new Set(open.map((c) => c.id)) : new Set())}
           />
         )}
         <div className="mt-2 overflow-hidden rounded-card border border-line bg-surface">
           {candidates.map((source) => {
+            const overlaps = blocked.get(source.id);
+            if (overlaps) {
+              return (
+                <div key={source.id} data-testid={`plan-add-source-${source.id}`} aria-disabled className="flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-line bg-bg-2 text-ink-4">
+                    <Icon name="lock-outline" size={12} />
+                  </span>
+                  <SourceTile segment={segment} sourceId={source.id} icon={source.icon} color={source.color} model={model} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] text-ink-3">{source.name}</span>
+                    {overlaps.map((overlap) => (
+                      <BlockedNote key={overlap.holder.subjectId} overlap={overlap} model={model} ops={ops} />
+                    ))}
+                  </span>
+                </div>
+              );
+            }
             const on = picked.has(source.id);
             return (
               <button

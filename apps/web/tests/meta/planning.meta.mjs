@@ -8,13 +8,13 @@ export const GROUPS = [
       {
         key: '70-planning',
         title: 'This period’s plan',
-        desc: 'The pool of checking and cash money handed out to the plan’s subjects — recurring costs and debts first, then the person’s own expenses, budgets and goals. The head shows what is left to give a job; the circle counts the periods funded ahead.',
+        desc: 'The pool of checking and cash money (a credit card may join) handed out to the plan’s subjects — recurring costs and debts first, then the person’s own expenses, budgets, events and goals. The head shows what is left to give a job; the circle counts the periods funded ahead. Bars read green when funded, orange when short of the target, red when overspent, green with orange stripes when spent past the target but covered; “in the red” opens a one-by-one review.',
         tags: ['planning', 'demo'],
       },
       {
         key: '71-planning-subject',
         title: 'A subject opened',
-        desc: 'What the subject holds against its target and what was spent; set an amount, fill to target, cover an overspend from a subject with room, snooze a mirrored subject, edit or remove an expense subject.',
+        desc: 'What the subject holds against its target and what was spent; set an amount (one chip per amount), fill to target, cover an overspend from a subject with room, snooze a mirrored subject, give an event its own total, settle an overlap with an older subject, edit or remove an expense subject.',
         tags: ['planning'],
       },
       {

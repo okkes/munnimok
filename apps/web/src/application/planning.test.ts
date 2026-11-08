@@ -22,7 +22,7 @@ async function fixture() {
   await repo.upsert('account', SPACE, 'main', { name: 'Main', type: 'checking', currency: 'EUR', balanceCents: 200_000, source: 'manual' });
   await repo.upsert('recurring', SPACE, 'rent', { name: 'Rent', kind: 'fixed', amountCents: 100_000, catId: 'housingRent', every: 'month', dueDay: 1, active: 1, icon: 'home-outline' });
   await repo.upsert('transaction', SPACE, 'r1', { accountId: 'main', date: '2026-03-01', amountCents: -100_000, currency: 'EUR', merchant: 'landlord', catId: 'housingRent', needsReview: 0, recurringId: 'rent' });
-  return { store, repo, ops: buildOps(store, repo, SPACE) };
+  return { store, repo, ops: buildOps(store, repo, SPACE, TODAY) };
 }
 
 const modelOf = async (store: DexieBackend) => buildPlanning(await loadPlanningData(store, SPACE), TODAY);
@@ -43,9 +43,12 @@ describe('planning ops (#128)', () => {
     await ops.snooze(id, true);
     expect(await store.get('planSubject', id)).toMatchObject({ snoozed: 1, fundedCents: 50_000, icon: 'home-outline', deleted: 0 });
 
-    // Start over tombstones the row; the deterministic id means the next add revives that very row
+    // Start over tombstones the row — and the plan with it, so the start screen comes back (#557);
+    // the deterministic ids mean starting again and adding the source revives those very rows
     await ops.clearPlan((await modelOf(store)).plan!);
     expect((await store.get('planSubject', id))?.deleted).toBe(1);
+    expect((await modelOf(store)).plan).toBeNull();
+    await ops.startPlan(MARCH, { kind: 'empty' });
     await ops.addMirrored(march, 'recurring', { id: 'rent', name: 'Rent' });
     const revived = await store.get('planSubject', id);
     // every field written anew: the skip and the funding did not come back, nor the face it no longer has
@@ -55,7 +58,7 @@ describe('planning ops (#128)', () => {
     expect(revived?.targetCents ?? null).toBeNull();
   });
 
-  it('a blueprint applied over a tombstoned twin revives it clean too', async () => {
+  it('a plan started again from a blueprint revives a tombstoned twin clean too', async () => {
     const { store, ops } = await fixture();
     stores.push(store);
     await ops.startPlan(MARCH, { kind: 'empty' });
@@ -65,8 +68,114 @@ describe('planning ops (#128)', () => {
     await ops.snooze(id, true);
     await ops.fund(id, 10_000);
     await ops.clearPlan((await modelOf(store)).plan!);
-    await ops.applyBlueprint((saved as { id: string }).id, (await modelOf(store)).plan!, false);
+    await ops.startPlan(MARCH, { kind: 'blueprint', id: (saved as { id: string }).id });
     expect(await store.get('planSubject', id)).toMatchObject({ deleted: 0, snoozed: 0, fundedCents: 0, sourceId: 'rent' });
+  });
+
+  it('a new period carries the last plan over: the subjects that still matter, unfunded, on the same rows from any device — and only once (#557)', async () => {
+    const { store, repo, ops } = await fixture();
+    stores.push(store);
+    const feb = planId(SPACE, 'actual', '2026-02-01');
+    await repo.upsert('plan', SPACE, feb, { kind: 'actual', periodStart: '2026-02-01', segments: [{ kind: 'goals' }] });
+    await repo.upsert('planSubject', SPACE, 'gro', { planId: feb, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 9_000 });
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(feb, 'recurring', 'rent'), { planId: feb, segment: 'recurring', order: 0, name: 'Rent', sourceId: 'rent', fundedCents: 100_000 });
+    // a party that was over in February stays behind
+    await repo.upsert('event', SPACE, 'party', { name: 'Party', from: '2026-02-10', to: '2026-02-11', budgetCents: 5_000 });
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(feb, 'events', 'party'), { planId: feb, segment: 'events', order: 0, name: 'Party', sourceId: 'party', fundedCents: 5_000 });
+
+    expect(await ops.continuePlan()).toBe(true);
+    const model = await modelOf(store);
+    expect(model.plan?.id).toBe(march);
+    expect(model.plan?.segments).toEqual([{ kind: 'goals' }]);
+    const carried = model.subjectsOf(model.plan!);
+    expect(carried.map((s) => s.name).sort((a, b) => a.localeCompare(b))).toEqual(['Groceries', 'Rent']);
+    expect(carried.every((s) => s.fundedCents === 0)).toBe(true);
+    expect(carried.find((s) => s.name === 'Groceries')).toMatchObject({ id: `psub:${march}:expenses:gro`, targetCents: 15_000 });
+    // a second device, or a second look: nothing more happens
+    expect(await ops.continuePlan()).toBe(false);
+    expect((await modelOf(store)).subjectsOf(model.plan!)).toHaveLength(2);
+  });
+
+  it('Start over goes back to the start screen: the plan, its subjects, its one-offs and its sandbox go; the period does not carry over again (#557)', async () => {
+    const { store, repo, ops } = await fixture();
+    stores.push(store);
+    const feb = planId(SPACE, 'actual', '2026-02-01');
+    await repo.upsert('plan', SPACE, feb, { kind: 'actual', periodStart: '2026-02-01' });
+    await repo.upsert('planSubject', SPACE, 'gro', { planId: feb, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 0 });
+    await ops.continuePlan();
+    let model = await modelOf(store);
+    await ops.fundOneOff(model.plan!, 'recurring:rent', 50_000);
+    await ops.createSandbox();
+    model = await modelOf(store);
+    expect(model.sandbox?.oneOffs).toEqual([{ key: 'recurring:rent', fundedCents: 50_000 }]);
+
+    await ops.clearPlan(model.plan!);
+    model = await modelOf(store);
+    expect(model.plan).toBeNull();
+    expect(model.sandbox).toBeNull();
+    expect(model.continuable).toBe(false);
+    expect(await ops.continuePlan()).toBe(false);
+    // starting again revives the row clean: no one-off comes back
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    model = await modelOf(store);
+    expect(model.plan?.oneOffs).toEqual([]);
+    expect(model.subjectsOf(model.plan!)).toEqual([]);
+  });
+
+  it('a one-off funds an Unplanned row for this period only; planning the row takes the money along, Take all back clears it, no copy carries it (#494)', async () => {
+    const { store, ops } = await fixture();
+    stores.push(store);
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    let model = await modelOf(store);
+    const started = model.startedWithOf(model.plan!);
+    await ops.fundOneOff(model.plan!, 'recurring:rent', 100_000);
+    model = await modelOf(store);
+    expect(model.unplannedOf(model.plan!)[0]).toMatchObject({ kind: 'recurring', cents: 100_000, fundedCents: 100_000 });
+    expect(model.toAllocateOf(model.plan!)).toBe(started - 100_000);
+    // a period ahead and a blueprint take the plan's shape — never its one-offs
+    await ops.fundAhead(model.nextAheadPeriod);
+    const saved = await ops.saveBlueprint(model.plan!, 'Normal');
+    model = await modelOf(store);
+    expect(model.ahead[0].plan.oneOffs).toEqual([]);
+    expect(model.blueprints.find((b) => b.id === (saved as { id: string }).id)?.oneOffs).toBeUndefined();
+
+    // Plan it: the subject is born with the money the row had
+    const id = await ops.addMirrored(march, 'recurring', { id: 'rent', name: 'Rent' });
+    model = await modelOf(store);
+    expect(model.plan?.oneOffs).toEqual([]);
+    expect(model.viewsOf(model.plan!).find((v) => v.subject.id === id)).toMatchObject({ fundedCents: 100_000, status: 'funded' });
+    expect(model.toAllocateOf(model.plan!)).toBe(started - 100_000);
+
+    // 0 takes a one-off back; Take all back empties them all
+    await ops.fundOneOff(model.plan!, 'goal:x', 3_000);
+    await ops.withdrawAll((await modelOf(store)).plan!);
+    expect((await modelOf(store)).plan?.oneOffs).toEqual([]);
+  });
+
+  it('freeing categories takes them from the holder; a subject left with none goes, its money back to the pool (#535)', async () => {
+    const { store, ops } = await fixture();
+    stores.push(store);
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    const both = await ops.addExpense(march, { name: 'Food', catIds: ['groceries', 'coffee'], targetCents: 10_000 });
+    const one = await ops.addExpense(march, { name: 'Coffee', catIds: ['coffee'], targetCents: 1_000 });
+    await ops.freeCategories(both, ['groceries']);
+    expect(await store.get('planSubject', both)).toMatchObject({ deleted: 0, catIds: ['coffee'] });
+    await ops.freeCategories(one, ['coffee']);
+    expect((await store.get('planSubject', one))?.deleted).toBe(1);
+  });
+
+  it('an event subject takes the person’s own total, and empty goes back to the estimate (#504)', async () => {
+    const { store, repo, ops } = await fixture();
+    stores.push(store);
+    await repo.upsert('event', SPACE, 'trip', { name: 'Trip', from: '2026-05-10', budgetCents: 60_000 });
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    const id = await ops.addMirrored(march, 'events', { id: 'trip', name: 'Trip' });
+    const target = async () => (await modelOf(store)).viewsOf((await modelOf(store)).plan!).find((v) => v.subject.id === id)?.targetCents;
+    expect(await target()).toBe(20_000);
+    await ops.setOwnTarget(id, 90_000);
+    expect(await target()).toBe(30_000);
+    await ops.setOwnTarget(id, null);
+    expect(await target()).toBe(20_000);
   });
 
   it('planning a paid recurring cost from Unplanned moves its money into the subject: the head does not move', async () => {

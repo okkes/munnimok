@@ -4,10 +4,11 @@ import type { PlanSegmentKind } from '@/db/types';
 import type { PlanningModel } from '@/application/planning';
 import type { SubjectView } from '@/domain/planning';
 import { shortfallCents } from '@/domain/planning';
+import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Pill, ProgressBar } from '@/ui/primitives';
 import { SourceTile } from './SourceTile';
-import { SEGMENT_COLOR, SEGMENT_META, STATUS_KEY, STATUS_TONE } from './planningUi';
+import { OVER_TARGET_STRIPES, SEGMENT_META, STATUS_BAR, STATUS_KEY, STATUS_TONE } from './planningUi';
 
 export type MoneyFmt = (cents: number, currency: string) => string;
 
@@ -16,7 +17,39 @@ export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency:
   const key = STATUS_KEY[view.status];
   if (view.status === 'underfunded') return t(key, { amount: fmt(shortfallCents(view), currency) });
   if (view.status === 'overspent') return t(key, { amount: fmt(view.realizedCents - view.fundedCents, currency) });
+  if (view.status === 'overTarget') return t(key, { amount: fmt(view.realizedCents - (view.targetCents ?? 0), currency) });
   return t(key);
+}
+
+/** the funding bar in the status's colour (#517); spent past the target but covered wears orange stripes over the green */
+export function StatusBar({ view, testId }: Readonly<{ view: SubjectView; testId?: string }>) {
+  const target = view.targetCents ?? 0;
+  const barMax = Math.max(target, view.fundedCents, view.realizedCents, 1);
+  const funded = view.fundedCents / barMax;
+  const spent = view.realizedCents / barMax;
+  return (
+    <ProgressBar
+      value={funded}
+      color={STATUS_BAR[view.status]}
+      size="sm"
+      testId={testId}
+      overlay={
+        <>
+          {view.status === 'overTarget' && (
+            <span
+              aria-hidden
+              data-testid={testId ? `${testId}-stripes` : undefined}
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ width: `${Math.min(100, funded * 100)}%`, backgroundImage: OVER_TARGET_STRIPES }}
+            />
+          )}
+          {spent > 0 && (
+            <span aria-hidden className="absolute inset-y-0 left-0 rounded-full opacity-45" style={{ width: `${Math.min(100, spent * 100)}%`, background: 'var(--m-ink-3)' }} />
+          )}
+        </>
+      }
+    />
+  );
 }
 
 /** one subject: its face, what it holds against what it needs, how far it is spent */
@@ -30,13 +63,7 @@ export function SubjectRow({
 }: Readonly<{ view: SubjectView; model?: PlanningModel; fmt: MoneyFmt; currency: string; onClick: () => void; onFundToTarget?: () => void }>) {
   const { t } = useLang();
   const { subject } = view;
-  const color = subject.color ?? SEGMENT_COLOR[subject.segment];
   const tone = STATUS_TONE[view.status];
-  const target = view.targetCents ?? 0;
-  const barMax = Math.max(target, view.fundedCents, view.realizedCents, 1);
-  const funded = view.fundedCents / barMax;
-  const spent = view.realizedCents / barMax;
-  const barColor = view.status === 'overspent' ? 'var(--m-negative)' : color;
   return (
     <button
       data-testid={`plan-subject-${subject.id}`}
@@ -69,16 +96,7 @@ export function SubjectRow({
           )}
         </span>
         <span className="mt-1 block">
-          <ProgressBar
-            value={funded}
-            color={barColor}
-            size="sm"
-            overlay={
-              spent > 0 ? (
-                <span aria-hidden className="absolute inset-y-0 left-0 rounded-full opacity-45" style={{ width: `${Math.min(100, spent * 100)}%`, background: 'var(--m-ink-3)' }} />
-              ) : null
-            }
-          />
+          <StatusBar view={view} testId={`plan-subject-bar-${subject.id}`} />
         </span>
         <span className="mt-1 flex items-baseline justify-between text-[11px] text-ink-4">
           <span className="m-num" data-testid={`plan-subject-funded-${subject.id}`}>
@@ -92,6 +110,17 @@ export function SubjectRow({
         {view.orphaned && (
           <span className="mt-1 block text-[11px] text-negative" data-testid={`plan-subject-orphan-${subject.id}`}>
             {t('plan.orphaned')}
+          </span>
+        )}
+        {/* first come keeps its place (#535): a later subject says whose categories it cannot count */}
+        {view.overlaps.map((overlap) => (
+          <span key={overlap.holder.subjectId} className="mt-1 block text-[11px] text-warning" data-testid={`plan-subject-overlap-${subject.id}`}>
+            {t('plan.overlapRow', { name: overlap.holder.name, n: overlap.catIds.length })}
+          </span>
+        ))}
+        {view.inPool && (
+          <span className="mt-1 block text-[11px] text-ink-4" data-testid={`plan-subject-inpool-${subject.id}`}>
+            {t('plan.debtInPool')}
           </span>
         )}
       </span>
@@ -152,7 +181,8 @@ export function SegmentSection({
           onClick={onToggleFold}
           className="m-tap flex min-w-0 items-center gap-1.5 border-none bg-transparent p-0 text-left text-inherit"
         >
-          <Icon name={folded ? 'chevron-right' : 'chevron-down'} size={14} />
+          {/* the chevron turns as the segment folds (user 2026-10-21, #518) */}
+          <Icon name="chevron-down" size={14} style={{ transform: folded ? 'rotate(-90deg)' : undefined, transition: 'transform 200ms ease-out' }} />
           <Icon name={meta.icon} size={14} />
           <span className="truncate">{t(meta.labelKey)}</span>
           <span className="m-num font-normal normal-case text-ink-4" data-testid={`plan-segment-total-${kind}`}>
@@ -181,7 +211,8 @@ export function SegmentSection({
           )}
         </span>
       </div>
-      {folded ? (
+      {/* folding animates both ways (user 2026-10-21, #518): the list closes as the summary line opens */}
+      <Collapse open={folded}>
         <button
           type="button"
           data-testid={`plan-segment-summary-${kind}`}
@@ -191,27 +222,28 @@ export function SegmentSection({
           <span>{t('plan.foldSummary', { n: views.length, funded: fmt(funded, currency), spent: fmt(spent, currency) })}</span>
           {attention > 0 && <span className="font-medium text-warning">{t('plan.foldAttention', { n: attention })}</span>}
         </button>
-      ) : (
-      <div className="overflow-hidden rounded-card border border-line bg-surface">
-        {views.length === 0 ? (
-          <p className="px-4 py-3 text-[12px] text-ink-4" data-testid={`plan-segment-empty-${kind}`}>
-            {t('plan.segmentEmpty')}
-          </p>
-        ) : (
-          views.map((view) => (
-            <SubjectRow
-              key={view.subject.id}
-              view={view}
-              model={model}
-              fmt={fmt}
-              currency={currency}
-              onClick={() => onOpen(view)}
-              onFundToTarget={canFill ? () => onFundToTarget(view) : undefined}
-            />
-          ))
-        )}
-      </div>
-      )}
+      </Collapse>
+      <Collapse open={!folded}>
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {views.length === 0 ? (
+            <p className="px-4 py-3 text-[12px] text-ink-4" data-testid={`plan-segment-empty-${kind}`}>
+              {t('plan.segmentEmpty')}
+            </p>
+          ) : (
+            views.map((view) => (
+              <SubjectRow
+                key={view.subject.id}
+                view={view}
+                model={model}
+                fmt={fmt}
+                currency={currency}
+                onClick={() => onOpen(view)}
+                onFundToTarget={canFill ? () => onFundToTarget(view) : undefined}
+              />
+            ))
+          )}
+        </div>
+      </Collapse>
     </section>
   );
 }

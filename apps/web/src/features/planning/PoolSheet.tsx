@@ -7,12 +7,15 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import type { MoneyFmt } from './SegmentSection';
 
-const POOL_CANDIDATE_TYPES = new Set(['checking', 'cash', 'savings']);
+// a credit card pays like a checking account (user 2026-10-21, #532), so it may join the pool
+const POOL_CANDIDATE_TYPES = new Set(['checking', 'cash', 'savings', 'credit']);
 
 /**
  * The money pool (#128): the accounts whose balances the plan hands out.
  * Every checking and cash account until the space ticks its own set — a
- * space fact, synced (planPoolAccountIds).
+ * space fact, synced (planPoolAccountIds). A credit card ticked in brings
+ * its balance (what is owed takes off) and its spending; paying it off
+ * then moves money inside the pool, so it is no debt to plan any more.
  */
 export function PoolSheet({
   open,
@@ -62,6 +65,11 @@ export function PoolSheet({
         <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] text-ink-2" data-testid="plan-pool-rule">
           {t('plan.poolRule')}
         </p>
+        {candidates.some((a) => a.type === 'credit') && (
+          <p className="px-1 text-[11px] text-ink-4" data-testid="plan-pool-credit">
+            {t('plan.poolCreditHint')}
+          </p>
+        )}
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {candidates.map((account) => {
             const on = ticks.has(account.id);

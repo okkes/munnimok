@@ -104,12 +104,15 @@ function CategoryTree({
   onToggleMain,
   onToggleSub,
   onTakeOver,
+  onRemoveHolder,
 }: Readonly<{
   draft: Draft;
   conflicts: ReadonlyMap<string, Reservation>;
   onToggleMain: (main: Cat, subs: readonly Cat[]) => void;
   onToggleSub: (main: Cat, sub: Cat) => void;
   onTakeOver: (reservation: Reservation, catId: string) => void;
+  /** a budget holds the category (#535): it can leave the plan from right here */
+  onRemoveHolder: (reservation: Reservation) => void;
 }>) {
   const { t } = useLang();
   const cats = useCategories();
@@ -119,9 +122,20 @@ function CategoryTree({
     const reservation = conflicts.get(catId);
     if (!reservation) return null;
     if (reservation.segment === 'budgets') {
+      // a budget's categories come from the budget itself — it cannot hand one over, only leave the plan
       return (
-        <span className="block text-[10px] text-ink-4" data-testid={`plan-editor-budget-${catId}`}>
+        <span className="flex items-center gap-2 text-[10px] text-warning" data-testid={`plan-editor-budget-${catId}`}>
           {t('plan.subject.conflictBudget', { name: reservation.name })}
+          <button
+            data-testid={`plan-editor-remove-${catId}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveHolder(reservation);
+            }}
+            className="m-tap border-none bg-transparent p-0 font-semibold text-accent-deep"
+          >
+            {t('plan.overlapRemove', { name: reservation.name })}
+          </button>
         </span>
       );
     }
@@ -260,7 +274,8 @@ export function SubjectEditor({
   const estimate = useMemo(() => model.estimate(family), [family, model]);
   const target = parseCents(draft.target);
   const blocker = blockerOf(draft, target);
-  const expenseConflicts = [...conflicts.values()].some((r) => r.segment === 'expenses');
+  // first come keeps its place (#535): a category another subject — an expense or a budget — holds blocks the save
+  const anyConflict = conflicts.size > 0;
 
   const toggleMain = (main: Cat, subs: readonly Cat[]) => {
     const catIds = new Set(draft.catIds);
@@ -291,7 +306,7 @@ export function SubjectEditor({
 
   const save = async () => {
     setAttempted(true);
-    if (blocker || target === null || expenseConflicts) return;
+    if (blocker || target === null || anyConflict) return;
     const fields = {
       name: draft.name.trim(),
       icon: draft.icon,
@@ -338,9 +353,10 @@ export function SubjectEditor({
           onToggleMain={toggleMain}
           onToggleSub={toggleSub}
           onTakeOver={(reservation, catId) => void ops.freeCategories(reservation.subjectId, [catId])}
+          onRemoveHolder={(reservation) => void ops.removeSubject(reservation.subjectId)}
         />
         <FormBlockerNote show={attempted && blocker === 'cats'} text={t(BLOCKER_KEY.cats)} testId="plan-editor-blocker" />
-        <FormBlockerNote show={attempted && !blocker && expenseConflicts} text={t('plan.subject.blockerConflict')} testId="plan-editor-blocker" />
+        <FormBlockerNote show={attempted && !blocker && anyConflict} text={t('plan.subject.blockerConflict')} testId="plan-editor-blocker" />
 
         <div className="m-cap px-1">{t('plan.target')}</div>
         <input

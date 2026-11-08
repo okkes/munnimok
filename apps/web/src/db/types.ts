@@ -750,8 +750,19 @@ export interface InsightDismissRow extends SyncEnvelope {
   insightId: string;
 }
 
-/** #128: the five kinds of plan subject — what must be paid first, then the person’s own expenses, the ceilings, the goals */
-export type PlanSegmentKind = 'recurring' | 'debts' | 'expenses' | 'budgets' | 'goals';
+/** #128: the kinds of plan subject — what must be paid first, then the person’s own expenses, the ceilings, the events (#504), the goals */
+export type PlanSegmentKind = 'recurring' | 'debts' | 'expenses' | 'budgets' | 'events' | 'goals';
+
+/**
+ * #494: money given to an Unplanned row for this period only — it never
+ * becomes a subject, so no copy (the next period, a blueprint, the periods
+ * ahead) ever carries it. `key` names the row: `category:<mainId>`,
+ * `recurring:<id>`, `debt:<id>`, `goal:<id>` or `event:<id>`.
+ */
+export interface PlanOneOff {
+  key: string;
+  fundedCents: number;
+}
 
 export type PlanKind = 'actual' | 'sandbox' | 'blueprint';
 
@@ -780,6 +791,8 @@ export interface PlanRow extends SyncEnvelope {
   segments?: PlanSegmentConfig[];
   /** ISO: when a blueprint was last saved or overridden */
   savedAt?: string;
+  /** #494: the Unplanned rows this period funds without planning them (actual and sandbox plans only) */
+  oneOffs?: PlanOneOff[];
 }
 
 /**
@@ -804,9 +817,10 @@ export interface PlanSubjectRow extends SyncEnvelope {
   catIds?: string[];
   /** expenses: subs of a chosen main that are left out */
   excludeCatIds?: string[];
-  /** expenses: what the person wants to set aside this period (0 = unknown yet) */
+  /** expenses: what the person wants to set aside this period (0 = unknown yet);
+   *  events (#504): the person's own total for the event — absent = its estimate */
   targetCents?: number;
-  /** the mirrored source row of a budget / recurring / debt / goal subject */
+  /** the mirrored source row of a budget / recurring / debt / event / goal subject */
   sourceId?: string;
   fundedCents: number;
   /** recurring, debts, goals: not due this period — green without funding */

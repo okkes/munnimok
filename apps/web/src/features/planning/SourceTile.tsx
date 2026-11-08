@@ -1,6 +1,7 @@
 import type { PlanSegmentKind } from '@/db/types';
 import type { PlanningModel } from '@/application/planning';
 import { LoanTile } from '@/features/debts/DebtsScreen';
+import { eventPictureStyle } from '@/features/events/EventsScreen';
 import { KIND_ICON, RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { Tile } from '@/ui/primitives';
 import { SEGMENT_COLOR, SEGMENT_META, softOf } from './planningUi';
@@ -49,7 +50,16 @@ export function SourceTile({
       </span>
     );
   }
-  const tone = color ?? SEGMENT_COLOR[segment];
-  const face = icon ?? rec?.icon ?? (rec && KIND_ICON[rec.kind]) ?? SEGMENT_META[segment].icon;
+  // an event wears its own picture (#504), cropped as the events list crops it
+  const event = segment === 'events' && sourceId ? model?.data.events.find((e) => e.id === sourceId) : undefined;
+  if (event?.picture) {
+    return (
+      <Tile size={size} tone="neutral">
+        <img data-testid={testId} src={event.picture} alt="" className="absolute inset-0 h-full w-full rounded-[inherit] object-cover" style={eventPictureStyle(event)} />
+      </Tile>
+    );
+  }
+  const tone = color ?? event?.color ?? SEGMENT_COLOR[segment];
+  const face = icon ?? event?.icon ?? rec?.icon ?? (rec && KIND_ICON[rec.kind]) ?? SEGMENT_META[segment].icon;
   return <Tile size={size} icon={face} bg={softOf(tone)} color={tone} />;
 }

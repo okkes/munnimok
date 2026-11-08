@@ -2,11 +2,24 @@ import { useMemo } from 'react';
 import { useData } from '@/app/data';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { PlanRow, PlanSegmentConfig, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
+import type { PlanKind, PlanRow, PlanSegmentConfig, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
 import { useQuery } from '@/db/useQuery';
 import { isDebtTracked } from '@/domain/debts';
 import type { Period } from '@/domain/periods';
-import { brokenSubjects, fillInOrder, mirroredSubjectId, planId, recommendSubjects, sameSubjects, subjectShape, subjectView, shortfallCents } from '@/domain/planning';
+import {
+  brokenSubjects,
+  byBirth,
+  fillInOrder,
+  mirroredSubjectId,
+  planId,
+  recommendSubjects,
+  sameSubjects,
+  shortfallCents,
+  stillRelevant,
+  subjectFamily,
+  subjectShape,
+  subjectView,
+} from '@/domain/planning';
 import type { SubjectShape, SubjectView } from '@/domain/planning';
 import { measure } from '@/lib/perf';
 import { logActivity } from './activity';
@@ -77,14 +90,24 @@ export type BlueprintSave = { ok: true; id: string } | { ok: false; sameAs: stri
 
 export interface PlanningOps {
   startPlan: (period: Period, from: PlanStart) => Promise<string>;
+  /**
+   * #557 (user 2026-10-23): a new period whose plan is still empty takes the
+   * previous period's subjects that still matter, unfunded — never after a
+   * Start over, never over a plan already made. True when it carried over.
+   */
+  continuePlan: () => Promise<boolean>;
   addExpense: (planId: string, shape: ExpenseShape) => Promise<string>;
   updateSubject: (subjectId: string, fields: Partial<Pick<PlanSubjectRow, 'name' | 'icon' | 'color' | 'catIds' | 'excludeCatIds' | 'targetCents'>>) => Promise<void>;
+  /** an event subject's own total (#504); null goes back to the event's estimate */
+  setOwnTarget: (subjectId: string, cents: number | null) => Promise<void>;
   removeSubject: (subjectId: string) => Promise<void>;
-  /** start over (user 2026-10-08): every subject of the plan goes — the money back to the pool, the spending back under Unplanned */
+  /** start over (#557): the period's plan goes — subjects, one-offs and its sandbox — and the start screen comes back */
   clearPlan: (plan: PlanRow) => Promise<void>;
   addMirrored: (planId: string, segment: PlanSegmentKind, source: MirroredSource) => Promise<string>;
   /** set the funding of one subject */
   fund: (subjectId: string, cents: number) => Promise<void>;
+  /** #494: fund an Unplanned row for this period only — 0 takes it back */
+  fundOneOff: (plan: PlanRow, key: string, cents: number) => Promise<void>;
   fillSubject: (plan: PlanRow, subjectId: string) => Promise<void>;
   fillSegment: (plan: PlanRow, segment: PlanSegmentKind) => Promise<void>;
   /** every subject of a segment to its target, pool or no pool (user 2026-10-07; the beyond-the-pool guard asks first) */
@@ -95,7 +118,7 @@ export interface PlanningOps {
   reorderSubjects: (orderedIds: string[]) => Promise<void>;
   setSegments: (plan: PlanRow, segments: PlanSegmentConfig[]) => Promise<void>;
   snooze: (subjectId: string, on: boolean) => Promise<void>;
-  /** take categories away from the expense subject holding them (a sub under a chosen main becomes an exclusion) */
+  /** take categories away from the expense subject holding them (a sub under a chosen main becomes an exclusion); a subject left with none goes (#535) */
   freeCategories: (holderId: string, catIds: string[]) => Promise<void>;
   fundAhead: (period: Period) => Promise<void>;
   withdrawAhead: (plan: PlanRow) => Promise<void>;
@@ -146,6 +169,26 @@ const shapeFields = (shape: SubjectShape, planId: string, fundedCents = 0): Subj
 const idForShape = (repo: Repo, planId: string, shape: SubjectShape): string =>
   shape.sourceId ? mirroredSubjectId(planId, shape.segment, shape.sourceId) : repo.newId();
 
+/**
+ * The carry-over's ids (#557) are deterministic, expense subjects too: two
+ * devices opening the new period both carry the plan over and must land on
+ * the same rows. An expense subject keeps the tail of its lineage (its first
+ * id), so the id never grows period after period.
+ */
+const carriedIdFor = (planId: string, shape: SubjectShape, sourceSubjectId: string): string =>
+  shape.sourceId ? mirroredSubjectId(planId, shape.segment, shape.sourceId) : `psub:${planId}:expenses:${sourceSubjectId.slice(sourceSubjectId.lastIndexOf(':') + 1)}`;
+
+/** the plan row's whole field set (the reset rule): a period started over and started again carries nothing of before */
+const planFields = (kind: PlanKind, periodStart: string, segments: PlanSegmentConfig[] | undefined) => ({
+  kind,
+  periodStart,
+  segments: orNull(segments),
+  oneOffs: [],
+});
+
+/** the Unplanned row a mirrored segment's subject takes the place of (#494) */
+const ONE_OFF_KIND: Partial<Record<PlanSegmentKind, string>> = { recurring: 'recurring', debts: 'debt', events: 'event', goals: 'goal' };
+
 /** a subject's identity across copies: the mirrored source, or the expense subject's name and categories */
 const signatureOf = (s: Pick<PlanSubjectRow, 'segment' | 'sourceId' | 'name' | 'catIds'>): string =>
   `${s.segment}|${s.sourceId ?? ''}|${s.sourceId ? '' : s.name}|${(s.catIds ?? []).join(',')}`;
@@ -170,11 +213,27 @@ export function usePlanningOps(): PlanningOps {
   return useMemo(() => buildOps(store, repo, spaceId), [store, repo, spaceId]);
 }
 
-/** the commands over a store and repo — the hook's body, exported so a test drives them without React */
-export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): PlanningOps {
-  const fresh = async (): Promise<PlanningModel> => buildPlanning(await loadPlanningData(store, spaceId));
+/** the commands over a store and repo — the hook's body, exported so a test drives them without React (on its own `today`) */
+export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, today?: string): PlanningOps {
+  const fresh = async (): Promise<PlanningModel> => buildPlanning(await loadPlanningData(store, spaceId), today);
   const act = (kind: string) => void logActivity(store, repo, spaceId, kind);
   const write = (id: string, fields: Partial<SubjectFields>) => repo.upsert('planSubject', spaceId, id, fields);
+
+  /** a plan's subjects as shapes for `period`: oldest first (#535's first-come order survives the copy), the ones that no longer matter left behind */
+  const relevantShapes = (model: PlanningModel, rows: readonly PlanSubjectRow[], period: Period): SubjectShape[] =>
+    byBirth(rows)
+      .filter((s) => stillRelevant(s, period, model.relevance))
+      .map(subjectShape);
+
+  /** a new subject takes over what the plan gave its Unplanned row for this period only (#494) */
+  const absorbOneOffs = async (model: PlanningModel, planIdOf: string, keys: readonly string[]): Promise<number> => {
+    const row = model.data.plans.find((p) => p.id === planIdOf);
+    const all = row?.oneOffs ?? [];
+    const taken = all.filter((o) => keys.includes(o.key));
+    if (!row || taken.length === 0) return 0;
+    await repo.upsert('plan', spaceId, row.id, { oneOffs: all.filter((o) => !keys.includes(o.key)) });
+    return taken.reduce((sum, o) => sum + o.fundedCents, 0);
+  };
 
   /**
    * A subject is born with nothing funded (user 2026-10-08) — what the period
@@ -233,21 +292,22 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
     switch (from.kind) {
       case 'last': {
         const source = model.pastPlans.find((p) => p.periodStart! < period.start);
-        return source ? model.subjectsOf(source).map(subjectShape) : [];
+        return source ? relevantShapes(model, model.subjectsOf(source), period) : [];
       }
       case 'blueprint': {
         const blueprint = model.blueprints.find((b) => b.id === from.id);
-        return blueprint ? model.subjectsOf(blueprint).map(subjectShape) : [];
+        return blueprint ? relevantShapes(model, model.subjectsOf(blueprint), period) : [];
       }
       case 'recommendation':
         return recommendSubjects({
           catalog: model.data.catalog,
           nameOf: from.nameOf,
-          txs: model.data.txs,
-          pastPeriods: model.pastPeriods,
+          pastLedgers: model.pastLedgers,
           budgets: model.data.budgets,
           recurrings: model.data.recurrings,
           accounts: model.data.accounts,
+          poolIds: model.poolIds,
+          events: model.data.events,
           goals: model.data.goals,
           incomeCents: from.incomeCents,
           space: model.data.space ?? { periodType: 'month', periodDay: 1 },
@@ -259,7 +319,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
   };
 
   const copyWithFunding = async (targetId: string, source: readonly PlanSubjectRow[]) =>
-    copyShapes(targetId, source.map(subjectShape), fundingFrom(source));
+    copyShapes(targetId, byBirth(source).map(subjectShape), fundingFrom(source));
 
   const nextOrder = (model: PlanningModel, plan: string, segment: PlanSegmentKind): number => {
     const target = model.data.plans.find((p) => p.id === plan);
@@ -271,24 +331,53 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       const model = await fresh();
       const id = planId(spaceId, 'actual', period.start);
       const blueprint = from.kind === 'blueprint' ? model.blueprints.find((b) => b.id === from.id) : undefined;
-      const segments = blueprint?.segments ?? (model.plan ? model.segmentsOf(model.plan) : undefined);
-      await repo.upsert('plan', spaceId, id, { kind: 'actual', periodStart: period.start, segments });
+      // the segments as the person last set them: the blueprint's, else the latest plan's
+      const segments = blueprint?.segments ?? model.pastPlans[0]?.segments;
+      await repo.upsert('plan', spaceId, id, planFields('actual', period.start, segments));
       await copyShapes(id, shapesForStart(model, period, from));
       act('planStart');
       return id;
     },
 
+    continuePlan: async () => {
+      const model = await fresh();
+      const source = model.previousPlan;
+      if (!model.continuable || !source) return false;
+      const id = planId(spaceId, 'actual', model.period.start);
+      if (await store.get('plan', id)) return false; // made meanwhile, or started over on another device
+      // the spending starts at nothing by itself; the funding stays behind — what a bill or an event
+      // set aside and did not spend still reaches it as carried (carriedBySource)
+      await repo.batch(async () => {
+        await repo.upsert('plan', spaceId, id, planFields('actual', model.period.start, source.segments));
+        for (const row of byBirth(model.subjectsOf(source))) {
+          if (!stillRelevant(row, model.period, model.relevance)) continue;
+          const shape = subjectShape(row);
+          await write(carriedIdFor(id, shape, row.id), shapeFields(shape, id));
+        }
+      });
+      act('planStart');
+      return true;
+    },
+
     addExpense: async (plan, shape) => {
       const model = await fresh();
       const id = repo.newId();
-      // born unfunded (user 2026-10-08): its spending so far reads "Over by" until the person funds it
-      await write(id, shapeFields({ ...shape, segment: 'expenses', order: nextOrder(model, plan, 'expenses') }, plan));
+      // born unfunded (user 2026-10-08): its spending so far reads "Over by" until the person funds it —
+      // unless its main had money for this period only (#494): that follows it into the subject
+      const mains = shape.catIds.filter((catId) => !model.data.catalog.byId(catId).parentId);
+      const funded = await absorbOneOffs(model, plan, mains.map((mainId) => `category:${mainId}`));
+      await write(id, shapeFields({ ...shape, segment: 'expenses', order: nextOrder(model, plan, 'expenses') }, plan, funded));
       act('planEdit');
       return id;
     },
 
     updateSubject: async (subjectId, fields) => {
       await write(subjectId, fields);
+      act('planEdit');
+    },
+
+    setOwnTarget: async (subjectId, cents) => {
+      await write(subjectId, { targetCents: cents === null ? orNull(undefined) : Math.max(0, Math.round(cents)) });
       act('planEdit');
     },
 
@@ -299,25 +388,51 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
     },
 
     clearPlan: async (plan) => {
-      // start over (user 2026-10-08): the subjects go, and with them their funding (back to
-      // the pool by their absence) and their claim on the period's spending (back under
-      // Unplanned); the segments, the blueprints and the periods ahead are not touched
+      // start over (user 2026-10-23: "the initial screen, not an empty plan"): the subjects go —
+      // their funding back to the pool by their absence, their spending back under Unplanned —
+      // and an actual plan goes with them, its sandbox too, so the start screen comes back
+      // (the tombstone also keeps the period from carrying the last plan over by itself);
+      // the blueprints and the periods ahead are not touched
       const model = await fresh();
-      await removeSubjects(model.subjectsOf(planIn(model, plan)));
+      const target = planIn(model, plan);
+      // one burst: the screen goes from the plan straight to the start screen, never through a half-emptied plan
+      await repo.batch(async () => {
+        await removeSubjects(model.subjectsOf(target));
+        if (target.kind === 'actual') {
+          if (model.sandbox && target.periodStart === model.period.start) {
+            await removeSubjects(model.subjectsOf(model.sandbox));
+            await repo.remove('plan', spaceId, model.sandbox.id);
+          }
+          await repo.remove('plan', spaceId, target.id);
+        } else if (target.oneOffs?.length) {
+          await repo.upsert('plan', spaceId, target.id, { oneOffs: [] });
+        }
+      });
       act('planEdit');
     },
 
     addMirrored: async (plan, segment, source) => {
       const model = await fresh();
       const id = mirroredSubjectId(plan, segment, source.id);
+      const kind = ONE_OFF_KIND[segment];
+      const funded = kind ? await absorbOneOffs(model, plan, [`${kind}:${source.id}`]) : 0;
       // the whole field set (the reset rule above): a source removed by Start over and added again starts clean
-      await write(id, shapeFields({ segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id }, plan));
+      await write(id, shapeFields({ segment, order: nextOrder(model, plan, segment), name: source.name, icon: source.icon, color: source.color, sourceId: source.id }, plan, funded));
       act('planEdit');
       return id;
     },
 
     fund: async (subjectId, cents) => {
       await write(subjectId, { fundedCents: Math.max(0, Math.round(cents)) });
+      act('planFund');
+    },
+
+    fundOneOff: async (plan, key, cents) => {
+      const model = await fresh();
+      const target = planIn(model, plan);
+      const rest = (target.oneOffs ?? []).filter((o) => o.key !== key);
+      const amount = Math.max(0, Math.round(cents));
+      await repo.upsert('plan', spaceId, target.id, { oneOffs: amount > 0 ? [...rest, { key, fundedCents: amount }] : rest });
       act('planFund');
     },
 
@@ -339,6 +454,9 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
 
     withdrawAll: async (plan) => {
       await zeroAll(plan);
+      // every subject back to zero — and what the period gave its Unplanned rows (#494)
+      const model = await fresh();
+      if (planIn(model, plan).oneOffs?.length) await repo.upsert('plan', spaceId, plan.id, { oneOffs: [] });
       act('planFund');
     },
 
@@ -379,7 +497,10 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       // a sub the holder owns through its main is excluded rather than removed
       const chosenMains = new Set(direct);
       const viaMain = catIds.filter((id) => chosenMains.has(model.data.catalog.byId(id).parentId ?? ''));
-      await write(holderId, { catIds: direct, excludeCatIds: [...new Set([...(holder.excludeCatIds ?? []), ...viaMain])] });
+      const excludeCatIds = [...new Set([...(holder.excludeCatIds ?? []), ...viaMain])];
+      // nothing left to answer for (#535): the subject goes, its money back to the pool
+      if (subjectFamily({ catIds: direct, excludeCatIds }, model.data.catalog).size > 0) await write(holderId, { catIds: direct, excludeCatIds });
+      else await repo.remove('planSubject', spaceId, holderId);
       act('planEdit');
     },
 
@@ -392,10 +513,10 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       if (existing) {
         subjects = model.subjectsOf(existing);
       } else {
-        // the period takes the current plan's shape; the ids are minted ONCE so the
-        // funding below lands on the rows just written
-        await repo.upsert('plan', spaceId, id, { kind: 'actual', periodStart: period.start, segments: model.segmentsOf(model.plan) });
-        const rows = model.subjectsOf(model.plan).map(subjectShape).map((shape) => ({ id: idForShape(repo, id, shape), fields: shapeFields(shape, id) }));
+        // the period takes the current plan's shape — the subjects that still matter then (an event
+        // over by that period stays behind); the ids are minted ONCE so the funding below lands on the rows just written
+        await repo.upsert('plan', spaceId, id, planFields('actual', period.start, model.segmentsOf(model.plan)));
+        const rows = relevantShapes(model, model.subjectsOf(model.plan), period).map((shape) => ({ id: idForShape(repo, id, shape), fields: shapeFields(shape, id) }));
         for (const row of rows) await write(row.id, row.fields);
         subjects = sortSubjects(
           rows.map((row) => ({ ...row.fields, id: row.id, spaceId, hlc: '', deleted: 0 as const, fieldVersions: {} })),
@@ -418,9 +539,9 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
 
     applyToAhead: async (plan) => {
       const model = await fresh();
-      const shapes = model.subjectsOf(planIn(model, plan)).map(subjectShape);
+      const subjects = model.subjectsOf(planIn(model, plan));
       for (const ahead of model.ahead) {
-        await replaceSubjects(model, ahead.plan, shapes, true);
+        await replaceSubjects(model, ahead.plan, relevantShapes(model, subjects, ahead.period), true);
         await repo.upsert('plan', spaceId, ahead.plan.id, { segments: model.segmentsOf(plan) });
       }
       act('planEdit');
@@ -435,7 +556,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       await repo.upsert('plan', spaceId, id, { kind: 'blueprint', name, segments: model.segmentsOf(plan), savedAt: new Date().toISOString() });
       const previous = overrideId ? model.blueprints.find((b) => b.id === overrideId) : undefined;
       if (previous) await removeSubjects(model.subjectsOf(previous));
-      await copyShapes(id, subjects.map(subjectShape));
+      await copyShapes(id, byBirth(subjects).map(subjectShape));
       act('planBlueprint');
       return { ok: true, id };
     },
@@ -444,13 +565,14 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       const model = await fresh();
       const blueprint = model.blueprints.find((b) => b.id === blueprintId);
       if (!blueprint) return;
-      const shapes = model.subjectsOf(blueprint).map(subjectShape);
-      await replaceSubjects(model, planIn(model, target), shapes, true);
+      const rows = model.subjectsOf(blueprint);
+      const into = planIn(model, target);
+      await replaceSubjects(model, into, relevantShapes(model, rows, model.periodOf(into)), true);
       await repo.upsert('plan', spaceId, target.id, { segments: blueprint.segments });
       if (alsoAhead) {
         // the periods ahead take the blueprint too; their funding comes back to the pool
         for (const ahead of model.ahead) {
-          await replaceSubjects(model, ahead.plan, shapes, false);
+          await replaceSubjects(model, ahead.plan, relevantShapes(model, rows, ahead.period), false);
           await repo.upsert('plan', spaceId, ahead.plan.id, { segments: blueprint.segments });
         }
       }
@@ -466,6 +588,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
         budgetIds: new Set(model.data.budgets.map((b) => b.id)),
         recurringIds: new Set(model.data.recurrings.map((r) => r.id)),
         loanIds: new Set(model.data.accounts.filter((a) => isDebtTracked(a)).map((a) => a.id)),
+        eventIds: new Set(model.data.events.map((e) => e.id)),
         goalIds: new Set(model.data.goals.map((g) => g.id)),
       });
       await removeSubjects(broken);
@@ -488,7 +611,8 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       const model = await fresh();
       if (!model.plan) throw new Error('no plan');
       const id = planId(spaceId, 'sandbox', model.period.start);
-      await repo.upsert('plan', spaceId, id, { kind: 'sandbox', periodStart: model.period.start, segments: model.segmentsOf(model.plan) });
+      // the one-offs are the period's too (#494): the sandbox plays with a copy
+      await repo.upsert('plan', spaceId, id, { ...planFields('sandbox', model.period.start, model.segmentsOf(model.plan)), oneOffs: model.plan.oneOffs ?? [] });
       await copyWithFunding(id, model.subjectsOf(model.plan));
       act('planSandbox');
       return id;
@@ -499,7 +623,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       if (!model.plan || !model.sandbox) return;
       await removeSubjects(model.subjectsOf(model.sandbox));
       await copyWithFunding(model.sandbox.id, model.subjectsOf(model.plan));
-      await repo.upsert('plan', spaceId, model.sandbox.id, { segments: model.segmentsOf(model.plan) });
+      await repo.upsert('plan', spaceId, model.sandbox.id, { segments: model.segmentsOf(model.plan), oneOffs: model.plan.oneOffs ?? [] });
       act('planSandbox');
     },
 
@@ -509,7 +633,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string): Pl
       const sandboxSubjects = model.subjectsOf(model.sandbox);
       await removeSubjects(model.subjectsOf(model.plan));
       await copyWithFunding(model.plan.id, sandboxSubjects);
-      await repo.upsert('plan', spaceId, model.plan.id, { segments: model.segmentsOf(model.sandbox) });
+      await repo.upsert('plan', spaceId, model.plan.id, { segments: model.segmentsOf(model.sandbox), oneOffs: model.sandbox.oneOffs ?? [] });
       await removeSubjects(sandboxSubjects);
       await repo.remove('plan', spaceId, model.sandbox.id);
       act('planSandbox');
