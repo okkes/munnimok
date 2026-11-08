@@ -74,8 +74,9 @@ services:
       POSTGRES_DB: glitchtip
     volumes:
       - glitchtipdb:/var/lib/postgresql
+    # -d: without it pg_isready asks for a database named after the user, which this server lacks — a FATAL line every 5 s (#573)
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni -d glitchtip"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -394,7 +395,7 @@ services:
       - pgdata:/var/lib/postgresql
       - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni -d munni"]
       interval: 5s
       timeout: 3s
       retries: 10

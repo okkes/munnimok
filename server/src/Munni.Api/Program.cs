@@ -226,6 +226,7 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
     using var scope = app.Services.CreateScope();
     // real migrations: schema evolves in place across releases
     var migrated = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await DatabaseStartup.WaitForServerAsync(migrated.Database, app.Logger, TimeSpan.FromMinutes(5));
     await migrated.Database.MigrateAsync();
     // the 2026-10-05 overlay repair: once per database, remembered in AppSettings
     await TxMetaOverlayRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
