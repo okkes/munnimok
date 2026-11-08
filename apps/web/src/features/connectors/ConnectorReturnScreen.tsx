@@ -174,7 +174,8 @@ function ReturnFlow() {
       return;
     }
     await ops.rename(state.connectionId, name);
-    globalThis.location.assign('/#/connections');
+    // the app's own return page serves the open-banking consents: banks live on All accounts (#527)
+    globalThis.location.assign('/#/accounts');
   };
 
   return <ReturnShell state={state} name={name} onName={setName} attempted={attempted} onContinue={() => void proceed()} />;
@@ -274,7 +275,7 @@ function ReturnShell({
         </p>
       )}
       {state.kind !== 'working' && !naming && (
-        <a href="/#/connections" data-testid="connector-return-back" className={(state.kind === 'lost' || state.kind === 'handoff') && !isNativeApp() ? 'text-[13px] text-accent-deep' : BUTTON_LINK}>
+        <a href="/#/accounts" data-testid="connector-return-back" className={(state.kind === 'lost' || state.kind === 'handoff') && !isNativeApp() ? 'text-[13px] text-accent-deep' : BUTTON_LINK}>
           {t('connect.return.back')}
         </a>
       )}

@@ -98,7 +98,9 @@ public sealed class ControlPlaneHost : IAsyncDisposable
         return (await db.Sessions.SingleAsync(s => s.Id == sessionId)).State;
     }
 
-    public static async Task<ControlPlaneHost> StartAsync(int fetchWaitSeconds = 1)
+    /// <param name="mockRecordCap">The mock banks' per-fetch ceiling, so a pass comes back partial (#460); null keeps the manifest's.</param>
+    /// <param name="mockBankClock">The mock banks' clock - the day their ledger and window end on; null is the system's.</param>
+    public static async Task<ControlPlaneHost> StartAsync(int fetchWaitSeconds = 1, int? mockRecordCap = null, TimeProvider? mockBankClock = null)
     {
         var root = Path.Combine(Path.GetTempPath(), "munni-relay-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -122,7 +124,7 @@ public sealed class ControlPlaneHost : IAsyncDisposable
 
         builder.Services.AddConnectorPlatform(builder.Configuration, platform =>
         {
-            foreach (var adapter in BankAdapters.All(new BankAdapterOptions())) platform.AddAdapter(adapter);
+            foreach (var adapter in BankAdapters.All(new BankAdapterOptions { MockRecordCap = mockRecordCap }, mockBankClock)) platform.AddAdapter(adapter);
             foreach (var adapter in ShopAdapters.All(new ShopAdapterOptions())) platform.AddAdapter(adapter);
             foreach (var adapter in RegistryAdapters.All(new RegistryAdapterOptions())) platform.AddAdapter(adapter);
         });
@@ -170,7 +172,13 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
     /// <summary>How long the control plane waits for a fetch before it answers 202; a suite overrides it to force the job path.</summary>
     protected virtual int FetchWaitSeconds => 1;
 
-    public async Task InitializeAsync() => ControlPlane = await ControlPlaneHost.StartAsync(FetchWaitSeconds);
+    /// <summary>The mock banks' per-fetch ceiling; a suite sets a small one to make a pass partial (#460).</summary>
+    protected virtual int? MockRecordCap => null;
+
+    /// <summary>The mock banks' clock; a suite pins it where its expected rows hang on the day. Null is the system's.</summary>
+    protected virtual TimeProvider? MockBankClock => null;
+
+    public async Task InitializeAsync() => ControlPlane = await ControlPlaneHost.StartAsync(FetchWaitSeconds, MockRecordCap, MockBankClock);
 
     async Task IAsyncLifetime.DisposeAsync()
     {
@@ -188,6 +196,8 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
         builder.UseSetting("Connectors:AgentPublicUrl", AgentPublicUrl);
         builder.UseSetting("Connectors:LoginsPerHour", "1000");
         builder.UseSetting("Connectors:SyncsPerHour", "1000");
+        // the stand-in parties are how these tests drive the protocol end to end (#526 keeps them from people)
+        builder.UseSetting("Connectors:OfferFixtures", "true");
         builder.ConfigureServices(services =>
         {
             foreach (var d in services

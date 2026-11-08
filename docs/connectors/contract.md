@@ -16,7 +16,7 @@ omitted.
 | `X-Connector-Key` | request | every `/v1` route, development | the shared secret, when one is configured |
 | `X-Connector-Subject` | request | every route naming a session, job, ticket or agent; optional beside a body `subject`, and must then agree | the user the call is made for — opaque to the connector |
 | `X-Connector-Ticket` | request | `GET /v1/{provider}/{resource}`, `…/ack` | a ticket from `sessions/resume` |
-| `X-Connector-Trigger` | request | login, fetch | `user` (default), `schedule` (held to the provider's `min_interval_seconds`) or `lab` (the operator's own run; honoured for the admin scope only, and the one trigger that may carry `record`) |
+| `X-Connector-Trigger` | request | login, fetch | `user` (default), `schedule` (held to the provider's `min_interval_seconds`), `backfill` (a schedule's pass over older history, #460: held to the same interval on a clock of its own) or `lab` (the operator's own run; honoured for the admin scope only, and the one trigger that may carry `record`) |
 | `X-Device-Class` | request | login | `native` (default) or `web`; web bundles live shorter |
 | `Idempotency-Key` | request | login | a repeated login with the same key for the same subject returns the same session |
 | `X-Manifest-Version` | response | the routes that read a provider's manifest: login, session view, resume, disconnect, fetch, ack, job view | which contract version of that provider answered |
@@ -28,8 +28,8 @@ omitted.
 
 | Route | What it does |
 | --- | --- |
-| `GET /providers`, `GET /providers/{id}` | the catalogue: every manifest with its health grafted on |
-| `GET /status` | providers (each with `quota` — `limit`, `remaining`, `reset_at`, `seen_at` — when the party last said something about its budget), agents online/revoked, queue depth |
+| `GET /providers`, `GET /providers/{id}` | the catalogue: every manifest with its health grafted on. A `fixture: true` manifest is the platform's own stand-in party (the mocks, #526): served like any other — tests and the lab's bench run the protocol through it — and left out by a consumer of what it offers people |
+| `GET /status` | providers (each with `quota` — `limit`, `remaining`, `reset_at`, `seen_at` — when the party last said something about its budget, and `inventory: true` when it keeps an inventory at the operator's account, the only parties `GET /admin/providers/{id}/remote-consents` answers for), agents online/revoked, queue depth |
 | `GET /{provider}/options/{field}?q=…` | the values of a `lookup` field, listed by the party at connect time (an aggregator's institutions); every other query parameter is context (the step's country); `{ options: [{ value, label, has_logo }] }` |
 | `GET /{provider}/options/{field}/{token}/logo` | the option's logo, vendored by the control plane once and cached for a month; `token` is the option's value as base64url (a party may name an option `ASN Bank\|NL`); 404 when the party has none |
 | `GET /health` (anonymous, outside the group) | liveness |
@@ -40,6 +40,7 @@ omitted.
 | `POST /{provider}/login/{sessionId}/answer` | `challenge_id`, `value` |
 | `POST /{provider}/login/{sessionId}/cancel` | fails the run in flight |
 | `GET …/challenges/{challengeId}/live/frame?after=n`, `POST …/live/input` | the live view: newest JPEG frame past `n` (long poll), the human's taps and keys (`move`, `down`, `up`, `scroll`, `text`, `key`); #441 L3 adds `navigate` (`url`: http(s), a public host, no user-info), `back` and `reload` — refused as a whole batch on every run but an `explore` run's, where the operator drives their own browser |
+| `GET …/challenges/{challengeId}/live/stream?after=n` | #429: the same frames pushed — `text/event-stream`, `Cache-Control: no-store`, `X-Accel-Buffering: no`; `retry: 1000` on open, then one `event: frame` per picture (`id` = its sequence, `data` = `{ sequence, width, height, origin?, jpeg }` with the JPEG in base64), a `: keep-alive` comment after `LiveStreamKeepAliveSeconds` (10) of quiet, and `event: end` + `{ code }` (`challenge_expired`) when the view is over — the run is re-read every second and at once when its job's entry is dropped. `Last-Event-ID` (or `after`) resumes: only a picture newer than it is sent, no backlog. Refused before the first byte exactly as the poll (410 `challenge_expired`, 400 `unsupported_resource`); held at most `LiveStreamSeconds` (600) and to the challenge's expiry. The consumer is munni's API, never a device |
 | `POST /{provider}/sessions/resume` | `subject`, `bundle` → a ticket (15 min) |
 | `DELETE /{provider}/sessions/{sessionId}` | disconnect, with an optional `bundle` for the upstream logout |
 | `GET /{provider}/{resource}?…` | fetch with a ticket: 200 data page, 202 job handle, or a challenge; a fetch of a resource already in flight for the session is handed that job's 202 instead of a second run (prod 2026-10-06: a phone reopening the app queued four Amazon fetches behind one another) |
@@ -137,7 +138,12 @@ resource as the catalogue's `returns` says: `account`, `transaction`,
 `receipt` (lines, totals, an optional invoice document), `credit_registration`
 (BKR), `student_debt` (DUO). Their schemas are in the OpenAPI document under
 `components/schemas`. Amounts are minor units with a currency; hashes make
-a record stable across fetches so a consumer can reconcile.
+a record stable across fetches so a consumer can reconcile. A record's
+`external_id` is the party's id within one session; an `account` may also
+carry `identity`, the party's name for the account across consents (Enable
+Banking's identification hash, #491) — a consumer keys a card or wallet
+without an IBAN on it, or a new consent of the same wallet reads as a new
+account.
 
 ## Idempotency and streams
 

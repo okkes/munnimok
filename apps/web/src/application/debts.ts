@@ -1,7 +1,27 @@
 import { useMemo } from 'react';
 import { useSpaceAccounts } from './transactions';
+import { visibleAccounts } from '@/db/joined';
 import { isDebtTracked, loanProgress, loanRemainingCents } from '@/domain/debts';
+import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
+
+/**
+ * #536 (user): the debts some live space HOLDS without an interest rate —
+ * each space's own reading of the account (an attachment's type and name),
+ * one entry per account. A global account is no loan until a space attaches
+ * it as one, so it never asks.
+ */
+export async function debtsMissingRate(store: StorageBackend): Promise<AccountRow[]> {
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
+  const found = new Map<string, AccountRow>();
+  for (const space of spaces) {
+    for (const account of await visibleAccounts(store, space.id)) {
+      if (found.has(account.id) || account.archived === 1 || account.link?.archived === 1) continue;
+      if ((account.interestPctYear ?? undefined) === undefined && isDebtTracked(account)) found.set(account.id, account);
+    }
+  }
+  return [...found.values()];
+}
 
 export interface LoanStatus {
   account: AccountRow;

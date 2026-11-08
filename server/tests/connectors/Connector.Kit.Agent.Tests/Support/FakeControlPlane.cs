@@ -83,9 +83,10 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     private int _stallRenewals;
     private int _stallHeartbeats;
     private int _answerBlips;
+    private int _inputPolls;
 
     /// <summary>One live frame as it arrived on the wire.</summary>
-    internal readonly record struct PostedFrame(long Sequence, string? Size, int Bytes);
+    internal readonly record struct PostedFrame(long Sequence, string? Size, int Bytes, string? Origin);
 
     /// <summary>
     /// A request nobody answered, the bound of the client that sent it, and how
@@ -261,6 +262,16 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     {
         lock (_gate) _pendingInput.Enqueue(batch);
     }
+
+    /// <summary>Batches queued and not yet handed to the agent.</summary>
+    public int PendingInput { get { lock (_gate) return _pendingInput.Count; } }
+
+    /// <summary>
+    /// Input polls answered. The agent only asks again once it has done
+    /// whatever it was going to do with the last answer, so a poll counted
+    /// after a batch went out is proof that batch was dealt with.
+    /// </summary>
+    public int InputPolls { get { lock (_gate) return _inputPolls; } }
 
     /// <summary>
     /// Renewals this control plane ANSWERED. One it was told to hang on is
@@ -447,7 +458,8 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
 
             lock (_gate)
             {
-                _frames.Add(new PostedFrame(sequence, Header(request, ControlPlaneClient.SizeHeader), bytes.Length));
+                _frames.Add(new PostedFrame(
+                    sequence, Header(request, ControlPlaneClient.SizeHeader), bytes.Length, Header(request, ControlPlaneClient.OriginHeader)));
 
                 // The connector's one slot per job, modelled: higher or nothing.
                 if (sequence > _highestSequence) _highestSequence = sequence;
@@ -462,7 +474,11 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
             if (Stalling(ref _stallInputPolls)) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
 
             LiveInputBatch? batch;
-            lock (_gate) batch = _pendingInput.Count == 0 ? null : _pendingInput.Dequeue();
+            lock (_gate)
+            {
+                batch = _pendingInput.Count == 0 ? null : _pendingInput.Dequeue();
+                _inputPolls++;
+            }
 
             if (batch is not null) return Json(System.Text.Json.JsonSerializer.Serialize(batch, AgentJson.Options));
 

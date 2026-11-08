@@ -1,8 +1,7 @@
 /**
- * The Add-account chooser's Connect door (#414: a bank is a party of the
- * Connections hub): it leads to the hub with the catalogue already open,
- * so a person who chose "Connect a bank" on an accounts screen is not
- * asked to choose again. One-shot — the hub reads it on mount.
+ * The Add-account chooser's Connect door (#527): it leads to All accounts
+ * with the bank picker already open, so a person who chose "Connect a bank"
+ * elsewhere is not asked to choose again. One-shot — read on mount.
  */
 let pending = false;
 

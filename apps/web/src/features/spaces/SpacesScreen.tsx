@@ -111,10 +111,9 @@ export function SpacesScreen() {
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
       .then(async () => {
-        // #221: the six defaults exist from birth — a movement category
-        // always has a valid counterparty to point at
-        const { ensureSpaceDefaultAccounts } = await import('@/application/defaultAccounts');
-        await ensureSpaceDefaultAccounts(store, repo, id);
+        // #546: the cash wallet is the one account a space is born with
+        const { ensureCashWallet } = await import('@/application/defaultAccounts');
+        await ensureCashWallet(store, repo, id);
         setActiveSpace(id);
       });
     setCreateOpen(false);

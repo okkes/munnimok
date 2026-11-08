@@ -17,6 +17,8 @@ export interface SyncActivity {
   phase: SyncPhase;
   /** records the party's run reported gathering so far; null until it counted anything */
   found: number | null;
+  /** #460: the sync went on to older history — the oldest day fetched so far (yyyy-mm-dd) */
+  older?: string;
   startedAt: number;
   finishedAt?: number;
   /** the outcome, once done */
@@ -27,6 +29,8 @@ interface SyncActivityStore {
   activity: Record<string, SyncActivity>;
   begin: (connectionId: string) => void;
   found: (connectionId: string, records: number) => void;
+  /** #460: the sync is fetching older history; `reached` is the oldest day fetched so far */
+  older: (connectionId: string, reached: string) => void;
   end: (connectionId: string, report: SyncReport) => void;
   forget: (connectionId: string) => void;
 }
@@ -45,6 +49,12 @@ export const useSyncActivity = create<SyncActivityStore>((set) => ({
       const current = s.activity[connectionId];
       if (current?.phase !== 'fetching') return s;
       return { activity: { ...s.activity, [connectionId]: { ...current, found: records } } };
+    }),
+  older: (connectionId, reached) =>
+    set((s) => {
+      const current = s.activity[connectionId];
+      if (current?.phase !== 'fetching') return s;
+      return { activity: { ...s.activity, [connectionId]: { ...current, older: reached } } };
     }),
   end: (connectionId, report) =>
     set((s) => {

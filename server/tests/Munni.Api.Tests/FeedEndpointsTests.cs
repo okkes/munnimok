@@ -263,6 +263,48 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         Assert.Equal(2, full!.Ops.Count);
     }
 
+    /// <summary>
+    /// #569: one call names every space the caller reaches with the head its
+    /// pull would report - an archived reader's feed capped where its pull is -
+    /// so a sync round pulls only what moved instead of asking each space.
+    /// </summary>
+    [Fact]
+    public async Task Heads_name_every_reachable_space_with_the_head_its_pull_reports()
+    {
+        var feed = FeedId();
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var ownerSub = $"owner_{Guid.NewGuid():N}";
+        var memberSub = $"member_{Guid.NewGuid():N}";
+        var alice = ClientFor(ownerSub);
+        var bob = ClientFor(memberSub);
+
+        await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"));
+        await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed, "tx-before")]));
+        await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "spacerow")]));
+        await AddMemberAsync(spaceId, memberSub);
+        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1", "2026-01-01"));
+        await alice.DeleteAsync($"/spaces/{spaceId}/members/{await UserIdAsync(ownerSub)}");
+        await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed, "tx-after")]));
+
+        async Task AssertHeadsMatchPullsAsync(HttpClient who, params string[] expected)
+        {
+            var heads = (await who.GetFromJsonAsync<List<SpaceHead>>("/sync/heads"))!.ToDictionary(h => h.SpaceId, h => h.LatestSeq);
+            Assert.Equal(expected.Order(), heads.Keys.Order());
+            foreach (var id in expected)
+            {
+                var pulled = await who.GetFromJsonAsync<PullResponse>($"/sync/{id}/pull?since=0");
+                Assert.Equal(pulled!.LatestSeq, heads[id]);
+            }
+        }
+
+        // the owner's own feed runs on; the archived reader's stops where his pull does
+        await AssertHeadsMatchPullsAsync(alice, feed);
+        await AssertHeadsMatchPullsAsync(bob, feed, spaceId);
+        var bobs = (await bob.GetFromJsonAsync<List<SpaceHead>>("/sync/heads"))!.Single(h => h.SpaceId == feed);
+        var alices = (await alice.GetFromJsonAsync<List<SpaceHead>>("/sync/heads"))!.Single(h => h.SpaceId == feed);
+        Assert.True(bobs.LatestSeq < alices.LatestSeq);
+    }
+
     [Fact]
     public async Task Server_mirror_ops_complete_a_missing_fact_but_never_override_a_present_one()
     {

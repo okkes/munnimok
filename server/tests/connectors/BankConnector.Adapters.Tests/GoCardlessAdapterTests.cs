@@ -30,7 +30,7 @@ public sealed class GoCardlessAdapterTests
     private static GoCardlessAdapter Adapter(TimeProvider? time = null) => new(Options, time ?? new FixedTime(Now));
 
     private const string Institutions = """
-        [{"id":"ING_INGBNL2A","name":"ING","transaction_total_days":"730","logo":"https://cdn.test/ing.png"},
+        [{"id":"ING_INGBNL2A","name":"ING","transaction_total_days":"730","logo":"https://cdn.test/ing.png","max_access_valid_for_days":"180"},
          {"id":"ABNAMRO_ABNANL2A","name":"ABN AMRO","transaction_total_days":"90","logo":null}]
         """;
 
@@ -112,7 +112,8 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal(FieldType.Lookup, step.Fields[1].Type);
         Assert.Equal("return_url", Assert.Single(m.Auth.Config).Key);
         Assert.True(m.Auth.Session.Refreshable);
-        Assert.Equal(90 * 86_400, m.Auth.Session.TtlSeconds);
+        // the ceiling a consent can reach; each consent's own expiry ends it sooner
+        Assert.Equal(180 * 86_400, m.Auth.Session.TtlSeconds);
         Assert.False(m.Auth.Reauth.Cheap);
         Assert.Contains("consent_expired", m.Auth.Reauth.TriggerCodes);
         Assert.Equal(3, m.Limits.PreferredFetchHourLocal);
@@ -165,6 +166,8 @@ public sealed class GoCardlessAdapterTests
         Assert.StartsWith("gcr_", reference);
         using var agreement = JsonDocument.Parse(wire.Requests.Single(r => r.Path.EndsWith("/agreements/enduser/", StringComparison.Ordinal)).Body!);
         Assert.Equal(730, agreement.RootElement.GetProperty("max_historical_days").GetInt32());
+        // and for the half year of access the bank grants (#491), not GoCardless's default 90 days
+        Assert.Equal(180, agreement.RootElement.GetProperty("access_valid_for_days").GetInt32());
 
         // the challenge names where to go, where the bank comes back and what to look for
         var challenge = Assert.Single(ctx.Asked);
@@ -177,7 +180,7 @@ public sealed class GoCardlessAdapterTests
         // the consent is the requisition; the material holds it and the accounts with their details, never a secret
         Assert.Equal("ING", result.Account?.DisplayName);
         Assert.Equal("req1", result.Account?.ExternalId);
-        Assert.Equal(Now.AddDays(90), result.ExpiresAt);
+        Assert.Equal(Now.AddDays(180), result.ExpiresAt);
         var reachable = Assert.Single(result.Reachable);
         Assert.Equal("acc1", reachable.ExternalId);
         Assert.Equal("Betaalrekening", reachable.DisplayName);
@@ -275,6 +278,23 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal(2, quota.Remaining);
         Assert.Equal(Now.AddSeconds(3600), quota.ResetAt);
         Assert.Equal(Now, quota.SeenAt);
+    }
+
+    /// <summary>#460: a pass over older history names its end as date_to, and today's pending rows - outside its window - stay out of it.</summary>
+    [Fact]
+    public async Task A_backfill_pass_names_its_end_and_leaves_todays_pending_rows_out()
+    {
+        var wire = Wire();
+        using var ctx = new FakeJobContext(wire) { Material = Consent(detailed: false) };
+        var request = new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 1), Until = new DateOnly(2026, 9, 29) };
+
+        var older = await Adapter().FetchAsync(ctx, request, CancellationToken.None);
+
+        var query = wire.Requests.Single(r => r.Path.EndsWith("/accounts/acc1/transactions/", StringComparison.Ordinal)).Query;
+        Assert.Contains("date_from=2026-08-29", query);
+        Assert.Contains("date_to=2026-09-29", query);
+        Assert.DoesNotContain(older.Transactions, t => t.ExternalId.StartsWith("pending:", StringComparison.Ordinal));
+        Assert.True(older.Complete);
     }
 
     [Fact]

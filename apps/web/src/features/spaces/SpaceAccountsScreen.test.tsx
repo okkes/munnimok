@@ -356,4 +356,182 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     // the space's own manual account stays badge-free
     expect(screen.queryByTestId('space-account-shared-manual-1')).toBeNull();
   }, 15_000);
+
+  it('#550: the accounts stand in one segment per type — the space\'s own reading of an attached account decides', async () => {
+    await seedRows();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t3'), { trackOutbox: false });
+    await repo.upsert('account', 's-user', 'manual-loan', { name: 'DUO Studieschuld', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -100_000 });
+    // the global row says checking — this space attached it as a loan
+    await repo.upsert('account', 'feed-3', 'feedacct-3', { name: 'R13792519', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: -43_792 });
+    await repo.upsert('accountLink', 's-user', 'link-3', { feedSpaceId: 'feed-3', accountId: 'feedacct-3', type: 'loan' });
+    db.close();
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: apiWithCandidate('personal'),
+    });
+
+    const list = await screen.findByTestId('space-accounts-list', {}, { timeout: 5000 });
+    await waitFor(() => expect(list.querySelectorAll('section')).toHaveLength(3));
+    const groups = [...list.querySelectorAll('section')].map((s) => s.getAttribute('data-testid'));
+    expect(groups).toEqual(['space-accounts-group-checking', 'space-accounts-group-cash', 'space-accounts-group-loan']);
+    const loans = screen.getByTestId('space-accounts-group-loan');
+    expect(loans.textContent).toContain('Loans');
+    expect(loans.querySelector('[data-testid="space-account-link-3"]')).toBeTruthy();
+    expect(loans.querySelector('[data-testid="space-account-manual-loan"]')).toBeTruthy();
+    expect(screen.getByTestId('space-accounts-group-cash').querySelector('[data-testid="space-account-manual-1"]')).toBeTruthy();
+  }, 15_000);
+
+  it('#536: the attach step starts on the type the bank reported — the space still picks', async () => {
+    await seedRows();
+    await seedCandidate();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t4'), { trackOutbox: false });
+    // ING listed this agreement as a LOAN
+    await repo.upsert('account', 'feed-2', 'feedloan', { name: 'R13792519', type: 'loan', source: 'connector', currency: 'EUR', balanceCents: -43_792 });
+    db.close();
+    const { setSpaceAttachIntent } = await import('@/features/accounts/openHandoff');
+    setSpaceAttachIntent('feedloan');
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: apiWithCandidate('personal'),
+    });
+
+    await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 });
+    expect(screen.getByTestId('space-attach-type-loan').className).toContain('border-accent');
+    expect(screen.getByTestId('space-attach-type-checking').className).not.toContain('border-accent');
+    // a suggestion only: the space's own pick replaces it
+    fireEvent.click(screen.getByTestId('space-attach-type-mortgage'));
+    expect(screen.getByTestId('space-attach-type-mortgage').className).toContain('border-accent');
+    expect(screen.getByTestId('space-attach-type-loan').className).not.toContain('border-accent');
+  }, 20_000);
+});
+
+/** an Enable Banking connection of mine and the account it fetched, attached to the space; its last sync nine days ago */
+const seedOpenBanking = async () => {
+  const { MunniDB } = await import('@/db/schema');
+  const { Repo } = await import('@/db/repo');
+  const { DexieBackend } = await import('@/db/backend');
+  const { HlcClock } = await import('@/sync/hlc');
+  const { storeFeedId } = await import('@/domain/feedIds');
+  const { USER_TEST_SUB } = await import('@/test/harness');
+  const { catalogueOf, manifestOf } = await import('@/test/connectorFixtures');
+  const db = new MunniDB(USER_TEST_DB);
+  const backend = new DexieBackend(db);
+  const repo = new Repo(backend, new HlcClock('ob'), { trackOutbox: false });
+  await repo.upsert('storeConn', storeFeedId(USER_TEST_SUB), 'c-eb', { store: 'enablebanking', kind: 'bank', displayName: 'PayPal Okkes', connectedAt: '2026-07-01', status: 'ok' });
+  await repo.upsert('account', 'feed-eb', 'eb-acc', {
+    name: 'Okkes Doker',
+    type: 'checking',
+    source: 'connector',
+    provider: 'enablebanking',
+    connectionId: 'c-eb',
+    currency: 'EUR',
+    balanceCents: 0,
+    lastSyncedAt: new Date(Date.now() - 9 * 86_400_000).toISOString(),
+  });
+  await repo.upsert('accountLink', 's-user', 'link-eb', { feedSpaceId: 'feed-eb', accountId: 'eb-acc', type: 'checking', displayName: 'PayPal EB' });
+  // the catalogue as the hub last cached it: Enable Banking syncs by itself, its consent in the relay's keeping
+  const enableBanking = manifestOf({ id: 'enablebanking', name: 'Enable Banking', kind: 'bank', unattendedFetch: true, secretCustody: 'server' });
+  await backend.metaPut('connectorCatalogue', { etag: null, catalogue: catalogueOf(enableBanking), at: new Date().toISOString() });
+  db.close();
+  return enableBanking;
+};
+
+const binding = (state: string) => [
+  { sessionId: 'ses-eb', provider: 'enablebanking', connectionId: 'c-eb', state, createdAt: '2026-07-01T00:00:00Z', lastSeenAt: '2026-10-05T00:00:00Z', scheduled: true },
+];
+
+describe('SpaceAccountsScreen — connecting and reconnecting from the space (#527, #528)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+
+  it('#527: the archived accounts fold away below the list — a quiet toggle shows them', async () => {
+    await seedRows();
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('arch'), { trackOutbox: false });
+    await repo.upsert('account', 's-user', 'old-loan', { name: 'Lening canan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: 0, archived: 1 });
+    db.close();
+    renderAppAsUser('/spaces/s-user/accounts', { spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }], api: apiWithCandidate('personal') });
+
+    await screen.findByTestId('space-account-manual-1', {}, { timeout: 5000 });
+    const toggle = await screen.findByTestId('space-accounts-archived-toggle');
+    expect(screen.queryByTestId('space-account-old-loan')).toBeNull();
+    expect(toggle.textContent).toContain('Show archived accounts (1)');
+    fireEvent.click(toggle);
+    expect((await screen.findByTestId('space-account-old-loan')).textContent).toContain('Archived');
+    expect(screen.getByTestId('space-accounts-list').querySelector('[data-testid="space-account-old-loan"]')).toBeNull();
+    fireEvent.click(screen.getByTestId('space-accounts-archived-toggle'));
+    await waitFor(() => expect(screen.queryByTestId('space-account-old-loan')).toBeNull());
+  }, 15_000);
+
+  it('#527: the space’s Add door connects a bank, imports a statement or adds a manual account — Connect opens the bank picker right here', async () => {
+    const { catalogueOf, manifestOf } = await import('@/test/connectorFixtures');
+    const consent = { ...manifestOf().auth, flow: 'oauth_redirect' as const, steps: [] };
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: { ...apiWithCandidate('personal'), 'GET /connectors/providers': () => catalogueOf(manifestOf({ id: 'enablebanking', name: 'Enable Banking', kind: 'bank', auth: consent }), manifestOf()) },
+    });
+    fireEvent.click(await screen.findByTestId('space-accounts-add', {}, { timeout: 5000 }));
+    expect(await screen.findByTestId('chooser-import')).toBeTruthy();
+    expect(screen.getByTestId('chooser-manual')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('chooser-connect'));
+    const picker = await screen.findByTestId('bank-picker', {}, { timeout: 5000 });
+    expect((await screen.findByTestId('conn-party-enablebanking', {}, { timeout: 5000 })).textContent).toContain('Enable Banking');
+    expect(picker.querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeNull();
+    // no detour: still the space's own accounts
+    expect(screen.getByTestId('screen-space-accounts')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('conn-party-enablebanking'));
+    expect(await screen.findByTestId('connect-form', {}, { timeout: 5000 })).toBeTruthy();
+  }, 20_000);
+
+  it('#528: a living open-banking consent asks for no reconnect, however long ago its last sync', async () => {
+    await seedOpenBanking();
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: { ...apiWithCandidate('personal'), 'GET /me/feeds': () => [{ feedSpaceId: 'feed-eb' }], 'GET /connectors/sessions': () => binding('active') },
+    });
+    await screen.findByTestId('space-account-link-eb', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('space-account-link-eb'));
+    await screen.findByTestId('space-account-info');
+    expect(screen.queryByTestId('space-account-stale-link-eb')).toBeNull();
+    expect(screen.queryByTestId('space-account-uncovered')).toBeNull();
+  }, 15_000);
+
+  it('#528: a consent that ended says so, and its Reconnect leads to that connection on All accounts, brought into view', async () => {
+    await seedOpenBanking();
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'personal' }],
+      api: {
+        ...apiWithCandidate('personal'),
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-eb' }],
+        'GET /connectors/sessions': () => binding('needs_reauth'),
+        'GET /connectors/providers': () => ({ providers: [], service: { kinds: [], version: 'test', manifestDigest: 'd' } }),
+      },
+    });
+    expect((await screen.findByTestId('space-account-stale-link-eb', {}, { timeout: 5000 })).textContent).toContain('Reconnect');
+    fireEvent.click(screen.getByTestId('space-account-link-eb'));
+    const note = await screen.findByTestId('space-account-uncovered');
+    expect(note.textContent).toContain('PayPal Okkes');
+    expect(note.textContent).toContain('lost its consent');
+    fireEvent.click(screen.getByTestId('space-account-reconnect'));
+    const card = await screen.findByTestId('conn-card-c-eb', {}, { timeout: 5000 });
+    expect(screen.getByTestId('screen-accounts')).toBeTruthy();
+    await waitFor(() => expect(card.dataset.flash).toBe('1'), { timeout: 3000 });
+  }, 20_000);
 });

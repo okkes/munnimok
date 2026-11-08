@@ -22,8 +22,14 @@ internal static class OpenBankingManifests
     public const string InstitutionField = "institution";
     public const string ReturnUrlConfig = "return_url";
 
+    /// <summary>What a consent is asked for where the bank's own maximum is not known.</summary>
     public const int ConsentDays = 90;
-    public const int ConsentTtlSeconds = ConsentDays * 86_400;
+
+    /// <summary>The longest AIS consent PSD2 lets a bank grant; a bank's own maximum lowers it.</summary>
+    public const int MaxConsentDays = 180;
+
+    /// <summary>The session's ceiling; each consent's own expiry (the days it was granted) ends it sooner.</summary>
+    public const int ConsentTtlSeconds = MaxConsentDays * 86_400;
     public const int PreferredFetchHourLocal = 3;
     public const int RedirectMinutes = 20;
 

@@ -18,6 +18,7 @@ one stream the app already holds. This page is written from that code.
 | `AgentPublicUrl` | Where a household agent dials in from the outside, as the platform publishes it. Absent, enrollment answers a code with no address and the app says household agents are not offered here. |
 | `LoginsPerHour`, `SyncsPerHour` | Per-user budgets on the two calls that reach a party (defaults 20 and 60 since 5.7.1: four connections syncing on every app open spent twelve within the hour), on top of the connector's own per-provider interval. |
 | `TimeoutSeconds` | One call's ceiling (default 60; a fetch waits at most 25 s at the control plane before it answers 202). |
+| `OfferFixtures` | Whether the app's catalogue offers the platform's stand-in parties (`fixture` manifests, the mocks; #526). Off by default: `GET /connectors/providers` leaves them out and a login to one answers `unsupported_resource`. The lab's bench reaches them through its own door either way; the API test host turns it on. |
 
 A configured relay with a setting that cannot be right (a base URL that is
 not one, no salt, half a machine pair) refuses to start with the setting's
@@ -60,6 +61,13 @@ An unconfigured one is simply absent — never a stand-in.
   same envelope: `rate_limited` (429) for the budget, `unsupported_resource`
   (404) for a session that is not yours, `provider_unavailable` (503) when the
   control plane cannot be reached.
+- **The live view has buckets of its own** (`ApiRateLimits`): the frame
+  poll and the input batches ride `RateLimits:LiveTokens` /
+  `LiveRefillPer10s` (1500 / 400), the pushed stream's OPENS ride
+  `RateLimits:LiveStreamOpens` / `LiveStreamOpensPer10s` (20 / 5) — one
+  stream is one request for a whole login, so what is bounded is how often
+  one opens (a reconnect after a dropped network), each open holding a
+  stream to the control plane. Neither touches the global bucket.
 
 ## Routes (`/connectors`, signed-in user)
 
@@ -70,16 +78,18 @@ An unconfigured one is simply absent — never a stand-in.
 | `GET /connectors/{provider}/options/{field}?q=…` | a `lookup` field's values, listed by the party at connect time (an aggregator's institutions; every other query parameter is context, the step's country) — `{ options: [{ value, label, hasLogo }] }` |
 | `GET …/options/{field}/{token}/logo` | the option's logo, vendored by the control plane and kept by the browser for a month; `token` is the value as base64url; anonymous — a public brand image an `<img>` fetches, nothing of anyone's in it |
 | `GET /connectors/sessions` | the caller's bindings: session, provider, connection, state, label, times, and whether the relay syncs it by itself (`scheduled`, `lastScheduledSyncAt`, `lastScheduleError`) |
+| `GET /connectors/accounts` | #524: which account each of the caller's connections reaches — `[{ connectionId, provider, feedSpaceId, accountId }]` from the references the ingest keeps per person (excluded accounts left out). An account row's own `connectionId` names whoever fetched it last, which on an IBAN feed two people connected is not the viewer's; the app files an account under the connection that fetches it from this list |
 | `POST /connectors/{provider}/login` | `{ connectionId, inputs?, credentialBundle?, config?, label?, preferAgent?, idempotencyKey? }` → the session view; 200 with the bundle attached, or 202 to follow. `X-Device-Class: native\|web` is honoured; absent, the platform header decides (web bundles live shorter) |
 | `GET …/login/{sessionId}` | the view; the bundle is handed over exactly once |
 | `POST …/login/{sessionId}/answer` | `{ challengeId, value }` |
 | `POST …/login/{sessionId}/cancel` | fails the run in flight |
 | `GET …/login/{sessionId}/challenges/{challengeId}/image` | the picture |
 | `GET …/challenges/{challengeId}/live/frame?after=n`, `POST …/live/input` | the live view: the newest JPEG frame past `n` (`X-Live-*` headers relayed), the human's taps and keys |
-| `POST /connectors/{provider}/sync` | `{ connectionId, bundle, since? }` → resume, fetch every resource the manifest declares, ingest, acknowledge; 200 `{ sessionId, state, ingested, complete, session? }` — `complete` is false when the party holds more history than one pass fetches (the adapters walk newest first and cap themselves; the relay runs a resource once per sync) — `session.bundle` only when the provider rotated it, and then the app persists it; 202 `{ jobId, … }` when a fetch outran its window or stopped for a question |
+| `GET …/challenges/{challengeId}/live/stream` | #429: the live view pushed. The app holds ONE response here for the whole login; the relay holds one stream to the control plane (`…/live/stream?after=`) and hands each event on as it arrives — so the device talks to this API alone, the control plane and the agents stay on the private network, and the taps still travel through `…/live/input` above. `Last-Event-ID` (or `?after=`) names the picture the app drew; a reconnect gets only a newer one. Frames are re-written from what was validated (`id` = sequence; `{ sequence, width, height, origin?, jpeg }`, nothing else), `: keep-alive` comments are passed on, `end` (`{ code }`) is final; a stream the control plane refuses keeps its status and envelope (404 not yours, 410 over, 400 a `Last-Event-ID` that is not a number). One stream per viewer: a second one for the same user and challenge takes over, and the first is sent `event: superseded` and lets its upstream go (a phone that switched networks; a second tab, which then polls). An upstream silent 30 s is dropped. Headers `text/event-stream`, `no-store`, `X-Accel-Buffering: no`; never a Sentry transaction; opens ride their own rate bucket (below) |
+| `POST /connectors/{provider}/sync` | `{ connectionId, bundle, since?, until? }` → resume, fetch every resource the manifest declares, ingest, acknowledge; 200 `{ sessionId, state, ingested, complete, oldest?, session? }` — `complete` is false when the party holds more history than one pass fetches (the adapters walk newest first and cap themselves; the relay runs a resource once per sync), and `oldest` is then the oldest day the pass brought. `until` makes it a pass over older history (#460): only the resources that take an `until` (accounts are all of them already), nothing past the party's floor or before the pass's own `since`, and the pending mirror left alone — the caller passes `until = oldest` (the frontier day is asked again: a cap can cut a day in half) until a pass comes back whole or reaches no further. `session.bundle` only when the provider rotated it, and then the app persists it; 202 `{ jobId, … }` when a fetch outran its window or stopped for a question |
 | `GET …/jobs/{jobId}` | the job's view, without its page of records |
 | `POST …/jobs/{jobId}/answer` | `{ challengeId, value }` |
-| `POST …/jobs/{jobId}/collect` | `{ bundle, since? }` once the job succeeded: ingests its page, acknowledges it, then walks on to the resources after the job's — each pass may become a job of its own, answered as 202 with THAT job's view, to follow and collect in turn; 200 with the view, `ingested` (the walk's total) and `complete` once the walk is done; 202 with the job's own view while it still runs. The walk used to end at the collect (2026-10-04: a bank's accounts pass outran its window and the transactions were never asked for) |
+| `POST …/jobs/{jobId}/collect` | `{ bundle, since?, until? }` (the window the sync asked with) once the job succeeded: ingests its page, acknowledges it, then walks on to the resources after the job's — each pass may become a job of its own, answered as 202 with THAT job's view, to follow and collect in turn; 200 with the view, `ingested` (the walk's total) and `complete` once the walk is done; 202 with the job's own view while it still runs. The walk used to end at the collect (2026-10-04: a bank's accounts pass outran its window and the transactions were never asked for) |
 | `POST …/jobs/{jobId}/artifacts/share`, `DELETE …/jobs/{jobId}/artifacts` | #441 L1: the person's answer to "report this failure?". A session or job view whose `artifactsJobId` is set says a failed run left a picture that waits on them; yes relays the share under their subject and answers `{ jobId, expiresAt }`, no deletes it (204). Both close the open question on the binding: the relay's scheduler records a failed run's `artifactsJobId` on the row (`PendingArtifactsJobId`) and `GET /sessions` carries it, so the hub can ask for a run nobody was there for |
 | `DELETE /connectors/{provider}/sessions/{sessionId}` | `{ bundle? }` → `{ loggedOut, jobId?, reason? }`; the binding row is removed. Reaches the control plane row or no row: a caller must always be able to remove a connection |
 | `GET /connectors/private-agents/mine`, `POST /connectors/private-agents/requests`, `DELETE …/requests/{requestId}`, `DELETE /connectors/private-agents/mine` | hosted private agents (#420 A2): the caller's standing `{ offered, free, request?, agent? }` — whether the environment hosts any slot, how many are free, their latest request (`pending`, `approved`, `denied`, `withdrawn`, `released`), the slot bound to them; a request (asking twice is one request; refused where no slot exists or one is already theirs); withdrawing a pending request; giving the slot back (it wipes its profiles before the next person). `DELETE /connectors/agents/{agentId}` on a hosted agent gives it back too — munni's container is never revoked by a user |
@@ -112,6 +122,16 @@ them the way the api's own open-banking service once did:
   with the kept bundle (and the next job the collect answers with, and
   the next, until the walk is done); a job that asks a question leaves the session
   `awaiting_input` — the app's card says so and *Sync now* answers it;
+- a run that came back partial leaves older history behind
+  (`ConnectorSession.BackfillSince/BackfillUntil`, #460): after each run
+  that went through, ONE pass over it follows, declared as
+  `X-Connector-Trigger: backfill` — the control plane holds those to the
+  party's interval on a clock of their own, so a party sees the schedule's
+  pass and one older pass per interval (an open-banking consent: two
+  unattended reads a night where PSD2 allows four). Its refusals leave the
+  backfill for the next run; only one the person must act on touches the
+  session. The app does the same right away while the person is there
+  (attended: up to ten passes a sync, see client.md);
 - a refusal the person must act on (`session_expired`,
   `invalid_credentials`, `mfa_failed`, `consent_expired`,
   `unsupported_resource`, `agent_revoked`) drops the kept bundle and marks
@@ -196,7 +216,7 @@ carries its accounts too.
 | account | `account` row: `source: connector`, `provider`, `iban`, `currency`, name and type seeded once, `balanceCents`/`balanceAsOf`, `lastSyncedAt` | the IBAN's feed (co-owned when someone else connected it first); a card or wallet without an IBAN in a personal `CONN:{provider}:{external id}` feed |
 | transaction | `transaction` row: `accountId`, `date`, `amountCents`, `currency`, `merchant`, `description`, `importRef`, `counterIban` | the account's feed; `ConnectorAccountRefs` remembers which feed and row each connector account id maps to, so a job collected later files its rows |
 | credit_registration | a liability `account`: type from the registry's kind (instalment → loan, revolving/deferred → credit, mortgage, lease → loan), `originalCents` = the registered amount, `balanceCents` the same while running and 0 (archived) when ended, `paymentCents`/`paymentEvery` when stated, `note` with the registry's own label and arrears code | the personal registry feed (`feed:REG:{sub}`) |
-| student_debt | a `loan` account named after the provider: `balanceCents` = the total, `interestPctYear`, `note` with the phase | the personal registry feed |
+| student_debt | a `loan` account named after the provider: `balanceCents` = the total, `balanceAsOf` = the day interest was calculated to (`as_of`), `originalCents` = what was owed when repayment began, `paymentCents`/`paymentEvery`/`paymentDay` from the instalment and its due day, `interestPctYear`, `note` with the registry's own phase and regime. The sync asks for the `ledger` include, where DUO states its instalment and its booked movements (#566); the movements themselves do not land as transactions | the personal registry feed |
 
 Attaching to a space stays the user's explicit step; ingest never writes a
 link and never an overlay.

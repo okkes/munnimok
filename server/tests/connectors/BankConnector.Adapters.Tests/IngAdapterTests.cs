@@ -2341,6 +2341,11 @@ public sealed class IngAdapterTests
         Assert.False(manifest.Auth.Session.Refreshable);
         Assert.Equal(900, manifest.Auth.Session.TtlSeconds);
 
+        // every sync is a sign-in: the person's own device keeps a sealed copy of
+        // what they typed (#543), and the push to their phone stays theirs to approve
+        Assert.True(manifest.OffersCredentialStore);
+        ManifestValidator.Validate(manifest);
+
         // THE ACCOUNT HOLDER ASKED FOR THIS. ING's fraud detection notices an
         // account that signs in repeatedly and never signs out.
         Assert.Equal(LogoutSupport.Session, manifest.Logout);

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import type { Span } from '@sentry/react';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { identityDbName } from '@/db/schema';
@@ -11,6 +12,8 @@ import { getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
 import { ApiSyncBackend } from '@/sync/backend';
 import { SyncEngine } from '@/sync/engine';
+import type { SyncStatus } from '@/sync/engine';
+import { SpaceAccess } from '@/sync/spaceAccess';
 import { config } from './config';
 import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
@@ -112,8 +115,32 @@ async function restoreAndSync(
   engine.start();
 }
 
+/** a user identity's first sync once the boot opened its store (S3776: out of the boot) */
+async function startFirstSync(
+  store: StorageBackend,
+  engine: SyncEngine,
+  isCancelled: () => boolean,
+  onAttempts: (n: number) => void,
+  boot: Span,
+): Promise<void> {
+  const finishSync = () => restoreAndSync(store, engine, isCancelled, onAttempts);
+  if ((await liveSpaces(store)).length > 0) {
+    // returning device: local-first — render from what's stored NOW;
+    // auth restore + first sync catch up in the background. A dead
+    // server or unreachable OIDC endpoint must never block the UI
+    // (it did: a hanging fetch kept users on the connecting screen
+    // despite a fully usable local database).
+    void finishSync().catch(() => undefined);
+  } else {
+    // brand-new device: nothing to show — wait for the server to
+    // confirm the account state (fail-closed bootstrap)
+    boot.setAttribute('boot.waited_for_server', true);
+    await finishSync();
+  }
+}
+
 /** the sync stack of a signed-in user identity (token mirroring included) */
-function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: StorageBackend, repo: Repo): SyncEngine {
+function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: StorageBackend, repo: Repo, access: SpaceAccess): SyncEngine {
   const key = identityKey(identity);
   const backend = new ApiSyncBackend({
     baseUrl: config.apiUrl,
@@ -136,7 +163,20 @@ function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: S
       return { bearer };
     },
   });
-  return new SyncEngine(store, repo, backend, getDeviceId());
+  return new SyncEngine(store, repo, backend, getDeviceId(), { access });
+}
+
+/** what the boot does with each engine status (S2004: out of the boot's nested callbacks) */
+function onEngineStatus(status: SyncStatus, store: StorageBackend, upkeep: Repo): void {
+  // pushes failing (offline / server away) — arm the background
+  // flush so the outbox drains even if the app is killed meanwhile
+  if (status === 'offline' || status === 'error') requestOutboxSync();
+  // #533: a cycle that pulled a booking hands the reserved row's story on
+  if (status === 'idle') {
+    void import('@/application/reservedCarry')
+      .then(({ carryReservedOpinionsWhenDue }) => carryReservedOpinionsWhenDue(store, upkeep))
+      .catch(() => undefined);
+  }
 }
 
 interface DataContextValue {
@@ -148,6 +188,8 @@ interface DataContextValue {
   setActiveSpace: (spaceId: string) => Promise<void>;
   /** present only for syncing (user) identities */
   engine: SyncEngine | null;
+  /** #505: this identity's role per space — read through useCanEdit */
+  access: SpaceAccess;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -164,6 +206,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     repo: Repo;
     spaceId: string;
     engine: SyncEngine | null;
+    access: SpaceAccess;
   } | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -205,10 +248,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
       openedStore = store;
       liveStore = store;
       const syncing = identity.kind === 'user';
+      // #505: the roles the server named last — known before the first
+      // write, so a reader's space refuses writes from the start, offline too
+      const access = new SpaceAccess(syncing ? store : null);
+      await access.hydrate();
       const repo = new Repo(store, getClock(), {
         trackOutbox: syncing, // demo/offline never sync — no outbox
         onWrite: () => engine?.nudge(),
+        readOnly: (spaceId) => access.isReadOnly(spaceId),
       });
+      // the app's own upkeep leaves the spaces this identity only reads alone
+      const upkeep = repo.upkeep();
       if (syncing) {
         // operator catalog: cheap ETag revalidation, then apply any
         // tombstones exactly once per version — all fire-and-forget
@@ -216,7 +266,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const { cachedCatalog, refreshCatalog } = await import('@/sync/catalogSync');
           await refreshCatalog(store);
           const { applyCatalogTombstones } = await import('@/application/catalogMaintenance');
-          await applyCatalogTombstones(store, repo);
+          await applyCatalogTombstones(store, upkeep);
           // R9: operator-curated store fingerprints feed the receipt matcher
           const { setCatalogStorePatterns } = await import('@/domain/storeReceipts');
           setCatalogStorePatterns((await cachedCatalog(store))?.stores ?? []);
@@ -227,12 +277,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const { hydrateProfileMeta } = await import('@/application/profileHydrate');
           await hydrateProfileMeta(store);
         })().catch(() => undefined);
-        engine = buildSyncEngine(identity, store, repo);
-        // pushes failing (offline / server away) — arm the background
-        // flush so the outbox drains even if the app is killed meanwhile
-        engine.onStatus((status) => {
-          if (status === 'offline' || status === 'error') requestOutboxSync();
-        });
+        engine = buildSyncEngine(identity, store, repo, access);
+        engine.onStatus((status) => onEngineStatus(status, store, upkeep));
         // remote-wipe: if this account was deleted (or went offline) on
         // ANOTHER device, the /me binding mismatch wipes this copy too
         void enforceAccountBinding(store, identity).catch(() => undefined);
@@ -250,31 +296,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (identity.kind === 'demo') await measure('app.boot.seed', () => seedDemoIfNeeded(repo), undefined, { parent: boot });
       // boot maintenance chain: the every-boot heals (ALL identities —
       // demo/offline data too); each is idempotent and cheap — timed as
-      // its own transaction (parent null), since it outlives the boot span
+      // its own transaction (parent null), since it outlives the boot span.
+      // #505: through the upkeep view — a space this identity only reads is
+      // healed by the devices of those who may write it
       const bootChain = measure('app.boot.heal', async () => {
         // #228: reimbursement on a SPLIT transaction stays on the split.
         // Every boot: links name their parts (a row split after it was
         // linked) and each side's settle bookkeeping is recomputed
         const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
-        await normalizeReimbursements(store, repo);
-        // #221: every live space carries its six default accounts (every
-        // boot, idempotent — pre-#221 spaces and old-device deletes heal)
-        const { ensureAllDefaultAccounts } = await import('@/application/defaultAccounts');
-        await ensureAllDefaultAccounts(store, repo);
-        // #133 ruling 3 / #221: bare movement rows link onto the DEFAULT
-        // accounts — balances move via the mirror lifecycle. Every boot:
-        // the server keeps writing keyword-predicted movement categories
-        // (GcIngest) with no counterparty, so this heals continuously.
-        const { migrateBareSpecialRows } = await import('@/application/categoryModel');
-        await migrateBareSpecialRows(store, repo);
+        await normalizeReimbursements(store, upkeep);
+        // #546: the retired family defaults leave their spaces (every boot
+        // until none is left — a default pulled later retires next boot)
+        const { retireDefaultAccounts } = await import('@/application/defaultAccounts');
+        await retireDefaultAccounts(store, upkeep);
+        // #544: rows still naming an account their space lost let go of it
+        const { repairDanglingCounterparties } = await import('@/application/accountRelease');
+        await repairDanglingCounterparties(store, upkeep);
+        // #133 ruling 3 / #546: bare movement rows link the account their
+        // text names (the ATM pair: the cash wallet) — balances move via the
+        // mirror lifecycle. Every boot: the server keeps writing predicted
+        // movement categories with no counterparty, so this heals continuously.
+        // #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
+        const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
+        await migrateBareSpecialRows(store, upkeep);
+        await refileCashTransfers(store, upkeep);
+        // #509: a loan typed at its original amount counts every payment linked to it, its date's included
+        const { settlePristineLoans } = await import('@/application/loanBalance');
+        await settlePristineLoans(store, upkeep);
         // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
         // a linked row a fetch's overlay re-filed takes it back every boot
         const { realignRecurringCategories } = await import('@/application/recurring');
-        await realignRecurringCategories(store, repo);
+        await realignRecurringCategories(store, upkeep);
         // transfers are ONE event with two legs — pair them within each
         // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');
-        await linkTransferPairs(store, repo);
+        await linkTransferPairs(store, upkeep);
+        // #533: a reserved charge the bank booked hands its story to the booked row
+        const { carryReservedOpinions } = await import('@/application/reservedCarry');
+        await carryReservedOpinions(store, upkeep);
+        // #578: the keys recurrings, loans and dismissals stored follow the merchant key's new spelling, once
+        const { rekeyMerchantKeys } = await import('@/application/merchantKeyRekey');
+        await rekeyMerchantKeys(store, upkeep);
       }, undefined, { parent: null }).catch(() => undefined);
       // test seam: the chain writes fire-and-forget, and a test that
       // deletes the database while a PREVIOUS boot's chain still holds
@@ -285,7 +347,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // bank-connect completions attach server-side from an anonymous
       // page — mirror any link no device ever saw being made (also heals
       // the historic "connected but shows up nowhere" danglers)
-      if (identity.kind === 'user') void mirrorSpaceLinks(store, repo).catch(() => undefined);
+      if (identity.kind === 'user') void mirrorSpaceLinks(store, upkeep).catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile, same Mina flow as online (user ruling):
         // no auto-created space — the tutorial's create-step (or its
@@ -298,30 +360,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const profile = (await store.metaGet('profile'))?.value as { country?: string } | undefined;
         setPredictionCountry(profile?.country);
       }
-      if (engine) {
-        const eng = engine;
-        const finishSync = () => restoreAndSync(store, eng, isCancelled, onAttempts);
-        if ((await liveSpaces(store)).length > 0) {
-          // returning device: local-first — render from what's stored NOW;
-          // auth restore + first sync catch up in the background. A dead
-          // server or unreachable OIDC endpoint must never block the UI
-          // (it did: a hanging fetch kept users on the connecting screen
-          // despite a fully usable local database).
-          void finishSync().catch(() => undefined);
-        } else {
-          // brand-new device: nothing to show — wait for the server to
-          // confirm the account state (fail-closed bootstrap)
-          boot.setAttribute('boot.waited_for_server', true);
-          await finishSync();
-        }
-      }
+      if (engine) await startFirstSync(store, engine, isCancelled, onAttempts, boot);
       const stored = (await store.metaGet(ACTIVE_SPACE_KEY))?.value as string | undefined;
       const spaces = await liveSpaces(store);
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
       boot.setAttribute('boot.spaces', spaces.length);
       tagSpacePeriod(spaces.find((s) => s.id === spaceId)?.periodType);
       if (!spaceId && !(await minaOwnsFirstRun(store))) throw new Error('no space available after seed');
-      if (!cancelled) setState({ store, repo, spaceId: spaceId ?? '', engine });
+      if (!cancelled) setState({ store, repo, spaceId: spaceId ?? '', engine, access });
     }).catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
       if (!cancelled) throw err;

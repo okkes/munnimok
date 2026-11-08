@@ -128,6 +128,24 @@ describe('linkTransferPairs (application, per space)', () => {
     expect(await db.transactions.get('in')).toMatchObject({ catId: 'savingDeposit', linkedAccountId: 'checking' });
   });
 
+  it('#536: an attached account pairs as the SPACE reads it — the global row\'s own type says nothing', async () => {
+    // the global row came in as checking; this space attached it as its savings
+    await repo.upsert('account', 'feedS', 'fsav', { name: 'Oranje Spaarrekening', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('accountLink', 'priv', 'link-sav', { feedSpaceId: 'feedS', accountId: 'fsav', type: 'savings' });
+    await repo.upsert('transaction', 'priv', 'out', {
+      accountId: 'checking', date: '2026-07-25', amountCents: -50000, currency: 'EUR',
+      merchant: 'To the spaarrekening', catId: 'transferOut', linkedAccountId: 'fsav', needsReview: 0,
+    });
+    await repo.upsert('transaction', 'feedS', 'fin', {
+      accountId: 'fsav', date: '2026-07-26', amountCents: 50000, currency: 'EUR', merchant: 'From checking', needsReview: 1,
+    });
+    expect(await linkTransferPairs(store, repo)).toBe(1);
+    // savings to this space: the checking leg files Set aside, the feed row its stamp — on the space's overlay
+    expect(await db.transactions.get('out')).toMatchObject({ transferPeerId: 'fin', catId: 'savingDeposit' });
+    const overlay = (await db.txMeta.toArray()).find((m) => m.txId === 'fin');
+    expect(overlay).toMatchObject({ spaceId: 'priv', catId: 'savingDeposit', linkedAccountId: 'checking', transferPeerId: 'out' });
+  });
+
   it('a deliberate out-leg claims its RAW income twin and types the mirror', async () => {
     await repo.upsert('transaction', 'priv', 'out', {
       accountId: 'checking',

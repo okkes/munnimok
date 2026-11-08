@@ -47,6 +47,7 @@ public sealed class MockBankSlowAdapter : MockBankAdapter
         Id = ProviderId,
         Name = "Mock Bank (slow)",
         Kind = ProviderKind.Bank,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserInteractive,

@@ -30,6 +30,7 @@ public sealed class MockBankBrokenAdapter : MockBankAdapter
         Id = ProviderId,
         Name = "Mock Bank (broken)",
         Kind = ProviderKind.Bank,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,
@@ -61,7 +62,7 @@ public sealed class MockBankBrokenAdapter : MockBankAdapter
     /// hand-thrown exception - which is what makes it a test of the chain
     /// check as well as of the alert path.
     /// </summary>
-    protected override MockBankLedger Ledger => MockBankLedger.BrokenChain;
+    protected override MockBankLedger LedgerThrough(DateOnly today) => MockBankLedger.BrokenThrough(today);
 
     public override ProviderManifest Describe() => Instance;
 

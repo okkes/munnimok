@@ -30,6 +30,7 @@ public sealed class MockBankConsentAdapter : MockBankAdapter, ILookupProvider, I
         Id = ProviderId,
         Name = "Mock Bank (consent)",
         Kind = ProviderKind.Bank,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,
@@ -45,10 +46,13 @@ public sealed class MockBankConsentAdapter : MockBankAdapter, ILookupProvider, I
         Limits = OpenBankingManifests.Limits(MockBankLedger.HistoryDays),
     };
 
+    /// <summary>When the inventory's consent was given: a listing's own record, nothing reads a window from it.</summary>
+    private static readonly DateOnly Consented = new(2026, 7, 26);
+
     private readonly List<RemoteConsent> _inventory =
     [
-        new() { Id = "mock-consent-here", Status = "LN", Reference = "gcr_here", InstitutionId = Institution, Origin = "https://app.mock.invalid", AccountCount = 2, CreatedAt = MockBankLedger.Anchor.ToDateTime(TimeOnly.MinValue) },
-        new() { Id = "mock-consent-elsewhere", Status = "EX", Reference = "legacy", InstitutionId = Institution, Origin = "https://other.mock.invalid", AccountCount = 0, CreatedAt = MockBankLedger.Anchor.AddDays(-100).ToDateTime(TimeOnly.MinValue) },
+        new() { Id = "mock-consent-here", Status = "LN", Reference = "gcr_here", InstitutionId = Institution, Origin = "https://app.mock.invalid", AccountCount = 2, CreatedAt = Consented.ToDateTime(TimeOnly.MinValue) },
+        new() { Id = "mock-consent-elsewhere", Status = "EX", Reference = "legacy", InstitutionId = Institution, Origin = "https://other.mock.invalid", AccountCount = 0, CreatedAt = Consented.AddDays(-100).ToDateTime(TimeOnly.MinValue) },
     ];
 
     public MockBankConsentAdapter(TimeProvider? time = null) : base(time)
@@ -77,18 +81,19 @@ public sealed class MockBankConsentAdapter : MockBankAdapter, ILookupProvider, I
         OpenBankingReturn.RequireReturn(ProviderId, answer, reference, "ref");
 
         ctx.Progress(JobStep.Finalizing);
+        var reachable = LedgerThrough(Today).Reachable;
         var consent = new ConsentMaterial
         {
             ConsentId = $"mock-consent-{reference}",
             InstitutionId = Institution,
             InstitutionName = InstitutionName,
-            Accounts = [.. Ledger.Reachable.Select(a => new ConsentAccount { Id = a.ExternalId, Iban = a.ExternalId, Name = a.DisplayName, Currency = "EUR", Detailed = true })],
+            Accounts = [.. reachable.Select(a => new ConsentAccount { Id = a.ExternalId, Iban = a.ExternalId, Name = a.DisplayName, Currency = "EUR", Detailed = true })],
         };
         return new LoginResult
         {
             Material = consent.ToMaterial(),
             Account = new ProviderAccount { DisplayName = InstitutionName, ExternalId = consent.ConsentId },
-            Reachable = Ledger.Reachable,
+            Reachable = reachable,
             ExpiresAt = Time.GetUtcNow().AddDays(OpenBankingManifests.ConsentDays),
         };
     }

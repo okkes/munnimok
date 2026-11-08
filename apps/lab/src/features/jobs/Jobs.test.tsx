@@ -85,6 +85,7 @@ describe('Jobs', () => {
     expect(whoLine({ who: null, subject: 'u_x', trigger: 'user' })).toBe('u_x');
     expect(triggerWord(null)).toBe('nobody in particular');
     expect(triggerWord('schedule')).toBe('the schedule');
+    expect(triggerWord('backfill')).toBe("the schedule's older-history pass");
     expect(artifactsLine({ artifacts: 'retained', hasScreenshot: false })).toBe('digest');
     expect(artifactsLine({ artifacts: 'none', hasScreenshot: false })).toBe('');
     expect(outcomeLine(JOBS.jobs[0])).toBe('provider_changed');

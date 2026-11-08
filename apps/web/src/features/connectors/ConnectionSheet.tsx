@@ -6,6 +6,7 @@ import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Sheet } from '@/ui/Sheet';
 import { kindIcon } from './logos';
 import { SpacePicker } from './SpacePicker';
@@ -97,7 +98,7 @@ export function ConnectionSheet({
           className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-3 py-2.5 text-left text-[13px] text-ink"
         >
           {view.meta.icon ? (
-            <img src={view.meta.icon} alt="" className="h-6 w-6 rounded object-contain" />
+            <Picture src={view.meta.icon} className="h-6 w-6 rounded object-contain" />
           ) : (
             <Icon name={kindIcon(kind)} size={20} color="var(--m-ink-3)" />
           )}
@@ -105,10 +106,14 @@ export function ConnectionSheet({
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
 
-        {/* which spaces this connection's receipts flow into */}
-        <div className="m-cap px-1">{t('conn.sharedSpaces')}</div>
-        <p className="px-1 text-[11px] leading-snug text-ink-4">{t('conn.sharedSpacesSub')}</p>
-        <SpacePicker spaces={allSpaces} selected={includedSpaceIds} disabled={busy} onToggle={(id) => void toggleSpace(id)} testId="conn-manage-spaces" />
+        {/* which spaces this connection's receipts flow into — a bank's accounts are attached one by one instead */}
+        {kind !== 'bank' && (
+          <>
+            <div className="m-cap px-1">{t('conn.sharedSpaces')}</div>
+            <p className="px-1 text-[11px] leading-snug text-ink-4">{t('conn.sharedSpacesSub')}</p>
+            <SpacePicker spaces={allSpaces} selected={includedSpaceIds} disabled={busy} onToggle={(id) => void toggleSpace(id)} testId="conn-manage-spaces" />
+          </>
+        )}
 
         {/* #441 L1: a failed run's picture reaches the people who run munni only with the person's word — this gives it once */}
         {view.device && (

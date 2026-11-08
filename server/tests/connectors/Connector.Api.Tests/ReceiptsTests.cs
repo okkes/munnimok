@@ -27,11 +27,25 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
     };
 
     /// <summary>
-    /// The shipped fixture is anchored to July 2026, so this window holds every
-    /// receipt in it until mid-2027 - after which the fixture, not the test,
-    /// needs moving.
+    /// Before the mock store's first day (2026-06-28); the platform clamps it
+    /// to the year the store keeps, so it reaches everything the store holds.
     /// </summary>
     private const string Since = "2026-06-01";
+
+    /// <summary>
+    /// One cycle of the mock store, ending yesterday and pinned to the day the
+    /// test started: the store repeats the fixture's three receipts every
+    /// <see cref="MockStoreAdapters.ReceiptCycleDays"/> days, so this window
+    /// holds each of them exactly once on any day - and a midnight mid-test
+    /// cannot move it.
+    /// </summary>
+    private static (string Since, string Until) OneCycle()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return (Day(today.AddDays(-MockStoreAdapters.ReceiptCycleDays)), Day(today.AddDays(-1)));
+    }
+
+    private static string Day(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     /// <summary>The one include the one-shot form asks for.</summary>
     private static readonly string[] ItemsOnly = ["items"];
@@ -44,9 +58,10 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
         using var http = factory.CreateAuthorizedClient();
         var connection = await Flows.ConnectAsync(http, provider, Flows.NewSubject("receipts"), Credentials);
         var ticket = await Flows.ResumeAsync(http, provider, connection);
+        var (since, until) = OneCycle();
 
         var page = await Flows.FetchPageAsync(
-            http, provider, $"/v1/{provider}/receipts?since={Since}&include=items", ticket);
+            http, provider, $"/v1/{provider}/receipts?since={since}&until={until}&include=items", ticket);
 
         Assert.Equal("receipts", page.Text("resource"));
         Assert.True(page.GetProperty("complete").GetBoolean(), "the fixture fits inside one pass");
@@ -78,21 +93,23 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
             Assert.False(receipt.GetProperty("total_is_derived").GetBoolean());
         }
 
-        var byExternalId = receipts.ToDictionary(r => r.Text("external_id"), StringComparer.Ordinal);
+        // Keyed by the fixture receipt each one repeats: an id names its own day,
+        // then which of the file's receipts it is (mock-{yyyy-MM-dd}-0001).
+        var byFixtureReceipt = receipts.ToDictionary(r => r.Text("external_id")[^4..], StringComparer.Ordinal);
 
         // Money is minor units and an ISO-4217 code, never a float.
-        Assert.Equal(1085, byExternalId["mock-2026-07-19-0001"].GetProperty("total").GetProperty("value").GetInt64());
+        Assert.Equal(1085, byFixtureReceipt["0001"].GetProperty("total").GetProperty("value").GetInt64());
 
         // Discount lines are negative, because without them the items do not sum
         // to the total and reconciliation would be meaningless.
-        var discount = byExternalId["mock-2026-07-19-0001"].GetProperty("items")[0].GetProperty("discount");
+        var discount = byFixtureReceipt["0001"].GetProperty("items")[0].GetProperty("discount");
         Assert.Equal(-30, discount.GetProperty("amount").GetProperty("value").GetInt64());
 
         // A receipt whose items do not reconcile is emitted with the verdict
         // rather than dropped: dropping it would hide a real purchase, and
         // trusting it silently would hand over a total we know is inconsistent.
-        Assert.False(byExternalId["mock-2026-06-28-0003"].GetProperty("reconciled").GetBoolean());
-        Assert.True(byExternalId["mock-2026-07-19-0001"].GetProperty("reconciled").GetBoolean());
+        Assert.False(byFixtureReceipt["0003"].GetProperty("reconciled").GetBoolean());
+        Assert.True(byFixtureReceipt["0001"].GetProperty("reconciled").GetBoolean());
 
         // This adapter reported no refreshed material, so nothing is re-issued.
         // A bundle appearing here would mean the connector was handing back
@@ -156,6 +173,7 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
 
         using var http = factory.CreateAuthorizedClient();
         var connection = await Flows.ConnectAsync(http, provider, Flows.NewSubject("one-shot"), Credentials);
+        var (since, until) = OneCycle();
 
         using var request = Wire.Post($"/v1/{provider}/receipts:fetch", new
         {
@@ -163,7 +181,8 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
             Bundle = connection.Bundle,
             Params = new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                ["since"] = Since,
+                ["since"] = since,
+                ["until"] = until,
                 ["include"] = ItemsOnly,
             },
         });

@@ -61,6 +61,13 @@ public sealed record ConnectorSessionDto(
 /// <summary>What an enrollment hands the user: the code, and the line that starts their agent.</summary>
 public sealed record ConnectorEnrollmentDto(string Code, DateTimeOffset ExpiresAt, string? ControlPlaneUrl, string? ComposeCommand);
 
+/// <summary>
+/// One account a connection of the caller's reaches (#524): which feed row
+/// it fetches. Per person — an IBAN feed two people connected carries one
+/// row, whose own connection stamp names whoever fetched it last.
+/// </summary>
+public sealed record ConnectorAccountLinkDto(string ConnectionId, string Provider, string FeedSpaceId, string AccountId);
+
 // The bodies the relay sends on: the wire encoding renames these to
 // snake_case, dictionary keys stay what the user typed.
 internal sealed record WireLogin(
@@ -116,6 +123,7 @@ public static partial class ConnectorRelayEndpoints
         group.MapGet("", Overview);
         group.MapGet("/providers", Catalogue);
         group.MapGet("/sessions", MySessions);
+        group.MapGet("/accounts", MyAccounts);
         group.MapGet("/{provider}/options/{field}", Options);
         // a public brand image an <img> tag fetches: no session to bind, nothing of anyone's in it
         group.MapGet("/{provider}/options/{field}/{token}/logo", OptionLogo).AllowAnonymous();
@@ -126,6 +134,7 @@ public static partial class ConnectorRelayEndpoints
         group.MapPost("/{provider}/login/{sessionId}/cancel", Cancel);
         group.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/image", ChallengeImage);
         group.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/live/frame", LiveFrame);
+        group.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/live/stream", LiveStream);
         group.MapPost("/{provider}/login/{sessionId}/challenges/{challengeId}/live/input", LiveInput);
         group.MapDelete("/{provider}/sessions/{sessionId}", Disconnect);
 
@@ -148,8 +157,8 @@ public static partial class ConnectorRelayEndpoints
         });
     }
 
-    /// <summary>The catalogue, in this API's casing, revalidated with the connector's own ETag.</summary>
-    private static async Task<IResult> Catalogue(HttpContext http, ConnectorRelay relay, ConnectorCatalogue catalogue, CancellationToken ct)
+    /// <summary>The catalogue, in this API's casing, revalidated with the connector's own ETag; the stand-in parties only where this environment offers them.</summary>
+    private static async Task<IResult> Catalogue(HttpContext http, ConnectorRelay relay, ConnectorCatalogue catalogue, ConnectorOptions options, CancellationToken ct)
     {
         var (etag, document) = await catalogue.GetAsync(relay.Client, ct);
         if (etag is not null)
@@ -160,7 +169,34 @@ public static partial class ConnectorRelayEndpoints
             }
             http.Response.Headers.ETag = etag;
         }
-        return Results.Json(ConnectorJson.ToCamel(document));
+        var view = ConnectorJson.ToCamel(document);
+        if (!options.OfferFixtures && view?["providers"] is JsonArray providers)
+        {
+            foreach (var fixture in providers.Where(IsFixture).ToList()) providers.Remove(fixture);
+        }
+        return Results.Json(view);
+    }
+
+    /// <summary>A stand-in party (#526): the manifest says so itself.</summary>
+    internal static bool IsFixture(JsonNode? manifest) =>
+        manifest is JsonObject node && node["fixture"] is JsonValue flag && flag.TryGetValue<bool>(out var fixture) && fixture;
+
+    /// <summary>
+    /// The accounts each of the caller's connections reaches (#524) — the
+    /// references the ingest keeps per person, so the app files an account
+    /// under the connection that fetches it rather than under every
+    /// connection of the same party, and tells an account no connection of
+    /// theirs fetches any more.
+    /// </summary>
+    private static async Task<IResult> MyAccounts(HttpContext http, ConnectorRelay relay)
+    {
+        var userId = http.GetUserId();
+        var rows = await relay.Db.ConnectorAccountRefs
+            .Where(a => a.UserId == userId && a.ConnectionId != null && !a.Excluded)
+            .Select(a => new ConnectorAccountLinkDto(a.ConnectionId!, a.Provider, a.FeedSpaceId, a.AccountEntityId))
+            .Distinct()
+            .ToListAsync();
+        return Results.Ok(rows.OrderBy(r => r.ConnectionId, StringComparer.Ordinal).ThenBy(r => r.AccountId, StringComparer.Ordinal));
     }
 
     private static async Task<IResult> MySessions(HttpContext http, ConnectorRelay relay)
@@ -178,9 +214,12 @@ public static partial class ConnectorRelayEndpoints
 
     // ── the login and its session ────────────────────────────────────────
 
-    private static async Task<IResult> Login(string provider, ConnectorLoginRequest request, HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    private static async Task<IResult> Login(
+        string provider, ConnectorLoginRequest request, HttpContext http, ConnectorRelay relay, ConnectorOptions options, CancellationToken ct)
     {
         var userId = http.GetUserId();
+        // a stand-in party this environment does not offer is no party a person may sign in to (#526)
+        if (!options.OfferFixtures && IsFixture(await relay.Catalogue.ProviderAsync(relay.Client, provider, ct))) return UnknownSession(http);
         if (!relay.Budget.TrySpend(userId, ConnectorBudget.Login, out var retryAfter)) return BudgetExceeded(http, retryAfter);
 
         var subject = relay.Minter.For(userId);

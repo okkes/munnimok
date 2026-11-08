@@ -35,6 +35,7 @@ const monthDay = (offset: number, day: number): string => {
 export async function seedRichDemo(repo: Repo): Promise<void> {
   await seedIncome(repo);
   await seedHistory(repo);
+  await seedLinkedTransfers(repo);
   await seedRecurring(repo);
   await seedBudgets(repo);
   await seedGoals(repo);
@@ -155,9 +156,8 @@ async function seedHistory(repo: Repo): Promise<void> {
     if (m % 2 === 0) await spend(`demo_hist_fuel_${m}`, monthDay(-m, 20), 6240, 'Shell', 'transportFuel');
   }
   // the typed-splits showcase (v2): the phone bill is TWO kinds of money
-  // — telecom plus paying the device off. Counterparty-less debt part →
-  // the default-loan bucket; amounts unchanged, so every pinned total
-  // stays put.
+  // — telecom plus paying the device off. The debt part names no loan
+  // (#546: no default-loan bucket catches it any more).
   await repo.upsert('transaction', DEMO_SPACE_ID, 'demo_split_phone', {
     accountId: 'demo_main', date: monthDay(0, 2), amountCents: -6500, currency: 'EUR',
     merchant: 'Vodafone', catId: 'telecom', needsReview: 0,
@@ -185,6 +185,36 @@ async function seedHistory(repo: Repo): Promise<void> {
   // and two more strangers so the queue feels like a real backlog
   await spend('demo_rev_x_0', daysAgo(2), 1799, 'Praxis', 'uncategorized', 1);
   await spend('demo_rev_x_1', daysAgo(4), 899, 'Etos', 'uncategorized', 1);
+}
+
+// ── #352 (user): two accounts that move money between them. The main
+//    account tops PayPal up (an outgoing and an incoming leg), and PayPal
+//    pays a shop while the bank debits PayPal for it the same day (two
+//    outgoing legs — the wallet pattern). Collapsed, each pair is one
+//    row; "Show linked separately" stands the legs side by side. ──────
+async function seedLinkedTransfers(repo: Repo): Promise<void> {
+  await repo.upsert('account', DEMO_SPACE_ID, 'demo_paypal', {
+    name: 'PayPal',
+    type: 'checking',
+    source: 'manual',
+    currency: 'EUR',
+    balanceCents: 2_101,
+    bankId: 'paypal',
+    logo: '/brands/paypal.svg',
+  } as never);
+  const leg = (id: string, accountId: string, date: string, cents: number, merchant: string, catId: string, peer: string, linked?: string) =>
+    repo.upsert('transaction', DEMO_SPACE_ID, id, {
+      accountId, date, amountCents: cents, currency: 'EUR', merchant, description: merchant.toUpperCase(),
+      catId, needsReview: 0, transferPeerId: peer, ...(linked ? { linkedAccountId: linked } : {}),
+    } as never);
+  // the top-up: out of the main account, into PayPal
+  await leg('demo_pp_topup_out', 'demo_main', daysAgo(11), -5_000, 'PayPal top-up', 'transferOut', 'demo_pp_topup_in', 'demo_paypal');
+  await leg('demo_pp_topup_in', 'demo_paypal', daysAgo(11), 5_000, 'Top-up from Demo Checking', 'transferIn', 'demo_pp_topup_out', 'demo_main');
+  // PayPal pays the shop, the bank pays PayPal — the purchase keeps its own category
+  await leg('demo_pp_buy1_bank', 'demo_main', daysAgo(4), -2_899, 'PayPal Europe S.a.r.l.', 'transferOut', 'demo_pp_buy1', 'demo_paypal');
+  await leg('demo_pp_buy1', 'demo_paypal', daysAgo(4), -2_899, 'Zalando', 'clothing', 'demo_pp_buy1_bank');
+  await leg('demo_pp_buy2_bank', 'demo_main', daysAgo(9), -5_999, 'PayPal Europe S.a.r.l.', 'transferOut', 'demo_pp_buy2', 'demo_paypal');
+  await leg('demo_pp_buy2', 'demo_paypal', daysAgo(9), -5_999, 'Steam', 'videoGame', 'demo_pp_buy2_bank');
 }
 
 // ── recurring costs + their linked charge history ──────────────────────

@@ -70,6 +70,15 @@ public sealed class ConnectorOptions
     public int SyncsPerHour { get; set; } = 60;
 
     /// <summary>
+    /// Whether the app's catalogue offers the platform's stand-in parties
+    /// (the mocks, #526). Off: no person is offered a party that is no real
+    /// shop or bank, and the relay refuses to sign one in; the lab's bench
+    /// reaches them through its own door either way. The test host turns it
+    /// on to exercise the protocol end to end.
+    /// </summary>
+    public bool OfferFixtures { get; set; }
+
+    /// <summary>
     /// One call's ceiling. A fetch waits up to the control plane's own window
     /// (25 s) before it answers 202, so this sits well above it.
     /// </summary>

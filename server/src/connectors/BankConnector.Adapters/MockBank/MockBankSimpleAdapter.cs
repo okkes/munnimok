@@ -26,6 +26,7 @@ public sealed class MockBankSimpleAdapter : MockBankAdapter
         Id = ProviderId,
         Name = "Mock Bank (simple)",
         Kind = ProviderKind.Bank,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,

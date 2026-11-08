@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLang } from '@/i18n';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Pill } from '@/ui/primitives';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
@@ -10,11 +11,51 @@ import { kindIcon, partyLogo } from './logos';
 import { connectableHere, needsOwnComputer } from './manifestForm';
 import type { ErrorEnvelope, ProviderManifest } from './types';
 
+/** one party to connect, as the manifest describes it: its status honest, "needs your own computer" marked, unreachable here disabled */
+export function PartyRow({ manifest, sub, onPick }: Readonly<{ manifest: ProviderManifest; sub?: string; onPick: (manifest: ProviderManifest) => void }>) {
+  const { t } = useLang();
+  const device = deviceClass();
+  const logo = partyLogo(manifest.logoRef);
+  const offered = connectableHere(manifest, device);
+  const ownComputer = needsOwnComputer(manifest);
+  return (
+    <button
+      data-testid={`conn-party-${manifest.id}`}
+      disabled={!offered}
+      onClick={() => onPick(manifest)}
+      className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0 disabled:opacity-60"
+    >
+      {logo ? <Picture src={logo} className="h-6 w-6 rounded object-contain" /> : <Icon name={kindIcon(manifest.kind)} size={20} color="var(--m-ink-3)" />}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] text-ink">{manifest.name}</span>
+        {sub && <span className="block text-[11px] text-ink-4">{sub}</span>}
+        {ownComputer && (
+          <span className="block text-[11px] text-ink-4" data-testid={`conn-party-${manifest.id}-agent`}>
+            {t('conn.needsComputer')}
+          </span>
+        )}
+        {device === 'web' && manifest.webSupport === 'none' && (
+          <span className="block text-[11px] text-ink-4" data-testid={`conn-party-${manifest.id}-app`}>
+            {t('conn.useApp')}
+          </span>
+        )}
+      </span>
+      {manifest.status.state === 'degraded' && (
+        <Pill tone="warning" testId={`conn-party-${manifest.id}-degraded`}>
+          {t('conn.partyDegraded')}
+        </Pill>
+      )}
+      {manifest.status.state === 'paused' && <Pill testId={`conn-party-${manifest.id}-paused`}>{t('conn.partyPaused')}</Pill>}
+      {offered && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
+    </button>
+  );
+}
+
 /**
- * The catalogue (§10.1): every party the environment runs, rendered from
- * the manifests — grouped by kind, searchable, its status shown
- * honestly, "needs your own computer" marked. Shops for now; banks and
- * registries join with their slices.
+ * The catalogue (§10.1): the parties of the kinds a screen manages,
+ * rendered from the manifests — grouped by kind, searchable. Connected
+ * services offers shops and registries here; banks have their own picker
+ * on the accounts screens (#527).
  */
 export function CatalogueSheet({
   open,
@@ -35,7 +76,6 @@ export function CatalogueSheet({
 }>) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
-  const device = deviceClass();
 
   // banks first, then shops, then the registries
   const groups = useMemo(() => {
@@ -68,42 +108,9 @@ export function CatalogueSheet({
           <div key={group.kind}>
             <div className="m-cap mb-1 px-1">{t(group.captionKey)}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`conn-catalogue-${group.kind}`}>
-              {group.rows.map((manifest) => {
-                const logo = partyLogo(manifest.logoRef);
-                const offered = connectableHere(manifest, device);
-                const ownComputer = needsOwnComputer(manifest);
-                return (
-                  <button
-                    key={manifest.id}
-                    data-testid={`conn-party-${manifest.id}`}
-                    disabled={!offered}
-                    onClick={() => onPick(manifest)}
-                    className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0 disabled:opacity-60"
-                  >
-                    {logo ? <img src={logo} alt="" className="h-6 w-6 rounded object-contain" /> : <Icon name={kindIcon(manifest.kind)} size={20} color="var(--m-ink-3)" />}
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] text-ink">{manifest.name}</span>
-                      {ownComputer && (
-                        <span className="block text-[11px] text-ink-4" data-testid={`conn-party-${manifest.id}-agent`}>
-                          {t('conn.needsComputer')}
-                        </span>
-                      )}
-                      {device === 'web' && manifest.webSupport === 'none' && (
-                        <span className="block text-[11px] text-ink-4" data-testid={`conn-party-${manifest.id}-app`}>
-                          {t('conn.useApp')}
-                        </span>
-                      )}
-                    </span>
-                    {manifest.status.state === 'degraded' && (
-                      <Pill tone="warning" testId={`conn-party-${manifest.id}-degraded`}>
-                        {t('conn.partyDegraded')}
-                      </Pill>
-                    )}
-                    {manifest.status.state === 'paused' && <Pill testId={`conn-party-${manifest.id}-paused`}>{t('conn.partyPaused')}</Pill>}
-                    {offered && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
-                  </button>
-                );
-              })}
+              {group.rows.map((manifest) => (
+                <PartyRow key={manifest.id} manifest={manifest} onPick={onPick} />
+              ))}
             </div>
           </div>
         ))}

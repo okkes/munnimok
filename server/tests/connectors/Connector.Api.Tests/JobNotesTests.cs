@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using ShopConnector.Adapters.Mock;
 using Connector.Api.Tests.Infrastructure;
@@ -25,10 +26,14 @@ public sealed class JobNotesTests(ShopApiFactory factory)
 
     /// <summary>
     /// A window that excludes some of the fixture but not all of it, so the
-    /// mock has something true to say.
+    /// mock has something true to say: two weeks back from the test's own day.
+    /// The store keeps a year of receipts, and none is more than two weeks
+    /// after the one before it.
     /// </summary>
-    private const string NarrowWindow = "2026-07-10";
+    private static string NarrowWindow() =>
+        DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-14).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
+    /// <summary>Before the store's first day; the platform clamps it to the year the store keeps, so nothing falls outside.</summary>
     private const string WholeWindow = "2026-06-01";
 
     [Fact]
@@ -41,7 +46,7 @@ public sealed class JobNotesTests(ShopApiFactory factory)
         var ticket = await Flows.ResumeAsync(http, provider, connection);
 
         var page = await Flows.FetchPageAsync(
-            http, provider, $"/v1/{provider}/receipts?since={NarrowWindow}", ticket);
+            http, provider, $"/v1/{provider}/receipts?since={NarrowWindow()}", ticket);
 
         var notes = page.GetProperty("notes").EnumerateArray().Select(n => n.GetString()!).ToList();
 

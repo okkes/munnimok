@@ -4,23 +4,48 @@ import { measure } from '@/lib/perf';
 import { reportError } from '@/lib/report';
 import { reportEviction } from '@/app/evicted';
 import type { StorageBackend } from '@/db/backend';
-import type { OutboxRow } from '@/db/types';
+import { ENTITY_NAMES } from '@/db/types';
+import type { EntityName, OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
+import { cursorKey, drainPull } from './drain';
+import { dropUnstamped, unstampWrites } from './merge';
+import type { SyncEnvelope } from './merge';
+import { noteUnsavedUndone } from './spaceAccess';
+import type { SpaceAccess } from './spaceAccess';
 
 /** answers that mean "not now", never "broken": the server's pause and the gateway's own errors */
 export const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
 import { publishConnectorFrame } from '@/features/connectors/events';
 
-const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
 const parkedKey = (spaceId: string) => `parkedOps_${spaceId}`;
 /** #306: durable per-identity eviction tombstone — mirrored in swSync.ts */
 const evictedKey = (spaceId: string) => `evictedSpace_${spaceId}`;
+/** #505: rows whose own writes were undone, waiting for the pull that lays the server's values back */
+const undoKey = (spaceId: string) => `undoPending_${spaceId}`;
+const KNOWN_ENTITIES: ReadonlySet<string> = new Set(ENTITY_NAMES);
+/** "entity:id" — entity names carry no colon, ids may */
+const splitRowKey = (key: string): [EntityName, string] => {
+  const at = key.indexOf(':');
+  return [key.slice(0, at) as EntityName, key.slice(at + 1)];
+};
+const entitiesOf = (keys: readonly string[]): EntityName[] => [...new Set(keys.map((key) => splitRowKey(key)[0]))];
 
 /** ops per push request — the server caps at 1000, proxies cap body size */
 const PUSH_CHUNK = 300;
 export const LAST_SYNC_KEY = 'lastSyncAt';
+/** #569: how long a pause lasts when the server asked for one without saying how long (its limiter says ten seconds) */
+export const DEFAULT_PAUSE_MS = 10_000;
+
+const isTransient = (err: unknown): err is SyncHttpError => err instanceof SyncHttpError && TRANSIENT_STATUSES.has(err.status);
+
+export interface SyncEngineOptions {
+  /** the engine's clock, for the pause a server asks for; a test passes its own */
+  now?: () => number;
+  /** #505: this identity's role per space — each round's heads update it, a read-only space takes no push */
+  access?: SpaceAccess;
+}
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
 
@@ -44,13 +69,24 @@ export class SyncEngine {
   private status: SyncStatus = 'idle';
   private eventsAbort: AbortController | null = null;
   private eventDebounce: ReturnType<typeof setTimeout> | null = null;
+  /** #569: a trigger that met a round in flight or a pause — one more round follows */
+  private rerun = false;
+  /** #569: until when the server asked for quiet (Retry-After); no request leaves before it */
+  private pausedUntil = 0;
+  private pauseTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly now: () => number;
+  private readonly access: SpaceAccess | null;
 
   constructor(
     private readonly store: StorageBackend,
     private readonly repo: Repo,
     private readonly backend: SyncBackend,
     private readonly clientId: string,
-  ) {}
+    options: SyncEngineOptions = {},
+  ) {
+    this.now = options.now ?? Date.now;
+    this.access = options.access ?? null;
+  }
 
   onStatus(listener: (status: SyncStatus) => void): () => void {
     this.listeners.add(listener);
@@ -85,6 +121,8 @@ export class SyncEngine {
     document.removeEventListener('visibilitychange', this.handleWake);
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.pauseTimer) clearTimeout(this.pauseTimer);
+    this.pauseTimer = null;
     this.eventsAbort?.abort();
     this.eventsAbort = null;
   }
@@ -133,8 +171,16 @@ export class SyncEngine {
   private pulled = 0;
 
   async syncAll(): Promise<void> {
-    if (this.running) return;
+    // #569: a trigger that meets a round in flight (a write, a frame from the
+    // stream) is folded into ONE more round after it, and one inside a pause
+    // the server asked for waits for its end — a burst of writes used to
+    // stack round on round until the rate limiter answered 429 for everything
+    if (this.running || this.now() < this.pausedUntil) {
+      this.rerun = true;
+      return;
+    }
     this.running = true;
+    this.rerun = false;
     this.roundOk = false;
     this.pushed = 0;
     this.pulled = 0;
@@ -146,6 +192,7 @@ export class SyncEngine {
     // root of its own: the first round starts inside the boot span and
     // usually outlives it
     await measure('sync.round', (round) => this.runRound(round), undefined, { parent: null });
+    if (this.rerun && this.now() >= this.pausedUntil) void this.syncAll();
   }
 
   private async runRound(round: Span): Promise<void> {
@@ -164,8 +211,15 @@ export class SyncEngine {
       const spaces = (await this.store.allRows('space')).filter((s) => s.deleted === 0);
       // also flush outbox ops for spaces we no longer have rows for
       const outboxSpaces = (await this.store.outboxAll()).map((o) => o.spaceId);
-      // and pull spaces the server knows us to be in (fresh device / new invite)
-      const serverSpaces = await measure('sync.spaces', () => this.backend.listSpaces(), undefined, { parent: round });
+      // and pull spaces the server knows us to be in (fresh device / new
+      // invite) — #569: with the head of each, so a space that did not move
+      // costs no request at all (a round used to ask every space in turn)
+      const heads = await measure('sync.spaces', () => this.backend.heads(), undefined, { parent: round });
+      // #505: the heads name this identity's role per space — writes into a
+      // space it may only read are refused from here on
+      await this.access?.record(heads);
+      const serverSpaces = heads.map((h) => h.spaceId);
+      const headOf = new Map(heads.map((h) => [h.spaceId, h.latestSeq]));
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
       round.setAttribute('sync.spaces', spaceIds.length);
       // one space's failure must not starve the rest: a single poisoned
@@ -179,8 +233,11 @@ export class SyncEngine {
           // #306 (user): a space we KNOW evicted us stays untouched until
           // the server re-grants it — no request may leave for it
           if (await this.skipKnownEvicted(spaceId, serverSet)) continue;
-          await this.syncSpace(spaceId, round);
+          await this.syncSpace(spaceId, round, headOf.get(spaceId));
         } catch (err) {
+          // #569: the server's pause (or its gateway's) holds for every space
+          // alike — the rest would only be answered the same, so stop asking
+          if (isTransient(err)) throw err;
           firstError ??= err;
         }
       }
@@ -208,19 +265,19 @@ export class SyncEngine {
 
   /**
    * A cycle that did not finish: what the person sees and whether anyone
-   * is told. Offline (a fetch TypeError) and a pause the server asked for
-   * (429, the live view's polling shares the bucket) or a gateway
-   * answering for it (502/503/504: a deploy, a restart) are the next
-   * tick's business — a breadcrumb, never an event (GlitchTip 2/3/5/20,
-   * user rule 2026-10-05). 401/403 are identity states the auth path
-   * reports and recovers itself. Only a genuine sync fault reports.
+   * is told. Offline (a fetch TypeError) is the next tick's business; a
+   * pause the server asked for (429) or a gateway answering for it
+   * (502/503/504: a deploy, a restart) is waited out (#569) — a
+   * breadcrumb, never an event (GlitchTip 2/3/5/20, user rule 2026-10-05).
+   * 401/403 are identity states the auth path reports and recovers itself.
+   * Only a genuine sync fault reports.
    */
   private settleFailure(err: unknown): void {
     this.lastError = String(err); // surfaced on the connecting screen
     const offline = err instanceof TypeError; // fetch network errors are TypeError
     const authState = err instanceof SyncHttpError && (err.status === 401 || err.status === 403);
-    const transient = err instanceof SyncHttpError && TRANSIENT_STATUSES.has(err.status);
-    if (transient) console.warn(`sync paused: ${String(err)} — retrying on the next tick`);
+    const transient = isTransient(err);
+    if (transient) this.pause(err.retryAfterMs ?? DEFAULT_PAUSE_MS);
     else if (!offline && !authState) reportError('sync', err);
     // a 401 is the session's business, not the network's: the banner names an
     // expired session on its own (sessionExpiry), and a request that simply
@@ -231,6 +288,23 @@ export class SyncEngine {
       return;
     }
     this.setStatus(offline || transient ? 'offline' : 'error');
+  }
+
+  /**
+   * #569: the server asked for quiet (429 with Retry-After, its limiter's
+   * ten seconds by default) or its gateway is away: no request leaves until
+   * then, and a running engine syncs by itself once it is over. Every
+   * trigger meanwhile folds into that one round.
+   */
+  private pause(ms: number): void {
+    console.warn(`sync paused for ${Math.ceil(ms / 1000)} s: the server asked for a pause`);
+    this.pausedUntil = this.now() + ms;
+    if (!this.timer) return;
+    if (this.pauseTimer) clearTimeout(this.pauseTimer);
+    this.pauseTimer = setTimeout(() => {
+      this.pauseTimer = null;
+      void this.syncAll();
+    }, ms);
   }
 
   /**
@@ -288,78 +362,46 @@ export class SyncEngine {
     if (stillParked.length !== parked.length) await this.store.metaPut(parkedKey(spaceId), stillParked);
   }
 
-  /** #305 bug 4: the server PAGES at 1000 ops while reporting the
-   *  space-head LatestSeq — stamping the cursor at the head after a
-   *  partial page skipped every op in between FOREVER (a consumer
-   *  joining a mature shared feed lost its whole recent window). Page
-   *  until drained: prefer the server's explicit nextSince, fall back
-   *  on dense per-space seqs for servers predating it. */
-  private async drainPull(spaceId: string, initialSince: number): Promise<void> {
-    let since = initialSince;
-    for (;;) {
-      const { ops, latestSeq, nextSince } = await this.backend.pull(spaceId, since);
-      if (ops.length === 0) {
-        if (latestSeq > since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
-        return;
-      }
-      await this.repo.applyRemoteOps(ops);
-      this.pulled += ops.length;
-      const next = nextSince ?? since + ops.length;
-      if (next <= since) return; // defensive: never spin without progress
-      await this.store.metaPut(cursorKey(spaceId), next);
-      since = next;
-      if (since >= latestSeq) return;
-    }
-  }
-
-  /** `round`: the sync.round span this space's push/pull spans nest under */
-  async syncSpace(spaceId: string, round?: Span): Promise<void> {
+  /**
+   * `round`: the sync.round span this space's push/pull spans nest under;
+   * `head`: the space's head as the round read it (#569) — at or below the
+   * cursor, with nothing pushed, the space did not move and needs no pull
+   */
+  async syncSpace(spaceId: string, round?: Span, head?: number): Promise<void> {
     try {
-      // 1. push queued local ops (ordered by HLC), CHUNKED: the server
-      // caps a push at 1000 ops and proxies cap body size — a store-
-      // receipt sync alone can queue hundreds of fat ops, and each chunk
-      // that lands is deleted immediately so progress survives a failure
-      await this.retryParked(spaceId);
       // #306 (user): a push-403 alone is AMBIGUOUS — a reader role may
       // pull but never push. The pull below is the judge: succeeding
-      // means we are still a member (read-only: park the unlandable
-      // ops); only a denied pull is a true eviction. Before this, every
-      // push-403 raised the "removed from space" sheet and purged — and
-      // the still-granted pull resurrected the space, looping forever.
+      // means we are still a member, only read-only; a denied pull is a
+      // true eviction. Before this, every push-403 raised the "removed
+      // from space" sheet and purged — and the still-granted pull
+      // resurrected the space, looping forever.
       let writeDenied = false;
-      try {
-        await measure(
-          'sync.push',
-          async (push) => {
-            const outbox = await this.store.outboxBySpace(spaceId);
-            push.setAttribute('sync.ops', outbox.length);
-            for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
-              const chunk = outbox.slice(i, i + PUSH_CHUNK);
-              await this.pushChunk(spaceId, chunk);
-            }
-          },
-          undefined,
-          { parent: round },
-        );
-      } catch (err) {
-        if (!(err instanceof SyncHttpError) || err.status !== 403) throw err;
-        writeDenied = true;
+      let queued = 0;
+      if (this.access?.isReadOnly(spaceId)) {
+        // #505: no push leaves for a space this identity only reads; what
+        // is still queued for it can never land — undone here, said once
+        await this.undoUnsaved(spaceId);
+      } else {
+        await this.retryParked(spaceId);
+        try {
+          queued = await this.pushOutbox(spaceId, round);
+        } catch (err) {
+          if (!(err instanceof SyncHttpError) || err.status !== 403) throw err;
+          writeDenied = true;
+        }
       }
 
-      // 2. pull everything after our cursor and merge (own ops no-op) —
-      // paged until drained (#305 bug 4; the loop lives in drainPull)
+      // pull everything after our cursor and merge (own ops no-op) —
+      // paged until drained (#305 bug 4; the loop lives in sync/drain.ts)
       const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
-      const pulledBefore = this.pulled;
-      await measure(
-        'sync.pull',
-        async (pull) => {
-          await this.drainPull(spaceId, since);
-          pull.setAttribute('sync.rows', this.pulled - pulledBefore);
-        },
-        undefined,
-        { parent: round },
-      );
-      if (writeDenied) await this.parkReadOnlyOps(spaceId);
+      if (head === undefined || head > since || queued > 0 || writeDenied) await this.pullSpace(spaceId, since, round);
+      if (writeDenied) {
+        // #505: the pull answered — still a member, without write access (a
+        // role changed after the round's heads, or a server naming no roles)
+        await this.access?.note(spaceId, 'reader');
+        if (await this.undoUnsaved(spaceId)) await this.pullSpace(spaceId, 0, round);
+      }
+      await this.settleUndo(spaceId);
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {
         // #173: a 403 on a MEMBER space is an eviction (feed sweeps stay
@@ -371,15 +413,91 @@ export class SyncEngine {
     }
   }
 
-  /** #306: read-only member — local ops the server will never take are
-   *  parked (kept: a role upgrade re-offers them via retryParked), so
-   *  the outbox stops re-pushing into a guaranteed 403 every cycle */
-  private async parkReadOnlyOps(spaceId: string): Promise<void> {
-    const ops = await this.store.outboxBySpace(spaceId);
-    if (ops.length === 0) return;
+  /**
+   * Push queued local ops (ordered by HLC), CHUNKED: the server caps a
+   * push at 1000 ops and proxies cap body size — a store-receipt sync
+   * alone can queue hundreds of fat ops, and each chunk that lands is
+   * deleted immediately so progress survives a failure.
+   * @returns how many ops were queued
+   */
+  private async pushOutbox(spaceId: string, round?: Span): Promise<number> {
+    return measure(
+      'sync.push',
+      async (push) => {
+        const outbox = await this.store.outboxBySpace(spaceId);
+        push.setAttribute('sync.ops', outbox.length);
+        for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
+          await this.pushChunk(spaceId, outbox.slice(i, i + PUSH_CHUNK));
+        }
+        return outbox.length;
+      },
+      undefined,
+      { parent: round },
+    );
+  }
+
+  private async pullSpace(spaceId: string, since: number, round?: Span): Promise<void> {
+    await measure(
+      'sync.pull',
+      async (pull) => {
+        const rows = await drainPull(this.store, this.repo, this.backend, spaceId, { since });
+        this.pulled += rows;
+        pull.setAttribute('sync.rows', rows);
+      },
+      undefined,
+      { parent: round },
+    );
+  }
+
+  /**
+   * #505 (user): changes queued for a space this identity may only read —
+   * made before the app knew, or before a demotion — never land: the
+   * server refuses every push there. Parking them (#306) left the device
+   * showing edits no other member ever saw. Now they are undone: the
+   * fields they wrote lose their stamp, the cursor restarts so this
+   * round's pull lays the server's values back (settleUndo then drops what
+   * only this device ever wrote), and a notice says so once.
+   * @returns whether anything was undone
+   */
+  private async undoUnsaved(spaceId: string): Promise<boolean> {
     const parked = ((await this.store.metaGet(parkedKey(spaceId)))?.value as OutboxRow[] | undefined) ?? [];
-    await this.store.metaPut(parkedKey(spaceId), [...parked, ...ops].slice(-500));
-    await this.store.outboxDelete(ops.map((o) => o.opId));
+    const queued = await this.store.outboxBySpace(spaceId);
+    const ops = [...parked, ...queued];
+    if (ops.length === 0) return false;
+    const own = new Set(ops.map((o) => o.hlc));
+    const rows = [...new Set(ops.filter((o) => KNOWN_ENTITIES.has(o.entity)).map((o) => `${o.entity}:${o.entityId}`))];
+    const pending = ((await this.store.metaGet(undoKey(spaceId)))?.value as string[] | undefined) ?? [];
+    const spaceName = (await this.store.get('space', spaceId))?.name ?? '';
+    await this.store.transact([...entitiesOf(rows), 'outbox', 'meta'], async () => {
+      for (const key of rows) {
+        const [entity, entityId] = splitRowKey(key);
+        const row = (await this.store.get(entity, entityId)) as (Record<string, unknown> & SyncEnvelope & { id: string }) | undefined;
+        if (row) await this.store.put(entity, unstampWrites(row, own));
+      }
+      await this.store.outboxDelete(queued.map((o) => o.opId));
+      await this.store.metaDelete(parkedKey(spaceId));
+      await this.store.metaDelete(cursorKey(spaceId));
+      await this.store.metaPut(undoKey(spaceId), [...new Set([...pending, ...rows])]);
+      await noteUnsavedUndone(this.store, { spaceId, spaceName, count: ops.length });
+    });
+    return true;
+  }
+
+  /** #505: the pull from the start is through — what no server op wrote back only ever lived here */
+  private async settleUndo(spaceId: string): Promise<void> {
+    const rows = (await this.store.metaGet(undoKey(spaceId)))?.value as string[] | undefined;
+    if (!rows) return;
+    await this.store.transact([...entitiesOf(rows), 'meta'], async () => {
+      for (const key of rows) {
+        const [entity, entityId] = splitRowKey(key);
+        const row = (await this.store.get(entity, entityId)) as (Record<string, unknown> & SyncEnvelope & { id: string }) | undefined;
+        if (!row) continue;
+        const kept = dropUnstamped(row);
+        if (kept) await this.store.put(entity, kept);
+        else await this.store.deleteRow(entity, entityId);
+      }
+      await this.store.metaDelete(undoKey(spaceId));
+    });
   }
 
   /** #173/#306: membership truly revoked — ONE durable notice, then purge.
@@ -470,6 +588,7 @@ export class SyncEngine {
       // session — a lingering 403 POST per boot); the eviction tombstone
       // deliberately survives this purge
       await this.store.metaDelete(parkedKey(spaceId));
+      await this.store.metaDelete(undoKey(spaceId));
     });
   }
 }

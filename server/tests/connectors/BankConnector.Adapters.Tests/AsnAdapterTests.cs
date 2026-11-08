@@ -207,6 +207,35 @@ public sealed class AsnAdapterTests
     }
 
     /// <summary>
+    /// #562: ASN's "Browser updaten" notice stands in front of the sign-in when
+    /// it judges the browser outdated, with its own button on to online
+    /// banking. It is pressed before anything else, and said - the agent's
+    /// browser wants renewing - where it used to end the login as a page the
+    /// connector had never seen. A page without it costs nothing but the look.
+    /// </summary>
+    [Fact]
+    public async Task The_outdated_browser_notice_is_passed_before_the_sign_in_and_said()
+    {
+        using var ctx = Context();
+        var portal = StubAsnPortal.SignedIn(Options.AppMethodLabel);
+        portal.AbsentSelectors.Remove(StubAsnPortal.BrowserNotice);
+
+        await new AsnAdapter(Options).LoginAsync(ctx, portal, CancellationToken.None);
+
+        var passed = Step(portal, $"click:{StubAsnPortal.BrowserNotice}");
+        Assert.True(passed >= 0, "the notice's way on was never pressed");
+        Assert.True(passed < Step(portal, $"click:{Options.CookieRefuseSelectors[0]}"), "the cookie wall was dealt with before the notice in front of it");
+        Assert.True(passed < Step(portal, $"click:{Options.AppMethodLabel}"));
+        Assert.Contains(ctx.Notes, n => n.Contains("outdated-browser notice", StringComparison.Ordinal));
+
+        using var quiet = Context();
+        var plain = StubAsnPortal.SignedIn(Options.AppMethodLabel);
+        await new AsnAdapter(Options).LoginAsync(quiet, plain, CancellationToken.None);
+        Assert.DoesNotContain(plain.Calls, c => c.StartsWith($"click:{StubAsnPortal.BrowserNotice}", StringComparison.Ordinal));
+        Assert.DoesNotContain(quiet.Notes, n => n.Contains("outdated-browser notice", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// THE BANK'S OWN SCREEN IS RELAYED, because its code will not sit still.
     /// </summary>
     /// <remarks>

@@ -285,6 +285,91 @@ public class ConnectorUnitTests
         Assert.InRange((DateOnly.FromDateTime(DateTime.UtcNow).DayNumber - since.DayNumber), 89, 91);
     }
 
+    private static readonly string[] EveryPass = ["accounts", "transactions"];
+    private static readonly string[] BackfillPass = ["transactions"];
+
+    [Fact]
+    public void A_backfill_pass_asks_the_history_resources_up_to_its_until_and_nothing_past_the_partys_floor()
+    {
+        var manifest = (JsonObject)JsonNode.Parse("""
+            {"limits":{"max_history_days":400},"resources":[
+              {"id":"accounts","returns":"account","params":[]},
+              {"id":"transactions","returns":"transaction","params":[{"key":"since","type":"date"},{"key":"until","type":"date"}]}]}
+            """)!;
+        var transactions = (JsonObject)manifest["resources"]![1]!;
+
+        // #460: the window's end rides along where the resource takes one
+        Assert.Equal("?since=2026-01-01&until=2026-03-10", ConnectorSyncService.QueryFor(transactions, manifest, "2026-01-01", "2026-03-10"));
+        // a backfill pass walks the history only: accounts are all of them already
+        Assert.Equal(EveryPass, ConnectorSyncService.PassResources(manifest, null).Select(r => r["id"]!.GetValue<string>()));
+        Assert.Equal(BackfillPass, ConnectorSyncService.PassResources(manifest, "2026-03-10").Select(r => r["id"]!.GetValue<string>()));
+
+        // past the party's floor, or before the pass's own since, there is nothing to ask for
+        var now = new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(ConnectorSyncService.Reaches(transactions, manifest, null, "2026-03-10", now));
+        Assert.False(ConnectorSyncService.Reaches(transactions, manifest, null, "2025-10-01", now));
+        Assert.False(ConnectorSyncService.Reaches(transactions, manifest, "2026-04-01", "2026-03-10", now));
+        Assert.False(ConnectorSyncService.Reaches(transactions, manifest, null, "not a day", now));
+    }
+
+    /// <summary>#566: DUO states its instalment and its booked movements only in its ledger — the sync asks for it, never for raw.</summary>
+    [Fact]
+    public void A_registry_offering_its_ledger_is_asked_for_it()
+    {
+        var manifest = (JsonObject)JsonNode.Parse("""{"limits":{}}""")!;
+        var debt = (JsonObject)JsonNode.Parse("""
+            {"id":"debt","returns":"student_debt","params":[{"key":"include","type":"enum","values":["ledger","raw"],"multi":true}]}
+            """)!;
+        Assert.Equal("?include=ledger", ConnectorSyncService.QueryFor(debt, manifest, null));
+    }
+
+    [Fact]
+    public void The_oldest_day_a_page_brought_is_a_booking_day_or_a_purchase_day_as_its_own_clock_dates_it()
+    {
+        var page = (JsonArray)JsonNode.Parse("""
+            [{"id":"acc_1"},
+             {"id":"txn_1","booked_at":"2026-03-12"},
+             {"id":"txn_2","booked_at":"2026-03-10"},
+             {"id":"rcp_1","purchased_at":"2026-03-11T00:30:00+01:00"},
+             {"id":"rcp_2","purchased_at":"2026-03-09T23:30:00+01:00"}]
+            """)!;
+        Assert.Equal(new DateOnly(2026, 3, 9), ConnectorSyncService.OldestOf(page));
+        Assert.Null(ConnectorSyncService.OldestOf((JsonArray)JsonNode.Parse("""[{"id":"acc_1"}]""")!));
+        Assert.Null(ConnectorSyncService.OldestOf(null));
+    }
+
+    [Fact]
+    public void The_schedulers_backfill_follows_the_apps_rule()
+    {
+        static JsonObject Finished(bool complete, string? oldest = null) =>
+            oldest is null ? new JsonObject { ["complete"] = complete } : new JsonObject { ["complete"] = complete, ["oldest"] = oldest };
+        static ConnectorSession Row() => new() { Id = "ses_1", Provider = "p", ConnectionId = "c", State = "active" };
+
+        // a partial scheduled pass leaves the days below what it brought, down to its since
+        var row = Row();
+        ConnectorScheduleService.NoteBackfill(row, "2026-11-01", null, Finished(false, "2026-11-04"));
+        Assert.Equal(new DateOnly(2026, 11, 1), row.BackfillSince);
+        Assert.Equal(new DateOnly(2026, 11, 4), row.BackfillUntil);
+        // a whole one leaves it as it was
+        ConnectorScheduleService.NoteBackfill(row, "2026-11-07", null, Finished(true));
+        Assert.Equal(new DateOnly(2026, 11, 4), row.BackfillUntil);
+        // the settlement lag can bring days below the since: the backfill starts from them
+        ConnectorScheduleService.NoteBackfill(row, "2026-11-01", "2026-11-04", Finished(false, "2026-10-25"));
+        Assert.Equal(new DateOnly(2026, 10, 25), row.BackfillSince);
+        Assert.Equal(new DateOnly(2026, 10, 25), row.BackfillUntil);
+        // reaching no further, or coming back whole, ends it
+        ConnectorScheduleService.NoteBackfill(row, "2026-10-25", "2026-10-25", Finished(false, "2026-10-25"));
+        Assert.Null(row.BackfillUntil);
+        Assert.Null(row.BackfillSince);
+
+        var floor = Row();
+        ConnectorScheduleService.NoteBackfill(floor, null, null, Finished(false, "2026-03-10"));
+        Assert.Null(floor.BackfillSince);
+        Assert.Equal(new DateOnly(2026, 3, 10), floor.BackfillUntil);
+        ConnectorScheduleService.NoteBackfill(floor, null, "2026-03-10", Finished(true));
+        Assert.Null(floor.BackfillUntil);
+    }
+
     [Fact]
     public void Types_are_mapped_the_way_the_app_names_them()
     {

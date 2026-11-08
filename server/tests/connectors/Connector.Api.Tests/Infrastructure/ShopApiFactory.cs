@@ -40,6 +40,10 @@ public sealed class ShopApiFactory : WebApplicationFactory<Program>
         // since the wait returns the moment the session settles either way.
         Set("Connector__Timeouts__LoginWaitSeconds", "15");
 
+        // The pushed live view's keep-alive (#429) at a second rather than
+        // ten, so a quiet stream proves it keeps itself open inside a test.
+        Set("Connector__Timeouts__LiveStreamKeepAliveSeconds", "1");
+
         // The operator's own fleet, named exactly as the local compose file
         // names it. Without this every agent is owner-scoped and the one case
         // where a machine legitimately serves more than one person - which is

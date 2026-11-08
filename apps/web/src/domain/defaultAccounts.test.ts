@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FAMILIES, FAMILY_ACCOUNT_TYPE, FAMILY_TX_TYPE, defaultAccountId, defaultFamilyFor, defaultPickFamily } from './defaultAccounts';
+import { cashWalletId, defaultAccountId, defaultFamilyFor, isRetiredDefault } from './defaultAccounts';
 
-describe('#221 default-account domain', () => {
+describe('default-account domain', () => {
   it('defaultFamilyFor: the ATM pair pins the cash wallet, families pin their pots, standard cats pin nothing', () => {
     expect(defaultFamilyFor('cashWithdraw')).toBe('cash');
     expect(defaultFamilyFor('cashDeposit')).toBe('cash');
@@ -17,21 +17,12 @@ describe('#221 default-account domain', () => {
     expect(defaultFamilyFor(undefined)).toBeNull();
   });
 
-  it('the six families map to their account types and derivation vocabulary', () => {
-    expect(DEFAULT_FAMILIES).toHaveLength(6);
-    for (const family of DEFAULT_FAMILIES) {
-      expect(FAMILY_ACCOUNT_TYPE[family]).toBeTruthy();
-      expect(FAMILY_TX_TYPE[family]).toBeTruthy();
+  it('#546: the cash wallet is the default that stays — every other family default is retired', () => {
+    expect(cashWalletId('s1')).toBe(defaultAccountId('s1', 'cash'));
+    expect(isRetiredDefault({ defaultFor: 'cash' })).toBe(false);
+    expect(isRetiredDefault({ defaultFor: undefined })).toBe(false);
+    for (const family of ['saving', 'debtPayment', 'investment', 'transfer', 'funding'] as const) {
+      expect(isRetiredDefault({ defaultFor: family })).toBe(true);
     }
-    // the cash wallet is the transfer family's ATM half
-    expect(FAMILY_ACCOUNT_TYPE.cash).toBe('cash');
-    expect(FAMILY_TX_TYPE.cash).toBe('transfer');
-    expect(FAMILY_ACCOUNT_TYPE.transfer).toBe('checking');
-  });
-
-  it('defaultPickFamily: only the family default keeps the special story', () => {
-    expect(defaultPickFamily('saving', defaultAccountId('s1', 'saving'), 's1')).toBe('saving');
-    expect(defaultPickFamily('saving', 'someRealAccount', 's1')).toBeNull();
-    expect(defaultPickFamily(null, defaultAccountId('s1', 'saving'), 's1')).toBeNull();
   });
 });

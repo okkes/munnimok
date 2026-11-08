@@ -8,10 +8,10 @@ namespace Connector.Kit.Agent.Browsing;
 ///
 /// Every figure is milliseconds except the counts and the byte size, and the
 /// shape is deliberately the shape of a decision: <see cref="Fps"/> says
-/// whether this is a live view or a slideshow, <see cref="ShutterP95"/> says
-/// whether the browser or the network is the reason, and
-/// <see cref="Suppressed"/> says whether the change detection that the whole
-/// bandwidth argument rests on is doing anything at all on a real page.
+/// whether this is a live view or a slideshow, <see cref="AgeP95"/> says how
+/// stale a picture already is when it leaves, <see cref="PostP95"/> whether
+/// the network is the reason, and <see cref="Superseded"/> how much of what the
+/// browser drew never had to travel.
 /// </summary>
 internal readonly record struct LiveViewWindow
 {
@@ -20,18 +20,22 @@ internal readonly record struct LiveViewWindow
     /// <summary>Frames that reached the control plane.</summary>
     public required int Posted { get; init; }
 
-    /// <summary>Shutters whose bytes were identical to the last posted frame.</summary>
+    /// <summary>Frames whose bytes were identical to the last posted frame.</summary>
     public required int Suppressed { get; init; }
 
-    /// <summary>Shutters that produced no image at all.</summary>
+    /// <summary>Frames dropped at the source while a navigation was being checked.</summary>
     public required int Missed { get; init; }
+
+    /// <summary>Frames the browser drew that a newer one replaced before they could leave.</summary>
+    public required int Superseded { get; init; }
 
     /// <summary>Frames the control plane would not take.</summary>
     public required int Failed { get; init; }
 
-    public required double ShutterMedian { get; init; }
+    /// <summary>How old a frame was when it left: from the compositor drawing it to the post starting.</summary>
+    public required double AgeMedian { get; init; }
 
-    public required double ShutterP95 { get; init; }
+    public required double AgeP95 { get; init; }
 
     public required double PostMedian { get; init; }
 
@@ -49,37 +53,36 @@ internal readonly record struct LiveViewWindow
     public double Fps => Elapsed.TotalSeconds <= 0 ? 0 : Posted / Elapsed.TotalSeconds;
 
     /// <summary>
-    /// How many shutters ran per second, delivered or not. Read beside
-    /// <see cref="Fps"/> this is the ceiling the cadence could reach if every
-    /// frame differed.
+    /// How many frames the browser drew per second, sent or not. Read beside
+    /// <see cref="Fps"/> this is how much the pacing kept off the wire.
     /// </summary>
-    public double ShutterHz =>
-        Elapsed.TotalSeconds <= 0 ? 0 : (Posted + Suppressed + Missed + Failed) / Elapsed.TotalSeconds;
+    public double DrawnHz =>
+        Elapsed.TotalSeconds <= 0 ? 0 : (Posted + Suppressed + Missed + Superseded + Failed) / Elapsed.TotalSeconds;
 
     public double KilobytesPerSecond => Elapsed.TotalSeconds <= 0 ? 0 : Posted * MeanBytes / Elapsed.TotalSeconds / 1024;
 
     /// <summary>
-    /// Whether any shutter at all ran in this window. A window of nothing is
-    /// what the last call of a session that had just reported gets, and logging
-    /// a line of zeroes under it would say "the stream delivered nothing",
-    /// which is the opposite of what happened.
+    /// Whether anything at all happened in this window. A window of nothing is
+    /// what a still page and the last call of a session that had just reported
+    /// get, and logging a line of zeroes under it would say "the stream
+    /// delivered nothing", which is the opposite of what happened.
     /// </summary>
-    public bool HasSamples => Posted + Suppressed + Missed + Failed > 0;
+    public bool HasSamples => Posted + Suppressed + Missed + Superseded + Failed > 0;
 
     public override string ToString() => string.Create(
         CultureInfo.InvariantCulture,
-        $"{Fps:0.0} fps delivered of {ShutterHz:0.0} shutters/s, " +
-        $"shutter {ShutterMedian:0.0}/{ShutterP95:0.0} ms (median/p95), " +
+        $"{Fps:0.0} fps delivered of {DrawnHz:0.0} drawn/s, " +
+        $"age {AgeMedian:0.0}/{AgeP95:0.0} ms (median/p95), " +
         $"post {PostMedian:0.0}/{PostP95:0.0} ms, " +
         $"{MeanBytes} B/frame, {KilobytesPerSecond:0.0} KB/s, " +
-        $"{Posted} posted, {Suppressed} unchanged, {Missed} no-image, {Failed} refused");
+        $"{Posted} posted, {Superseded} superseded, {Suppressed} unchanged, {Missed} withheld, {Failed} refused");
 }
 
 /// <summary>
-/// The stopwatch on the shutter, because nobody has ever measured this and
-/// every number in the design scales with it.
+/// The stopwatch on the stream, because every number in the design scales
+/// with what a frame costs and how old it is by the time it leaves.
 ///
-/// It reports at least once a second while a stream is running rather than at
+/// It reports at least once a second while a stream is busy rather than at
 /// the end, for two reasons: a session that is killed by an expiry or a
 /// navigation would otherwise report nothing at all, which is precisely the run
 /// you most want the numbers from; and a cadence that degrades halfway through
@@ -87,19 +90,18 @@ internal readonly record struct LiveViewWindow
 /// browser is now sharing a NAS with three other jobs - is invisible in a
 /// single average over ninety seconds.
 ///
-/// Capture and encode are one number and cannot be separated here: Playwright's
-/// <c>ScreenshotAsync</c> prepares the page, takes the raster and returns
-/// encoded bytes in one round trip, so "shutter" is all three. What CAN be
-/// separated is the post, and separating those two is what distinguishes a slow
-/// browser from a slow link - which are fixed by completely different people.
+/// Two numbers per frame, because they are fixed by different people: its
+/// AGE when it left (the browser drew it at the compositor's timestamp; a long
+/// age is the agent's machine or the pacing) and its POST (the link to the
+/// control plane).
 ///
-/// NOT thread-safe, and does not need to be: one shutter loop writes it, and
+/// NOT thread-safe, and does not need to be: one picture loop writes it, and
 /// the session reads the last window only after that loop has finished. A lock
 /// here would be measuring the cost of measuring.
 /// </summary>
 internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
 {
-    private readonly List<double> _shutters = [];
+    private readonly List<double> _ages = [];
     private readonly List<double> _posts = [];
     private readonly long _openedAt = time.GetTimestamp();
 
@@ -107,16 +109,18 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
     private int _posted;
     private int _suppressed;
     private int _missed;
+    private int _superseded;
     private int _failed;
     private long _bytes;
 
     private int _totalPosted;
     private int _totalSuppressed;
+    private int _totalSuperseded;
     private long _totalBytes;
 
-    public void Posted(TimeSpan shutter, TimeSpan post, int bytes)
+    public void Posted(TimeSpan age, TimeSpan post, int bytes)
     {
-        _shutters.Add(shutter.TotalMilliseconds);
+        _ages.Add(age.TotalMilliseconds);
         _posts.Add(post.TotalMilliseconds);
         _posted++;
         _totalPosted++;
@@ -124,25 +128,31 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
         _totalBytes += bytes;
     }
 
-    /// <summary>A shutter whose bytes matched the last posted frame, so nothing was sent.</summary>
-    public void Suppressed(TimeSpan shutter)
+    /// <summary>A frame whose bytes matched the last posted one, so nothing was sent.</summary>
+    public void Suppressed(TimeSpan age)
     {
-        _shutters.Add(shutter.TotalMilliseconds);
+        _ages.Add(age.TotalMilliseconds);
         _suppressed++;
         _totalSuppressed++;
     }
 
-    /// <summary>A shutter that produced no image.</summary>
-    public void Missed(TimeSpan shutter)
+    /// <summary>Frames dropped at the source while a navigation was being checked.</summary>
+    public void Missed(int count)
     {
-        _shutters.Add(shutter.TotalMilliseconds);
-        _missed++;
+        _missed += count;
+    }
+
+    /// <summary>Frames the browser drew that a newer one replaced before they could leave.</summary>
+    public void Superseded(int count)
+    {
+        _superseded += count;
+        _totalSuperseded += count;
     }
 
     /// <summary>A frame the control plane would not take.</summary>
-    public void Failed(TimeSpan shutter)
+    public void Failed(TimeSpan age)
     {
-        _shutters.Add(shutter.TotalMilliseconds);
+        _ages.Add(age.TotalMilliseconds);
         _failed++;
     }
 
@@ -172,7 +182,7 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
     public string Total() => string.Create(
         CultureInfo.InvariantCulture,
         $"{_totalPosted} frame(s) over {time.GetElapsedTime(_openedAt).TotalSeconds:0.0} s, " +
-        $"{_totalSuppressed} unchanged and not sent, {_totalBytes / 1024} KB total");
+        $"{_totalSuperseded} superseded and {_totalSuppressed} unchanged and not sent, {_totalBytes / 1024} KB total");
 
     private LiveViewWindow Close(TimeSpan elapsed)
     {
@@ -182,19 +192,21 @@ internal sealed class LiveViewMeter(TimeProvider time, TimeSpan interval)
             Posted = _posted,
             Suppressed = _suppressed,
             Missed = _missed,
+            Superseded = _superseded,
             Failed = _failed,
-            ShutterMedian = Percentile(_shutters, 0.5),
-            ShutterP95 = Percentile(_shutters, 0.95),
+            AgeMedian = Percentile(_ages, 0.5),
+            AgeP95 = Percentile(_ages, 0.95),
             PostMedian = Percentile(_posts, 0.5),
             PostP95 = Percentile(_posts, 0.95),
             MeanBytes = _posted == 0 ? 0 : (int)(_bytes / _posted),
         };
 
-        _shutters.Clear();
+        _ages.Clear();
         _posts.Clear();
         _posted = 0;
         _suppressed = 0;
         _missed = 0;
+        _superseded = 0;
         _failed = 0;
         _bytes = 0;
         _windowStartedAt = time.GetTimestamp();

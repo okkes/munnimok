@@ -6,15 +6,19 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>One sync of a connection (docs/connector-integration-plan.md §5.2): the bundle the client holds, and how far back to look.</summary>
-public sealed record ConnectorSyncRequest(string ConnectionId, string Bundle, string? Since = null);
+/// <summary>
+/// One sync of a connection (docs/connectors/relay.md, "Routes"): the
+/// bundle the client holds, and the window. <c>Until</c> makes it a backfill
+/// pass (#460): only the history resources, up to that day.
+/// </summary>
+public sealed record ConnectorSyncRequest(string ConnectionId, string Bundle, string? Since = null, string? Until = null);
 
 /// <summary>
 /// Following a fetch that did not finish inside the connector's window: the
-/// newest bundle the client holds, and the <c>since</c> the sync asked with,
-/// for the resources the walk goes on to after the job's.
+/// newest bundle the client holds, and the window the sync asked with, for
+/// the resources the walk goes on to after the job's.
 /// </summary>
-public sealed record ConnectorCollectRequest(string Bundle, string? Since = null);
+public sealed record ConnectorCollectRequest(string Bundle, string? Since = null, string? Until = null);
 
 /// <summary>What a collect runs as: the app's request, who asked (<c>user</c> or <c>schedule</c>) and the device class the walk's fetches ride on.</summary>
 public sealed record ConnectorCollectCall(ConnectorCollectRequest Request, string Trigger = "user", string DeviceClass = "native");
@@ -44,19 +48,25 @@ public sealed class ConnectorSyncService(
     ILogger<ConnectorSyncService> logger,
     Munni.Api.Push.PushNotifier? notifier = null)
 {
-    /// <summary>The includes a sync asks for when a resource offers them; <c>raw</c> is never one of them.</summary>
-    private static readonly string[] WantedIncludes = ["items", "invoice"];
+    /// <summary>
+    /// The includes a sync asks for when a resource offers them; <c>raw</c> is
+    /// never one of them. <c>ledger</c> (#566): DUO states its instalment and
+    /// its booked movements only there, and a debt without them read as €0.
+    /// </summary>
+    private static readonly string[] WantedIncludes = ["items", "invoice", "ledger"];
 
     /// <summary>How many passes one sync makes over a resource the provider paginates.</summary>
 
     private const string SessionField = "session";
     private const string ResourceField = "resource";
     private const string CompleteField = "complete";
+    private const string OldestField = "oldest";
+    private const string DayFormat = "yyyy-MM-dd";
     private const string NoTicket = "resume answered without a ticket";
 
     private static readonly HashSet<string> SettledJobStates = new(StringComparer.Ordinal) { "succeeded", "failed", "expired" };
 
-    /// <param name="trigger"><c>user</c> for a person's call, <c>schedule</c> for the relay's own scheduler — the connector holds the latter to the provider's interval.</param>
+    /// <param name="trigger"><c>user</c> for a person's call, <c>schedule</c> for the relay's own scheduler, <c>backfill</c> for its pass over older history — the connector holds the last two to the provider's interval, each on its own clock.</param>
     public async Task<ConnectorOutcome> SyncAsync(
         Guid userId, string subject, string provider, ConnectorSyncRequest request, string deviceClass, CancellationToken ct, string trigger = "user")
     {
@@ -72,7 +82,7 @@ public sealed class ConnectorSyncService(
         };
         var row = await ConnectorRelayEndpoints.BindAsync(relay.Db, userId, provider, request.ConnectionId, resumed, relay.Time, ct);
 
-        foreach (var resource in Resources(manifest))
+        foreach (var resource in PassResources(manifest, request.Until))
         {
             var pending = await FetchResourceAsync(run, resource, ct);
             if (pending is not null) return pending;
@@ -96,8 +106,18 @@ public sealed class ConnectorSyncService(
             // app says so instead of presenting the newest rows as the lot
             [CompleteField] = !run.Partial,
         };
+        StampOldest(body, run);
         if (run.Rotated) body[SessionField] = Session(run.Bundle);
         return new ConnectorOutcome(StatusCodes.Status200OK, body);
+    }
+
+    /// <summary>
+    /// The oldest day a partial pass brought (#460): where the next backfill
+    /// pass asks up to. Absent when the pass was whole or brought nothing dated.
+    /// </summary>
+    private static void StampOldest(JsonObject body, SyncRun run)
+    {
+        if (run.Partial && run.Oldest is { } oldest) body[OldestField] = oldest.ToString(DayFormat, CultureInfo.InvariantCulture);
     }
 
     /// <summary>
@@ -113,8 +133,10 @@ public sealed class ConnectorSyncService(
         var resourceId = resource.Text("id");
         var shape = resource.Text("returns");
         if (resourceId is null || shape is null) return null;
+        // a backfill pass past the party's history (or before its own since) has nothing left to ask for
+        if (run.Request.Until is { } until && !Reaches(resource, run.Manifest, run.Request.Since, until, relay.Time.GetUtcNow())) return null;
 
-        var query = QueryFor(resource, run.Manifest, run.Request.Since);
+        var query = QueryFor(resource, run.Manifest, run.Request.Since, run.Request.Until);
         var fetch = await relay.Client.GetAsync($"v1/{run.Provider}/{resourceId}{query}", new ConnectorCall
         {
             Subject = run.Subject,
@@ -131,12 +153,17 @@ public sealed class ConnectorSyncService(
         if (page[CompleteField]?.GetValue<bool>() == false)
         {
             run.Partial = true;
+            run.NoteOldest(OldestOf(page["data"] as JsonArray));
             return null;
         }
 
         // a complete pass over the transactions settles the pending mirror (§15): what the
-        // party stopped reporting is tombstoned; an incomplete pass settles nothing
-        if (shape == "transaction") await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, run.Pending, ct);
+        // party stopped reporting is tombstoned; an incomplete pass settles nothing — and
+        // neither does a backfill pass, whose window ends long before today's pending rows
+        if (shape == "transaction" && run.Request.Until is null)
+        {
+            await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, run.Pending, ct);
+        }
         return null;
     }
 
@@ -233,7 +260,7 @@ public sealed class ConnectorSyncService(
         var sessionId = job.Text(ConnectorRelayEndpoints.SessionIdField) ?? throw new InvalidOperationException("a job without a session");
         var row = await relay.Db.ConnectorSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId, ct);
         var manifest = await catalogue.ProviderAsync(relay.Client, provider, ct);
-        var landed = await LandJobAsync(userId, provider, manifest, row, job, sessionId, ct);
+        var landed = await LandJobAsync(new JobPage(userId, provider, manifest, row, job, sessionId), call.Request.Until is not null, ct);
 
         // the bundle the job itself rotated wins over the one the app sent
         var rotated = job[SessionField] is JsonObject;
@@ -248,7 +275,9 @@ public sealed class ConnectorSyncService(
         // own: the app (or the scheduler) follows that one and collects again,
         // and the walk goes on from there.
         var run = new SyncRun(
-            userId, subject, provider, new ConnectorSyncRequest(row?.ConnectionId ?? sessionId, bundle, call.Request.Since), call.DeviceClass, manifest ?? new JsonObject())
+            userId, subject, provider,
+            new ConnectorSyncRequest(row?.ConnectionId ?? sessionId, bundle, call.Request.Since, call.Request.Until),
+            call.DeviceClass, manifest ?? new JsonObject())
         {
             SessionId = sessionId,
             Ticket = ticket,
@@ -257,20 +286,28 @@ public sealed class ConnectorSyncService(
             Partial = job[CompleteField]?.GetValue<bool>() == false,
             Rotated = rotated,
         };
+        if (run.Partial) run.NoteOldest(OldestOf(job["data"] as JsonArray));
         if (landed is not null) run.Attached.UnionWith(landed.Attached);
 
         var pending = await WalkOnAsync(run, row, job.Text(ResourceField), ct);
         return pending ?? await FinishAsync(run, row, view, ct);
     }
 
-    /// <summary>The job's page landed, and the pending mirror settled when the page was a complete pass over the transactions (§15).</summary>
-    private async Task<ConnectorIngestResult?> LandJobAsync(
-        Guid userId, string provider, JsonObject? manifest, ConnectorSession? row, JsonObject job, string sessionId, CancellationToken ct)
+    /// <summary>
+    /// The job's page landed, and the pending mirror settled when the job was a
+    /// complete pass over the transactions (§15) — an empty one included: the
+    /// bank reported nothing pending. (#508: this used to wait for a page
+    /// without a cursor, but every page that carries rows carries its ack
+    /// cursor, so a pass that outran the window never settled, and the rows
+    /// the bank booked meanwhile stayed beside their booked twins.)
+    /// </summary>
+    private async Task<ConnectorIngestResult?> LandJobAsync(JobPage page, bool backfill, CancellationToken ct)
     {
-        var landed = await LandJobPageAsync(userId, provider, manifest, row, job, sessionId, ct);
-        if (landed is not null && job.Text("cursor") is null && ShapeOf(manifest, job) == "transaction")
+        var landed = await LandJobPageAsync(page, ct);
+        // a backfill pass (#460) reads older history only: today's pending rows are outside its window
+        if (!backfill && ShapeOf(page.Manifest, page.Job) == "transaction" && page.Job[CompleteField]?.GetValue<bool>() != false)
         {
-            await ingest.SettlePendingAsync(userId, provider, row?.ConnectionId ?? sessionId, landed.PendingRows, ct);
+            await ingest.SettlePendingAsync(page.UserId, page.Provider, page.ConnectionId, landed?.PendingRows ?? [], ct);
         }
         return landed;
     }
@@ -291,7 +328,7 @@ public sealed class ConnectorSyncService(
     private async Task<ConnectorOutcome?> WalkOnAsync(SyncRun run, ConnectorSession? row, string? resourceId, CancellationToken ct)
     {
         if (resourceId is null) return null;
-        foreach (var resource in Resources(run.Manifest).SkipWhile(r => r.Text("id") != resourceId).Skip(1))
+        foreach (var resource in PassResources(run.Manifest, run.Request.Until).SkipWhile(r => r.Text("id") != resourceId).Skip(1))
         {
             var pending = await FetchResourceAsync(run, resource, ct);
             if (pending is null) continue;
@@ -321,18 +358,18 @@ public sealed class ConnectorSyncService(
 
         view["ingested"] = Counts(run.Landed);
         view[CompleteField] = !run.Partial;
+        StampOldest(view, run);
         if (run.Rotated) view[SessionField] = Session(run.Bundle);
         return new ConnectorOutcome(StatusCodes.Status200OK, view);
     }
 
-    private async Task<ConnectorIngestResult?> LandJobPageAsync(
-        Guid userId, string provider, JsonObject? manifest, ConnectorSession? row, JsonObject job, string sessionId, CancellationToken ct)
+    private async Task<ConnectorIngestResult?> LandJobPageAsync(JobPage page, CancellationToken ct)
     {
-        var shape = ShapeOf(manifest, job);
-        if (shape is null || job["data"] is not JsonArray data || data.Count == 0) return null;
+        var shape = ShapeOf(page.Manifest, page.Job);
+        if (shape is null || page.Job["data"] is not JsonArray data || data.Count == 0) return null;
 
         var landed = await ingest.IngestAsync(
-            userId, provider, manifest?.Text("name") ?? provider, row?.ConnectionId ?? sessionId, shape, data, ct);
+            page.UserId, page.Provider, page.Manifest?.Text("name") ?? page.Provider, page.ConnectionId, shape, data, ct);
         Wake(landed.TouchedSpaces);
         return landed;
     }
@@ -407,25 +444,28 @@ public sealed class ConnectorSyncService(
     private static IEnumerable<JsonObject> Resources(JsonObject? manifest) =>
         manifest?["resources"] is JsonArray resources ? resources.OfType<JsonObject>() : [];
 
+    /// <summary>The resources one pass walks: all of them, or for a backfill pass (#460) only those that take an <c>until</c> — accounts are all of them already.</summary>
+    internal static IEnumerable<JsonObject> PassResources(JsonObject? manifest, string? until) =>
+        until is null ? Resources(manifest) : Resources(manifest).Where(r => Param(r["params"] as JsonArray ?? [], "until") is not null);
+
     /// <summary>
     /// The query a resource takes: <c>since</c> when it declares one (the
-    /// caller's date, else as far back as the provider allows), the includes
-    /// it offers among the ones munni wants. Nothing else — accounts are all
-    /// of them, and <c>until</c> is today.
+    /// caller's date, else as far back as the provider allows), <c>until</c>
+    /// on a backfill pass, the includes it offers among the ones munni wants.
+    /// Nothing else — accounts are all of them.
     /// </summary>
-    internal static string QueryFor(JsonObject resource, JsonObject manifest, string? since)
+    internal static string QueryFor(JsonObject resource, JsonObject manifest, string? since, string? until = null)
     {
         var parameters = resource["params"] as JsonArray ?? [];
         var parts = new List<string>();
 
         if (Param(parameters, "since") is not null)
         {
-            var maxDays = resource["max_history_days"]?.GetValue<int>()
-                          ?? (manifest["limits"] as JsonObject)?["max_history_days"]?.GetValue<int>()
-                          ?? 365;
-            var from = since ?? DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-maxDays).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var from = since ?? Floor(resource, manifest, DateTimeOffset.UtcNow).ToString(DayFormat, CultureInfo.InvariantCulture);
             parts.Add($"since={Uri.EscapeDataString(from)}");
         }
+
+        if (until is not null && Param(parameters, "until") is not null) parts.Add($"until={Uri.EscapeDataString(until)}");
 
         if (Param(parameters, "include") is { } include && include["values"] is JsonArray offered)
         {
@@ -438,6 +478,53 @@ public sealed class ConnectorSyncService(
 
     private static JsonObject? Param(JsonArray parameters, string key) =>
         parameters.OfType<JsonObject>().FirstOrDefault(p => string.Equals(p.Text("key"), key, StringComparison.Ordinal));
+
+    /// <summary>The oldest day a resource reaches: its own history limit, else the party's, else a year.</summary>
+    private static DateOnly Floor(JsonObject resource, JsonObject manifest, DateTimeOffset now)
+    {
+        var maxDays = resource["max_history_days"]?.GetValue<int>()
+                      ?? (manifest["limits"] as JsonObject)?["max_history_days"]?.GetValue<int>()
+                      ?? 365;
+        return DateOnly.FromDateTime(now.UtcDateTime).AddDays(-maxDays);
+    }
+
+    /// <summary>Whether a backfill window still holds a day the party keeps: an <c>until</c> before the floor (or before the pass's own <c>since</c>) asks for nothing.</summary>
+    internal static bool Reaches(JsonObject resource, JsonObject manifest, string? since, string until, DateTimeOffset now)
+    {
+        if (!DateOnly.TryParseExact(until, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var to)) return false;
+        if (to < Floor(resource, manifest, now)) return false;
+        return since is null
+               || !DateOnly.TryParseExact(since, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var from)
+               || from <= to;
+    }
+
+    /// <summary>
+    /// The oldest day a page's records carry: a transaction's booking day, a
+    /// receipt's purchase day as its own clock dates it (the day the adapters'
+    /// window reads). Null when none is dated.
+    /// </summary>
+    internal static DateOnly? OldestOf(JsonArray? records)
+    {
+        DateOnly? oldest = null;
+        foreach (var record in records?.OfType<JsonObject>() ?? [])
+        {
+            if (DayOf(record) is { } day && (oldest is null || day < oldest)) oldest = day;
+        }
+        return oldest;
+    }
+
+    private static DateOnly? DayOf(JsonObject record)
+    {
+        if (record.Text("booked_at") is { } booked
+            && DateOnly.TryParseExact(booked, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
+        {
+            return day;
+        }
+        return record.Text("purchased_at") is { } purchased
+               && DateTimeOffset.TryParse(purchased, CultureInfo.InvariantCulture, DateTimeStyles.None, out var at)
+            ? DateOnly.FromDateTime(at.Date)
+            : null;
+    }
 
     private static JsonObject Counts(ConnectorIngestCounts counts) => new()
     {
@@ -463,6 +550,12 @@ public sealed class ConnectorSyncService(
     });
 
     /// <summary>One sync's state as it walks the manifest: the ticket in hand, the bundle to persist, what landed.</summary>
+    /// <summary>A collected job's page and whose it is: the connection it lands under is the session's own, or the session itself before it had one.</summary>
+    private sealed record JobPage(Guid UserId, string Provider, JsonObject? Manifest, ConnectorSession? Row, JsonObject Job, string SessionId)
+    {
+        public string ConnectionId => Row?.ConnectionId ?? SessionId;
+    }
+
     private sealed class SyncRun(Guid userId, string subject, string provider, ConnectorSyncRequest request, string deviceClass, JsonObject manifest)
     {
         public Guid UserId { get; } = userId;
@@ -491,6 +584,14 @@ public sealed class ConnectorSyncService(
 
         /// <summary>A resource's pass came back incomplete: the party holds more than one fetch brings.</summary>
         public bool Partial { get; set; }
+
+        /// <summary>The oldest day an incomplete pass brought: the next backfill pass asks up to it (#460).</summary>
+        public DateOnly? Oldest { get; private set; }
+
+        public void NoteOldest(DateOnly? day)
+        {
+            if (day is { } d && (Oldest is null || d < Oldest)) Oldest = d;
+        }
 
         /// <summary>What the fetches declare themselves as: a person's call, or the scheduler's.</summary>
         public string Trigger { get; init; } = "user";

@@ -7,6 +7,7 @@ import {
   counterTypesFor,
   counterTypesForFamily,
   familyForCounter,
+  fitToMatrix,
   movementCatFor,
   movementCatsForCounter,
   typeForLinkedAccount,
@@ -140,11 +141,13 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
       expect([...movementCatsForCounter('credit', 'credit')].sort()).toEqual(['debtBorrowed', 'transferIn']);
       // single-meaning counters narrow to exactly one category
       expect([...movementCatsForCounter('savings', 'debit')]).toEqual(['savingDeposit']);
-      expect([...movementCatsForCounter('cash', 'debit')].sort()).toEqual(['cashWithdraw', 'transferOut']);
+      // #574: a cash counter means the ATM pair alone — never "Transfer out" beside it
+      expect([...movementCatsForCounter('cash', 'debit')]).toEqual(['cashWithdraw']);
+      expect([...movementCatsForCounter('cash', 'credit')]).toEqual(['cashDeposit']);
     });
     it('plain Transfer lists REGULAR accounts only — the special kinds ARE the family categories (user rule)', () => {
-      expect(counterTypesFor('transferOut')).toEqual(['checking', 'cash', 'credit']);
-      expect(counterTypesFor('transferIn')).toEqual(['checking', 'cash', 'credit']);
+      expect(counterTypesFor('transferOut')).toEqual(['checking', 'credit']);
+      expect(counterTypesFor('transferIn')).toEqual(['checking', 'credit']);
     });
     it('the ATM pair points at cash wallets; funding at funding attachments', () => {
       expect(counterTypesFor('cashWithdraw')).toEqual(['cash']);
@@ -156,6 +159,25 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
     it('the family read agrees with the per-category read', () => {
       expect(counterTypesForFamily('saving')).toEqual(counterTypesFor('savingDeposit'));
       expect(counterTypesForFamily('investment')).toEqual(counterTypesFor('investBuy'));
+    });
+  });
+
+  describe('#564 fitToMatrix — a suggestion obeys the cell the picker shows', () => {
+    it('a movement read from the wrong side turns into its sibling on this side', () => {
+      expect(fitToMatrix('savingDeposit', 'checking', 'credit')).toBe('savingWithdraw');
+      expect(fitToMatrix('savingWithdraw', 'checking', 'debit')).toBe('savingDeposit');
+      expect(fitToMatrix('loanRepayment', 'checking', 'credit')).toBe('debtBorrowed');
+      expect(fitToMatrix('cashDeposit', 'checking', 'debit')).toBe('cashWithdraw');
+      expect(fitToMatrix('transferIn', undefined, 'debit')).toBe('transferOut');
+      // the pot's own ledger runs sign-inverted
+      expect(fitToMatrix('savingWithdraw', 'savings', 'credit')).toBe('savingDeposit');
+    });
+    it('what the cell allows, and every ordinary category, passes untouched', () => {
+      expect(fitToMatrix('savingWithdraw', 'checking', 'credit')).toBe('savingWithdraw');
+      expect(fitToMatrix('groceries', 'savings', 'credit')).toBe('groceries');
+    });
+    it('a value story that only lives on the pot is no suggestion on an ordinary account', () => {
+      expect(fitToMatrix('savingInterest', 'checking', 'credit')).toBeNull();
     });
   });
 });

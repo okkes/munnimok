@@ -91,11 +91,12 @@ public static class SentryNoise
 
     /// <summary>
     /// Requests that are never a transaction: the health probes (docker's
-    /// wget every 10 s, the web's handshake every round), the SSE stream (open
-    /// for an hour, it would read as the slowest request on the platform) and
-    /// the agents' heartbeats.
+    /// wget every 10 s, the web's handshake every round), the SSE streams (the
+    /// sync one open for an hour, the live view's for a whole login - either
+    /// would read as the slowest request on the platform) and the agents'
+    /// heartbeats.
     /// </summary>
-    private static readonly string[] HeartbeatPaths = ["/health", "/sync/events", "/heartbeat"];
+    private static readonly string[] HeartbeatPaths = ["/health", "/sync/events", "/live/stream", "/heartbeat"];
 
     public static bool IsHeartbeat(string? transactionName) =>
         transactionName is not null && HeartbeatPaths.Any(p => transactionName.Contains(p, StringComparison.OrdinalIgnoreCase));

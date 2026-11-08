@@ -17,6 +17,7 @@ internal static class MockRegistryManifest
         Id = id,
         Name = name,
         Kind = ProviderKind.Registry,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.Http,

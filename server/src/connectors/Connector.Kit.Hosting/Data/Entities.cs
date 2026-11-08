@@ -170,6 +170,9 @@ public sealed class JobRow
 
     public const string ScheduleTrigger = "schedule";
 
+    /// <summary>The relay's scheduler fetching older history after a partial pass (#460): paced like a schedule, on its own clock.</summary>
+    public const string BackfillTrigger = "backfill";
+
     /// <summary>The operator's lab (#441): a run from the test bench, held like a person's and read like the operator's own.</summary>
     public const string LabTrigger = "lab";
 

@@ -805,7 +805,7 @@ describe('Connections hub (signed-in user)', () => {
     db.close();
   }, 20_000);
 
-  it('connects a bank: listed under Banks, the sync counts its rows, the fetched account offers the attach step (M4)', async () => {
+  it('connects a bank on All accounts: listed under Bank connections, the sync counts its rows, the fetched account offers the attach step (M4, #527)', async () => {
     const bank = manifestOf({
       id: 'mock-bank-simple',
       name: 'Mock Bank',
@@ -817,33 +817,41 @@ describe('Connections hub (signed-in user)', () => {
         { id: 'transactions', returns: 'transaction', typicalDurationSeconds: 5, maxRecordsPerFetch: 500, notesKey: 'fetch.asn.notes.whole_export' },
       ],
     });
-    const feedAccountOp = {
+    // the connection id is the app's own, minted at sign-in: the relay's answers name it
+    let connectionId = '';
+    const feedAccountOp = () => ({
       opId: 'srv-acct-mock',
       spaceId: 'feed-mock',
       entity: 'account',
       entityId: 'acct-mock-1',
-      fields: { name: 'Betaalrekening', type: 'checking', source: 'connector', provider: 'mock-bank-simple', currency: 'EUR', balanceCents: 12_345, iban: 'NL00MOCK0000000001', lastSyncedAt: new Date().toISOString() },
+      fields: { name: 'Betaalrekening', type: 'checking', source: 'connector', provider: 'mock-bank-simple', connectionId, currency: 'EUR', balanceCents: 12_345, iban: 'NL00MOCK0000000001', lastSyncedAt: new Date().toISOString() },
       hlc: '000000100-0000-server',
-    };
-    renderAppAsUser('/connections', {
+    });
+    renderAppAsUser('/accounts', {
       api: {
         'GET /connectors/providers': () => catalogueOf(bank, manifestOf()),
         ...feeds,
         // the relay's ingest wrote the bank's feed: the next pull lists it and hands its account over
         'GET /me/spaces': () => ['s-user', 'feed-mock'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-mock' }],
-        'GET /sync/feed-mock/pull': (_body, url) => (Number(url.searchParams.get('since') ?? 0) === 0 ? { ops: [feedAccountOp], latestSeq: 1 } : { ops: [], latestSeq: 1 }),
-        'POST /connectors/mock-bank-simple/login': () => ({ sessionId: 'ses_b', state: 'active', bundle: 'sb_v1.bank', notes: [] }),
+        // the account lands with the first sync after the sign-in (the boot pull found the feed empty)
+        'GET /sync/feed-mock/pull': (_body, url) =>
+          connectionId && Number(url.searchParams.get('since') ?? 0) < 2 ? { ops: [feedAccountOp()], latestSeq: 2 } : { ops: [], latestSeq: connectionId ? 2 : 1 },
+        'GET /connectors/accounts': () => (connectionId ? [{ connectionId, provider: 'mock-bank-simple', feedSpaceId: 'feed-mock', accountId: 'acct-mock-1' }] : []),
+        'POST /connectors/mock-bank-simple/login': (body) => {
+          connectionId = (body as { connectionId: string }).connectionId;
+          return { sessionId: 'ses_b', state: 'active', bundle: 'sb_v1.bank', notes: [] };
+        },
         'POST /connectors/mock-bank-simple/sync': () => ({ sessionId: 'ses_b', state: 'active', ingested: { ...NO_INGEST, records: 6, accounts: 1, transactions: 5 } }),
       },
     });
-    await screen.findByTestId('screen-connections');
+    await screen.findByTestId('screen-accounts');
     fireEvent.click(await screen.findByTestId('conn-add-open'));
-    // the catalogue groups by kind, banks first
-    const banks = await screen.findByTestId('conn-catalogue-bank', {}, { timeout: 5000 });
-    expect(banks.querySelector('[data-testid="conn-party-mock-bank-simple"]')).toBeTruthy();
-    expect(screen.getByTestId('conn-catalogue-store').querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('conn-party-mock-bank-simple'));
+    // the bank picker: no shop on offer, munni's own connector lists its banks
+    const picker = await screen.findByTestId('bank-picker', {}, { timeout: 5000 });
+    expect(picker.querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeNull();
+    fireEvent.click(await screen.findByTestId('bank-picker-munni', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('conn-party-mock-bank-simple'));
     // what the fetch says about itself rides the form
     expect((await screen.findByTestId('connect-resource-note-transactions')).textContent).toContain('one file');
     fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'me' } });
@@ -883,6 +891,111 @@ describe('Connections hub (signed-in user)', () => {
     await screen.findByTestId('screen-space-accounts', {}, { timeout: 5000 });
     expect((await screen.findByTestId('space-attach-focus', {}, { timeout: 5000 })).textContent).toContain('Betaalrekening');
   }, 25_000);
+
+  it('#491/#528: a bank connection whose consent the relay no longer keeps reads "reconnect" on its card, and Reconnect signs in again as that same connection', async () => {
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { storeFeedId } = await import('@/domain/feedIds');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    const db = await userDb();
+    const backend = new DexieBackend(db);
+    const repo = new Repo(backend, new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('storeConn', storeFeedId(USER_TEST_SUB), 'c-eb', { store: 'enablebanking', kind: 'bank', displayName: 'PayPal Okkes', connectedAt: '2026-07-01', status: 'ok' });
+    // this device last saw it active: the consent ended at the party, which only the relay hears
+    await backend.connectorConnPut({ id: 'c-eb', provider: 'enablebanking', sessionId: 'ses-old', state: 'active', refreshedAt: '2026-07-01T00:00:00Z', lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    db.close();
+    const eb = manifestOf({ id: 'enablebanking', name: 'Enable Banking', kind: 'bank', secretCustody: 'server', unattendedFetch: true });
+    let request: { connectionId?: string } = {};
+    renderAppAsUser('/accounts', {
+      api: {
+        'GET /connectors/providers': () => catalogueOf(eb),
+        'GET /connectors/sessions': () => [],
+        'POST /connectors/enablebanking/login': (body) => {
+          request = body as typeof request;
+          return { sessionId: 'ses-new', state: 'active', bundle: 'sb_v1.eb', notes: [] };
+        },
+        'POST /connectors/enablebanking/sync': () => ({ sessionId: 'ses-new', state: 'active', ingested: NO_INGEST }),
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('conn-state-c-eb').textContent).toMatch(/[Rr]econnect/), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('conn-signin-c-eb'));
+    fireEvent.change(await screen.findByTestId('connect-field-username', {}, { timeout: 5000 }), { target: { value: 'me' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await waitFor(() => expect(request.connectionId).toBe('c-eb'), { timeout: 5000 });
+    // the same connection: no naming step, still one connection
+    expect(screen.queryByTestId('conn-name-input')).toBeNull();
+  }, 20_000);
+
+  it('#527: Connected services holds the shops and registries — a bank connection is managed on All accounts', async () => {
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { storeFeedId } = await import('@/domain/feedIds');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    await seedConnection('c-shop');
+    const db = await userDb();
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('storeConn', storeFeedId(USER_TEST_SUB), 'c-bank', { store: 'enablebanking', kind: 'bank', displayName: 'ING main', connectedAt: '2026-09-01', status: 'ok' });
+    db.close();
+    renderAppAsUser('/connections', { api: { ...catalogue } });
+    await screen.findByTestId('conn-card-c-shop', {}, { timeout: 5000 });
+    expect(screen.getByTestId('screen-connections').textContent).toContain('Connected services');
+    expect(screen.queryByTestId('conn-card-c-bank')).toBeNull();
+    expect(screen.queryByTestId('conn-list-bank')).toBeNull();
+  }, 15_000);
+
+  it('#524: a bank card lists the accounts its own connection fetches — never every account of the same party', async () => {
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { storeFeedId } = await import('@/domain/feedIds');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    const db = await userDb();
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    const feed = storeFeedId(USER_TEST_SUB);
+    for (const [id, name] of [['c-paypal', 'PayPal Okkes'], ['c-ing', 'ING main']]) {
+      await repo.upsert('storeConn', feed, id, { store: 'enablebanking', kind: 'bank', displayName: name, connectedAt: '2026-09-01', status: 'ok' });
+    }
+    const account = (id: string, name: string, extra: Record<string, unknown>) =>
+      repo.upsert('account', 's-user', id, { name, type: 'checking', source: 'connector', provider: 'enablebanking', currency: 'EUR', balanceCents: 0, lastSyncedAt: new Date().toISOString(), ...extra });
+    await account('acc-paypal', 'Okkes Doker', { connectionId: 'c-paypal' });
+    await account('acc-ing', 'Hr O Döker', { connectionId: 'c-paypal', iban: 'NL74INGB0001029507' });   // the row's stamp names whoever fetched it last
+    await account('acc-asn', 'O. Doker CJ E. Kaymazlar', { connectionId: 'c-partner', iban: 'NL43ASNB8852368507' });   // a co-owner's connection fetched it last
+    await repo.upsert('transaction', 's-user', 'tx-paypal', { accountId: 'acc-paypal', date: '2026-10-01', amountCents: -500, currency: 'EUR', merchant: 'Shop' });
+    await repo.upsert('transaction', 's-user', 'tx-ing', { accountId: 'acc-ing', date: '2024-10-13', amountCents: -500, currency: 'EUR', merchant: 'Shop' });
+    db.close();
+    renderAppAsUser('/accounts', {
+      api: {
+        'GET /connectors/providers': () => catalogueOf(manifestOf({ id: 'enablebanking', name: 'Enable Banking', kind: 'bank' })),
+        'GET /me/feeds': () => [{ feedSpaceId: 's-user' }],
+        // the relay's per-person record: which of MY connections fetches what
+        'GET /connectors/accounts': () => [
+          { connectionId: 'c-paypal', provider: 'enablebanking', feedSpaceId: 's-user', accountId: 'acc-paypal' },
+          { connectionId: 'c-ing', provider: 'enablebanking', feedSpaceId: 's-user', accountId: 'acc-ing' },
+          { connectionId: 'c-ing', provider: 'enablebanking', feedSpaceId: 's-user', accountId: 'acc-asn' },
+        ],
+      },
+    });
+    await waitFor(
+      () => {
+        const paypal = screen.getByTestId('conn-accounts-c-paypal');
+        expect(paypal.querySelector('[data-testid="conn-account-acc-paypal"]')).toBeTruthy();
+        expect(paypal.querySelector('[data-testid="conn-account-acc-ing"]')).toBeNull();
+        expect(paypal.querySelector('[data-testid="conn-account-acc-asn"]')).toBeNull();
+        const ing = screen.getByTestId('conn-accounts-c-ing');
+        expect(ing.querySelector('[data-testid="conn-account-acc-ing"]')).toBeTruthy();
+        expect(ing.querySelector('[data-testid="conn-account-acc-asn"]')).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
+    // a card's range is its own accounts' history, not the party's
+    expect(screen.getByTestId('conn-range-c-paypal').textContent).not.toContain('2024');
+    expect(screen.getByTestId('conn-range-c-ing').textContent).toContain('2024');
+    // the co-owned account another person's connection fetched last is still the viewer's own connection's: never "not fetched any more"
+    expect(screen.queryByTestId('conn-uncovered-acc-asn')).toBeNull();
+  }, 15_000);
 
   it('a party that only talks to a browser on the person’s own computer asks which agent holds the sign-in (M5)', async () => {
     const persistent = manifestOf({
@@ -991,7 +1104,7 @@ describe('Connections hub (signed-in user)', () => {
       },
     };
     const lookups: string[] = [];
-    renderAppAsUser('/connections', {
+    renderAppAsUser('/accounts', {
       api: {
         'GET /connectors/providers': () => catalogueOf(aggregator),
         ...feeds,
@@ -1030,8 +1143,11 @@ describe('Connections hub (signed-in user)', () => {
       },
     });
     try {
-      await screen.findByTestId('screen-connections');
+      await screen.findByTestId('screen-accounts');
       fireEvent.click(await screen.findByTestId('conn-add-open'));
+      // #527: the bank picker offers the aggregator itself, straight into its consent flow
+      const openBanking = await screen.findByTestId('bank-picker-open-banking', {}, { timeout: 5000 });
+      expect(openBanking.textContent).toContain('180 days');
       fireEvent.click(await screen.findByTestId('conn-party-gocardless', {}, { timeout: 5000 }));
       await screen.findByTestId('connect-field-country');
       expect(screen.queryByTestId('connect-field-return_url')).toBeNull();

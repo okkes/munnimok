@@ -10,7 +10,7 @@ import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { matchCounterAccount } from '@/domain/counterClue';
 import type { ClueAccount } from '@/domain/counterClue';
 import { movementCatFor } from '@/domain/txType';
-import { ensureDefaultAccount } from '@/application/defaultAccounts';
+import { walletForAutoLink } from '@/application/defaultAccounts';
 import { visibleAccounts, writeTxTransform } from '@/db/joined';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import type { Repo } from '@/db/repo';
@@ -81,6 +81,7 @@ function predictEntry(
   memory: SpaceMemory,
   entry: ParsedStatement['entries'][number],
   keywordRules?: readonly { catId: string; keywords: string[] }[],
+  sourceAccountType?: AccountType,
 ): { catId: string; needsReview: 0 | 1 } {
   const prediction = predictTx({
     memory,
@@ -88,6 +89,7 @@ function predictEntry(
     description: entry.description,
     amountCents: entry.amountCents,
     keywordRules,
+    sourceAccountType,
   });
   return {
     catId: prediction?.catId ?? UNCATEGORIZED_ID,
@@ -122,12 +124,12 @@ async function uploaderName(store: StorageBackend): Promise<string | undefined> 
 }
 
 /**
- * #221: a movement-category prediction is only VALID with a counterparty
- * — link it to the space's default for that family through the write
- * choke, so the mirror leg mints and a wrong guess later retires it
- * (the ordinary link lifecycle, spec'd by the user). #228 r3: the
- * TRANSFER family never leans on its default — only a clue-matched
- * account links (`matchedId`); the pot families keep their defaults.
+ * A movement-category prediction links its counterparty through the write
+ * choke, so the mirror leg mints and a wrong guess later retires it (the
+ * ordinary link lifecycle). #228 r3: a transfer links only a clue-matched
+ * account (`matchedId`); #546: the ATM pair takes the cash wallet, and the
+ * pot families no default any more — the boot fold matches their account
+ * from the text, or the review asks for it.
  */
 async function linkPredictedMovement(
   ctx: EntryContext,
@@ -139,8 +141,7 @@ async function linkPredictedMovement(
   if (!isMovementCat(predicted.catId)) return;
   const family = defaultFamilyFor(predicted.catId);
   if (!family) return;
-  const targetId =
-    matchedId ?? (family === 'transfer' ? null : await ensureDefaultAccount(ctx.store, ctx.repo, ctx.spaceId, family));
+  const targetId = matchedId ?? (family === 'cash' ? await walletForAutoLink(ctx.store, ctx.repo, ctx.spaceId) : null);
   if (!targetId) return;
   await writeTxTransform(
     ctx.repo,
@@ -158,7 +159,8 @@ function resolveEntryPrediction(
   ctx: EntryContext,
   entry: ParsedStatement['entries'][number],
 ): { predicted: { catId: string; needsReview: 0 | 1 }; matchedId?: string } {
-  const predicted = predictEntry(ctx.memory, entry, ctx.keywordRules);
+  // #564: the imported account's type decides the side a suggested movement reads from
+  const predicted = predictEntry(ctx.memory, entry, ctx.keywordRules, ctx.counterCandidates.find((a) => a.id === ctx.accountId)?.type);
   if (defaultFamilyFor(predicted.catId) !== 'transfer') return { predicted };
   const match = matchCounterAccount(
     {

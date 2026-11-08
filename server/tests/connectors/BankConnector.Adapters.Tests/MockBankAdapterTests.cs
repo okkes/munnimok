@@ -21,9 +21,10 @@ namespace BankConnector.Adapters.Tests;
 /// </summary>
 public sealed class MockBankAdapterTests
 {
-    /// <summary>Pinned to the ledger's anchor so a window is a fixed range.</summary>
-    private static readonly DateTimeOffset Now =
-        new(MockBankLedger.Anchor.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+    /// <summary>Pinned so a window is a fixed range; the ledger runs through whatever day the clock says.</summary>
+    private static readonly DateTimeOffset Now = new(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
+
+    private static readonly DateOnly Today = DateOnly.FromDateTime(Now.UtcDateTime);
 
     private static readonly IReadOnlyDictionary<string, string> GoodCredentials =
         new Dictionary<string, string>(StringComparer.Ordinal)
@@ -161,10 +162,34 @@ public sealed class MockBankAdapterTests
         // permanently and invisibly, so the window is widened and the content
         // hash absorbs the overlap.
         var earliest = result.Transactions.Min(t => t.BookedAt);
-        var floor = MockBankLedger.Anchor.AddDays(-(BankWindow.DefaultSinceDays + BankLimits.DutchCardSettlementLagDays));
+        var floor = Today.AddDays(-(BankWindow.DefaultSinceDays + BankLimits.DutchCardSettlementLagDays));
 
         Assert.True(earliest >= floor, $"{earliest} predates the widened window");
-        Assert.True(earliest < MockBankLedger.Anchor.AddDays(-BankWindow.DefaultSinceDays));
+        Assert.True(earliest < Today.AddDays(-BankWindow.DefaultSinceDays));
+    }
+
+    /// <summary>
+    /// The ledger ends on the provider's own today, so its history limit is
+    /// filled on any clock: years on, a fetch asking for more than the limit
+    /// still gets rows from the limit's first week to the last week. With a
+    /// fixed last day this came back empty from 2027-01-23 on.
+    /// </summary>
+    [Fact]
+    public async Task The_history_follows_the_clock_and_always_reaches_back_its_limit()
+    {
+        var later = new DateTimeOffset(2031, 3, 14, 12, 0, 0, TimeSpan.Zero);
+        var today = DateOnly.FromDateTime(later.UtcDateTime);
+        var floor = today.AddDays(-MockBankLedger.HistoryDays);
+        var adapter = BankAdapters.MockFleet(new FixedTimeProvider(later))
+            .Single(a => string.Equals(a.Describe().Id, MockBankSimpleAdapter.ProviderId, StringComparison.Ordinal));
+        using var ctx = new FakeJobContext { Inputs = GoodCredentials };
+
+        var result = await adapter.FetchAsync(ctx, Transactions(since: today.AddYears(-2)), CancellationToken.None);
+
+        Assert.True(result.Complete);
+        Assert.InRange(result.Transactions.Min(t => t.BookedAt), floor, floor.AddDays(7));
+        Assert.InRange(result.Transactions.Max(t => t.BookedAt), today.AddDays(-7), today);
+        BankEmission.VerifyPerAccount(MockBankSimpleAdapter.ProviderId, result.Transactions);
     }
 
     [Fact]

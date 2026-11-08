@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { connectorApi } from './api';
 import type { LookupOption } from './types';
 
@@ -74,7 +75,7 @@ export function LookupField({
         }}
         className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
       >
-        {picked.hasLogo && <img src={connectorApi.optionLogoUrl(provider, field, picked.value)} alt="" className="h-6 w-6 rounded-full object-contain" />}
+        {picked.hasLogo && <Picture src={connectorApi.optionLogoUrl(provider, field, picked.value)} className="h-6 w-6 rounded-full object-contain" />}
         <span className="min-w-0 flex-1 truncate">{picked.label}</span>
         <Icon name="close" size={16} color="var(--m-ink-4)" />
       </button>
@@ -125,7 +126,7 @@ export function LookupField({
               className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
             >
               {option.hasLogo ? (
-                <img src={connectorApi.optionLogoUrl(provider, field, option.value)} alt="" loading="lazy" className="h-7 w-7 rounded-full object-contain" />
+                <Picture src={connectorApi.optionLogoUrl(provider, field, option.value)} loading="lazy" className="h-7 w-7 rounded-full object-contain" />
               ) : (
                 <span className="flex h-7 w-7 items-center justify-center rounded-full bg-bg-2">
                   <Icon name="bank-outline" size={16} color="var(--m-ink-4)" />

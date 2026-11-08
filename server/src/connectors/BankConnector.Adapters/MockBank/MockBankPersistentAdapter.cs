@@ -34,6 +34,7 @@ public sealed class MockBankPersistentAdapter : MockBankAdapter
         Id = ProviderId,
         Name = "Mock Bank (always-on)",
         Kind = ProviderKind.Bank,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserPersistent,

@@ -6,7 +6,7 @@ import { Repo } from './repo';
 import { DexieBackend } from './backend';
 import { DEMO_SPACE_ID, seedDemoIfNeeded } from './seed';
 import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
-import { DEFAULT_FAMILIES } from '@/domain/defaultAccounts';
+import { cashWalletId } from '@/domain/defaultAccounts';
 
 let counter = 0;
 
@@ -24,9 +24,9 @@ describe('seedDemoIfNeeded', () => {
   it('seeds the demo space, accounts and full transaction set', async () => {
     await seedDemoIfNeeded(repo);
     expect((await db.spaces.get(DEMO_SPACE_ID))?.kind).toBe('personal');
-    // #221: the demo space is born with its six default accounts too
-    expect(await db.accounts.count()).toBe(DEMO_ACCOUNTS.length + DEFAULT_FAMILIES.length);
-    expect(await db.accounts.filter((a) => !!a.defaultFor).count()).toBe(DEFAULT_FAMILIES.length);
+    // #546: the demo space is born with its cash wallet — the one default left
+    expect(await db.accounts.count()).toBe(DEMO_ACCOUNTS.length + 1);
+    expect((await db.accounts.filter((a) => !!a.defaultFor).toArray()).map((a) => a.id)).toEqual([cashWalletId(DEMO_SPACE_ID)]);
     expect(await db.transactions.count()).toBe(DEMO_TXS.length);
     // demo never syncs — nothing may land in the outbox
     expect(await db.outbox.count()).toBe(0);

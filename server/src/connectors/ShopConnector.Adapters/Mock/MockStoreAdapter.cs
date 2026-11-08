@@ -17,8 +17,8 @@ namespace ShopConnector.Adapters.Mock;
 /// These ship before any real provider and stay useful afterwards: they are
 /// how the control plane, the agent protocol, the challenge relay and the
 /// consuming app are all exercised end to end without an account, a browser
-/// or an egress IP. Every output is deterministic given a session id, so a
-/// test can assert on ids and content hashes rather than on shapes.
+/// or an egress IP. Every output is deterministic given a session id and the
+/// clock, so a test can assert on ids and content hashes rather than on shapes.
 /// </summary>
 public sealed class MockStoreAdapter : IProviderAdapter
 {
@@ -151,8 +151,18 @@ public sealed class MockStoreAdapter : IProviderAdapter
             ctx.Progress(JobStep.Parsing);
         }
 
+        // What the store holds today: the fixture's receipts repeated up to the
+        // clock's now, kept as far back as this manifest's own history limit -
+        // the same limit the platform clamps a since to, so a whole-history
+        // fetch leaves nothing out.
         var all = MockReceiptFixture
-            .Read(_profile.FixtureName, _profile.Id, ctx.SessionId, request.WantsItems)
+            .Read(
+                _profile.FixtureName,
+                _profile.Id,
+                ctx.SessionId,
+                request.WantsItems,
+                _time.GetUtcNow(),
+                _manifest.Resource(ReceiptsResource)?.MaxHistoryDays ?? _manifest.Limits.MaxHistoryDays)
             .ToList();
 
         var receipts = all.Where(r => ReceiptFactory.InWindow(r.PurchasedAt, request)).ToList();

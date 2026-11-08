@@ -2,8 +2,9 @@ using System.Threading.RateLimiting;
 
 namespace Munni.Api;
 
-/// <summary>The buckets a person gets: the global one, and the streamed login's own.</summary>
-public sealed record RateLimitBudgets(int GlobalTokens, int GlobalRefillPer10S, int LiveTokens, int LiveRefillPer10S);
+/// <summary>The buckets a person gets: the global one, the streamed login's own, and the opens of its pushed stream.</summary>
+public sealed record RateLimitBudgets(
+    int GlobalTokens, int GlobalRefillPer10S, int LiveTokens, int LiveRefillPer10S, int LiveStreamOpens, int LiveStreamOpensPer10S);
 
 /// <summary>
 /// The abuse guard's partitions, per user (per IP before auth).
@@ -22,12 +23,28 @@ public static class ApiRateLimits
     public static string KeyFor(HttpContext http) =>
         http.User.FindFirst("sub")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anon";
 
+    /// <summary>The app's streamed login and the lab's (its bench and explore runs, #576) — the same traffic, the same bucket.</summary>
     public static bool IsLiveViewRoute(PathString path) =>
-        path.StartsWithSegments("/connectors") && (path.Value ?? string.Empty).Contains("/live/", StringComparison.Ordinal);
+        (path.StartsWithSegments("/connectors") || path.StartsWithSegments("/lab/bench"))
+        && (path.Value ?? string.Empty).Contains("/live/", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The pushed live view (#429): one request for the whole login, so the
+    /// per-frame bucket means nothing to it. What is worth bounding is how
+    /// often a person opens one - a reconnect after a dropped network, never a
+    /// stream a second - and each open holds a stream to the control plane.
+    /// </summary>
+    public static bool IsLiveStreamRoute(PathString path) =>
+        IsLiveViewRoute(path) && (path.Value ?? string.Empty).EndsWith("/live/stream", StringComparison.Ordinal);
 
     public static RateLimitPartition<string> PartitionFor(HttpContext http, RateLimitBudgets budgets)
     {
         ArgumentNullException.ThrowIfNull(budgets);
+        if (IsLiveStreamRoute(http.Request.Path))
+        {
+            return RateLimitPartition.GetTokenBucketLimiter("livestream:" + KeyFor(http), _ => Bucket(budgets.LiveStreamOpens, budgets.LiveStreamOpensPer10S));
+        }
+
         if (IsLiveViewRoute(http.Request.Path))
         {
             return RateLimitPartition.GetTokenBucketLimiter("live:" + KeyFor(http), _ => Bucket(budgets.LiveTokens, budgets.LiveRefillPer10S));

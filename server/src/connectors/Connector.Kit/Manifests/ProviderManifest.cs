@@ -80,6 +80,15 @@ public sealed record ProviderManifest
     public bool OperatorOnly { get; init; }
 
     /// <summary>
+    /// The platform's own stand-in party (the mocks, #526): it runs on every
+    /// door as any party does — the tests and the lab's bench exercise the
+    /// protocol through it without anybody's real account — but it is no
+    /// shop or bank a person would connect, so a consumer leaves it out of
+    /// what it offers people, and the lab lists it apart.
+    /// </summary>
+    public bool Fixture { get; init; }
+
+    /// <summary>
     /// What disconnecting does to the account upstream, if anything.
     ///
     /// There was no field, so <c>DELETE /sessions/{id}</c> called

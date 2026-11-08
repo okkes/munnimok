@@ -51,11 +51,11 @@ export const upcomingRecAmountCents = (rec: Pick<RecurringRow, 'amountCents'>): 
 export const upcomingLoanAmountCents = (loan: Pick<AccountRow, 'paymentCents'>): number =>
   Math.abs(loan.paymentCents ?? 0);
 
-/** tracked loan payment plans due in the window — archived accounts and
- *  dormant default pots stay out, matching the home block (#266) */
+/** tracked loan payment plans due in the window — archived accounts stay
+ *  out, matching the home block (#266) */
 export function upcomingLoanPayments<A extends AccountRow>(accounts: A[], today: string, horizon: string): UpcomingLoan<A>[] {
   return accounts
-    .filter((a) => a.deleted === 0 && a.archived !== 1 && !a.defaultFor && isDebtTracked(a))
+    .filter((a) => a.deleted === 0 && a.archived !== 1 && isDebtTracked(a))
     .map((loan) => ({ loan, nextDue: nextDebtPaymentDate(loan, today) }))
     .filter((u): u is UpcomingLoan<A> => u.nextDue !== null && u.nextDue <= horizon)
     .sort((a, b) => a.nextDue.localeCompare(b.nextDue));

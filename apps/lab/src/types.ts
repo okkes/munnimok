@@ -69,6 +69,8 @@ export interface ProviderEntry {
   runtime?: string;
   agent?: { required?: boolean; class?: string; egress?: { country?: string; kind?: string } | null; desktopBrowser?: boolean } | null;
   unattendedFetch?: boolean;
+  /** #526: the platform's own stand-in party (the mocks) */
+  fixture?: boolean;
   loginNeedsHeadedAgent?: boolean;
   logout?: string;
   offersCredentialStore?: boolean;

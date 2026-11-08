@@ -36,6 +36,13 @@ public class ConnectorAccountRef
     public string? ConnectionId { get; set; }
 
     /// <summary>
+    /// The party's identity for the account across consents (#491), where it
+    /// states one: a new consent's card or wallet is filed under the
+    /// reference an earlier consent's ref with the same identity carries.
+    /// </summary>
+    public string? Identity { get; set; }
+
+    /// <summary>
     /// The person deleted this account's feed while the consent still reaches
     /// other accounts (§15): the consent lives on for those, and this account
     /// is left where the party lists it — no feed, no rows — until the person

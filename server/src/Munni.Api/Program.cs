@@ -167,7 +167,10 @@ var globalRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:Global
 var socialPerMinute = builder.Configuration.GetValue<int?>("RateLimits:SocialPerMinute") ?? unlimitedForTests ?? 30;
 var liveTokens = builder.Configuration.GetValue<int?>("RateLimits:LiveTokens") ?? unlimitedForTests ?? 1500;
 var liveRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:LiveRefillPer10s") ?? unlimitedForTests ?? 400;
-var rateBudgets = new RateLimitBudgets(globalTokens, globalRefillPer10S, liveTokens, liveRefillPer10S);
+// the pushed live view (#429) is one request per login: what is bounded is how often one opens
+var liveStreamOpens = builder.Configuration.GetValue<int?>("RateLimits:LiveStreamOpens") ?? unlimitedForTests ?? 20;
+var liveStreamOpensPer10S = builder.Configuration.GetValue<int?>("RateLimits:LiveStreamOpensPer10s") ?? unlimitedForTests ?? 5;
+var rateBudgets = new RateLimitBudgets(globalTokens, globalRefillPer10S, liveTokens, liveRefillPer10S, liveStreamOpens, liveStreamOpensPer10S);
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -201,6 +204,8 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
     await Munni.Api.Connectors.DerivedDuplicateRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // the 2026-10-09 needs-review repair: rows a prediction alone marked reviewed go back to the review, once per database
     await NeedsReviewRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
+    // the 2026-11-08 reserved-row repair (#508): untracked reserved rows go to a connection that settles them, once per database
+    await Munni.Api.Connectors.ReservedRowRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
 }
 
 // handled errors keep their CORS headers — unhandled exceptions wipe the

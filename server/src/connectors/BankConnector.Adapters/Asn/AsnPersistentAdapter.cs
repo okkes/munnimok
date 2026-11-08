@@ -542,6 +542,11 @@ internal sealed class AsnPersistentAdapter(AsnOptions? options = null, TimeProvi
     private async Task<SessionPresence> PresenceAsync(IAsnPortal portal, CancellationToken ct)
     {
         await portal.GotoAsync(Absolute(_options.SignedInPathMarker), ct).ConfigureAwait(false);
+        // the outdated-browser notice stands in front of the answer (#562): passed, and asked again
+        if (await AsnAdapter.PastBrowserNoticeAsync(portal, _options, note: null, ct).ConfigureAwait(false))
+        {
+            await portal.GotoAsync(Absolute(_options.SignedInPathMarker), ct).ConfigureAwait(false);
+        }
 
         // Bounced already, so there is nothing to wait for.
         if (portal.Url.Contains(_options.SignInPathMarker, StringComparison.OrdinalIgnoreCase))

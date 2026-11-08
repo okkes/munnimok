@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { useSpaceAccounts, useSpaceHistoryTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceHistoryTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { countsTowardLoan } from '@/application/loanBalance';
 import { REIMBURSED_ID, autoSubFor } from '@/domain/categories';
@@ -33,16 +33,7 @@ type MatchAccount = Pick<AccountRow, 'id' | 'name' | 'iban' | 'paymentCents' | '
  * sheet's memo renders from it, and the DebtsScreen host asks it BEFORE
  * auto-opening (zero hits = the sheet never shows at all).
  */
-export function loanMatchCandidates(
-  account: MatchAccount,
-  txs: readonly SpaceTx[],
-  spaceAccounts: readonly Pick<AccountRow, 'id' | 'defaultFor'>[],
-): Scored[] {
-  // #221: a link onto the space's DEFAULT pot is provisional — those
-  // rows stay candidates, and applying RELINKS them (the choke moves
-  // the minted leg from the pot to this loan)
-  const defaultIds = new Set(spaceAccounts.filter((a) => a.defaultFor).map((a) => a.id));
-  const provisional = (tx: SpaceTx) => !!tx.linkedAccountId && defaultIds.has(tx.linkedAccountId);
+export function loanMatchCandidates(account: MatchAccount, txs: readonly SpaceTx[]): Scored[] {
   const ctx = {
     iban: account.iban ? normalizeIban(account.iban) : null,
     tokens: account.name
@@ -54,7 +45,8 @@ export function loanMatchCandidates(
   const scored: Scored[] = [];
   for (const tx of txs) {
     if (tx.deleted !== 0 || tx.accountId === account.id) continue;
-    if ((tx.linkedAccountId || tx.transferPeerId) && !provisional(tx)) continue;
+    // a row that names its counterparty already is spoken for (#546: no default pot holds rows provisionally any more)
+    if (tx.linkedAccountId || tx.transferPeerId) continue;
     // #143: a split container never links wholesale — its parts carry
     // their own loan legs (linked from their part pages)
     if ((tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) continue;
@@ -289,7 +281,7 @@ function MatchFooter({
   onApply: () => void;
 }>) {
   const { t } = useLang();
-  const { fmt } = useDisplayMoney();
+  const { fmt, fmtSensitive } = useDisplayMoney();
   return (
     <div className="flex flex-col gap-1.5" data-testid="loanmatch-summary">
       {/* #286 r5 (user ss): the app's fact-row recipe — plain UI-font
@@ -304,7 +296,7 @@ function MatchFooter({
       <div className="flex items-baseline justify-between text-[12px] text-ink-3">
         <span>{t('debts.matchNewBalance')}</span>
         <span className="m-num font-medium text-ink" data-testid="loanmatch-new-balance">
-          {fmt(balanceCents, currency)} → {fmt(newBalanceCents, currency)}
+          {fmtSensitive(balanceCents, currency)} → {fmtSensitive(newBalanceCents, currency)}
         </span>
       </div>
       <Button className="mt-1 w-full" data-testid="loanmatch-apply" disabled={busy || count === 0} onClick={onApply}>
@@ -327,19 +319,18 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
   const { store } = useData();
   const transform = useTxTransform();
   const txs = useSpaceHistoryTransactions();
-  const spaceAccounts = useSpaceAccounts();
   const account = useQuery(store, async () => (accountId ? store.get('account', accountId) : undefined), [accountId]);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [counted, setCounted] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
 
   const candidates = useMemo<Scored[]>(
-    () => (account && txs ? loanMatchCandidates(account, txs, spaceAccounts ?? []) : []),
-    [account, txs, spaceAccounts],
+    () => (account && txs ? loanMatchCandidates(account, txs) : []),
+    [account, txs],
   );
   // #286 r2: "nothing found" is only true once the queries answered —
   // while they load, the sheet shows the hint, never a false empty line
-  const ready = !!account && !!txs && !!spaceAccounts;
+  const ready = !!account && !!txs;
   const empty = ready && candidates.length === 0;
 
   // strong matches arrive pre-checked ONCE per loan; live-query

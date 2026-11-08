@@ -664,7 +664,7 @@ public sealed class AgentJobContext : IJobContext, IAsyncDisposable
             // and a login nobody could finish. A provider that declares nothing
             // keeps the old behaviour, which is the stricter one.
             var session = new LiveViewSession(
-                page, _redactor, _control, JobId, _frames,
+                page, _control, JobId, _frames,
                 // An explore run (#441 L3) is the operator's own browser: it streams
                 // whatever origin they walk to and takes the navigation vocabulary.
                 // Both decided here, from the provider, never from anything relayed.

@@ -82,8 +82,10 @@ describe('planning model (#128)', () => {
     expect(groceries.realizedCents).toBe(11_000);
     expect(groceries.status).toBe('overspent');
     expect(model.attention.map((v) => v.subject.name)).toEqual(['Groceries']);
-    // reserved: nothing left unspent in March (10k funded, 11k spent; rent paid) + 50k ahead
-    expect(model.reservedCents).toBe(50_000);
+    // held for later: nothing left unspent in March (10k funded, 11k spent; rent paid) — April's 50k is funded ahead
+    expect(model.heldBySegment.get('expenses')).toBe(0);
+    expect(model.heldBySegment.get('recurring')).toBe(0);
+    expect(model.aheadFundedCents).toBe(50_000);
     expect(model.estimate(new Set(['groceries'])).lastCents).toBe(9_000);
     expect(await planOverspentCount(store, SPACE)).toBe(0); // the real today has no plan in this fixture
   });
@@ -98,8 +100,8 @@ describe('planning model (#128)', () => {
     expect(model.unplannedOf(model.plan!).map((m) => m.cents)).toEqual([100_000]);
     expect(model.startedWithOf(model.plan!)).toBe(250_000);
     expect(model.toAllocateOf(model.plan!)).toBe(250_000);
-    // Home's safe-to-spend keeps reading funded-and-not-yet-spent: nothing is
-    expect(model.reservedCents).toBe(0);
+    // Home's safe-to-spend reads funded-and-not-yet-spent per segment: nothing is
+    expect([...model.heldBySegment.values()].every((cents) => cents === 0)).toBe(true);
 
     // groceries went out too (the balance dropped by it): a subject funded 100 over 150 spent hands the
     // 50 overspend back as money still to assign — what the period started with does not move
@@ -128,7 +130,8 @@ describe('planning model (#128)', () => {
     expect(model.toAllocateOf(model.plan!)).toBe(185_000);
     expect(model.startedWithOf(model.ahead[0].plan)).toBe(135_000);
     expect(model.toAllocateOf(model.ahead[0].plan)).toBe(135_000 - 50_000);
-    expect(model.reservedCents).toBe(50_000);
+    expect(model.heldBySegment.get('expenses')).toBe(0);
+    expect(model.aheadFundedCents).toBe(50_000);
   });
 
   it('what the period started with does not move when a paid recurring cost, loan or goal becomes a subject (user 2026-10-09)', async () => {
@@ -249,7 +252,9 @@ describe('planning model (#128)', () => {
     expect(rows[1]).toMatchObject({ kind: 'recurring', sourceId: 'rent', name: 'Rent', cents: 0, fundedCents: 5_000 });
     expect(model.startedWithOf(model.plan!)).toBe(250_000);
     expect(model.toAllocateOf(model.plan!)).toBe(250_000 - 105_000);
-    expect(model.reservedCents).toBe(5_000);
+    // a one-off is held under its row's segment: the rent's 5k waits, the coffee's 100k went out
+    expect(model.heldBySegment.get('recurring')).toBe(5_000);
+    expect(model.heldBySegment.get('expenses')).toBe(0);
   });
 
   it('a credit card in the pool brings its balance and its spending; paying it off moves money inside the pool (#532)', async () => {

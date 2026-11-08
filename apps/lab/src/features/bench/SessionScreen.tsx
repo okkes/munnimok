@@ -15,6 +15,12 @@ type Page = { resource: string; records: Record<string, unknown>[]; complete: bo
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** what the Bundle fact says — a sign-in still running has none yet (S3776) */
+function bundleFact(hasBundle: boolean, signingIn: boolean): string {
+  if (signingIn) return 'not yet — the sign-in is still running';
+  return hasBundle ? 'kept by the relay' : 'none — sign in again';
+}
+
 /** one lab session in full: the facts, a fetch of any resource with its params and the records that came back, the canary flip, the disconnect */
 export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const query = useRouteQuery();
@@ -171,12 +177,10 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   }
 
   const setValue = (key: string, value: string | string[]) => setValues((v) => ({ ...v, [key]: value }));
-  const columns = page ? columnsOf(page.records) : [];
   const explore = session.provider === EXPLORE;
   // an explore run (or any party without a resource) has nothing to fetch and nothing a canary could prove
   const fetchable = !explore && (party === null || resources.length > 0);
-  let bundle = session.hasBundle ? 'kept by the relay' : 'none — sign in again';
-  if (signingIn) bundle = 'not yet — the sign-in is still running';
+  const bundle = bundleFact(session.hasBundle, signingIn);
   // the relay's row is the state it last read; the run read just now is the newer word
   const shownState = signingIn && run ? run.state : session.state;
 
@@ -240,57 +244,8 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
             {fetchError}
           </p>
         )}
-        {job && running && (
-          <div data-testid="bench-fetch-job">
-            <p className="hint">
-              job <span className="mono">{job.jobId}</span> · {job.state} · {job.progress?.step ?? '—'}
-              {job.progress?.found != null ? ` · ${job.progress.found} found` : ''}
-            </p>
-            {job.state === 'awaiting_input' && job.challenge && (
-              <div className="row">
-                <span className="sub">
-                  the party asks: {job.challenge.type}
-                  {job.challenge.delivery ? ` (${job.challenge.delivery})` : ''}
-                </span>
-                <input data-testid="bench-job-answer" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="the code" />
-                <button className="btn" data-testid="bench-job-answer-send" disabled={busy || !answer} onClick={() => void answerJob()}>
-                  answer
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        {page && (
-          <div data-testid="bench-records">
-            <p className="hint">
-              <strong>{page.records.length}</strong> record(s) of <span className="mono">{page.resource}</span> · {page.complete ? 'complete' : 'the party holds more'} · {page.via}
-              {page.cursor ? ` · cursor ${page.cursor}` : ''}
-            </p>
-            {page.notes.length > 0 && <pre className="code">{page.notes.join('\n')}</pre>}
-            <div style={{ overflowX: 'auto' }}>
-              <table data-testid="bench-records-table">
-                <thead>
-                  <tr>
-                    {columns.map((c) => (
-                      <th key={c}>{c}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {page.records.map((r, i) => (
-                    <tr key={String(r.id ?? r.externalId ?? i)}>
-                      {columns.map((c) => (
-                        <td key={c} className="mono">
-                          {cellText(r[c])}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {job && running && <FetchJob job={job} answer={answer} onAnswer={setAnswer} busy={busy} onSend={() => void answerJob()} />}
+        {page && <FetchedRecords page={page} />}
       </section>
 
       <section className="card" data-testid="bench-canary-card">
@@ -317,6 +272,78 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
         </>
       )}
     </>
+  );
+}
+
+/** the job a fetch became, followed until it ends — the party's question answered in place */
+function FetchJob({
+  job,
+  answer,
+  onAnswer,
+  busy,
+  onSend,
+}: Readonly<{ job: JobView; answer: string; onAnswer: (value: string) => void; busy: boolean; onSend: () => void }>) {
+  return (
+    <div data-testid="bench-fetch-job">
+      <p className="hint">
+        job <span className="mono">{job.jobId}</span> · {job.state} · {job.progress?.step ?? '—'}
+        {job.progress?.found != null ? ` · ${job.progress.found} found` : ''}
+      </p>
+      {job.state === 'awaiting_input' && job.challenge && (
+        <div className="row">
+          <span className="sub">
+            the party asks: {job.challenge.type}
+            {job.challenge.delivery ? ` (${job.challenge.delivery})` : ''}
+          </span>
+          <input data-testid="bench-job-answer" value={answer} onChange={(e) => onAnswer(e.target.value)} placeholder="the code" />
+          <button className="btn" data-testid="bench-job-answer-send" disabled={busy || !answer} onClick={onSend}>
+            answer
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** a record's own id keys its row where the party sent one; else its place in the page */
+function rowKey(record: Record<string, unknown>, index: number): string {
+  const id = record.id ?? record.externalId;
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : String(index);
+}
+
+/** the records a fetch brought back, as the party sent them */
+function FetchedRecords({ page }: Readonly<{ page: Page }>) {
+  const columns = columnsOf(page.records);
+  return (
+    <div data-testid="bench-records">
+      <p className="hint">
+        <strong>{page.records.length}</strong> record(s) of <span className="mono">{page.resource}</span> · {page.complete ? 'complete' : 'the party holds more'} · {page.via}
+        {page.cursor ? ` · cursor ${page.cursor}` : ''}
+      </p>
+      {page.notes.length > 0 && <pre className="code">{page.notes.join('\n')}</pre>}
+      <div style={{ overflowX: 'auto' }}>
+        <table data-testid="bench-records-table">
+          <thead>
+            <tr>
+              {columns.map((c) => (
+                <th key={c}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {page.records.map((r, i) => (
+              <tr key={rowKey(r, i)}>
+                {columns.map((c) => (
+                  <td key={c} className="mono">
+                    {cellText(r[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

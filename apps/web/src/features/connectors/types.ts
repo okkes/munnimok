@@ -105,6 +105,8 @@ export interface ProviderManifest {
   runtime: 'http' | 'browser_once' | 'browser_interactive' | 'browser_persistent';
   agent: AgentRequirement;
   unattendedFetch: boolean;
+  /** #526: the platform's own stand-in party — the relay leaves it out of the app's catalogue */
+  fixture?: boolean;
   loginNeedsHeadedAgent: boolean;
   logout: 'none' | 'session' | 'account';
   offersCredentialStore: boolean;
@@ -233,6 +235,8 @@ export interface JobView {
   error?: ErrorEnvelope;
   /** on a collect that ingested */
   ingested?: IngestedCounts;
+  /** #460: on a collect that finished a partial walk, the oldest day it brought — the next pass asks up to it */
+  oldest?: string;
   /** #441 L1: this job, when its last picture waits on the person's word */
   artifactsJobId?: string | null;
 }
@@ -245,6 +249,8 @@ export interface SyncOutcome {
   session?: RotatedSession;
   /** false when the party holds more history than one pass fetches (newest first) */
   complete?: boolean;
+  /** #460: with complete false, the oldest day the pass brought — the next pass asks up to it */
+  oldest?: string;
 }
 
 /** `GET /connectors/sessions` — one row per binding the relay holds for the caller */
@@ -264,6 +270,14 @@ export interface BindingView {
   scheduleNotBefore?: string | null;
   /** #441 L1: a scheduled run failed and left a picture that waits on the person's word — the hub asks */
   artifactsJobId?: string | null;
+}
+
+/** `GET /connectors/accounts` — one account a connection of the caller's reaches (#524) */
+export interface ConnectionAccountLink {
+  connectionId: string;
+  provider: string;
+  feedSpaceId: string;
+  accountId: string;
 }
 
 /** a household agent the caller enrolled, as the relay lists it */

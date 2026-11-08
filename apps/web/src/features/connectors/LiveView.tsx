@@ -6,13 +6,17 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { connectorApi } from './api';
 import { fitFrame, isTap, keyboardInset, nearestScroller } from './liveLayout';
+import { readLiveStream } from './liveStream';
 import type { LiveFrame, LiveInputEvent } from './types';
 
 /**
  * The `live_view` challenge (§10.2): the party's own page, streamed as
  * JPEG frames from the agent's browser, with the human's taps, keys and
  * text relayed back — the clipped page rectangle, never a full viewport.
- * Frames are long-polled past the last sequence; input is batched.
+ * Frames arrive pushed on one stream from the munni API (#429), reopened
+ * past the last picture when it drops; where it cannot be held (an API
+ * without it, a proxy that buffers it, another viewer of the same login)
+ * they are long-polled past the last sequence instead. Input is batched.
  *
  * The frame takes every pixel the sheet leaves it (user request
  * 2026-10-01): the host opens the sheet at full height, the frame is
@@ -28,6 +32,11 @@ import type { LiveFrame, LiveInputEvent } from './types';
  */
 const FRAME_IDLE_MS = 400;
 const FRAME_RETRY_MS = 1_500;
+/** opens of the stream that may fail outright before the poll takes over */
+const STREAM_ATTEMPTS = 3;
+const STREAM_RETRY_MS = 1_000;
+/** a stream that worked and dropped is reopened after this */
+const STREAM_REOPEN_MS = 300;
 /** the floor between two polls that both came straight back with a picture */
 const MIN_POLL_GAP_MS = 60;
 const FLUSH_MS = 80;
@@ -47,6 +56,34 @@ export const liveViewOver = (err: unknown): boolean => {
 
 /** what one poll came back with, and therefore how long to wait before the next */
 type Poll = 'idle' | 'advanced' | 'repeat' | 'retry' | 'over';
+
+/**
+ * What one stream came back with: the view is over; it worked and dropped
+ * (reopen it); it failed to open (try again a few times); or it cannot be
+ * held here at all (the poll from now on).
+ */
+type Stream = 'over' | 'dropped' | 'failed' | 'unavailable';
+
+/**
+ * A stream refused before its first byte. Only "over" ends the view here:
+ * a 404 is as likely an API without the stream as a session that went, and
+ * the poll that takes over tells the two apart.
+ */
+const streamRefusal = (err: unknown): Stream => {
+  const e = err as { status?: number; envelope?: { code?: string } } | null;
+  if (e?.status === 410 || e?.envelope?.code === 'challenge_expired') return 'over';
+  if (typeof e?.status === 'number' && e.status < 500) return 'unavailable';
+  return 'failed';
+};
+
+/** what follows one stream that did not end the view: reopen it after a pause, or hand the view to the poll */
+const afterStream = (outcome: Exclude<Stream, 'over'>, failures: number): { streaming: boolean; failures: number; pauseMs: number } => {
+  if (outcome === 'dropped') return { streaming: true, failures: 0, pauseMs: STREAM_REOPEN_MS };
+  if (outcome === 'failed' && failures + 1 < STREAM_ATTEMPTS) {
+    return { streaming: true, failures: failures + 1, pauseMs: STREAM_RETRY_MS * (failures + 1) };
+  }
+  return { streaming: false, failures, pauseMs: 0 };
+};
 
 /**
  * The pause after a poll. A picture already shown (a relay that lost the
@@ -124,9 +161,11 @@ export function LiveView({
     return advanced;
   }, []);
 
-  // frames: one long-poll after another, each asking past the last sequence
+  // frames: pushed on one stream while one can be held, each reopen asking
+  // past the last sequence; otherwise one long-poll after another
   useEffect(() => {
     let alive = true;
+    const opened = new AbortController();
     const pollOnce = async (): Promise<Poll> => {
       try {
         const frame = await connectorApi.liveFrame(provider, sessionId, challengeId, sequence.current);
@@ -137,22 +176,60 @@ export function LiveView({
         return liveViewOver(err) ? 'over' : 'retry';
       }
     };
+    const streamOnce = async (): Promise<Stream> => {
+      let response: Response;
+      try {
+        response = await connectorApi.liveStream(provider, sessionId, challengeId, sequence.current, opened.signal);
+      } catch (err) {
+        return streamRefusal(err);
+      }
+      const read = await readLiveStream(response, (frame) => {
+        if (alive) showFrame(frame);
+      });
+      if (read.end === 'over') return 'over';
+      // a newer stream of this viewer took over, or this one never spoke:
+      // the poll serves this view from here, beside it
+      if (read.end !== 'closed') return 'unavailable';
+      return read.heard ? 'dropped' : 'failed';
+    };
+    let streaming = true;
+    let failures = 0;
+    /** one stream, then what follows it; false once the view is over or gone */
+    const streamStep = async (): Promise<boolean> => {
+      const outcome = await streamOnce();
+      if (!alive) return false;
+      if (outcome === 'over') {
+        finish();
+        return false;
+      }
+      const next = afterStream(outcome, failures);
+      streaming = next.streaming;
+      failures = next.failures;
+      await sleep(next.pauseMs);
+      return true;
+    };
+    const pollStep = async (): Promise<boolean> => {
+      const startedAt = Date.now();
+      const outcome = await pollOnce();
+      if (!alive) return false;
+      if (outcome === 'over') {
+        finish();
+        return false;
+      }
+      await sleep(pauseAfter(outcome, Date.now() - startedAt));
+      return true;
+    };
     void (async () => {
-      while (alive && !over.current) {
-        const startedAt = Date.now();
-        const outcome = await pollOnce();
-        if (!alive) break;
-        if (outcome === 'over') {
-          finish();
-          break;
-        }
-        await sleep(pauseAfter(outcome, Date.now() - startedAt));
+      while (alive && !over.current && (await (streaming ? streamStep() : pollStep()))) {
+        // the stream while it holds, the poll after it
       }
       if (shown.current) URL.revokeObjectURL(shown.current);
       shown.current = null;
     })();
     return () => {
       alive = false;
+      // the open stream goes with the view, and the API lets its upstream go
+      opened.abort();
     };
   }, [provider, sessionId, challengeId, showFrame, finish]);
 

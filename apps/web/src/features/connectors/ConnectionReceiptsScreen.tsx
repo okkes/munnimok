@@ -9,6 +9,7 @@ import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { SearchField } from '@/ui/SearchField';
 import type { ReceiptRow, StoreConnRow } from '@/db/types';
 import { resultStillFresh, useSyncActivity } from './syncActivity';
@@ -31,10 +32,14 @@ export function rangeLine(range: FetchedRange | undefined, t: Translate, lang: L
   return t('conn.range', { from: fmtDay(range.from, lang), to: fmtDay(range.to, lang), n: range.count });
 }
 
+/** #460: a sync gone on to older history, with the oldest day it reached so far */
+export const olderLine = (reached: string, t: Translate, lang: Lang): string => t('conn.syncOlder', { date: fmtDay(reached, lang) });
+
 /** what a sync is doing for this connection right now, in one line; null when nothing is running or fresh */
-export function activityLine(activity: SyncActivity | undefined, t: Translate): { text: string; busy: boolean } | null {
+export function activityLine(activity: SyncActivity | undefined, t: Translate, lang: Lang): { text: string; busy: boolean } | null {
   if (!activity) return null;
   if (activity.phase === 'fetching') {
+    if (activity.older) return { text: olderLine(activity.older, t, lang), busy: true };
     return { text: activity.found === null ? t('receipts.fetching') : t('receipts.fetchingFound', { n: activity.found }), busy: true };
   }
   if (!resultStillFresh(activity)) return null;
@@ -42,6 +47,7 @@ export function activityLine(activity: SyncActivity | undefined, t: Translate): 
   if (report.status !== 'ok') return null;
   let text = t('receipts.fetchedDone', { n: report.added });
   if (report.partial) text += ` · ${t('conn.syncPartial')}`;
+  if (report.olderPending) text += ` · ${t('conn.syncOlderLater')}`;
   return { text, busy: false };
 }
 
@@ -104,7 +110,7 @@ export function ConnectionReceiptsScreen() {
   );
 
   const renderGroup = ({ meta, rows }: { meta: StoreConnRow; rows: ReceiptRow[] }) => {
-    const running = activityLine(activity[meta.id], t);
+    const running = activityLine(activity[meta.id], t, lang);
     const open = unfolded.has(meta.id) || (query.trim().length > 0 && rows.length > 0);
     return (
       <div key={meta.id} data-testid={`receipts-conn-${meta.id}`}>
@@ -116,7 +122,7 @@ export function ConnectionReceiptsScreen() {
             onClick={() => toggle(meta.id)}
             className="m-tap flex w-full items-center gap-2 border-none bg-transparent p-0 text-left"
           >
-            {meta.icon ? <img src={meta.icon} alt="" className="h-5 w-5 rounded object-contain" /> : <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />}
+            {meta.icon ? <Picture src={meta.icon} className="h-5 w-5 rounded object-contain" /> : <Icon name="storefront-outline" size={16} color="var(--m-ink-3)" />}
             <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{meta.displayName}</span>
             <span className="text-[12px] text-ink-4" data-testid={`receipts-conn-count-${meta.id}`}>
               {rows.length}

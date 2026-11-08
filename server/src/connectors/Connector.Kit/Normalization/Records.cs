@@ -58,6 +58,14 @@ public sealed record Account : NormalizedRecord
     /// institution.
     /// </summary>
     public string? Institution { get; init; }
+
+    /// <summary>
+    /// The account's identity at the party across consents and sessions (an
+    /// aggregator's identification hash), where the external id is per
+    /// session. Without it a wallet that has no IBAN looked like a new account
+    /// on every new consent (#491: a reconnected PayPal landed twice).
+    /// </summary>
+    public string? Identity { get; init; }
 }
 
 public sealed record Balance

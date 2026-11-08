@@ -58,7 +58,10 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         await using var session = Session(page, control);
 
         session.Start(CancellationToken.None);
-        await UntilAsync(() => control.Frames.Count >= 2, "two frames");
+        await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
+
+        await ShowAnErrorAsync(page);
+        await UntilAsync(() => control.Frames.Count >= 2, "the frame that shows the change");
 
         var frames = control.Frames;
         Assert.Equal([1L, 2L], frames.Take(2).Select(f => f.Sequence));
@@ -111,19 +114,24 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     }
 
     /// <summary>
-    /// A page nobody is touching sends nothing.
+    /// A page nobody is touching sends its picture once, and the next one it
+    /// sends is the change.
     ///
     /// This is the entire bandwidth argument: a login form is static until
-    /// somebody types, and a stream that re-sends the same picture twelve times
-    /// a second for the ninety seconds a human spends reading it is the version
-    /// of this feature that gets switched off. The slow re-send is bounded by
-    /// <c>MaxSilence</c>, pushed out of the way here so the test measures
-    /// suppression and not the heartbeat.
+    /// somebody types, and a stream that re-sends the same picture for the
+    /// ninety seconds a human spends reading it is the version of this feature
+    /// that gets switched off. The heartbeat (<c>MaxSilence</c>) is pushed out
+    /// of the way so the test measures the stream and not the heartbeat; the
+    /// focused field is there because a blinking caret would be the one thing
+    /// on this page that draws by itself. The proof is the numbering: whatever
+    /// the machine's load, the change is frame two only if nothing went out in
+    /// between.
     /// </summary>
     [Fact]
-    public async Task A_page_nobody_is_touching_is_photographed_and_not_sent()
+    public async Task A_page_nobody_is_touching_sends_its_picture_once()
     {
         var (page, control) = await OpenAsync();
+        await page.FocusAsync("#password");
         await using var session = Session(page, control, o => o with
         {
             IdleInterval = TimeSpan.FromMilliseconds(40),
@@ -133,10 +141,44 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         session.Start(CancellationToken.None);
         await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
 
-        // Long enough for a dozen shutters at the idle interval above.
-        await Task.Delay(700);
+        // Longer than one caret blink, and a dozen idle gaps.
+        await Task.Delay(TimeSpan.FromMilliseconds(700));
+        await ShowAnErrorAsync(page);
+        await UntilAsync(() => control.Frames.Count >= 2, "the frame that shows the change");
 
-        Assert.Single(control.Frames);
+        Assert.Equal([1L, 2L], control.Frames.Select(f => f.Sequence));
+    }
+
+    /// <summary>
+    /// A moving pointer is streamed softer, and the page is sent sharp again
+    /// once it settles - one fresh frame at the higher quality, without the
+    /// page having to change.
+    /// </summary>
+    [Fact]
+    public async Task A_moving_pointer_is_streamed_softer_and_the_page_sharp_once_it_settles()
+    {
+        var (page, control) = await OpenAsync(LiveFrameTests.PhotographicPage());
+        await using var session = Session(page, control, o => o with { MaxSilence = TimeSpan.FromMinutes(5) });
+
+        session.Start(CancellationToken.None);
+        await UntilAsync(() => control.Frames.Count >= 1, "the first, settled frame");
+        var settled = control.Frames[0].Bytes;
+
+        control.SendLiveInput(new LiveInputBatch
+        {
+            Events =
+            [
+                new LiveInput { Kind = LiveInputKind.Move, X = 0.2, Y = 0.2, Sequence = 1 },
+                new LiveInput { Kind = LiveInputKind.Move, X = 0.4, Y = 0.4, Sequence = 2 },
+            ],
+        });
+
+        await UntilAsync(() => control.Frames.Any(f => f.Bytes < settled * 0.85), "a softer frame while the pointer moves");
+        var soft = control.Frames.Count;
+
+        await UntilAsync(
+            () => control.Frames.Skip(soft).Any(f => f.Bytes > settled * 0.85),
+            "one sharp frame after the pointer settled");
     }
 
     /// <summary>
@@ -299,9 +341,12 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
             async () => await ValueOfAsync(page, "#password") == "once",
             "the typing to arrive");
 
-        // Long enough for several more input polls to have handed the
-        // re-delivery over and been refused.
-        await Task.Delay(400);
+        // The re-delivery handed over, and one more poll after it: the agent
+        // asks again only once it has dealt with what it was given.
+        await UntilAsync(() => control.PendingInput == 0, "the re-delivered batch to be handed over");
+        var handed = control.InputPolls;
+        await UntilAsync(() => control.InputPolls > handed, "the poll that follows the re-delivery");
+
         Assert.Equal("once", await ValueOfAsync(page, "#password"));
     }
 
@@ -319,7 +364,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     public async Task A_page_that_leaves_its_origin_stops_the_stream_for_good()
     {
         var (page, control) = await OpenAsync();
-        await using var session = Session(page, control);
+        var session = Session(page, control);
 
         session.Start(CancellationToken.None);
         await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
@@ -327,11 +372,12 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         await page.GotoAsync(ElsewhereUrl);
         await UntilAsync(() => session.Stopped, "the stream to latch shut");
 
-        var afterwards = control.Frames.Count;
-        await Task.Delay(400);
+        // Disposing waits both loops out, so everything that will ever be
+        // posted has been: none of it is the other origin's.
+        await session.DisposeAsync();
 
-        Assert.Equal(afterwards, control.Frames.Count);
         Assert.True(session.Stopped);
+        Assert.All(control.Frames, f => Assert.Equal("https://provider.test", f.Origin));
     }
 
     /// <summary>
@@ -347,9 +393,10 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
 
         session.Start(CancellationToken.None);
         await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
+        var before = control.Frames.Count;
 
         await page.GotoAsync("https://provider.test/login/step-two");
-        await UntilAsync(() => control.Frames.Count >= 3, "frames to keep arriving");
+        await UntilAsync(() => control.Frames.Count > before, "the next page's picture");
 
         Assert.False(session.Stopped);
     }
@@ -372,9 +419,12 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
         control.ClientTimeout = TimeSpan.FromMilliseconds(250);
         control.StallFrames(1);
 
+        // A still page sends its next picture on the heartbeat, so the
+        // heartbeat comes round quickly here.
         await using var session = Session(page, control, o => o with
         {
             IdleInterval = TimeSpan.FromMilliseconds(40),
+            MaxSilence = TimeSpan.FromMilliseconds(300),
         });
 
         session.Start(CancellationToken.None);
@@ -513,18 +563,32 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     public async Task The_cost_of_a_frame_is_measured_and_written_down()
     {
         var (page, control) = await OpenAsync();
+
+        // The fake's empty input poll answers after 50 ms where a real one
+        // holds for its window; the floor that keeps a fast answer from
+        // becoming a spin would otherwise be most of what is measured.
         await using var session = Session(
-            page, control, o => o with { MeterInterval = TimeSpan.FromSeconds(1) }, log: true);
+            page,
+            control,
+            o => o with { MeterInterval = TimeSpan.FromSeconds(1), EmptyPollFloor = TimeSpan.FromMilliseconds(1) },
+            log: true);
 
         session.Start(CancellationToken.None);
+        await UntilAsync(() => control.Frames.Count >= 1, "the first frame");
 
-        // Typing keeps the shutter in its burst tier and keeps the page
-        // changing, which is the expensive case and the one worth timing.
+        // Typing keeps the stream in its burst tier and keeps the page
+        // changing, which is the expensive case and the one worth timing: a
+        // keystroke every 250 ms, and how long each takes to come back as a
+        // picture the control plane holds.
         var (x, y) = await CentreOfAsync(page, "#password");
         var sequence = 0L;
+        var reactions = new List<double>();
 
         for (var i = 0; i < 12; i++)
         {
+            var before = control.Frames.Count;
+            var sent = System.Diagnostics.Stopwatch.StartNew();
+
             control.SendLiveInput(new LiveInputBatch
             {
                 Events =
@@ -535,14 +599,19 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
                 ],
             });
 
-            await Task.Delay(250);
+            await UntilAsync(() => control.Frames.Count > before, "the keystroke's picture");
+            reactions.Add(sent.Elapsed.TotalMilliseconds);
+
+            var rest = TimeSpan.FromMilliseconds(250) - sent.Elapsed;
+            if (rest > TimeSpan.Zero) await Task.Delay(rest);
         }
 
-        Assert.True(control.Frames.Count > 0, "a live view that posts no frames has measured nothing");
-
         var bytes = control.Frames.Sum(f => (long)f.Bytes);
+        reactions.Sort();
         output.WriteLine($"{control.Frames.Count} frames, {bytes / 1024} KB total, " +
-                         $"{bytes / control.Frames.Count} B mean");
+                         $"{bytes / control.Frames.Count} B mean; keystroke to posted frame " +
+                         $"{reactions[reactions.Count / 2]:0} ms median, {reactions[^1]:0} ms worst " +
+                         "(the input poll's own 50 ms window included)");
     }
 
     /// <summary>
@@ -561,7 +630,6 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
 
         return new LiveViewSession(
             page,
-            new ScreenshotRedactor(TestRig.Manifest, NullLogger.Instance),
             new ControlPlaneClient(control, NullLogger<ControlPlaneClient>.Instance),
             "job_live_test",
             frames ?? new LiveFrameSequence(),
@@ -612,6 +680,10 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
 
     private static async Task<string> ValueOfAsync(IPage page, string selector) =>
         await page.EvaluateAsync<string>($"() => document.querySelector('{selector}').value");
+
+    /// <summary>The one thing on a login page that changes by itself: an error message being drawn.</summary>
+    private static Task<System.Text.Json.JsonElement?> ShowAnErrorAsync(IPage page) =>
+        page.EvaluateAsync("() => { document.querySelector('#error').textContent = 'Onjuist wachtwoord'; }");
 
     private static Task UntilAsync(Func<bool> condition, string what) =>
         UntilAsync(() => Task.FromResult(condition()), what);

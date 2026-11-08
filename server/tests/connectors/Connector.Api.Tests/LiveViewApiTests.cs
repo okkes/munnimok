@@ -206,6 +206,128 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Null(Channel.Frame(run.JobId));
     }
 
+    // ------------------------------------------------------- the pushed stream
+
+    /// <summary>
+    /// One response for the whole login (#429): every picture the agent posts
+    /// arrives as an event numbered by its sequence, with the shape it was
+    /// taken at - and the response is marked as one nothing may buffer or keep.
+    /// </summary>
+    [Fact]
+    public async Task The_stream_pushes_each_picture_as_the_agent_posts_it()
+    {
+        var run = await ArrangeAsync();
+        using var agent = AgentClient(run);
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
+
+        using var response = await OpenStreamAsync(http, run);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/event-stream", response.ContentType()?.MediaType);
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Equal("no", Assert.Single(response.RawHeader("X-Accel-Buffering")));
+
+        var events = new EventReader(response);
+
+        using (var posted = await PostFrameAsync(agent, run.JobId, sequence: 1, Frame(0x11)))
+        {
+            Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        }
+
+        AssertFrame(await events.UntilAsync(e => e.Name == LiveStream.FrameEvent, "the first picture"), 1, Frame(0x11));
+
+        using (var posted = await PostFrameAsync(agent, run.JobId, sequence: 2, Frame(0x22)))
+        {
+            Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        }
+
+        AssertFrame(await events.UntilAsync(e => e.Name == LiveStream.FrameEvent, "the second picture"), 2, Frame(0x22));
+    }
+
+    /// <summary>
+    /// A reconnect says which picture it drew and is handed the current one
+    /// only when that is newer: there is no backlog to replay, and a picture it
+    /// is already showing costs its bandwidth to change nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_reconnect_names_the_picture_it_drew_and_is_handed_only_a_newer_one()
+    {
+        var run = await ArrangeAsync();
+        using var agent = AgentClient(run);
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
+
+        foreach (var sequence in new long[] { 1, 2, 3 })
+        {
+            using var posted = await PostFrameAsync(agent, run.JobId, sequence, Frame((byte)sequence));
+            Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        }
+
+        // Behind the slot: the newest is there at once, never the backlog.
+        using (var behind = await OpenStreamAsync(http, run, after: 1))
+        {
+            AssertFrame(await new EventReader(behind).UntilAsync(e => e.Name == LiveStream.FrameEvent, "the newest picture"), 3, Frame(3));
+        }
+
+        // Level with it, by the header an EventSource sends: the first picture
+        // handed over is the next one the agent takes.
+        using var level = await OpenStreamAsync(http, run, lastEventId: "3");
+        var events = new EventReader(level);
+
+        using (var posted = await PostFrameAsync(agent, run.JobId, sequence: 4, Frame(4)))
+        {
+            Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        }
+
+        AssertFrame(await events.UntilAsync(e => e.Name == LiveStream.FrameEvent, "the picture after the one drawn"), 4, Frame(4));
+    }
+
+    /// <summary>
+    /// A static login page writes nothing, and a reverse proxy reaps a
+    /// response that stays silent for a minute - so the quiet is filled.
+    /// </summary>
+    [Fact]
+    public async Task A_quiet_stream_keeps_itself_open()
+    {
+        var run = await ArrangeAsync();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
+
+        using var response = await OpenStreamAsync(http, run);
+        var keepAlive = await new EventReader(response).UntilAsync(e => e.Comment, "a keep-alive in the quiet");
+
+        Assert.Null(keepAlive.Name);
+    }
+
+    /// <summary>
+    /// The stream ends on the platform's word, which is the word the poll
+    /// answers with: the adapter's success signal settles the challenge, and
+    /// the consumer is told the view is over instead of reconnecting into it.
+    /// </summary>
+    [Fact]
+    public async Task A_settled_live_view_ends_the_stream_with_the_word_the_poll_answers()
+    {
+        var run = await ArrangeAsync();
+        using var agent = AgentClient(run);
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
+
+        using var response = await OpenStreamAsync(http, run);
+        var events = new EventReader(response);
+
+        using (var posted = await PostFrameAsync(agent, run.JobId, sequence: 1, Frame(0x31)))
+        {
+            Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+        }
+
+        await events.UntilAsync(e => e.Name == LiveStream.FrameEvent, "the picture before the end");
+        await SettleAsync(run);
+
+        var end = await events.UntilAsync(e => e.Name == LiveStream.EndEvent, "the end of the live view");
+        using (var data = JsonDocument.Parse(end.Data!))
+        {
+            Assert.Equal("challenge_expired", data.RootElement.Text("code"));
+        }
+
+        Assert.Null(await events.NextAsync());
+    }
+
     // ------------------------------------------------------------------- input
 
     /// <summary>
@@ -359,6 +481,11 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             await ErrorEnvelope.AssertAsync(frame, HttpStatusCode.BadRequest, "unsupported_resource");
         }
 
+        using (var stream = await OpenStreamAsync(http, run))
+        {
+            await ErrorEnvelope.AssertAsync(stream, HttpStatusCode.BadRequest, "unsupported_resource");
+        }
+
         using var input = await PostInputAsync(http, run, DownEvent(1, 0.5, 0.5));
         await ErrorEnvelope.AssertAsync(input, HttpStatusCode.BadRequest, "unsupported_resource");
     }
@@ -418,6 +545,11 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             await ErrorEnvelope.AssertAsync(frame, HttpStatusCode.Gone, "challenge_expired");
         }
 
+        using (var stream = await OpenStreamAsync(http, expired))
+        {
+            await ErrorEnvelope.AssertAsync(stream, HttpStatusCode.Gone, "challenge_expired");
+        }
+
         using (var input = await PostInputAsync(http, expired, DownEvent(1, 0.5, 0.5)))
         {
             await ErrorEnvelope.AssertAsync(input, HttpStatusCode.Gone, "challenge_expired");
@@ -436,6 +568,11 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         using (var frame = await http.GetAsync(FrameUrl(settled, after: 0)))
         {
             await ErrorEnvelope.AssertAsync(frame, HttpStatusCode.Gone, "challenge_expired");
+        }
+
+        using (var stream = await OpenStreamAsync(http, settled))
+        {
+            await ErrorEnvelope.AssertAsync(stream, HttpStatusCode.Gone, "challenge_expired");
         }
 
         using var late = await PostInputAsync(http, settled, DownEvent(1, 0.5, 0.5));
@@ -466,6 +603,11 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         using (var frame = await http.GetAsync(FrameUrl(crossed, after: 0)))
         {
             await ErrorEnvelope.AssertAsync(frame, HttpStatusCode.BadRequest, "unsupported_resource");
+        }
+
+        using (var stream = await OpenStreamAsync(http, crossed))
+        {
+            await ErrorEnvelope.AssertAsync(stream, HttpStatusCode.BadRequest, "unsupported_resource");
         }
 
         using var input = await PostInputAsync(http, crossed, DownEvent(1, 0.5, 0.5));
@@ -595,9 +737,10 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             .Where(e => e.RoutePattern.RawText?.Contains("/live/", StringComparison.Ordinal) == true)
             .ToList();
 
-        // The four routes of the fixed wire. If this number moves, the list
-        // below moved with it and somebody has to look at the new one.
-        Assert.Equal(4, endpoints.Count);
+        // The five routes of the fixed wire - the pushed stream (#429) is the
+        // fifth. If this number moves, the list below moved with it and
+        // somebody has to look at the new one.
+        Assert.Equal(5, endpoints.Count);
 
         foreach (var endpoint in endpoints)
         {
@@ -620,6 +763,89 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
 
     private static string InputUrl(string jobId, long after) =>
         $"/agent/v1/jobs/{jobId}/live/input?after={after}";
+
+    /// <summary>The stream opened the way a consumer opens it: headers first, the body read as it arrives.</summary>
+    private static async Task<HttpResponseMessage> OpenStreamAsync(
+        HttpClient http, LiveRun run, long? after = null, string? lastEventId = null)
+    {
+        var url = $"/v1/{Provider}/login/{run.SessionId}/challenges/{run.ChallengeId}/live/stream"
+                  + (after is { } a ? $"?after={a}" : string.Empty);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (lastEventId is not null) request.AddHeader(LiveStream.LastEventId, lastEventId);
+
+        return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+    }
+
+    private static void AssertFrame(StreamEvent frame, long sequence, byte[] bytes)
+    {
+        Assert.Equal(sequence.ToString(CultureInfo.InvariantCulture), frame.Id);
+
+        using var data = JsonDocument.Parse(frame.Data!);
+        var body = data.RootElement;
+        Assert.Equal(sequence, body.GetProperty("sequence").GetInt64());
+        Assert.Equal(PhoneSize, $"{body.GetProperty("width").GetInt32()}x{body.GetProperty("height").GetInt32()}");
+        Assert.Equal(bytes, body.GetProperty("jpeg").GetBytesFromBase64());
+    }
+
+    /// <summary>One server-sent event as the consumer sees it; a comment block is how a keep-alive arrives.</summary>
+    private sealed record StreamEvent(string? Name, string? Id, string? Data, bool Comment);
+
+    /// <summary>
+    /// Reads the pushed stream an event at a time. Every wait is bounded by a
+    /// generous deadline and ends the moment the awaited event arrives, so a
+    /// loaded build machine makes a slow test rather than a red one.
+    /// </summary>
+    private sealed class EventReader(HttpResponseMessage response)
+    {
+        private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(20);
+
+        private readonly StreamReader _reader = new(response.Content.ReadAsStream());
+
+        public async Task<StreamEvent> UntilAsync(Func<StreamEvent, bool> wanted, string what)
+        {
+            using var deadline = new CancellationTokenSource(Deadline);
+            try
+            {
+                while (await NextAsync(deadline.Token) is { } next)
+                {
+                    if (wanted(next)) return next;
+                }
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            {
+                throw new Xunit.Sdk.XunitException($"timed out waiting for {what}");
+            }
+
+            throw new Xunit.Sdk.XunitException($"the stream ended before {what}");
+        }
+
+        public async Task<StreamEvent?> NextAsync(CancellationToken ct = default)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(Deadline);
+
+            string? name = null;
+            string? id = null;
+            string? data = null;
+            var comment = false;
+
+            while (await _reader.ReadLineAsync(deadline.Token) is { } line)
+            {
+                if (line.Length == 0)
+                {
+                    if (name is null && id is null && data is null && !comment) continue;
+                    return new StreamEvent(name, id, data, comment && name is null && data is null);
+                }
+
+                if (line.StartsWith(':')) comment = true;
+                else if (line.StartsWith("event: ", StringComparison.Ordinal)) name = line[7..];
+                else if (line.StartsWith("id: ", StringComparison.Ordinal)) id = line[4..];
+                else if (line.StartsWith("data: ", StringComparison.Ordinal)) data = line[6..];
+            }
+
+            return null;
+        }
+    }
 
     /// <summary>Distinguishable bytes, so "the newest frame" is a claim a test can check.</summary>
     private static byte[] Frame(byte tag) => [.. Jpeg, tag];

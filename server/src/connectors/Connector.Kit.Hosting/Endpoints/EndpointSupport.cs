@@ -121,10 +121,11 @@ public static class RequestContext
     /// Absent means a person - the historical default, and the one that is
     /// never throttled by a provider's sync interval.
     /// </summary>
-    /// <summary>The trigger as a job row records it: <see cref="JobRow.UserTrigger"/>, <see cref="JobRow.ScheduleTrigger"/> or <see cref="JobRow.LabTrigger"/>.</summary>
+    /// <summary>The trigger as a job row records it: <see cref="JobRow.UserTrigger"/>, <see cref="JobRow.ScheduleTrigger"/>, <see cref="JobRow.BackfillTrigger"/> or <see cref="JobRow.LabTrigger"/>.</summary>
     public static string TriggerNameOf(HttpContext http) => TriggerOf(http) switch
     {
         FetchTrigger.Schedule => JobRow.ScheduleTrigger,
+        FetchTrigger.Backfill => JobRow.BackfillTrigger,
         FetchTrigger.Lab => JobRow.LabTrigger,
         _ => JobRow.UserTrigger,
     };
@@ -169,6 +170,7 @@ public static class RequestContext
         {
             "user" => FetchTrigger.User,
             "schedule" => FetchTrigger.Schedule,
+            "backfill" => FetchTrigger.Backfill,
             // The operator's word, for the operator only: a lab run's failure
             // pictures are retained without asking anyone, so a consumer that
             // could claim the word for a person's run would be claiming that
@@ -176,7 +178,7 @@ public static class RequestContext
             "lab" => http.RequestServices.GetRequiredService<Auth.ConnectorAuth>().IsOperator(http)
                 ? FetchTrigger.Lab
                 : throw ConnectorException.InvalidRequest($"{TriggerHeader} 'lab' needs the admin scope"),
-            _ => throw ConnectorException.InvalidRequest($"{TriggerHeader} must be 'user', 'schedule' or 'lab'"),
+            _ => throw ConnectorException.InvalidRequest($"{TriggerHeader} must be 'user', 'schedule', 'backfill' or 'lab'"),
         };
     }
 
@@ -225,6 +227,13 @@ public enum FetchTrigger
 
     /// <summary>A schedule. Held to the provider's <c>min_interval_seconds</c> as well.</summary>
     Schedule,
+
+    /// <summary>
+    /// A schedule's pass over older history (#460), after a pass that brought
+    /// only the newest part. Unattended like a schedule and held to the same
+    /// interval on a clock of its own: a party sees one of each per interval.
+    /// </summary>
+    Backfill,
 
     /// <summary>The operator's lab (#441): paced like a person's, and its failures are the operator's own to read.</summary>
     Lab,

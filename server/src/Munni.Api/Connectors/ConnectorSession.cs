@@ -53,6 +53,16 @@ public class ConnectorSession
     public DateTimeOffset? ScheduleNotBefore { get; set; }
 
     /// <summary>
+    /// The older history a scheduled pass left behind (#460): the next
+    /// backfill pass asks from <see cref="BackfillSince"/> (null: the party's
+    /// floor) up to this day. Null when nothing is left.
+    /// </summary>
+    public DateOnly? BackfillUntil { get; set; }
+
+    /// <summary>Where that backfill ends: the since of the pass that came back partial; null for the party's own floor.</summary>
+    public DateOnly? BackfillSince { get; set; }
+
+    /// <summary>
     /// The failed job whose last picture waits on this person's answer
     /// (#441 L1), as the relay's own scheduled sync saw it — the hub asks
     /// "report this failure?", the answer clears it. Null when nothing waits.

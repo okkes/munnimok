@@ -8,23 +8,24 @@ using Microsoft.Playwright;
 namespace Connector.Kit.Agent.Browsing;
 
 /// <summary>
-/// How fast the shutter runs, and when it stops.
+/// How often frames leave, at what quality, and when the stream stops.
 ///
 /// The cadence numbers are the argument, so they are here with their reasons
-/// rather than scattered through the loop.
+/// rather than scattered through the loop. The browser's screencast decides
+/// WHEN there is a new picture (only when it drew something); these decide
+/// how many of them are worth sending.
 /// </summary>
 internal sealed record LiveViewOptions
 {
     /// <summary>
-    /// The shutter interval while the human is touching the page.
+    /// The shortest gap between two posted frames while the human is touching
+    /// the page.
     ///
     /// 80 ms is a CEILING of 12.5 frames a second and will often be missed
-    /// downward, which is the point: the loop starts the next shutter when the
-    /// last one finished, so a slow page degrades to whatever it can manage
-    /// instead of building a queue of pictures that arrive late and are then
-    /// answered against a box that has moved. The design's own measurement put
-    /// a ~33 ms floor on a synthetic page and warned of several times that on a
-    /// real one with nested third-party frames.
+    /// downward, which is the point: the next frame leaves when the last one
+    /// has, and it is always the newest one the browser drew, so a slow uplink
+    /// degrades to fewer pictures instead of a queue of pictures that arrive
+    /// late and are then answered against a box that has moved.
     /// </summary>
     public TimeSpan BurstInterval { get; init; } = TimeSpan.FromMilliseconds(80);
 
@@ -39,36 +40,41 @@ internal sealed record LiveViewOptions
     public TimeSpan BurstWindow { get; init; } = TimeSpan.FromMilliseconds(1200);
 
     /// <summary>
-    /// The shutter interval when nobody has touched anything.
+    /// The shortest gap between two posted frames when nobody has touched
+    /// anything.
     ///
-    /// 500 ms. A login form is static until somebody touches it, and 2 frames a
-    /// second is still fast enough to notice a cookie banner appearing or an
-    /// error message being drawn - which are the only things that move on their
-    /// own - for about four percent of the burst tier's cost.
+    /// 500 ms. A login form draws nothing until somebody touches it, so this
+    /// only bites on a page that animates on its own - a spinner, a carousel
+    /// behind the cookie banner - which is then sent twice a second rather
+    /// than at the sixty its compositor draws.
     /// </summary>
     public TimeSpan IdleInterval { get; init; } = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
     /// The longest a stream stays silent when nothing on the page has changed.
     ///
-    /// Change suppression means a static form sends nothing at all, which is
-    /// correct and is also indistinguishable, from the viewer's side, from a
-    /// stream that has died. One frame every 5 s is a few hundred bytes a
-    /// second and gives a viewer that attached late something to draw.
+    /// The screencast sends nothing for a static form, which is correct and is
+    /// also indistinguishable, from the viewer's side, from a stream that has
+    /// died - and the control plane forgets a login nothing was written to for
+    /// two minutes. One fresh picture every 5 s answers both.
     /// </summary>
     public TimeSpan MaxSilence { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// JPEG quality. 60 is where the design's measurements were taken and it is
-    /// a deliberate compromise: below about 80 the 11-pixel small print on a
-    /// Dutch login page starts to ring, and above it the byte count runs away
-    /// at twelve frames a second. It is the number most worth revisiting once
-    /// somebody has looked at a real provider's page on a real phone.
+    /// JPEG quality while the pointer moves: a drag, a scroll, a hover. Motion
+    /// hides what the lower quality costs, and these are the frames that come
+    /// many to the second.
+    /// </summary>
+    public int MovingQuality { get; init; } = 45;
+
+    /// <summary>
+    /// JPEG quality for everything else, and for the one frame that follows
+    /// the pointer coming to rest: what the human reads and types against.
     /// </summary>
     /// <remarks>
-    /// NOT ENOUGH FOR A QR CODE, measured rather than guessed. A login that
-    /// works by showing a QR for the account owner to scan - DigiD's app flow,
-    /// and therefore anything reached through it - was swept across 135
+    /// 80, because of a QR, measured rather than guessed. A login that works by
+    /// showing a QR for the account owner to scan - DigiD's app flow, and
+    /// therefore anything reached through it - was swept across 135
     /// combinations of payload length, error-correction level, rendered size
     /// and offset against JPEG's 8x8 block grid:
     /// <code>
@@ -80,20 +86,19 @@ internal sealed record LiveViewOptions
     /// The failures are not where intuition puts them - one was a LARGER QR
     /// that decoded fine at quality 40 - because what breaks a QR is the block
     /// grid landing badly against its module edges, not a shortage of pixels.
-    /// A rate, not a verdict: it decodes almost always, which is the worst
-    /// possible way for it to fail. The user scans, nothing happens, and
-    /// nothing anywhere says why.
-    /// <para>
-    /// THE FIX IS USUALLY NOT THIS NUMBER. A QR is a
-    /// <see cref="Challenges.ChallengeType.QrDisplay"/> - "a QR the human scans
-    /// with the provider's own app" - and that path relays a cropped STILL
-    /// through <see cref="ScreenshotRedactor.CaptureAsync"/>, which encodes
-    /// PNG. Lossless, so none of the above applies to it. Streaming a QR
-    /// through the live view instead is the case that needs 70 or better, and
-    /// this option is not reachable per provider yet.
-    /// </para>
+    /// A QR on a streamed page is still, so it is drawn at this quality. (A
+    /// <see cref="Challenges.ChallengeType.QrDisplay"/> relays a lossless PNG
+    /// still through <see cref="ScreenshotRedactor.CaptureAsync"/> and never
+    /// depended on this number.) Measured on a phone-sized form: 7.6 KB at 45,
+    /// 9.9 KB at 80; on a photographic page 15.7 KB against 27 KB.
     /// </remarks>
-    public int JpegQuality { get; init; } = 60;
+    public int SettledQuality { get; init; } = 80;
+
+    /// <summary>
+    /// How long after the last pointer move the sharp tier returns - and with
+    /// it one fresh, sharp frame of the page as it came to rest.
+    /// </summary>
+    public TimeSpan SettleDelay { get; init; } = TimeSpan.FromMilliseconds(300);
 
     /// <summary>
     /// Consecutive transport failures before the stream gives up on a leg.
@@ -142,21 +147,36 @@ internal sealed record LiveViewOptions
 }
 
 /// <summary>
-/// One live view, for the length of one challenge: photograph the page many
-/// times a second, post each frame, and replay what the human sends back.
+/// One live view, for the length of one challenge: the browser's own
+/// screencast (<see cref="LiveScreencast"/>) pushes a picture whenever it drew
+/// something new, the newest one is posted, and what the human sends back is
+/// replayed.
+///
+/// <b>What is photographed is the whole visible page, unmasked</b>, and that
+/// is a custody decision rather than a gap. The still relay refuses a page
+/// whose password box holds content and conceals every secret-bearing field,
+/// because there the value would be OURS. Here the human is typing into the
+/// provider's own page, deliberately, watching this stream to do it: a
+/// provider served this way declares no credential fields, frames are never
+/// stored, and they go to one attached viewer. A refusal would stream a black
+/// rectangle at exactly the moment the feature exists for. What does hold is
+/// the origin latch below - checked at the source, per frame, and on every
+/// navigation.
 ///
 /// <b>Two loops, not one.</b> The input leg is a long poll bounded by the
 /// control plane's own window - tens of seconds - so running it inline would
-/// stall the shutter for essentially the whole session. They share a stop and
-/// one nudge: replaying an event puts the shutter into its burst tier, because
-/// the only moment a login form changes is just after somebody touched it.
+/// stall the pictures for essentially the whole session. They share a stop and
+/// one nudge: replaying an event puts the stream into its burst tier, because
+/// the only moment a login form changes is just after somebody touched it, and
+/// a pointer that moves puts it into the softer encoding until it settles.
 ///
 /// <b>Stopping is terminal.</b> <see cref="Stop"/> latches through an
 /// <see cref="Interlocked.Exchange(ref int, int)"/> and is checked after every
-/// await, so no path resumes a stream that has been stopped. Five things stop
+/// await, so no path resumes a stream that has been stopped. Six things stop
 /// it today: the caller's token, the page navigating off the allowed origin,
-/// the control plane saying the channel is gone, a run of transport failures,
-/// and either loop failing in a way nobody predicted. The last is deliberate
+/// the page closing, the control plane saying the channel is gone, a run of
+/// transport failures, and either loop failing in a way nobody predicted.
+/// Stopping also stops the browser's screencast. The last is deliberate
 /// and it is new: a leg that dies quietly leaves a live view that lies - a
 /// frozen picture that still accepts keystrokes, or a moving one that answers
 /// none - so an unexpected end is logged at error and takes the whole stream
@@ -173,16 +193,15 @@ internal sealed record LiveViewOptions
 /// it cannot do is allow a login that legitimately crosses to an identity
 /// provider, and that is exactly what the manifest list is for.
 ///
-/// <b>Nothing here is stored.</b> One frame exists at a time, on the stack, and
-/// what outlives it is a 32-byte hash used to notice that the next one is
-/// identical. Not the previous frame's pixels: holding a picture of somebody's
-/// login page in agent memory to compare against is the same mistake as writing
-/// it to a row, one order of magnitude smaller.
+/// <b>Nothing here is stored.</b> One frame waits at a time, replaced by the
+/// next, and what outlives a posted one is a 32-byte hash used to notice that
+/// the next one is identical. Not the previous frame's pixels: holding a
+/// picture of somebody's login page in agent memory to compare against is the
+/// same mistake as writing it to a row, one order of magnitude smaller.
 /// </summary>
 internal sealed class LiveViewSession : IAsyncDisposable
 {
     private readonly IPage _page;
-    private readonly ScreenshotRedactor _redactor;
     private readonly ControlPlaneClient _control;
     private readonly ILiveSurface _surface;
     private readonly string _jobId;
@@ -194,9 +213,9 @@ internal sealed class LiveViewSession : IAsyncDisposable
     private readonly HashSet<string> _origins;
 
     /// <summary>
-    /// Wakes the shutter out of its idle wait the instant an event lands.
-    /// Bounded at one so a burst of events cannot bank wake-ups that fire long
-    /// after the human stopped.
+    /// Wakes the picture loop the instant an event lands or the browser drew a
+    /// frame. Bounded at one so a burst of either cannot bank wake-ups that
+    /// fire long after the page went still.
     /// </summary>
     private readonly SemaphoreSlim _nudge = new(0, 1);
 
@@ -215,6 +234,9 @@ internal sealed class LiveViewSession : IAsyncDisposable
 
     private long _burstUntilTicks;
 
+    /// <summary>Until when the pointer counts as moving, which is what the softer encoding follows.</summary>
+    private long _movingUntilTicks;
+
     /// <param name="sequence">
     /// The JOB's frame counter, not this session's. Passed in rather than
     /// started here, because a second live view inside one job must continue the
@@ -223,7 +245,6 @@ internal sealed class LiveViewSession : IAsyncDisposable
     /// </param>
     public LiveViewSession(
         IPage page,
-        ScreenshotRedactor redactor,
         ControlPlaneClient control,
         string jobId,
         LiveFrameSequence sequence,
@@ -233,7 +254,6 @@ internal sealed class LiveViewSession : IAsyncDisposable
         ILiveSurface? surface = null)
     {
         ArgumentNullException.ThrowIfNull(page);
-        ArgumentNullException.ThrowIfNull(redactor);
         ArgumentNullException.ThrowIfNull(control);
         ArgumentNullException.ThrowIfNull(sequence);
         ArgumentNullException.ThrowIfNull(options);
@@ -242,7 +262,6 @@ internal sealed class LiveViewSession : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
 
         _page = page;
-        _redactor = redactor;
         _control = control;
         _jobId = jobId;
         _sequence = sequence;
@@ -259,7 +278,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
     public bool Stopped => Volatile.Read(ref _stopped) == 1;
 
     /// <summary>
-    /// Frames that reached the control plane. Written by the shutter loop and
+    /// Frames that reached the control plane. Written by the picture loop and
     /// read once the loops have finished, which is what decides whether a
     /// closing measurement is worth writing down at all.
     /// </summary>
@@ -283,7 +302,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
             "job {JobId}: live view open on {Origins} at up to {Fps:0.#} fps, frames continue from {Sequence}",
             _jobId, Describe(_origins), Fps(), _sequence.Last);
 
-        // The navigation latch is wired before the first shutter, so a page
+        // The navigation latch is wired before the first picture, so a page
         // that leaves while the browser is still launching is caught too.
         _page.FrameNavigated += OnFrameNavigated;
 
@@ -345,12 +364,15 @@ internal sealed class LiveViewSession : IAsyncDisposable
         _nudge.Dispose();
     }
 
-    /// <summary>What the capture loop carries from one frame to the next.</summary>
+    /// <summary>What the picture loop carries from one frame to the next.</summary>
     private sealed class Shutter
     {
         public byte[] LastHash { get; set; } = [];
 
         public DateTimeOffset LastPostedAt { get; set; }
+
+        /// <summary>When a fresh picture of an unchanged page was last asked for, so the heartbeat asks once.</summary>
+        public DateTimeOffset RefreshedAt { get; set; }
 
         public int Failures { get; set; }
     }
@@ -358,6 +380,9 @@ internal sealed class LiveViewSession : IAsyncDisposable
     /// <summary>What became of one frame the loop tried to post.</summary>
     private enum Posting
     {
+        /// <summary>Nothing new to send: no picture waiting, or the same one again.</summary>
+        Idle,
+
         /// <summary>The control plane took it.</summary>
         Accepted,
 
@@ -370,46 +395,50 @@ internal sealed class LiveViewSession : IAsyncDisposable
 
     private async Task CaptureLoopAsync(CancellationToken ct)
     {
-        var shutter = new Shutter { LastPostedAt = _time.GetUtcNow() };
+        var now = _time.GetUtcNow();
+        var shutter = new Shutter { LastPostedAt = now, RefreshedAt = now };
+
+        // Disposed with this loop, however it ends: the browser stops encoding
+        // the moment the stream stops, not when the job does.
+        await using var camera = new LiveScreencast(
+            _page,
+            _options,
+            IsAllowed,
+            _ => Stop("the page navigated off the origin the stream opened on"),
+            Wake,
+            _logger,
+            _time);
 
         try
         {
+            if (!IsAllowed(_page.Url))
+            {
+                Stop("the page is not on an origin this stream may photograph");
+                return;
+            }
+
+            await camera.StartAsync(TierAt(_time.GetUtcNow()), ct).ConfigureAwait(false);
+
             while (!ct.IsCancellationRequested && !Stopped)
             {
-                // Cheap, local, and checked every frame rather than trusted to
-                // the event: FrameNavigated is a notification and a
-                // notification can be missed, but no frame may leave for a page
-                // that is not where it is supposed to be.
-                // Read once and reused for the frame below, so the origin
-                // reported is the one that was checked rather than a second
-                // reading taken a few milliseconds later.
-                var url = _page.Url;
-                if (!IsAllowed(url))
+                if (camera.Closed)
                 {
-                    Stop("the page navigated off the origin the stream opened on");
+                    // Warning, not debug: somebody is in front of a picture
+                    // that has stopped updating, and this is the one line that
+                    // says why.
+                    _logger.LogWarning("job {JobId}: the page closed under its live view", _jobId);
+                    Stop("the page closed");
                     return;
                 }
 
-                var shutterAt = _time.GetTimestamp();
-                var capture = await _redactor
-                    .CaptureLiveFrameAsync(_page, _options.JpegQuality, ct).ConfigureAwait(false);
-                var elapsed = _time.GetElapsedTime(shutterAt);
+                var tier = TierAt(_time.GetUtcNow());
+                if (tier != camera.Tier) await camera.SetTierAsync(tier).ConfigureAwait(false);
 
-                if (!capture.Captured)
-                {
-                    _meter.Missed(elapsed);
-                }
-                else if (IsQuiet(capture.Jpeg, shutter, out var hash))
-                {
-                    _meter.Suppressed(elapsed);
-                }
-                else if (await PostAsync(capture, url, hash, elapsed, shutter, ct).ConfigureAwait(false) == Posting.Ended)
-                {
-                    return;
-                }
+                if (await TakeAndPostAsync(camera, shutter, ct).ConfigureAwait(false) == Posting.Ended) return;
 
+                CountSkipped(camera);
                 ReportIfDue();
-                await WaitAsync(ct).ConfigureAwait(false);
+                await WaitAsync(camera, shutter, ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -421,22 +450,76 @@ internal sealed class LiveViewSession : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            // Anything else ends the shutter, so it ends the stream too, loudly.
-            // A shutter that dies while the input leg lives is the worst of the
-            // two failures: the human's keystrokes keep reaching a page they can
-            // no longer see, against a frozen picture of it.
-            _logger.LogError(ex, "job {JobId}: the live view's shutter failed", _jobId);
-            Stop("the shutter failed");
+            // Anything else ends the pictures, so it ends the stream too,
+            // loudly. Pictures that die while the input leg lives are the worse
+            // of the two failures: the human's keystrokes keep reaching a page
+            // they can no longer see, against a frozen picture of it.
+            _logger.LogError(ex, "job {JobId}: the live view's camera failed", _jobId);
+            Stop("the camera failed");
         }
     }
 
     /// <summary>
-    /// Whether this picture is the last one again, recently enough to skip.
+    /// Posts the newest picture the browser drew, when there is one; asks for
+    /// a fresh one when the page has been still for too long.
+    /// </summary>
+    private async Task<Posting> TakeAndPostAsync(LiveScreencast camera, Shutter shutter, CancellationToken ct)
+    {
+        var now = _time.GetUtcNow();
+
+        if (!camera.TryTake(out var frame))
+        {
+            // Nothing drawn: a heartbeat, so silence never reads as a dead
+            // stream - asked for once a silence, posted when it arrives.
+            if (now - shutter.LastPostedAt >= _options.MaxSilence && now - shutter.RefreshedAt >= _options.MaxSilence)
+            {
+                shutter.RefreshedAt = now;
+                await camera.RefreshAsync().ConfigureAwait(false);
+            }
+
+            return Posting.Idle;
+        }
+
+        // Checked per frame and not only trusted to the events: a
+        // notification can be missed, and no frame may leave for a page that
+        // is not where it is supposed to be. Read once and reused for the
+        // frame, so the origin reported is the one that was checked.
+        var url = _page.Url;
+        if (!IsAllowed(url))
+        {
+            Stop("the page navigated off the origin the stream opened on");
+            return Posting.Ended;
+        }
+
+        var age = now - frame.CapturedAt;
+        if (IsQuiet(frame.Jpeg, shutter, out var hash))
+        {
+            _meter.Suppressed(age);
+            return Posting.Idle;
+        }
+
+        return await PostAsync(frame, url, hash, age, shutter, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The frames the browser drew that never left, for the meter's line.</summary>
+    private void CountSkipped(LiveScreencast camera)
+    {
+        var (superseded, withheld) = camera.TakeCounts();
+        _meter.Superseded(superseded);
+        _meter.Missed(withheld);
+    }
+
+    /// <summary>The encoding the pointer asks for: soft while it moves, sharp once it settled.</summary>
+    private LiveTier TierAt(DateTimeOffset now) =>
+        now.UtcTicks < Volatile.Read(ref _movingUntilTicks) ? LiveTier.Moving : LiveTier.Settled;
+
+    /// <summary>
+    /// Whether this picture is the last one again, recently enough to skip -
+    /// a fresh frame asked for by a tier switch on a page that did not change.
     ///
-    /// Hashing the ENCODED bytes, which the design measured to be
-    /// byte-identical across a gap on a page that did not change. The hash
-    /// and not the frame: 32 bytes of nothing, rather than a picture of a
-    /// login page kept alive to compare against.
+    /// Hashing the ENCODED bytes, which are byte-identical for the same page
+    /// at the same quality. The hash and not the frame: 32 bytes of nothing,
+    /// rather than a picture of a login page kept alive to compare against.
     /// </summary>
     private bool IsQuiet(byte[] jpeg, Shutter shutter, out byte[] hash)
     {
@@ -448,7 +531,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
 
     /// <summary>Numbers, posts and books one frame the loop decided to send.</summary>
     private async Task<Posting> PostAsync(
-        LiveCapture capture, string url, byte[] hash, TimeSpan elapsed, Shutter shutter, CancellationToken ct)
+        CastFrame capture, string url, byte[] hash, TimeSpan age, Shutter shutter, CancellationToken ct)
     {
         // The JOB's counter and never this session's. Taken here, after
         // suppression has decided the bytes are worth sending, so a
@@ -479,7 +562,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         }
         catch (Exception ex) when (IsTransportBlip(ex, ct))
         {
-            _meter.Failed(elapsed);
+            _meter.Failed(age);
 
             if (++shutter.Failures >= _options.MaxConsecutiveFailures)
             {
@@ -511,7 +594,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         Volatile.Write(ref _frameSize, ((long)capture.Width << 32) | (uint)capture.Height);
         FramesPosted++;
 
-        _meter.Posted(elapsed, post, frame.Bytes.Length);
+        _meter.Posted(age, post, frame.Bytes.Length);
         return Posting.Accepted;
     }
 
@@ -554,8 +637,8 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 var dispatched = await LiveInputReplay
                     .ReplayAsync(batch.Events, frame, _surface, _logger, ct, _options.Navigation).ConfigureAwait(false);
 
-                // Something moved, so the picture is about to be worth taking.
-                if (dispatched > 0) Nudge();
+                // Something moved, so the next pictures are worth sending soon.
+                if (dispatched > 0) Nudge(batch.Events.Any(e => e.Kind is LiveInputKind.Move or LiveInputKind.Scroll));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -670,21 +753,30 @@ internal sealed class LiveViewSession : IAsyncDisposable
         ex is ControlPlaneException || (ex is OperationCanceledException && !ct.IsCancellationRequested);
 
     /// <summary>
-    /// Puts the shutter into its burst tier and wakes it now, so the first
-    /// frame after a keystroke is 80 ms away rather than up to half a second.
+    /// Puts the stream into its burst tier and wakes it now, so the frame
+    /// after a keystroke leaves at once rather than up to half a second later;
+    /// a pointer that moved also asks for the softer encoding until it settles.
     /// </summary>
-    private void Nudge()
+    private void Nudge(bool moved)
     {
-        Volatile.Write(ref _burstUntilTicks, (_time.GetUtcNow() + _options.BurstWindow).UtcTicks);
+        var now = _time.GetUtcNow();
+        Volatile.Write(ref _burstUntilTicks, (now + _options.BurstWindow).UtcTicks);
+        if (moved) Volatile.Write(ref _movingUntilTicks, (now + _options.SettleDelay).UtcTicks);
 
+        Wake();
+    }
+
+    /// <summary>Wakes the picture loop: a frame is waiting, or somebody touched the page.</summary>
+    private void Wake()
+    {
         try
         {
             _nudge.Release();
         }
         catch (SemaphoreFullException)
         {
-            // The shutter is already owed a wake-up. Banking a second one would
-            // fire it after the human had stopped, at the cost of a frame.
+            // The loop is already owed a wake-up. Banking a second one would
+            // fire it after the page went still.
         }
         catch (ObjectDisposedException)
         {
@@ -693,26 +785,70 @@ internal sealed class LiveViewSession : IAsyncDisposable
     }
 
     /// <summary>
-    /// Sleeps for one cadence interval, or until an event lands.
+    /// Sleeps until the next thing worth doing: the gap since the last posted
+    /// frame closing (shorter while somebody is at the page), a picture
+    /// arriving, the pointer settling, or the heartbeat coming due.
     ///
     /// The wait is on the semaphore rather than a timer so that the burst
-    /// begins on the keystroke instead of at the end of whatever idle interval
-    /// happened to be running. Wall clock and not the injected
-    /// <see cref="TimeProvider"/>, deliberately: this is the cadence, a virtual
-    /// clock cannot tell anyone what a frame costs, and the whole point of the
-    /// exercise is a real number.
+    /// begins on the keystroke instead of at the end of whatever idle gap
+    /// happened to be running. Wall clock and not a virtual one, deliberately:
+    /// this is the cadence, and the whole point of the exercise is a real
+    /// number.
     /// </summary>
-    private async Task WaitAsync(CancellationToken ct)
+    private async Task WaitAsync(LiveScreencast camera, Shutter shutter, CancellationToken ct)
     {
-        var burst = _time.GetUtcNow().UtcTicks < Volatile.Read(ref _burstUntilTicks);
-        var delay = burst ? _options.BurstInterval : _options.IdleInterval;
+        while (!ct.IsCancellationRequested && !Stopped && !camera.Closed)
+        {
+            var now = _time.GetUtcNow();
+            var paceUntil = shutter.LastPostedAt + GapAt(now);
+            var settleAt = SettleAt(now);
 
-        await _nudge.WaitAsync(delay, ct).ConfigureAwait(false);
+            // The tier follows the pointer at once, whatever else is pending.
+            if (TierAt(now) != camera.Tier) return;
+
+            if (now < paceUntil)
+            {
+                // A picture may already be waiting; it is the newest one when
+                // the gap closes. A keystroke shortens the gap.
+                await _nudge.WaitAsync(Shortest(paceUntil - now, settleAt - now), ct).ConfigureAwait(false);
+                continue;
+            }
+
+            var heartbeatAt = HeartbeatAt(shutter);
+            if (camera.HasFrame || now >= heartbeatAt) return;
+
+            await _nudge.WaitAsync(Shortest(heartbeatAt - now, settleAt - now), ct).ConfigureAwait(false);
+            return;
+        }
     }
 
+    /// <summary>The shortest gap between two posted frames: short while somebody is at the page.</summary>
+    private TimeSpan GapAt(DateTimeOffset now) =>
+        now.UtcTicks < Volatile.Read(ref _burstUntilTicks) ? _options.BurstInterval : _options.IdleInterval;
+
+    /// <summary>When a moving pointer counts as settled, or never while it is not moving.</summary>
+    private DateTimeOffset SettleAt(DateTimeOffset now)
+    {
+        var movingUntil = new DateTimeOffset(Volatile.Read(ref _movingUntilTicks), TimeSpan.Zero);
+        return movingUntil > now ? movingUntil : DateTimeOffset.MaxValue;
+    }
+
+    /// <summary>When a still page is due its fresh picture: a silence after the last frame sent or asked for.</summary>
+    private DateTimeOffset HeartbeatAt(Shutter shutter) =>
+        (shutter.LastPostedAt > shutter.RefreshedAt ? shutter.LastPostedAt : shutter.RefreshedAt) + _options.MaxSilence;
+
+    /// <summary>The nearer of two deadlines, never negative, and never past the heartbeat - a wait has to come back to look.</summary>
+    private TimeSpan Shortest(TimeSpan a, TimeSpan b)
+    {
+        var shortest = a < b ? a : b;
+        if (shortest <= TimeSpan.Zero) return TimeSpan.Zero;
+        return shortest < _options.MaxSilence ? shortest : _options.MaxSilence;
+    }
+
+    /// <summary>A window is written when it closes with something in it; a still page writes nothing.</summary>
     private void ReportIfDue()
     {
-        if (_meter.TryClose() is { } window) _logger.Report(_jobId, window);
+        if (_meter.TryClose() is { HasSamples: true } window) _logger.Report(_jobId, window);
     }
 
     private void OnFrameNavigated(object? sender, IFrame frame)

@@ -35,7 +35,8 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("country")] string Country,
         [property: JsonPropertyName("logo")] string? Logo,
-        [property: JsonPropertyName("transaction_total_days")] int? TransactionTotalDays);
+        [property: JsonPropertyName("transaction_total_days")] int? TransactionTotalDays,
+        [property: JsonPropertyName("maximum_consent_validity")] long? MaximumConsentValidity = null);
 
     private sealed record AspspList([property: JsonPropertyName("aspsps")] List<Aspsp> Aspsps);
 
@@ -53,7 +54,8 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         [property: JsonPropertyName("account_id")] EbAccountId? AccountId,
         [property: JsonPropertyName("name")] string? Name,
         [property: JsonPropertyName("currency")] string? Currency,
-        [property: JsonPropertyName("owner_name")] string? OwnerName);
+        [property: JsonPropertyName("owner_name")] string? OwnerName,
+        [property: JsonPropertyName("identification_hash")] string? IdentificationHash = null);
 
     private sealed record EbAmount(
         [property: JsonPropertyName("amount")] string Amount,
@@ -91,12 +93,12 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
     public async Task<IReadOnlyList<Aspsp>> AspspsAsync(HttpClient http, string country, CancellationToken ct) =>
         (await SendAsync<AspspList>(http, HttpMethod.Get, $"aspsps?country={Uri.EscapeDataString(country)}", null, "institutions", false, ct).ConfigureAwait(false)).Aspsps;
 
-    /// <summary>A 90-day consent; the aggregator has no id for it until the bank has come back.</summary>
-    public async Task<string> AuthUrlAsync(HttpClient http, string name, string country, string state, string redirectUrl, CancellationToken ct)
+    /// <summary>A consent of <paramref name="days"/>; the aggregator has no id for it until the bank has come back.</summary>
+    public async Task<string> AuthUrlAsync(HttpClient http, string name, string country, string state, string redirectUrl, int days, CancellationToken ct)
     {
         var auth = await SendAsync<AuthResponse>(http, HttpMethod.Post, "auth", new
         {
-            access = new { valid_until = time.GetUtcNow().AddDays(OpenBankingManifests.ConsentDays).ToString("o") },
+            access = new { valid_until = time.GetUtcNow().AddDays(days).ToString("o") },
             aspsp = new { name, country },
             state,
             redirect_url = redirectUrl,
@@ -134,10 +136,12 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         await EnsureAsync(response, "revoke", consentScoped: true, ct).ConfigureAwait(false);
     }
 
-    public async Task<(string? Iban, string? Name, string? Currency)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct)
+    /// <summary>The account's facts; its identification hash names it across sessions, as its uid does not.</summary>
+    public async Task<(string? Iban, string? Name, string? Currency, string? Identity)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct)
     {
         var details = await SendAsync<EbDetails>(http, HttpMethod.Get, $"accounts/{Uri.EscapeDataString(accountId)}/details", null, "account details", true, ct).ConfigureAwait(false);
-        return (details.AccountId?.Iban, details.Name ?? details.OwnerName, details.Currency);
+        var identity = string.IsNullOrWhiteSpace(details.IdentificationHash) ? null : details.IdentificationHash;
+        return (details.AccountId?.Iban, details.Name ?? details.OwnerName, details.Currency, identity);
     }
 
     public async Task<IReadOnlyList<(string Type, string Amount, string Currency, string? Date)>> BalancesAsync(HttpClient http, string accountId, CancellationToken ct)
@@ -150,15 +154,20 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
     /// Continuation-key pagination, capped; an out-of-range <c>date_from</c>
     /// that some banks answer with an empty list (a wallet's window is far
     /// shorter than the ask) is retried once on the bank's own window.
+    /// <c>date_to</c> only when the caller named an end (a backfill pass,
+    /// #460). Not complete when the cap stopped the walk with a page still
+    /// offered - that used to read as the whole history.
     /// </summary>
-    public async Task<IReadOnlyList<AggregatorTransaction>> TransactionsAsync(HttpClient http, string accountId, DateOnly? from, CancellationToken ct)
+    public async Task<(IReadOnlyList<AggregatorTransaction> Rows, bool Complete)> TransactionsAsync(
+        HttpClient http, string accountId, DateOnly? from, DateOnly? to, CancellationToken ct)
     {
-        var rows = await PagesAsync(http, accountId, from, ct).ConfigureAwait(false);
-        if (from is not null && rows.Count == 0) rows = await PagesAsync(http, accountId, null, ct).ConfigureAwait(false);
-        return rows;
+        var walk = await PagesAsync(http, accountId, from, to, ct).ConfigureAwait(false);
+        if (from is not null && walk.Rows.Count == 0) walk = await PagesAsync(http, accountId, null, to, ct).ConfigureAwait(false);
+        return walk;
     }
 
-    private async Task<List<AggregatorTransaction>> PagesAsync(HttpClient http, string accountId, DateOnly? from, CancellationToken ct)
+    private async Task<(IReadOnlyList<AggregatorTransaction> Rows, bool Complete)> PagesAsync(
+        HttpClient http, string accountId, DateOnly? from, DateOnly? to, CancellationToken ct)
     {
         var rows = new List<AggregatorTransaction>();
         string? continuation = null;
@@ -166,6 +175,7 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         {
             var query = new List<string>();
             if (from is { } f) query.Add($"date_from={f:yyyy-MM-dd}");
+            if (to is { } t) query.Add($"date_to={t:yyyy-MM-dd}");
             if (continuation is not null) query.Add($"continuation_key={Uri.EscapeDataString(continuation)}");
             var path = $"accounts/{Uri.EscapeDataString(accountId)}/transactions{(query.Count > 0 ? "?" + string.Join('&', query) : string.Empty)}";
             var result = await SendAsync<EbTransactions>(http, HttpMethod.Get, path, null, "transactions", true, ct).ConfigureAwait(false);
@@ -173,7 +183,7 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
             continuation = result.ContinuationKey;
             if (continuation is null) break;
         }
-        return rows;
+        return (rows, continuation is null);
     }
 
     // ── mapping ─────────────────────────────────────────────────────────

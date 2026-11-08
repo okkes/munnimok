@@ -258,6 +258,34 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains(ctx.Notes, note => note.Contains("'00000003'", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// #430: "Factuur aanvragen" is offered on MediaMarkt's recent orders only
+    /// (the account holder, 2026-11-02), so an older order without one is
+    /// normal: no note per order reading like a page that changed, one line
+    /// that says what it is, and the purchase stays.
+    /// </summary>
+    [Fact]
+    public async Task An_order_that_offers_no_invoice_is_normal_and_said_once()
+    {
+        var (ctx, adapter) = Rig();
+        var portal = new ScriptedPortal(PageOf(3))
+        {
+            Invoices =
+            {
+                ["00000001"] = new MediaMarktDocument(200, "application/pdf", "%PDF-1.4 factuur"u8.ToArray(), "factuur-1.pdf"),
+                ["00000002"] = MediaMarktDocument.NotOffered,
+                ["00000003"] = MediaMarktDocument.NotOffered,
+            },
+        };
+
+        var result = await adapter.FetchAsync(ctx, Requests.Receipts(invoice: true), portal, CancellationToken.None);
+
+        Assert.Single(Assert.Single(result.Receipts, r => r.ExternalId == "00000001").Documents);
+        Assert.Empty(Assert.Single(result.Receipts, r => r.ExternalId == "00000002").Documents);
+        Assert.DoesNotContain(ctx.Notes, note => note.Contains("'00000002'", StringComparison.Ordinal) || note.Contains("'00000003'", StringComparison.Ordinal));
+        Assert.Contains(ctx.Notes, note => note.Contains("2 order(s) offer no invoice", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Invoices_are_not_asked_for_unless_the_caller_wanted_them()
     {

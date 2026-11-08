@@ -307,6 +307,15 @@ with `reconciled: false` rather than dropped, and a test should assert
 exactly that. Silently dropping it would hide a real purchase; silently
 trusting it would hand over a total we know disagrees with its own contents.
 
+**The file is the store's first cycle.** Its receipts keep their own days
+(2026-06-28 to 2026-07-19 — a fixed first day, so their ids and hashes never
+move); from there each repeats every 28 days
+(`MockStoreAdapters.ReceiptCycleDays`) at the same local time, up to the
+adapter's clock, and the store keeps a year of them: its manifest's history
+limit, the one the platform clamps a `since` to. A repeat's id names its own
+day (`mock-{yyyy-MM-dd}-0001`). A test that needs exact receipts pins the
+adapter's clock, or asks for one cycle ending yesterday.
+
 ---
 
 ## Terms-of-service reality check
