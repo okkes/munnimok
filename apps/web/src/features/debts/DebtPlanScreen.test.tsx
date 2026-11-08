@@ -252,15 +252,21 @@ describe('Payoff planner (#413)', () => {
     await screen.findByTestId('screen-debtplan');
     await seedLoans();
     await screen.findByTestId('debtplan-hero');
+    // both loans, or the rollover has nothing to roll over (the seed lands one write at a time)
     await screen.findByTestId('debtplan-order-loan-car');
+    await screen.findByTestId('debtplan-order-loan-card');
     const pathOf = (id: string) => screen.getByTestId(id).getAttribute('d');
     expect(screen.getByTestId('debtplan-rollover').getAttribute('aria-checked')).toBe('true');
-    expect(pathOf('debtplan-chart-plan')).not.toBe(pathOf('debtplan-chart-baseline'));
-    expect(screen.getByTestId('debtplan-vs').textContent).toMatch(/months earlier/);
+    await waitFor(() => {
+      expect(pathOf('debtplan-chart-plan')).not.toBe(pathOf('debtplan-chart-baseline'));
+      expect(screen.getByTestId('debtplan-vs').textContent).toMatch(/months earlier/);
+    });
     expect(screen.getByTestId('debtplan-rollover-hint').textContent).toMatch(/keeps €350\.00 per month flowing until the last debt is gone/);
     fireEvent.click(screen.getByTestId('debtplan-rollover'));
-    await waitFor(() => expect(screen.getByTestId('debtplan-rollover').getAttribute('aria-checked')).toBe('false'));
-    expect(pathOf('debtplan-chart-plan')).toBe(pathOf('debtplan-chart-baseline'));
+    await waitFor(() => {
+      expect(screen.getByTestId('debtplan-rollover').getAttribute('aria-checked')).toBe('false');
+      expect(pathOf('debtplan-chart-plan')).toBe(pathOf('debtplan-chart-baseline'));
+    });
     expect(screen.getByTestId('debtplan-vs').textContent).toMatch(/The same as paying the minimums only/);
     expect(screen.getByTestId('debtplan-overall-saved').textContent).toMatch(/The same as paying the minimums only/);
     expect(screen.getByTestId('debtplan-rollover-hint').textContent).toMatch(/Each payment stops with its loan/);
