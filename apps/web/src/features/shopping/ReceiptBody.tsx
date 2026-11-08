@@ -5,6 +5,7 @@ import { partyName } from '@/features/connectors/logos';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { ImageZoomView } from './ImageZoomView';
 import { PdfView } from './PdfView';
 import type { ReceiptDocument, ReceiptRow } from '@/db/types';
 
@@ -14,21 +15,28 @@ export const receiptTitle = (receipt: ReceiptRow, t: TFunc): string => {
   return receipt.merchant ?? partyName(receipt.source);
 };
 
-/** an invoice the party issued, shown in place — a PDF or a picture, from
- *  its data URL. User 2026-10-06: the sheet takes the whole height (the
- *  wide dialog on a desktop) and a PDF is drawn by pdf.js at the frame's
- *  width with zoom on top — the browser's own plugin fit the page instead,
- *  zoomed as it pleased, and Android had none. */
-function InvoiceSheet({ document, onClose, testIdPrefix }: Readonly<{ document: ReceiptDocument | null; onClose: () => void; testIdPrefix: string }>) {
+/** what the viewer shows: an invoice the party issued, or the receipt's own picture (#568) */
+type Viewed = { kind: 'invoice'; document: ReceiptDocument } | { kind: 'picture'; src: string };
+
+/** an invoice or the picture, shown in place from its data URL. User
+ *  2026-10-06: the sheet takes the whole height (the wide dialog on a
+ *  desktop) and a PDF is drawn by pdf.js at the frame's width with zoom on
+ *  top — the browser's own plugin fit the page instead, zoomed as it
+ *  pleased, and Android had none. #568: a picture zooms the same way. */
+function ViewerSheet({ viewed, open, onClose, testIdPrefix }: Readonly<{ viewed: Viewed | null; open: boolean; onClose: () => void; testIdPrefix: string }>) {
   const { t } = useLang();
+  const document = viewed?.kind === 'invoice' ? viewed.document : null;
   return (
-    <Sheet open={document !== null} onOpenChange={(open) => !open && onClose()} title={t('receipts.invoice')} size="full" wide>
+    <Sheet open={open} onOpenChange={(next) => !next && onClose()} title={t(viewed?.kind === 'picture' ? 'receipt.title' : 'receipts.invoice')} size="full" wide>
+      {viewed?.kind === 'picture' && (
+        <div data-testid={`${testIdPrefix}-picture-view`}>
+          <ImageZoomView src={viewed.src} alt={t('receipt.title')} testId={`${testIdPrefix}-picture-zoom`} />
+        </div>
+      )}
       {document && (
         <div className="flex flex-col gap-2" data-testid={`${testIdPrefix}-invoice-view`}>
           {document.mime.startsWith('image/') ? (
-            <div className="h-[calc(100dvh-250px)] overflow-auto rounded-card border border-line bg-bg-2 lg:h-[min(calc(92dvh-250px),760px)]" data-sheet-no-drag>
-              <img src={document.dataUrl} alt={t('receipts.invoice')} className="w-full" />
-            </div>
+            <ImageZoomView src={document.dataUrl} alt={t('receipts.invoice')} testId={`${testIdPrefix}-invoice-image`} />
           ) : (
             <PdfView dataUrl={document.dataUrl} testId={`${testIdPrefix}-pdf`} />
           )}
@@ -68,8 +76,15 @@ export function ReceiptBody({
   testIdPrefix?: string;
 }>) {
   const { t, lang } = useLang();
-  const [invoice, setInvoice] = useState<ReceiptDocument | null>(null);
+  // the viewed thing outlives the open flag, so the sheet never empties mid-slide
+  const [viewed, setViewed] = useState<Viewed | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const view = (next: Viewed) => {
+    setViewed(next);
+    setViewOpen(true);
+  };
   const id = (suffix: string): string => `${testIdPrefix}-${suffix}`;
+  const picture = receipt.image;
   const money = (cents: number) => fmtCents(cents, currency, lang);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -105,7 +120,20 @@ export function ReceiptBody({
         )}
       </div>
 
-      {receipt.image && <img src={receipt.image} alt={t('receipt.title')} className="w-full rounded-card object-contain" style={{ maxHeight: 520 }} />}
+      {/* #568: the picture opens the zoom viewer — its items must be readable */}
+      {picture && (
+        <button
+          data-testid={id('picture')}
+          aria-label={t('receipt.zoomOpen')}
+          onClick={() => view({ kind: 'picture', src: picture })}
+          className="m-tap relative block w-full rounded-card border-none bg-transparent p-0"
+        >
+          <img src={picture} alt={t('receipt.title')} className="w-full rounded-card object-contain" style={{ maxHeight: 520 }} />
+          <span className="absolute right-2 bottom-2 flex h-8 w-8 items-center justify-center rounded-full bg-surface text-ink shadow-sm">
+            <Icon name="magnify-plus-outline" size={18} />
+          </span>
+        </button>
+      )}
 
       {!!receipt.items?.length && (
         <div>
@@ -138,7 +166,7 @@ export function ReceiptBody({
               <button
                 key={`${document.filename ?? document.kind}-${index}`}
                 data-testid={id(`document-${index}`)}
-                onClick={() => setInvoice(document)}
+                onClick={() => view({ kind: 'invoice', document })}
                 className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
               >
                 <Icon name="file-pdf-box" size={18} color="var(--m-ink-3)" />
@@ -149,7 +177,7 @@ export function ReceiptBody({
           </div>
         </div>
       )}
-      <InvoiceSheet document={invoice} onClose={() => setInvoice(null)} testIdPrefix={testIdPrefix} />
+      <ViewerSheet viewed={viewed} open={viewOpen} onClose={() => setViewOpen(false)} testIdPrefix={testIdPrefix} />
     </>
   );
 }
