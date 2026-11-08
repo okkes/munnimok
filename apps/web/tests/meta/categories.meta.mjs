@@ -14,7 +14,7 @@ export const GROUPS = [
       {
         key: '30-cats-create',
         title: 'Create a custom category and use it',
-        desc: 'New category sheet: name, parent chips, icon grid. Custom categories are per-space synced rows, appear in the picker instantly, and can be assigned to transactions.',
+        desc: 'New category sheet: name, color, the icon grid (suggestions first, the whole font below and by search; a sibling\'s icon is refused). Custom categories are per-space synced rows, appear in the picker instantly, and can be assigned to transactions.',
         tags: ['state'],
         steps: [
           'Filled create sheet',

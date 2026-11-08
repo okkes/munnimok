@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Why this spec exists (test policy 2026-09-17): custom categories as a
+// Guide capture (npm run shots — never in CI): custom categories as a
 // real-browser flow — the manage screen's grouped catalog, creating a
 // custom sub through the form sheet and picking it on a transaction
 // through the split-categories editor and the picker (three stacked

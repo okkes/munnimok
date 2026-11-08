@@ -7,29 +7,9 @@ export const GROUPS = [
     tests: [
       {
         key: '09-tx-detail',
-        title: 'Detail opens and back returns',
-        desc: 'Tapping a row opens the detail screen (amount hero, category, account, bank description, notes); browser back returns to the list.',
+        title: 'A transaction’s own page',
+        desc: 'Saving a new transaction opens its detail (amount hero, category, account, bank description, notes); back returns to the list.',
         tags: ['navigation'],
-        steps: [
-          'Detail screen',
-          'Back to list',
-        ],
-      },
-      {
-        key: '10-tx-recat',
-        title: 'Recategorize clears review flag',
-        desc: 'The category row opens the picker sheet; choosing a category updates the transaction and clears the needs-review badge.',
-        tags: ['state'],
-        steps: [
-          'Category picker sheet',
-          'Detail with new category',
-        ],
-      },
-      {
-        key: '12-tx-notes',
-        title: 'Notes persist',
-        desc: 'Notes save on blur into the local database and survive leaving and reopening the transaction.',
-        tags: ['state'],
       },
     ],
   },
@@ -39,23 +19,23 @@ export const GROUPS = [
       {
         key: '27-tx-create',
         title: 'Add a manual transaction',
-        desc: 'The + button opens the form: sign toggle, amount (EU decimals), name, date, account chips, category picker. Saved transactions appear in the list immediately.',
+        desc: 'The + button opens a screen of its own (#348): sign toggle, amount (EU decimals), name, date, account, then the category — the counterparty opens once the category is a movement — and the event, a note and the reimbursement link. Saving opens the new transaction.',
         tags: ['state'],
         steps: [
           'Filled form',
-          'New transaction in the list',
+          'The new transaction',
         ],
       },
       {
         key: '28-tx-edit',
         title: 'Edit a manual transaction',
-        desc: 'Manual transactions get a pencil in the detail header; amount, name, date, account and category are editable. Bank-imported rows stay read-only (their data is the bank’s truth).',
+        desc: 'Manual transactions get a pencil in the detail header; amount, name, date, account and category are editable in a sheet (the counterparty opens once the category is a movement). Bank-imported rows stay read-only (their data is the bank’s truth).',
         tags: ['state', 'edge-case'],
       },
       {
         key: '34-tx-reimburse',
         title: 'Link a reimbursement',
-        desc: 'Expenses can link credit transactions as (partial) reimbursements: amounts are clamped to what is possible, the hero shows the net cost with the gross struck through, and unlinking restores it.',
+        desc: 'Expenses can link credit transactions as (partial) reimbursements: amounts are clamped to what is possible, the hero shows the net cost with the gross struck through, and unlinking restores it. The picker lists every open row and jumps to the day of the transaction (#502).',
         tags: ['state'],
       },
       {

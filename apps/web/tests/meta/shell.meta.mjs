@@ -38,23 +38,6 @@ export const GROUPS = [
     name: 'Appearance & Language',
     tests: [
       {
-        key: '04-shell-language',
-        title: 'Language switch (EN → NL)',
-        desc: 'Settings → Language opens the shared bottom sheet; picking Nederlands relabels the whole UI.',
-        tags: ['state'],
-        steps: [
-          'Settings screen',
-          'Language sheet open',
-          'UI in Dutch',
-        ],
-      },
-      {
-        key: '05-shell-dark',
-        title: 'Dark mode toggle',
-        desc: 'The Appearance row hosts a three-way segment (light / dark / auto); picking dark pins the warm-dark theme and persists in localStorage.',
-        tags: ['state'],
-      },
-      {
         key: '38-offline',
         title: 'Offline mode lifecycle',
         desc: 'Create a fully local profile (zero network, ever): personal space named after it, accounts and transactions work offline, signing out keeps the data, and the profile is selectable again on the login screen.',

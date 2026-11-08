@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Why this spec exists (test policy 2026-09-17): the period overview as
+// Guide capture (npm run shots — never in CI): the period overview as
 // the user meets it — the Home tiles and the expense drill-down (chart,
 // composition, expandable categories, period switch) rendered by a real
 // browser on demo data. It produces the guide screenshots 59-overview-home

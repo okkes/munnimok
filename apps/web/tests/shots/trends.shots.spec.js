@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Why this spec exists (test policy 2026-09-17): the trends screen as one
+// Guide capture (npm run shots — never in CI): the trends screen as one
 // real-browser flow — the three views render their charts from demo data
 // and the category picker narrows the bars to one main. It produces the
 // guide screenshots 63-trends-categories and 65-trends-networth (plus

@@ -5,13 +5,15 @@ import { defineConfig } from '@playwright/test';
 // vite webServer must not start.
 const externalBaseUrl = process.env.PW_BASE_URL;
 
+// The CI gate (user 2026-11-08): the critical features' happy flows only —
+// tests/e2e. The user guide's other screenshots are captured by
+// playwright.shots.config.ts (tests/shots), which never gates a deploy.
 export default defineConfig({
-  testDir: 'tests/specs',
+  testDir: 'tests/e2e',
   workers: process.env.CI ? 3 : 2, // CI: 3; local: 2 (more workers overwhelm vite dev server)
   outputDir: 'tests/results',
   projects: [
-    // the gallery suite (screenshots + flows) — chromium, as always
-    { name: 'gallery', testMatch: '**/*.gallery.spec.js', use: { browserName: 'chromium' as const } },
+    { name: 'e2e', testMatch: '**/*.e2e.spec.js', use: { browserName: 'chromium' as const } },
     // WebKit engine guard (all of iOS is WebKit; Blink hides its layout
     // bugs). Only defined where the browser actually exists — CI and the
     // dockerized runner — so host runs never trip over a missing binary.

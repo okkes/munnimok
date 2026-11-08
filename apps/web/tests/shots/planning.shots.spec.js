@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Why this spec exists (test policy 2026-09-17): the planning tab (#128)
+// Guide capture (npm run shots — never in CI): the planning tab (#128)
 // in a real browser on the rich demo — the plan with its segments, the
 // circle and the left-to-give head, a subject opened, and the periods
 // ahead. It produces the gallery/guide screenshots 70-72. The arithmetic
