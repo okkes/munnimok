@@ -282,6 +282,8 @@ public class User
     public string? Country { get; set; }
     /// <summary>ISO 4217 display currency (currency plan CD3) — null = "as recorded", no conversion</summary>
     public string? DisplayCurrency { get; set; }
+    /// <summary>#580: the in-app notifications up to this moment were cleared on one of the person's devices — the others follow</summary>
+    public DateTimeOffset? NotificationsClearedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -301,6 +303,8 @@ public class SpaceMember
     public required string Role { get; set; } // owner | contributor | reader (SpaceRoles)
     /// <summary>#172 "member since"</summary>
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>#549: whether this member gets the space's notifications — personal, never shown to the others</summary>
+    public bool Notify { get; set; } = true;
 }
 
 public class SyncOpRow

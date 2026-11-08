@@ -3,7 +3,11 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useBudgetOps, useBudgets } from '@/application/budgets';
+import { usePushState } from '@/application/pushState';
+import type { PushState } from '@/application/pushState';
 import { localToday } from '@/application/recurring';
 import { budgetFamily, categoryConflicts } from '@/domain/budgets';
 import { LOCKED_MAIN_IDS } from '@/domain/categories';
@@ -15,30 +19,34 @@ import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Button } from '@/ui/Button';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
+import { IconPicker } from '@/ui/IconPicker';
+import { TickBox, enterToggles, halfRef } from '@/ui/TickBox';
+import type { TickState } from '@/ui/TickBox';
+import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 import { SearchField } from '@/ui/SearchField';
+import type { TranslationKey } from '@/i18n';
 import { BUDGET_ICONS } from './budgetUi';
-import { MDI_NAMES } from '@/generated/mdiNames';
-import { SpacePhotoStrip } from '@/features/spaces/SpaceSettingsScreen';
 
-/**
- * Create/edit a budget — a full screen, not a sheet: icon, name, amount,
- * cadence + anchor, the category checklist with exclusivity badges,
- * carry-over configuration and the warning threshold.
- */
+/** #534: why a warning cannot reach the person, and how it could */
+const NOTIFY_BLOCKED: Record<Exclude<PushState, 'on'>, TranslationKey> = {
+  off: 'budgets.notifyOff',
+  'no-account': 'budgets.notifyNoAccount',
+  unsupported: 'budgets.notifyUnsupported',
+};
+
 /** #374: a category row's tick — full, half (some free subs picked) or empty */
-type TickState = 'checked' | 'half' | 'off';
 const tickStateOf = (checked: boolean, half: boolean): TickState => {
   if (checked) return 'checked';
   if (half) return 'half';
   return 'off';
 };
-const TICK_BOX: Record<TickState, string> = {
-  checked: 'border-accent bg-accent',
-  half: 'border-accent bg-accent-soft',
-  off: 'border-line bg-transparent',
-};
 
+/**
+ * Create/edit a budget — a full screen, not a sheet: name, icon, amount,
+ * cadence + anchor, the category checklist with exclusivity badges,
+ * carry-over configuration and the warning threshold.
+ */
 export function BudgetFormScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -48,13 +56,13 @@ export function BudgetFormScreen() {
   const ops = useBudgetOps();
   const cats = useCategories();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const canEdit = useCanEdit(); // #505
 
   const editing = budgets?.find((b) => b.id === budgetId);
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(BUDGET_ICONS[0]);
-  // #373: the whole icon font by search, or an own picture
+  // #373: the whole icon font by search (#534: icons only — no own pictures)
   const [iconQuery, setIconQuery] = useState('');
-  const [picture, setPicture] = useState('');
   const [amount, setAmount] = useState('');
   const [every, setEvery] = useState<BudgetEvery>('month');
   const [anchor, setAnchor] = useState(localToday());
@@ -71,6 +79,8 @@ export function BudgetFormScreen() {
   const [carryPeriodsText, setCarryPeriodsText] = useState('1');
   const [carryCap, setCarryCap] = useState('');
   const [notifyAtPct, setNotifyAtPct] = useState(0);
+  // #534: a warning arrives as a notification — none can reach this device while the device or this space has them off (#549)
+  const push = usePushState(store, spaceId);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -78,7 +88,6 @@ export function BudgetFormScreen() {
     if (!editing || loaded) return;
     setName(editing.name);
     setIcon(editing.icon ?? BUDGET_ICONS[0]);
-    setPicture(editing.picture ?? '');
     setAmount((editing.amountCents / 100).toFixed(2));
     setEvery(editing.every);
     setAnchor(editing.anchor);
@@ -151,7 +160,7 @@ export function BudgetFormScreen() {
   })();
   // #164: edits guard the back arrow — the draft is dirty once any field
   // moved away from the seeded state (creation counts from blank)
-  const draftPrint = JSON.stringify([name, icon, picture, amount, every, anchor, resetDayText, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
+  const draftPrint = JSON.stringify([name, icon, amount, every, anchor, resetDayText, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
   const baselineRef = useRef<string | null>(null);
   if (baselineRef.current === null && (!budgetId || loaded)) baselineRef.current = draftPrint;
   const formDirty = baselineRef.current !== null && draftPrint !== baselineRef.current;
@@ -164,7 +173,6 @@ export function BudgetFormScreen() {
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
       icon,
-      picture: picture || undefined,
       amountCents,
       every,
       anchor,
@@ -201,24 +209,30 @@ export function BudgetFormScreen() {
     const coveredByMain = !catIds.includes(id) && ownFamily.has(id);
     const disabled = !!conflictOwner || coveredByMain;
     const free = isMain ? freeSubsOf(id) : [];
-    const half = isMain && !catIds.includes(id) && free.some((sub) => catIds.includes(sub));
-    const checked = catIds.includes(id) || coveredByMain || (isMain && free.length > 0 && free.every((sub) => catIds.includes(sub)) && claimedSubsOf(id) > 0);
+    // #374 r2 (user ss): a main whose subs another budget partly holds is never ticked in full — it reads half, all free subs picked or not
+    const checked = catIds.includes(id) || coveredByMain;
+    const half = isMain && !checked && free.some((sub) => catIds.includes(sub));
     const tick = tickStateOf(checked, half);
+    // the row labels a native checkbox that wears the house tick and lends the row its focus ring (m-focus-card);
+    // a disabled row takes no press, as the disabled button did
     return (
-      <button
+      <label
         key={id}
-        data-testid={`budget-cat-${id}`}
-        data-state={tick}
-        disabled={disabled}
-        onClick={() => (isMain ? toggleMain(id) : toggleCat(id))}
-        className={`m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0 ${indent ? 'pl-8' : 'pl-1'} ${disabled ? 'opacity-45' : ''}`}
+        className={`m-tap m-focus-card relative flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0 ${indent ? 'pl-8' : 'pl-1'} ${disabled ? 'opacity-45 active:transform-none data-pressed:transform-none' : ''}`}
       >
-        <span
-          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${TICK_BOX[tick]}`}
-        >
-          {checked && <Icon name="check" size={12} color="#fff" />}
-          {!checked && half && <Icon name="minus" size={12} color="var(--m-accent-deep)" />}
-        </span>
+        <input
+          type="checkbox"
+          data-testid={`budget-cat-${id}`}
+          data-state={tick}
+          data-quiet-focus
+          ref={halfRef(tick === 'half')}
+          checked={tick === 'checked'}
+          disabled={disabled}
+          onChange={() => (isMain ? toggleMain(id) : toggleCat(id))}
+          onKeyDown={enterToggles}
+          className="sr-only"
+        />
+        <TickBox state={tick} />
         <Icon name={cat.icon} size={16} color={cat.color ?? cats.byId(cat.parentId)?.color ?? 'var(--m-ink-3)'} />
         <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cat, t)}</span>
         {conflictOwner && (
@@ -226,7 +240,7 @@ export function BudgetFormScreen() {
             {t('budgets.inBudget', { name: conflictOwner })}
           </span>
         )}
-      </button>
+      </label>
     );
   };
 
@@ -243,28 +257,7 @@ export function BudgetFormScreen() {
       {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col gap-3 pt-1">
-          {/* #373: an own picture wins over the icon; the curated icons by default, the whole font by search */}
-          <SpacePhotoStrip picture={picture} onPicture={setPicture} onWebcam={null} testIdPrefix="budgetform-photo" />
-          <SearchField testId="budgetform-icon-search" value={iconQuery} onChange={setIconQuery} placeholder={t('cats.iconSearch')} height="h-10" textSize="text-[13px]" />
-          <div className="grid max-h-40 grid-cols-6 gap-2 overflow-y-auto">
-            {(iconQuery.trim() ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 48) : BUDGET_ICONS).map((candidate) => (
-              <button
-                key={candidate}
-                data-testid={`budgetform-icon-${candidate}`}
-                title={candidate}
-                onClick={() => setIcon(candidate)}
-                className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
-                  icon === candidate && !picture ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-                }`}
-              >
-                <Icon name={candidate} size={19} />
-              </button>
-            ))}
-            {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
-              <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
-            )}
-          </div>
-
+          {/* #534 (user): the name comes first — an icon search on top read as the thing to fill in */}
           <input
             data-testid="budgetform-name"
             value={name}
@@ -274,6 +267,10 @@ export function BudgetFormScreen() {
           />
           {/* #195 r2 (user): the blocker sits AT the field */}
           <FormBlockerNote show={blockerField === 'name'} text={blockerText} testId="budgetform-blocker" />
+
+          {/* the curated icons lead, the whole font follows — to scroll or to search (#563) */}
+          <div className="m-cap px-1">{t('budgets.icon')}</div>
+          <IconPicker value={icon} onChange={setIcon} featured={BUDGET_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="budgetform-icon" />
 
           <div className="m-cap px-1">{t('budgets.amount', { currency })}</div>
           <input
@@ -448,17 +445,30 @@ export function BudgetFormScreen() {
             </div>
           )}
 
-          <div className="m-cap px-1">{t('budgets.notify')}</div>
+          {/* #534 (user): with notifications off a warning could never arrive — the
+              choice rests (a stored one is kept) and the info says why and how */}
+          <div className="m-cap flex flex-wrap items-center gap-1.5 px-1">
+            {t('budgets.notify')}
+            {push !== 'on' && push !== null && <InfoHint text={t(NOTIFY_BLOCKED[push])} testId="budgetform-notify-why" />}
+          </div>
           <div className="flex flex-wrap gap-2">
             {[0, 80, 90, 100].map((pct) => (
-              <Chip key={pct} testId={`budgetform-notify-${pct}`} selected={notifyAtPct === pct} onClick={() => setNotifyAtPct(pct)}>
+              <Chip
+                key={pct}
+                testId={`budgetform-notify-${pct}`}
+                selected={notifyAtPct === pct}
+                disabled={push !== 'on'}
+                onClick={() => setNotifyAtPct(pct)}
+              >
                 {pct === 0 ? t('recurring.notifyOff') : `${pct}%`}
               </Chip>
             ))}
           </div>
 
+          <ReadOnlyNote testId="budgetform-readonly-note" />
           <Button
             data-testid="budgetform-save"
+            disabled={!canEdit}
             onClick={() => {
               if (!valid) {
                 setAttempted(true);
@@ -469,7 +479,7 @@ export function BudgetFormScreen() {
           >
             {editing ? t('action.save') : t('action.create')}
           </Button>
-          {editing && (
+          {editing && canEdit && (
             <Button variant="danger" data-testid="budgetform-delete" onClick={() => void removeBudget()}>
               {confirmDelete ? t('action.confirm') : t('action.delete')}
             </Button>

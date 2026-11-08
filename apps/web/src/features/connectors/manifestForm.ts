@@ -3,7 +3,7 @@ import type { TranslationKey } from '@/i18n';
 import type { ChallengeType, ErrorEnvelope, FieldSpec, ProviderManifest } from './types';
 
 /**
- * A manifest becomes a form (docs/connector-integration-plan.md §10.2):
+ * A manifest becomes a form (docs/connectors/client.md, "The connect flow"):
  * pure functions from the catalogue's declarations to steps, fields,
  * validation, the split into `inputs` and `config`, and the copy keys
  * munni renders them with. Nothing here knows a provider by name — the

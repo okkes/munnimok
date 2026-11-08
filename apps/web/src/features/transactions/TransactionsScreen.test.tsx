@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { clearTxFilters, presetTxFilters } from './txFilters';
@@ -11,6 +11,22 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
 const rows = () => screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]');
+
+/** the boot chain (heals, minted legs, migrations) still writes rows after the first paint — count from its end, once the list holds still */
+async function settledRows(): Promise<number> {
+  await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+  let last = -1;
+  await waitFor(
+    () => {
+      const now = rows().length;
+      const steady = now === last && now > 3;
+      last = now;
+      expect(steady).toBe(true);
+    },
+    { interval: 250, timeout: 8000 },
+  );
+  return last;
+}
 
 describe('TransactionsScreen (demo identity)', () => {
   beforeEach(async () => {
@@ -55,11 +71,64 @@ describe('TransactionsScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('#492: the whole history is listed — a page at a time, as deep again after the detour', async () => {
+    const first = renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    // the lean demo fits one page: nothing waits behind the list's end
+    const demoRows = await settledRows();
+    expect(screen.queryByTestId('tx-list-more')).toBeNull();
+    const db = new MunniDB('munni_demo');
+    // hundreds of rows through the coverage-instrumented list: every step gets a real budget
+    const slow = { timeout: 20_000 };
+    try {
+      const repo = new Repo(new DexieBackend(db), new HlcClock('seed-history'), { trackOutbox: false });
+      await repo.batch(async () => {
+        for (let i = 0; i < 150; i += 1) {
+          await repo.upsert('transaction', DEMO_SPACE_ID, `hist${i}`, {
+            accountId: 'demo_main', date: `2019-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`,
+            amountCents: -(100 + i), currency: 'EUR', merchant: `History shop ${i}`, catId: 'groceries', needsReview: 0,
+          });
+        }
+      });
+      // one page stands; the older rows wait behind the list's end
+      await waitFor(() => expect(rows()).toHaveLength(120), slow);
+      const more = await screen.findByTestId('tx-list-more', {}, slow);
+      // the count the list names — the boot's own background steps may still move a demo row, so it is read, not assumed
+      const behind = Number(/\((\d+)/.exec(more.textContent ?? '')?.[1]);
+      expect(120 + behind).toBeGreaterThanOrEqual(150 + demoRows - 3);
+      // each step brings the next page, down to the end of what the list named (a boot step may still add a demo row)
+      fireEvent.click(more);
+      await waitFor(() => expect(rows()).toHaveLength(240), slow);
+      fireEvent.click(screen.getByTestId('tx-list-more'));
+      await waitFor(() => {
+        expect(rows().length).toBeGreaterThanOrEqual(120 + behind);
+        expect(screen.queryByTestId('tx-list-more')).toBeNull();
+      }, slow);
+      // the oldest row of the history is reachable
+      expect(screen.getByTestId('tx-row-hist0')).toBeTruthy();
+      // the detour into a row comes back as deep as it was: every page still open (the second boot may
+      // still converge the demo by a row — #546's pass runs every boot until no default is left)
+      first.unmount();
+      cleanup();
+      renderApp('/transactions');
+      await screen.findByTestId('tx-list');
+      await waitFor(() => {
+        expect(rows().length).toBeGreaterThan(240);
+        expect(screen.queryByTestId('tx-list-more')).toBeNull();
+      }, slow);
+      // a new lens starts over at one page
+      fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'History shop' } });
+      await waitFor(() => expect(rows()).toHaveLength(120), slow);
+    } finally {
+      // a failure must not leave this spec's handle holding the demo database the next spec deletes
+      db.close();
+    }
+  }, 120_000);
+
   it('#140/#148 r2: the lens survives a remount (detail detour); the new-only preset shows first-seen arrivals', async () => {
     const first = renderApp('/transactions');
     await screen.findByTestId('tx-list');
-    await waitFor(() => expect(rows().length).toBeGreaterThan(3));
-    const fullCount = rows().length;
+    const fullCount = await settledRows();
     // turn a lens on — search text
     fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'heijn' } });
     await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
@@ -222,18 +291,15 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
   });
 
-  it('the filter sheet narrows by account and groups the space defaults apart from made accounts', async () => {
+  it('the filter sheet narrows by account — the cash wallet among the others', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
     const all = rows().length;
 
     fireEvent.click(screen.getByTestId('tx-filter-open'));
-    // #320 (user): the space's default pots sit in their OWN labeled
-    // group, apart from the accounts people actually made
-    const defaultsGroup = await screen.findByTestId('filter-defaults-group');
-    expect(within(defaultsGroup).getByTestId('filter-account-defaultacct_saving_demo_space')).toBeTruthy();
-    expect(within(defaultsGroup).queryByTestId('filter-account-demo_main')).toBeNull();
+    // #546: the default pots retired — the space's wallet is an account like any other
+    expect(await screen.findByTestId('filter-account-defaultacct_cash_demo_space')).toBeTruthy();
     // every chip wears the account's face (type icon here — no logo seeded)
     expect(screen.getByTestId('filter-account-demo_main').querySelector('.mdi')).toBeTruthy();
 

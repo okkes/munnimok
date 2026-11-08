@@ -290,4 +290,21 @@ describe('§5 niceties seam', () => {
     });
     expect(await nativeBiometricAvailable()).toBe(false);
   });
+
+  it('#506: a web search for a title opens in a new tab on the web and in the in-app browser on the shells', async () => {
+    const { openExternal, webSearchUrl } = await import('./platform');
+    const url = webSearchUrl('  PM *Z2U HongKong ');
+    expect(url).toBe('https://www.google.com/search?q=PM%20*Z2U%20HongKong');
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    openExternal(url);
+    expect(open).toHaveBeenCalledWith(url, '_blank', 'noopener');
+
+    const browserOpen = vi.fn(() => Promise.resolve());
+    setCapacitor({ isNativePlatform: () => true, Plugins: { Browser: { open: browserOpen } } });
+    openExternal(url);
+    expect(browserOpen).toHaveBeenCalledWith({ url });
+    expect(open).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 });

@@ -44,14 +44,21 @@ export const VARIANTS = [
   { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 },
 ];
 
+// The gallery's screenshots and videos are local artefacts (the guide, the
+// visual review); CI keeps neither, so it records no video and takes no shots.
+const LOCAL_ARTEFACTS = !process.env.CI;
+
 // Create a browser context + page configured for the given variant.
-// Includes video recording — call teardown() after the test to finalize.
+// Records a video locally — call teardown() after the test to finalize.
 export async function createPage(browser, variant) {
   const ctx = await browser.newContext({
     viewport:          variant.vp,
     deviceScaleFactor: variant.dpr,
     locale:            variant.lang === 'tr' ? 'tr-TR' : 'en-US',
-    recordVideo:       { dir: VIDEOS_DIR, size: variant.vp },
+    // CI serves the dev server, where no service worker registers; the
+    // dockerized runs serve a production build — block it so both run alike
+    serviceWorkers:    'block',
+    ...(LOCAL_ARTEFACTS ? { recordVideo: { dir: VIDEOS_DIR, size: variant.vp } } : {}),
   });
   const page = await ctx.newPage();
   return { page, ctx };
@@ -90,9 +97,8 @@ async function completeOnboardingIfShown(page, userSub) {
   // and the spec waited forever for a tab bar onboarding keeps hidden.
   // Race the two possible outcomes instead of guessing.
   const onboarding = page.locator('[data-testid="screen-onboarding"]');
-  // NOT tab-home: the tab bar sits OUTSIDE DataProvider and is visible
-  // during the whole bootstrap — screen-home only renders once state is
-  // ready, which is exactly when the needsOnboarding meta is final
+  // screen-home, not tab-home: Home only renders once state is ready,
+  // which is exactly when the needsOnboarding meta is final
   const home = page.locator('[data-testid="screen-home"]');
   // as patient as the spec budget itself: under FULL-suite load a brand
   // new user's first paint has been observed beyond 30s — a shorter cap
@@ -198,10 +204,14 @@ export async function gotoSpaces(page) {
   await page.waitForSelector('[data-testid="screen-spaces"]');
 }
 
+// The docker-compose.test.yml API: localhost:8181 on a CI runner, the compose
+// service name when the suite itself runs in a container on that network.
+const TEST_API_URL = process.env.E2E_API_URL ?? 'http://localhost:8181';
+
 // True when the docker-compose.test.yml API (header test-auth) is reachable.
 export async function syncApiUp() {
   try {
-    const res = await fetch('http://localhost:8181/health', { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${TEST_API_URL}/health`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) return false;
     const body = await res.json();
     return body.capabilities?.testAuth === true;
@@ -211,7 +221,9 @@ export async function syncApiUp() {
 }
 
 // Wait for the m-fade animation (280ms) to finish before screenshotting.
+// Never a synchronisation point: a spec waits for its own conditions.
 export async function shot(page, name) {
+  if (!LOCAL_ARTEFACTS) return;
   await page.waitForTimeout(350);
   await page.screenshot({ path: path.join(SHOTS_DIR, `${name}.png`), fullPage: false });
 }

@@ -22,6 +22,14 @@ public sealed record ProviderStatus
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Adapters.ProviderQuota? Quota { get; init; }
 
+    /// <summary>
+    /// Whether the party keeps an inventory at the operator's account (an
+    /// aggregator's consents, <see cref="Adapters.IRemoteInventory"/>), so a
+    /// console offers it for these parties alone; on the status document only.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Inventory { get; init; }
+
     public static ProviderStatus Healthy(string providerId, DateTimeOffset at) =>
         new() { ProviderId = providerId, State = ProviderState.Healthy, Since = at };
 

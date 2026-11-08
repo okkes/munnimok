@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import type { PlanRow } from '@/db/types';
 import type { PlanningModel } from '@/application/planning';
@@ -34,6 +35,8 @@ export function PlanHeader({
   onAhead: () => void;
 }>) {
   const { t } = useLang();
+  // #530: the pool and what is left of it are the balances seen through the plan — they hide; the spending stays
+  const balance = useDisplayMoney().sensitive(fmt);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const left = model.toAllocateOf(plan);
   let color = 'var(--m-warning)';
@@ -45,18 +48,18 @@ export function PlanHeader({
     color = 'var(--m-negative)';
     line = t('plan.overGiven');
   }
-  const hasFunding = model.subjectsOf(plan).some((s) => s.fundedCents > 0);
+  const hasFunding = model.subjectsOf(plan).some((s) => s.fundedCents > 0) || (plan.oneOffs ?? []).some((o) => o.fundedCents > 0);
   const started = model.startedWithOf(plan);
   const spent = started - model.poolCents;
   const poolLine =
     spent > 0
-      ? t('plan.startedLine', { started: fmt(started, currency), pool: fmt(model.poolCents, currency), spent: fmt(spent, currency) })
-      : t('plan.poolLine', { amount: fmt(model.poolCents, currency) });
+      ? t('plan.startedLine', { started: balance(started, currency), pool: balance(model.poolCents, currency), spent: fmt(spent, currency) })
+      : t('plan.poolLine', { amount: balance(model.poolCents, currency) });
   return (
     <div className="flex items-center gap-4 rounded-card border border-line bg-surface p-4" data-testid="plan-header">
       <div className="min-w-0 flex-1">
         <div className="m-num text-[28px] leading-tight font-semibold" style={{ color }} data-testid="plan-toallocate">
-          {fmt(left, currency)}
+          {balance(left, currency)}
         </div>
         <div className="text-[12px] text-ink-3">{line}</div>
         <div className="mt-1 text-[11px] text-ink-4" data-testid="plan-pool-line">

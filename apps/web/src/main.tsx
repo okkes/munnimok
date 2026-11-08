@@ -19,7 +19,7 @@ import { installViewportGuard } from '@/lib/viewportGuard';
 import { installKeyboardDismiss } from '@/lib/keyboardDismiss';
 import { installKeyboardReveal } from '@/lib/keyboardReveal';
 import { installMemWatch } from '@/lib/memWatch';
-import { installWebVitals, scrubEvent, transactionFilter } from '@/lib/perf';
+import { installWebVitals, isHeldStream, scrubEvent, transactionFilter } from '@/lib/perf';
 import { gateTransport, reportWarning } from '@/lib/report';
 import { initPressFeedback } from '@/app/pressFeedback';
 import { ThemeProvider } from '@/app/theme';
@@ -79,7 +79,12 @@ if (config.glitchtipDsn) {
       // named by the route PATTERN (/transactions/$txId, never the id) with
       // the fetches, long animation frames (and their script) and the
       // interaction-to-next-paint under them; the gates below decide who sends
-      Sentry.tanstackRouterBrowserTracingIntegration(router, { enableInp: true, enableLongAnimationFrame: true }),
+      Sentry.tanstackRouterBrowserTracingIntegration(router, {
+        enableInp: true,
+        enableLongAnimationFrame: true,
+        // the streams the app holds open (sync, a live view's frames) are no span
+        shouldCreateSpanForRequest: (url) => !isHeldStream(url),
+      }),
     ],
     tracesSampleRate: config.tracesSampleRate,
     // the sync api continues our traces (a slow Confirm shows its push end

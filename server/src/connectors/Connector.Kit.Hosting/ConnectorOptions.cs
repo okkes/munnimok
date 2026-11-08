@@ -333,6 +333,21 @@ public sealed class ConnectorTimeouts
     public int LiveFramePollSeconds { get; set; } = 5;
 
     /// <summary>
+    /// The longest the pushed live view (#429) holds one response. A login
+    /// outlives it easily: the consumer reconnects past the frame it drew and
+    /// loses nothing, and a response that cannot outlive this cannot outlive a
+    /// forgotten tab either.
+    /// </summary>
+    public int LiveStreamSeconds { get; set; } = 600;
+
+    /// <summary>
+    /// How long the pushed live view may go without writing before it sends a
+    /// keep-alive: well under the minute a reverse proxy (nginx, the NAS's)
+    /// gives an idle upstream, and a static login page writes nothing else.
+    /// </summary>
+    public int LiveStreamKeepAliveSeconds { get; set; } = 10;
+
+    /// <summary>
     /// Staged rows die after this regardless of whether the caller ever acked.
     ///
     /// A day, not a week. This is the backstop for a consumer that broke

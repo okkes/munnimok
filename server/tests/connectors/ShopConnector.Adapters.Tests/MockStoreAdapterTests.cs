@@ -173,6 +173,63 @@ public sealed class MockStoreAdapterTests
         Assert.DoesNotContain(result.Receipts, r => r.ExternalId == "mock-2026-06-28-0003");
     }
 
+    /// <summary>
+    /// The file's receipts are the store's first cycle; they repeat every four
+    /// weeks up to the clock's now and are kept as far back as the history
+    /// limit. Years on, the store still holds a year of receipts inside its
+    /// window - each of the file's once in the last whole cycle, never one in
+    /// the future - and a second fetch that day returns the same ids and hashes.
+    /// Read as it stood, the file held nothing in reach from mid-2027.
+    /// </summary>
+    [Fact]
+    public async Task The_receipts_follow_the_clock_and_stay_inside_the_history_limit()
+    {
+        var later = new DateTimeOffset(2031, 3, 14, 12, 0, 0, TimeSpan.Zero);
+        var today = DateOnly.FromDateTime(later.UtcDateTime);
+        var floor = today.AddDays(-Describe(MockStoreAdapters.Simple).Limits.MaxHistoryDays);
+        var adapter = MockStoreAdapters.Create(MockStoreAdapters.Simple, Fast, new FixedTimeProvider(later));
+        using var first = new FakeJobContext { Inputs = GoodCredentials };
+        using var second = new FakeJobContext { Inputs = GoodCredentials };
+
+        var result = await adapter.FetchAsync(first, Requests.Receipts(), CancellationToken.None);
+        var again = await adapter.FetchAsync(second, Requests.Receipts(), CancellationToken.None);
+
+        var days = result.Receipts.Select(r => DateOnly.FromDateTime(r.PurchasedAt.DateTime)).ToList();
+        Assert.InRange(days.Min(), floor, floor.AddDays(MockStoreAdapters.ReceiptCycleDays));
+        Assert.All(result.Receipts, r => Assert.True(r.PurchasedAt <= later, $"{r.ExternalId} is in the future"));
+        Assert.Equal(3, days.Count(d => d >= today.AddDays(-MockStoreAdapters.ReceiptCycleDays) && d < today));
+        // never more than two weeks between receipts, nor since the newest: a two-week window always splits them
+        Assert.InRange(today.DayNumber - days[0].DayNumber, 0, 14);
+        Assert.All(days.Zip(days.Skip(1)), pair => Assert.InRange(pair.First.DayNumber - pair.Second.DayNumber, 0, 14));
+        Assert.All(result.Receipts, r => Assert.StartsWith(
+            $"mock-{DateOnly.FromDateTime(r.PurchasedAt.DateTime):yyyy-MM-dd}-", r.ExternalId, StringComparison.Ordinal));
+        Assert.Equal(result.Receipts.Select(r => r.Id), again.Receipts.Select(r => r.Id));
+        Assert.Equal(result.Receipts.Select(r => r.ContentHash), again.Receipts.Select(r => r.ContentHash));
+    }
+
+    /// <summary>
+    /// The first day never moves: a later clock serves the file's own
+    /// receipts with the ids and hashes they always had, so a store synced
+    /// before still matches row for row.
+    /// </summary>
+    [Fact]
+    public async Task A_days_receipt_keeps_its_id_and_hash_as_the_clock_moves_on()
+    {
+        using var then = new FakeJobContext { Inputs = GoodCredentials };
+        using var later = new FakeJobContext { Inputs = GoodCredentials };
+        var firstCycle = Requests.Receipts(until: Requests.Day(2026, 7, 25));
+
+        var a = await Adapter(MockStoreAdapters.Simple).FetchAsync(then, firstCycle, CancellationToken.None);
+        var b = await MockStoreAdapters.Create(MockStoreAdapters.Simple, Fast, new FixedTimeProvider(Now.AddDays(100)))
+            .FetchAsync(later, firstCycle, CancellationToken.None);
+
+        Assert.Equal(["mock-2026-07-19-0001", "mock-2026-07-05-0002", "mock-2026-06-28-0003"], a.Receipts.Select(r => r.ExternalId));
+        Assert.Equal(a.Receipts.Select(r => r.Id), b.Receipts.Select(r => r.Id));
+        Assert.Equal(a.Receipts.Select(r => r.ContentHash), b.Receipts.Select(r => r.ContentHash));
+    }
+
+    private static Connector.Kit.Manifests.ProviderManifest Describe(string id) => Adapter(id).Describe();
+
     // ---- the challenge relay -----------------------------------------------
 
     [Fact]

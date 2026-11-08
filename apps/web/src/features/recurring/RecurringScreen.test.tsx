@@ -326,6 +326,34 @@ describe('RecurringScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
+  it('#520: the face picker offers the whole icon font — a picked icon is the cost\'s own and outlives a kind change', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Barberbrothers' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '27' } });
+    expect(screen.getByTestId('recform-face').textContent).toBe('Default icon');
+    fireEvent.click(screen.getByTestId('recform-logo-open'));
+    // the logo search leads while no icon was picked; the Icon tab holds the font
+    await screen.findByTestId('brandpicker-search');
+    fireEvent.click(screen.getByTestId('brandpicker-tab-icon'));
+    fireEvent.change(await screen.findByTestId('brandpicker-icon-search'), { target: { value: 'content cut' } });
+    fireEvent.click(await screen.findByTestId('brandpicker-icon-content-cut'));
+    expect(screen.getByTestId('recform-face').textContent).toBe('Your own icon');
+    fireEvent.click(screen.getByTestId('recform-kind-fixed'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const rec = (await db.recurrings.toArray()).find((r) => r.name === 'Barberbrothers');
+        expect(rec).toMatchObject({ icon: 'content-cut', logo: '', kind: 'fixed' });
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('accepting a suggestion prefills the sheet, links past payments, detail lists them', async () => {
     const db = new MunniDB('munni_demo');
     const first = renderApp('/recurring');
@@ -831,6 +859,41 @@ describe('RecurringScreen editing (demo identity)', () => {
     await screen.findByTestId('screen-home');
     await new Promise((r) => setTimeout(r, 150));
     expect(showNotification).toHaveBeenCalledTimes(1);
+  }, 20_000);
+
+  it('#549/#551: a space with its notifications off keeps the reminder in the list, named, but not on the OS', async () => {
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Rent' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '740' } });
+    const today = new Date().getDate();
+    fireEvent.change(screen.getByTestId('recform-dueday'), { target: { value: String(today <= 28 ? today : 1) } });
+    fireEvent.blur(screen.getByTestId('recform-dueday'));
+    fireEvent.click(screen.getByTestId('recform-notify-7'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+    await screen.findByText('Rent', {}, { timeout: 5000 });
+    first.unmount();
+
+    const { MunniDB } = await import('@/db/schema');
+    const { DexieBackend } = await import('@/db/backend');
+    const { readInbox } = await import('@/application/notifications');
+    const store = new DexieBackend(new MunniDB('munni_demo'));
+    try {
+      const rent = (await store.allRows('recurring')).find((r) => r.name === 'Rent')!;
+      await store.metaPut('notifyOffSpaces', [rent.spaceId]);
+
+      const showNotification = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(window, 'Notification', { configurable: true, value: { permission: 'granted' } });
+      Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { ready: Promise.resolve({ showNotification }) } });
+      renderApp('/home');
+      await waitFor(async () => expect((await readInbox(store)).some((e) => e.kind === 'recurringDue')).toBe(true), { timeout: 5000 });
+      const entry = (await readInbox(store)).find((e) => e.kind === 'recurringDue')!;
+      expect(entry.payload?.spaceId).toBe(rent.spaceId);
+      expect(showNotification).not.toHaveBeenCalled();
+    } finally {
+      store.close();
+    }
   }, 20_000);
 });
 

@@ -5,12 +5,12 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { defaultAccountId, ensureDefaultAccount } from './defaultAccounts';
-import { migrateBareSpecialRows } from './categoryModel';
+import { cashWalletId, defaultAccountId, ensureCashWallet, walletForAutoLink } from './defaultAccounts';
+import { migrateBareSpecialRows, refileCashTransfers } from './categoryModel';
 
 const SPACE = 's1';
 
-describe('#133 step A: default accounts + the bare-row migration', () => {
+describe('the cash wallet + the bare-row migration', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {
     for (const s of stores.splice(0)) await s.destroy();
@@ -23,26 +23,39 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     return { store, repo };
   }
 
-  it('mints the default pot lazily, deterministically and idempotently', async () => {
+  it('mints the cash wallet deterministically and idempotently; an automatic link never revives a deleted one', async () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
-    const id = await ensureDefaultAccount(store, repo, SPACE, 'saving');
-    expect(id).toBe(defaultAccountId(SPACE, 'saving'));
+    const id = await ensureCashWallet(store, repo, SPACE);
+    expect(id).toBe(cashWalletId(SPACE));
     const minted = await store.get('account', id);
-    expect(minted).toMatchObject({ type: 'savings', source: 'manual', defaultFor: 'saving', balanceCents: 0, currency: 'EUR' });
-    // second call returns the same pot without re-minting
-    expect(await ensureDefaultAccount(store, repo, SPACE, 'saving')).toBe(id);
+    expect(minted).toMatchObject({ type: 'cash', source: 'manual', defaultFor: 'cash', balanceCents: 0, currency: 'EUR' });
+    // second call returns the same wallet without re-minting
+    expect(await ensureCashWallet(store, repo, SPACE)).toBe(id);
+    // #348: the person deleted it — automatic links leave it deleted, an explicit pick revives it
+    await repo.remove('account', SPACE, id);
+    expect(await walletForAutoLink(store, repo, SPACE)).toBeNull();
+    expect((await store.get('account', id))?.deleted).toBe(1);
+    expect(await ensureCashWallet(store, repo, SPACE)).toBe(id);
+    expect((await store.get('account', id))?.deleted).toBe(0);
   });
 
-  it('links bare movement rows onto the default pot — type kept, mirror minted; value stories untouched', async () => {
+  it('#546: a bare pot movement links the account of its kind its text names — no clue, it stays bare; value stories untouched', async () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
     await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    // the bare set-aside: ◆ movement category, no counterparty
+    // a checking account named in the text is the wrong kind for a set-aside
+    await repo.upsert('account', SPACE, 'other', { name: 'Holiday current', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    // the bare set-aside: ◆ movement category, no counterparty — its text names the pot
     await repo.upsert('transaction', SPACE, 'bare1', {
       accountId: 'main', date: '2026-07-01', amountCents: -5000, currency: 'EUR',
-      merchant: 'Set aside', catId: 'savingDeposit', needsReview: 0,
+      merchant: 'To Holiday', catId: 'savingDeposit', needsReview: 0,
+    });
+    // a bare debt payment naming no tracked account stays bare: the review asks for the loan
+    await repo.upsert('transaction', SPACE, 'debt1', {
+      accountId: 'main', date: '2026-07-01', amountCents: -6324, currency: 'EUR',
+      merchant: 'Incasso lening', catId: 'loanRepayment', needsReview: 1,
     });
     // interest is a value story, not a movement — never links
     await repo.upsert('transaction', SPACE, 'interest1', {
@@ -59,21 +72,28 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     expect(touched).toBe(1);
 
     const migrated = await store.get('transaction', 'bare1');
-    expect(migrated?.linkedAccountId).toBe(defaultAccountId(SPACE, 'saving'));
-    // the counterparty rule: a DEFAULT pot keeps the special category's type
-    expect(migrated?.transferPeerId).toBeTruthy();
+    expect(migrated?.linkedAccountId).toBe('pot');
+    expect(migrated?.catId).toBe('savingDeposit');
     // the pot's leg exists and carries the money
+    expect(migrated?.transferPeerId).toBeTruthy();
     const mirror = await store.get('transaction', migrated!.transferPeerId!);
-    expect(mirror).toMatchObject({ accountId: defaultAccountId(SPACE, 'saving'), amountCents: 5000 });
+    expect(mirror).toMatchObject({ accountId: 'pot', amountCents: 5000 });
 
+    const debt = await store.get('transaction', 'debt1');
+    expect(debt).toMatchObject({ catId: 'loanRepayment', needsReview: 1 });
+    expect(debt?.linkedAccountId).toBeUndefined();
     expect((await store.get('transaction', 'interest1'))?.linkedAccountId).toBeUndefined();
     expect((await store.get('transaction', 'onpot1'))?.linkedAccountId).toBeUndefined();
-    // #221: no marker — the fold runs every boot; idempotence comes from
-    // the rows being linked now
+    // no default pot is minted for anything (#546)
+    for (const family of ['saving', 'debtPayment', 'transfer'] as const) {
+      expect(await store.get('account', defaultAccountId(SPACE, family))).toBeUndefined();
+    }
+    // the fold runs every boot; idempotence comes from linked rows skipping
+    // and bare rows without a clue writing nothing
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 
-  it('#221: bare movement rows link — the ATM pair onto the CASH wallet; #228 r3: a clueless transfer stands down instead', async () => {
+  it('the ATM pair links the CASH wallet; #228 r3: a clueless transfer stands down; #546: a clueless funding stays bare', async () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
@@ -91,31 +111,45 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
       merchant: 'To the pot', catId: 'fundingOut', needsReview: 0,
     });
 
-    expect(await migrateBareSpecialRows(store, repo)).toBe(3);
+    expect(await migrateBareSpecialRows(store, repo)).toBe(2);
 
     const atm = await store.get('transaction', 'atm1');
-    expect(atm?.linkedAccountId).toBe(defaultAccountId(SPACE, 'cash'));
+    expect(atm?.linkedAccountId).toBe(cashWalletId(SPACE));
     expect(atm?.needsReview).toBe(1); // healing is not reviewing
     // the wallet's leg files by ITS counter's kind (the checking source)
     const atmMirror = await store.get('transaction', atm!.transferPeerId!);
-    expect(atmMirror).toMatchObject({ accountId: defaultAccountId(SPACE, 'cash'), amountCents: 100, catId: 'transferIn' });
+    expect(atmMirror).toMatchObject({ accountId: cashWalletId(SPACE), amountCents: 100, catId: 'transferIn' });
     // the wallet's balance moved with the leg
-    expect((await store.get('account', defaultAccountId(SPACE, 'cash')))?.balanceCents).toBe(100);
+    expect((await store.get('account', cashWalletId(SPACE)))?.balanceCents).toBe(100);
 
     // #228 r3 (user rule): "Moved out" names no tracked account — the
-    // transfer stands down to Uncategorized and goes back to review;
-    // the transfer default is never minted for it
+    // transfer stands down to Uncategorized and goes back to review
     const tout = await store.get('transaction', 'tout1');
     expect(tout).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(tout?.linkedAccountId).toBeUndefined();
-    expect(await store.get('account', defaultAccountId(SPACE, 'transfer'))).toBeUndefined();
-    // funding links its pot but mints NOTHING (#152: funding shows no rows)
+    // no funding account named: the row keeps its story and waits for the person
     const fund = await store.get('transaction', 'fund1');
-    expect(fund?.linkedAccountId).toBe(defaultAccountId(SPACE, 'funding'));
-    expect(fund?.transferPeerId).toBeUndefined();
+    expect(fund).toMatchObject({ catId: 'fundingOut' });
+    expect(fund?.linkedAccountId).toBeUndefined();
+    expect(await store.get('account', defaultAccountId(SPACE, 'funding'))).toBeUndefined();
 
     // every-boot idempotence: nothing left to do
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+  });
+
+  it('#348: a cash wallet the person deleted is never revived by the ATM fold — the row stays bare', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await ensureCashWallet(store, repo, SPACE);
+    await repo.remove('account', SPACE, cashWalletId(SPACE));
+    await repo.upsert('transaction', SPACE, 'atm2', {
+      accountId: 'main', date: '2026-07-10', amountCents: -100, currency: 'EUR',
+      merchant: 'Geldmaat', catId: 'cashWithdraw', needsReview: 1,
+    });
+    expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+    expect((await store.get('transaction', 'atm2'))?.linkedAccountId).toBeUndefined();
+    expect((await store.get('account', cashWalletId(SPACE)))?.deleted).toBe(1);
   });
 
   it('#228 r3: a bare transfer whose text names a tracked account links IT — the bijection refiles the category', async () => {
@@ -193,44 +227,98 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 
-  it('#221: ensureSpaceDefaultAccounts mints all six, once', async () => {
-    const { store, repo } = fresh();
-    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
-    const { ensureSpaceDefaultAccounts } = await import('./defaultAccounts');
-    await ensureSpaceDefaultAccounts(store, repo, SPACE);
-    await ensureSpaceDefaultAccounts(store, repo, SPACE); // idempotent
-    const defaults = (await store.bySpace('account', SPACE)).filter((a) => a.deleted === 0 && a.defaultFor);
-    expect(defaults).toHaveLength(6);
-    const byFamily = new Map(defaults.map((a) => [a.defaultFor, a.type]));
-    expect(byFamily.get('saving')).toBe('savings');
-    expect(byFamily.get('debtPayment')).toBe('loan');
-    expect(byFamily.get('investment')).toBe('brokerage');
-    expect(byFamily.get('transfer')).toBe('checking');
-    expect(byFamily.get('cash')).toBe('cash');
-    expect(byFamily.get('funding')).toBe('funding');
-  });
-
-  it('migrates bare movement PARTS of a split through the part-mirror machinery', async () => {
+  it('migrates bare movement PARTS of a split through the part-mirror machinery — a clueless part stays as it is', async () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
+    await repo.upsert('account', SPACE, 'dev', { name: 'Devicepot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('transaction', SPACE, 'split1', {
       accountId: 'main', date: '2026-07-05', amountCents: -6500, currency: 'EUR',
-      merchant: 'Phone bill', catId: 'telecom', needsReview: 0,
+      merchant: 'Phone bill + Devicepot', catId: 'telecom', needsReview: 0,
       splits: [
         { id: 'p1', catId: 'telecom', amountCents: 4000 },
         { id: 'p2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device pot' },
+      ],
+    });
+    await repo.upsert('transaction', SPACE, 'split2', {
+      accountId: 'main', date: '2026-07-06', amountCents: -6500, currency: 'EUR',
+      merchant: 'Phone bill', catId: 'telecom', needsReview: 0,
+      splits: [
+        { id: 'q1', catId: 'telecom', amountCents: 4000 },
+        { id: 'q2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving' },
       ],
     });
 
     expect(await migrateBareSpecialRows(store, repo)).toBe(1);
     const row = await store.get('transaction', 'split1');
     const part = row?.splits?.find((s) => s.id === 'p2');
-    expect(part?.linkedAccountId).toBe(defaultAccountId(SPACE, 'saving'));
+    expect(part?.linkedAccountId).toBe('dev');
     expect(part?.transferPeerId).toBeTruthy();
     const partMirror = await store.get('transaction', part!.transferPeerId!);
-    expect(partMirror).toMatchObject({ accountId: defaultAccountId(SPACE, 'saving'), amountCents: 2500 });
+    expect(partMirror).toMatchObject({ accountId: 'dev', amountCents: 2500 });
     // the untouched part stays untouched
     expect(row?.splits?.find((s) => s.id === 'p1')?.linkedAccountId).toBeUndefined();
+    // no clue: the bare part waits for the person, nothing written
+    expect((await store.get('transaction', 'split2'))?.splits?.find((s) => s.id === 'q2')?.linkedAccountId).toBeUndefined();
+  });
+
+  it('#536: the fold reads the SPACE\'s type for an attached account — a feed row the space calls savings is the pot\'s own ledger', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', kind: 'personal', currency: 'EUR' });
+    // the global row says checking; this space attached it as savings
+    await repo.upsert('account', 'feed1', 'f-acct', { name: 'NL01 Feed', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('accountLink', SPACE, 'link1', { feedSpaceId: 'feed1', accountId: 'f-acct', type: 'savings' });
+    await repo.upsert('transaction', 'feed1', 'feedrow', {
+      accountId: 'f-acct', date: '2026-07-07', amountCents: 2000, currency: 'EUR', merchant: 'Deposit', needsReview: 1,
+    });
+    await repo.upsert('txMeta', SPACE, 'meta1', { txId: 'feedrow', catId: 'savingWithdraw', needsReview: 1 });
+    // a stamped row is the pot's own ledger: never linked, nothing written
+    expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+    expect((await store.get('txMeta', 'meta1'))?.linkedAccountId).toBeUndefined();
+  });
+});
+
+describe('#574: a cash counter means the ATM pair', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('re-files "Transfer out/in" against a cash wallet as Cash withdraw/deposit — rows and parts, once', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_cashrefile_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('cashrefile'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', kind: 'personal', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'other', { name: 'Other bank', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'wallet', { name: 'Cash wallet', type: 'cash', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'cash' });
+    await repo.upsert('transaction', SPACE, 'out1', {
+      accountId: 'main', date: '2026-07-01', amountCents: -5000, currency: 'EUR', merchant: 'ATM', catId: 'transferOut', linkedAccountId: 'wallet', needsReview: 0,
+    });
+    await repo.upsert('transaction', SPACE, 'in1', {
+      accountId: 'main', date: '2026-07-02', amountCents: 3000, currency: 'EUR', merchant: 'Deposit', catId: 'transferIn', linkedAccountId: 'wallet', needsReview: 0,
+    });
+    // a transfer between bank accounts stays a transfer
+    await repo.upsert('transaction', SPACE, 'out2', {
+      accountId: 'main', date: '2026-07-03', amountCents: -1000, currency: 'EUR', merchant: 'Move', catId: 'transferOut', linkedAccountId: 'other', needsReview: 0,
+    });
+    await repo.upsert('transaction', SPACE, 'split1', {
+      accountId: 'main', date: '2026-07-04', amountCents: -6000, currency: 'EUR', merchant: 'Mixed', catId: 'groceries', needsReview: 0,
+      splits: [
+        { id: 'p1', catId: 'groceries', amountCents: 4000 },
+        { id: 'p2', catId: 'transferOut', amountCents: 2000, linkedAccountId: 'wallet' },
+      ],
+    });
+
+    expect(await refileCashTransfers(store, repo)).toBe(3);
+    expect((await store.get('transaction', 'out1'))?.catId).toBe('cashWithdraw');
+    expect((await store.get('transaction', 'in1'))?.catId).toBe('cashDeposit');
+    expect((await store.get('transaction', 'out2'))?.catId).toBe('transferOut');
+    const parts = (await store.get('transaction', 'split1'))?.splits ?? [];
+    expect(parts.map((p) => p.catId)).toEqual(['groceries', 'cashWithdraw']);
+    expect(parts[1].linkedAccountId).toBe('wallet');
+    // the money and the links stay where they were
+    expect((await store.get('transaction', 'out1'))?.linkedAccountId).toBe('wallet');
+    expect(await refileCashTransfers(store, repo)).toBe(0);
   });
 });

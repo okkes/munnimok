@@ -90,6 +90,21 @@ public sealed record AsnOptions
         ["button[data-testid='button']"];
 
     /// <summary>
+    /// The way past ASN's "Browser updaten" notice, which it shows a browser
+    /// it judges outdated - with its own button on to online banking.
+    /// OBSERVED (#562, a lab job of 2026-10-23: the agent's Chromium had
+    /// fallen behind and the sign-in never got past this page).
+    /// </summary>
+    public IReadOnlyList<string> BrowserNoticeContinueSelectors { get; init; } =
+        ["a:has-text('Naar ASN Online Bankieren')", "button:has-text('Naar ASN Online Bankieren')"];
+
+    /// <summary>
+    /// How long a page is given to show that notice. Short: on a current
+    /// browser it never comes, and every sign-in pays the wait.
+    /// </summary>
+    public int BrowserNoticeProbeMs { get; init; } = 1_500;
+
+    /// <summary>
     /// Choosing how to sign in. OBSERVED - three of them, by their own words.
     /// </summary>
     /// <remarks>

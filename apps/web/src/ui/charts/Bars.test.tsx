@@ -33,6 +33,17 @@ describe('Bars (user 2026-10-08: numbers on top, a pick with a ring)', () => {
     expect(onSelect).toHaveBeenCalledWith(0);
   });
 
+  it('#375: the dashed reference line names itself at its right end — above it, or under it when it runs along the top', () => {
+    render(<Bars testId="lim" values={[500, 1500]} average={1000} averageLabel="Budget €10.00" />);
+    const line = screen.getByTestId('lim-average');
+    const label = screen.getByTestId('lim-average-label');
+    expect(label.textContent).toBe('Budget €10.00');
+    expect(label.getAttribute('text-anchor')).toBe('end');
+    expect(Number(label.getAttribute('y'))).toBeLessThan(Number(line.getAttribute('y1')));
+    render(<Bars testId="top" values={[100, 200]} average={1000} averageLabel="Budget €10.00" />);
+    expect(Number(screen.getByTestId('top-average-label').getAttribute('y'))).toBeGreaterThan(Number(screen.getByTestId('top-average').getAttribute('y1')));
+  });
+
   it('without value labels the chart keeps its old shape', () => {
     render(<Bars testId="plain" values={[5, 10]} />);
     expect(screen.getByTestId('plain').querySelectorAll('text')).toHaveLength(0);

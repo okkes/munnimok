@@ -166,6 +166,17 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: v
 }
 .chip.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
 .warn-chip { background: var(--warn-soft); color: var(--warn); border-color: transparent; margin-left: 6px; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h3 { font: 600 13.5px/1.3 system-ui, sans-serif; margin: 18px 0 6px; }
+.consent-group + .consent-group { border-top: 1px solid var(--line-2); margin-top: 8px; }
+/* one table per environment: the same column widths so the groups read as one list */
+.consent-group table { table-layout: fixed; }
+.consent-group th:nth-child(1) { width: 44%; }
+.consent-group th:nth-child(2) { width: 30%; }
+.consent-group th:nth-child(3) { width: 11%; }
+.consent-group .cell-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.about p { margin: 0 0 10px; font-size: 13px; line-height: 1.55; color: var(--ink2); }
+.about p:last-child { margin-bottom: 0; }
 
 /* ── tables ───────────────────────────────────────────────────────── */
 table { width: 100%; border-collapse: collapse; }

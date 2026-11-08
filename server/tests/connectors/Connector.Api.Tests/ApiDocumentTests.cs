@@ -106,6 +106,8 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
     // frame type a consumer is told a subscription returns nothing.
     [InlineData("/v1/{provider}/login/{sessionId}/events", "get", "text/event-stream", "SessionResponse")]
     [InlineData("/v1/{provider}/jobs/{jobId}/events", "get", "text/event-stream", "JobResponse")]
+    // The live view pushed (#429): one frame per event.
+    [InlineData("/v1/{provider}/login/{sessionId}/challenges/{challengeId}/live/stream", "get", "text/event-stream", "LiveStreamFrame")]
     public async Task A_stream_names_its_media_type_and_the_view_it_carries(
         string path, string method, string mediaType, string schema)
     {
@@ -446,8 +448,9 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         // 53 since the hosted private agents (#420 A2): four routes for the
         // person, four for the operator. 60 since the operator's history and
         // health (#441 L1): the person's share and decline, the job list and
-        // one job, the picture, the health report, the canary run now.
-        Assert.Equal(64, operations);
+        // one job, the picture, the health report, the canary run now. 65
+        // since the live view's pushed stream (#429).
+        Assert.Equal(65, operations);
     }
 
     [Theory]

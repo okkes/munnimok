@@ -74,8 +74,23 @@ function stripLegalForms(value: string): string {
   return tokens.join(' ');
 }
 
-export function merchantKey(merchant: string): string {
-  const base = stripProcessorPrefix(merchant.toLowerCase().trim())
+/**
+ * #578 (user ss): a card line names the place behind a ">" — ING's
+ * "Albert Heijn 1842 >S-GRAVENH30.10.2026 18U08 KV007 …", cut to forty
+ * characters by the feed — so the city (truncated), the date, the time and
+ * the terminal all ride behind it. The name is what stands before; a line
+ * that is nothing but place keeps its text.
+ */
+function cutAtPlaceMarker(value: string): string {
+  const at = value.indexOf('>');
+  if (at <= 0) return value;
+  const head = value.slice(0, at);
+  return /\p{L}/u.test(head) ? head : value;
+}
+
+function normalize(merchant: string, since578: boolean): string {
+  const lowered = merchant.toLowerCase().trim();
+  const cleaned = stripProcessorPrefix(since578 ? cutAtPlaceMarker(lowered) : lowered)
     // #450 (user): the date and the clock time of the charge are the one
     // thing that differs between two visits to the same till ("8.08.2026
     // 10U53", "11.09.2026 18U57"), and they come glued to the name as often
@@ -84,10 +99,22 @@ export function merchantKey(merchant: string): string {
     .replaceAll(/\d{4}-\d{2}-\d{2}/g, ' ') // 2026-09-11
     .replaceAll(/\d{1,2}[:uh.]\d{2}(?!\d)/g, ' ') // 10u53, 18:57, 9.05
     .replaceAll(/\d{2,}[\d./:-]*/g, ' ') // store nrs, terminal ids - glued to a word or not
-    .replaceAll(/[^\p{L}\p{N}&' ]+/gu, ' ')
-    .replaceAll(/\s+/g, ' ')
-    .trim();
+    .replaceAll(/[^\p{L}\p{N}&' ]+/gu, ' ');
+  // #578: a lone digit is what the forty-character cut left of a time or
+  // a store number ("…30.10.2026 1") - glued to a word ("3fm") it stays
+  const base = (since578 ? cleaned.replaceAll(/(?<=^|\s)\d(?=\s|$)/g, ' ') : cleaned).replaceAll(/\s+/g, ' ').trim();
   // branch cities differ per charge, the merchant doesn't (user request);
   // the legal form behind the name neither (#346)
   return stripLegalForms(stripTrailingCity(base)).slice(0, 40);
+}
+
+export function merchantKey(merchant: string): string {
+  return normalize(merchant, true);
+}
+
+/** the key as it was spelled before #578 — read only by the stored-key
+ *  migration (application/merchantKeyRekey.ts), which maps the keys that
+ *  recurrings, loans and dismissed suggestions carry onto today's */
+export function merchantKeyBefore578(merchant: string): string {
+  return normalize(merchant, false);
 }

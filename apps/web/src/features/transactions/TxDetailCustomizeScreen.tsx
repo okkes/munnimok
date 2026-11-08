@@ -2,6 +2,8 @@ import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import type { SpaceRow } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -63,11 +65,14 @@ export function TxDetailCustomizeScreen() {
   const { store, repo, spaceId } = useData();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const blocks = resolveTxDetailBlocks(space);
+  const canEdit = useCanEdit(); // #505
 
-  const persist = (next: TxDetailBlockConfig[]) =>
+  const persist = (next: TxDetailBlockConfig[]) => {
+    if (!canEdit) return;
     void repo.upsert('space', spaceId, spaceId, {
       txDetailBlocks: next.map((entry) => ({ id: entry.id, hidden: entry.hidden ? (1 as const) : (0 as const) })),
     });
+  };
 
   const reorder = (from: number, to: number) => {
     const next = [...blocks];
@@ -92,10 +97,11 @@ export function TxDetailCustomizeScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="pb-2 text-[12px] text-ink-3">{t('tx.customizeSub')}</p>
+        <ReadOnlyNote className="mb-3" testId="tx-customize-readonly-note" />
         {/* render only once the SAVED layout arrived — acting on the
             defaults mid-load silently overwrote the real order */}
         {space && (
-        <div className="flex flex-col" data-testid="tx-customize-list">
+        <div className="flex flex-col" data-testid="tx-customize-list" inert={canEdit ? undefined : true}>
           <BlockListEditor
             rows={blocks.map((entry) => ({
               id: entry.id,

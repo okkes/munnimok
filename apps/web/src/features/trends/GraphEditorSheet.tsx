@@ -1,13 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LOCKED_MAIN_IDS } from '@/domain/categories';
 import { useLang } from '@/i18n';
+import { useSpaceAccounts } from '@/application/transactions';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { Cat } from '@/features/categories/useCategories';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import type { TrendGraph, TrendGraphDraft } from './useTrendGraphs';
+import { AccountTicks, graphAccounts, liquidAccountIds } from './AccountTicks';
+import type { TrendGraphDraft } from './useTrendGraphs';
+
+/** what the sheet edits: a spending graph (categories + accounts) or a balance line (accounts) */
+export interface EditableGraph {
+  id: string;
+  name: string;
+  catIds?: string[];
+  accountIds?: string[];
+}
+
+const sameSet = (a: ReadonlySet<string> | null, b: readonly string[] | null): boolean =>
+  a === null || b === null ? a === b : a.size === b.length && b.every((id) => a.has(id));
 
 type Tick = 'checked' | 'half' | 'off';
 const TICK_BOX: Record<Tick, string> = {
@@ -132,8 +145,10 @@ function CategoryTree({ picked, onChange }: Readonly<{ picked: ReadonlySet<strin
 
 /**
  * A custom graph's shape (user 2026-10-08): a name and one or more
- * (sub)categories. New and edit share the sheet; delete asks once through
- * the shared danger confirm.
+ * (sub)categories — and since #531 the financial accounts it reads (every
+ * account until ticked otherwise). A balance line (`kind` cashflow) is a
+ * name and its accounts, the money in hand ticked to start with. New and
+ * edit share the sheet; delete asks once through the shared danger confirm.
  */
 export function GraphEditorSheet({
   open,
@@ -141,28 +156,43 @@ export function GraphEditorSheet({
   initial,
   onSave,
   onDelete,
+  kind = 'spending',
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** null = a new graph */
-  initial: TrendGraph | null;
+  initial: EditableGraph | null;
   onSave: (draft: TrendGraphDraft) => void;
   onDelete: (id: string) => void;
+  kind?: 'spending' | 'cashflow';
 }>) {
   const { t } = useLang();
+  const accounts = graphAccounts(useSpaceAccounts() ?? []);
   const [name, setName] = useState('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [accountPick, setAccountPick] = useState<Set<string> | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const spending = kind === 'spending';
 
-  // every opening starts from the graph it edits (or blank)
+  // every opening starts from the graph it edits (or blank); accounts are
+  // read at the opening only — a later sync must not undo the ticks
+  const startAccounts = (): string[] | null => initial?.accountIds ?? (spending ? null : liquidAccountIds(accounts));
   useEffect(() => {
     if (!open) return;
     setName(initial?.name ?? '');
     setPicked(new Set(initial?.catIds ?? []));
+    const start = startAccounts();
+    setAccountPick(start ? new Set(start) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the opening is the moment
   }, [open, initial]);
 
-  const dirty = name !== (initial?.name ?? '') || picked.size !== (initial?.catIds.length ?? 0) || (initial?.catIds ?? []).some((id) => !picked.has(id));
-  const canSave = name.trim().length > 0 && picked.size > 0;
+  const initialCats = initial?.catIds ?? [];
+  const dirty =
+    name !== (initial?.name ?? '') ||
+    picked.size !== initialCats.length ||
+    initialCats.some((id) => !picked.has(id)) ||
+    !sameSet(accountPick, initial ? (initial.accountIds ?? null) : startAccounts());
+  const canSave = name.trim().length > 0 && (!spending || picked.size > 0) && (accountPick === null || accountPick.size > 0);
 
   return (
     <>
@@ -183,7 +213,9 @@ export function GraphEditorSheet({
               className="flex-1"
               data-testid="trends-graph-save"
               disabled={!canSave}
-              onClick={() => onSave({ id: initial?.id, name: name.trim(), catIds: [...picked] })}
+              onClick={() =>
+                onSave({ id: initial?.id, name: name.trim(), catIds: spending ? [...picked] : [], accountIds: accountPick ? [...accountPick] : null })
+              }
             >
               {t('action.save')}
             </Button>
@@ -197,14 +229,21 @@ export function GraphEditorSheet({
               data-testid="trends-graph-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={t('trends.graphNamePlaceholder')}
+              placeholder={t(spending ? 'trends.graphNamePlaceholder' : 'trends.flowNamePlaceholder')}
               className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
             />
           </label>
+          {spending && (
+            <div className="flex flex-col gap-1.5">
+              <span className="m-cap px-1">{t('trends.graphCategories')}</span>
+              <p className="px-1 text-[11px] text-ink-4">{t('trends.graphCategoriesHint')}</p>
+              {open && <CategoryTree key={initial?.id ?? 'new'} picked={picked} onChange={setPicked} />}
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
-            <span className="m-cap px-1">{t('trends.graphCategories')}</span>
-            <p className="px-1 text-[11px] text-ink-4">{t('trends.graphCategoriesHint')}</p>
-            {open && <CategoryTree key={initial?.id ?? 'new'} picked={picked} onChange={setPicked} />}
+            <span className="m-cap px-1">{t('trends.graphAccounts')}</span>
+            <p className="px-1 text-[11px] text-ink-4">{t(spending ? 'trends.graphAccountsHint' : 'trends.flowAccountsHint')}</p>
+            <AccountTicks accounts={accounts} picked={accountPick} onChange={setAccountPick} allowAll={spending} testId="trends-graph-accounts" />
           </div>
         </div>
       </Sheet>

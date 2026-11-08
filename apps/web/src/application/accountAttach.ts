@@ -1,4 +1,5 @@
 import { accountLinkId } from '@/domain/feedIds';
+import { releaseAccountReferences } from './accountRelease';
 import { logActivity } from './activity';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { attachAccount, detachAccount, fetchSpaceLinks } from '@/features/accounts/feedGateway';
@@ -86,5 +87,7 @@ export async function detachFeedFromSpace(
     (l) => l.deleted === 0 && l.accountId === accountId && l.feedSpaceId === feedSpaceId,
   );
   if (local) await repo.remove('accountLink', spaceId, local.id);
+  // #544: nothing in the space keeps pointing at the account it let go
+  await releaseAccountReferences(store, repo, spaceId, accountId);
   void logActivity(store, repo, spaceId, 'detach', (await store.get('account', accountId))?.name);
 }

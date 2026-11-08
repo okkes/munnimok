@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useCallback, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -20,8 +20,13 @@ import { SearchField } from '@/ui/SearchField';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
 import { StackedBar } from '@/ui/charts';
+import { JumpToDateButton, useJumpToDate } from '@/ui/JumpToDate';
+import { MoreRows, PAGE_ROWS } from '@/ui/MoreRows';
 import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
+
+/** rows mounted past a jump's target, so there is something to scroll down into */
+const JUMP_TAIL = 40;
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 
@@ -182,10 +187,17 @@ export function ReimburseLinkScreen() {
   );
   const suggestedIds = useMemo(() => new Set(suggested.map((s) => s.tx.id)), [suggested]);
 
+  // every open row, newest first — paged as it scrolls (#502: the old cap
+  // of 100 left an older day out of reach)
   const listed = useMemo(() => {
     const matched = filterTxs(candidates, { query });
-    return [...matched].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 100);
+    return [...matched].sort((a, b) => b.date.localeCompare(a.date));
   }, [candidates, query]);
+  const [shownRows, setShownRows] = useState(PAGE_ROWS);
+  const showMore = useCallback(() => setShownRows((n) => n + PAGE_ROWS), []);
+  // #502 (user): jump to the anchor's day, then scroll up or down from there
+  const { scrollerRef, jump, jumpedId } = useJumpToDate(listed, (index) => setShownRows((n) => Math.max(n, index + JUMP_TAIL)));
+  const shownList = listed.slice(0, shownRows);
 
   const openValueOf = (row: SpaceTx): number => (row.amountCents > 0 ? giveableCents(row) : remainingCents(row));
   const pickedCents = picks.reduce((sum, pick) => sum + centsOf(pick), 0);
@@ -389,10 +401,18 @@ export function ReimburseLinkScreen() {
           the sticky+translate version left its slot as a void */}
       <CollapsingSearch offset={searchOffset}>
         <div className="px-5 pt-1 pb-2">
-          <SearchField testId="reimb-link-search" value={query} onChange={setQuery} placeholder={t('tx.searchPlaceholder')} />
+          <SearchField
+            testId="reimb-link-search"
+            value={query}
+            onChange={(value) => {
+              setQuery(value);
+              setShownRows(PAGE_ROWS);
+            }}
+            placeholder={t('tx.searchPlaceholder')}
+          />
         </div>
       </CollapsingSearch>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4" onScroll={onListScroll}>
+      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-4" onScroll={onListScroll}>
         {/* the smart segment stands down while the user searches */}
         {!query && suggested.length > 0 && (
           <>
@@ -406,11 +426,21 @@ export function ReimburseLinkScreen() {
           </>
         )}
 
-        <div className="m-cap mt-2 mb-1 px-1">{t(anchorIsExpense ? 'reimb.allCredits' : 'reimb.allExpenses')}</div>
+        <div className="m-cap mt-2 mb-1 flex items-center gap-2 px-1">
+          <span>{t(anchorIsExpense ? 'reimb.allCredits' : 'reimb.allExpenses')}</span>
+          {tx && listed.length > 0 && <JumpToDateButton date={tx.date} onJump={() => jump(tx.date)} testId="reimb-link-jump" />}
+        </div>
         <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-1" data-testid="reimb-link-list">
-          {listed.map((row) => rowFor(row, 'reimb-pick', 'list'))}
+          {shownList.map((row) => (
+            <div key={row.id} data-jump-id={row.id} className={`transition-colors ${jumpedId === row.id ? 'bg-accent-soft' : ''}`}>
+              {rowFor(row, 'reimb-pick', 'list')}
+            </div>
+          ))}
           {listed.length === 0 && <div className="px-1 py-4 text-center text-[12px] text-ink-4">—</div>}
         </div>
+        {listed.length > shownList.length && (
+          <MoreRows rootRef={scrollerRef} remaining={listed.length - shownList.length} onMore={showMore} testId="reimb-link-more" />
+        )}
       </div>
 
       {/* the pinned footer: the anchor's composition, the category shift, the one save for every pick */}

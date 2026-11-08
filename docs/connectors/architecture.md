@@ -55,7 +55,7 @@ A provider's manifest declares its runtime:
 | --- | --- | --- |
 | `client` | in a **sealed bundle** the consumer holds (AES-GCM under the control plane's key ring, `sb_v1.<kid>.…`); the control plane keeps nothing | every T1–T3 provider today |
 | `agent` | in the household agent's browser profile on the user's own disk; the bundle names the agent and the profile | `asn-persistent` |
-| `server` | in a vault on the control plane, for unattended scheduled sync | none yet — slice M4 of the plan |
+| `server` | the session is the consent at the aggregator (its id and the accounts it reaches, never a credential), in the bundle the munni relay keeps for its scheduled syncs ([relay.md](relay.md)) | `gocardless`, `enablebanking` |
 
 A **credential bundle** (`cb_v1.…`) is the same seal around the login
 inputs, minted on request so a device can re-connect without asking again;
@@ -77,6 +77,17 @@ the same `session_expired`.
    becomes `awaiting_input`, and the consumer answers it on the session or
    job route. A `live_view` challenge streams the agent's page as JPEG frames
    the consumer relays to the human, whose taps and keystrokes flow back.
+   The agent captures with Chromium's own screencast (#429,
+   `LiveScreencast`): a frame only when the compositor drew something new,
+   acknowledged on arrival so a change is never dropped, softer (quality 45)
+   while the pointer moves and one sharp frame (80) once it settles, the
+   caret steadied by an inspector stylesheet the page cannot see, and no
+   frame kept from the start of a main-frame navigation until its commit is
+   checked against the allowed origins. It POSTs the newest frame (the
+   outbound-only leg it always was); the control plane holds that one frame
+   in memory and pushes it down `…/live/stream` to the consumer, munni's API,
+   which pushes it on to the device - one response per hop for the whole
+   login instead of one request per frame.
 3. The job succeeds with the session's material sealed into a bundle the
    consumer collects **once** from the session view; the session is `active`.
 4. Later, the consumer exchanges the bundle for a **ticket** (15 minutes) and

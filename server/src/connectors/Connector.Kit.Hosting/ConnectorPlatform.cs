@@ -285,6 +285,7 @@ public static class ConnectorPlatform
 
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ConnectorDbContext>();
+        DatabaseStartup.WaitForServerAsync(db.Database, app.Logger, TimeSpan.FromMinutes(5)).GetAwaiter().GetResult();
         db.EnsureCreatedOrMigrateAsync().GetAwaiter().GetResult();
 
         var statuses = scope.ServiceProvider.GetRequiredService<ProviderStatusService>();

@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useLgViewport } from '@/lib/viewport';
-import { useSpaceAccounts, useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceAccount, useSpaceAccounts, useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { EventFormSheet } from '@/features/events/EventsScreen';
+import { EventPickList } from '@/features/events/EventPickList';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
@@ -20,6 +21,7 @@ import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, humanizeBankKeys, orDefaultLabel, txTitle } from '@/lib/text';
+import { SearchableTitle } from './TitleSearch';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -27,14 +29,20 @@ import { Pill } from '@/ui/primitives';
 import { Sheet, hasOpenSheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, partNetCents, reimbursedInCats, totalReimbursedCents } from '@/domain/reimbursement';
 import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType, stampMovementSub } from '@/domain/categories';
-import { defaultFamilyFor } from '@/domain/defaultAccounts';
+import { cashWalletId, defaultFamilyFor } from '@/domain/defaultAccounts';
 import { isEventMoney } from '@/domain/events';
 import { primaryCatId } from '@/domain/splits';
 import { scaleCatsTo, scaleSplitsTo } from '@/domain/txSlices';
 import { ReviewPartDeck, partRecurringPrefill } from '@/features/review/ReviewScreen';
 import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
+import { BulkReceiptQueue } from '@/features/shopping/BulkReceiptQueue';
+import { receiptsToVerify } from '@/features/shopping/receiptWalk';
+import { useAttachableReceipts } from '@/application/connections';
+import { useProposedMatches } from '@/application/receiptLinks';
 import { ReimburseSection } from './ReimburseSection';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
+import { useCanEdit } from '@/app/useCanEdit';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from './PartCatsSheet';
 import type { CatsApplyEntry } from './PartCatsSheet';
@@ -44,14 +52,14 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf } from '@/domain/txKind';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { pairWithExistingRow, releasePeerLeg } from '@/application/counterPair';
-import { writeTxTransform } from '@/db/joined';
+import { asSpaceAccount, writeTxTransform } from '@/db/joined';
 import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { AccountRow, RecurringRow, TxSplit, TxSplitCat } from '@/db/types';
+import type { AccountRow, EventRow, RecurringRow, TxSplit, TxSplitCat } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -277,6 +285,20 @@ const offersLoanCount = (
   !!linked.balanceAsOf &&
   tx.date <= linked.balanceAsOf;
 
+/** #509 (user): the count-it-in offer lives on BOTH legs — the payment's
+ *  own counterparty row, and the loan's generated leg, which counts its
+ *  source in (the marker stays on the source) */
+const loanCountOffer = (
+  tx: SpaceTx,
+  account: AccountRow | undefined,
+  linkedAccount: AccountRow | undefined,
+  peer: SpaceTx | undefined,
+): { source: SpaceTx; loan: AccountRow } | null => {
+  if (linkedAccount && offersLoanCount(tx, linkedAccount)) return { source: tx, loan: linkedAccount };
+  if (account && peer && tx.id === mirrorTxId(peer.id) && offersLoanCount(peer, account)) return { source: peer, loan: account };
+  return null;
+};
+
 /** deleting a manual row (S3776: out of the screen): its mint goes with
  *  it — the manual counter's mirror is tombstoned and the balance it
  *  moved comes back (typed-splits v2) — and the row's own manual account
@@ -337,9 +359,7 @@ function transferPairState(
   return linkedAccount.source === 'manual' ? 'offerCreate' : 'awaiting';
 }
 
-/** the pair row: jump to the other leg, or release the link — #221: a
- *  default-ledger mirror keeps the jump but not the release (the link
- *  belongs to the ORIGIN row).
+/** the pair row: jump to the other leg, or release the link.
  *  #237 (user): the row reads like a reimbursement record now — who the
  *  other leg is, when, on which account and for how much — and the tap
  *  goes STRAIGHT to that transaction (no sheet in between). */
@@ -1157,7 +1177,7 @@ function DetailSplitSheets({
   setSplitStage: (stage: TxSplit[] | null) => void;
   completeOpen: boolean;
   setCompleteOpen: (open: boolean) => void;
-  activeEvents: readonly { id: string; name: string; icon?: string }[];
+  activeEvents: readonly EventRow[];
   lockedKind: boolean;
   /** r7: parts link recurring costs like whole transactions do */
   recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
@@ -1287,7 +1307,8 @@ function PartDetailBody({
   parts: readonly TxSplit[];
   accountName: string | undefined;
   ownStamp: boolean;
-  activeEvents: readonly { id: string; name: string; icon?: string }[];
+  /** #537: every event, archived ones included (the picker labels them) */
+  activeEvents: readonly EventRow[];
   allowedCatIds?: readonly string[];
   onManageSplits: () => void;
   /** opens another transaction (or a part) under the tree this detail lives in */
@@ -1761,21 +1782,15 @@ function PartDetailBody({
             <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
             <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
           </button>
-          {activeEvents.map((event) => (
-            <button
-              key={event.id}
-              data-testid={`tx-part-event-${event.id}`}
-              onClick={() => {
-                patchPart({ eventId: event.id });
-                setEventOpen(false);
-              }}
-              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
-            >
-              <Icon name={event.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
-              <span className="min-w-0 flex-1 truncate">{event.name}</span>
-              {part.eventId === event.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
-            </button>
-          ))}
+          <EventPickList
+            events={activeEvents}
+            selectedId={part.eventId}
+            testIdPrefix="tx-part-event-"
+            onPick={(id) => {
+              patchPart({ eventId: id });
+              setEventOpen(false);
+            }}
+          />
           {/* #251: the quick-create door the whole-tx picker has */}
           <button
             data-testid="tx-part-event-create"
@@ -1824,10 +1839,13 @@ function DetailAccountBlock({
   onUnpair,
   onEditCounter,
   onPickCounterpart,
+  readOnly,
 }: Readonly<{
   tx: SpaceTx;
   account: AccountRow | undefined;
   linkedAccount: AccountRow | undefined;
+  /** #505: the space is read-only to this identity — the block's own writes stay hidden */
+  readOnly?: boolean;
   /** the accounts as the space names them (#239) — the counterparty row speaks that name */
   spaceAccounts: readonly { id: string; name: string }[] | undefined;
   pairState: ReturnType<typeof transferPairState>;
@@ -1840,11 +1858,9 @@ function DetailAccountBlock({
   /** #255 r4: absent when the pair pointer resolves to nothing visible —
    *  the row then renders without the dead jump */
   onOpenPeer?: () => void;
-  /** absent on a default-ledger row (#221): the pair releases from the
-   *  origin side only */
   onUnpair?: () => void;
   /** #228: opens the transaction-level counterparty picker; absent =
-   *  the row is read-only here (default ledgers, containers hide it) */
+   *  the row is read-only here (containers and adjustments hide it) */
   onEditCounter?: () => void;
   /** #237: opens the counter-match sheet — point the pair at a row that
    *  already exists on the counter account */
@@ -1853,6 +1869,7 @@ function DetailAccountBlock({
   const { t, lang } = useLang();
   const { store, repo } = useData();
   const counterRow = !!linkedAccount || !!onEditCounter;
+  const loanCount = readOnly ? null : loanCountOffer(tx, account, linkedAccount, peer);
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
       <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink" data-testid="tx-detail-account-row">
@@ -1895,7 +1912,7 @@ function DetailAccountBlock({
               {/* pre-anchor payment (loans v2): dated before the loan's
                   known-true balance, so it did NOT move the balance —
                   the user can deliberately count it in, once */}
-              {linkedAccount && offersLoanCount(tx, linkedAccount) && (
+              {loanCount && (
                 <button
                   data-testid="tx-detail-loan-count"
                   disabled={loanCountBusy}
@@ -1904,8 +1921,8 @@ function DetailAccountBlock({
                     // that hides this button trails the write (review
                     // finding: a double-tap applied the delta twice)
                     setLoanCountBusy(true);
-                    void countPreAnchorTx(store, repo, { ...tx, linkedAccountId: linkedAccount.id } as never, () =>
-                      writeTxTransform(repo, tx, { loanCounted: 1 }),
+                    void countPreAnchorTx(store, repo, { ...loanCount.source, linkedAccountId: loanCount.loan.id } as never, () =>
+                      writeTxTransform(repo, loanCount.source, { loanCounted: 1 }),
                     ).finally(() => setLoanCountBusy(false));
                   }}
                   className="m-tap mt-0.5 block border-none bg-transparent p-0 text-left text-[11px] text-warning underline disabled:opacity-50"
@@ -1939,7 +1956,7 @@ function DetailAccountBlock({
           )}
         </div>
       )}
-      {pairState === 'offerCreate' && (
+      {pairState === 'offerCreate' && !readOnly && (
         <div className="px-4 pb-3">
           {/* #237: creating is one option — pointing at the existing row
               is the other, and neither happens silently anymore */}
@@ -1979,6 +1996,9 @@ export type OpenTx = (txId: string, part?: string) => void;
 export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ backTo?: string; openTx?: OpenTx }> = {}) { // NOSONAR(S3776)
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
+  // #505 (user): a space this identity only reads shows the transaction, never an edit door
+  const canEdit = useCanEdit();
+  const readOnlyRegion = canEdit ? undefined : true;
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [editOpen, setEditOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -2018,6 +2038,12 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const [bulkOffer, setBulkOffer] = useState<BulkOfferState | null>(null);
   // #268: the per-sibling counter-match queue a viaPeer bulk apply runs
   const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; accountId: string } | null>(null);
+  // #495 (user): the bulk siblings' receipts walk in turn afterwards — after the counter queue, over the ones it settled
+  const [receiptBulk, setReceiptBulk] = useState<SpaceTx[] | null>(null);
+  const pendingReceiptBulk = useRef<SpaceTx[] | null>(null);
+  const counterSettled = useRef(new Set<string>());
+  const receiptInventory = useAttachableReceipts();
+  const receiptProposals = useProposedMatches();
   // #141: a landed split offers itself to the splitless siblings —
   // mutually exclusive with the category offer (they share the bar)
   const [splitBulk, setSplitBulk] = useState<TxSplit[] | null>(null);
@@ -2057,12 +2083,9 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const account = useQuery(store, async () => (tx ? store.get('account', tx.accountId) : undefined), [tx?.accountId]);
-  const linkedAccount = useQuery(
-    store,
-    async () => (tx?.linkedAccountId ? store.get('account', tx.linkedAccountId) : undefined),
-    [tx?.linkedAccountId],
-  );
+  // #545: the names this space gave its accounts, never the global ones
+  const account = useSpaceAccount(tx?.accountId);
+  const linkedAccount = useSpaceAccount(tx?.linkedAccountId);
   const spaceAccounts = useSpaceAccounts();
   // a transfer into a loan account IS a payment on that loan (v2: the
   // account is the debt) — say so, matching the review card's debt row
@@ -2074,9 +2097,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     store,
     async () =>
       counterIban
-        ? (await store.allRows('account')).find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === counterIban)
+        ? asSpaceAccount(
+            store,
+            spaceId,
+            (await store.allRows('account')).find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === counterIban),
+          )
         : undefined,
-    [counterIban],
+    [counterIban, spaceId],
   );
   const cats = useCategories();
   const recurrings = useRecurrings();
@@ -2111,11 +2138,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     () => (tx ? resolvePairPeer(tx.id, effectivePeerId, allTxs) : null),
     [tx, effectivePeerId, allTxs],
   );
-  const peerAccount = useQuery(
-    store,
-    async () => (resolvedPeer ? store.get('account', resolvedPeer.row.accountId) : undefined),
-    [resolvedPeer?.row.accountId],
-  );
+  const peerAccount = useSpaceAccount(resolvedPeer?.row.accountId);
   // …and HEALS the missing reciprocal, once per pairing, so every other
   // surface (lists, match-sheet exclusion, the other detail) recovers.
   // The key latch keeps the heal from re-arming a pair mid-unpair.
@@ -2125,10 +2148,11 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     const key = `${tx.id}:${tx.transferPeerId ?? ''}:${reversePeer?.id ?? ''}`;
     if (healedPairRef.current === key) return;
     healedPairRef.current = key;
+    const upkeep = repo.upkeep(); // #505: a heal, not the person's edit — skipped where they only read
     if (tx.transferPeerId) {
       const peer = allTxs.find((row) => row.id === tx.transferPeerId && row.deleted === 0);
       if (peer && !peer.transferPeerId && !peer.splits?.some((s) => s.transferPeerId === tx.id)) {
-        void writeTxTransform(repo, peer, { transferPeerId: tx.id });
+        void writeTxTransform(upkeep, peer, { transferPeerId: tx.id });
       }
     } else if (reversePeer?.transferPeerId === tx.id && !tx.splits?.some((s) => s.transferPeerId === reversePeer.id)) {
       // row-level pointer only — a PART's pair belongs to the part.
@@ -2136,7 +2160,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       // container row-level; lifting it here minted a duplicate
       // row-level pair on top of the part's own (the corruption the
       // user's screenshots walked into).
-      void writeTxTransform(repo, tx, { transferPeerId: reversePeer.id });
+      void writeTxTransform(upkeep, tx, { transferPeerId: reversePeer.id });
     }
   }, [tx, allTxs, reversePeer, repo]);
 
@@ -2148,7 +2172,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   }, [reimbNow, bulkOffer]);
 
   // display-currency lens: the headline converts at THIS day's fixing
-  const { fmt, ensureDates } = useDisplayMoney();
+  const { fmt, ensureDates, fmtSensitive } = useDisplayMoney();
   const txDate = tx?.date;
   useEffect(() => {
     if (txDate) ensureDates([txDate]);
@@ -2189,12 +2213,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     }
   };
   // #237 (user): unlinking asks first when there is something at stake —
-  // a DEFAULT counter resets the whole story, munni's own generated leg
-  // can be removed or kept; a picked/bank pair just releases
+  // the cash wallet (the one default, #546) resets the whole story,
+  // munni's own generated leg can be removed or kept; a picked/bank pair
+  // just releases
   const unpair = () => {
     // the deterministic id decides, not the (async) account row — a tap
-    // racing the query must never route a default to the wrong question
-    if (tx.linkedAccountId?.startsWith('defaultacct_')) setUnpairConfirm('default');
+    // racing the query must never route the wallet to the wrong question
+    if (tx.linkedAccountId === cashWalletId(tx.spaceId)) setUnpairConfirm('default');
     else if (tx.transferPeerId === mirrorTxId(tx.id)) setUnpairConfirm('mint');
     else releasePair();
   };
@@ -2224,18 +2249,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       offer?.link && offer.link.accountId === tx.linkedAccountId ? { ...offer, link: { ...offer.link, viaPeer: true } } : offer,
     );
   };
-  // #221: a DEFAULT account's ledger is system-managed — its rows (the
-  // minted mirror legs and balance adjustments) are read-only; they are
-  // managed from the ORIGIN transaction, or by adjusting the balance.
-  // #348: the cash wallet takes hand entries, so its rows stay editable
-  const onDefaultLedger = !!account?.defaultFor && account.defaultFor !== 'cash';
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize. The
   // part a PARTIAL link left open is the user's to file (user ss
   // 2026-10-05: +250 settled 163, the uncategorized 87 was stuck): the
   // settled slice stays pinned inside the editor, the remainder is editable
   const openRemainder = (tx.cats ?? []).some((c) => c.catId !== REIMBURSED_ID && c.amountCents !== 0);
-  const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0 && !openRemainder) || onDefaultLedger;
+  const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0 && !openRemainder;
   // the recurring OWNS the category (user rule 2026-07-28): a linked row
   // only picks between the recurring's category and expected
   // reimbursement — the editor's picker enforces it
@@ -2245,7 +2265,8 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   // carry the stories
   const parts = tx.splits ?? [];
   const multiPart = parts.length > 1;
-  const activeEventsList = (events ?? []).filter((e) => e.archived !== 1);
+  // #537: pickers list archived events too — labelled, after the active ones
+  const activeEventsList = events ?? [];
   const activeRecsList = (recurrings ?? []).filter((r) => r.active === 1);
   // the completion stage: values Done stages; Apply writes once whole
   const stageComplete = stagedSplitComplete(splitStage);
@@ -2369,9 +2390,12 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const applyCatsBulk = async () => {
     if (!catsBulk) return;
     const picked = catsTargets.filter((target) => catsSelected.has(target.id));
+    // #495: the siblings whose receipt wants a look — read before the writes settle their review
+    const walk = receiptsToVerify(picked, receiptInventory, receiptProposals);
     const n = await writeCatsBulk(transform, catsBulk, picked);
     if (n > 0) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${n}`);
     setCatsBulk(null);
+    if (walk.length > 0) setReceiptBulk(walk);
   };
 
   const bulkTargets = catBulkTargets(allTxs, tx, bulkOffer);
@@ -2400,9 +2424,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const applyBulk = async () => {
     if (!bulkOffer) return;
     const picked = bulkTargets.filter((target) => bulkSelected.has(target.id));
+    // #495: the siblings whose receipt wants a look — read before the writes settle their review
+    const walk = receiptsToVerify(picked, receiptInventory, receiptProposals);
     // #268 (user): a SPECIFIC counter pick cannot be copied — each
     // sibling asks for its own counter row (or links and waits)
     if (bulkOffer.link?.viaPeer && picked.length > 0) {
+      counterSettled.current = new Set();
+      pendingReceiptBulk.current = walk.length > 0 ? walk : null;
       setCounterBulk({ items: picked, catId: bulkOffer.catId, accountId: bulkOffer.link.accountId });
       setBulkOffer(null);
       return;
@@ -2422,6 +2450,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
     }
     if (picked.length) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${picked.length}`);
     setBulkOffer(null);
+    if (walk.length > 0) setReceiptBulk(walk);
   };
 
   // #268: one queue step — the sibling gets the category, the link and
@@ -2440,6 +2469,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       null,
     );
     if (peerId) await pairWithExistingRow(store, repo, spaceId, item, peerId, allTxs);
+    counterSettled.current.add(item.id);
   };
   const saveNotes = (notes: string) => {
     if (notes === (tx.notes ?? '')) return;
@@ -2463,11 +2493,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const savePartLabel = (raw: string): void => writePartLabel(transform, tx, partView, partDefault, raw);
   const renameProps = renameSheetProps(tx, partView, partDefault, savePartLabel, renameTitle);
   const screenTitle = detailScreenTitle(tx, parts, partView, t);
-  // #221: a default-ledger row offers NO edit door at all — no pencil,
-  // no rename; the origin transaction (or the balance edit) is the hand
-  const trailingAction = onDefaultLedger
-    ? undefined
-    : detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true));
+  const trailingAction = canEdit ? detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true)) : null;
   // the values editor edits the STAGE when one exists, else the stored
   // parts; classic mode stays uncontrolled
   const editorValue = valuesEditorValue(splitStage, multiPart, parts);
@@ -2475,7 +2501,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-tx-detail">
       <AppBar
-        title={screenTitle}
+        title={<SearchableTitle text={screenTitle} query={txTitle(tx)} testId="tx-detail-search-web" />}
         leading={
           <DetailBackButton panes={panes} onClose={() => void navigate({ to: backTo, replace: true })} t={t} />
         }
@@ -2483,7 +2509,9 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
       />
       {!tx.importRef && <TxFormSheet open={editOpen} onOpenChange={setEditOpen} tx={tx} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mt-3" testId="tx-detail-readonly-note" />
         {partView ? (
+          <div inert={readOnlyRegion}>
           <PartDetailBody
             key={partView.id}
             tx={tx}
@@ -2496,6 +2524,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             onManageSplits={openValuesEditor}
             open={open}
           />
+          </div>
         ) : (
           <>
         <div className="flex flex-col items-center py-6 text-center">
@@ -2554,16 +2583,17 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           onOpenPeer={
             resolvedPeer ? () => open(resolvedPeer.nav.txId, resolvedPeer.nav.part ?? undefined) : undefined
           }
-          onUnpair={onDefaultLedger ? undefined : unpair}
+          onUnpair={canEdit ? unpair : undefined}
           // #265 (user): a recurring-narrowed row's counter door STAYS
           // open — a fully inert row left funding picks unescapable; the
           // sheet's detach is the way out (it resets the category too)
           onEditCounter={
-            multiPart || onDefaultLedger || tx.adjustment === 1 || tx.txType === 'adjustment'
+            !canEdit || multiPart || tx.adjustment === 1 || tx.txType === 'adjustment'
               ? undefined
               : () => setCounterPickOpen(true)
           }
-          onPickCounterpart={onDefaultLedger ? undefined : () => setMatchOpen(true)}
+          onPickCounterpart={canEdit ? () => setMatchOpen(true) : undefined}
+          readOnly={!canEdit}
         />
 
         {/* block: categories — ONE edit affordance for the whole block
@@ -2571,10 +2601,9 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             r9: on a container the block lists PARTS, and says so */}
         <CategoriesHeader
           locked={categoryLocked}
-          lockLabel={onDefaultLedger ? t('tx.defaultLedgerLocked') : undefined}
           byRecurring={!!recurringAllowedCats}
           multiPart={multiPart}
-          onEdit={openCategoriesEditor}
+          onEdit={canEdit ? openCategoriesEditor : undefined}
         />
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
           <CategorySlices
@@ -2583,7 +2612,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             fallbackCat={cat}
             fallbackColor={color}
             // #328 (user): locked = no door — undefined drops the chevron
-            onEdit={categoryLocked ? undefined : openCategoriesEditor}
+            onEdit={categoryLocked || !canEdit ? undefined : openCategoriesEditor}
             onOpenPart={(id) => open(tx.id, id)}
           />
           {bulkOffer && (
@@ -2621,13 +2650,12 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         {/* everything below the categories card follows the space's saved
             order/visibility (#232: actions and the facts card joined the
             registry — same mechanics as Home). r7/r9: a container carries
-            no notes/reimbursements/receipts — the parts do. #221: a
-            default-ledger row carries none either. Actions and facts run
-            for every row, gated only by their own content. */}
+            no notes/reimbursements/receipts — the parts do. Actions and
+            facts run for every row, gated only by their own content. */}
         {resolveTxDetailBlocks(space)
           .filter((entry) => !entry.hidden)
           .map((entry) => {
-            const attachable = !multiPart && !onDefaultLedger;
+            const attachable = !multiPart;
             const section: Record<TxDetailBlockId, ReactNode> = {
               // #213 (user): the split door leads the actions, out of the
               // categories card; recurring + event links follow (expense,
@@ -2666,13 +2694,17 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
                 </>
               ) : null,
             };
-            return <div key={entry.id}>{section[entry.id]}</div>;
+            // #505: every block but the facts edits the row — inert where the space is read-only
+            return (
+              <div key={entry.id} inert={entry.id === 'facts' ? undefined : readOnlyRegion}>
+                {section[entry.id]}
+              </div>
+            );
           })}
 
         {/* #232: actions/facts are customizable on every row now — the
-            door stays on containers too; a read-only DEFAULT-ledger row
-            keeps none of its doors (#221) */}
-        {!onDefaultLedger && (
+            door stays on containers too */}
+        {canEdit && (
           <button
             data-testid="tx-detail-customize"
             onClick={() => void navigate({ to: '/tx-customize' })}
@@ -2684,10 +2716,8 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         )}
 
         {/* manual rows may leave again (user request); bank rows are the
-            bank's truth and only ever tombstone via their feed. #221: a
-            default-ledger row leaves only with its ORIGIN (the link) or
-            by a counter-adjustment — never by hand */}
-        {!tx.importRef && !tx.feedSpaceId && !onDefaultLedger && (
+            bank's truth and only ever tombstone via their feed */}
+        {canEdit && !tx.importRef && !tx.feedSpaceId && (
           <button
             data-testid="tx-detail-delete"
             onClick={() => setConfirmDelete(true)}
@@ -2749,9 +2779,15 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           onDone={(resolved) => {
             if (resolved > 0) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${resolved}`);
             setCounterBulk(null);
+            // #495: the receipt walk follows, over the siblings the queue settled
+            const walk = (pendingReceiptBulk.current ?? []).filter((item) => counterSettled.current.has(item.id));
+            pendingReceiptBulk.current = null;
+            if (walk.length > 0) setReceiptBulk(walk);
           }}
         />
       )}
+      {/* #495 (user): the per-sibling receipt walk a bulk apply leaves behind */}
+      {receiptBulk && <BulkReceiptQueue queue={receiptBulk} onDone={() => setReceiptBulk(null)} />}
       {/* #237 (user): unlinking a DEFAULT counter resets the story — say
           so before doing it */}
       <DangerConfirmSheet
@@ -2891,7 +2927,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             </div>
             <div className="flex items-center justify-between border-b border-line-2 px-1 py-3 text-[14px]">
               <span className="text-ink-3">{t('acct.balanceNow')}</span>
-              <span className="m-num text-ink">{fmtCents(counterAccount.balanceCents, counterAccount.currency, lang)}</span>
+              <span className="m-num text-ink">{fmtSensitive(counterAccount.balanceCents, counterAccount.currency, { asRecorded: true })}</span>
             </div>
             <div className="flex items-center justify-between px-1 py-3 text-[14px]">
               <span className="text-ink-3">{t('tx.counterpartySource')}</span>
@@ -2916,23 +2952,17 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
             <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
             {!tx.eventId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
           </button>
-          {(events ?? [])
-            .filter((e) => e.archived !== 1)
-            .map((e) => (
-              <button
-                key={e.id}
-                data-testid={`tx-event-${e.id}`}
-                onClick={() => {
-                  void transform(tx, { eventId: e.id }, 'txLink');
-                  setEventOpen(false);
-                }}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink last:border-0"
-              >
-                <Icon name={e.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
-                <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                {tx.eventId === e.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
-              </button>
-            ))}
+          {/* #537: archived events labelled after the active ones, each with a peek */}
+          <EventPickList
+            events={events ?? []}
+            selectedId={tx.eventId}
+            testIdPrefix="tx-event-"
+            onPick={(id) => {
+              void transform(tx, { eventId: id }, 'txLink');
+              setEventOpen(false);
+            }}
+          />
+
           <button
             data-testid="tx-event-create"
             onClick={() => {
@@ -3067,11 +3097,10 @@ function recurringCatConstraint(
  *  "Split transactions", not "Categories". */
 function CategoriesHeader({
   locked,
-  lockLabel,
   byRecurring,
   multiPart,
   onEdit,
-}: Readonly<{ locked: boolean; lockLabel?: string; byRecurring?: boolean; multiPart?: boolean; onEdit: () => void }>) {
+}: Readonly<{ locked: boolean; byRecurring?: boolean; multiPart?: boolean; onEdit?: () => void }>) {
   const { t } = useLang();
   return (
     <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
@@ -3089,12 +3118,13 @@ function CategoriesHeader({
       {locked && (
         <span className="flex items-center gap-1 text-[11px] text-ink-4" data-testid="tx-detail-cats-locked">
           <Icon name="lock-outline" size={12} />
-          {lockLabel ?? t('reimb.categoryLocked')}
+          {t('reimb.categoryLocked')}
         </span>
       )}
       {/* #200: on a container the Edit pencil is gone — Manage splits
-          below is the one door; a whole transaction keeps it */}
-      {!locked && !multiPart && (
+          below is the one door; a whole transaction keeps it (#505: an
+          absent onEdit = a space this identity only reads) */}
+      {!locked && !multiPart && onEdit && (
         <button
           data-testid="tx-detail-cats-edit"
           aria-label={t('action.edit')}

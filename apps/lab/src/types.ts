@@ -69,6 +69,8 @@ export interface ProviderEntry {
   runtime?: string;
   agent?: { required?: boolean; class?: string; egress?: { country?: string; kind?: string } | null; desktopBrowser?: boolean } | null;
   unattendedFetch?: boolean;
+  /** #526: the platform's own stand-in party (the mocks) */
+  fixture?: boolean;
   loginNeedsHeadedAgent?: boolean;
   logout?: string;
   offersCredentialStore?: boolean;
@@ -110,6 +112,8 @@ export interface AgentView {
   profiles: ProfileView[];
   /** a hosted private slot (#420 A2): munni's own container for one person at a time */
   hosted?: boolean;
+  /** enrolled for the operator's own lab: it takes the lab's runs beside the fleet (#576) */
+  lab?: boolean;
   bound?: boolean;
   boundAt?: string | null;
   resetting?: boolean;

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import type { CategoryRow, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
-import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { logActivity } from '@/application/activity';
 import { hapticNotify } from '@/lib/platform';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -13,11 +14,11 @@ import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
+import { IconPicker } from '@/ui/IconPicker';
 import { Sheet } from '@/ui/Sheet';
-import { SearchField } from '@/ui/SearchField';
 import {
-  copyCategoryToSpace,
-  copyableUnits,
+  copyCount,
+  copyGroups,
   iconConflict,
   createMainCategory,
   createSubCategory,
@@ -28,8 +29,9 @@ import type { CategoryChanges, PendingCommit } from './categoryOps';
 import { catName, useCategories } from './useCategories';
 import type { Cat } from './useCategories';
 import { takeCategoriesCreateIntent } from './categoriesHandoff';
+import { CopyCategoriesSheet } from './CopyCategoriesSheet';
 import type { TFunc } from '@/i18n';
-import { MDI_NAMES } from '@/generated/mdiNames';
+import { CATEGORY_ICONS, firstFreeIcon } from './categoryIcons';
 import { categoryNameConflict } from '@/domain/categoryNames';
 import { LOCKED_MAIN_IDS } from '@/domain/categories';
 import { SpecialCatMark } from './SpecialCatMark';
@@ -40,16 +42,6 @@ const NAME_ERROR_KEYS = {
   subNamedLikeParent: 'cats.nameIsParent',
   duplicateSub: 'cats.nameDuplicateSub',
 } as const;
-
-// curated MDI icons for custom categories
-const ICONS = [
-  'silverware-fork-knife', 'coffee-outline', 'cart-outline', 'cash', 'gift-outline', 'home-outline',
-  'car-outline', 'bus', 'bike', 'airplane', 'gamepad-variant-outline', 'music',
-  'movie-open-outline', 'book-open-outline', 'school-outline', 'heart-outline', 'medical-bag', 'pill',
-  'dumbbell', 'run', 'tshirt-crew-outline', 'shoe-sneaker', 'laptop', 'cellphone',
-  'sofa-outline', 'flower-outline', 'paw', 'baby-carriage', 'beach', 'tent',
-  'tools', 'lightning-bolt-outline', 'water-outline', 'fire', 'leaf', 'tag-outline',
-];
 
 const COLORS = [
   '#E67E22', '#3498DB', '#27AE60', '#9B59B6', '#E74C3C', '#1ABC9C',
@@ -229,6 +221,35 @@ function GroupHeader({
   );
 }
 
+/** a main while a sub is lifted: a drop row, or a refused one that says why */
+function DropRow({ parent, state, target, home, t }: Readonly<{ parent: Cat; state: DropState; target: boolean; home: boolean; t: TFunc }>) {
+  if (state !== 'open') {
+    return (
+      <div
+        data-testid={`cats-nodrop-${parent.id}`}
+        data-reason={state}
+        className="mt-2 flex items-center gap-2.5 rounded-card border border-dashed border-line px-4 py-3.5 opacity-45"
+      >
+        <Icon name={state === 'locked' ? 'lock-outline' : parent.icon} size={17} color="var(--m-ink-4)" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink-3">{catName(parent, t)}</span>
+        <span className="text-[11px] text-ink-4">{t(state === 'locked' ? 'cats.noDropLocked' : 'cats.noDropIcon')}</span>
+      </div>
+    );
+  }
+  let tone = 'border-line bg-surface';
+  if (target) tone = 'border-accent bg-accent-soft';
+  else if (home) tone = 'border-line bg-surface opacity-55';
+  return (
+    <div data-testid={`cats-drop-${parent.id}`} className={`mt-2 flex items-center gap-2.5 rounded-card border px-4 py-3.5 transition-colors ${tone}`}>
+      <Icon name={parent.icon} size={17} color={parent.color} />
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: parent.color }}>
+        {catName(parent, t)}
+      </span>
+      <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold text-ink-3">{t(`tx.type.${parent.txTypes[0]}`)}</span>
+    </div>
+  );
+}
+
 /** the parent a sub form files under: a new sub's parent, or an edited sub's (possibly moved) one */
 const parentIdOf = (mode: FormMode | null, moveTo: string | null): string | undefined => {
   if (mode?.kind === 'newSub') return mode.parentId;
@@ -238,6 +259,21 @@ const parentIdOf = (mode: FormMode | null, moveTo: string | null): string | unde
 /** the row an edit form stands for — excluded from its own conflict checks */
 const selfIdOf = (mode: FormMode | null): string | undefined =>
   mode?.kind === 'editMain' || mode?.kind === 'editSub' ? mode.row.id : undefined;
+/** what a main is to a lifted sub: a place to drop it, or refused — a locked special (#385) or a
+ *  main where a sub already wears the lifted one's icon (#389: siblings never share a face) */
+type DropState = 'open' | 'locked' | 'icon';
+const dropStateOf = (parentId: string, lifted: CategoryRow, all: readonly Cat[]): DropState => {
+  if (LOCKED_MAIN_IDS.has(parentId)) return 'locked';
+  if (parentId !== lifted.parentId && iconConflict({ icon: lifted.icon, parentId, selfId: lifted.id }, all)) return 'icon';
+  return 'open';
+};
+/** #389: the sub form's icon is one a sibling wears — a clash the person CHOSE (a new pick or a
+ *  move); a sub that already shared its face before the rule still saves while neither moves */
+const iconClashes = (mode: FormMode | null, icon: string, moveTo: string | null, worn: ReadonlySet<string>): boolean => {
+  if (mode?.kind !== 'newSub' && mode?.kind !== 'editSub') return false;
+  if (!worn.has(icon)) return false;
+  return mode.kind === 'newSub' || icon !== mode.row.icon || moveTo !== null;
+};
 
 export function ManageCategoriesScreen() {
   // fold state (user redesign): everything starts collapsed
@@ -253,21 +289,12 @@ export function ManageCategoriesScreen() {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
+  // #505: the space's categories are its members' to change — a reader only browses them
+  const canEdit = useCanEdit();
   const [mode, setMode] = useState<FormMode | null>(null);
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState(ICONS[0]);
+  const [icon, setIcon] = useState(CATEGORY_ICONS[0]);
   const [iconQuery, setIconQuery] = useState('');
-  // #389: a sibling already wears the picked icon
-  const [iconError, setIconError] = useState(false);
-  // #390: the other spaces' custom categories this space lacks, ticked for copying
-  const [copyPicked, setCopyPicked] = useState<ReadonlySet<string>>(new Set());
-  const toggleCopyUnit = (id: string, on: boolean) =>
-    setCopyPicked((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
   const [color, setColor] = useState(COLORS[0]);
   const [txType, setTxType] = useState<TxType>('expense');
   const [moveTo, setMoveTo] = useState<string | null>(null);
@@ -291,10 +318,14 @@ export function ManageCategoriesScreen() {
   // event dispatch)
   const dragActiveRef = useRef(false);
 
+  // #572: the drop rows keep the last lifted sub while they fold away after the drop
+  const [lifted, setLifted] = useState<CategoryRow | null>(null);
+
   const startDrag = (row: CategoryRow, clientY: number) => {
     dragActiveRef.current = true;
     pointerY.current = clientY;
     navigator.vibrate?.(15); // lift feedback where supported
+    setLifted(row);
     setDragging(row);
   };
   const [pending, setPending] = useState<PendingCommit | null>(null);
@@ -321,26 +352,17 @@ export function ManageCategoriesScreen() {
   const rowById = (id: string) => customRows?.find((r) => r.id === id);
 
   // #390: what the user's other spaces have that this one lacks
-  const copyUnits = useQuery(
+  const copyable = useQuery(
     store,
-    async () => copyableUnits(spaceId, (await store.allRows('space')).filter((s) => s.deleted === 0), await store.allRows('category')),
+    async () => copyGroups(spaceId, (await store.allRows('space')).filter((s) => s.deleted === 0), await store.allRows('category')),
     [spaceId],
   );
-  const copySelected = async () => {
-    const chosen = (copyUnits ?? []).filter((u) => copyPicked.has(u.row.id));
-    for (const unit of chosen) {
-      await copyCategoryToSpace(store, repo, spaceId, unit.row);
-      void logActivity(store, repo, spaceId, 'catAdd', unit.row.name);
-    }
-    setCopyPicked(new Set());
-    setCopyOpen(false);
-  };
+  const copyTotal = copyCount(copyable ?? []);
 
   const openNewMain = () => {
     setName('');
-    setIcon(ICONS[0]);
+    setIcon(CATEGORY_ICONS[0]);
     setIconQuery(''); // #384: a search never outlives the sheet
-    setIconError(false);
     setColor(COLORS[0]);
     setTxType('expense');
     setNameError(null); // #247: a stale conflict must not flash into a fresh form
@@ -355,10 +377,8 @@ export function ManageCategoriesScreen() {
   const openNewSub = (parentId: string) => {
     setName('');
     // #389: siblings never share an icon — start on the first curated one that is still free
-    const worn = new Set(cats.childrenOf(parentId).map((c) => c.icon));
-    setIcon(ICONS.find((candidate) => !worn.has(candidate)) ?? ICONS[0]);
+    setIcon(firstFreeIcon(new Set(cats.childrenOf(parentId).map((c) => c.icon))));
     setIconQuery('');
-    setIconError(false);
     setNameError(null); // #247
     setAttempted(false);
     setMode({ kind: 'newSub', parentId });
@@ -369,7 +389,6 @@ export function ManageCategoriesScreen() {
     setName(row.name ?? '');
     setIcon(row.icon);
     setIconQuery('');
-    setIconError(false);
     setColor(row.color || COLORS[0]);
     setTxType(row.txType);
     setMoveTo(null);
@@ -399,16 +418,21 @@ export function ManageCategoriesScreen() {
       parentId: cat.parentId,
     }));
 
+  // #389: the icons the form's siblings already wear (the row being edited excluded) — refused in the grid
+  const wornIcons = (() => {
+    const parentId = parentIdOf(mode, moveTo);
+    if (!parentId) return new Set<string>();
+    const selfId = selfIdOf(mode);
+    return new Set(cats.childrenOf(parentId).filter((c) => c.id !== selfId).map((c) => c.icon));
+  })();
+  const iconBlocked = iconClashes(mode, icon, moveTo, wornIcons);
+
   const save = async () => {
-    if (!mode || !name.trim()) return;
+    if (!mode || !name.trim() || iconBlocked) return;
     const candidateParentId = parentIdOf(mode, moveTo);
     const conflict = categoryNameConflict({ name, parentId: candidateParentId, selfId: selfIdOf(mode) }, namedCategories());
     if (conflict) {
       setNameError(conflict);
-      return;
-    }
-    if (mode.kind !== 'newMain' && mode.kind !== 'editMain' && iconConflict({ icon, parentId: candidateParentId, selfId: selfIdOf(mode) }, cats.all)) {
-      setIconError(true);
       return;
     }
     if (mode.kind === 'newMain') {
@@ -488,7 +512,7 @@ export function ManageCategoriesScreen() {
     const onUp = () => {
       const targetId = dropTargetRef.current;
       endDrag();
-      if (!targetId || targetId === dragging.parentId || LOCKED_MAIN_IDS.has(targetId)) return;
+      if (!targetId || targetId === dragging.parentId || dropStateOf(targetId, dragging, cats.all) !== 'open') return;
       // naming rules apply to drags too: the target parent may already
       // hold a sub with this name (or the name IS a parent's)
       const conflict = categoryNameConflict(
@@ -522,12 +546,11 @@ export function ManageCategoriesScreen() {
         let dy = 0;
         if (pointerY.current < rect.top + zone) dy = -Math.ceil((rect.top + zone - pointerY.current) / 6);
         else if (pointerY.current > rect.bottom - zone) dy = Math.ceil((pointerY.current - (rect.bottom - zone)) / 6);
-        if (dy !== 0) {
-          scroller.scrollTop += dy;
-          positionGhost();
-          setDropTarget(targetUnderRail());
-        }
+        if (dy !== 0) scroller.scrollTop += dy;
       }
+      // #572: the list folds over a few frames under a finger that may stand still — every frame re-anchors
+      positionGhost();
+      setDropTarget(targetUnderRail());
       raf = requestAnimationFrame(tick);
     });
     positionGhost(); // anchor before the first move
@@ -546,13 +569,6 @@ export function ManageCategoriesScreen() {
   }, [dragging]);
 
   const editing = mode?.kind === 'editMain' || mode?.kind === 'editSub';
-  // #389: the icons the form's siblings already wear (the row being edited excluded) — dimmed in the grid
-  const wornIcons = (() => {
-    const parentId = parentIdOf(mode, moveTo);
-    if (!parentId) return new Set<string>();
-    const selfId = selfIdOf(mode);
-    return new Set(cats.childrenOf(parentId).filter((c) => c.id !== selfId).map((c) => c.icon));
-  })();
   const isMainForm = mode?.kind === 'newMain' || mode?.kind === 'editMain';
   let formParent = null;
   if (mode?.kind === 'newSub') formParent = cats.byId(mode.parentId);
@@ -574,13 +590,16 @@ export function ManageCategoriesScreen() {
         trailing={
           <>
             <HelpButton tourId="categories" />
-            <IconButton label={t('cats.newMain')} testId="cats-add" onClick={openNewMain}>
-              <Icon name="plus" size={22} />
-            </IconButton>
+            {canEdit && (
+              <IconButton label={t('cats.newMain')} testId="cats-add" onClick={openNewMain}>
+                <Icon name="plus" size={22} />
+              </IconButton>
+            )}
           </>
         }
       />
       <div ref={scrollRef} className={`relative min-h-0 flex-1 overflow-y-auto px-5 pb-6 ${dragging ? 'select-none' : ''}`}>
+        <ReadOnlyNote className="mt-2" testId="cats-readonly-note" />
         {dragError && (
           <p
             className="mt-2 rounded-card border border-negative/40 bg-negative/10 px-3 py-2 text-[12px] text-negative"
@@ -589,66 +608,36 @@ export function ManageCategoriesScreen() {
             {t(NAME_ERROR_KEYS[dragError])}
           </p>
         )}
-        {(copyUnits?.length ?? 0) > 0 && (
+        {canEdit && copyTotal > 0 && (
           <button
             data-testid="cats-copy-open"
             onClick={() => setCopyOpen(true)}
             className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-accent bg-accent-soft px-4 py-3 text-left text-[13px] font-medium text-accent-deep"
           >
             <Icon name="content-copy" size={17} />
-            <span className="min-w-0 flex-1">{t('cats.copyBanner', { n: copyUnits?.length ?? 0 })}</span>
+            <span className="min-w-0 flex-1">{t(copyTotal === 1 ? 'cats.copyBannerOne' : 'cats.copyBanner', { n: copyTotal })}</span>
             <Icon name="chevron-right" size={17} />
           </button>
         )}
         {cats.allParents.map((parent) => {
           const mainHidden = cats.hiddenMains.has(parent.id);
-          if (dragging) {
-            if (mainHidden) return null; // hidden mains take no drops
-            // #385: a locked special main takes no sub — not through the form, not through a drop
-            if (LOCKED_MAIN_IDS.has(parent.id)) {
-              return (
-                <div
-                  key={parent.id}
-                  data-testid={`cats-nodrop-${parent.id}`}
-                  className="mt-2 flex items-center gap-2.5 rounded-card border border-dashed border-line px-4 py-3.5 opacity-45"
-                >
-                  <Icon name="lock-outline" size={17} color="var(--m-ink-4)" />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink-3">{catName(parent, t)}</span>
-                  <span className="text-[11px] text-ink-4">{t('cats.noDropLocked')}</span>
-                </div>
-              );
-            }
-            // fold mode: every main collapses into one fat drop row, so
-            // even a long list fits a couple of screens while dragging
-            let foldClass = 'border-line bg-surface';
-            if (dropTarget === parent.id) foldClass = 'border-accent bg-accent-soft';
-            else if (parent.id === dragging.parentId) foldClass = 'border-line bg-surface opacity-55';
-            return (
-              <div
-                key={parent.id}
-                data-cat-group={parent.id}
-                data-testid={`cats-drop-${parent.id}`}
-                className={`mt-2 flex items-center gap-2.5 rounded-card border px-4 py-3.5 transition-colors ${foldClass}`}
-              >
-                <Icon name={parent.icon} size={17} color={parent.color} />
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: parent.color }}>
-                  {catName(parent, t)}
-                </span>
-                <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold text-ink-3">
-                  {t(`tx.type.${parent.txTypes[0]}`)}
-                </span>
-              </div>
-            );
-          }
+          // fold mode: every main collapses into one fat drop row, so even a long list fits a couple of
+          // screens while dragging. #572 (user): both views stay in place and fold into each other —
+          // the swap was one frame. Hidden mains take no drops; refused ones say why (#385, #389)
+          const drop = lifted && !mainHidden ? dropStateOf(parent.id, lifted, cats.all) : null;
           return (
-            <div key={parent.id} data-cat-group={parent.id} className={mainHidden ? 'opacity-55' : ''}>
+            <div key={parent.id} data-cat-group={!dragging || drop === 'open' ? parent.id : undefined} className={mainHidden ? 'opacity-55' : ''}>
+              {/* -mx-2/px-2: the fold clips, and the hold highlight reaches past the header row */}
+              <div className="-mx-2">
+              <Collapse open={!dragging}>
+              <div className="px-2">
               <GroupHeader
                 parent={parent}
                 mainHidden={mainHidden}
                 isExpanded={expandedGroups.has(parent.id)}
                 onToggle={() => toggleGroup(parent.id)}
-                onMenu={() => setGroupMenu(parent)}
-                onEdit={parent.custom ? () => openEdit(parent) : undefined}
+                onMenu={() => canEdit && setGroupMenu(parent)}
+                onEdit={parent.custom && canEdit ? () => openEdit(parent) : undefined}
                 t={t}
               />
               {mainHidden && (
@@ -667,11 +656,11 @@ export function ManageCategoriesScreen() {
                     <SubCatRow
                       cat={cat}
                       parentColor={parent.color}
-                      onEdit={() => openEdit(cat)}
-                      onMenu={() => setSubMenu(cat)}
+                      onEdit={() => canEdit && openEdit(cat)}
+                      onMenu={() => canEdit && setSubMenu(cat)}
                       t={t}
                       onDragStart={
-                        cat.custom && !cat.isOther && !cat.isParent
+                        canEdit && cat.custom && !cat.isOther && !cat.isParent
                           ? (clientY) => {
                               const row = rowById(cat.id);
                               if (row) startDrag(row, clientY);
@@ -683,7 +672,7 @@ export function ManageCategoriesScreen() {
                   </div>
                 ))}
                 {/* #382 (user): the add door sits below "Other", where the new sub will land */}
-                {!LOCKED_MAIN_IDS.has(parent.id) && (
+                {canEdit && !LOCKED_MAIN_IDS.has(parent.id) && (
                   <>
                     <div className="mx-4 h-px bg-line-2" />
                     <button
@@ -699,6 +688,12 @@ export function ManageCategoriesScreen() {
               </div>
               </Collapse>
               )}
+              </div>
+              </Collapse>
+              </div>
+              <Collapse open={!!dragging && !mainHidden}>
+                {lifted && drop && <DropRow parent={parent} state={drop} target={dropTarget === parent.id} home={parent.id === lifted.parentId} t={t} />}
+              </Collapse>
             </div>
           );
         })}
@@ -823,7 +818,6 @@ export function ManageCategoriesScreen() {
           setNameError(null);
           setAttempted(false);
           setIconQuery(''); // #384
-          setIconError(false);
         }}
         title={formTitle}
         size="tall"
@@ -833,6 +827,7 @@ export function ManageCategoriesScreen() {
           <div className="flex flex-col gap-2">
             <Button
               data-testid="catform-save"
+              disabled={iconBlocked}
               onClick={() => {
                 if (!name.trim()) {
                   setAttempted(true);
@@ -932,43 +927,20 @@ export function ManageCategoriesScreen() {
             </>
           )}
 
-          {/* icon picker: a curated grid by default; searching opens the
-              whole self-hosted font (7k+ glyphs, fully offline) */}
-          <SearchField
-            testId="catform-icon-search"
-            value={iconQuery}
-            onChange={setIconQuery}
-            placeholder={t('cats.iconSearch')}
-            height="h-10"
-            textSize="text-[13px]"
+          {/* the curated icons lead, the whole font follows (#563); #389 (user): the
+              icons a sibling wears are asleep and refused — no error after the fact */}
+          <IconPicker
+            value={icon}
+            onChange={setIcon}
+            featured={CATEGORY_ICONS}
+            query={iconQuery}
+            onQuery={setIconQuery}
+            testIdPrefix="catform-icon"
+            taken={isMainForm ? undefined : wornIcons}
           />
-          <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
-            {(iconQuery.trim()
-              ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 60)
-              : ICONS
-            ).map((name_) => (
-              <button
-                key={name_}
-                data-testid={`catform-icon-${name_}`}
-                title={name_}
-                onClick={() => {
-                  setIcon(name_);
-                  setIconError(false);
-                }}
-                data-worn={wornIcons.has(name_) ? '1' : undefined}
-                className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
-                  icon === name_ ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-                } ${wornIcons.has(name_) ? 'opacity-35' : ''}`}
-              >
-                <Icon name={name_} size={20} />
-              </button>
-            ))}
-            {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
-              <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
-            )}
-          </div>
-          {iconError && (
-            <p className="text-[12px] text-negative" data-testid="catform-icon-error">
+          {/* only a move can land the icon on a sibling's: say so before Save, which waits for a free one */}
+          {iconBlocked && (
+            <p className="text-[12px] text-negative" data-testid="catform-icon-taken">
               {t('cats.iconTaken')}
             </p>
           )}
@@ -1032,59 +1004,8 @@ export function ManageCategoriesScreen() {
         </div>
       </Sheet>
 
-      {/* #390: the other spaces' custom categories this space lacks — grouped by space, ticked, copied in one go */}
-      <Sheet
-        open={copyOpen}
-        onOpenChange={setCopyOpen}
-        title={t('cats.copyFromSpaces')}
-        size="tall"
-        footer={
-          <Button data-testid="cats-copy-commit" disabled={copyPicked.size === 0} onClick={() => void copySelected()}>
-            {t('cats.copyCommit', { n: copyPicked.size })}
-          </Button>
-        }
-      >
-        <div data-testid="cats-copy-list" className="pt-1">
-          {(copyUnits?.length ?? 0) === 0 && <p className="py-3 text-center text-[13px] text-ink-3">{t('cats.copyNone')}</p>}
-          {[...new Map((copyUnits ?? []).map((u) => [u.space.id, u.space])).values()].map((space) => (
-            <div key={space.id} className="mb-3">
-              <div className="m-cap flex items-center gap-2 px-1">
-                {space.picture ? (
-                  <SpacePicture space={space} className="h-4 w-4" />
-                ) : (
-                  <Icon name={space.icon ?? 'leaf'} size={14} color={space.color} />
-                )}
-                {t('cats.copyFrom', { space: space.name })}
-              </div>
-              {(copyUnits ?? [])
-                .filter((u) => u.space.id === space.id)
-                .map((u) => (
-                  <label
-                    key={u.row.id}
-                    className="flex cursor-pointer items-center gap-3 border-b border-line-2 px-1 py-2.5 last:border-0"
-                  >
-                    <input
-                      type="checkbox"
-                      data-testid={`cats-copy-unit-${u.row.id}`}
-                      checked={copyPicked.has(u.row.id)}
-                      onChange={(e) => toggleCopyUnit(u.row.id, e.target.checked)}
-                    />
-                    <Icon name={u.row.icon} size={19} color={u.row.color || 'var(--m-ink-3)'} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] text-ink">{u.row.name}</span>
-                      {u.subs.length > 0 && (
-                        <span className="block truncate text-[11px] text-ink-4">{t('cats.copySubs', { n: u.subs.length })}</span>
-                      )}
-                      {u.row.isParent !== 1 && u.row.parentId && (
-                        <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(u.row.parentId) ?? { id: u.row.parentId, icon: '', txTypes: ['expense'], direction: 'both' } as never, t)}</span>
-                      )}
-                    </span>
-                  </label>
-                ))}
-            </div>
-          ))}
-        </div>
-      </Sheet>
+      {/* #390: the other spaces' custom categories this space lacks — per space and main, every sub its own pick */}
+      <CopyCategoriesSheet open={copyOpen} onOpenChange={setCopyOpen} groups={copyable ?? []} />
 
       {/* hold-menu on a group header: the quiet actions live here now */}
       <Sheet

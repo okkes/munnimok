@@ -1,5 +1,6 @@
 import { ScrollRow } from '@/ui/ScrollRow';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MoreRows, PAGE_ROWS } from '@/ui/MoreRows';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -17,6 +18,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useNewTransactions } from '@/application/newTxs';
 import { readTxFilters, writeTxFilters } from './txFilters';
 import { Icon } from '@/ui/Icon';
@@ -26,9 +28,23 @@ import { TxPartRow } from '@/ui/TxPartRow';
 import { SearchField } from '@/ui/SearchField';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useScrollMemory } from '@/lib/scrollMemory';
-import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
+
+/** #492: the whole history is listed, a page of rows at a time — the rows
+ *  are in memory already, but thousands of mounted rows made every visit
+ *  to the tab heavy. The depth reached is remembered for the session like
+ *  the scroll offset, so the detour into a row comes back to the same spot. */
+const ROWS_KEY = 'munni_txlist_rows';
+
+function readShownRows(): number {
+  try {
+    const stored = Number(sessionStorage.getItem(ROWS_KEY));
+    return Number.isFinite(stored) && stored > PAGE_ROWS ? stored : PAGE_ROWS;
+  } catch {
+    return PAGE_ROWS;
+  }
+}
 
 /** the parts a filter singled out, standing alone (#126 r8) —
  *  module-level for S2004 */
@@ -263,7 +279,6 @@ function groupByDate(txs: SpaceTx[]): [string, SpaceTx[]][] {
 export function TransactionsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const [addOpen, setAddOpen] = useState(false);
   // #140: seeded from the module snapshot — the lens survives the detour
   // into a transaction; a tab switch or fresh start finds it empty
   const [query, setQuery] = useState(() => readTxFilters().query);
@@ -279,6 +294,27 @@ export function TransactionsScreen() {
   useEffect(() => {
     writeTxFilters({ query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters });
   }, [query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters]);
+  // #492: how deep the list is rendered — a changed lens starts at one
+  // page again; the mount keeps the depth the detour remembered
+  const [shownRows, setShownRows] = useState(readShownRows);
+  const lens = useMemo(
+    () => ({ query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters }),
+    [query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters],
+  );
+  const lensRef = useRef(lens);
+  useEffect(() => {
+    if (lensRef.current === lens) return;
+    lensRef.current = lens;
+    setShownRows(PAGE_ROWS);
+  }, [lens]);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(ROWS_KEY, String(shownRows));
+    } catch {
+      // storage refused (private mode): the depth is simply not remembered
+    }
+  }, [shownRows]);
+  const showMore = useCallback(() => setShownRows((n) => n + PAGE_ROWS), []);
 
   const allTxs = useSpaceTransactions();
   // #148 r2: NEW = first-seen on this device within 24h (the same set
@@ -288,6 +324,7 @@ export function TransactionsScreen() {
   const accounts = useSpaceAccounts();
   // #181 (user): the empty state leads to the SPACE's own accounts screen
   const { spaceId } = useData();
+  const canEdit = useCanEdit(); // #505
   const accountNames = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a.name])), [accounts]);
   // credits net out what they refunded: one pass over the links for the whole list
   const givenByCredit = useMemo(() => {
@@ -334,8 +371,8 @@ export function TransactionsScreen() {
     return new Set(mains.flatMap((id) => [id, ...cats.childrenOf(id).map((c) => c.id)]));
   }, [filters.mainCatIds, cats]);
 
-  // filter FIRST, then newest-first capped at 200 — an old category match
-  // must not vanish behind the recency cap
+  // filter FIRST, then newest-first — the whole history (#492: it used to
+  // stop at 200 rows); the render below pages through it
   const txs = useMemo(() => {
     if (!allTxs) return undefined;
     // filterTxs returns a fresh array — sorting it in place mutates no input
@@ -364,8 +401,9 @@ export function TransactionsScreen() {
     // #352: with the legs standing separately, a SAME-DAY pair sits
     // together (outgoing first) — the date sort alone scattered them
     if (counterOnly) matched = pairAdjacentLegs(matched);
-    return matched.slice(0, 200);
+    return matched;
   }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, newIds, catIds]);
+  const shownTxs = useMemo(() => txs?.slice(0, shownRows), [txs, shownRows]);
 
   // the collapsed row says where the money went: "Checking → Savings".
   // #237: a same-sign wallet pair's surviving purchase reads the funding
@@ -378,21 +416,22 @@ export function TransactionsScreen() {
       if (row.transferPeerId) reverse.set(row.transferPeerId, row);
     }
     const map = new Map<string, string>();
-    for (const item of txs ?? []) {
+    for (const item of shownTxs ?? []) {
       const note = peerNoteFor(item, byId, reverse, accountNames);
       if (note) map.set(item.id, note);
     }
     return map;
-  }, [txs, allTxs, accountNames, filters.accountIds]);
+  }, [shownTxs, allTxs, accountNames, filters.accountIds]);
 
   // display-currency lens: rows convert at their own day's fixing —
   // warm the rate cache for every date this list is about to show
   const { fmt, ensureDates } = useDisplayMoney();
   useEffect(() => {
-    ensureDates([...new Set((txs ?? []).map((tx) => tx.date))]);
-  }, [txs, ensureDates]);
+    ensureDates([...new Set((shownTxs ?? []).map((tx) => tx.date))]);
+  }, [shownTxs, ensureDates]);
 
-  const groups = groupByDate(txs ?? []);
+  const groups = groupByDate(shownTxs ?? []);
+  const remainingRows = (txs?.length ?? 0) - (shownTxs?.length ?? 0);
   const activeCount = countActive(filters);
   const filtering = !!query || uncatOnly || unsettledOnly || counterOnly || newOnly || !!catIds || activeCount > 0;
 
@@ -404,13 +443,15 @@ export function TransactionsScreen() {
         trailing={
           <>
             <HelpButton tourId="transactions" />
-            <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => setAddOpen(true)}>
-              <Icon name="plus" size={22} />
-            </IconButton>
+            {/* #348 (user): adding is a screen of its own; #505: not in a space this identity only reads */}
+            {canEdit && (
+              <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => void navigate({ to: '/transactions/new' })}>
+                <Icon name="plus" size={22} />
+              </IconButton>
+            )}
           </>
         }
       />
-      <TxFormSheet open={addOpen} onOpenChange={setAddOpen} />
       {/* search + filters */}
       <div className="shrink-0 px-5 pb-1">
         <SearchField testId="tx-search" value={query} onChange={setQuery} placeholder={t('tx.searchPlaceholder')} />
@@ -567,6 +608,7 @@ export function TransactionsScreen() {
           </div>
           );
         })}
+        {remainingRows > 0 && <MoreRows rootRef={scrollRef} remaining={remainingRows} onMore={showMore} testId="tx-list-more" />}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { syncNativeStatusBar } from '@/lib/platform';
 
 export type Theme = 'light' | 'dark';
-/** 'system' follows the device live (native-benefits §3) */
+/** 'system' follows the device live */
 export type ThemeMode = Theme | 'system';
 const LS_KEY = 'munni_theme';
 

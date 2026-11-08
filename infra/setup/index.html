@@ -303,6 +303,34 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 #nohelper{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
 .ws .card-head h3 .envtag{font-weight:400}
 .runs .runrow{margin:3px 0}
+/* ── quick access (#560): every service of the picked platform, one click away ── */
+.quick-h{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.quick-h>div:nth-child(2){flex:1;min-width:220px}
+.quick-h h2{margin:0;font-size:17px}
+.quick-h .sub{margin:2px 0 0}
+.quick-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.quick-tools input{width:230px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:20px;overflow:hidden;margin:0;padding:0;min-width:0}
+.seg button{margin:0;border:0;border-radius:0;padding:6px 14px;background:transparent;color:var(--muted)}
+.seg button.sel{background:var(--brand);color:#f2efe7}
+.qa-h{margin:16px 0 2px;font-size:14px;display:flex;align-items:baseline;gap:8px}
+#s-quick .why{color:var(--muted);font-size:12.5px;margin:2px 0}
+.qa-shared{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin:8px 0}
+.qa-tile{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.qa-tile b{font-size:14px}
+.qa-host{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.qa-foot{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:6px}
+.qa-open{margin-left:auto;font-size:12px;font-weight:600;text-decoration:none;border:1px solid var(--line);border-radius:16px;padding:3px 10px;white-space:nowrap}
+.qa-open:hover{border-color:var(--brand-ink)}
+.qa-envs{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;margin:8px 0}
+.qa-env{border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0}
+.qa-env-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--brand-ink) 6%,transparent);flex-wrap:wrap}
+.qa-row{display:flex;align-items:center;gap:10px;padding:7px 12px;border-top:1px solid var(--line);font-size:13px}
+.qa-env-h+.qa-row{border-top:0}
+.qa-row .nm{flex:0 0 140px;font-weight:600}
+.qa-row .qa-host{flex:1}
+.step.quick .sn{background:color-mix(in srgb,var(--brand-ink) 14%,transparent);color:var(--brand-ink)}
+@media(max-width:700px){.qa-envs{grid-template-columns:1fr}.quick-tools,.quick-tools input{width:100%}.qa-row .nm{flex-basis:96px}}
 </style>
 </head>
 <body>
@@ -328,6 +356,26 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
     </div>
   </div>
 </div>
+
+<!-- every service and endpoint of the picked platform in one place (#560) — the helper derives them from the stack config, nothing here is kept by hand -->
+<section id="s-quick" data-quick="Quick access">
+  <div class="quick-h">
+    <span class="ico" data-ico="link"></span>
+    <div>
+      <h2>Quick access</h2>
+      <p class="sub">Every service of the picked platform — the shared stack and each environment — with its address, one click away.</p>
+    </div>
+    <div class="quick-tools">
+      <fieldset class="seg" aria-label="which services">
+        <button type="button" data-quick-filter="all">All</button>
+        <button type="button" data-quick-filter="shared">Shared</button>
+        <button type="button" data-quick-filter="envs">Environments</button>
+      </fieldset>
+      <input type="text" id="quick-search" placeholder="search services, addresses…" aria-label="search the services" autocomplete="off"/>
+    </div>
+  </div>
+  <div id="quick-body"><p class="why">reading the platform…</p></div>
+</section>
 
 <section id="s-platforms" data-step="Platforms">
   <h2><span class="n">1</span> Platforms</h2>
@@ -1178,6 +1226,7 @@ const S = {
   appLinksByEnv: {},       // env name -> the served /.well-known files vs the config (the Phones tab's App links card)
   pending: {},             // stack -> what runs vs what is configured (the helper's verdict, plus the run in flight)
   busyEnvs: new Set(),
+  services: null,          // the picked platform's services and addresses (/api/services, #560)
 };
 
 /* ── the secrets manifest as the page needs it (infra/secrets.manifest.json —
@@ -1382,6 +1431,7 @@ const ICONS = {
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/></svg>',
   phone: '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 17.5h2"/></svg>',
   users: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5c2.8 0 5 2.2 5 5.5"/></svg>',
+  link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
 };
 function applyIcons(root = document) {
   root.querySelectorAll('[data-ico]').forEach((el) => { el.innerHTML = ICONS[el.dataset.ico] ?? ''; });
@@ -2443,6 +2493,7 @@ async function refreshLocal() {
     fillDynamicCopy();
     renderStatus();
     loadPending().catch(() => {});
+    refreshServices().catch(() => {});
   } catch (e) {
     if (box) box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
   }
@@ -3298,9 +3349,87 @@ function renderSharedLinks() {
   const html = [link('GlitchTip', 'glitchtip'), link('Vault', 'vault'), link('control', 'control'), link('pgAdmin', 'pgadmin')].join(' ');
   boxes.forEach((b) => { b.innerHTML = html; });
 }
+
+/* ── quick access (#560): every service of the picked platform as the helper reads it from the stack config ── */
+/** whether a service answers: the helper's probe on this computer, the outside-in NAS probe there; null = never probed */
+function serviceUp(stack, key) {
+  const k = key === 'apiDocs' ? 'api' : key;
+  if (isLcl()) {
+    const v = S.status?.stacks?.[stack]?.services?.[k];
+    return v === undefined ? null : Boolean(v);
+  }
+  const h = S.nasProbe?.stacks?.find((x) => x.stack === stack)?.hosts.find((x) => x.key === k);
+  if (!h) return null;
+  return (h.state === 'no-cert' && h.behind ? h.behind : h.state) === 'up';
+}
+let servicesSig = '';
+/** asks the helper again only when what the addresses derive from changed: the platform, its environments and their features, the domain, LAN mode */
+async function refreshServices() {
+  if (!HELPER) return;
+  const sig = [S.platform, S.domain, S.status?.lan ?? '', ...S.envList.map((e) => `${e.stack}:${e.features?.connectors ? 'c' : ''}`)].join('|');
+  if (sig === servicesSig && S.services && !S.services.error) { renderServices(); return; }
+  const epoch = platformEpoch;
+  try {
+    const r = await hjson(`/api/services?platform=${encodeURIComponent(S.platform)}`);
+    if (epoch !== platformEpoch) return;
+    S.services = r;
+    servicesSig = sig;
+  } catch (e) {
+    if (epoch !== platformEpoch) return;
+    S.services = { error: e.message };
+  }
+  renderServices();
+}
+function renderServices() {
+  const box = document.getElementById('quick-body');
+  if (!box) return;
+  const filter = LS.get('quick-filter', 'all');
+  document.querySelectorAll('[data-quick-filter]').forEach((b) => b.classList.toggle('sel', b.dataset.quickFilter === filter));
+  const v = S.services;
+  if (!v) { box.innerHTML = '<p class="why">reading the platform…</p>'; return; }
+  if (v.error) { box.innerHTML = `<p class="why">The helper could not list the services (${esc(v.error)}) — when the strip above says it is out of date, restart it.</p>`; return; }
+  if (v.domainMissing) { box.innerHTML = '<p class="why">The addresses hang off the platform\'s domain — save it under Your domain (step 2) and every service appears here.</p>'; return; }
+  const q = (document.getElementById('quick-search')?.value ?? '').trim().toLowerCase();
+  const hit = (s, context) => !q || `${s.name} ${s.what} ${s.url} ${context}`.toLowerCase().includes(q);
+  const host = (url) => url.replace(/^https?:\/\//, '');
+  const dot = (stack, key) => {
+    const up = serviceUp(stack, key);
+    return `<span class="dot ${up === null ? '' : (up ? 'ok' : 'miss')}" title="${up === null ? 'not probed' : (up ? 'answers' : 'does not answer')}"></span>`;
+  };
+  const open = (s) => `<a class="qa-open" href="${escAttr(s.url)}" target="_blank" rel="noreferrer">Open ↗</a>`;
+  const parts = [];
+  if (filter !== 'envs') {
+    const shared = v.shared.services.filter((s) => hit(s, 'shared'));
+    if (shared.length) {
+      parts.push(`<h3 class="qa-h">Shared stack <span class="envtag">${esc(v.shared.stack)}</span></h3><p class="why">One per platform, used by every environment.</p><div class="qa-shared">${shared.map((s) => `
+        <div class="qa-tile" data-quick-service="${escAttr(`${v.shared.stack}:${s.key}`)}">
+          <b>${dot(v.shared.stack, s.key)} ${esc(s.name)}</b>
+          <span class="qa-host" title="${escAttr(s.url)}">${esc(host(s.url))}</span>
+          <span class="why">${esc(s.what)}${s.key === 'control' && v.controlEnv ? ` — signs in through ${esc(v.controlEnv)}` : ''}</span>
+          <div class="qa-foot"><span class="tag">shared</span>${open(s)}</div>
+        </div>`).join('')}</div>`);
+    }
+  }
+  if (filter !== 'shared') {
+    const envs = v.envs.map((e) => ({ e, rows: e.services.filter((s) => hit(s, `${e.env} ${e.label}`)) })).filter((x) => x.rows.length);
+    if (envs.length) {
+      parts.push(`<h3 class="qa-h">Environments</h3><p class="why">The same stack per environment, each with its own data, sign-in and database.</p><div class="qa-envs">${envs.map(({ e, rows }) => `
+        <div class="qa-env" data-quick-env="${escAttr(e.env)}">
+          <div class="qa-env-h"><b>${esc(e.label)}</b><span class="tag info">${esc(e.env)}</span><span class="tag">${e.channel === 'latest' ? 'releases' : 'dev builds'}</span></div>
+          ${rows.map((s) => `<div class="qa-row" data-quick-service="${escAttr(`${e.stack}:${s.key}`)}" title="${escAttr(s.what)}">${dot(e.stack, s.key)}<span class="nm">${esc(s.name)}</span><span class="qa-host" title="${escAttr(s.url)}">${esc(host(s.url))}</span>${open(s)}</div>`).join('')}
+        </div>`).join('')}</div>`);
+    } else if (!v.envs.length) {
+      parts.push('<h3 class="qa-h">Environments</h3><p class="why">No environment on this platform yet — add one in step 4 and its services appear here.</p>');
+    }
+  }
+  box.innerHTML = parts.join('') || `<p class="why">Nothing matches “${esc(q)}”.</p>`;
+}
+document.getElementById('quick-search')?.addEventListener('input', () => renderServices());
+document.querySelectorAll('[data-quick-filter]').forEach((b) => b.addEventListener('click', () => { LS.set('quick-filter', b.dataset.quickFilter); renderServices(); }));
 /** every workspace's pills, links and lists from the current facts */
 function renderEnvStatus() {
   renderSharedLinks();
+  renderServices();
   for (const env of S.envList) {
     const s = env.env;
     const c = envCodeState(env);
@@ -4360,6 +4489,8 @@ function renderStepper() {
   let n = 0;
   const chips = { done: 'Complete', progress: 'In progress', todo: 'Not started', none: '' };
   nav.innerHTML = '<div class="steps">' + [...document.querySelectorAll('main > section')].filter((sec) => !sec.classList.contains('hide')).map((sec) => {
+    // the quick access is no setup step: an unnumbered chip, so every service is one click from anywhere on the page (#560)
+    if (sec.dataset.quick) return `<a class="step quick" href="#${sec.id}" ${jumpAttr({ href: `#${sec.id}` })}><span class="sn">↗</span><span class="st"><b>${esc(sec.dataset.quick)}</b><small>every service, one click</small></span></a>`;
     n += 1;
     const s = states[sec.id] ?? { state: 'none', sub: '' };
     const title = sec.dataset.step ?? sec.id;

@@ -8,18 +8,21 @@ import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAtt
 import { newestTxDate } from '@/application/accounts';
 import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
-import { fetchesItself, sourceKeyFor, sourceParamsFor } from '@/features/accounts/AttachSheet';
-import { uncoveredDateText } from '@/features/accounts/coverage';
-import { useLiveConnectionIds, useMyFeedIds } from '@/application/connections';
-import { ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
-import { partyName } from '@/features/connectors/logos';
+import { sourceKeyFor, sourceParamsFor } from '@/features/accounts/AttachSheet';
+import { useMyFeedIds } from '@/application/connections';
+import { ownsFeed } from '@/domain/accountCoverage';
+import type { ReconnectNeed } from '@/domain/accountCoverage';
+import { BankConnect } from '@/features/connectors/BankConnect';
+import { useReconnectReader } from '@/features/connectors/useReconnect';
+import { ReconnectNote } from '@/features/accounts/ReconnectNote';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
-import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
+import { ACCOUNT_TYPES, groupByAccountType, typeDef } from '@/features/accounts/accountTypes';
 import { setAccountOpenHandoff, takeSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { useMyRole } from './SpaceSharing';
+import { ReadOnlyNote } from './ReadOnlyNote';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
 import { linkEffectiveType } from '@/db/joined';
@@ -30,19 +33,17 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
-
-/** bank-linked data older than this smells like a dead consent (90/180d
- *  windows) — the row asks for a reconnect instead of silently aging */
-const STALE_SYNC_MS = 48 * 60 * 60 * 1000;
 
 interface AttachedAccountEntry {
   key: string;
   name: string;
+  /** what the account is to THIS space (an attachment's type) — its segment (#550) */
+  type: AccountType;
   subtitle: string;
   archived: boolean;
-  stale: boolean;
   /** present = a detachable feed attachment */
   detach?: { feedSpaceId: string; accountId: string };
   /** present = a space-owned manual account, editable in place */
@@ -65,6 +66,9 @@ interface AttachCandidate {
   feedSpaceId: string;
   name: string;
   ibanTail?: string;
+  /** #536: what the bank reported the account to be — the attach step's
+   *  first suggestion only; the space's pick is the account's type here */
+  reportedType: AccountType;
 }
 
 type T = ReturnType<typeof useLang>['t'];
@@ -74,12 +78,6 @@ const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
 
 const syncLine = (t: T, lang: Lang, account?: AccountRow) =>
   account?.lastSyncedAt ? t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) }) : undefined;
-
-const isStale = (account?: AccountRow) =>
-  !!account &&
-  fetchesItself(account) &&
-  !!account.lastSyncedAt &&
-  Date.now() - Date.parse(account.lastSyncedAt) > STALE_SYNC_MS;
 
 function linkProvenance(t: T, link: AccountLinkRow, mySub?: string): string | undefined {
   if (link.attachedBy && mySub === link.attachedBy) return t('acct.provMine');
@@ -95,21 +93,39 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
     key: link.id,
     // #239: the space's own name wins here — the global one stays global
     name: link.displayName || (account?.name ?? t('acct.bank')),
-    // #212 r2: the SPACE's type leads the subtitle — import/linked rows
-    // were the ones missing their type here (user ss)
+    // #212 r2: the SPACE's type decides — #550: it names the row's segment
+    type: account ? linkEffectiveType(link, account) : (link.type ?? 'checking'),
     subtitle: [
-      account ? t(typeDef(linkEffectiveType(link, account)).labelKey) : undefined,
       ibanTail(account?.iban),
       account ? t(sourceKeyFor(account), sourceParamsFor(account)) : undefined,
     ]
       .filter(Boolean)
       .join(' · '),
     archived: !!link.archived,
-    stale: isStale(account),
     detach: { feedSpaceId: link.feedSpaceId, accountId: link.accountId },
     account,
     link,
   };
+}
+
+/** the info sheet's facts as label/value pairs — an absent fact drops
+ *  out (S3776: out of the screen) */
+function infoFacts(t: T, lang: Lang, info: AttachedAccountEntry, mySub: string | undefined, newestTx: string | undefined): (readonly [string, string])[] {
+  return [
+    // #239 r2 (user): the GLOBAL name, next to the space's own
+    info.link && info.account ? ([t('acct.globalName'), info.account.name] as const) : null,
+    info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,
+    // #177 (user "what does the - mean"): an absent gate SAYS
+    // it shows the full history instead of a bare dash
+    info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? t('acct.historyFromAll')] as const) : null,
+    info.link && linkProvenance(t, info.link, mySub) ? ([t('acct.attachedBy'), linkProvenance(t, info.link, mySub)!] as const) : null,
+    syncLine(t, lang, info.account) ? ([t('acct.lastSyncedLabel'), syncLine(t, lang, info.account)!] as const) : null,
+    // #205: where the DATA ends (imports stamp it) and the
+    // newest transaction actually on the account — different
+    // facts from "last synced"
+    info.account?.dataThroughDate ? ([t('acct.dataThroughLabel'), info.account.dataThroughDate] as const) : null,
+    [t('acct.newestTx'), newestTx ?? '—'] as const,
+  ].filter((row): row is readonly [string, string] => row !== null);
 }
 
 /**
@@ -117,13 +133,11 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
  * list shows last-sync freshness, every feed attachment detaches HERE
  * (danger sheet + cooldown), and "+ attach" offers the user's not-yet-
  * attached accounts (#207: the history start is the space's own fact,
- * not a per-attach ask) — account CREATION stays behind the manage
- * door inside that sheet.
+ * not a per-attach ask) — and #527: a bank is connected, a statement
+ * imported or a manual account added from here too.
  */
 export function SpaceAccountsScreen() {
   const { t, lang } = useLang();
-  // #445: a row no live connection fetches any more says so in its info sheet
-  const liveIds = useLiveConnectionIds();
   const { store, repo } = useData();
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
@@ -169,11 +183,21 @@ export function SpaceAccountsScreen() {
   // and wears the shared badge (offline the set stays unknown: no badge
   // beats a wrong one)
   const myFeeds = useMyFeedIds();
-  // #445: only the person whose connection feeds the account can tell whether it still does —
+  // #445/#528: only the person whose connection feeds the account can tell whether it still does —
   // a friend's attachment reads nothing here (user ss 2026-10-08: "shared by Elo" under a reconnect
   // banner; 2026-10-09: the same banner on a friend's account whose link carried no name — the
   // feed set decides now, not the link)
-  const infoUncovered = uncoveredOf(info, liveIds, mySub, myFeeds);
+  const reconnect = useReconnectReader();
+  const reconnectOf = (entry: AttachedAccountEntry): ReconnectNeed | null => {
+    if (!entry.account || !reconnect) return null;
+    const owned = ownsFeed(entry.link?.feedSpaceId ?? entry.account.spaceId, myFeeds, entry.link ? [entry.link] : [], mySub);
+    return reconnect.needOf(entry.account, owned);
+  };
+  const infoNeed = info ? reconnectOf(info) : null;
+  // #527: the archived accounts wait behind a toggle below the list
+  const [showArchived, setShowArchived] = useState(false);
+  // #527: a bank connected from here, in place — no detour through another screen
+  const [bankConnectOpen, setBankConnectOpen] = useState(false);
 
   const entries = useQuery(store, async () => {
     // reads only — a teardown/closed-db rejection must never escape
@@ -194,11 +218,9 @@ export function SpaceAccountsScreen() {
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
-      subtitle: [t(typeDef(account.type).labelKey), ibanTail(account.iban), t(sourceKeyFor(account), sourceParamsFor(account))]
-        .filter(Boolean)
-        .join(' · '),
+      type: account.type,
+      subtitle: [ibanTail(account.iban), t(sourceKeyFor(account), sourceParamsFor(account))].filter(Boolean).join(' · '),
       archived: !!account.archived,
-      stale: isStale(account),
       manual: account,
       account,
     }));
@@ -224,7 +246,7 @@ export function SpaceAccountsScreen() {
       const attached = new Set(links.filter((l) => l.deleted === 0 && !l.archived).map((l) => l.accountId));
       return allAccounts
         .filter((a) => a.deleted === 0 && myFeeds.has(a.spaceId) && !attached.has(a.id))
-        .map((a) => ({ accountId: a.id, feedSpaceId: a.spaceId, name: a.name, ibanTail: ibanTail(a.iban) }));
+        .map((a) => ({ accountId: a.id, feedSpaceId: a.spaceId, name: a.name, ibanTail: ibanTail(a.iban), reportedType: typeDef(a.type).type }));
     },
     [spaceId, syncing, attachOpen],
   );
@@ -239,6 +261,7 @@ export function SpaceAccountsScreen() {
       ? candidates.find((c) => c.accountId === pendingAttach.accountId)
       : undefined;
     setPicked(target ?? null);
+    if (target) setAttachType(target.reportedType);
     setAttachFocus(!!target);
     setAttachOpen(true);
     setPendingAttach(null);
@@ -276,6 +299,61 @@ export function SpaceAccountsScreen() {
     }
   };
 
+  const archived = (entries ?? []).filter((entry) => entry.archived);
+
+  const renderRow = (entry: AttachedAccountEntry) => {
+    const logo = entry.account?.logo ?? institutionLogoUrl(entry.account);
+    return (
+      <button
+        key={entry.key}
+        data-testid={`space-account-${entry.key}`}
+        // #206: a space-owned (manual) row edits directly — its
+        // info sheet had nothing the editor doesn't say better
+        // (#284: readers get the read-only info sheet instead)
+        onClick={() => (entry.manual && !readOnly ? setEditing(entry.manual) : setInfo(entry))}
+        className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+      >
+        {/* the real bank mark where we have it (user request);
+            a 404 must not leave a broken square (#176) */}
+        {logo && (
+          <Picture
+            src={logo}
+            className="h-9 w-9 shrink-0 rounded-full object-contain"
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+        )}
+        <span className={`${logo ? 'hidden ' : ''}flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2`}>
+          <Icon name={typeDef(entry.type).icon} size={18} color="var(--m-ink-3)" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-medium text-ink">{entry.name}</span>
+          <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>
+        </span>
+        {/* #305 (user): say it IS a shared account, right on
+            the consumer's row */}
+        {entry.link && myFeeds && !myFeeds.has(entry.link.feedSpaceId) && (
+          <SharedSpaceBadge testId={`space-account-shared-${entry.key}`} />
+        )}
+        {/* #528: only when the connection truly needs the person — the row's tap leads on to it */}
+        {reconnectOf(entry) && (
+          <Pill tone="warning" testId={`space-account-stale-${entry.key}`}>
+            {t('acct.reconnectHint')}
+          </Pill>
+        )}
+        {entry.archived && <Pill>{t('acct.archived')}</Pill>}
+        {/* manual · imported · linked at a glance */}
+        {entry.account && (
+          <Icon name={SOURCE_ICONS[entry.account.source]} size={16} color="var(--m-ink-4)" />
+        )}
+        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+      </button>
+    );
+  };
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-space-accounts">
       <AppBar
@@ -290,11 +368,7 @@ export function SpaceAccountsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
         <div className="pt-1" data-testid="space-accounts">
-          {readOnly && (
-            <p className="px-1 pb-2 text-[13px] text-ink-4" data-testid="space-accounts-reader-note">
-              {t('acct.readerNote')}
-            </p>
-          )}
+          <ReadOnlyNote spaceId={spaceId} className="mb-2" testId="space-accounts-reader-note" />
           {entries?.length === 0 && (
             <p className="px-1 text-[13px] text-ink-4" data-testid="space-accounts-empty">
               {t('space.noAccounts')}
@@ -302,58 +376,28 @@ export function SpaceAccountsScreen() {
           )}
           {!!entries?.length && (
             <div className="flex flex-col gap-2.5" data-testid="space-accounts-list">
-              {entries.map((entry) => {
-                const logo = entry.account?.logo ?? institutionLogoUrl(entry.account);
-                return (
-                  <button
-                    key={entry.key}
-                    data-testid={`space-account-${entry.key}`}
-                    // #206: a space-owned (manual) row edits directly — its
-                    // info sheet had nothing the editor doesn't say better
-                    // (#284: readers get the read-only info sheet instead)
-                    onClick={() => (entry.manual && !readOnly ? setEditing(entry.manual) : setInfo(entry))}
-                    className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
-                  >
-                    {/* the real bank mark where we have it (user request);
-                        a 404 must not leave a broken square (#176) */}
-                    {logo && (
-                      <img
-                        src={logo}
-                        alt=""
-                        className="h-9 w-9 shrink-0 rounded-full object-contain"
-                        loading="lazy"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    )}
-                    <span className={`${logo ? 'hidden ' : ''}flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2`}>
-                      <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium text-ink">{entry.name}</span>
-                      <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>
-                    </span>
-                    {/* #305 (user): say it IS a shared account, right on
-                        the consumer's row */}
-                    {entry.link && myFeeds && !myFeeds.has(entry.link.feedSpaceId) && (
-                      <SharedSpaceBadge testId={`space-account-shared-${entry.key}`} />
-                    )}
-                    {entry.stale && (
-                      <Pill tone="warning" testId={`space-account-stale-${entry.key}`}>
-                        {t('acct.reconnectHint')}
-                      </Pill>
-                    )}
-                    {entry.archived && <Pill>{t('acct.archived')}</Pill>}
-                    {/* manual · imported · linked at a glance */}
-                    {entry.account && (
-                      <Icon name={SOURCE_ICONS[entry.account.source]} size={16} color="var(--m-ink-4)" />
-                    )}
-                    <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-                  </button>
-                );
-              })}
+              {/* #550 (user): one segment per account type instead of one long list */}
+              {groupByAccountType(entries.filter((entry) => !entry.archived)).map((group) => (
+                <section key={group.type} className="flex flex-col gap-2.5" data-testid={`space-accounts-group-${group.type}`}>
+                  <div className="m-cap px-1 pt-2">{t(typeDef(group.type).groupKey)}</div>
+                  {group.items.map(renderRow)}
+                </section>
+              ))}
+            </div>
+          )}
+          {/* #527 (user): the archived ones fold away below — beside the others they bloated the list */}
+          {archived.length > 0 && (
+            <div className="mt-3" data-testid="space-accounts-archived">
+              <button
+                data-testid="space-accounts-archived-toggle"
+                aria-expanded={showArchived}
+                onClick={() => setShowArchived((v) => !v)}
+                className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-1 py-1.5 text-left text-[12px] font-medium text-ink-4"
+              >
+                <Icon name={showArchived ? 'chevron-up' : 'chevron-down'} size={14} />
+                {showArchived ? t('acct.hideArchived') : t('acct.showArchived', { n: archived.length })}
+              </button>
+              {showArchived && <div className="mt-1.5 flex flex-col gap-2.5">{archived.map(renderRow)}</div>}
             </div>
           )}
           {/* #284: attach/add are mutations — readers see neither */}
@@ -388,17 +432,17 @@ export function SpaceAccountsScreen() {
               data-testid="space-accounts-add"
               onClick={() => setAddOpen(true)}
             >
-              <Icon name="pencil-plus-outline" size={17} />
-              {t('acct.addManualHere')}
+              <Icon name="plus" size={17} />
+              {t('acct.addAccount')}
             </Button>
           )}
         </div>
       </div>
 
-      {/* the manual type grid directly — this button SAYS manual now
-          (user redesign ss13/ss14); connect/import live behind Attach
-          and the global overview */}
-      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} initialStep="manual" />
+      {/* #527 (user): connect, import or add right from the space — a manual
+          account lives here, a connected or imported one is attached here */}
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} onConnect={() => setBankConnectOpen(true)} />
+      {syncing && <BankConnect open={bankConnectOpen} onOpenChange={setBankConnectOpen} />}
 
       {/* tap-through info: the full story per account, with the actions
           (edit / detach) moved off the row (user redesign ss13) */}
@@ -409,21 +453,17 @@ export function SpaceAccountsScreen() {
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
               {info.account ? t(sourceKeyFor(info.account), sourceParamsFor(info.account)) : t('acct.bank')}
             </div>
-            {/* the reconnect names the connection, so the sign-in reuses it and the server
-                retires the old session instead of scheduling two (prod 2026-10-08) */}
-            {info.account && infoUncovered !== null && (
-              <div className="rounded-card border border-line bg-bg-2 px-4 py-3 text-[13px] text-ink-2" data-testid="space-account-uncovered">
-                {t('acct.uncovered', { date: uncoveredDateText(infoUncovered, lang), party: partyName(info.account.provider ?? info.account.source) })}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-2"
-                  data-testid="space-account-reconnect"
-                  onClick={() => void navigate({ to: '/connections', search: { connect: info.account!.provider ?? info.account!.source, reconnect: info.account!.connectionId } })}
-                >
-                  {t('acct.reconnect', { party: partyName(info.account.provider ?? info.account.source) })}
-                </Button>
-              </div>
+            {/* #528: why it needs its connection again, and the way to that connection —
+                its card brought into view, where signing in again reuses it (prod 2026-10-08) */}
+            {info.account && infoNeed && reconnect && (
+              <ReconnectNote
+                account={info.account}
+                need={infoNeed}
+                door={reconnect.doorOf(info.account, infoNeed)}
+                onLeave={() => setInfo(null)}
+                testId="space-account-uncovered"
+                actionTestId="space-account-reconnect"
+              />
             )}
             {/* #239 (user): this SPACE's own name for the account — the
                 global name stays untouched; clearing falls back to it */}
@@ -456,30 +496,13 @@ export function SpaceAccountsScreen() {
                 type reading in the row subtitle instead */}
             {info.link && info.account && !readOnly && <AccountTypeRow account={info.account} link={info.link} />}
             <div className="overflow-hidden rounded-card border border-line bg-surface">
-              {[
-                // #239 r2 (user): the GLOBAL name, next to the space's own
-                info.link && info.account ? ([t('acct.globalName'), info.account.name] as const) : null,
-                info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,
-                // #177 (user "what does the - mean"): an absent gate SAYS
-                // it shows the full history instead of a bare dash
-                info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? t('acct.historyFromAll')] as const) : null,
-                info.link && linkProvenance(t, info.link, mySub) ? ([t('acct.attachedBy'), linkProvenance(t, info.link, mySub)!] as const) : null,
-                syncLine(t, lang, info.account) ? ([t('acct.lastSyncedLabel'), syncLine(t, lang, info.account)!] as const) : null,
-                // #205: where the DATA ends (imports stamp it) and the
-                // newest transaction actually on the account — different
-                // facts from "last synced"
-                info.account?.dataThroughDate ? ([t('acct.dataThroughLabel'), info.account.dataThroughDate] as const) : null,
-                [t('acct.newestTx'), infoNewestTx ?? '—'] as const,
-              ]
-                .filter((row): row is readonly [string, string] => row !== null)
-                .map(([label, value]) => (
-                  <div key={label} className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0">
-                    <span className="text-ink-3">{label}</span>
-                    <span className="min-w-0 truncate text-right font-mono text-[12px] text-ink">{value}</span>
-                  </div>
-                ))}
+              {infoFacts(t, lang, info, mySub, infoNewestTx).map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0">
+                  <span className="text-ink-3">{label}</span>
+                  <span className="min-w-0 truncate text-right font-mono text-[12px] text-ink">{value}</span>
+                </div>
+              ))}
             </div>
-            {info.stale && <Pill tone="warning">{t('acct.reconnectHint')}</Pill>}
             {/* #239 r2 (user): straight to the account in the global
                 overview — its sheet opens on arrival */}
             {info.link && info.account && (
@@ -544,7 +567,11 @@ export function SpaceAccountsScreen() {
                 <button
                   key={candidate.accountId}
                   data-testid={`space-attach-pick-${candidate.accountId}`}
-                  onClick={() => setPicked(candidate)}
+                  onClick={() => {
+                    setPicked(candidate);
+                    // #536: the bank's word starts the type pick — the space's choice stands
+                    setAttachType(candidate.reportedType);
+                  }}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
                 >
                   <Icon
@@ -644,16 +671,4 @@ export function SpaceAccountsScreen() {
       />
     </div>
   );
-}
-
-/** #445: the info sheet's "not fetched any more" reading — only when the account's feed is known to be the viewer's own (S3776: out of the component) */
-function uncoveredOf(
-  info: AttachedAccountEntry | null,
-  liveIds: ReadonlySet<string> | undefined,
-  mySub: string | undefined,
-  myFeeds: ReadonlySet<string> | undefined,
-): string | null {
-  if (!info?.account || !liveIds) return null;
-  const owned = ownsFeed(info.link?.feedSpaceId ?? info.account.spaceId, myFeeds, info.link ? [info.link] : [], mySub);
-  return uncoveredSince(info.account, liveIds, owned);
 }

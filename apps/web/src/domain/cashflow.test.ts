@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { nextPayday, safeToSpend } from './cashflow';
-import type { RecurringRow, TxView } from '@/db/types';
+import { nextPayday } from './cashflow';
+import type { TxView } from '@/db/types';
 
 const tx = (over: Partial<TxView>): TxView => ({
   id: Math.random().toString(36).slice(2),
@@ -24,25 +24,6 @@ const salaryTxs = [
   tx({ merchant: 'Belastingdienst', amountCents: 500_000, txType: 'income', date: '2026-06-02' }),
 ];
 
-const rec = (over: Partial<RecurringRow>): RecurringRow => ({
-  id: 'r1',
-  spaceId: 's1',
-  name: 'Rent',
-  kind: 'fixed',
-  amountCents: 85_000,
-  every: 'month',
-  dueDay: 20,
-  active: 1,
-  fieldVersions: {},
-  deleted: 0,
-  ...over,
-});
-
-const accounts = [
-  { id: 'a1', type: 'checking' as const, balanceCents: 150_000, archived: 0 as const, deleted: 0 as const },
-  { id: 'a2', type: 'savings' as const, balanceCents: 999_999, archived: 0 as const, deleted: 0 as const },
-];
-
 describe('nextPayday', () => {
   it('projects the repeating largest credit forward, before or after today', () => {
     expect(nextPayday(salaryTxs, '2026-07-10')).toEqual({
@@ -61,39 +42,5 @@ describe('nextPayday', () => {
     // repeated small credits (tikkies) don't qualify
     const tikkies = ['2026-05-05', '2026-06-05'].map((date) => tx({ merchant: 'Friend', amountCents: 2_000, date }));
     expect(nextPayday(tikkies, '2026-07-10')).toBeNull();
-  });
-});
-
-describe('safeToSpend', () => {
-  it('liquid balance minus what falls due before payday, per day', () => {
-    const result = safeToSpend({
-      accounts,
-      txs: salaryTxs,
-      recurrings: [rec({}), rec({ id: 'r2', name: 'Netflix', amountCents: 1_599, dueDay: 28 })], // 28th is after payday
-      today: '2026-07-10',
-    })!;
-    // savings never count as spendable; rent (due 20th) does, Netflix (28th) doesn't
-    expect(result.liquidCents).toBe(150_000);
-    expect(result.upcoming.map((u) => u.rec.name)).toEqual(['Rent']);
-    expect(result.cents).toBe(150_000 - 85_000);
-    expect(result.days).toBe(15);
-    expect(result.perDayCents).toBe(Math.floor(65_000 / 15));
-  });
-
-  it('money the plan holds reduces the safe number (F2, #128)', () => {
-    const result = safeToSpend({
-      accounts,
-      txs: salaryTxs,
-      recurrings: [],
-      plannedCents: 40_000,
-      today: '2026-07-10',
-    })!;
-    expect(result.plannedCents).toBe(40_000);
-    expect(result.cents).toBe(150_000 - 40_000);
-  });
-
-  it('shows nothing rather than a wrong number', () => {
-    expect(safeToSpend({ accounts, txs: [], recurrings: [], today: '2026-07-10' })).toBeNull();
-    expect(safeToSpend({ accounts: [], txs: salaryTxs, recurrings: [], today: '2026-07-10' })).toBeNull();
   });
 });

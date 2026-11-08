@@ -3,6 +3,7 @@ import { visibleAccounts, visibleTransactions } from '@/db/joined';
 import type { SpaceAccount, SpaceTx } from '@/db/joined';
 import type {
   BudgetRow,
+  EventRow,
   GoalContributionRow,
   GoalRow,
   PlanRow,
@@ -24,19 +25,30 @@ import { slackCents,
   SEGMENT_ORDER,
   aheadSuggested,
   categoryReservations,
-  debtRealizedCents,
   estimateTarget,
+  eventNetBefore,
+  periodLedger,
   periodsAhead,
   planFundedFraction,
   planId,
   planPoolAccounts,
   poolCents,
-  recurringRealizedCents,
   subjectFamily,
   subjectView,
+  unplannedKey,
   unplannedRows,
 } from '@/domain/planning';
-import type { Reservation, SubjectContext, SubjectStatus, SubjectView, TargetEstimate, UnplannedRow } from '@/domain/planning';
+import type {
+  PeriodLedger,
+  RelevanceSources,
+  Reservation,
+  SliceOwners,
+  SubjectContext,
+  SubjectStatus,
+  SubjectView,
+  TargetEstimate,
+  UnplannedRow,
+} from '@/domain/planning';
 import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 
 /**
@@ -49,11 +61,14 @@ import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 export interface PlanningData {
   space: SpaceRow | undefined;
   plans: PlanRow[];
+  /** the period starts of actual plans that were started over (#557: a tombstone the continuation leaves alone) */
+  removedPlanStarts: ReadonlySet<string>;
   subjects: PlanSubjectRow[];
   txs: SpaceTx[];
   accounts: SpaceAccount[];
   budgets: BudgetRow[];
   recurrings: RecurringRow[];
+  events: EventRow[];
   goals: GoalRow[];
   contributions: GoalContributionRow[];
   catalog: Catalog;
@@ -72,14 +87,21 @@ const live = <T extends { deleted: 0 | 1 }>(rows: T[]): T[] => rows.filter((r) =
 
 /** every row the model needs, read once */
 export async function loadPlanningData(store: StorageBackend, spaceId: string): Promise<PlanningData> {
-  const [space, plans, subjects, txs, accounts, budgets, recurrings, goals, contributions, allSpaces, allCats, docRow] = await Promise.all([
+  const [rows, txs] = await Promise.all([loadPlanningRows(store, spaceId), visibleTransactions(store, spaceId)]);
+  return { ...rows, txs };
+}
+
+/** what the model needs besides the transactions — a screen joins those with the space's one shared
+ *  read (#554: the tab's dot and Home's block each joined every transaction again on every write) */
+export async function loadPlanningRows(store: StorageBackend, spaceId: string): Promise<Omit<PlanningData, 'txs'>> {
+  const [space, plans, subjects, accounts, budgets, recurrings, events, goals, contributions, allSpaces, allCats, docRow] = await Promise.all([
     store.get('space', spaceId),
     store.bySpace('plan', spaceId),
     store.bySpace('planSubject', spaceId),
-    visibleTransactions(store, spaceId),
     visibleAccounts(store, spaceId),
     store.bySpace('budget', spaceId),
     store.bySpace('recurring', spaceId),
+    store.bySpace('event', spaceId),
     store.bySpace('goal', spaceId),
     store.bySpace('goalContribution', spaceId),
     store.allRows('space'),
@@ -94,11 +116,12 @@ export async function loadPlanningData(store: StorageBackend, spaceId: string): 
   return {
     space,
     plans: live(plans),
+    removedPlanStarts: new Set(plans.filter((p) => p.deleted === 1 && p.kind === 'actual' && p.periodStart).map((p) => p.periodStart!)),
     subjects: live(subjects),
-    txs,
     accounts,
     budgets: live(budgets),
     recurrings: live(recurrings),
+    events: live(events),
     goals: live(goals).map((g) => ({ ...g, allocatedCents: allocated.get(g.id) ?? 0 })),
     contributions: live(contributions),
     catalog: buildCatalog(vis.rows, vis.sharedScope, vis.hiddenMains, doc),
@@ -132,6 +155,17 @@ export interface PlanningModel {
   blueprints: PlanRow[];
   poolCents: number;
   poolAccounts: SpaceAccount[];
+  /** the pool's account ids (#532) */
+  poolIds: ReadonlySet<string>;
+  /** the source rows a copy checks a subject against (stillRelevant) */
+  relevance: RelevanceSources;
+  /**
+   * #557 (user 2026-10-23): the period has no plan, was not started over, and
+   * the previous period's plan has subjects — its plan carries over by itself
+   */
+  continuable: boolean;
+  /** the past periods' ledgers, newest last — what the estimates and the recommendation read */
+  pastLedgers: PeriodLedger[];
   aheadSuggested: number;
   /** the funded future periods, nearest first */
   ahead: PlanAhead[];
@@ -140,8 +174,8 @@ export interface PlanningModel {
   aheadCount: number;
   /** the next period without a plan yet */
   nextAheadPeriod: Period;
-  /** money the current plan holds for later: funded and not yet realized, plus everything funded ahead */
-  reservedCents: number;
+  /** what the current plan still holds per segment: funded and not yet realized, a one-off under its row's segment (#541: safe to spend's set-asides) */
+  heldBySegment: ReadonlyMap<PlanSegmentKind, number>;
   periodOf: (plan: PlanRow) => Period;
   editabilityOf: (plan: PlanRow) => PlanEditability;
   subjectsOf: (plan: PlanRow) => PlanSubjectRow[];
@@ -149,13 +183,15 @@ export interface PlanningModel {
   segmentsOf: (plan: PlanRow) => PlanSegmentConfig[];
   /** what the plan's period STARTED with: the pool now plus what the period already spent (see toAllocateOf) */
   startedWithOf: (plan: PlanRow) => number;
-  /** what is left to give a job: what the period started with minus the subjects' funding and the other periods ahead */
+  /** what is left to give a job: what the period started with minus the subjects' funding, the one-offs and the other periods ahead */
   toAllocateOf: (plan: PlanRow) => number;
   reservationsOf: (plan: PlanRow) => Map<string, Reservation>;
   /**
    * The period's money outside every subject (user 2026-10-09): the recurring
-   * costs, loans and goals it paid for that the plan does not mirror, and the
-   * category spending no expense or budget subject answers for.
+   * costs, loans, events and goals it paid for that the plan does not mirror,
+   * and the category spending no expense or budget subject answers for —
+   * each with what the plan funds it with for this period only (#494); a
+   * one-off whose row spent nothing (yet, or any more) still shows.
    */
   unplannedOf: (plan: PlanRow) => UnplannedRow[];
   estimate: (family: ReadonlySet<string>) => TargetEstimate;
@@ -186,35 +222,90 @@ export const sortSubjects = (rows: readonly PlanSubjectRow[], segments: readonly
 
 const DEFAULT_SPACE = { periodType: 'month', periodDay: 1 } as SpaceRow;
 
-/** what earlier periods set aside for a recurring cost or a loan and never spent — walked back to the last payment */
+/** the kinds whose unspent funding carries into the next period */
+const CARRIED_SEGMENTS: ReadonlySet<PlanSegmentKind> = new Set(['recurring', 'debts', 'events']);
+
+const realizedIn = (ledger: PeriodLedger, segment: PlanSegmentKind, sourceId: string): number => {
+  if (segment === 'debts') return ledger.byDebt.get(sourceId) ?? 0;
+  if (segment === 'events') return ledger.byEvent.get(sourceId) ?? 0;
+  return ledger.byRecurring.get(sourceId) ?? 0;
+};
+
+/** the recurring costs, loans and events the subjects fund, each with its segment (S3776) */
+function carriedSources(subjects: readonly PlanSubjectRow[]): Map<string, PlanSegmentKind> {
+  const sources = new Map<string, PlanSegmentKind>();
+  for (const s of subjects) if (CARRIED_SEGMENTS.has(s.segment) && s.sourceId) sources.set(s.sourceId, s.segment);
+  return sources;
+}
+
+/**
+ * What earlier periods set aside for a recurring cost, a loan or an event
+ * and never spent. A bill walks back to its last payment (funding before it
+ * was spent); an event's money adds up over every period before (#504).
+ */
 function carriedBySource(
   data: PlanningData,
   space: SpaceRow,
   forPeriod: Period,
   actualByStart: ReadonlyMap<string, PlanRow>,
   subjectsByPlan: ReadonlyMap<string, PlanSubjectRow[]>,
+  ledgerFor: (period: Period) => PeriodLedger,
 ): Map<string, number> {
   const out = new Map<string, number>();
   const earlier = [...actualByStart.values()]
     .filter((p) => p.periodStart && p.periodStart < forPeriod.start)
     .sort((a, b) => b.periodStart!.localeCompare(a.periodStart!));
-  const sourceIds = new Set(
-    data.subjects.filter((s) => (s.segment === 'recurring' || s.segment === 'debts') && s.sourceId).map((s) => s.sourceId!),
-  );
-  for (const sourceId of sourceIds) {
+  for (const [sourceId, segment] of carriedSources(data.subjects)) {
     let carried = 0;
     for (const plan of earlier) {
-      const subject = (subjectsByPlan.get(plan.id) ?? []).find((s) => s.sourceId === sourceId);
+      const subject = (subjectsByPlan.get(plan.id) ?? []).find((s) => s.sourceId === sourceId && s.segment === segment);
       if (!subject) continue;
-      const thatPeriod = periodHistory(space.periodType, space.periodDay, 1, parseLocalDate(plan.periodStart!))[0];
-      const realized =
-        subject.segment === 'debts' ? debtRealizedCents(sourceId, data.txs, thatPeriod) : recurringRealizedCents(sourceId, data.txs, thatPeriod);
+      const realized = realizedIn(ledgerFor(periodHistory(space.periodType, space.periodDay, 1, parseLocalDate(plan.periodStart!))[0]), segment, sourceId);
       carried += Math.max(0, subject.fundedCents - realized);
-      if (realized > 0) break; // the bill was paid in that period: funding before it was spent
+      if (segment !== 'events' && realized > 0) break; // the bill was paid in that period: funding before it was spent
     }
     if (carried > 0) out.set(sourceId, carried);
   }
   return out;
+}
+
+/** the segment an Unplanned row's kind belongs to — where its one-off funding is held */
+const UNPLANNED_SEGMENT: Record<UnplannedRow['kind'], PlanSegmentKind> = {
+  category: 'expenses',
+  recurring: 'recurring',
+  debt: 'debts',
+  event: 'events',
+  goal: 'goals',
+};
+
+/** the plan's one-off funding per Unplanned row key (#494) */
+const oneOffMap = (plan: PlanRow): Map<string, number> => new Map((plan.oneOffs ?? []).filter((o) => o.fundedCents !== 0).map((o) => [o.key, o.fundedCents]));
+
+/** a one-off whose row spent nothing this period still shows — the face comes from its source */
+function fundedOnlyRow(key: string, data: PlanningData, loansById: ReadonlyMap<string, SpaceAccount>): UnplannedRow | null {
+  const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+  switch (kind) {
+    case 'category':
+      return { kind: 'category', mainId: id, cents: 0, subs: [] };
+    case 'recurring': {
+      const rec = data.recurrings.find((r) => r.id === id);
+      return rec ? { kind: 'recurring', sourceId: id, name: rec.name, icon: rec.icon, cents: 0 } : null;
+    }
+    case 'debt': {
+      const loan = loansById.get(id);
+      return loan ? { kind: 'debt', sourceId: id, name: loan.name, color: loan.color, cents: 0 } : null;
+    }
+    case 'event': {
+      const event = data.events.find((e) => e.id === id);
+      return event ? { kind: 'event', sourceId: id, name: event.name, icon: event.icon, color: event.color, cents: 0 } : null;
+    }
+    case 'goal': {
+      const goal = data.goals.find((g) => g.id === id);
+      return goal ? { kind: 'goal', sourceId: id, name: goal.name, icon: goal.icon, color: goal.color, cents: 0 } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /** the model, pure — every screen and job reads the same arithmetic */
@@ -246,24 +337,53 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   const budgetsById = new Map(data.budgets.map((b) => [b.id, b]));
   const recurringsById = new Map(data.recurrings.map((r) => [r.id, r]));
   const loansById = new Map(data.accounts.filter((a) => isDebtTracked(a)).map((a) => [a.id, a]));
+  const eventsById = new Map(data.events.map((e) => [e.id, e]));
   const goalsById = new Map(data.goals.map((g) => [g.id, g]));
   const budgetOpts = budgetOptsFor(data.space);
+  const poolAccounts = planPoolAccounts(data.accounts, data.space);
+  const poolIds: ReadonlySet<string> = new Set(poolAccounts.map((a) => a.id));
+  // one owner per slice (sliceOwner): a debt in the pool is no debt — paying it moves money inside the pool
+  const owners: SliceOwners = {
+    recurringIds: new Set(recurringsById.keys()),
+    loanIds: new Set([...loansById.keys()].filter((id) => !poolIds.has(id))),
+    eventIds: new Set(eventsById.keys()),
+    poolIds,
+  };
+
+  const ledgers = new Map<string, PeriodLedger>();
+  const ledgerFor = (forPeriod: Period): PeriodLedger => {
+    const cached = ledgers.get(forPeriod.start);
+    if (cached) return cached;
+    const ledger = periodLedger(data.txs, forPeriod, owners);
+    ledgers.set(forPeriod.start, ledger);
+    return ledger;
+  };
 
   const contexts = new Map<string, SubjectContext>();
   const contextFor = (forPeriod: Period): SubjectContext => {
     const cached = contexts.get(forPeriod.start);
     if (cached) return cached;
+    const spentBefore = new Map<string, number>();
     const ctx: SubjectContext = {
       space,
       period: forPeriod,
-      txs: data.txs,
+      ledger: ledgerFor(forPeriod),
       catalog: data.catalog,
       budgetsById,
       recurringsById,
       loansById,
+      eventsById,
       goalsById,
       contributions: data.contributions,
-      carriedBySource: carriedBySource(data, space, forPeriod, actualByStart, subjectsByPlan),
+      poolIds,
+      eventSpentBefore: (eventId) => {
+        const known = spentBefore.get(eventId);
+        if (known !== undefined) return known;
+        const net = eventNetBefore(data.txs, eventId, forPeriod.start, owners);
+        spentBefore.set(eventId, net);
+        return net;
+      },
+      carriedBySource: carriedBySource(data, space, forPeriod, actualByStart, subjectsByPlan, ledgerFor),
       budgetOpts,
     };
     contexts.set(forPeriod.start, ctx);
@@ -272,12 +392,14 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
 
   const periodOf = (plan: PlanRow): Period =>
     plan.periodStart ? periodHistory(space.periodType, space.periodDay, 1, parseLocalDate(plan.periodStart))[0] : period;
+  const reservationsOf = (plan: PlanRow): Map<string, Reservation> => categoryReservations(subjectsOf(plan), budgetsById, data.catalog);
   const views = new Map<string, SubjectView[]>();
   const viewsOf = (plan: PlanRow): SubjectView[] => {
     const cached = views.get(plan.id);
     if (cached) return cached;
     const ctx = contextFor(periodOf(plan));
-    const list = subjectsOf(plan).map((subject) => subjectView(subject, ctx));
+    const reservations = reservationsOf(plan);
+    const list = subjectsOf(plan).map((subject) => subjectView(subject, ctx, reservations));
     views.set(plan.id, list);
     return list;
   };
@@ -303,6 +425,15 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   const aheadFundedCents = ahead.reduce((sum, a) => sum + a.fundedCents, 0);
   const pool = poolCents(data.accounts, data.space);
 
+  // the Unplanned rows read the very sources the subjects read (#557: archived loans, stopped
+  // recurring costs, archived goals and events included), so no money drops out when a subject goes
+  const sources = {
+    recurrings: data.recurrings,
+    loans: [...loansById.values()].filter((a) => !poolIds.has(a.id)),
+    events: data.events,
+    goals: data.goals,
+    contributions: data.contributions,
+  };
   const unplanned = new Map<string, UnplannedRow[]>();
   const unplannedOf = (p: PlanRow): UnplannedRow[] => {
     const cached = unplanned.get(p.id);
@@ -310,17 +441,22 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     const subjects = subjectsOf(p);
     const covered = new Set<string>();
     for (const subject of subjects) for (const id of familyOf(subject, data, budgetsById)) covered.add(id);
-    const list = unplannedRows(
-      subjects,
-      { recurrings: data.recurrings, accounts: data.accounts, goals: data.goals, contributions: data.contributions },
-      data.txs,
-      periodOf(p),
-      covered,
-      data.catalog,
-    );
+    const forPeriod = periodOf(p);
+    const rows = unplannedRows(subjects, sources, ledgerFor(forPeriod), forPeriod, covered, data.catalog);
+    const funding = oneOffMap(p);
+    const list: UnplannedRow[] = rows.map((row) => {
+      const funded = funding.get(unplannedKey(row));
+      return funded ? { ...row, fundedCents: funded } : row;
+    });
+    const shown = new Set(rows.map(unplannedKey));
+    for (const [key, funded] of funding) {
+      const row = shown.has(key) ? null : fundedOnlyRow(key, data, loansById);
+      if (row) list.push({ ...row, fundedCents: funded });
+    }
     unplanned.set(p.id, list);
     return list;
   };
+  const oneOffsFunded = (p: PlanRow): number => [...oneOffMap(p).values()].reduce((sum, cents) => sum + cents, 0);
 
   // THE POOL RULE (user 2026-10-08): the pool reads as what the period STARTED
   // with — the balance now plus what the period already spent, inside the
@@ -333,15 +469,17 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   // plan never counts its own ahead funding twice. A period ahead has spent
   // nothing, so its reading is the pool minus funding, as before. The sandbox
   // and a past plan read their own subjects over their own period the same way.
-  // Home's safe-to-spend keeps reading funded-and-not-yet-spent (reservedCents).
+  // Home's safe-to-spend reads funded-and-not-yet-spent per segment (heldBySegment).
   // THE INVARIANCE (user 2026-10-09): "what already left" is every Unplanned
   // row of every kind plus the subjects' realized — a recurring cost, a loan or
   // a goal the period paid for sits under Unplanned until its subject exists,
   // and then under the subject; adding the subject moves the money across and
   // never changes what the period started with.
+  // #557 (user 2026-10-23): one owner per slice (sliceOwner) and Unplanned rows over the subjects'
+  // own source sets keep this sum the same with or without subjects — an overlap no longer counts twice
   const startedWithOf = (p: PlanRow): number =>
     pool + viewsOf(p).reduce((sum, v) => sum + v.realizedCents, 0) + unplannedOf(p).reduce((sum, m) => sum + m.cents, 0);
-  const fundedOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + v.fundedCents, 0);
+  const fundedOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + v.fundedCents, 0) + oneOffsFunded(p);
   const aheadHeldExcept = (p: PlanRow): number => ahead.filter((a) => a.plan.id !== p.id).reduce((sum, a) => sum + a.fundedCents, 0);
 
   const taken = new Set(ahead.map((a) => a.period.start));
@@ -349,7 +487,10 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   const nextAheadPeriod = candidates.find((candidate) => !taken.has(candidate.start)) ?? candidates[0];
 
   const currentViews = plan ? viewsOf(plan) : [];
-  const reservedCents = currentViews.reduce((sum, v) => sum + slackCents(v), 0) + aheadFundedCents;
+  const heldBySegment = new Map<PlanSegmentKind, number>();
+  const hold = (segment: PlanSegmentKind, cents: number) => heldBySegment.set(segment, (heldBySegment.get(segment) ?? 0) + cents);
+  for (const view of currentViews) hold(view.subject.segment, slackCents(view));
+  if (plan) for (const row of unplannedOf(plan)) hold(UNPLANNED_SEGMENT[row.kind], Math.max(0, (row.fundedCents ?? 0) - row.cents));
 
   const editabilityOf = (p: PlanRow): PlanEditability => {
     if (p.kind !== 'actual' || !p.periodStart || p.periodStart >= period.start) return 'full';
@@ -368,13 +509,22 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     sandbox,
     blueprints,
     poolCents: pool,
-    poolAccounts: planPoolAccounts(data.accounts, data.space),
+    poolAccounts,
+    poolIds,
+    relevance: { recurringsById, loansById, budgetsById, eventsById, goalsById, poolIds },
+    continuable:
+      !plan &&
+      !data.removedPlanStarts.has(period.start) &&
+      !!previousPlan &&
+      previousPlan.periodStart !== period.start &&
+      (subjectsByPlan.get(previousPlan.id) ?? []).length > 0,
+    pastLedgers: pastPeriods.map(ledgerFor),
     aheadSuggested: aheadSuggested(space.periodType),
     ahead,
     aheadFundedCents,
     aheadCount: ahead.reduce((sum, a) => sum + a.fraction, 0),
     nextAheadPeriod,
-    reservedCents,
+    heldBySegment,
     periodOf,
     editabilityOf,
     subjectsOf,
@@ -382,9 +532,9 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     segmentsOf: (p) => segmentsOf(p),
     startedWithOf,
     toAllocateOf: (p) => startedWithOf(p) - fundedOf(p) - aheadHeldExcept(p),
-    reservationsOf: (p) => categoryReservations(subjectsOf(p), budgetsById, data.catalog),
+    reservationsOf,
     unplannedOf,
-    estimate: (family) => estimateTarget(family, data.txs, pastPeriods),
+    estimate: (family) => estimateTarget(family, pastPeriods.map(ledgerFor)),
     contextFor,
     attention: currentViews.filter((v) => v.status === 'overspent'),
   };
@@ -429,12 +579,12 @@ export function availabilityByCat(model: PlanningModel): Map<string, CategoryAva
   const out = new Map<string, CategoryAvailability>();
   if (!model.plan) return out;
   const currency = model.data.space?.currency ?? 'EUR';
-  for (const view of model.viewsOf(model.plan)) {
-    const { subject } = view;
-    for (const catId of familyOf(subject, model.data, new Map(model.data.budgets.map((b) => [b.id, b])))) {
-      if (out.has(catId)) continue; // a budget's claim never overrides an expense subject's (expenses come first)
-      out.set(catId, { subjectName: subject.name, color: subject.color, cents: view.fundedCents - view.realizedCents, currency, status: view.status });
-    }
+  const views = new Map(model.viewsOf(model.plan).map((v) => [v.subject.id, v]));
+  // a category answers to the subject that holds it — the one that came into the plan first (#535)
+  for (const [catId, holder] of model.reservationsOf(model.plan)) {
+    const view = views.get(holder.subjectId);
+    if (!view) continue;
+    out.set(catId, { subjectName: holder.name, color: view.subject.color, cents: view.fundedCents - view.realizedCents, currency, status: view.status });
   }
   return out;
 }

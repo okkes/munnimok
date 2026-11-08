@@ -88,6 +88,7 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
     private async Task<LoginResult> SignInAsync(IJobContext ctx, IAsnPortal portal, CancellationToken ct)
     {
         await portal.GotoAsync(_options.LoginUrl, ct).ConfigureAwait(false);
+        await PastBrowserNoticeAsync(portal, _options, ctx.Note, ct).ConfigureAwait(false);
 
         // REFUSED, NOT ACCEPTED, and it stands in front of everything. Best
         // effort: it appears on the second render rather than the first, and a
@@ -125,6 +126,29 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
                 StorageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false),
             },
         };
+    }
+
+    /// <summary>
+    /// ASN's "Browser updaten" notice, passed: the bank shows it a browser it
+    /// judges outdated, with its own button on to online banking. A sign-in
+    /// that met it used to end as a page the connector had never seen (#562).
+    /// Said out loud when it was there - the agent's browser wants renewing
+    /// (docs/connectors/deploy.md, "Keeping the agents' browsers current") -
+    /// and quiet when it was not.
+    /// </summary>
+    /// <returns>Whether the notice was there and passed.</returns>
+    internal static async Task<bool> PastBrowserNoticeAsync(IAsnPortal portal, AsnOptions options, Action<string>? note, CancellationToken ct)
+    {
+        if (!await portal.HasAsync(options.BrowserNoticeContinueSelectors, TimeSpan.FromMilliseconds(options.BrowserNoticeProbeMs), ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (!await portal.ClickAsync(options.BrowserNoticeContinueSelectors, ct).ConfigureAwait(false)) return false;
+
+        note?.Invoke($"{ProviderId}: ASN showed its outdated-browser notice and was asked to go on to online banking; "
+                     + "this agent's browser wants renewing");
+        return true;
     }
 
     /// <summary>
@@ -310,6 +334,11 @@ internal sealed class AsnAdapter(AsnOptions? options = null, TimeProvider? time 
         ctx.Progress(JobStep.Downloading);
 
         await portal.GotoAsync(Absolute(_options.ExportPath), ct).ConfigureAwait(false);
+        // the notice goes on to online banking, not back to the page asked for
+        if (await PastBrowserNoticeAsync(portal, _options, ctx.Note, ct).ConfigureAwait(false))
+        {
+            await portal.GotoAsync(Absolute(_options.ExportPath), ct).ConfigureAwait(false);
+        }
 
         var offered = await ChooseAccountsAsync(ctx, portal, ct).ConfigureAwait(false);
 

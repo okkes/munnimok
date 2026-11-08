@@ -3,13 +3,35 @@ import { getJson } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
 import { hrefOf, navigate } from '../../app/router';
 import { ago, shortId } from '../../lib/format';
-import type { Catalogue, LabSessionRow } from '../../types';
+import type { Catalogue, LabSessionRow, SessionView } from '../../types';
 import { AbsentCard } from '../dashboard/DashboardScreen';
 import { stateChip } from '../jobs/jobFacts';
+import { SIGNING_IN } from './benchFacts';
 
 /** a lab session's state, in the connector's word, coloured by what it means */
 const SESSION_CHIP: Record<string, string> = { active: 'ok-chip', awaiting_input: 'warn-chip', needs_reauth: 'warn-chip', blocked: 'danger-chip', failed: 'danger-chip', expired: 'danger-chip' };
 export const sessionChip = (state: string): string => SESSION_CHIP[state] ?? stateChip(state);
+
+/** what a session still signing in waits for, and that opening it picks the run up (#576) */
+export function signingInLine(row: Pick<LabSessionRow, 'provider' | 'state'>): string {
+  if (row.state !== 'awaiting_input') return 'still signing in — open it to follow the run';
+  return row.provider === 'explore' ? 'the live view waits for you — open it to drive the browser' : 'waiting for your answer — open it to answer';
+}
+
+/**
+ * The relay keeps a session's state as it last read it, and nobody reads a
+ * run the operator walked away from — a session still signing in is asked
+ * afresh, which also brings the relay's copy up to date.
+ */
+async function freshStates(call: ScreenProps['call'], rows: LabSessionRow[]): Promise<LabSessionRow[]> {
+  return Promise.all(
+    rows.map(async (row) => {
+      if (!SIGNING_IN.has(row.state)) return row;
+      const view = await getJson<SessionView>(call, `/lab/bench/${encodeURIComponent(row.provider)}/login/${encodeURIComponent(row.sessionId)}`);
+      return view && view !== 'unreachable' ? { ...row, state: view.state } : row;
+    }),
+  );
+}
 
 /**
  * The test bench (#441 L2): the operator's own connections at the parties,
@@ -25,7 +47,7 @@ export function BenchScreen({ call }: Readonly<ScreenProps>) {
 
   const load = useCallback(async () => {
     const [s, c] = await Promise.all([getJson<LabSessionRow[]>(call, '/lab/bench/sessions'), getJson<Catalogue>(call, '/lab/providers')]);
-    setSessions(s);
+    setSessions(Array.isArray(s) ? await freshStates(call, s) : s);
     setCatalogue(c && c !== 'unreachable' ? c : null);
   }, [call]);
   useEffect(() => {
@@ -122,6 +144,11 @@ export function BenchScreen({ call }: Readonly<ScreenProps>) {
                   <span className={`chip ${sessionChip(s.state)}`} data-testid={`bench-state-${s.sessionId}`}>
                     {s.state}
                   </span>
+                  {SIGNING_IN.has(s.state) && (
+                    <div className="sub" data-testid={`bench-signing-in-${s.sessionId}`}>
+                      {signingInLine(s)}
+                    </div>
+                  )}
                   {s.lastError && <div className="cell-sub mono">{s.lastError}</div>}
                 </td>
                 <td>{s.hasBundle ? 'kept' : 'none'}</td>

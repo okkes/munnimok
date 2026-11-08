@@ -2,7 +2,8 @@ import 'fake-indexeddb/auto';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
-import type { ReceiptRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountLinkRow, AccountRow, ReceiptRow, RecurringRow, SpaceRow, StoreConnLinkRow, StoreConnRow, TransactionRow, TxMetaRow } from '@/db/types';
+import { accountLinkId, storeConnLinkId, txMetaId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { applyOp } from '@/sync/merge';
 import { perfBudget } from '@/lib/perf';
@@ -13,7 +14,9 @@ import { perfBudget } from '@/lib/perf';
  * recurring rows in a real Dexie store (fake-indexeddb), every row
  * carrying a proper sync envelope (built through the merge, written in
  * bulk so the seed itself stays cheap). The same seed yields the same
- * rows on every run, so timings compare across runs.
+ * rows on every run, so timings compare across runs. PERF_BANK_SIZE adds
+ * the shape a connected household has: a bank feed joined through an
+ * accountLink with txMeta overlays, and a second space.
  *
  * From a *.test.ts (a budget assertion with CI headroom):
  *
@@ -32,14 +35,27 @@ export const PERF_SPACE_ID = 'perf_space';
 export const PERF_FEED_ID = 'perf_store_feed';
 export const PERF_ACCOUNT_ID = 'perf_main';
 export const PERF_CONNECTION_ID = 'perf_conn_ah';
+/** a connected bank's feed and its one account (the tail the receipts' payment names) */
+export const PERF_BANK_FEED_ID = 'perf_bank_feed';
+export const PERF_BANK_ACCOUNT_ID = 'perf_bank';
+export const perfOtherSpaceId = (n: number): string => `perf_space_${n}`;
 
 export interface PerfDatasetSize {
+  /** the space's own rows (manual entries, statement imports) */
   transactions: number;
   receipts: number;
   recurring: number;
+  /** bank rows in an attached feed — the shape a connected bank lands in: joined
+   *  through an accountLink, the reviewed ones dressed by the space's txMeta */
+  feedTransactions: number;
+  /** further real spaces attaching the same bank account and shop (a shared household) */
+  otherSpaces: number;
 }
 
-export const PERF_DEFAULT_SIZE: Readonly<PerfDatasetSize> = Object.freeze({ transactions: 1500, receipts: 300, recurring: 40 });
+export const PERF_DEFAULT_SIZE: Readonly<PerfDatasetSize> = Object.freeze({ transactions: 1500, receipts: 300, recurring: 40, feedTransactions: 0, otherSpaces: 0 });
+
+/** a connected household (2026-11, #554): three years of a bank's rows, the shops' receipts, a second space */
+export const PERF_BANK_SIZE: Readonly<PerfDatasetSize> = Object.freeze({ transactions: 300, receipts: 600, recurring: 40, feedTransactions: 4000, otherSpaces: 1 });
 
 export interface PerfStore {
   db: MunniDB;
@@ -138,10 +154,51 @@ export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name =
     }) as TransactionRow;
   });
 
+  // a bank's three years, newest first: the newest sixty await review (no
+  // overlay yet — the join reads them as unreviewed), the rest were filed
+  // in every space that attaches the account; every third charge is a till
+  // line of the shop whose receipts the store feed holds
+  const otherSpaceIds = Array.from({ length: want.otherSpaces }, (_, n) => perfOtherSpaceId(n + 1));
+  const viewers = want.feedTransactions > 0 ? [PERF_SPACE_ID, ...otherSpaceIds] : [];
+  // the seeded pick only where neither the salary nor the till line names it (the same rows every run)
+  const feedMerchant = (i: number, income: boolean): string => {
+    if (income) return 'Employer BV';
+    return i % 3 === 1 ? 'Albert Heijn 1470 AMS' : pick(MERCHANTS);
+  };
+  const feedTxs: TransactionRow[] = Array.from({ length: want.feedTransactions }, (_, i) => {
+    const income = i % 30 === 0;
+    const merchant = feedMerchant(i, income);
+    return row('transaction', PERF_BANK_FEED_ID, `perf_btx_${i}`, {
+      accountId: PERF_BANK_ACCOUNT_ID,
+      date: daysAgo(Math.floor((i / want.feedTransactions) * 1095)),
+      amountCents: income ? 250_000 + Math.floor(random() * 50_000) : -(100 + Math.floor(random() * 15_000)),
+      currency: 'EUR',
+      merchant,
+      description: `${merchant} ${i}`,
+      importRef: `perf-bank-${i}`,
+    }) as TransactionRow;
+  });
+  const metas: TxMetaRow[] = viewers.flatMap((viewer) =>
+    feedTxs.slice(60).map((tx, i) =>
+      row('txMeta', viewer, txMetaId(viewer, tx.id), {
+        txId: tx.id,
+        catId: tx.amountCents > 0 ? 'income' : CATEGORIES[i % CATEGORIES.length],
+        needsReview: 0,
+      }) as TxMetaRow,
+    ),
+  );
+  const ahFeed = feedTxs.filter((tx) => tx.amountCents < 0 && tx.merchant?.startsWith('Albert Heijn'));
+  const twinOf = (i: number): TransactionRow | undefined => {
+    if (i % 2 !== 0) return undefined;
+    // with a bank attached, every other twin is one of its till lines
+    if (ahFeed.length > 0 && i % 4 === 0) return ahFeed[(i / 4) % ahFeed.length];
+    return transactions[(i * 5) % transactions.length];
+  };
+
   // half the receipts mirror a transaction (same day, same total: the
   // matcher has work), the other half have no counterpart
   const receipts: ReceiptRow[] = Array.from({ length: want.receipts }, (_, i) => {
-    const twin = i % 2 === 0 ? transactions[(i * 5) % transactions.length] : undefined;
+    const twin = twinOf(i);
     const totalCents = twin ? Math.abs(twin.amountCents) : 200 + Math.floor(random() * 9_000);
     const lines = 1 + (i % 4);
     const items = Array.from({ length: lines }, (_, j) => ({ name: ITEMS[(i + j) % ITEMS.length], qty: 1, totalCents: j === lines - 1 ? totalCents - Math.floor(totalCents / lines) * (lines - 1) : Math.floor(totalCents / lines) }));
@@ -158,10 +215,32 @@ export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name =
     }) as ReceiptRow;
   });
 
-  await db.transaction('rw', [db.transactions, db.receipts, db.recurrings], async () => {
+  // the shop's connection and its inclusion in every space: what the matcher walks
+  const spaces = otherSpaceIds.map(
+    (id, n) => row('space', id, id, { name: `Perf ${n + 2}`, kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 }) as SpaceRow,
+  );
+  const storeConn = row('storeConn', PERF_FEED_ID, PERF_CONNECTION_ID, { store: 'ah', kind: 'store', displayName: 'Albert Heijn', connectedAt: '2024-01-01T00:00:00Z' }) as StoreConnRow;
+  const connLinks = [PERF_SPACE_ID, ...otherSpaceIds].map(
+    (spaceId) => row('storeConnLink', spaceId, storeConnLinkId(spaceId, PERF_CONNECTION_ID), { instanceId: PERF_CONNECTION_ID, store: 'ah', displayName: 'Albert Heijn' }) as StoreConnLinkRow,
+  );
+  const accountLinks = viewers.map(
+    (viewer) => row('accountLink', viewer, accountLinkId(viewer, PERF_BANK_FEED_ID), { feedSpaceId: PERF_BANK_FEED_ID, accountId: PERF_BANK_ACCOUNT_ID, type: 'checking' }) as AccountLinkRow,
+  );
+
+  await db.transaction('rw', [db.spaces, db.accounts, db.accountLinks, db.transactions, db.txMeta, db.receipts, db.recurrings, db.storeConns, db.storeConnLinks], async () => {
+    await db.spaces.bulkPut(spaces);
+    if (feedTxs.length > 0) {
+      await db.accounts.put(
+        row('account', PERF_BANK_FEED_ID, PERF_BANK_ACCOUNT_ID, { name: 'ING', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 180_000, iban: 'NL91INGB0001231234' }) as AccountRow,
+      );
+    }
+    await db.accountLinks.bulkPut(accountLinks);
     await db.recurrings.bulkPut(recurrings);
-    await db.transactions.bulkPut(transactions);
+    await db.transactions.bulkPut([...transactions, ...feedTxs]);
+    await db.txMeta.bulkPut(metas);
     await db.receipts.bulkPut(receipts);
+    await db.storeConns.put(storeConn);
+    await db.storeConnLinks.bulkPut(connLinks);
   });
 
   return { db, store, repo, spaceId: PERF_SPACE_ID, feedId: PERF_FEED_ID, size: want, close: () => db.close() };
@@ -182,7 +261,8 @@ export async function timeIt<T>(label: string, fn: () => T | Promise<T>, budget:
   const started = performance.now();
   const result = await fn();
   const ms = performance.now() - started;
-  const verdict = budget === undefined ? '' : ` (budget ${budget} ms${ms > budget ? ' — OVER' : ''})`;
+  const over = budget !== undefined && ms > budget ? ' — OVER' : '';
+  const verdict = budget === undefined ? '' : ` (budget ${budget} ms${over})`;
   console.info(`[perf] ${label}: ${Math.round(ms)} ms${verdict}`);
   return { ms, result };
 }

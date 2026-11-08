@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import type { MoneyFmt } from './SegmentSection';
 
@@ -61,12 +62,14 @@ export function useOverBudgetGuard(spaceId: string): OverBudgetGuard {
 /** the question itself, mounted once per screen that funds */
 export function OverBudgetSheet({ guard, fmt, currency }: Readonly<{ guard: OverBudgetGuard; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
+  // #530: how far past the pool tells what the pool holds — it hides with the sensitive figures
+  const balance = useDisplayMoney().sensitive(fmt);
   return (
     <DangerConfirmSheet
       open={guard.pending !== null}
       onOpenChange={(open) => !open && guard.dismiss()}
       title={t('plan.overBudgetTitle')}
-      body={t('plan.overBudgetBody', { amount: fmt(guard.pending?.overCents ?? 0, currency) })}
+      body={t('plan.overBudgetBody', { amount: balance(guard.pending?.overCents ?? 0, currency) })}
       confirmLabel={t('plan.overBudgetConfirm')}
       cooldown={0}
       testId="plan-overbudget"

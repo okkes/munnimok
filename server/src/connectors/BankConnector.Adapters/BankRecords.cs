@@ -31,6 +31,9 @@ public sealed record AccountDraft
 
     /// <summary>The institution as the party's lookup names it (an aggregator); null where the party is the bank.</summary>
     public string? Institution { get; init; }
+
+    /// <summary>The party's identity for the account across consents, where its external id is per session.</summary>
+    public string? Identity { get; init; }
 }
 
 /// <summary>
@@ -104,6 +107,7 @@ public static class BankRecords
             MaskedNumber = stated.MaskedNumber,
             Balance = stated.Balance,
             Institution = stated.Institution,
+            Identity = stated.Identity,
         };
 
         return account with { ContentHash = ContentHash.Of(account) };

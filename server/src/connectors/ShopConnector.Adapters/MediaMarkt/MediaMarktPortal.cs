@@ -32,7 +32,15 @@ internal readonly record struct MediaMarktCall(
 /// assumed from the name, because a session that expired between the list
 /// and here answers a link ending in .pdf with a sign-in page.
 /// </summary>
-internal sealed record MediaMarktDocument(int Status, string MediaType, byte[] Bytes, string? Filename);
+internal sealed record MediaMarktDocument(int Status, string MediaType, byte[] Bytes, string? Filename)
+{
+    /// <summary>
+    /// The order's page offers no invoice at all - NORMAL, not a drift:
+    /// MediaMarkt offers "Factuur aanvragen" on its recent orders only (the
+    /// account holder, #430, 2026-11-02).
+    /// </summary>
+    public static MediaMarktDocument NotOffered { get; } = new(204, string.Empty, [], null);
+}
 
 /// <summary>
 /// The seam between "which pages of orders to read" and "how to reach them".
@@ -71,9 +79,10 @@ internal interface IMediaMarktPortal
     /// <summary>
     /// The invoice MediaMarkt holds for one order, fetched the way a shopper
     /// gets it: the order's own page, "Factuur aanvragen" when it is offered,
-    /// then "Download de factuur" (the user's walk-through, 2026-10-02). Null
-    /// when the page offered no download, with the reason handed to
-    /// <paramref name="note"/> so the fetch can say so.
+    /// then "Download de factuur" (the user's walk-through, 2026-10-02).
+    /// <see cref="MediaMarktDocument.NotOffered"/> when the order offers none;
+    /// null when the page did not do what it should, with the reason handed
+    /// to <paramref name="note"/> so the fetch can say so.
     /// </summary>
     Task<MediaMarktDocument?> InvoiceAsync(string orderId, Action<string> note, CancellationToken ct);
 
@@ -315,28 +324,39 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
                 "stored session is over.");
         }
 
+        // THE PAGE IS A CLIENT-RENDERED APP: at DOMContentLoaded it is a shell.
+        // "Is 'Factuur aanvragen' there?" asked at that moment was answered no
+        // on every order, so the invoice was never asked for and the download
+        // it produces never came (#430). The order itself is waited for first.
+        if (!await AppearsAsync(Any(_options.OrderPageSelectors), _options.OrderPageMs).ConfigureAwait(false))
+        {
+            note($"order '{orderId}': its page never showed the order; " + await DescribeAsync(ct).ConfigureAwait(false));
+            return null;
+        }
+
+        // An order that offers no invoice at all is normal - MediaMarkt
+        // offers one on its recent orders only - and says nothing. The
+        // controls can trail the order block by a moment.
+        var request = Any(_options.RequestInvoiceSelectors);
+        var link = Any(_options.DownloadInvoiceSelectors);
+        if (!await AppearsAsync(Any([.. _options.RequestInvoiceSelectors, .. _options.DownloadInvoiceSelectors]), _options.InvoiceControlsMs)
+                .ConfigureAwait(false))
+        {
+            return MediaMarktDocument.NotOffered;
+        }
+
         // Asked for when MediaMarkt offers to issue one; an order that has its
         // invoice already shows the download straight away.
-        var request = _page.Locator(string.Join(", ", _options.RequestInvoiceSelectors)).First;
-        if (await VisibleAsync(request).ConfigureAwait(false))
+        if (!await VisibleAsync(link).ConfigureAwait(false) && await VisibleAsync(request).ConfigureAwait(false))
         {
             await request.ClickAsync(new LocatorClickOptions { Timeout = _options.StepProbeMs }).ConfigureAwait(false);
         }
 
-        var link = _page.Locator(string.Join(", ", _options.DownloadInvoiceSelectors)).First;
-        try
-        {
-            await link.WaitForAsync(new LocatorWaitForOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = _options.InvoiceProbeMs,
-            }).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        if (!await AppearsAsync(link, _options.InvoiceProbeMs).ConfigureAwait(false))
         {
             // The page as it stands, so a selector that drifted is one log
             // line from its fix rather than a silent absence of invoices.
-            note($"order '{orderId}': no invoice download appeared within {_options.InvoiceProbeMs} ms; " +
+            note($"order '{orderId}': the invoice was asked for and no download appeared within {_options.InvoiceProbeMs} ms; " +
                  await DescribeAsync(ct).ConfigureAwait(false));
             return null;
         }
@@ -390,6 +410,24 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         var mediaType = (contentType ?? string.Empty).Split(';')[0].Trim().ToLowerInvariant();
 
         return new MediaMarktDocument(response.Status, mediaType, body, Path.GetFileName(absolute.AbsolutePath));
+    }
+
+    /// <summary>The first visible match of any of these selectors.</summary>
+    private ILocator Any(IEnumerable<string> selectors) => _page.Locator(string.Join(", ", selectors)).First;
+
+    /// <summary>Whether it turns up visible within the budget - a wait, where <see cref="VisibleAsync"/> is a glance.</summary>
+    private static async Task<bool> AppearsAsync(ILocator locator, int timeoutMs)
+    {
+        try
+        {
+            await locator.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible, Timeout = timeoutMs })
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            return false;
+        }
     }
 
     private static async Task<bool> VisibleAsync(ILocator locator)

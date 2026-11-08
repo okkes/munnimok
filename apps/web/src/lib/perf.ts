@@ -32,6 +32,8 @@ export const perfBudget: Readonly<Record<string, number>> = Object.freeze({
   'planning.build': 150,
   /** matching fetched receipts against transactions */
   'receipts.match': 500,
+  /** preparing the suggestions of every row waiting in the review (#565) */
+  'review.suggest': 500,
 });
 
 export type PerfAttributes = Record<string, string | number | boolean>;
@@ -156,7 +158,7 @@ const looksLikeUrl = (token: string): boolean => /^(?:[a-z][a-z0-9+.-]*:\/\/|\/)
 const scrubText = (text: string): string => text.split(' ').map((t) => (looksLikeUrl(t) ? scrubUrl(t) : t)).join(' ');
 
 const URL_KEYS = ['url', 'http.url', 'url.full', 'url.path', 'from', 'to'];
-const DROP_KEYS = ['http.query', 'http.fragment', 'url.query', 'url.fragment', 'query_string'];
+const DROP_KEYS = new Set(['http.query', 'http.fragment', 'url.query', 'url.fragment', 'query_string']);
 /** the router integration's route params (`url.path.params.txId` & co) — the pattern is the point */
 const PARAM_KEY = /^(?:url\.path\.param|params\.)/;
 
@@ -167,7 +169,7 @@ function scrubBag(bag: Record<string, unknown> | undefined): void {
     if (typeof value === 'string') bag[key] = scrubUrl(value);
   }
   for (const key of Object.keys(bag)) {
-    if (DROP_KEYS.includes(key) || PARAM_KEY.test(key)) delete bag[key];
+    if (DROP_KEYS.has(key) || PARAM_KEY.test(key)) delete bag[key];
   }
 }
 
@@ -203,6 +205,14 @@ export function isIdleSyncRound(event: TransactionEvent): boolean {
 /** beforeSendTransaction (after the zero-network gate): idle rounds out, every URL scrubbed */
 export const transactionFilter = (event: TransactionEvent): TransactionEvent | null =>
   isIdleSyncRound(event) ? null : scrubEvent(event);
+
+/**
+ * The responses the app holds open for minutes - the sync stream, a live
+ * view's pushed frames (#429) - are never a span: one still open keeps the
+ * pageload or navigation it started under waiting until its deadline, and
+ * reads as the slowest request there is. The API leaves them out the same way.
+ */
+export const isHeldStream = (url: string): boolean => /\/(?:sync\/events|live\/stream)(?:\?|$)/.test(url);
 
 /* ── the interaction the person felt ─────────────────────────────────── */
 

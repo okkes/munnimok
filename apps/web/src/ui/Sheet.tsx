@@ -453,7 +453,9 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         data-sheet-body=""
         data-full={full ? '' : undefined}
         ref={(el) => registerCoveredEl(id, el)}
-        className={`react-modal-sheet-container relative z-10 m-0 flex ${wide ? 'w-[760px] max-w-[94vw]' : 'w-[480px] max-w-[92vw]'} flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none`}
+        // #389/#390 (user ss): overflow-hidden — the pinned footer's own
+        // background is a rectangle and squared the bottom corners off
+        className={`react-modal-sheet-container relative z-10 m-0 flex ${wide ? 'w-[760px] max-w-[94vw]' : 'w-[480px] max-w-[92vw]'} flex-col overflow-hidden rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none`}
         style={{
           // #276: the dialog grows with its content — the phone's fixed
           // heights left half-empty dialogs and clipped tall content on

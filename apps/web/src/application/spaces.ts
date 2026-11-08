@@ -53,7 +53,8 @@ export async function healSharedKind(
   if (members.length < 2) return;
   const owner = members.find((m) => m.role === 'owner');
   try {
-    await ensureSpaceShared(store, repo, spaceId, owner?.displayName ?? null);
+    // #505: a reader's copy learns it from the members who may write the row
+    await ensureSpaceShared(store, repo.upkeep(), spaceId, owner?.displayName ?? null);
   } catch {
     // best-effort — it runs again on the next members fetch
   }
@@ -97,7 +98,8 @@ export async function stampJoinedSharedSpace(
       await sync();
       const rows = await joinedRows(store, target);
       if (rows.length > 0) {
-        for (const row of rows) await ensureSpaceShared(store, repo, row.id, creatorName);
+        // #505: joined as a reader, the stamp is the owner's devices' to make
+        for (const row of rows) await ensureSpaceShared(store, repo.upkeep(), row.id, creatorName);
         return;
       }
     }

@@ -160,25 +160,11 @@ export function cumulativeByDay(
   return out;
 }
 
-export interface SameDayPoint {
-  period: Period;
-  cents: number;
-}
-
-/** the cumulative spend each period had reached at the same day-of-period
- *  (a shorter period is read at its last day) */
-export function sameDayComparison(
-  txs: readonly TxView[],
-  periods: readonly Period[],
-  dayIndex: number,
-  catIds: readonly string[] | null,
-  catalog: CatalogLookup,
-): SameDayPoint[] {
-  return periods.map((period) => {
-    const cumulative = cumulativeByDay(txs, period, catIds, catalog);
-    const at = Math.min(dayIndex, cumulative.length - 1);
-    return { period, cents: at < 0 ? 0 : cumulative[at] };
-  });
+/** what a cumulative series had reached by a day-of-period — a shorter
+ *  period is read at its last day, a day before the first reads zero */
+export function reachedBy(cumulative: readonly number[], dayIndex: number): number {
+  const at = Math.min(dayIndex, cumulative.length - 1);
+  return at < 0 ? 0 : cumulative[at];
 }
 
 export interface CashflowPoint {
@@ -242,10 +228,18 @@ type LiquidAccount = Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived
  * balance line): the liquid accounts — checking, savings, cash; the
  * shared pot is not among LIQUID_TYPES — summed and walked back the net
  * worth way (balanceNow − Σ amounts after the day), one point per day
- * from `from` to `to` inclusive. Pending rows stay out.
+ * from `from` to `to` inclusive. Pending rows stay out. A custom graph
+ * (#531) names its own accounts, whatever their type.
  */
-export function dailyBalanceSeries(accounts: readonly LiquidAccount[], txs: readonly TxView[], from: string, to: string): DailyPoint[] {
-  const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1 && LIQUID_TYPES.has(account.type));
+export function dailyBalanceSeries(
+  accounts: readonly LiquidAccount[],
+  txs: readonly TxView[],
+  from: string,
+  to: string,
+  picked: readonly string[] | null = null,
+): DailyPoint[] {
+  const counts = (account: LiquidAccount) => (picked ? picked.includes(account.id) : LIQUID_TYPES.has(account.type));
+  const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1 && counts(account));
   const nowCents = live.reduce((sum, account) => sum + account.balanceCents, 0);
   const accountIds = new Set(live.map((account) => account.id));
   const perDay = new Map<string, number>();
@@ -352,6 +346,24 @@ function recurringDeltas(recurrings: readonly RecurringRow[], from: string, to: 
     }
   }
   return { deltas, incomeDays };
+}
+
+/**
+ * The recurring rows a custom balance line expects (#531): a recurring
+ * cost carries no account of its own, so it counts where its latest
+ * linked payment landed; one never paid yet belongs to no picked set.
+ */
+export function recurringsOnAccounts(recurrings: readonly RecurringRow[], txs: readonly TxView[], accountIds: readonly string[]): RecurringRow[] {
+  const latest = new Map<string, TxView>();
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || !tx.recurringId) continue;
+    const prev = latest.get(tx.recurringId);
+    if (!prev || tx.date > prev.date) latest.set(tx.recurringId, tx);
+  }
+  return recurrings.filter((rec) => {
+    const paid = latest.get(rec.id);
+    return paid !== undefined && accountIds.includes(paid.accountId);
+  });
 }
 
 export function balanceProjection(

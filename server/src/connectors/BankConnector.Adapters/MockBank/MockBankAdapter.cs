@@ -2,6 +2,7 @@ using Connector.Kit.Adapters;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
 using Connector.Kit.Manifests;
+using Connector.Kit.Normalization;
 using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
@@ -19,8 +20,9 @@ namespace BankConnector.Adapters.MockBank;
 /// socket. They never touch <see cref="IJobContext.Browser"/>, even where
 /// the manifest declares a browser tier, because the tier is what routing
 /// and agent-class logic are supposed to see, not an instruction to start
-/// Chromium. And their data never moves, so a content hash asserted today
-/// still holds next year.
+/// Chromium. And a day's data never moves, so a content hash asserted today
+/// still holds next year - while the history itself ends on the provider's
+/// own today, so it always reaches back as far as the manifest says.
 /// </summary>
 public abstract class MockBankAdapter : IProviderAdapter
 {
@@ -28,8 +30,19 @@ public abstract class MockBankAdapter : IProviderAdapter
 
     protected TimeProvider Time { get; }
 
-    /// <summary>The fixture set this provider serves.</summary>
-    protected virtual MockBankLedger Ledger => MockBankLedger.Consistent;
+    /// <summary>
+    /// The fixture set this provider serves, through <paramref name="today"/>:
+    /// the ledger ends on the provider's clock (an injected one in tests), so
+    /// its history limit is always filled - a fixed last day emptied every
+    /// window once it fell behind the limit.
+    /// </summary>
+    protected virtual MockBankLedger LedgerThrough(DateOnly today) => MockBankLedger.Through(today);
+
+    /// <summary>The provider's today in UTC: where its ledger ends and its windows are resolved from.</summary>
+    protected DateOnly Today => DateOnly.FromDateTime(Time.GetUtcNow().UtcDateTime);
+
+    /// <summary>Overrides the transactions resource's per-fetch ceiling; null outside tests, where a small one makes a pass partial on purpose.</summary>
+    public int? RecordCap { get; init; }
 
     public abstract ProviderManifest Describe();
 
@@ -64,7 +77,10 @@ public abstract class MockBankAdapter : IProviderAdapter
         ArgumentNullException.ThrowIfNull(request);
 
         var manifest = Describe();
-        var accounts = Ledger.ToAccounts(ctx.SessionId);
+        // one reading of the clock: the ledger and the window end on the same day
+        var today = Today;
+        var ledger = LedgerThrough(today);
+        var accounts = ledger.ToAccounts(ctx.SessionId);
 
         ctx.Progress(JobStep.Parsing);
 
@@ -77,12 +93,12 @@ public abstract class MockBankAdapter : IProviderAdapter
             case BankResources.Transactions:
             {
                 var selected = BankAccountFilter.Select(accounts, request);
-                var window = BankWindow.Resolve(request, manifest, DateOnly.FromDateTime(Time.GetUtcNow().UtcDateTime));
+                var window = BankWindow.Resolve(request, manifest, today);
 
                 ctx.Progress(JobStep.Normalizing);
-                var (page, complete) = BankEmission.Page(
-                    Ledger.ToTransactions(ctx.SessionId, selected, window),
-                    manifest.Resource(BankResources.Transactions)?.MaxRecordsPerFetch ?? 200);
+                var (page, complete) = Newest(
+                    ledger.ToTransactions(ctx.SessionId, selected, window),
+                    RecordCap ?? manifest.Resource(BankResources.Transactions)?.MaxRecordsPerFetch ?? 200);
 
                 ctx.Progress(JobStep.Finalizing);
                 return BankEmission.Verified(manifest.Id, selected, page, complete, via: "fixture");
@@ -91,6 +107,30 @@ public abstract class MockBankAdapter : IProviderAdapter
             default:
                 throw ConnectorException.Unsupported($"{manifest.Id} has no resource '{request.ResourceId}'");
         }
+    }
+
+    /// <summary>
+    /// The rows a capped pass keeps, taken the way a live party walks: newest
+    /// first, stopping at the cap. What a partial pass leaves behind is then
+    /// OLDER history - the part a backfill pass asks for with <c>until</c>
+    /// (#460) - and every account keeps a contiguous run of its own newest
+    /// rows, so its balance chain still verifies. The emitted order stays the
+    /// ledger's own, oldest first per account.
+    /// </summary>
+    internal static (IReadOnlyList<Transaction> Page, bool Complete) Newest(IReadOnlyList<Transaction> ordered, int cap)
+    {
+        ArgumentNullException.ThrowIfNull(ordered);
+        if (ordered.Count <= cap) return (ordered, true);
+
+        var kept = ordered
+            .Select((tx, index) => (tx.BookedAt, Index: index))
+            .OrderByDescending(r => r.BookedAt)
+            .ThenByDescending(r => r.Index)
+            .Take(cap)
+            .Select(r => r.Index)
+            .ToHashSet();
+
+        return ([.. ordered.Where((_, index) => kept.Contains(index))], false);
     }
 
     protected static string RequireInput(IJobContext ctx, string key)
@@ -114,7 +154,7 @@ public abstract class MockBankAdapter : IProviderAdapter
                 DisplayName = MockBankCredentials.AccountLabel,
                 ExternalId = MockBankLedger.CurrentIban,
             },
-            Reachable = Ledger.Reachable,
+            Reachable = LedgerThrough(Today).Reachable,
             // Stating the real expiry rather than letting the manifest TTL
             // stand: a manifest that claims thirty days for a one-hour
             // session makes the consumer promise a month of silent syncing

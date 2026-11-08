@@ -113,6 +113,27 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         await Flows.ConnectAsync(http, Provider, subject, Credentials);
     }
 
+    /// <summary>
+    /// #460: a scheduler's pass over older history is unattended too, held to
+    /// the interval on a clock of its own: it fits beside the schedule's pass,
+    /// and a second one inside the interval is told to wait - one of each per
+    /// interval, two unattended reads where PSD2 allows four.
+    /// </summary>
+    [Fact]
+    public async Task A_backfill_pass_fits_beside_the_schedules_pass_and_a_second_one_inside_the_interval_is_held_off()
+    {
+        using var http = factory.CreateAuthorizedClient();
+        var connection = await Flows.ConnectAsync(http, Provider, Flows.NewSubject("backfill-interval"), Credentials);
+        var ticket = await Flows.ResumeAsync(http, Provider, connection);
+
+        await SettledAsync(http, ticket, "schedule");
+        await SettledAsync(http, ticket, "backfill");
+
+        using var second = await FetchAsync(http, ticket, "backfill");
+        var error = await ErrorEnvelope.AssertAsync(second, HttpStatusCode.TooManyRequests, "rate_limited");
+        Assert.InRange(error.GetProperty("retry_after_seconds").GetInt32(), 1, 60);
+    }
+
     [Fact]
     public async Task A_trigger_the_connector_does_not_know_is_refused_rather_than_guessed()
     {
@@ -123,6 +144,30 @@ public sealed class SyncIntervalTests(ShopApiFactory factory)
         using var response = await FetchAsync(http, ticket, "cron");
 
         await ErrorEnvelope.AssertAsync(response, HttpStatusCode.BadRequest, "invalid_request");
+    }
+
+    /// <summary>A fetch under a trigger, followed to success: the interval counts jobs that succeeded.</summary>
+    private static async Task SettledAsync(HttpClient http, string ticket, string trigger)
+    {
+        string? jobId;
+        using (var response = await FetchAsync(http, ticket, trigger))
+        {
+            var body = await response.JsonAsync();
+            if (response.StatusCode == HttpStatusCode.OK) return;
+            Assert.True(response.StatusCode == HttpStatusCode.Accepted, $"{trigger} fetch answered {(int)response.StatusCode}: {body}");
+            jobId = body.Text("job_id");
+        }
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            using var poll = await http.GetAsync($"/v1/{Provider}/jobs/{jobId}");
+            var state = (await poll.JsonAsync()).Text("state");
+            if (state == "succeeded") return;
+            Assert.False(state is "failed" or "expired", $"{trigger} fetch job ended as {state}");
+            await Task.Delay(100);
+        }
+        Assert.Fail($"{trigger} fetch job {jobId} never settled");
     }
 
     private static async Task<HttpResponseMessage> FetchAsync(HttpClient http, string ticket, string trigger)

@@ -4,6 +4,8 @@ import { Repo } from '@/db/repo';
 import { HlcClock } from './hlc';
 import { ApiSyncBackend } from './backend';
 import type { SyncBackend } from './backend';
+import { drainPull } from './drain';
+import { readSpaceRoles } from './spaceAccess';
 
 /**
  * Background sync for the service worker (app killed or in the
@@ -64,17 +66,29 @@ export async function readSwSession(now = Date.now()): Promise<SwSession | null>
   return raw;
 }
 
-const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
+/**
+ * How long one wake pages through spaces before it leaves the rest to the
+ * next pull: a browser ends a worker's event soon (on some platforms within
+ * half a minute), and the budget alerts still run after the pull.
+ */
+export const SW_PULL_BUDGET_MS = 20_000;
 
 interface SwSyncDeps {
   /** injectable for tests */
   backend?: SyncBackend;
   session?: SwSession | null;
+  /** the worker's clock and its pull budget, for tests */
+  now?: () => number;
+  budgetMs?: number;
 }
 
 /**
  * Pull new ops for one space (push payload) or every reachable space.
- * Merge-by-LWW makes replays harmless; cursors keep it cheap.
+ * Merge-by-LWW makes replays harmless; cursors keep it cheap. Each space
+ * is paged until drained (sync/drain.ts): the head stamp after one page
+ * this used to write skipped everything past the first thousand ops for
+ * good. A wake that runs out of budget stops at the last page it applied,
+ * and the next pull — the app's or the next push's — goes on from there.
  */
 export async function backgroundPull(spaceId?: string, deps: SwSyncDeps = {}): Promise<number> {
   // 'in' on purpose: tests inject an explicit null to mean "no session"
@@ -89,15 +103,14 @@ export async function backgroundPull(spaceId?: string, deps: SwSyncDeps = {}): P
 
   const store = new DexieBackend(new MunniDB(identityDbName(session.identityKey)));
   const repo = new Repo(store, new HlcClock('sw'), { trackOutbox: false });
+  const now = deps.now ?? Date.now;
+  const deadline = now() + (deps.budgetMs ?? SW_PULL_BUDGET_MS);
   let applied = 0;
   try {
     const spaces = spaceId ? [spaceId] : await backend.listSpaces();
     for (const id of spaces) {
-      const since = ((await store.metaGet(cursorKey(id)))?.value as number | undefined) ?? 0;
-      const { ops, latestSeq } = await backend.pull(id, since);
-      if (ops.length > 0) await repo.applyRemoteOps(ops);
-      if (latestSeq !== since) await store.metaPut(cursorKey(id), latestSeq);
-      applied += ops.length;
+      applied += await drainPull(store, repo, backend, id, { deadline, now });
+      if (now() >= deadline) break;
     }
   } finally {
     store.close();
@@ -125,6 +138,7 @@ export async function flushOutbox(deps: SwSyncDeps = {}): Promise<number> {
   let pushed = 0;
   try {
     const outbox = await store.outboxAll();
+    const roles = await readSpaceRoles(store);
     const bySpace = new Map<string, typeof outbox>();
     for (const op of outbox) {
       const list = bySpace.get(op.spaceId) ?? [];
@@ -132,6 +146,9 @@ export async function flushOutbox(deps: SwSyncDeps = {}): Promise<number> {
       bySpace.set(op.spaceId, list);
     }
     for (const [spaceId, ops] of bySpace) {
+      // #505: a space this identity only reads refuses the push — the app
+      // undoes those ops itself and tells the person
+      if (roles[spaceId] === 'reader') continue;
       // #306: the engine marked this space evicted — pushing would 403
       // forever; stray ops written after the purge are dropped instead
       if (await store.metaGet(`evictedSpace_${spaceId}`)) {

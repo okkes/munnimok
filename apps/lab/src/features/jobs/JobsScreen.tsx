@@ -8,7 +8,7 @@ import { AbsentCard } from '../dashboard/DashboardScreen';
 import { artifactsLine, jobsQuery, outcomeLine, stateChip, triggerWord, whoLine } from './jobFacts';
 
 const STATES = ['', 'queued', 'leased', 'running', 'awaiting_input', 'succeeded', 'failed', 'expired'];
-const TRIGGERS = ['', 'user', 'schedule', 'lab', 'canary', 'none'];
+const TRIGGERS = ['', 'user', 'schedule', 'backfill', 'lab', 'canary', 'none'];
 const KINDS = ['', 'login', 'fetch'];
 
 type Filters = { provider: string; state: string; kind: string; trigger: string; code: string; user: string; limit: string };

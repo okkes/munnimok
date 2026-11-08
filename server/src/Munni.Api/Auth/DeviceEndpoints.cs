@@ -14,7 +14,7 @@ public sealed record DeviceDto(
 public sealed record RenameDeviceRequest(string Name);
 
 /// <summary>
-/// Logged-in devices (docs/logged-in-devices-plan.md, approved): see
+/// Logged-in devices (user rulings 2026-07-24): see
 /// every device this account is signed in on, rename it, and remotely
 /// disconnect one — enforcement + last-seen stamping live in
 /// UserResolution.TouchDeviceAsync; the revoked device wipes itself on

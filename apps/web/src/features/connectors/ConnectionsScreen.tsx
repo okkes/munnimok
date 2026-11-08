@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang, TranslationKey } from '@/i18n';
@@ -6,29 +6,38 @@ import type { ConnectorConnRow } from '@/db/types';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useSession } from '@/app/session';
-import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges, useLiveConnectionIds, useMyFeedIds } from '@/application/connections';
-import { ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
+import {
+  connectorsAvailable,
+  mergedRange,
+  useConnectionOps,
+  useConnections,
+  useConnectorAccounts,
+  useFetchedRanges,
+  useLiveConnectionIds,
+  useMyFeedIds,
+} from '@/application/connections';
+import { fetchingConnectionIds, ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
 import { uncoveredDateText } from '@/features/accounts/coverage';
-import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
+import type { ConnectionView, ConnectorAccountView } from '@/application/connections';
 import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
-import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Sheet } from '@/ui/Sheet';
+import { BankPickerSheet } from './BankPickerSheet';
 import { CatalogueSheet } from './CatalogueSheet';
 import { takeCatalogueIntent } from './catalogueIntent';
 import { ChallengeCard } from './ChallengeCard';
-import { ConnectFlowSheet, forgetTypedValues } from './ConnectFlowSheet';
-import type { ResumeLogin } from './ConnectFlowSheet';
+import { ConnectSteps } from './ConnectSteps';
+import type { FlowRequest } from './ConnectSteps';
 import { connectorApi } from './api';
-import { usePendingLoginFollower, usePendingLogins } from './pendingLogins';
+import { usePendingLogins } from './pendingLogins';
 import type { PendingLogin } from './pendingLogins';
 import { ConnectionSheet } from './ConnectionSheet';
-import { rangeLine } from './ConnectionReceiptsScreen';
-import { SpacePicker } from './SpacePicker';
+import { olderLine, rangeLine } from './ConnectionReceiptsScreen';
 import { RESULT_TTL_MS, resultStillFresh, useSyncActivity } from './syncActivity';
 import { ReportAsk } from './ReportAsk';
 import { ConnectionSyncCard } from './ConnectionSyncCard';
@@ -36,7 +45,8 @@ import type { SyncReport } from './connectorSync';
 import { kindIcon, partyLogo, partyName } from './logos';
 import { errorKey } from './manifestForm';
 import type { BindingView, JobView, ProviderKind, ProviderManifest } from './types';
-import { useCatalogue, useRelayBindings } from './useCatalogue';
+import { useCatalogue, useRelayAccountLinks, useRelayBindingsRead } from './useCatalogue';
+import { manageRouteFor, renewalOf } from './connectionRules';
 
 /** the hub's sections, in the order they read */
 const SECTIONS: { kind: ProviderKind; captionKey: 'conn.banks' | 'conn.shops' | 'conn.registries' }[] = [
@@ -44,6 +54,31 @@ const SECTIONS: { kind: ProviderKind; captionKey: 'conn.banks' | 'conn.shops' | 
   { kind: 'store', captionKey: 'conn.shops' },
   { kind: 'registry', captionKey: 'conn.registries' },
 ];
+
+/** #527: Connected services holds the shops and registries; the banks are managed with the accounts */
+export const SERVICE_KINDS: readonly ProviderKind[] = ['store', 'registry'];
+export const BANK_KINDS: readonly ProviderKind[] = ['bank'];
+
+/** the deep links a hub answers: a party to connect (as a connection, to sign in again), a connection or an account to bring into view (#528) */
+interface HubSearch {
+  connect?: string;
+  reconnect?: string;
+  connection?: string;
+  uncovered?: string;
+}
+
+/** #528: brings a card into view and flashes it once the smooth scroll settles (the accounts screen's own pulse) */
+function flashIntoView(elementId: string): boolean {
+  const target = document.getElementById(elementId);
+  if (!target) return false;
+  target.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  delete target.dataset.flash;
+  globalThis.setTimeout(() => {
+    target.dataset.flash = '1';
+    globalThis.setTimeout(() => delete target.dataset.flash, 1600);
+  }, 450);
+  return true;
+}
 
 type Translate = ReturnType<typeof useLang>['t'];
 
@@ -59,6 +94,7 @@ function okLine(state: SyncReport, t: Translate): string {
   if (state.linked > 0) text += ` · ${t('conn.syncLinked', { n: state.linked })}`;
   if (state.proposed > 0) text += ` · ${t('conn.syncProposed', { n: state.proposed })}`;
   if (state.partial) text += ` · ${t('conn.syncPartial')}`;
+  if (state.olderPending) text += ` · ${t('conn.syncOlderLater')}`;
   return text;
 }
 
@@ -70,12 +106,15 @@ const REFUSAL_KEYS: Partial<Record<SyncReport['status'], TranslationKey>> = {
 };
 
 /** a sync attempt's outcome, spoken out loud */
-function SyncResultLine({ id, state, found }: Readonly<{ id: string; state: 'busy' | SyncReport; found?: number | null }>) {
-  const { t } = useLang();
+function SyncResultLine({ id, state, found, older }: Readonly<{ id: string; state: 'busy' | SyncReport; found?: number | null; older?: string }>) {
+  const { t, lang } = useLang();
   if (state === 'busy') {
+    let busy = found == null ? t('conn.syncBusy') : t('conn.syncFound', { n: found });
+    // #460: the sync went on to older history — how far back it reached so far
+    if (older) busy = olderLine(older, t, lang);
     return (
       <span className="block text-[11px] text-accent-deep" data-testid={`conn-syncing-${id}`}>
-        {found == null ? t('conn.syncBusy') : t('conn.syncFound', { n: found })}
+        {busy}
       </span>
     );
   }
@@ -152,13 +191,24 @@ const pendingQuestionOf = (view: ConnectionView, binding: BindingView | undefine
 const autoAnswered = new Set<string>();
 
 /**
- * Settings → Connections (#367, the hub): every party the user connected,
- * as cards with the party's status and the connection's state, one
- * primary action per state, the spaces a shop's receipts flow into or
- * the accounts a bank handed over — and the catalogue to connect one
- * more. Banks and shops; registries join with their slice.
+ * The connections of some kinds (#367, the hub): every party the user
+ * connected, as cards with the party's status and the connection's state,
+ * one primary action per state, the spaces a shop's receipts flow into or
+ * the accounts a bank handed over — and the door to connect one more.
+ * #527: Connected services renders the shops and registries, All accounts
+ * the banks (with a bank-only picker), on the same machinery.
  */
-export function ConnectionsScreen() {
+export function ConnectionHub({
+  kinds,
+  route,
+  picker,
+}: Readonly<{
+  kinds: readonly ProviderKind[];
+  /** the screen the hub sits on: a deep link's params are cleared back to it */
+  route: '/connections' | '/accounts';
+  /** a host whose own door (the Add-account chooser) opens the picker holds its state */
+  picker?: { open: boolean; onOpenChange: (open: boolean) => void };
+}>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
@@ -166,7 +216,14 @@ export function ConnectionsScreen() {
   const bankAccounts = useConnectorAccounts();
   const ops = useConnectionOps();
   const catalogue = useCatalogue();
-  const bindings = useRelayBindings();
+  // asked again once the set of connections changes: a fresh one is never read as dropped by the relay
+  const connectionKey = (connections ?? []).map((view) => view.meta.id).join(',');
+  const bindingsRead = useRelayBindingsRead(connectionKey);
+  const bindings = useMemo(() => bindingsRead ?? new Map<string, BindingView>(), [bindingsRead]);
+  /** #528: the session ended and only a new sign-in or consent revives it — the relay's word first (this device cannot see a consent end) */
+  const ended = (view: ConnectionView): boolean =>
+    renewalOf(view.meta, view.device, bindings.get(view.meta.id), bindingsRead !== undefined, catalogue.byId.get(view.meta.store)).ended;
+  const banks = kinds.includes('bank');
   // #445: which connections still exist - an account stamped with a gone one is not fetched any more;
   // only for accounts the viewer's own connection feeds (a friend's ids are not in this device's set) -
   // the feed set says whose (user ss 2026-10-09), the attacher's name only while that set is out of reach
@@ -174,29 +231,33 @@ export function ConnectionsScreen() {
   const myFeeds = useMyFeedIds();
   const identity = useSession((s) => s.identity);
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+  // every sync in flight or just finished, whoever started it; the rows read it
+  const activity = useSyncActivity((s) => s.activity);
+  // #524: which accounts each of the person's connections fetches, asked again after every finished sync
+  const finishedSyncs = Object.values(activity).filter((a) => a.phase === 'done').length;
+  const reachedBy = useRelayAccountLinks(finishedSyncs);
   const sinceOf = (view: ConnectorAccountView): string | null =>
-    liveIds ? uncoveredSince(view.account, liveIds, ownsFeed(view.account.spaceId, myFeeds, view.attachedTo, mySub)) : null;
-  const { connect: connectParam, reconnect: reconnectParam } = useSearch({ strict: false }) as { connect?: string; reconnect?: string };
+    liveIds ? uncoveredSince(view.account, liveIds, ownsFeed(view.account.spaceId, myFeeds, view.attachedTo, mySub), Date.now(), reachedBy) : null;
+  const search = useSearch({ strict: false }) as HubSearch;
+  const { connect: connectParam, reconnect: reconnectParam } = search;
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
+  /** the kind of party an account was fetched by — a registry's positions live with Connected services */
+  const partyKindOf = (provider: string | undefined): ProviderKind =>
+    (provider ? (catalogue.byId.get(provider)?.kind ?? connections?.find((c) => c.meta.store === provider)?.meta.kind) : undefined) ?? 'bank';
 
-  // an accounts screen's Connect door arrives with the catalogue already open (#414)
-  const [catalogueOpen, setCatalogueOpen] = useState(() => takeCatalogueIntent());
-  const [flow, setFlow] = useState<{ manifest: ProviderManifest; reconnectId: string | null; resume?: ResumeLogin } | null>(null);
-  // sign-ins in flight (closed sheets included): followed here and adopted when they settle
+  // an accounts screen's Connect door arrives with the bank picker already open (#414, #527); a host may hold it
+  const [ownPicker, setOwnPicker] = useState(() => !picker && banks && takeCatalogueIntent());
+  const catalogueOpen = picker?.open ?? ownPicker;
+  const setCatalogueOpen = picker?.onOpenChange ?? setOwnPicker;
+  const [flow, setFlow] = useState<FlowRequest | null>(null);
+  // sign-ins in flight (closed sheets included): followed by the connect steps and adopted when they settle
   const pendingLogins = usePendingLogins((s) => s.logins);
   const forgetPending = usePendingLogins((s) => s.remove);
-  const [naming, setNaming] = useState<{ connectionId: string; duplicateOf?: string } | null>(null);
-  const [nameDraft, setNameDraft] = useState('');
-  const [attempted, setAttempted] = useState(false);
   const [manageId, setManageId] = useState<string | null>(null);
-  // the step after naming a shop: which spaces its receipts reach (none until picked, user ruling 2026-10-02)
-  const [spacesStep, setSpacesStep] = useState<{ connectionId: string; picked: string[] } | null>(null);
   const [ask, setAsk] = useState<JobAsk | null>(null);
   // #441 L1: answers given to "report this failure?" this visit (the relay's copy refreshes on the next load)
   const [reportAnswers, setReportAnswers] = useState<Record<string, 'yes' | 'no'>>({});
-  // every sync in flight or just finished, whoever started it; the rows read it
-  const activity = useSyncActivity((s) => s.activity);
   const ranges = useFetchedRanges();
 
   // a finished sync's result leaves the row after a while: re-render when the soonest one expires
@@ -227,11 +288,12 @@ export function ConnectionsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the rows and the relay's word are the inputs; ops is rebuilt every render
   }, [connections, bindings, signedIn]);
 
-  // #445: party-fed accounts no live connection fetches, whose party has no card to sit under
+  // #445: party-fed accounts no live connection of the person's fetches any more — they sit under no card
+  // (#524: a card lists only what its own connection fetches), so they are listed here, with the way back
   const orphaned = (bankAccounts ?? [])
+    .filter((view) => kinds.includes(partyKindOf(view.account.provider ?? view.account.source)))
     .map((view) => ({ account: view.account, since: sinceOf(view) }))
-    .filter((entry): entry is { account: typeof entry.account; since: string } => entry.since !== null)
-    .filter(({ account }) => !(connections ?? []).some((view) => view.meta.store === (account.provider ?? account.source)));
+    .filter((entry): entry is { account: typeof entry.account; since: string } => entry.since !== null);
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
   const spaceNames = new Map((allSpaces ?? []).map((s) => [s.id, s.name]));
   const kindOf = (view: ConnectionView): ProviderKind => view.meta.kind ?? catalogue.byId.get(view.meta.store)?.kind ?? 'store';
@@ -244,36 +306,6 @@ export function ConnectionsScreen() {
     });
     setAsk(null);
   };
-
-  const afterConnect = async (result: AdoptResult, reconnect: boolean) => {
-    setFlow(null);
-    if (reconnect) return;
-    // fresh connection: ask for a display name right away (user ruling)
-    const meta = (await store.allRows('storeConn')).find((c) => c.id === result.connectionId);
-    setNameDraft(meta?.displayName ?? '');
-    setAttempted(false);
-    setNaming({ connectionId: result.connectionId, duplicateOf: result.duplicateOf });
-  };
-
-  const saveName = async () => {
-    if (!naming) return;
-    const named = naming.connectionId;
-    await ops.rename(named, nameDraft);
-    setNaming(null);
-    // a shop's receipts reach no space until picked (user ruling 2026-10-02): the step follows the name
-    const meta = (await store.allRows('storeConn')).find((c) => c.id === named && c.deleted === 0);
-    const kind = meta?.kind ?? (meta ? catalogue.byId.get(meta.store)?.kind : undefined) ?? 'store';
-    if (meta && kind === 'store' && (allSpaces ?? []).length > 0) setSpacesStep({ connectionId: named, picked: [] });
-  };
-
-  const saveSpaces = async () => {
-    if (!spacesStep) return;
-    if (spacesStep.picked.length > 0) await ops.setIncludedSpaces(spacesStep.connectionId, spacesStep.picked);
-    setSpacesStep(null);
-  };
-
-  const togglePicked = (spaceId: string) =>
-    setSpacesStep((step) => step && { ...step, picked: step.picked.includes(spaceId) ? step.picked.filter((id) => id !== spaceId) : [...step.picked, spaceId] });
 
   const openFlow = (manifest: ProviderManifest, reconnectId: string | null) => {
     setCatalogueOpen(false);
@@ -297,12 +329,27 @@ export function ConnectionsScreen() {
     if (!connectParam || !signedIn) return;
     const manifest = catalogue.byId.get(connectParam);
     if (!manifest) return;
+    // #527: a party another screen manages is connected there
+    if (!kinds.includes(manifest.kind)) {
+      void navigate({ to: manageRouteFor(manifest.kind), search: { connect: connectParam, reconnect: reconnectParam }, replace: true });
+      return;
+    }
     // the ids load a beat after the screen: a named connection waits for them rather than opening a fresh connect
     if (reconnectParam && liveIds === undefined) return;
     openFlow(manifest, reconnectParam && liveIds?.has(reconnectParam) ? reconnectParam : null);
-    void navigate({ to: '/connections', replace: true });
+    void navigate({ to: route, replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the manifest map and the live ids are the inputs that change
   }, [connectParam, reconnectParam, catalogue.byId, liveIds]);
+
+  // #528: a reconnect door elsewhere names the connection (or the account no connection fetches any more):
+  // it is brought into view and flashed, its own action right there — once the rows it names have rendered
+  const focusId = search.connection ? `conn-row-${search.connection}` : search.uncovered && `conn-uncovered-row-${search.uncovered}`;
+  const rendered = (connections?.length ?? 0) + orphaned.length;
+  useEffect(() => {
+    if (!focusId || !flashIntoView(focusId)) return;
+    void navigate({ to: route, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the rows rendering is what the effect waits for
+  }, [focusId, rendered]);
 
   /** back into a sign-in that was closed mid-way */
   const continueLogin = (login: PendingLogin) => {
@@ -316,19 +363,6 @@ export function ConnectionsScreen() {
     forgetPending(login.connectionId);
   };
 
-  // a sign-in that settles while its sheet is closed is adopted right here
-  usePendingLoginFollower({
-    exclude: flow?.resume?.connectionId ?? null,
-    onActive: async (login, view) => {
-      const manifest = catalogue.byId.get(login.provider);
-      if (!manifest) return;
-      const full = view.bundle ? view : await connectorApi.login(login.provider, view.sessionId);
-      const result = await ops.adopt({ manifest, view: full, connectionId: login.connectionId, reconnect: login.reconnect });
-      forgetTypedValues(login.reconnect ? login.connectionId : null, login.provider);
-      await afterConnect(result, login.reconnect);
-    },
-  });
-
   /** the attach step on the active space's accounts screen, the account already picked (#310) */
   const attach = (accountId: string) => {
     setSpaceAttachIntent(accountId);
@@ -337,7 +371,7 @@ export function ConnectionsScreen() {
 
   const stateLine = (view: ConnectionView) => {
     const running = activity[view.meta.id];
-    if (running?.phase === 'fetching') return <SyncResultLine id={view.meta.id} state="busy" found={running.found} />;
+    if (running?.phase === 'fetching') return <SyncResultLine id={view.meta.id} state="busy" found={running.found} older={running.older} />;
     if (resultStillFresh(running)) return <SyncResultLine id={view.meta.id} state={running.report} />;
     // a sign-in in flight for this connection outranks every other word
     const inFlight = pendingLogins[view.meta.id];
@@ -351,7 +385,10 @@ export function ConnectionsScreen() {
     }
     // what the relay heard last wins where it knows more than this device: a
     // question the scheduler left, a session it found dead, a sync it ran itself
-    const line = relayLine(bindings.get(view.meta.id), t, lang) ?? deviceLine(view, t, lang);
+    const binding = bindings.get(view.meta.id);
+    // a consent the relay no longer keeps reads as one to renew, whatever this device last saw
+    const gone = !binding && ended(view) ? { text: t('conn.state.reconnect'), warn: true } : null;
+    const line = relayLine(binding, t, lang) ?? gone ?? deviceLine(view, t, lang);
     return (
       <span className={`block text-[11px] ${line.warn ? 'text-warning' : 'text-ink-4'}`} data-testid={`conn-state-${view.meta.id}`}>
         {line.text}
@@ -359,13 +396,21 @@ export function ConnectionsScreen() {
     );
   };
 
+  /** #524: the accounts this connection itself fetches — never every account its party fed */
+  const fetchedBy = (view: ConnectionView) =>
+    (bankAccounts ?? []).filter((entry) => fetchingConnectionIds(entry.account, reachedBy).includes(view.meta.id));
+
   /** how far the fetches reach — the dates covered and the count — under the state (user request 2026-10-02) */
-  const rangeOf = (view: ConnectionView) =>
-    kindOf(view) === 'registry' ? null : (
+  const rangeOf = (view: ConnectionView) => {
+    const kind = kindOf(view);
+    if (kind === 'registry') return null;
+    const range = kind === 'bank' ? mergedRange(ranges, fetchedBy(view).map((entry) => entry.account.id)) : ranges?.[view.meta.id];
+    return (
       <span className="block text-[11px] text-ink-4" data-testid={`conn-range-${view.meta.id}`}>
-        {rangeLine(ranges?.[view.meta.id], t, lang)}
+        {rangeLine(range, t, lang)}
       </span>
     );
+  };
 
   /** the one action a state asks for */
   const primaryAction = (view: ConnectionView) => {
@@ -386,7 +431,7 @@ export function ConnectionsScreen() {
       );
     }
     if (view.device?.state === 'blocked') return null;
-    if (view.device?.state !== 'active' || view.meta.status === 'expired') return reconnect(t('conn.reconnect'));
+    if (view.device?.state !== 'active' || view.meta.status === 'expired' || ended(view)) return reconnect(t('conn.reconnect'));
     if (!view.hasBundle) return reconnect(t('conn.signIn'));
     return (
       <button
@@ -415,9 +460,9 @@ export function ConnectionsScreen() {
     );
   };
 
-  /** a bank's accounts, each with where it is attached and the door to attach it here */
+  /** a bank's accounts — the ones this connection itself fetches (#524) — each with where it is attached and the door to attach it here */
   const accountsOf = (view: ConnectionView) => {
-    const mine = (bankAccounts ?? []).filter((a) => a.account.provider === view.meta.store);
+    const mine = fetchedBy(view);
     return (
       <div className="mt-1.5 pl-9" data-testid={`conn-accounts-${view.meta.id}`}>
         {mine.length === 0 ? (
@@ -426,7 +471,6 @@ export function ConnectionsScreen() {
           mine.map((entry) => {
             const { account, attachedTo } = entry;
             const here = attachedTo.some((s) => s.spaceId === spaceId);
-            const since = sinceOf(entry);
             return (
               <div key={account.id} className="flex items-center gap-2 py-1" data-testid={`conn-account-${account.id}`}>
                 <Icon name="bank-outline" size={14} color="var(--m-ink-4)" />
@@ -434,12 +478,6 @@ export function ConnectionsScreen() {
                   <span className="block truncate text-[12px] text-ink">
                     {account.name} <span className="text-ink-4">{accountTail(account)}</span>
                   </span>
-                  {/* #445: the connection that fetched this row is gone - a new consent that reaches it lands on the same row */}
-                  {since !== null && (
-                    <span className="block text-[11px] text-warning" data-testid={`conn-account-uncovered-${account.id}`}>
-                      {t('acct.uncovered', { date: uncoveredDateText(since, lang), party: partyName(view.meta.store) })}
-                    </span>
-                  )}
                   {attachedTo.length > 0 && (
                     <span className="flex flex-wrap gap-1" data-testid={`conn-account-usedin-${account.id}`}>
                       {attachedTo.map((s) => (
@@ -471,7 +509,7 @@ export function ConnectionsScreen() {
     return (
       <div key={login.connectionId} className="border-b border-line-2 px-4 py-3.5 last:border-0" data-testid={`conn-pending-${login.connectionId}`}>
         <div className="flex items-center gap-3">
-          {logo ? <img src={logo} alt="" className="h-6 w-6 rounded object-contain" /> : <Icon name="progress-clock" size={20} color="var(--m-ink-3)" />}
+          {logo ? <Picture src={logo} className="h-6 w-6 rounded object-contain" /> : <Icon name="progress-clock" size={20} color="var(--m-ink-3)" />}
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[15px] text-ink">{manifest?.name ?? login.provider}</span>
             <span className={`block text-[11px] ${line.warn ? 'text-warning' : 'text-ink-4'}`} data-testid={`conn-pending-state-${login.connectionId}`}>
@@ -523,10 +561,10 @@ export function ConnectionsScreen() {
     const logo = view.meta.icon ?? partyLogo(manifest?.logoRef);
     const healthy = view.device?.state === 'active' && view.hasBundle;
     return (
-      <div key={view.meta.id} className="border-b border-line-2 px-4 py-3.5 last:border-0" data-testid={`conn-card-${view.meta.id}`}>
+      <div key={view.meta.id} id={`conn-row-${view.meta.id}`} className="border-b border-line-2 px-4 py-3.5 last:border-0" data-testid={`conn-card-${view.meta.id}`}>
         <div className="flex items-center gap-3">
           {logo ? (
-            <img src={logo} alt="" className="h-6 w-6 rounded object-contain" />
+            <Picture src={logo} className="h-6 w-6 rounded object-contain" />
           ) : (
             <Icon name={kindIcon(kind)} size={20} color={healthy ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
           )}
@@ -564,30 +602,26 @@ export function ConnectionsScreen() {
     );
   };
 
+  // All accounts stays quiet for an identity that can connect no bank and has none to show (demo, offline)
+  const quiet = banks && !signedIn && (connections ?? []).length === 0 && orphaned.length === 0;
+
   return (
-    <div className="m-fade flex h-full flex-col" data-testid="screen-connections">
-      <AppBar
-        title={t('conn.title')}
-        leading={
-          <IconButton label={t('action.back')} testId="connections-back" onClick={() => window.history.back()}>
-            <Icon name="arrow-left" size={22} />
-          </IconButton>
-        }
-        trailing={<HelpButton tourId="connections" />}
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <div className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="conn-privacy">
-          <Icon name="shield-lock-outline" size={18} color="var(--m-accent-deep)" />
-          <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-2">{t('conn.privacy')}</p>
-        </div>
+    <>
+      <div data-testid={banks ? 'bank-connections' : 'service-connections'} hidden={quiet}>
+        {!banks && (
+          <div className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="conn-privacy">
+            <Icon name="shield-lock-outline" size={18} color="var(--m-accent-deep)" />
+            <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-2">{t('conn.privacy')}</p>
+          </div>
+        )}
 
         {!signedIn && (
           <p className="mt-2 px-1 text-[12px] text-ink-4" data-testid="conn-signin-note">
-            {t('conn.signInNote')}
+            {t(banks ? 'conn.bankSignInNote' : 'conn.signInNote')}
           </p>
         )}
 
-        {SECTIONS.map(({ kind, captionKey }) => {
+        {SECTIONS.filter(({ kind }) => kinds.includes(kind)).map(({ kind, captionKey }) => {
           const rows = (connections ?? []).filter((c) => kindOf(c) === kind);
           // sign-ins in flight for connections that are not rows yet sit at the top of their section
           const known = new Set(rows.map((c) => c.meta.id));
@@ -597,7 +631,7 @@ export function ConnectionsScreen() {
           if (rows.length === 0 && starting.length === 0) return null;
           return (
             <div key={kind}>
-              <div className="m-cap mt-4 mb-1 px-1">{t(captionKey)}</div>
+              <div className="m-cap mt-4 mb-1 px-1">{t(banks ? 'conn.bankConnections' : captionKey)}</div>
               <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`conn-list-${kind}`}>
                 {starting.map(renderPending)}
                 {rows.map(renderCard)}
@@ -606,8 +640,8 @@ export function ConnectionsScreen() {
           );
         })}
 
-        {/* #445: accounts whose party has no card left - the connection that fetched
-            them is gone - still belong to the person: say so, and offer the way back */}
+        {/* #445: accounts no connection of the person's fetches any more still belong
+            to them: say so, and offer the way back */}
         {orphaned.length > 0 && (
           <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-uncovered">
             <div className="px-4 pt-3.5 pb-1">
@@ -618,7 +652,12 @@ export function ConnectionsScreen() {
               const party = account.provider ?? account.source;
               const manifest = catalogue.byId.get(party);
               return (
-                <div key={account.id} className="flex items-center gap-3 border-t border-line-2 px-4 py-3" data-testid={`conn-uncovered-${account.id}`}>
+                <div
+                  key={account.id}
+                  id={`conn-uncovered-row-${account.id}`}
+                  className="flex items-center gap-3 border-t border-line-2 px-4 py-3"
+                  data-testid={`conn-uncovered-${account.id}`}
+                >
                   <Icon name="bank-off-outline" size={18} color="var(--m-ink-4)" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] text-ink">
@@ -637,13 +676,13 @@ export function ConnectionsScreen() {
           </div>
         )}
 
-        {/* the catalogue door — always visible, honest about sign-in */}
+        {/* the catalogue door — always visible, honest about sign-in; on All accounts the bank picker's */}
         <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
           <div className="flex items-center gap-3 px-4 py-3.5" data-testid="conn-add">
-            <Icon name="plus-circle-outline" size={20} color="var(--m-ink-3)" />
+            <Icon name={banks ? 'bank-plus' : 'plus-circle-outline'} size={20} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1">
-              <span className="block text-[15px] text-ink">{t('conn.add')}</span>
-              <span className="block text-[12px] text-ink-4">{t('conn.addSub')}</span>
+              <span className="block text-[15px] text-ink">{t(banks ? 'conn.addBank' : 'conn.add')}</span>
+              <span className="block text-[12px] text-ink-4">{t(banks ? 'conn.addBankSub' : 'conn.addSub')}</span>
             </span>
             {signedIn ? (
               <Button size="sm" data-testid="conn-add-open" onClick={() => setCatalogueOpen(true)}>
@@ -656,7 +695,7 @@ export function ConnectionsScreen() {
         </div>
 
         {/* the household agents (§10.4): the parties that only talk to a browser on the person's own connection */}
-        {signedIn && (
+        {signedIn && !banks && (
           <button
             data-testid="conn-agents"
             onClick={() => void navigate({ to: '/connections/agents' })}
@@ -671,101 +710,53 @@ export function ConnectionsScreen() {
           </button>
         )}
 
-        {/* the hub's own receipts: everything the shops handed over, per connection (a space's Receipts carry the matching) */}
-        <button
-          data-testid="conn-view-receipts"
-          onClick={() => void navigate({ to: '/connections/receipts' })}
-          className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
-        >
-          <Icon name="receipt-text-outline" size={20} color="var(--m-ink-2)" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15px] text-ink">{t('receipts.globalTitle')}</span>
-            <span className="block text-[12px] text-ink-4">{t('receipts.globalSub')}</span>
-          </span>
-          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-        </button>
+        {!banks && (
+          <>
+            {/* the hub's own receipts: everything the shops handed over, per connection (a space's Receipts carry the matching) */}
+            <button
+              data-testid="conn-view-receipts"
+              onClick={() => void navigate({ to: '/connections/receipts' })}
+              className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+            >
+              <Icon name="receipt-text-outline" size={20} color="var(--m-ink-2)" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] text-ink">{t('receipts.globalTitle')}</span>
+                <span className="block text-[12px] text-ink-4">{t('receipts.globalSub')}</span>
+              </span>
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
 
-        <p className="mt-3 px-1 text-[12px] text-ink-4" data-testid="conn-photo-note">
-          {t('conn.photoNote')}
-        </p>
-        {signedIn && <ConnectionSyncCard />}
+            <p className="mt-3 px-1 text-[12px] text-ink-4" data-testid="conn-photo-note">
+              {t('conn.photoNote')}
+            </p>
+            {signedIn && <ConnectionSyncCard />}
+          </>
+        )}
       </div>
 
-      <CatalogueSheet
-        open={catalogueOpen}
-        onOpenChange={setCatalogueOpen}
-        providers={catalogue.providers}
-        loading={catalogue.loading}
-        error={catalogue.error}
-        onRetry={catalogue.reload}
-        onPick={(manifest) => openFlow(manifest, null)}
-      />
+      {banks ? (
+        <BankPickerSheet
+          open={catalogueOpen}
+          onOpenChange={setCatalogueOpen}
+          providers={catalogue.providers}
+          loading={catalogue.loading}
+          error={catalogue.error}
+          onRetry={catalogue.reload}
+          onPick={(manifest) => openFlow(manifest, null)}
+        />
+      ) : (
+        <CatalogueSheet
+          open={catalogueOpen}
+          onOpenChange={setCatalogueOpen}
+          providers={catalogue.providers.filter((p) => kinds.includes(p.kind))}
+          loading={catalogue.loading}
+          error={catalogue.error}
+          onRetry={catalogue.reload}
+          onPick={(manifest) => openFlow(manifest, null)}
+        />
+      )}
 
-      <ConnectFlowSheet
-        open={flow !== null}
-        manifest={flow?.manifest ?? null}
-        reconnectId={flow?.reconnectId ?? null}
-        resume={flow?.resume ?? null}
-        onOpenChange={(open) => !open && setFlow(null)}
-        onDone={(result, reconnect) => void afterConnect(result, reconnect)}
-      />
-
-      {/* name-the-connection step right after a successful connect */}
-      <Sheet
-        open={naming !== null}
-        onOpenChange={(open) => {
-          if (open) return;
-          setNaming(null);
-          setAttempted(false);
-        }}
-        title={t('conn.nameTitle')}
-        size="form"
-      >
-        <div className="flex flex-col gap-3 pt-1">
-          <p className="text-[13px] leading-relaxed text-ink-2">{t('conn.nameHint')}</p>
-          {naming?.duplicateOf && (
-            <p className="rounded-card bg-warning-soft px-3 py-2 text-[12px] leading-relaxed text-ink-2" data-testid="conn-dup-note">
-              {t('conn.duplicateNote')}
-            </p>
-          )}
-          <input
-            data-testid="conn-name-input"
-            value={nameDraft}
-            onChange={(e) => setNameDraft(e.target.value)}
-            aria-invalid={attempted && !nameDraft.trim()}
-            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none${blockerRing(attempted && !nameDraft.trim())}`}
-          />
-          <FormBlockerNote show={attempted && !nameDraft.trim()} text={t('form.needName')} testId="conn-name-save-blocker" />
-          <Button
-            data-testid="conn-name-save"
-            onClick={() => {
-              if (!nameDraft.trim()) {
-                setAttempted(true);
-                return;
-              }
-              void saveName();
-            }}
-          >
-            {t('action.save')}
-          </Button>
-        </div>
-      </Sheet>
-
-      {/* the step after naming: which spaces a shop's receipts reach — none until picked (user ruling 2026-10-02) */}
-      <Sheet open={spacesStep !== null} onOpenChange={(open) => !open && setSpacesStep(null)} title={t('conn.spacesTitle')} size="tall">
-        {spacesStep && (
-          <div className="flex flex-col gap-3 pt-1" data-testid="conn-spaces-step">
-            <p className="text-[13px] leading-relaxed text-ink-2">{t('conn.spacesHint')}</p>
-            <SpacePicker spaces={allSpaces ?? []} selected={spacesStep.picked} onToggle={togglePicked} testId="conn-spaces-list" />
-            <Button data-testid="conn-spaces-save" onClick={() => void saveSpaces()}>
-              {t('action.save')}
-            </Button>
-            <Button variant="outline" data-testid="conn-spaces-skip" onClick={() => setSpacesStep(null)}>
-              {t('conn.spacesSkip')}
-            </Button>
-          </div>
-        )}
-      </Sheet>
+      <ConnectSteps flow={flow} onFlowChange={setFlow} catalogue={catalogue} />
 
       {/* a party's question while a sync runs from here */}
       <Sheet
@@ -795,6 +786,31 @@ export function ConnectionsScreen() {
           onClose={() => setManageId(null)}
         />
       )}
+    </>
+  );
+}
+
+/**
+ * Settings → Connected services (#527, renamed from Connections): the shops
+ * and registries. Banks are managed with the accounts (All accounts), on
+ * the same machinery and the same relay.
+ */
+export function ConnectionsScreen() {
+  const { t } = useLang();
+  return (
+    <div className="m-fade flex h-full flex-col" data-testid="screen-connections">
+      <AppBar
+        title={t('conn.title')}
+        leading={
+          <IconButton label={t('action.back')} testId="connections-back" onClick={() => window.history.back()}>
+            <Icon name="arrow-left" size={22} />
+          </IconButton>
+        }
+        trailing={<HelpButton tourId="connections" />}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ConnectionHub kinds={SERVICE_KINDS} route="/connections" />
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import { POOL_TYPES } from '@/domain/planning';
 import { Button } from '@/ui/Button';
@@ -7,12 +8,15 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import type { MoneyFmt } from './SegmentSection';
 
-const POOL_CANDIDATE_TYPES = new Set(['checking', 'cash', 'savings']);
+// a credit card pays like a checking account (user 2026-10-21, #532), so it may join the pool
+const POOL_CANDIDATE_TYPES = new Set(['checking', 'cash', 'savings', 'credit']);
 
 /**
  * The money pool (#128): the accounts whose balances the plan hands out.
  * Every checking and cash account until the space ticks its own set — a
- * space fact, synced (planPoolAccountIds).
+ * space fact, synced (planPoolAccountIds). A credit card ticked in brings
+ * its balance (what is owed takes off) and its spending; paying it off
+ * then moves money inside the pool, so it is no debt to plan any more.
  */
 export function PoolSheet({
   open,
@@ -23,8 +27,10 @@ export function PoolSheet({
   currency,
 }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; model: PlanningModel; ops: PlanningOps; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
+  // #530: the accounts' balances and their sum hide with the sensitive figures
+  const balance = useDisplayMoney().sensitive(fmt);
   const candidates = model.data.accounts.filter((a) => a.deleted === 0 && a.archived !== 1 && POOL_CANDIDATE_TYPES.has(a.type));
-  const defaults = new Set(candidates.filter((a) => POOL_TYPES.has(a.type) && !a.defaultFor).map((a) => a.id));
+  const defaults = new Set(candidates.filter((a) => POOL_TYPES.has(a.type)).map((a) => a.id));
   const picked = new Set(model.poolAccounts.map((a) => a.id));
   const [ticks, setTicks] = useState<ReadonlySet<string>>(picked);
   const pickedKey = [...picked].sort((a, b) => a.localeCompare(b)).join(',');
@@ -62,6 +68,11 @@ export function PoolSheet({
         <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] text-ink-2" data-testid="plan-pool-rule">
           {t('plan.poolRule')}
         </p>
+        {candidates.some((a) => a.type === 'credit') && (
+          <p className="px-1 text-[11px] text-ink-4" data-testid="plan-pool-credit">
+            {t('plan.poolCreditHint')}
+          </p>
+        )}
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {candidates.map((account) => {
             const on = ticks.has(account.id);
@@ -77,7 +88,7 @@ export function PoolSheet({
                   {on && <Icon name="check" size={14} color="white" />}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{account.name}</span>
-                <span className="m-num text-[13px] text-ink-2">{fmt(account.balanceCents, account.currency ?? currency)}</span>
+                <span className="m-num text-[13px] text-ink-2">{balance(account.balanceCents, account.currency ?? currency)}</span>
               </button>
             );
           })}
@@ -85,7 +96,7 @@ export function PoolSheet({
         <div className="flex items-baseline justify-between px-1 text-[13px]">
           <span className="text-ink-3">{sameAsDefault ? t('plan.poolAll') : t('plan.poolPicked', { n: ticks.size })}</span>
           <span className="m-num font-semibold text-ink" data-testid="plan-pool-total">
-            {fmt(total, currency)}
+            {balance(total, currency)}
           </span>
         </div>
       </div>

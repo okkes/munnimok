@@ -12,6 +12,7 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { useSession } from '@/app/session';
 import { leaveSpace, useMyRole } from './SpaceSharing';
+import { ReadOnlyNote } from './ReadOnlyNote';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { useDiscardGuard } from '@/ui/DiscardGuard';
@@ -19,6 +20,7 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
@@ -91,7 +93,7 @@ export function SpacePhotoStrip({
             title={t('action.delete')}
             className="m-tap relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-accent disabled:cursor-not-allowed disabled:opacity-45"
           >
-            <img src={picture} alt="" className="h-full w-full object-cover" />
+            <Picture src={picture} className="h-full w-full object-cover" />
             <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
               <Icon name="close" size={14} />
             </span>
@@ -276,11 +278,7 @@ export function SpaceSettingsScreen() {
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-8">
         {space && (
           <div className="flex flex-col gap-3 pt-1 pb-4">
-            {readOnly && (
-              <p className="rounded-card bg-bg-2 px-4 py-2.5 text-[13px] text-ink-3" data-testid="space-reader-note">
-                {t('space.readerNote')}
-              </p>
-            )}
+            <ReadOnlyNote spaceId={spaceId} testId="space-reader-note" />
             <input
               data-testid="space-edit-name"
               value={name}

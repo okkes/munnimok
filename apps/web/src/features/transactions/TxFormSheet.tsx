@@ -1,19 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
+import { useEvents } from '@/application/events';
+import { EventPickList } from '@/features/events/EventPickList';
+import { AppBar, IconButton } from '@/ui/AppBar';
+import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, isMovementCat, specialCatType, stampMovementSub } from '@/domain/categories';
 import { scaleCatsTo } from '@/domain/txSlices';
 import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Chip } from '@/ui/primitives';
 import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
@@ -45,7 +52,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const formFingerprint = (state: Record<string, unknown>): string =>
   JSON.stringify([
     state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
-    state.adjustment, state.linkedAccountId, state.recurringId, state.cats,
+    state.adjustment, state.linkedAccountId, state.recurringId, state.cats, state.notes, state.eventId,
   ]);
 
 type BalanceAccount = { id: string; source: string; balanceCents: number };
@@ -93,6 +100,7 @@ function applyManualBalanceDeltas(
 function CounterAdjustRows({
   counterName,
   locked = false,
+  disabled = false,
   adjustment,
   counterBlocker,
   onCounter,
@@ -101,6 +109,9 @@ function CounterAdjustRows({
   counterName: string | undefined;
   /** R1: a stamped account owns its rows' meaning */
   locked?: boolean;
+  /** #348 (user): an ordinary category has no other side — the row
+   *  stands, inert, until the category makes the row a movement */
+  disabled?: boolean;
   adjustment: boolean;
   /** #309 (user): the save refused for THIS field — text under the row */
   counterBlocker?: string;
@@ -112,8 +123,10 @@ function CounterAdjustRows({
     <>
       <button
         data-testid="txform-counter"
-        onClick={locked ? undefined : onCounter}
-        className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(!!counterBlocker)}`}
+        onClick={locked || disabled ? undefined : onCounter}
+        disabled={disabled}
+        aria-disabled={disabled}
+        className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(!!counterBlocker)}${disabled ? ' opacity-50' : ''}`}
       >
         <Icon name="bank-transfer" size={20} color={counterBlocker ? 'var(--m-negative)' : 'var(--m-ink-3)'} />
         <span className={`flex-1${counterBlocker ? ' text-negative' : ''}`}>{counterName ?? t('tx.counterNone')}</span>
@@ -259,6 +272,9 @@ function manualTxFields(args: {
   stagedCats: TxSplitCat[] | null;
   linkedAccountId: string | null;
   recurringId: string | null;
+  /** #348: the create screen's story fields — absent on the edit sheet,
+   *  which leaves them to the detail's own rows */
+  story?: { notes: string; eventId: string | null };
 }): Partial<Omit<TransactionRow, 'id' | 'spaceId'>> {
   // arc 2 locked doors: an uncategorized transfer-family row files under
   // the family's sign-picked sub instead of the hidden placeholder
@@ -280,6 +296,20 @@ function manualTxFields(args: {
     ...(cats || args.tx?.cats?.length ? { cats: cats ?? (null as never) } : {}),
     ...(args.linkedAccountId || args.tx?.linkedAccountId ? { linkedAccountId: args.linkedAccountId ?? (null as never) } : {}),
     ...(args.recurringId || args.tx?.recurringId ? { recurringId: args.recurringId ?? (null as never) } : {}),
+    ...storyFields(args.tx, args.story),
+  };
+}
+
+/** #348: notes and event as the create screen sets them (S3776) */
+function storyFields(
+  tx: TransactionRow | undefined,
+  story: { notes: string; eventId: string | null } | undefined,
+): Partial<Pick<TransactionRow, 'notes' | 'eventId'>> {
+  if (!story) return {};
+  const notes = story.notes.trim();
+  return {
+    ...(notes || tx?.notes ? { notes: notes || (null as never) } : {}),
+    ...(story.eventId || tx?.eventId ? { eventId: story.eventId ?? (null as never) } : {}),
   };
 }
 
@@ -364,7 +394,8 @@ function AccountPickSheet({
   selectedId: string | null;
   onPick: (id: string) => void;
 }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
+  const { fmtSensitive } = useDisplayMoney();
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('txform.account')} size="form" dragHandle>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-account-options">
@@ -386,7 +417,7 @@ function AccountPickSheet({
                 {account.iban ? ` · …${account.iban.slice(-4)}` : ''}
               </span>
             </span>
-            <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+            <span className="m-num text-[12px] text-ink-3">{fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })}</span>
             {selectedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
           </button>
         ))}
@@ -518,6 +549,8 @@ function AdjustmentPanel({
   currency: string;
 }>) {
   const { t, lang } = useLang();
+  // #530: the balance before and after hides with the sensitive figures; the change itself is the row
+  const { fmtSensitive } = useDisplayMoney();
   if (!show) return null;
   return (
     <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-adjust-panel">
@@ -533,8 +566,8 @@ function AdjustmentPanel({
         {adjustDelta === null
           ? t('txform.adjustImpactIdle')
           : t('txform.adjustImpact', {
-              from: fmtCents(adjustBase, currency, lang),
-              to: fmtCents(adjustBase + adjustDelta, currency, lang),
+              from: fmtSensitive(adjustBase, currency, { asRecorded: true }),
+              to: fmtSensitive(adjustBase + adjustDelta, currency, { asRecorded: true }),
               delta: fmtCents(adjustDelta, currency, lang, { sign: true }),
             })}
       </p>
@@ -603,11 +636,31 @@ function RecurringLinkRow({
   );
 }
 
-export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
+/** what the form needs from the host showing it (#348: a sheet for edits
+ *  from the detail, a full screen for creating) */
+interface TxFormHost {
+  open: boolean;
+  tx?: TransactionRow;
+  prefill?: NonNullable<TxFormSheetProps['prefill']>;
+  /** #348: the create screen — every field the detail offers */
+  extended?: boolean;
+  /** the host goes away (the no-account door leaves for the accounts screen) */
+  onClose: () => void;
+  /** saved: the row's id, and 'reimb' when the person asked to link a reimbursement next */
+  onSaved: (rowId: string, next?: 'reimb') => void;
+}
+
+/** the manual transaction form, shared by the edit sheet and the create screen */
+function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: TxFormHost) {
   const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
+  const events = useEvents();
+  // #348: the story fields the detail offers, on the create screen too
+  const [notes, setNotes] = useState('');
+  const [eventId, setEventId] = useState<string | null>(null);
+  const [eventOpen, setEventOpen] = useState(false);
   const [amount, setAmount] = useState('');
   // register-style entry state for the amount field (lib/amountRegister)
   const [amountEntryMode, setAmountEntryMode] = useState<AmountEntryMode>('register');
@@ -669,6 +722,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
     setStagedCats(tx?.cats ?? null);
+    setNotes(tx?.notes ?? '');
+    setEventId(tx?.eventId ?? null);
     setAttempted(false);
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
@@ -676,7 +731,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
       amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
       accountId: initial.accountId, catId: initial.catId, adjustment: initial.adjustment,
       linkedAccountId: initial.linkedAccountId, recurringId: initial.recurringId,
-      cats: tx?.cats ?? null,
+      cats: tx?.cats ?? null, notes: tx?.notes ?? '', eventId: tx?.eventId ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
@@ -711,7 +766,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
-  const save = () => {
+  const save = (next?: 'reimb') => {
     if (!valid || !effectiveAccount || cents === null) return;
     // #269: target mode writes the DIFFERENCE to the named balance
     const signed = signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
@@ -744,8 +799,11 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         stagedCats: adjustment ? null : stagedCats,
         linkedAccountId: adjustment ? null : linkedAccountId,
         recurringId: adjustment ? null : recurringId,
+        ...(extended ? { story: { notes, eventId: adjustment ? null : eventId } } : {}),
       });
       await repo.upsert('transaction', spaceId, rowId, fields);
+      // the reimbursement flow reads the row: it goes on once the row is there
+      if (next) onSaved(rowId, next);
       if (prevLinked !== nextLinked) {
         const { planMirrorChange } = await import('@/application/mirrorMint');
         const plan = await planMirrorChange(
@@ -770,45 +828,63 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         await plan.execute(repo);
       }
     })().catch(() => undefined);
-    onOpenChange(false);
+    if (!next) onSaved(rowId);
   };
 
-  return (
+  // #179: until the seed effect stamps a baseline, the form cannot be
+  // dirty — the ref-in-effect pattern left '' behind on a blank new form
+  // (no state change → no re-render → false discard ask)
+  const dirty =
+    open &&
+    baselineRef.current !== '' &&
+    formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats, notes, eventId }) !==
+      baselineRef.current;
+  // #348 (user): category first — the counterparty is the movement's
+  // other side, so it opens once the category makes it one (or one is set)
+  const counterRelevant = !!linkedAccountId || !!specialCatType(catId) || !!stagedCats?.some((e) => specialCatType(e.catId));
+  const empty = writable.length === 0 && !tx;
+  const pickedEvent = events?.find((e) => e.id === eventId);
+  const trySave = (next?: 'reimb') => {
+    if (!valid) {
+      setAttempted(true);
+      return;
+    }
+    save(next);
+  };
+
+  const saveButton = (
     <>
-      <Sheet
-        open={open}
-        onOpenChange={onOpenChange}
-        title={tx ? t('txform.editTitle') : t('txform.addTitle')}
-        size="tall"
-        // #179: until the seed effect stamps a baseline, the form cannot
-        // be dirty — the ref-in-effect pattern left '' behind on a blank
-        // new form (no state change → no re-render → false discard ask)
-        dirty={open && baselineRef.current !== '' && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats }) !== baselineRef.current}
+      <FormBlockerNote show={blockerField === 'form'} text={blockerText} testId="txform-save-blocker" />
+      <Button data-testid="txform-save" className="w-full" onClick={() => trySave()}>
+        {tx ? t('action.save') : t('action.add')}
+      </Button>
+    </>
+  );
+
+  // no manual account yet: explain WHY the form can't work and hand over
+  // a one-tap path to fix it (user UX request)
+  const fields = empty ? (
+    <div className="flex flex-col items-center gap-3 px-4 pt-8 text-center" data-testid="txform-no-accounts">
+      <Icon name="bank-plus" size={40} color="var(--m-ink-4)" />
+      <p className="text-[15px] font-medium text-ink">{t('txform.noAccountsTitle')}</p>
+      <p className="text-[13px] leading-relaxed text-ink-3">{t('txform.noAccountsBody')}</p>
+      <Button
+        className="mt-2 w-full"
+        data-testid="txform-add-account"
+        onClick={() => {
+          onClose();
+          // #179 (user): straight to the SPACE's accounts screen with the
+          // add sheet opening on arrival — the global overview hid manual
+          // creation two taps deep
+          setSpaceAddAccountIntent();
+          void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+        }}
       >
-        {/* no manual account yet: explain WHY the form can't work and
-            hand over a one-tap path to fix it (user UX request) */}
-        {writable.length === 0 && !tx ? (
-          <div className="flex flex-col items-center gap-3 px-4 pt-8 text-center" data-testid="txform-no-accounts">
-            <Icon name="bank-plus" size={40} color="var(--m-ink-4)" />
-            <p className="text-[15px] font-medium text-ink">{t('txform.noAccountsTitle')}</p>
-            <p className="text-[13px] leading-relaxed text-ink-3">{t('txform.noAccountsBody')}</p>
-            <Button
-              className="mt-2 w-full"
-              data-testid="txform-add-account"
-              onClick={() => {
-                onOpenChange(false);
-                // #179 (user): straight to the SPACE's accounts screen
-                // with the add sheet opening on arrival — the global
-                // overview hid manual creation two taps deep
-                setSpaceAddAccountIntent();
-                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
-              }}
-            >
-              {t('txform.noAccountsCta')}
-            </Button>
-          </div>
-        ) : (
-        <div className="flex flex-col gap-3 pt-1">
+        {t('txform.noAccountsCta')}
+      </Button>
+    </div>
+  ) : (
+        <>
           {/* direction + amount */}
           <div className="flex gap-2">
             {/* #327 r3 (user): halves own their corners — the inset
@@ -904,9 +980,19 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             </p>
           )}
 
+          {/* category row — the split-categories editor (#211). A split
+              CONTAINER owns no category of its own: the row states the
+              parts and stays inert (the detail's manage flow edits them).
+              #348 (user): the category comes first, as on the review card */}
+          <FormCategorySlot adjustment={adjustment} tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
+
+          {/* the counterparty follows the category: it stands on the form
+              and opens once the category is a movement (a MANUAL counter's
+              leg is always minted — the special account's ledger is the record) */}
           <CounterAdjustRows
             counterName={linkedAccount?.name}
             locked={!!ownStamp || adjustment}
+            disabled={!counterRelevant && !ownStamp && !adjustment}
             adjustment={adjustment}
             counterBlocker={fieldBlocker('counter', blockerField, blockerText)}
             onCounter={() => setCounterOpen(true)}
@@ -927,36 +1013,24 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             currency={formCurrency}
           />
 
-          {/* manual counter account: offer to write the other side too —
-              without it "-100 to savings" updated only half the picture */}
-          {/* the mirror checkbox retired 2026-08-05: a MANUAL counter's
-              leg is always minted now — the special account's ledger IS
-              the record (typed-splits v2) */}
-
-          {/* category row — the split-categories editor (#211). A split
-              CONTAINER owns no category of its own: the row states the
-              parts and stays inert (the detail's manage flow edits them) */}
-          <FormCategorySlot adjustment={adjustment} tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
-
           <RecurringLinkRow adjustment={adjustment} recurrings={recurrings} recurringId={recurringId} onOpen={() => setRecurringOpen(true)} />
 
-          <FormBlockerNote show={blockerField === 'form'} text={blockerText} testId="txform-save-blocker" />
-          <Button
-            data-testid="txform-save"
-            onClick={() => {
-              if (!valid) {
-                setAttempted(true);
-                return;
-              }
-              save();
-            }}
-          >
-            {tx ? t('action.save') : t('action.add')}
-          </Button>
-        </div>
-        )}
-      </Sheet>
+          {/* #348 (user): the create screen carries what the detail offers */}
+          {extended && !adjustment && (
+            <StoryRows
+              eventName={pickedEvent?.name}
+              onEvent={() => setEventOpen(true)}
+              notes={notes}
+              onNotes={setNotes}
+              credit={!isExpense}
+              onLinkReimb={() => trySave('reimb')}
+            />
+          )}
+        </>
+      );
 
+  const sheets = (
+    <>
       <CounterpartySheet
         open={counterOpen}
         onOpenChange={setCounterOpen}
@@ -1046,6 +1120,168 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         }}
       />
 
+      {/* #348: the event, picked the way every event picker picks (#537) */}
+      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form">
+        <div className="pt-1" data-testid="txform-event-list">
+          <button
+            data-testid="txform-event-none"
+            onClick={() => {
+              setEventId(null);
+              setEventOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
+          >
+            <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+            <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
+            {!eventId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+          <EventPickList
+            events={events ?? []}
+            selectedId={eventId}
+            testIdPrefix="txform-event-"
+            onPick={(id) => {
+              setEventId(id);
+              setEventOpen(false);
+            }}
+          />
+        </div>
+      </Sheet>
     </>
+  );
+
+  return { fields, saveButton, sheets, dirty, empty };
+}
+
+/** #348: the create screen's story rows — the event, the notes, and the
+ *  door into the reimbursement link that saves the row first (S3776) */
+function StoryRows({
+  eventName,
+  onEvent,
+  notes,
+  onNotes,
+  credit,
+  onLinkReimb,
+}: Readonly<{
+  eventName: string | undefined;
+  onEvent: () => void;
+  notes: string;
+  onNotes: (notes: string) => void;
+  /** a credit pays an expense back; an expense gets paid back */
+  credit: boolean;
+  onLinkReimb: () => void;
+}>) {
+  const { t } = useLang();
+  return (
+    <>
+      <button
+        data-testid="txform-event"
+        onClick={onEvent}
+        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+      >
+        <Icon name="party-popper" size={20} color="var(--m-ink-3)" />
+        <span className={`min-w-0 flex-1 truncate ${eventName ? '' : 'text-ink-4'}`}>{eventName ?? t('events.linkNone')}</span>
+        <span className="text-xs text-ink-4">{t('events.linkTitle')}</span>
+        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+      </button>
+      <textarea
+        data-testid="txform-notes"
+        value={notes}
+        onChange={(e) => onNotes(e.target.value)}
+        placeholder={t('tx.notesPlaceholder')}
+        rows={3}
+        className="w-full resize-none rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-4"
+      />
+      <button
+        data-testid="txform-link-reimb"
+        onClick={onLinkReimb}
+        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+      >
+        <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
+          <span className="block truncate text-[11px] text-ink-4">{t('txform.reimbAfterSave')}</span>
+        </span>
+        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+      </button>
+    </>
+  );
+}
+
+/** edit a manual transaction from its detail — the form in a sheet; the
+ *  detail's own rows keep the story fields (notes, event, links) */
+export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
+  const { t } = useLang();
+  const form = useTxForm({ open, tx, prefill, onClose: () => onOpenChange(false), onSaved: () => onOpenChange(false) });
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange} title={tx ? t('txform.editTitle') : t('txform.addTitle')} size="tall" dirty={form.dirty}>
+        {form.empty ? (
+          form.fields
+        ) : (
+          <div className="flex flex-col gap-3 pt-1">
+            {form.fields}
+            {form.saveButton}
+          </div>
+        )}
+      </Sheet>
+      {form.sheets}
+    </>
+  );
+}
+
+/**
+ * #348 (user): creating a manual transaction is a screen of its own — a
+ * sheet was too cramped for every field a transaction carries. The
+ * category comes first, the counterparty opens once the category makes
+ * the row a movement, and the story fields the detail offers (event,
+ * notes, the reimbursement link) are here from the start; saving lands on
+ * the new row's own page. A caller may stage a payment onto a
+ * counterparty (?counter=&title=, the debt's door).
+ */
+export function TxCreateScreen() {
+  const { t } = useLang();
+  const navigate = useNavigate();
+  const canEdit = useCanEdit();
+  const search = useSearch({ strict: false }) as { counter?: string; title?: string };
+  const prefill = useMemo(
+    () => (search.counter ? { linkedAccountId: search.counter, merchant: search.title } : undefined),
+    [search.counter, search.title],
+  );
+  const form = useTxForm({
+    open: true,
+    prefill,
+    extended: true,
+    onClose: () => undefined,
+    onSaved: (rowId, next) => {
+      // the new row's own page replaces this screen — every door the detail
+      // has (receipt, split, links) is one tap away, and back returns to the
+      // opener; the reimbursement flow goes there through the link picker
+      if (next === 'reimb') void navigate({ to: '/transactions/$txId/link-reimb', params: { txId: rowId }, replace: true });
+      else void navigate({ to: '/transactions/$txId', params: { txId: rowId }, replace: true });
+    },
+  });
+  const { guardedBack, sheet: discardSheet } = useDiscardGuard(form.dirty, () => window.history.back());
+  return (
+    <div className="m-fade flex h-full flex-col" data-testid="screen-tx-create">
+      <AppBar
+        title={t('txform.addTitle')}
+        leading={
+          <IconButton label={t('action.back')} testId="txform-back" onClick={guardedBack}>
+            <Icon name="arrow-left" size={22} />
+          </IconButton>
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <div className="flex flex-col gap-3 pt-1">{form.fields}</div>
+      </div>
+      {!form.empty && (
+        <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]">
+          {/* #505: a space this identity only reads takes no new transaction */}
+          {canEdit ? form.saveButton : <ReadOnlyNote testId="txform-readonly-note" />}
+        </div>
+      )}
+      {form.sheets}
+      {discardSheet}
+    </div>
   );
 }

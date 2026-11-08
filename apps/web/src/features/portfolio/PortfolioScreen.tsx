@@ -5,9 +5,13 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { quotesAvailable, usePortfolio, usePortfolioOps, useQuoteRefresh } from '@/application/portfolio';
 import type { DegiroImportResult } from '@/application/portfolio';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import type { AssetClass, HoldingRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
-import { fmtCents, fmtSignedPct, parseCents } from '@/lib/money';
+import { fmtSignedPct, parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { MASK } from '@/features/privacy/sensitive';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -173,7 +177,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
         />
         {/* #195 r2 (user): the blocker sits AT the field */}
         <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="pf-save-blocker" />
-        <ScrollRow tone="surface" scrollerClassName="gap-1.5 pb-1">
+        <ScrollRow scrollerClassName="gap-1.5 pb-1">
           {ASSET_CLASSES.map((candidate) => (
             <Chip
               key={candidate.id}
@@ -234,7 +238,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
 
 /** The portfolio: what you own, what it's worth, whether you're winning. */
 export function PortfolioScreen() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const navigate = useNavigate();
   const model = usePortfolio();
   const ops = usePortfolioOps();
@@ -242,8 +246,11 @@ export function PortfolioScreen() {
   const [formInitial, setFormInitial] = useState<HoldingRow | 'new' | null>(null);
   const [importResult, setImportResult] = useState<DegiroImportResult | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const canEdit = useCanEdit(); // #505
 
-  const money = (cents: number) => fmtCents(cents, 'EUR', lang);
+  // #530: what the holdings are worth — totals, gains, each position and its size — hides with the sensitive figures
+  const { fmtSensitive, hideSensitive } = useDisplayMoney();
+  const money = (cents: number, opts?: { sign?: boolean }) => fmtSensitive(cents, 'EUR', { ...opts, asRecorded: true });
 
   const onImport = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -262,13 +269,16 @@ export function PortfolioScreen() {
         trailing={
           <>
             <HelpButton tourId="portfolio" />
-            <IconButton label={t('pf.new')} testId="pf-add" onClick={() => setFormInitial('new')}>
-              <Icon name="plus" size={22} />
-            </IconButton>
+            {canEdit && (
+              <IconButton label={t('pf.new')} testId="pf-add" onClick={() => setFormInitial('new')}>
+                <Icon name="plus" size={22} />
+              </IconButton>
+            )}
           </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mb-3" testId="pf-readonly-note" />
         {model && active.length > 0 && (
           <div className="rounded-card border border-line bg-surface p-4" data-testid="pf-hero">
             <div className="m-num text-[28px] font-semibold text-ink" data-testid="pf-total">
@@ -277,11 +287,11 @@ export function PortfolioScreen() {
             <div className="mt-0.5 flex flex-wrap gap-x-3 text-[12px]">
               {model.totals.dayChangeCents !== null && (
                 <span className="m-num font-medium" style={{ color: model.totals.dayChangeCents >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }} data-testid="pf-day">
-                  {fmtCents(model.totals.dayChangeCents, 'EUR', lang, { sign: true })} {t('pf.today')}
+                  {money(model.totals.dayChangeCents, { sign: true })} {t('pf.today')}
                 </span>
               )}
               <span className="m-num text-ink-3">
-                {fmtCents(model.totals.gainCents, 'EUR', lang, { sign: true })} {t('pf.total')}
+                {money(model.totals.gainCents, { sign: true })} {t('pf.total')}
               </span>
             </div>
             {/* allocation as a stacked bar — the mix at a glance */}
@@ -321,7 +331,7 @@ export function PortfolioScreen() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-medium text-ink">{view.holding.name}</span>
                 <span className="block text-[11px] text-ink-4">
-                  {view.position.qty} {view.holding.symbol ? `· ${view.holding.symbol}` : ''}
+                  {hideSensitive ? MASK : view.position.qty} {view.holding.symbol ? `· ${view.holding.symbol}` : ''}
                 </span>
               </span>
               <span className="text-right">
@@ -348,17 +358,19 @@ export function PortfolioScreen() {
 
         {/* the official, stable route in: DEGIRO's own exports */}
         <input ref={importRef} data-testid="pf-import-file" type="file" accept=".csv,text/csv" multiple className="hidden" onChange={(e) => void onImport(e.target.files)} />
-        <button
-          data-testid="pf-import"
-          onClick={() => importRef.current?.click()}
-          className="m-tap mt-4 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3 text-left"
-        >
-          <Icon name="file-upload-outline" size={19} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] font-medium text-ink">{t('pf.import')}</span>
-            <span className="block text-[11px] text-ink-4">{t('pf.importSub')}</span>
-          </span>
-        </button>
+        {canEdit && (
+          <button
+            data-testid="pf-import"
+            onClick={() => importRef.current?.click()}
+            className="m-tap mt-4 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3 text-left"
+          >
+            <Icon name="file-upload-outline" size={19} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink">{t('pf.import')}</span>
+              <span className="block text-[11px] text-ink-4">{t('pf.importSub')}</span>
+            </span>
+          </button>
+        )}
         {importResult && (
           <p className="mt-1 px-1 text-[12px] text-accent-deep" data-testid="pf-import-result">
             {t('pf.importResult', { holdings: importResult.holdings, lots: importResult.lots })}

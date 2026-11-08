@@ -98,8 +98,8 @@ export const REIMB_CAT_IDS = [EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID];
 
 /**
  * The settlement rewrite for a (split) transaction's own category
- * partition (`cats`) — reimbursement redesign, docs/
- * reimbursement-redesign.md: slices carry the GROSS attribution and the
+ * partition (`cats`) — the reimbursement redesign (2026-07-24): slices
+ * carry the GROSS attribution and the
  * settled value sits in an explicit `reimbursed` slice on BOTH sides of
  * a link — no more categories silently shrinking to €0.
  *

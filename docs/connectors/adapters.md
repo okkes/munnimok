@@ -65,7 +65,15 @@ history. The account record names its `institution` — the lookup's own
 value — so a consumer shows the same logo on the account row. GoCardless
 also answers the operator's inventory (every consent on the aggregator
 account, with the environment that made it) and reports its per-account
-daily budget as the party's quota.
+daily budget as the party's quota. A pass over older history (#460) sends
+its `until` as `date_to` to both and leaves today's pending rows out;
+Enable Banking's continuation walk stops at ten pages, and a walk stopped
+there with a page still offered is reported partial rather than whole.
+
+The mock banks walk the way live parties do — newest first, stopping at
+the cap — so what a capped pass leaves behind is older history;
+`BankAdapters:MockRecordCap` (null everywhere but the tests) makes them
+cap below the manifest's ceiling.
 
 `asn-persistent` is the household-agent form of ASN: the sign-in the user
 does once stays in a browser profile on their own machine, and scheduled
@@ -73,7 +81,11 @@ fetches run from there. `AsnDiscoveryAdapter` (`asn-discovery`) is kept in
 the pack unregistered: it is the instrument that mapped ASN's screens (it
 streams the page and records what each screen is made of) and de Volksbank
 serves SNS, RegioBank and BLG Wonen from the same pages — register it to map
-a screen, then take it back out.
+a screen, then take it back out. ASN shows a browser it judges outdated a
+"Browser updaten" page with its own way on ("Naar ASN Online Bankieren",
+#562): both forms press it before the sign-in, the export and the presence
+check, and the job's notes say the agent's browser wants renewing
+(deploy.md, "Keeping the agents' browsers current").
 
 ## Registries (`RegistryConnector.Adapters`)
 
@@ -82,6 +94,13 @@ a screen, then take it back out.
 | BKR | `bkr` | `browser_interactive` | no | no | client | credit registrations |
 | DUO | `duo` | `browser_interactive` | no | no (DigiD; a household agent is expected) | client | student debt |
 | Mock ×2 | `mock-registry-*` | `http` | — | — | client | credit registrations |
+
+DUO states no total: the record's `total` is the sum of the component
+amounts, and where those add up to nothing while DUO states a debt (a debt
+in its repayment phase came through as €0.00, #566) the sum of its booked
+movements (the `ledger` include) stands in, and without them the balance
+DUO states as current. The monthly instalment and its due day are read
+from the same ledger, which munni's sync always asks for.
 
 ## Verification markers
 

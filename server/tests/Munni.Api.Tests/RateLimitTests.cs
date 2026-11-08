@@ -84,6 +84,55 @@ public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
         Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync("/me")).StatusCode);
     }
 
+    /// <summary>
+    /// The pushed live view (#429) is one request for a whole login, so what
+    /// is bounded is how often one opens - each open holds a stream to the
+    /// control plane - and neither the per-frame bucket nor the global one
+    /// pays for it.
+    /// </summary>
+    [Fact]
+    public async Task Live_view_stream_opens_ride_their_own_small_bucket()
+    {
+        var client = ClientFor($"livestream_{Guid.NewGuid():N}");
+        const string stream = "/connectors/mock-store-simple/login/ses_x/challenges/chl_x/live/stream";
+
+        // the factory allows three opens: the fourth in a row is refused
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync(stream)).StatusCode);
+        }
+
+        var refused = await client.GetAsync(stream);
+        Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode);
+        Assert.True(refused.Headers.Contains("Retry-After"));
+
+        // the poll beside it, the app's fallback, still has its own bucket
+        Assert.NotEqual(HttpStatusCode.TooManyRequests,
+            (await client.GetAsync("/connectors/mock-store-simple/login/ses_x/challenges/chl_x/live/frame?after=0")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync("/me")).StatusCode);
+    }
+
+    /// <summary>
+    /// The lab drives the same live view on its bench and in an explore run
+    /// (#576): in the global bucket a minute of it starved every other lab
+    /// call and the taps were dropped as if sent.
+    /// </summary>
+    [Fact]
+    public async Task The_labs_live_view_rides_the_live_bucket_too()
+    {
+        var client = ClientFor($"lablive_{Guid.NewGuid():N}");
+
+        for (var i = 0; i < 20; i++)
+        {
+            var frame = await client.GetAsync("/lab/bench/explore/login/ses_x/challenges/chl_x/live/frame?after=0");
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, frame.StatusCode);
+            using var input = await client.PostAsJsonAsync("/lab/bench/explore/login/ses_x/challenges/chl_x/live/input", new { events = Array.Empty<object>() });
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, input.StatusCode);
+        }
+
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync("/me")).StatusCode);
+    }
+
     [Theory]
     [InlineData("/sync/%20/pull?since=0")]
     [InlineData("/sync/sp%3Cscript%3E/pull?since=0")]
@@ -122,6 +171,8 @@ public class RateLimitedApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("RateLimits:GlobalTokens", "8");
         builder.UseSetting("RateLimits:GlobalRefillPer10s", "1");
         builder.UseSetting("RateLimits:SocialPerMinute", "2");
+        builder.UseSetting("RateLimits:LiveStreamOpens", "3");
+        builder.UseSetting("RateLimits:LiveStreamOpensPer10s", "1");
         builder.ConfigureServices(services =>
         {
             foreach (var d in services

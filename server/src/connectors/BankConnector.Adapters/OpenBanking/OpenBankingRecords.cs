@@ -98,6 +98,7 @@ internal static partial class OpenBankingRecords
             Balance = balance,
             // the institution as the lookup listed it: the app fetches the same logo for the account row
             Institution = string.IsNullOrWhiteSpace(consent.InstitutionId) ? null : consent.InstitutionId,
+            Identity = string.IsNullOrWhiteSpace(account.Identity) ? null : account.Identity,
         };
     }
 

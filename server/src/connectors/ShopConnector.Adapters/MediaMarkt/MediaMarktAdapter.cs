@@ -311,6 +311,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
     {
         var withDocuments = new List<Receipt>(receipts.Count);
         var opened = 0;
+        var notOffered = 0;
 
         foreach (var receipt in receipts)
         {
@@ -323,10 +324,17 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             }
 
             opened++;
-            var document = await InvoiceAsync(ctx, portal, receipt.ExternalId, ct).ConfigureAwait(false);
+            var (document, offered) = await InvoiceAsync(ctx, portal, receipt.ExternalId, ct).ConfigureAwait(false);
+            if (!offered) notOffered++;
             withDocuments.Add(document is null ? receipt : receipt with { Documents = [document] });
 
             await Task.Delay(TimeSpan.FromMilliseconds(_options.PageGapMs), _time, ct).ConfigureAwait(false);
+        }
+
+        if (notOffered > 0)
+        {
+            // said once, and as what it is (#430): no change on MediaMarkt's side to chase
+            ctx.Note($"{ProviderId}: {notOffered} order(s) offer no invoice; MediaMarkt offers one on its recent orders only");
         }
 
         if (receipts.Count > _options.MaxDocumentOrdersPerFetch)
@@ -340,8 +348,8 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         return withDocuments;
     }
 
-    /// <summary>One order's invoice as a document, or null with the reason noted.</summary>
-    private async Task<ReceiptDocument?> InvoiceAsync(
+    /// <summary>One order's invoice as a document, or none - with the reason noted unless the order simply offers none.</summary>
+    private async Task<(ReceiptDocument? Document, bool Offered)> InvoiceAsync(
         IJobContext ctx, IMediaMarktPortal portal, string orderId, CancellationToken ct)
     {
         MediaMarktDocument? fetched;
@@ -354,9 +362,16 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             // A dead session is the one failure worth propagating: every
             // remaining order would fail the same way.
             ctx.Note($"order '{orderId}': the invoice could not be fetched ({ex.Code}: {ex.Detail})");
-            return null;
+            return (null, true);
         }
 
+        if (ReferenceEquals(fetched, MediaMarktDocument.NotOffered)) return (null, false);
+        return (Document(ctx, orderId, fetched), true);
+    }
+
+    /// <summary>What the page handed over, attached only when it is the document it claims to be.</summary>
+    private ReceiptDocument? Document(IJobContext ctx, string orderId, MediaMarktDocument? fetched)
+    {
         if (fetched is null) return null;
 
         // What it says it is, not what it is called: a sign-in page answered

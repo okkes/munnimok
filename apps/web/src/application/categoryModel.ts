@@ -8,8 +8,8 @@ import { matchCounterAccount } from '@/domain/counterClue';
 import type { ClueTx } from '@/domain/counterClue';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import type { DefaultFamily } from '@/domain/defaultAccounts';
-import { accountStamp, movementCatFor } from '@/domain/txType';
-import { ensureDefaultAccount } from './defaultAccounts';
+import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
+import { walletForAutoLink } from './defaultAccounts';
 
 /** the row's clue text for the transfer matcher (#228 r3) — the user's
  *  rename counts as a title clue too */
@@ -57,9 +57,24 @@ function resolveBareTransferPart(
   return { part: { ...rest, catId: UNCATEGORIZED_ID }, sendBack: true };
 }
 
-/** the splits arm of the bare-row fold (S3776: out of migrateRow): pot
- *  families take their default, transfer parts resolve by clue or stand
- *  the container back to review (#228 r3). Null = nothing to fold. */
+/** #546: a pot family's bare movement links only the account of ITS kind
+ *  the bank text names — the category stays (a credit card can take a debt
+ *  payment); no clue, no link: the review asks for the account */
+function resolveBarePot(
+  clue: ClueTx,
+  candidates: readonly SpaceAccount[],
+  accountId: string,
+  catId: string | undefined,
+): string | undefined {
+  const kinds = catId ? counterTypesFor(catId) : undefined;
+  if (!kinds) return undefined;
+  return matchCounterAccount(clue, candidates.filter((a) => kinds.includes(a.type)), accountId)?.id;
+}
+
+/** the splits arm of the bare-row fold (S3776: out of migrateRow): the ATM
+ *  pair takes the wallet, pot families the account their text names (#546),
+ *  transfer parts resolve by clue or stand the container back to review
+ *  (#228 r3). Null = nothing to fold. */
 async function foldBareParts(
   store: StorageBackend,
   repo: Repo,
@@ -73,6 +88,7 @@ async function foldBareParts(
   const clue = clueOf(raw, meta);
   const next: TxSplit[] = [];
   let sendBack = false;
+  let changed = false;
   for (const slice of splits ?? []) {
     const family = barePartFamily(slice);
     if (!family) {
@@ -83,42 +99,47 @@ async function foldBareParts(
       const folded = resolveBareTransferPart(slice, clue, await candidatesFor(spaceId), raw.accountId, raw.amountCents);
       next.push(folded.part);
       sendBack ||= !!folded.sendBack;
+      changed = true;
       continue;
     }
-    next.push({ ...slice, linkedAccountId: await ensureDefaultAccount(store, repo, spaceId, family) });
+    const linkedAccountId =
+      family === 'cash'
+        ? await walletForAutoLink(store, repo, spaceId)
+        : resolveBarePot(clue, await candidatesFor(spaceId), raw.accountId, slice.catId);
+    next.push(linkedAccountId ? { ...slice, linkedAccountId } : slice);
+    changed ||= !!linkedAccountId;
   }
+  if (!changed) return null;
   return { splits: next, ...(sendBack ? { needsReview: 1 as const } : {}) };
 }
 
 /**
- * #133 ruling 3, widened by #221: bare MOVEMENT rows — a ◆ movement
+ * #133 ruling 3, reshaped by #546: bare MOVEMENT rows — a ◆ movement
  * category (set aside, loan repayment, cash withdraw, …) with no
- * counterparty — link onto the space's DEFAULT account for that family.
- * The link runs through the ONE write choke, so the mirror lifecycle
- * mints the counter leg and moves real balances, exactly as approved
- * ("migrate… balances then move"). Split PARTS with bare movement
+ * counterparty. The ATM pair links the space's cash wallet; the pot
+ * families (saving, debt, investment, funding) link the account of their
+ * kind the bank text names, and without such a clue stay bare — no default
+ * answers for the person any more, the review asks for the account. The
+ * link runs through the ONE write choke, so the mirror lifecycle mints the
+ * counter leg and moves real balances. Split PARTS with bare movement
  * categories get the same treatment through the part-mirror machinery.
  *
- * EVERY BOOT now (#221, the marker retired): the server keeps writing
- * keyword-predicted movement categories with no counterparty (GcIngest),
- * so a one-shot migration can never stay ahead — each boot heals what
- * arrived since the last one. Idempotent: already-linked rows skip, and
- * deterministic default-account and mirror ids converge across devices.
- * Interest/fees categories are value stories, not movements — untouched.
- * Rows ON special accounts are the pot's own ledger and never link
- * (their stamp guards them). The ATM pair links the cash wallet, not
- * the default bank account (defaultFamilyFor).
+ * EVERY BOOT (#221): the server keeps writing keyword-predicted movement
+ * categories with no counterparty, so a one-shot migration can never stay
+ * ahead — each boot heals what arrived since the last one. Idempotent:
+ * linked rows skip, and the deterministic wallet and mirror ids converge
+ * across devices. Interest/fees categories are value stories, not
+ * movements — untouched. Rows ON special accounts are the pot's own ledger
+ * and never link (their stamp guards them).
  *
- * #228 r3 (user rule): the TRANSFER family never folds onto its default
- * — the bank text must name a real tracked account (the clue-matcher);
- * without a clue the row stands down to Uncategorized and goes back to
- * review. Its default account remains a manual pick only.
+ * #228 r3 (user rule): a TRANSFER needs the bank text to name a real
+ * tracked account (the clue-matcher); without a clue the row stands down
+ * to Uncategorized and goes back to review.
  */
 export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo): Promise<number> {
   const accounts = new Map((await store.allRows('account')).map((a) => [a.id, a]));
-  const stampOf = (accountId: string) => accountStamp(accounts.get(accountId)?.type);
 
-  // the transfer clue-matcher's pool, per space (lazy — most boots never need it)
+  // the clue-matcher's pool, per space (lazy — most boots never need it)
   const candidatesBySpace = new Map<string, SpaceAccount[]>();
   const candidatesFor = async (spaceId: string): Promise<SpaceAccount[]> => {
     const cached = candidatesBySpace.get(spaceId);
@@ -127,6 +148,10 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
     candidatesBySpace.set(spaceId, fresh);
     return fresh;
   };
+  // #536: the stamp is the SPACE's reading of the account (an attachment's
+  // type) — a global account carries no type of its own
+  const stampOf = async (spaceId: string, accountId: string) =>
+    accountStamp((await candidatesFor(spaceId)).find((a) => a.id === accountId)?.type ?? accounts.get(accountId)?.type);
 
   let touched = 0;
 
@@ -136,7 +161,7 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
     spaceId: string,
     feedSpaceId: string | undefined,
   ): Promise<void> => {
-    if (stampOf(raw.accountId)) return; // the pot's own ledger — never links
+    if (await stampOf(spaceId, raw.accountId)) return; // the pot's own ledger — never links
     const catId = meta?.catId ?? raw.catId;
     const linkedAccountId = meta?.linkedAccountId ?? raw.linkedAccountId;
     const transferPeerId = meta?.transferPeerId ?? raw.transferPeerId;
@@ -171,9 +196,13 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
       touched++;
       return;
     }
-    const targetId = await ensureDefaultAccount(store, repo, spaceId, family);
-    // a DEFAULT counter keeps the row wearing its special category (the
-    // user's counterparty rule) — the view derives the family from it
+    const targetId =
+      family === 'cash'
+        ? await walletForAutoLink(store, repo, spaceId)
+        : resolveBarePot(clueOf(raw, meta), await candidatesFor(spaceId), raw.accountId, catId);
+    if (!targetId) return;
+    // the link keeps the row's category (the counterparty rule): the
+    // generated leg on the counter carries the money
     await writeTxTransform(repo, tx, { linkedAccountId: targetId });
     touched++;
   };
@@ -185,10 +214,11 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
     (row.splits ?? []).some((s) => isMovementCat(s.catId) && !s.linkedAccountId && !s.transferPeerId);
 
   // feed rows live in their FEED space and carry user decisions on txMeta
-  // — the raw loop takes only LOCAL rows, the meta loop the feed overlays
-  const feedSpaceIds = new Set((await store.allRows('accountLink')).map((link) => link.feedSpaceId));
+  // — the raw loop takes only the member spaces' OWN rows (a feed has no
+  // space row, so it never mints a wallet), the meta loop the feed overlays
+  const memberSpaceIds = new Set((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.id));
   for (const raw of await store.allRows('transaction')) {
-    if (raw.deleted !== 0 || feedSpaceIds.has(raw.spaceId) || !candidate(raw)) continue;
+    if (raw.deleted !== 0 || !memberSpaceIds.has(raw.spaceId) || !candidate(raw)) continue;
     await migrateRow(raw, undefined, raw.spaceId, undefined);
   }
   for (const meta of await store.allRows('txMeta')) {
@@ -198,5 +228,63 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
     await migrateRow(raw, meta, meta.spaceId, raw.spaceId);
   }
 
+  return touched;
+}
+
+/** the ATM pair's sub for a "Transfer out/in" that names a cash wallet, else null (#574) */
+const cashRefile = (catId: string | undefined, linked: string | undefined, amountCents: number, cashIds: ReadonlySet<string>): string | null =>
+  linked && cashIds.has(linked) && (catId === 'transferOut' || catId === 'transferIn') ? movementCatFor('cash', amountCents) : null;
+
+/** one stored row's #574 re-file: the row's own category and its parts' (S3776) */
+function cashRefileFields(raw: TransactionRow, meta: TxMetaRow | undefined, cashIds: ReadonlySet<string>): TxTransformFields | null {
+  const fields: TxTransformFields = {};
+  const rowCat = cashRefile(meta?.catId ?? raw.catId, meta ? meta.linkedAccountId : raw.linkedAccountId, raw.amountCents, cashIds);
+  if (rowCat) fields.catId = rowCat;
+  const sign = raw.amountCents < 0 ? -1 : 1;
+  const splits = meta ? meta.splits : raw.splits;
+  const parts = (splits ?? []).map((part) => {
+    const partCat = cashRefile(part.catId, part.linkedAccountId, sign * Math.abs(part.amountCents), cashIds);
+    return partCat ? { ...part, catId: partCat } : part;
+  });
+  if (parts.some((part, i) => part !== splits?.[i])) fields.splits = parts;
+  return Object.keys(fields).length > 0 ? fields : null;
+}
+
+/** the rows a space stores a transformation for: its own, then its overlays on the feed rows it sees (S3776) */
+async function spaceStoredRows(store: StorageBackend, spaceId: string): Promise<Array<{ raw: TransactionRow; meta?: TxMetaRow }>> {
+  const rows: Array<{ raw: TransactionRow; meta?: TxMetaRow }> = (await store.bySpace('transaction', spaceId))
+    .filter((raw) => raw.deleted === 0)
+    .map((raw) => ({ raw }));
+  for (const meta of await store.bySpace('txMeta', spaceId)) {
+    const raw = meta.deleted === 0 ? await store.get('transaction', meta.txId) : undefined;
+    if (raw?.deleted === 0) rows.push({ raw, meta });
+  }
+  return rows;
+}
+
+/**
+ * #574 (user): "Transfer out" to the cash wallet only repeated "Cash
+ * withdraw" — a cash counter means the ATM pair alone now (txType's
+ * counter table), and rows that filed the transfer pair against a cash
+ * account re-file as Cash withdraw/deposit, row and part alike. Every
+ * boot, idempotent: a re-filed row no longer matches.
+ */
+export async function refileCashTransfers(store: StorageBackend, repo: Repo): Promise<number> {
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
+  for (const space of spaces) {
+    const cashIds = new Set((await visibleAccounts(store, space.id)).filter((a) => a.type === 'cash').map((a) => a.id));
+    if (cashIds.size === 0) continue;
+    for (const { raw, meta } of await spaceStoredRows(store, space.id)) {
+      const fields = cashRefileFields(raw, meta, cashIds);
+      if (!fields) continue;
+      await writeTxTransform(
+        repo,
+        { id: raw.id, spaceId: space.id, feedSpaceId: meta ? raw.spaceId : undefined, needsReview: meta?.needsReview ?? raw.needsReview },
+        fields,
+      );
+      touched++;
+    }
+  }
   return touched;
 }

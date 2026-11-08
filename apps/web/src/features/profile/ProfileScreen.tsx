@@ -6,6 +6,7 @@ import { destroyIdentityData, useData } from '@/app/data';
 import { Row } from '@/ui/primitives';
 import { useSession } from '@/app/session';
 import { deleteOfflineProfile, getOfflineProfile, updateOfflineProfile } from '@/features/auth/offlineProfiles';
+import { forgetLastAccount } from '@/features/auth/lastAccount';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
@@ -20,6 +21,7 @@ import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Flag } from '@/ui/Flag';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
@@ -34,9 +36,8 @@ export const AVATARS = [
 export function Avatar({ picture, size = 40 }: { picture?: string | null; size?: number }) {
   if (isDataImage(picture)) {
     return (
-      <img
+      <Picture
         src={picture!}
-        alt=""
         className="shrink-0 rounded-full object-cover"
         style={{ width: size, height: size }}
         data-testid="profile-avatar"
@@ -202,6 +203,8 @@ export function ProfileScreen() {
     }
     setDeletePhase('local');
     logout();
+    // #559: the login screen no longer offers to continue as an account that is gone
+    forgetLastAccount();
     try {
       await destroyIdentityData(current);
     } catch (err) {

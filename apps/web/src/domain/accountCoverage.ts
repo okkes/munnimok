@@ -11,7 +11,24 @@ import type { AccountLinkRow, AccountRow } from '@/db/types';
  */
 export const UNCOVERED_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type CoverageAccount = Pick<AccountRow, 'source' | 'connectionId' | 'lastSyncedAt'>;
+export type CoverageAccount = Pick<AccountRow, 'source' | 'connectionId' | 'lastSyncedAt'> & Partial<Pick<AccountRow, 'id'>>;
+
+/** #524: the viewer's connections that fetch each account, by account id, as the relay keeps them per person */
+export type ReachedBy = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * #524: the connections that fetch an account for the viewer — the relay's
+ * per-person record where it has one, else the row's own stamp. The stamp
+ * alone misleads twice: it names whoever fetched the row last (an IBAN feed
+ * two people connected flips between them), and every connection of the
+ * same party used to claim every account the party fed (user ss 2026-10-21:
+ * the ING and ASN accounts listed under the PayPal connection).
+ */
+export function fetchingConnectionIds(account: CoverageAccount, reachedBy: ReachedBy | undefined): readonly string[] {
+  const listed = account.id ? reachedBy?.get(account.id) : undefined;
+  if (listed && listed.length > 0) return listed;
+  return account.connectionId ? [account.connectionId] : [];
+}
 
 export type CoverageLink = Pick<AccountLinkRow, 'attachedBy'>;
 
@@ -52,9 +69,51 @@ export function uncoveredSince(
   liveConnectionIds: ReadonlySet<string>,
   owned: boolean | undefined,
   now = Date.now(),
+  reachedBy?: ReachedBy,
 ): string | null {
   if (owned !== true || account.source !== 'connector') return null;
-  if (account.connectionId) return liveConnectionIds.has(account.connectionId) ? null : (account.lastSyncedAt ?? '');
+  const fetching = fetchingConnectionIds(account, reachedBy);
+  if (fetching.length > 0) return fetching.some((id) => liveConnectionIds.has(id)) ? null : (account.lastSyncedAt ?? '');
   if (account.lastSyncedAt && now - Date.parse(account.lastSyncedAt) > UNCOVERED_AFTER_MS) return account.lastSyncedAt;
   return null;
+}
+
+/** what one live connection says about renewing it (#528) */
+export interface ConnectionRenewal {
+  /** the party syncs by itself (open banking, an always-on agent): a lost session there is the person's to renew */
+  unattended: boolean;
+  /** only a new sign-in or consent revives the session */
+  ended: boolean;
+}
+
+/** #528: why an account asks for its connection again */
+export type ReconnectNeed =
+  /** no live connection of the viewer's fetches it any more — since its last sync ('' = never synced) */
+  | { kind: 'gone'; since: string }
+  /** the connection that syncs it by itself lost its session */
+  | { kind: 'signin'; connectionId: string };
+
+/**
+ * #528: an account asks for a reconnect only when it truly needs one —
+ * never because its data is a few days old (user 2026-10-21: an open-banking
+ * consent lasts half a year, yet "Reconnect?" showed after two quiet days):
+ * when no live connection of the viewer's fetches it, or when every one
+ * that does lost its session and one of them is a party that syncs by
+ * itself. A party that needs the person for every sync (ING's app approval,
+ * a shop's second step) is synced from Home's quick sync, not reconnected.
+ */
+export function reconnectNeedOf(
+  account: CoverageAccount,
+  owned: boolean | undefined,
+  live: ReadonlyMap<string, ConnectionRenewal>,
+  reachedBy: ReachedBy | undefined,
+  now = Date.now(),
+): ReconnectNeed | null {
+  const since = uncoveredSince(account, new Set(live.keys()), owned, now, reachedBy);
+  if (since !== null) return { kind: 'gone', since };
+  if (owned !== true || account.source !== 'connector') return null;
+  const fetching = fetchingConnectionIds(account, reachedBy).filter((id) => live.has(id));
+  if (fetching.length === 0 || fetching.some((id) => !live.get(id)!.ended)) return null;
+  const renewable = fetching.find((id) => live.get(id)!.unattended);
+  return renewable ? { kind: 'signin', connectionId: renewable } : null;
 }

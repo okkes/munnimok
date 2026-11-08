@@ -1,6 +1,7 @@
 using System.Globalization;
 using Npgsql;
 using Sentry;
+using Sentry.AspNetCore;
 
 namespace Munni.Api;
 
@@ -16,6 +17,26 @@ namespace Munni.Api;
 public static class SentryNoise
 {
     private static readonly string[] RacedTables = ["\"Users\"", "\"UserDevices\"", "\"SpaceAccountLinks\""];
+
+    public static void Configure(SentryAspNetCoreOptions options, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(configuration);
+        // explicit empty string = SDK disabled (unset would throw at boot)
+        options.Dsn = configuration["Sentry:Dsn"] ?? string.Empty;
+        options.SendDefaultPii = false;
+        // performance tracing (docs/observability.md): health probes and the SSE stream never count,
+        // and a trace the web app started keeps its decision
+        var tracesSampleRate = TracesSampleRate(configuration["Sentry:TracesSampleRate"]);
+        options.TracesSampler = context => SampleTrace(context.TransactionContext, tracesSampleRate);
+        // trace headers travel only to the connector control plane, never to a third party
+        options.TracePropagationTargets.Clear();
+        if (configuration["Connectors:BaseUrl"] is { Length: > 0 } relay) options.TracePropagationTargets.Add(relay);
+        // deliberate insert races are handled, not incidents (GlitchTip 66–74)
+        options.SetBeforeSend((sentryEvent, _) => IsHandledRace(sentryEvent) ? null : sentryEvent);
+        // upstream 5xx are retried by the fetch loop; real failures still surface as exceptions and LogError
+        options.CaptureFailedRequests = false;
+    }
 
     /// <summary>
     /// The sync push retries a unique violation on these up to three times
@@ -70,11 +91,12 @@ public static class SentryNoise
 
     /// <summary>
     /// Requests that are never a transaction: the health probes (docker's
-    /// wget every 10 s, the web's handshake every round), the SSE stream (open
-    /// for an hour, it would read as the slowest request on the platform) and
-    /// the agents' heartbeats.
+    /// wget every 10 s, the web's handshake every round), the SSE streams (the
+    /// sync one open for an hour, the live view's for a whole login - either
+    /// would read as the slowest request on the platform) and the agents'
+    /// heartbeats.
     /// </summary>
-    private static readonly string[] HeartbeatPaths = ["/health", "/sync/events", "/heartbeat"];
+    private static readonly string[] HeartbeatPaths = ["/health", "/sync/events", "/live/stream", "/heartbeat"];
 
     public static bool IsHeartbeat(string? transactionName) =>
         transactionName is not null && HeartbeatPaths.Any(p => transactionName.Contains(p, StringComparison.OrdinalIgnoreCase));

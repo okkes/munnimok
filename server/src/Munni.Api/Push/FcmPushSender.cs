@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Munni.Api.Social;
 
 namespace Munni.Api.Push;
 
@@ -28,13 +29,24 @@ public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : 
 /// </summary>
 public static class FcmTexts
 {
-    private sealed record Texts(string One, string Many, string FriendRequest, string FriendAccept, string SpaceInvite, string SpaceJoin, string Someone, string ASpace, string Test);
+    private sealed record Texts(
+        string One, string Many, string FriendRequest, string FriendAccept, string SpaceInvite, string SpaceJoin,
+        string MemberRemoved, string MemberRole, IReadOnlyDictionary<string, string> Roles, string Someone, string ASpace, string Test);
 
     private static readonly Dictionary<string, Texts> All = new()
     {
-        ["en"] = new("1 new transaction arrived", "{n} new transactions arrived", "{name} sent you a friend request", "{name} accepted your friend request", "{name} invited you to \"{space}\"", "{name} joined \"{space}\"", "Someone", "a space", "Test notification — push reaches this device ✓"),
-        ["nl"] = new("1 nieuwe transactie ontvangen", "{n} nieuwe transacties ontvangen", "{name} heeft je een vriendschapsverzoek gestuurd", "{name} heeft je vriendschapsverzoek geaccepteerd", "{name} heeft je uitgenodigd voor \"{space}\"", "{name} doet nu mee in \"{space}\"", "Iemand", "een ruimte", "Testmelding — push bereikt dit apparaat ✓"),
-        ["tr"] = new("1 yeni işlem geldi", "{n} yeni işlem geldi", "{name} sana arkadaşlık isteği gönderdi", "{name} arkadaşlık isteğini kabul etti", "{name} seni \"{space}\" alanına davet etti", "{name} \"{space}\" alanına katıldı", "Birisi", "bir alan", "Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓"),
+        ["en"] = new("1 new transaction arrived", "{n} new transactions arrived", "{name} sent you a friend request", "{name} accepted your friend request", "{name} invited you to \"{space}\"", "{name} joined \"{space}\"",
+            "You were removed from \"{space}\" by {name}", "Your role in \"{space}\" is now {role}",
+            new Dictionary<string, string> { [SpaceRoles.Owner] = "owner", [SpaceRoles.Contributor] = "contributor", [SpaceRoles.Reader] = "reader" },
+            "Someone", "a space", "Test notification — push reaches this device ✓"),
+        ["nl"] = new("1 nieuwe transactie ontvangen", "{n} nieuwe transacties ontvangen", "{name} heeft je een vriendschapsverzoek gestuurd", "{name} heeft je vriendschapsverzoek geaccepteerd", "{name} heeft je uitgenodigd voor \"{space}\"", "{name} doet nu mee in \"{space}\"",
+            "{name} heeft je verwijderd uit \"{space}\"", "Je rol in \"{space}\" is nu {role}",
+            new Dictionary<string, string> { [SpaceRoles.Owner] = "eigenaar", [SpaceRoles.Contributor] = "bijdrager", [SpaceRoles.Reader] = "lezer" },
+            "Iemand", "een ruimte", "Testmelding — push bereikt dit apparaat ✓"),
+        ["tr"] = new("1 yeni işlem geldi", "{n} yeni işlem geldi", "{name} sana arkadaşlık isteği gönderdi", "{name} arkadaşlık isteğini kabul etti", "{name} seni \"{space}\" alanına davet etti", "{name} \"{space}\" alanına katıldı",
+            "{name} seni \"{space}\" alanından çıkardı", "\"{space}\" alanındaki rolün artık {role}",
+            new Dictionary<string, string> { [SpaceRoles.Owner] = "sahip", [SpaceRoles.Contributor] = "katkıda bulunan", [SpaceRoles.Reader] = "okuyucu" },
+            "Birisi", "bir alan", "Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓"),
     };
 
     /// <summary>title+body for a payload, or null for types with no visible text</summary>
@@ -46,6 +58,7 @@ public static class FcmTexts
             payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
         string Social(string template) =>
             template.Replace("{name}", Str("fromName", texts.Someone)).Replace("{space}", Str("spaceName", texts.ASpace));
+        string Role() => texts.Roles.GetValueOrDefault(Str("role", "")) ?? Str("role", "");
 
         var body = type switch
         {
@@ -56,10 +69,17 @@ public static class FcmTexts
             "friend-accept" => Social(texts.FriendAccept),
             "space-invite" => Social(texts.SpaceInvite),
             "space-join" => Social(texts.SpaceJoin),
+            "member-removed" => Social(texts.MemberRemoved),
+            "member-role" => Social(texts.MemberRole).Replace("{role}", Role()),
             "test" => texts.Test,
             _ => null,
         };
-        return body is null ? null : ("munni", body);
+        if (body is null) return null;
+        // #551: a notification about one space wears its name as the title — the lock screen already says
+        // "munni" above it; the social ones name their space in the sentence
+        var spaceName = Str("spaceName", "").Trim();
+        var title = (type is "new-transactions" or "test") && spaceName.Length > 0 ? spaceName : "munni";
+        return (title, body);
     }
 }
 

@@ -10,8 +10,8 @@ using Munni.Api.Accounts;
 namespace Munni.Api.Tests.Connectors;
 
 /// <summary>
-/// The relay against the real control plane (docs/connector-integration-plan.md
-/// §5, M1): subjects minted here, sessions bound to their user, bundles passing
+/// The relay against the real control plane (docs/connectors/relay.md, #367
+/// M1): subjects minted here, sessions bound to their user, bundles passing
 /// through and never resting, the catalogue in the app's casing, the sync
 /// landing records in the feeds. The mock providers are the ones the
 /// shipped catalogue carries.
@@ -299,11 +299,13 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
             Assert.DoesNotMatch("(?i)bundle|input|credential|secret|token|password", property.Name);
         }
         Assert.Equal(
-            // PendingArtifactsJobId (#441 L1) is a job id: the open question a scheduled failure left, never the picture itself
-            ["ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "PendingArtifactsJobId", "Provider", "ScheduleNotBefore", "State", "UserId"],
+            // PendingArtifactsJobId (#441 L1) is a job id: the open question a scheduled failure left, never the picture itself;
+            // BackfillSince/Until (#460) are the days older history still spans
+            ["BackfillSince", "BackfillUntil", "ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "PendingArtifactsJobId", "Provider", "ScheduleNotBefore", "State", "UserId"],
             typeof(ConnectorSession).GetProperties().Select(p => p.Name).Order().ToArray());
         Assert.Equal(
-            ["AccountEntityId", "AccountRef", "ConnectionId", "Currency", "Excluded", "ExternalId", "FeedSpaceId", "Id", "Provider", "SeenAt", "UserId"],
+            // Identity (#491) is the party's opaque hash naming an account across consents — a reference like the rest
+            ["AccountEntityId", "AccountRef", "ConnectionId", "Currency", "Excluded", "ExternalId", "FeedSpaceId", "Id", "Identity", "Provider", "SeenAt", "UserId"],
             typeof(ConnectorAccountRef).GetProperties().Select(p => p.Name).Order().ToArray());
     }
 

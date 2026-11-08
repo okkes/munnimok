@@ -11,6 +11,34 @@ Both are built by `.github/workflows/release-images.yml` on every push to
 | `ghcr.io/okkes/munni-connector-api` (amd64, arm64) | `server/src/connectors/Connector.Api/Dockerfile` | the control plane with every adapter pack, on the ASP.NET runtime, port 8080 |
 | `ghcr.io/okkes/munni-connector-agent` (amd64) | `server/src/connectors/Connector.Agent/Dockerfile` | the agent with every adapter pack, on the Playwright image (Chromium + Xvfb), entrypoint `agent-entrypoint.sh` |
 
+## Keeping the agents' browsers current
+
+A bank judges the browser by its version, and ASN shows an outdated one a
+"Browser updaten" page instead of its sign-in (#562). The agent's browser is
+Playwright's bundled Chromium, and that is ONE version held in two places
+that must move together: the image the agent runs on
+(`mcr.microsoft.com/playwright/dotnet:v<x>-noble`, the Dockerfile above)
+and the `Microsoft.Playwright` package that drives it
+(`server/src/connectors/Directory.Packages.props`) — a drift between them
+fails every agent at launch. The device descriptor the agent presents
+(`BrowserDevice`, Pixel 5) carries the same Chromium version in its user
+agent, so what a site sees is what runs; nothing is disguised.
+
+- **Renovate raises the pair as one PR** (`renovate.json`, group
+  "playwright (agent browsers)", any day of the week): merging it is the
+  renewal. CI runs the agent's browser tests on the new Chromium first.
+- **Every environment's agents follow by themselves**: the merge rebuilds
+  `munni-connector-agent` (`release-images.yml`), the NAS deploy follows the
+  image build (`deploy-nas.yml`), and the NAS poller recreates the pooled
+  agents and hosted private slots on the new image — no manual redeploy.
+  Production gets it with the next release, as every image does.
+- **A household agent** (`household-agent.yml`, a person's own computer)
+  runs `:latest` and is renewed by its owner:
+  `docker compose -f household-agent.yml pull && docker compose -f household-agent.yml up -d`.
+- **A page that still finds the browser outdated** is passed where the
+  party offers a way on (ASN: "Naar ASN Online Bankieren") and the job's
+  notes say so — "this agent's browser wants renewing" — in the lab.
+
 ## Configuring the control plane
 
 `appsettings.json` is production-shaped: a container that starts with no
@@ -33,7 +61,7 @@ environment as `Connector__<Section>__<Key>`:
 | `Connector:FleetEnrollmentCode` | the operator's own fleet enrolls with this code, in production too: a generated per-platform secret the platform renders into the pooled agent and into every control plane of the platform, seeded under the subject `fleet` and re-armed on every start so an agent with a wiped state file comes back |
 | `Connector:DevEnrollmentCode` | development only: a fixed reusable code for a local agent |
 | `Connector:MaxQueuedJobs` | back-pressure: a login is refused when the queue is this deep |
-| `Connector:Timeouts:*` | ticket 900 s, lease 120 s, heartbeat 30 s, agent poll 30 s, login wait 3 s, fetch wait 25 s, job 300 s, abandoned job 1800 s, credential bundle 30 days, politeness 800 ms, challenge grace 300 s, live frame poll 5 s, result retention 1 day, enrollment code 900 s, sweeps 15 s / 60 s |
+| `Connector:Timeouts:*` | ticket 900 s, lease 120 s, heartbeat 30 s, agent poll 30 s, login wait 3 s, fetch wait 25 s, job 300 s, abandoned job 1800 s, credential bundle 30 days, politeness 800 ms, challenge grace 300 s, live frame poll 5 s, live stream 600 s (`LiveStreamSeconds`) with a keep-alive after 10 s of quiet (`LiveStreamKeepAliveSeconds`), result retention 1 day, enrollment code 900 s, sweeps 15 s / 60 s |
 | `BankAdapters`, `ShopAdapters`, `RegistryAdapters` | the packs' provider facts (see adapters.md) — keep in step with the agents |
 | `BankAdapters:GoCardless:SecretId`, `BankAdapters:GoCardless:SecretKey`, `BankAdapters:EnableBanking:ApplicationId`, `BankAdapters:EnableBanking:PrivateKeyPem` | the operator's aggregator accounts (#414): the party exists when its keys do; the platform renders them from the same four secrets the api once took (`GOCARDLESS_*`, `ENABLEBANKING_*`) and never hands them to an agent — a manifest does not depend on them, so the catalogue digest stays equal on both sides |
 
@@ -95,7 +123,7 @@ ConnectorAgent__ControlPlaneBaseUrl=http://localhost:5000/ ConnectorAgent__Enrol
   dotnet run --project server/src/connectors/Connector.Agent
 ```
 
-## What munni's platform renders (slice M2 of the plan)
+## What munni's platform renders
 
 `infra/modules/render.mjs`, from the committed config (`infra/platforms/`,
 see its README): an environment with `features.connectors` gets
@@ -114,7 +142,7 @@ see its README): an environment with `features.connectors` gets
   LAN mode) — the address household agents dial from outside. The control
   plane is reachable, and answers nobody without the machine token or an
   agent's own token; the health route alone is anonymous and carries no
-  data. This is the one departure from the plan's "publishes no port":
+  data. It is published on purpose, not hidden on the private network:
   household agents have to reach it from home, and a token-protected host is
   the honest way to do that;
 - **the api's relay settings** `Connectors:*` — the in-network base url,

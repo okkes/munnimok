@@ -1,5 +1,5 @@
 /**
- * Native update detection (native-benefits §4). Web deploys and store
+ * Native update detection. Web deploys and store
  * binaries are stamped with the SAME git commit count, so the hosted
  * /version.json build being newer than the shell's own build means an
  * update sits on the store. Pure logic here; IO lives in the caller.

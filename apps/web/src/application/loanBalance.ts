@@ -1,4 +1,6 @@
 import { isLiability } from '@/features/accounts/accountTypes';
+import { writeTxTransform } from '@/db/joined';
+import { isMintedLeg, txMetaId } from '@/domain/feedIds';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { AccountRow } from '@/db/types';
@@ -96,4 +98,67 @@ export async function countPreAnchorTx(
   });
   await writeMarker();
   return true;
+}
+
+/**
+ * #509 (user): a loan typed with its current balance equal to its original
+ * amount holds no payment yet — every payment linked to it moves its
+ * balance, whatever its date, so it carries no cut-off date at all.
+ */
+export const isPristineLoan = (account: Pick<AccountRow, 'originalCents' | 'balanceCents'>): boolean =>
+  !!account.originalCents && account.originalCents > 0 && Math.abs(account.balanceCents) === account.originalCents;
+
+/** a generated leg's source row as its space holds it — the loanCounted
+ *  marker sits on the row, or on the space's overlay for a feed row */
+async function legSource(store: StorageBackend, spaceId: string, sourceId: string) {
+  const raw = await store.get('transaction', sourceId);
+  if (raw?.deleted !== 0) return null;
+  if (raw.spaceId === spaceId) return { id: raw.id, spaceId, needsReview: raw.needsReview, loanCounted: raw.loanCounted };
+  const meta = await store.get('txMeta', txMetaId(spaceId, raw.id));
+  return { id: raw.id, spaceId, feedSpaceId: raw.spaceId, needsReview: meta?.needsReview ?? raw.needsReview, loanCounted: meta?.loanCounted };
+}
+
+/**
+ * #509: a manual loan that was typed pristine but carries a cut-off date
+ * (created before the rule) counts in every linked payment its date left
+ * out, and drops the date. Only where the ledger can be read back for sure:
+ * nothing on the loan but munni's generated legs (no typed balance, no hand
+ * entry), and the balance minus the legs that counted is the original — so
+ * the loan WAS typed pristine. Returns whether the loan changed.
+ */
+export async function settlePristineLoan(store: StorageBackend, repo: Repo, loanId: string): Promise<boolean> {
+  const loan = await adjustableLoan(store, loanId);
+  if (!loan?.balanceAsOf || !loan.originalCents) return false;
+  const anchor = loan.balanceAsOf;
+  const ledger = (await store.bySpace('transaction', loan.spaceId)).filter((t) => t.deleted === 0 && t.accountId === loan.id);
+  if (ledger.some((t) => !isMintedLeg(t))) return false;
+  const legs = await Promise.all(
+    ledger.map(async (leg) => {
+      // a part's leg points at "row:part" — parts carry no marker, their date decides
+      const source = leg.transferPeerId!.includes(':') ? null : await legSource(store, loan.spaceId, leg.transferPeerId!);
+      return { leg, source, counted: source?.loanCounted === 1 || leg.date > anchor };
+    }),
+  );
+  const typed = loan.balanceCents - legs.filter((l) => l.counted).reduce((sum, l) => sum + l.leg.amountCents, 0);
+  if (!isPristineLoan({ originalCents: loan.originalCents, balanceCents: typed })) return false;
+  const uncounted = legs.filter((l) => !l.counted);
+  await repo.upsert('account', loan.spaceId, loan.id, {
+    balanceCents: loan.balanceCents + uncounted.reduce((sum, l) => sum + l.leg.amountCents, 0),
+    balanceAsOf: null as never,
+  });
+  for (const { source } of uncounted) {
+    if (source) await writeTxTransform(repo, source, { loanCounted: 1 });
+  }
+  return true;
+}
+
+/** #509: every manual loan settles once (the boot fold) — a settled loan has no date left to settle */
+export async function settlePristineLoans(store: StorageBackend, repo: Repo): Promise<number> {
+  let settled = 0;
+  for (const account of await store.allRows('account')) {
+    if (account.deleted === 0 && account.source === 'manual' && isLiability(account.type) && account.balanceAsOf && account.originalCents) {
+      if (await settlePristineLoan(store, repo, account.id)) settled++;
+    }
+  }
+  return settled;
 }

@@ -20,7 +20,7 @@ is a bug in this folder.
 | [client.md](client.md) | The app's side (slices M3–M5): the Connections hub, the connect flow and its challenges, custody of the bundle, sync and matching, banks and registries with the attach step, the household agents, the E2EE device sync, what the app never does |
 | [deploy.md](deploy.md) | Running it: the local loop, the images, the household agent, what munni's platform renders |
 | [lab.md](lab.md) | The connector lab (`apps/lab`, #441): the operator's workbench — the dashboard and the kill switch, the fleet and the slots, the lab subject, its relay (`/lab`), and the slices that follow (jobs and health, the test bench, the recorder, the retention bench) |
-| [../connector-integration-plan.md](../connector-integration-plan.md) | The plan that brought it here and the slices that follow (relay, platform, hub, banks, registries, admin) |
+| [#367](https://github.com/okkes/munnimok/issues/367), [#414](https://github.com/okkes/munnimok/issues/414) | The tickets that brought it here (slices C0, M1–M6, O1–O4); the plan they delivered, `docs/connector-integration-plan.md`, lives in git history |
 | [research/](research/) | Provider research notes |
 
 ## The non-negotiables
@@ -61,8 +61,8 @@ docs/connectors/                this folder
 ```
 
 Munni's platform (`infra/`) renders the control plane and the pooled agent
-into each environment's stack; the munni API is the only consumer. Neither
-is wired yet — that is slice M1/M2 of the plan.
+into each environment's stack ([deploy.md](deploy.md)); the munni API is the
+only consumer ([relay.md](relay.md)).
 
 ## Working on it
 

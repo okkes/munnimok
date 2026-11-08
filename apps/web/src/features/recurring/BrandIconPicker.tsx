@@ -6,6 +6,8 @@ import { downscaleImage } from '@/lib/image';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
+import { IconPicker } from '@/ui/IconPicker';
+import { Picture } from '@/ui/Picture';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
@@ -34,6 +36,18 @@ interface RemoteLogo {
 export interface PickedLogo {
   /** '/brands/{slug}.svg' or a logo.dev image URL; null = default icon */
   logo: string | null;
+  /** #520: an icon picked from the font — the host's own face, the logo cleared with it */
+  icon?: string;
+}
+
+/** #520: a host whose face can be an icon of its own (a recurring cost) offers the icon font beside the logos */
+export interface IconChoice {
+  /** the icon the host shows when no logo is set */
+  value: string;
+  /** its suggestions, shown first */
+  featured: readonly string[];
+  /** the face now: a logo, the host's default icon, or an icon picked before (the sheet then opens on the icons) */
+  face: 'logo' | 'default' | 'own';
 }
 
 let brandIndexCache: BrandEntry[] | null = null;
@@ -62,11 +76,21 @@ interface BrandIconPickerProps {
   onPick: (picked: PickedLogo) => void;
   /** prefill (e.g. the cost's name); the first tap on the field clears it */
   initialQuery?: string;
+  /** #520: offer the whole icon font as well — an Icon | Logo switch heads the sheet */
+  icons?: IconChoice;
 }
 
-export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' }: Readonly<BrandIconPickerProps>) {
+export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '', icons }: Readonly<BrandIconPickerProps>) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<'icon' | 'logo'>('logo');
+  const [iconQuery, setIconQuery] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    setTab(icons?.face === 'own' ? 'icon' : 'logo');
+    setIconQuery('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const prefilled = useRef(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   // #160: desktop-only webcam door under the upload row
@@ -103,7 +127,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
   // so no 'unavailable' note either).
   useEffect(() => {
     const q = query.trim();
-    if (!open || q.length < 2 || readSessionIdentity()?.kind !== 'user') {
+    if (!open || tab !== 'logo' || q.length < 2 || readSessionIdentity()?.kind !== 'user') {
       setRemote([]);
       setRemoteState('idle');
       return;
@@ -118,7 +142,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
       });
     }, 300);
     return () => clearTimeout(timer);
-  }, [open, query]);
+  }, [open, query, tab]);
 
   const remoteShown = remote.slice(0, 12);
 
@@ -130,6 +154,11 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
 
   const pick = (logo: string | null) => {
     onPick({ logo });
+    setQuery('');
+    onOpenChange(false);
+  };
+  const pickIcon = (name: string) => {
+    onPick({ logo: null, icon: name });
     setQuery('');
     onOpenChange(false);
   };
@@ -160,8 +189,40 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
     <>
     {/* #344: steady — search results and conditional sections toggle per
         keystroke, and the growing dialog pumped between sizes */}
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall" steady dragHandle>
+    <Sheet open={open} onOpenChange={onOpenChange} title={t(icons ? 'recurring.faceTitle' : 'recurring.iconTitle')} size="tall" steady dragHandle>
       <div className="flex flex-col gap-3 pt-1">
+        {icons && (
+          <div className="flex rounded-xl bg-bg-2 p-0.5" role="tablist" data-testid="brandpicker-tabs">
+            {(['icon', 'logo'] as const).map((which) => (
+              <button
+                key={which}
+                type="button"
+                role="tab"
+                aria-selected={tab === which}
+                data-testid={`brandpicker-tab-${which}`}
+                onClick={() => setTab(which)}
+                className={`m-tap flex-1 rounded-[10px] border-none px-2.5 py-2 text-[13px] ${
+                  tab === which ? 'bg-surface font-semibold text-ink shadow-sm' : 'bg-transparent text-ink-3'
+                }`}
+              >
+                {t(which === 'icon' ? 'recurring.faceIcon' : 'recurring.faceLogo')}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* #520 (user): the whole icon font, the custom categories' picker — no ring while a logo is the face */}
+        {icons && tab === 'icon' ? (
+          <IconPicker
+            value={icons.value}
+            onChange={pickIcon}
+            featured={icons.featured}
+            query={iconQuery}
+            onQuery={setIconQuery}
+            testIdPrefix="brandpicker-icon"
+            sleeping={icons.face === 'logo'}
+          />
+        ) : (
+        <>
         {/* the field arrives prefilled with the cost's name — #234: the
             shared SearchField (this picker's pattern, generalized) */}
         <SearchField
@@ -175,14 +236,17 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
           placeholder={t('recurring.iconSearch')}
           textSize="text-[14px]"
         />
-        <button
-          data-testid="brandpicker-none"
-          onClick={() => pick(null)}
-          className="m-tap flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
-        >
-          <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
-          {t('recurring.iconNone')}
-        </button>
+        {/* with an icon tab, the way back from a logo is picking an icon there */}
+        {!icons && (
+          <button
+            data-testid="brandpicker-none"
+            onClick={() => pick(null)}
+            className="m-tap flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
+          >
+            <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+            {t('recurring.iconNone')}
+          </button>
+        )}
         {/* own image (user request 2026-08-01): third source beside the
             vendored set and logo.dev — downscaled like event pictures so
             it syncs as a field */}
@@ -238,7 +302,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
               onClick={() => pick(`brands/${brand.slug}.svg`)}
               className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
             >
-              <img src={`brands/${brand.slug}.svg`} alt="" className="h-7 w-7 object-contain" loading="lazy" />
+              <Picture src={`brands/${brand.slug}.svg`} className="h-7 w-7 rounded object-contain" loading="lazy" />
               <span className="w-full truncate text-center text-[10px] text-ink-3">
                 <Highlight text={brand.title} query={query} />
               </span>
@@ -258,7 +322,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
                   onClick={() => pick(r.logoUrl)}
                   className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
                 >
-                  <img src={r.logoUrl} alt="" className="h-7 w-7 rounded object-contain" loading="lazy" />
+                  <Picture src={r.logoUrl} className="h-7 w-7 rounded object-contain" loading="lazy" />
                   <span className="w-full truncate text-center text-[10px] text-ink-3">
                     <Highlight text={r.name} query={query} />
                   </span>
@@ -266,6 +330,8 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
               ))}
             </div>
           </>
+        )}
+        </>
         )}
       </div>
     </Sheet>

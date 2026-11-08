@@ -146,3 +146,23 @@ session is never silent); the token getter marks the session expired on an
 dead grant; the admin portal, which refreshed a dead grant 669 times in
 three minutes on 2026-10-06, got the same guard (`apps/admin/src/auth.tsx`)
 with its own "Your session expired — sign in again" note.
+
+## Continue as — the way back in (2026-11-08, #559)
+
+**The finding.** "Continue as <name>" sent a plain authorize request. That
+is instant while Logto's session lives, but a sign-out ends that session on
+purpose — and the next "Continue as" landed on Logto's empty sign-in page.
+
+**The policy.** A sign-out keeps ending the IdP session (a finance app on a
+shared device must not reopen without credentials), so "instant" is honest
+only while that session lives. Beyond it, the app remembers how the account
+gets back in, beside the name (`features/auth/lastAccount.ts`): right after
+the code exchange it reads Logto's userinfo with the `identities` scope (the
+exchange's own token — no refresh, no rotation race). An account with one
+social identity continues with `direct_sign_in=social:<target>` (Logto skips
+its page; Google's chooser then asks one tap, because the connector carries
+`prompts: select_account` so that "Use another account" can switch Google
+accounts); a username account gets `login_hint` (its username filled in); an
+account whose way in is unknown (a record from before, several providers)
+sees the plain "Sign in" instead of a name. The expired banner and the
+silent re-entry continue the same way. Deleting the account forgets it.

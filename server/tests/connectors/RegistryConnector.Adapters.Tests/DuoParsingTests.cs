@@ -707,6 +707,41 @@ public sealed class DuoParsingTests
                 Fixture.Read("duo/klantbeeld-reduced.json")),
             Today, Options, Session);
 
+    private const string NothingOwed =
+        """{"schuldbedragLening":0E-8,"schuldbedragLevenlanglerenkrediet":0E-8,"schuldbedragOVSchuld":0E-8,"schuldbedragPrestatiebeurs":0E-8,"schuldbedragTeveelBijverdiensten":0E-8,"schuldbedragTeveelOntvangenLevenlanglerenkrediet":0E-8,"schuldbedragTeveelOntvangenStudiefinanciering":0E-8,"schuldbedragTeveelOntvangenTegemoetkomingScholier":0E-8}""";
+
+    /// <summary>
+    /// #566: amounts that add up to nothing while DUO states a debt read as
+    /// €0.00 on a debt in its repayment phase. The booked movements then sum
+    /// to what the portal shows, and without them the balance DUO states as
+    /// current is its own figure - never a zero nobody owes.
+    /// </summary>
+    [Fact]
+    public void Amounts_that_add_up_to_nothing_give_way_to_the_ledger_and_then_to_the_stated_current_balance()
+    {
+        var notes = new List<string>();
+        var fromLedger = DuoDebtReader.Read(
+            new DuoPayloads(
+                NothingOwed, Positions, Holiday,
+                Fixture.Read("duo/schuldhistorie.json"),
+                Fixture.Read("duo/grondslaggegevens.json"),
+                Fixture.Read("duo/klantbeeld-reduced.json")),
+            Today, Options, Session, note: notes.Add);
+        Assert.Equal(fromLedger.Ledger.Sum(e => e.Amount.Value), fromLedger.Total.Value);
+        Assert.NotEqual(0, fromLedger.Total.Value);
+        Assert.True(fromLedger.TotalIsDerived);
+        Assert.Contains(notes, n => n.Contains("booked movements", StringComparison.Ordinal));
+
+        var fromHistory = DuoDebtReader.Read(
+            new DuoPayloads(NothingOwed, Positions, Holiday, Fixture.Read("duo/schuldhistorie.json")),
+            Today, Options, Session);
+        Assert.Equal(1_243_477, fromHistory.Total.Value);   // SaldoActueel's saldoInclusiefRente, 12434.77
+        Assert.False(fromHistory.TotalIsDerived);
+
+        // with nothing stated anywhere, nothing is owed
+        Assert.Equal(0, DuoDebtReader.Read(new DuoPayloads(NothingOwed, Positions, Holiday), Today, Options, Session).Total.Value);
+    }
+
     /// <summary>
     /// The sign is DUO's own, not this connector's reading of a reason code.
     ///

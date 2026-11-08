@@ -3,9 +3,10 @@ import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { PlanRow, PlanSubjectRow } from '@/db/types';
 import type { PlanEditability, PlanningModel, PlanningOps } from '@/application/planning';
-import type { SubjectView } from '@/domain/planning';
+import type { Overlap, SubjectView } from '@/domain/planning';
 import { canSkipPeriod, coverCandidates, shortfallCents, slackCents, subjectFamily } from '@/domain/planning';
 import { useData } from '@/app/data';
+import { catName } from '@/features/categories/useCategories';
 import { OverBudgetSheet, useOverBudgetGuard } from './overBudget';
 import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
@@ -39,10 +40,76 @@ function useOpenSource() {
       case 'goals':
         void navigate({ to: '/goals/$goalId', params: { goalId: id } });
         break;
+      case 'events':
+        void navigate({ to: '/events/$eventId', params: { eventId: id } });
+        break;
       default:
         break;
     }
   };
+}
+
+const centsText = (cents: number | null): string => (cents === null ? '' : (cents / 100).toFixed(2));
+
+/**
+ * An event subject's own total (#504, user 2026-10-20): what the person means
+ * to set aside for the event in all. Empty = the event's estimate; either way
+ * the period's target spreads it over the periods left until the event.
+ */
+function EventTotal({ view, model, ops, fmt, currency }: Readonly<{ view: SubjectView; model: PlanningModel; ops: PlanningOps; fmt: MoneyFmt; currency: string }>) {
+  const { t } = useLang();
+  const event = model.data.events.find((e) => e.id === view.subject.sourceId);
+  const own = view.subject.targetCents ?? null;
+  const [draft, setDraft] = useState(centsText(own));
+  useEffect(() => setDraft(centsText(own)), [own]);
+  const typed = draft.trim() ? parseCents(draft) : null;
+  const valid = draft.trim() === '' || (typed !== null && typed >= 0);
+  const estimate = event?.budgetCents ?? null;
+  let note = t('plan.event.noEstimate');
+  if (own !== null) note = t('plan.event.ownTotal');
+  else if (estimate !== null) note = t('plan.event.fromEstimate', { amount: fmt(estimate, currency) });
+  return (
+    <div data-testid="plan-event-total">
+      <div className="m-cap px-1">{t('plan.event.total', { currency })}</div>
+      <div className="mt-1 flex gap-2">
+        <input
+          data-testid="plan-event-total-input"
+          inputMode="decimal"
+          value={draft}
+          placeholder={estimate === null ? '0.00' : centsText(estimate)}
+          onChange={(e) => setDraft(e.target.value)}
+          className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+        />
+        <Button size="sm" variant="outline" data-testid="plan-event-total-save" disabled={!valid || typed === own} onClick={() => void ops.setOwnTarget(view.subject.id, typed)}>
+          {t('action.save')}
+        </Button>
+      </div>
+      <p className="mt-1 px-1 text-[11px] text-ink-4" data-testid="plan-event-total-note">
+        {note}
+      </p>
+    </div>
+  );
+}
+
+/** a subject blocked on some categories (#535): whose they are, and the one tap that settles it from here */
+function OverlapNote({ overlap, model, canEdit, ops }: Readonly<{ overlap: Overlap; model: PlanningModel; canEdit: boolean; ops: PlanningOps }>) {
+  const { t } = useLang();
+  const { holder } = overlap;
+  return (
+    <p className="rounded-card bg-warning-soft px-3 py-2 text-[12px] text-ink-2" data-testid="plan-sheet-overlap">
+      {t('plan.overlapNote', { name: holder.name, cats: overlap.catIds.map((id) => catName(model.data.catalog.byId(id), t)).join(', ') })}{' '}
+      {canEdit && (
+        <button
+          type="button"
+          data-testid="plan-sheet-overlap-fix"
+          onClick={() => void (holder.segment === 'expenses' ? ops.freeCategories(holder.subjectId, overlap.catIds) : ops.removeSubject(holder.subjectId))}
+          className="m-tap border-none bg-transparent p-0 font-semibold text-accent-deep"
+        >
+          {holder.segment === 'expenses' ? t('plan.overlapTake', { name: holder.name }) : t('plan.overlapRemove', { name: holder.name })}
+        </button>
+      )}
+    </p>
+  );
 }
 
 
@@ -215,6 +282,14 @@ export function SubjectSheet({
               {t('plan.readOnly')}
             </p>
           )}
+          {view.overlaps.map((overlap) => (
+            <OverlapNote key={overlap.holder.subjectId} overlap={overlap} model={model} canEdit={canEdit} ops={ops} />
+          ))}
+          {view.inPool && (
+            <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] text-ink-3" data-testid="plan-sheet-inpool">
+              {t('plan.debtInPool')}
+            </p>
+          )}
           {canMove && (
             <>
               <div className="m-cap px-1">{t('plan.fund.amount', { currency })}</div>
@@ -246,6 +321,7 @@ export function SubjectSheet({
               </div>
             </>
           )}
+          {canEdit && subject.segment === 'events' && !view.orphaned && <EventTotal view={view} model={model} ops={ops} fmt={fmt} currency={currency} />}
           <div className="mt-2 overflow-hidden rounded-card border border-line bg-surface">
             {subject.sourceId && (
               <Row icon="open-in-app" title={t('plan.fund.openSource')} testId="plan-fund-open" onClick={() => openSource(subject)} />

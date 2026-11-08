@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { assetFileName } from './src/lib/buildAssets';
 
 export default defineConfig(({ mode }) => {
   let buildNumber: number | string = 'dev';
@@ -54,7 +55,8 @@ export default defineConfig(({ mode }) => {
           // json matters: the vendored brand SVGs were precached but their
           // index (brands/index.json) was not — offline installs showed an
           // empty logo picker. jpg: the bundled event pictures must work
-          // offline/demo too.
+          // offline/demo too. js: every screen's own chunk (#554) — an
+          // offline start opens any screen.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,jpg}'],
           // never precache the runtime-config overlay: the nginx entrypoint
           // rewrites it per deployment, but the precache would pin the
@@ -103,10 +105,16 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, 'src'),
       },
     },
-    base: './',
+    // absolute: a real-path landing two levels deep (/splits/join/<token>)
+    // must still load the bundle from the root — a relative base sent the
+    // browser to /splits/join/assets/…, which nginx answers with the shell
+    // (a blank page). The manifest keeps its own './' start_url/scope/id.
+    base: '/',
     build: {
       outDir: 'dist',
       assetsInlineLimit: 0,
+      // #552: module assets (pdf.js's worker) leave as .js — see lib/buildAssets
+      rolldownOptions: { output: { assetFileNames: assetFileName } },
     },
     define: {
       __BUILD_NUMBER__: JSON.stringify(buildNumber),

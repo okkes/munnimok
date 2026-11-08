@@ -64,4 +64,23 @@ describe('predictCategory', () => {
     const debit = predictTx({ memory: layered(memory), merchant: 'Mw C Sahin', amountCents: -2_000_00 });
     expect(debit?.source ?? 'none').not.toMatch(/history/); // other sign: never from history
   });
+
+  it('#564 (user ss): money coming back from savings is suggested as Withdraw — the picker\'s matrix decides the side', () => {
+    const layered = (own: ReturnType<typeof buildMerchantMemory>) => ({ own, others: buildMerchantMemory([]) });
+    const row = (over: Partial<MemoryInput>): MemoryInput => ({
+      merchant: 'Oranje spaarrekening M10614086', catId: 'savingDeposit', needsReview: 0, date: '2026-08-01', amountCents: 500_00, ...over,
+    });
+    // the pot's own ledger files money IN as Set aside — it never teaches the checking account's rows
+    const potSide = buildMerchantMemory([row({ ledger: 'saving' }), row({ date: '2026-08-15', ledger: 'saving' })]);
+    const fromPot = predictTx({ memory: layered(potSide), merchant: 'Oranje spaarrekening M10614086', amountCents: 500_00, sourceAccountType: 'checking' });
+    expect(fromPot?.catId).not.toBe('savingDeposit');
+    expect(fromPot?.source ?? 'none').not.toMatch(/history/);
+    // the same ledger still answers, read from its own side
+    const onPot = predictTx({ memory: layered(potSide), merchant: 'Oranje spaarrekening M10614086', amountCents: 500_00, sourceAccountType: 'savings' });
+    expect(onPot?.catId).toBe('savingDeposit');
+    // a credit once confirmed as Set aside on the checking account: the family stands, the side is the matrix's
+    const misfiled = buildMerchantMemory([row({})]);
+    const back = predictTx({ memory: layered(misfiled), merchant: 'Oranje spaarrekening M10614086', amountCents: 500_00, sourceAccountType: 'checking' });
+    expect(back).toMatchObject({ catId: 'savingWithdraw', source: 'history-amount' });
+  });
 });

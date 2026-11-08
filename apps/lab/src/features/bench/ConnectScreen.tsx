@@ -109,9 +109,10 @@ function FormIntro({ explore, party }: Readonly<{ explore: boolean; party: Provi
       <>
         <h2>Start at</h2>
         <p className="hint" data-testid="bench-explore-hint">
-          A browser on a fleet agent opens at this address (a public host — never the NAS&apos;s own network). Drive it through the live view: tap,
-          type, open another address, go back, reload. Everything the browser does is recorded with the secrets taken out; press done when you
-          have seen enough and read the recording in the job history.
+          A browser on an agent opens at this address (a public host — never the NAS&apos;s own network). Its live view appears on this page
+          as soon as the page is up — and stays on the bench session if you leave. Drive it there: tap, type, open another address, go back,
+          reload. Everything the browser does is recorded with the secrets taken out; press done when you have seen enough and read the
+          recording in the job history.
         </p>
       </>
     );
@@ -127,8 +128,30 @@ function FormIntro({ explore, party }: Readonly<{ explore: boolean; party: Provi
   );
 }
 
-/** where the run happens: a pick, or the fact another screen fixed */
-function RunsOn({ form, patch, agents, preset }: Readonly<{ form: FormState; patch: (p: Partial<FormState>) => void; agents: AgentView[]; preset?: ConnectPreset }>) {
+/** a party whose browser stays on one machine: the agent named is the one the run is pinned to (any other party's run goes to the first free agent) */
+export const pinsAMachine = (party: ProviderEntry): boolean => party.runtime === 'browser_persistent' || ownMachineOnly(party);
+/** a party only an account holder's own machine may run — never the fleet */
+const ownMachineOnly = (party: ProviderEntry): boolean => party.agent?.required === true && party.agent.class === 'byo';
+
+/** where an agent runs, as the operator reads it (#576) */
+export function agentWhere(agent: AgentView): string {
+  if (agent.class === 'pooled') return 'munni’s pooled agent';
+  if (agent.hosted) return 'hosted private slot';
+  if (agent.lab) return 'your lab machine';
+  return 'someone’s own computer';
+}
+
+const names = (agents: AgentView[]): string =>
+  agents.length === 0 ? 'none' : agents.map((a) => `${a.name} (${a.online ? 'online' : 'offline'})`).join(', ');
+
+/**
+ * Where the run happens: a pick, or the fact another screen fixed. Only what
+ * the queue honours is offered (#576): a party that pins no machine runs on
+ * the first free agent of the choice, so naming one would be a promise the
+ * platform does not keep; people's own computers and the hosted slots never
+ * take the lab's work at all.
+ */
+function RunsOn({ party, form, patch, agents, preset }: Readonly<{ party: ProviderEntry; form: FormState; patch: (p: Partial<FormState>) => void; agents: AgentView[]; preset?: ConnectPreset }>) {
   if (preset?.runOn) {
     return (
       <div className="fact">
@@ -139,19 +162,38 @@ function RunsOn({ form, patch, agents, preset }: Readonly<{ form: FormState; pat
       </div>
     );
   }
+  const pooled = agents.filter((a) => a.class === 'pooled');
+  const lab = agents.filter((a) => a.lab);
+  const pins = pinsAMachine(party);
+  const ownOnly = ownMachineOnly(party);
+  const named = pins ? agents.filter((a) => a.lab || (!ownOnly && a.class === 'pooled')) : [];
   return (
-    <label className="fact">
-      <span className="fact-label">runs on</span>
-      <select data-testid="bench-run-on" value={form.runOn} onChange={(e) => patch({ runOn: e.target.value })}>
-        <option value="">no preference (the queue decides)</option>
-        <option value="fleet">the fleet (munni&apos;s pooled agents)</option>
-        {agents.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name} · {a.class} · {a.online ? 'online' : 'offline'}
-          </option>
-        ))}
-      </select>
-    </label>
+    <>
+      <label className="fact">
+        <span className="fact-label">runs on</span>
+        <select data-testid="bench-run-on" value={form.runOn} onChange={(e) => patch({ runOn: e.target.value })}>
+          {party.runtime === 'browser_persistent' ? (
+            <option value="">pick the machine that keeps the browser…</option>
+          ) : (
+            <option value="">no preference — your lab machine when one is online, else munni&apos;s pooled agents</option>
+          )}
+          {!ownOnly && <option value="fleet">munni&apos;s pooled agents only (the fleet)</option>}
+          {named.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} · {agentWhere(a)} · {a.online ? 'online' : 'offline'}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="hint run-on-hint" data-testid="bench-run-on-hint">
+        Where a run can go — munni&apos;s pooled agents, containers beside this environment&apos;s control plane on the server that hosts
+        it: {names(pooled)}. Your lab machines, household agents enrolled for the lab under Agents: {names(lab)}. People&apos;s own
+        computers and the hosted private slots only ever run their owner&apos;s work.{' '}
+        {pins
+          ? 'This party keeps its browser on the machine named here; its next fetch goes back to it.'
+          : 'This party keeps no browser on one machine, so the first free agent of your choice takes the run — the run’s facts say which one.'}
+      </p>
+    </>
   );
 }
 
@@ -168,7 +210,9 @@ function SignInForm({
 }: Readonly<{ party: ProviderEntry; explore: boolean; agents: AgentView[]; form: FormState; patch: (p: Partial<FormState>) => void; preset?: ConnectPreset; sending: boolean; onStart: () => void }>) {
   const fields = signInFields(party);
   const configFields = party.auth?.config ?? [];
-  const ready = fields.every((f) => !f.required || (form.inputs[f.key] ?? '').length > 0) && configFields.every((f) => !f.required || (form.config[f.key] ?? '').length > 0);
+  // a persistent party's login is refused without the machine that is to keep its browser
+  const machineNamed = party.runtime !== 'browser_persistent' || form.runOn.length > 0;
+  const ready = machineNamed && fields.every((f) => !f.required || (form.inputs[f.key] ?? '').length > 0) && configFields.every((f) => !f.required || (form.config[f.key] ?? '').length > 0);
   const showRecord = !explore && !preset?.record;
   return (
     <section className="card" data-testid="bench-connect-form">
@@ -211,7 +255,7 @@ function SignInForm({
           <span className="fact-label">label</span>
           <input data-testid="bench-label" value={form.label} placeholder="how the bench lists it" onChange={(e) => patch({ label: e.target.value })} />
         </label>
-        <RunsOn form={form} patch={patch} agents={agents} preset={preset} />
+        <RunsOn party={party} form={form} patch={patch} agents={agents} preset={preset} />
       </div>
       <div className="row">
         <button className="btn" data-testid="bench-start" disabled={!ready || sending} onClick={onStart}>
@@ -298,10 +342,10 @@ function ChallengePanel({
   return (
     <div data-testid={`bench-challenge-${challenge.type}`}>
       <h3>
-        The party asks: {challenge.type}
+        {explore ? 'The live view — the agent’s browser, yours to drive' : `The party asks: ${challenge.type}`}
         {challenge.delivery ? ` (${challenge.delivery})` : ''} <span className="sub">until {new Date(challenge.expiresAt).toLocaleTimeString()}</span>
       </h3>
-      {challenge.promptKey && <p className="hint mono">{challenge.promptKey}</p>}
+      {challenge.promptKey && !explore && <p className="hint mono">{challenge.promptKey}</p>}
       {challenge.type === 'live_view' && (
         <>
           <LiveView call={call} provider={provider} sessionId={view.sessionId} challengeId={challenge.id} navigation={explore} onEnded={onLiveEnded} />
@@ -388,13 +432,158 @@ function RunFacts({ view }: Readonly<{ view: SessionView }>) {
   );
 }
 
+/** what a run that has not reached the party's question yet is doing — and that leaving does not stop it */
+export function waitingLine(view: SessionView, explore: boolean): string {
+  const ahead = view.progress?.ahead ?? 0;
+  let first: string;
+  if (ahead > 0) first = `Waiting for a free agent — ${ahead} ahead in the queue.`;
+  else if (explore) first = 'An agent is opening the address in its browser; the live view appears right here, in this card, as soon as the page is up — you drive it from here.';
+  else first = 'An agent is signing in; whatever the party asks — a code, a picture, the live browser — appears right here.';
+  return `${first} The run keeps going if you leave: the Bench lists it, and opening it there brings this view back.`;
+}
+
+/**
+ * A sign-in as it runs (#441 L2): the step, the notes, and whatever the party
+ * asks — a code, a picture to tap, a choice, a page to open, the live
+ * browser — answered here. The connect screen shows it once a run starts; a
+ * session's own screen shows it while that session is still signing in, so a
+ * run left behind — an explore run's live view above all — stays in reach (#576).
+ */
+export function RunCard({
+  provider,
+  call,
+  busy,
+  view,
+  onView,
+  recorded = false,
+  sessionLink = true,
+  onAgain,
+}: Readonly<{
+  provider: string;
+  call: Call;
+  busy: boolean;
+  view: SessionView;
+  onView: (view: SessionView) => void;
+  /** the run is recorded: its recording opens once it settles */
+  recorded?: boolean;
+  /** offer the session's own screen once it is connected */
+  sessionLink?: boolean;
+  onAgain?: () => void;
+}>) {
+  const explore = provider === EXPLORE;
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const alive = useRef(true);
+  const base = `/lab/bench/${encodeURIComponent(provider)}/login`;
+  const image = useChallengeImage(call, provider, view.sessionId, view.challenge);
+  const recordingJob = useRecordingJob(call, view, recorded);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  // the run, read afresh every second and a half while it is not settled
+  const refresh = useCallback(
+    async (sessionId: string) => {
+      const next = await getJson<SessionView>(call, `${base}/${encodeURIComponent(sessionId)}`);
+      if (!alive.current) return;
+      if (next && next !== 'unreachable') onView(next);
+    },
+    [call, base, onView],
+  );
+
+  useEffect(() => {
+    if (TERMINAL.has(view.state)) return undefined;
+    if (view.state === 'awaiting_input' && view.challenge?.type === 'live_view') return undefined; // the live view says when the page moved on
+    const timer = setInterval(() => void refresh(view.sessionId), POLL_MS);
+    return () => clearInterval(timer);
+  }, [view, refresh]);
+
+  const answer = async (value: string) => {
+    if (!view.challenge) return;
+    setError(null);
+    setSending(true);
+    const res = await call(`${base}/${encodeURIComponent(view.sessionId)}/answer`, { method: 'POST', body: JSON.stringify({ challengeId: view.challenge.id, value }) }).catch(() => null);
+    setSending(false);
+    if (!res?.ok) {
+      setError(await reasonOf(res));
+      return;
+    }
+    onView((await res.json()) as SessionView);
+  };
+  const send = (value: string) => void answer(value);
+
+  const cancel = async () => {
+    const res = await call(`${base}/${encodeURIComponent(view.sessionId)}/cancel`, { method: 'POST' }).catch(() => null);
+    if (res?.ok) onView((await res.json()) as SessionView);
+  };
+
+  const challenge = view.challenge ?? null;
+  const asking = challenge !== null && view.state === 'awaiting_input';
+
+  return (
+    <section className="card" data-testid="bench-run">
+      <div className="card-head">
+        <h2>The run</h2>
+        <span className={`chip ${sessionChip(view.state)}`} data-testid="bench-run-state">
+          {view.state}
+        </span>
+      </div>
+      <RunFacts view={view} />
+      {!TERMINAL.has(view.state) && !asking && (
+        <p className="hint" data-testid="bench-run-waiting">
+          {waitingLine(view, explore)}
+        </p>
+      )}
+      {view.notes && view.notes.length > 0 && <pre className="code">{view.notes.join('\n')}</pre>}
+      {view.error && (
+        <p className="error" data-testid="bench-run-error">
+          {view.error.code} · the person is told to {view.error.userAction}
+          {view.artifactsJobId ? ' · the picture of the page is in the job history' : ''}
+        </p>
+      )}
+      {error && (
+        <p className="error" data-testid="bench-connect-error">
+          {error}
+        </p>
+      )}
+
+      {asking && <ChallengePanel challenge={challenge} provider={provider} explore={explore} call={call} view={view} image={image} sending={sending} send={send} onLiveEnded={() => void refresh(view.sessionId)} />}
+
+      <div className="row" style={{ marginTop: 12 }}>
+        {!TERMINAL.has(view.state) && (
+          <button className="btn quiet" data-testid="bench-cancel" disabled={busy} onClick={() => void cancel()}>
+            cancel
+          </button>
+        )}
+        {recordingJob && (
+          <button className="btn" data-testid="bench-open-recording" onClick={() => navigate(`jobs/${encodeURIComponent(recordingJob)}/trace`)}>
+            open the recording
+          </button>
+        )}
+        {view.state === 'active' && !explore && sessionLink && (
+          <button className="btn" data-testid="bench-open-session" onClick={() => navigate(`bench/sessions/${encodeURIComponent(view.sessionId)}`)}>
+            connected — open the session
+          </button>
+        )}
+        {onAgain && TERMINAL.has(view.state) && view.state !== 'active' && (
+          <button className="btn" data-testid="bench-again" onClick={onAgain}>
+            try again
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /**
  * Connect in the lab (#441 L2): the manifest's own sign-in form, the party's
- * config, a label, where the run happens — then the run as it goes: the
- * step, the notes, and whatever the party asks (a code, a picture to tap,
- * a choice, a page to open, the live browser), answered here. Embedded
- * (#441 L4), another screen fixes the agent and the recording and is told
- * when the run has settled.
+ * config, a label, where the run happens — then the run as it goes (the run
+ * card). Embedded (#441 L4), another screen fixes the agent and the recording
+ * and is told when the run has settled.
  */
 export function ConnectScreen({
   provider,
@@ -416,32 +605,7 @@ export function ConnectScreen({
   const [view, setView] = useState<SessionView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const alive = useRef(true);
   const settledFor = useRef<string | null>(null);
-  const base = `/lab/bench/${encodeURIComponent(provider)}/login`;
-  const image = useChallengeImage(call, provider, view?.sessionId ?? null, view?.challenge);
-  const recordingJob = useRecordingJob(call, view, form.record);
-
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-
-  // the run, read afresh every second and a half while it is not settled
-  const refresh = useCallback(async (sessionId: string) => {
-    const next = await getJson<SessionView>(call, `${base}/${encodeURIComponent(sessionId)}`);
-    if (!alive.current) return;
-    if (next && next !== 'unreachable') setView(next);
-  }, [call, base]);
-
-  useEffect(() => {
-    if (!view || TERMINAL.has(view.state)) return undefined;
-    if (view.state === 'awaiting_input' && view.challenge?.type === 'live_view') return undefined; // the live view says when the page moved on
-    const timer = setInterval(() => void refresh(view.sessionId), POLL_MS);
-    return () => clearInterval(timer);
-  }, [view, refresh]);
 
   // the settled run, told once to whoever embedded this screen
   useEffect(() => {
@@ -450,7 +614,10 @@ export function ConnectScreen({
     onSettled(view);
   }, [view, onSettled]);
 
-  const post = async (path: string, body: unknown) => {
+  const start = async () => {
+    const [path, body] = explore
+      ? ['/lab/bench/explore', { url: form.inputs.url ?? '', label: form.label || undefined, preferAgent: form.runOn || undefined }]
+      : [`/lab/bench/${encodeURIComponent(provider)}/login`, { inputs: form.inputs, config: form.config, label: form.label || undefined, preferAgent: form.runOn || undefined, ...(form.record ? { record: true } : {}) }];
     setError(null);
     setSending(true);
     const res = await call(path, { method: 'POST', body: JSON.stringify(body) }).catch(() => null);
@@ -460,22 +627,6 @@ export function ConnectScreen({
       return;
     }
     setView((await res.json()) as SessionView);
-  };
-
-  const start = () =>
-    explore
-      ? post('/lab/bench/explore', { url: form.inputs.url ?? '', label: form.label || undefined, preferAgent: form.runOn || undefined })
-      : post(base, { inputs: form.inputs, config: form.config, label: form.label || undefined, preferAgent: form.runOn || undefined, ...(form.record ? { record: true } : {}) });
-
-  const send = (value: string) => {
-    if (!view?.challenge) return;
-    void post(`${base}/${encodeURIComponent(view.sessionId)}/answer`, { challengeId: view.challenge.id, value });
-  };
-
-  const cancel = async () => {
-    if (!view) return;
-    const res = await call(`${base}/${encodeURIComponent(view.sessionId)}/cancel`, { method: 'POST' }).catch(() => null);
-    if (res?.ok) setView((await res.json()) as SessionView);
   };
 
   if (party === 'loading') return <p className="hint">loading…</p>;
@@ -493,8 +644,6 @@ export function ConnectScreen({
       </>
     );
   }
-
-  const challenge = view?.challenge ?? null;
 
   return (
     <>
@@ -519,51 +668,7 @@ export function ConnectScreen({
         </p>
       )}
 
-      {view && (
-        <section className="card" data-testid="bench-run">
-          <div className="card-head">
-            <h2>The run</h2>
-            <span className={`chip ${sessionChip(view.state)}`} data-testid="bench-run-state">
-              {view.state}
-            </span>
-          </div>
-          <RunFacts view={view} />
-          {view.notes && view.notes.length > 0 && <pre className="code">{view.notes.join('\n')}</pre>}
-          {view.error && (
-            <p className="error" data-testid="bench-run-error">
-              {view.error.code} · the person is told to {view.error.userAction}
-              {view.artifactsJobId ? ' · the picture of the page is in the job history' : ''}
-            </p>
-          )}
-
-          {challenge && view.state === 'awaiting_input' && (
-            <ChallengePanel challenge={challenge} provider={provider} explore={explore} call={call} view={view} image={image} sending={sending} send={send} onLiveEnded={() => void refresh(view.sessionId)} />
-          )}
-
-          <div className="row" style={{ marginTop: 12 }}>
-            {!TERMINAL.has(view.state) && (
-              <button className="btn quiet" data-testid="bench-cancel" disabled={busy} onClick={() => void cancel()}>
-                cancel
-              </button>
-            )}
-            {recordingJob && (
-              <button className="btn" data-testid="bench-open-recording" onClick={() => navigate(`jobs/${encodeURIComponent(recordingJob)}/trace`)}>
-                open the recording
-              </button>
-            )}
-            {view.state === 'active' && !explore && !embedded && (
-              <button className="btn" data-testid="bench-open-session" onClick={() => navigate(`bench/sessions/${encodeURIComponent(view.sessionId)}`)}>
-                connected — open the session
-              </button>
-            )}
-            {TERMINAL.has(view.state) && view.state !== 'active' && (
-              <button className="btn" data-testid="bench-again" onClick={() => setView(null)}>
-                try again
-              </button>
-            )}
-          </div>
-        </section>
-      )}
+      {view && <RunCard provider={provider} call={call} busy={busy} view={view} onView={setView} recorded={form.record} sessionLink={!embedded} onAgain={() => setView(null)} />}
     </>
   );
 }

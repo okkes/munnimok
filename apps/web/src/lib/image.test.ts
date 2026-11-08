@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { downscaleImage, fitWithin, isDataImage } from './image';
+import { downscaleImage, fitWithin, hasTransparency, isDataImage } from './image';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -33,6 +33,56 @@ describe('isDataImage', () => {
   });
 });
 
+/** a 2×1 RGBA picture: opaque, or with a see-through pixel */
+const pixels = (transparent: boolean) => new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, transparent ? 0 : 255]);
+
+/** the canvas a downscale draws on — what it was asked to encode, and what it was given */
+function stubCanvas(rgba: Uint8ClampedArray, encodes: (type: string) => string) {
+  const drawn = { fillRect: vi.fn(), drawImage: vi.fn(), composite: '' };
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+    () =>
+      ({
+        drawImage: drawn.drawImage,
+        fillRect: drawn.fillRect,
+        getImageData: () => ({ data: rgba }),
+        set globalCompositeOperation(value: string) {
+          drawn.composite = value;
+        },
+        fillStyle: '',
+      }) as never,
+  );
+  const toDataURL = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation((type?: string) => encodes(type ?? 'image/png'));
+  return { drawn, toDataURL };
+}
+
+describe('#522: a transparent picture never comes back on black', () => {
+  it('spots a see-through pixel', () => {
+    expect(hasTransparency(pixels(false))).toBe(false);
+    expect(hasTransparency(pixels(true))).toBe(true);
+  });
+
+  it('a small transparent picture keeps its alpha — WebP where the browser encodes it', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 64, height: 64, close: vi.fn() }));
+    stubCanvas(pixels(true), (type) => `data:${type};base64,x`);
+    expect(await downscaleImage(new Blob(['x']), 256)).toBe('data:image/webp;base64,x');
+  });
+
+  it('…and PNG where it cannot (WebKit hands back PNG for a WebP ask)', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 64, height: 64, close: vi.fn() }));
+    stubCanvas(pixels(true), () => 'data:image/png;base64,x');
+    expect(await downscaleImage(new Blob(['x']), 256)).toBe('data:image/png;base64,x');
+  });
+
+  it('a large transparent picture lands on a white page, still a JPEG', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 2000, height: 1000, close: vi.fn() }));
+    const { drawn, toDataURL } = stubCanvas(pixels(true), (type) => `data:${type};base64,x`);
+    expect(await downscaleImage(new Blob(['x']), 1080, 0.72)).toBe('data:image/jpeg;base64,x');
+    expect(drawn.composite).toBe('destination-over');
+    expect(drawn.fillRect).toHaveBeenCalled();
+    expect(toDataURL).toHaveBeenCalledWith('image/jpeg', 0.72);
+  });
+});
+
 describe('downscaleImage', () => {
   it('downscales the bitmap to the fitted size and returns the JPEG data URL', async () => {
     const close = vi.fn();
@@ -41,7 +91,7 @@ describe('downscaleImage', () => {
     let canvas: HTMLCanvasElement | undefined;
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
       canvas = this;
-      return { drawImage } as never;
+      return { drawImage, getImageData: () => ({ data: pixels(false) }) } as never;
     });
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,tiny');
 

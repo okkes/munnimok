@@ -51,9 +51,12 @@ export function ProvidersScreen({ call, busy, act }: Readonly<ScreenProps>) {
   }
 
   const q = query.trim().toLowerCase();
-  const rows = [...catalogue.providers]
+  const matching = [...catalogue.providers]
     .filter((p) => !q || p.id.includes(q) || p.name.toLowerCase().includes(q) || p.kind.includes(q))
     .sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9) || a.id.localeCompare(b.id));
+  // #526: the platform's own stand-ins sit apart — the app never offers them, the bench and the tests run through them
+  const rows = matching.filter((p) => !p.fixture);
+  const fixtures = matching.filter((p) => p.fixture);
 
   return (
     <>
@@ -95,6 +98,35 @@ export function ProvidersScreen({ call, busy, act }: Readonly<ScreenProps>) {
           </tbody>
         </table>
       </section>
+      {fixtures.length > 0 && (
+        <>
+          <h2>Test fixtures</h2>
+          <p className="hint">
+            The platform&apos;s own stand-in parties. The app never offers them to people; the bench and the tests drive the protocol
+            through them without anybody&apos;s real account.
+          </p>
+          <section className="card">
+            <table data-testid="providers-fixtures-table">
+              <thead>
+                <tr>
+                  <th>Party</th>
+                  <th>Kind</th>
+                  <th>Runs</th>
+                  <th>State</th>
+                  <th>Since</th>
+                  <th>Budget</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {fixtures.map((p) => (
+                  <ProviderRow key={p.id} p={p} busy={busy} act={act} call={call} onChanged={load} />
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </>
+      )}
     </>
   );
 }

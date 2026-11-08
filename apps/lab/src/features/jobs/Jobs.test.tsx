@@ -33,6 +33,24 @@ describe('Jobs', () => {
     await waitFor(() => expect(calls.some((c) => c === 'GET /lab/jobs')).toBe(true));
   });
 
+  it('#576: a lab sign-in still open is one tap from its run on the bench, where its live view is driven', async () => {
+    const open = { ...JOBS.jobs[2], jobId: 'job_open', sessionId: 'ses_x', providerId: 'explore', kind: 'login', resource: null, state: 'awaiting_input', trace: null };
+    scriptFetch({ ...HAPPY(), 'GET /lab/jobs/job_open': () => ({ body: open }) });
+    renderLab('#/jobs/job_open');
+    const card = await screen.findByTestId('job-bench-run');
+    expect(card.textContent).toContain('live on the bench');
+    expect(card.textContent).toContain('waits for you');
+    fireEvent.click(screen.getByTestId('job-open-bench'));
+    expect(globalThis.location.hash).toBe('#/bench/sessions/ses_x');
+    cleanup();
+
+    // a person's run or a settled one is nothing the bench could pick up
+    scriptFetch(HAPPY());
+    renderLab('#/jobs/job_lab1');
+    await screen.findByTestId('job-title');
+    expect(screen.queryByTestId('job-bench-run')).toBeNull();
+  });
+
   it('a run opens in full: the facts, the error, the notes, the request, and a shared picture', async () => {
     scriptFetch(HAPPY());
     renderLab('#/jobs/job_failed1');
@@ -67,6 +85,7 @@ describe('Jobs', () => {
     expect(whoLine({ who: null, subject: 'u_x', trigger: 'user' })).toBe('u_x');
     expect(triggerWord(null)).toBe('nobody in particular');
     expect(triggerWord('schedule')).toBe('the schedule');
+    expect(triggerWord('backfill')).toBe("the schedule's older-history pass");
     expect(artifactsLine({ artifacts: 'retained', hasScreenshot: false })).toBe('digest');
     expect(artifactsLine({ artifacts: 'none', hasScreenshot: false })).toBe('');
     expect(outcomeLine(JOBS.jobs[0])).toBe('provider_changed');

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Munni.Api;
 using Sentry;
 using Sentry.Protocol;
@@ -123,8 +124,10 @@ public class SentryNoiseTests
         Assert.True(SentryNoise.IsHeartbeat("GET /health"));
         Assert.True(SentryNoise.IsHeartbeat("GET /v1/health"));
         Assert.True(SentryNoise.IsHeartbeat("GET /sync/events"));
+        Assert.True(SentryNoise.IsHeartbeat("GET /connectors/{provider}/login/{sessionId}/challenges/{challengeId}/live/stream"));
         Assert.True(SentryNoise.IsHeartbeat("POST /v1/agents/{agentId}/heartbeat"));
         Assert.False(SentryNoise.IsHeartbeat("POST /sync/{spaceId}/push"));
+        Assert.False(SentryNoise.IsHeartbeat("POST /connectors/{provider}/login/{sessionId}/challenges/{challengeId}/live/input"));
         Assert.False(SentryNoise.IsHeartbeat(null));
     }
 
@@ -134,10 +137,31 @@ public class SentryNoiseTests
         Assert.Equal(0.2, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server"), 0.2));
         Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext("GET /health", "http.server"), 0.2));
         Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext("GET /sync/events", "http.server"), 0.2));
+        // the live view's stream is open for a whole login: never a transaction, even under a sampled web trace
+        Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext(
+            "GET /connectors/{provider}/login/{sessionId}/challenges/{challengeId}/live/stream", "http.server", isParentSampled: true), 0.2));
         // the sync push of a traced Confirm shows end to end; an unsampled web trace stays unsampled here too
         Assert.Equal(1, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server", isParentSampled: true), 0.2));
         Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server", isParentSampled: false), 0.2));
         // errors only: nothing, whatever the parent said
         Assert.Equal(0, SentryNoise.SampleTrace(new TransactionContext("POST /sync/{spaceId}/push", "http.server", isParentSampled: true), 0));
+    }
+
+    [Fact]
+    public void Configure_keeps_the_sdk_off_without_a_dsn_and_sends_trace_headers_only_to_the_relay()
+    {
+        var off = new Sentry.AspNetCore.SentryAspNetCoreOptions();
+        SentryNoise.Configure(off, new ConfigurationBuilder().Build());
+        Assert.Equal(string.Empty, off.Dsn);
+        Assert.Empty(off.TracePropagationTargets);
+        Assert.False(off.CaptureFailedRequests);
+        Assert.False(off.SendDefaultPii);
+
+        var on = new Sentry.AspNetCore.SentryAspNetCoreOptions();
+        SentryNoise.Configure(on, new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Sentry:Dsn"] = "https://k@glitchtip.example/1", ["Connectors:BaseUrl"] = "http://connector:8080" })
+            .Build());
+        Assert.Equal("https://k@glitchtip.example/1", on.Dsn);
+        Assert.Equal("http://connector:8080", Assert.Single(on.TracePropagationTargets).ToString());
     }
 }

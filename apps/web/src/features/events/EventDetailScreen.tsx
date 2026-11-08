@@ -3,7 +3,9 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useEvents } from '@/application/events';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useSpaceTransactions } from '@/application/transactions';
 import { eventCategoryBreakdown, eventNetText, eventPerDayCents, eventSubcategoryBreakdown, eventTotals, suggestableTxs } from '@/domain/events';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -17,6 +19,7 @@ import { TxPartRow } from '@/ui/TxPartRow';
 import { EventFormSheet, eventPicture, eventPictureStyle } from './EventsScreen';
 import { SplitEventSummary } from '@/features/splits/SplitEventSummary';
 import { REIMBURSED_ID } from '@/domain/categories';
+import { partNetCents } from '@/domain/reimbursement';
 import type { EventRow, TransactionRow, TxSplit } from '@/db/types';
 
 // ── #143: a split's parts attach individually — never the container ──
@@ -51,6 +54,7 @@ export function EventDetailScreen() {
   const cats = useCategories();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<EventRow | 'new' | null>(null);
+  const canEdit = useCanEdit(); // #505
   // category drill (user request): a tapped main filters the payments and
   // unfolds its subcategories; a tapped sub narrows further
   const [drillMain, setDrillMain] = useState<string | null>(null);
@@ -64,6 +68,16 @@ export function EventDetailScreen() {
   const currency = space?.currency ?? 'EUR';
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
+
+  // #493: a credit nets out what it paid back — struck through like the
+  // expense it settled (one pass over the links for the whole list)
+  const givenByCredit = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of txs ?? []) {
+      for (const link of item.reimbursements ?? []) map.set(link.txId, (map.get(link.txId) ?? 0) + link.amountCents);
+    }
+    return map;
+  }, [txs]);
 
   const view = useMemo(() => {
     if (!event || !txs) return undefined;
@@ -108,12 +122,15 @@ export function EventDetailScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('events.edit')} testId="eventdetail-edit" onClick={() => setFormInitial(event)}>
-            <Icon name="pencil-outline" size={20} />
-          </IconButton>
+          canEdit && (
+            <IconButton label={t('events.edit')} testId="eventdetail-edit" onClick={() => setFormInitial(event)}>
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          )
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mb-3" testId="eventdetail-readonly-note" />
         {/* the picture-first hero */}
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="eventdetail-hero">
           <div className="relative h-36 w-full">
@@ -160,7 +177,7 @@ export function EventDetailScreen() {
         {/* the fast path after a trip: review the date range, attach your picks —
             #379 (user): loud only while nothing is attached yet; afterwards a
             quiet "find more" sits with the payments header */}
-        {view.suggestions.length > 0 && view.list.length === 0 && (
+        {canEdit && view.suggestions.length > 0 && view.list.length === 0 && (
           <div className="mt-3 flex items-center gap-3 rounded-card border border-accent bg-accent-soft/40 px-4 py-3" data-testid="eventdetail-suggest">
             <Icon name="creation" size={17} color="var(--m-accent-deep)" />
             <span className="min-w-0 flex-1 text-[13px] text-ink-2">
@@ -233,7 +250,7 @@ export function EventDetailScreen() {
           <span>
             {t('overview.payments')} · {filteredList.length}
           </span>
-          {view.suggestions.length > 0 && view.list.length > 0 && (
+          {canEdit && view.suggestions.length > 0 && view.list.length > 0 && (
             <button
               data-testid="eventdetail-find-more"
               onClick={() => void navigate({ to: '/events/$eventId/attach', params: { eventId: event.id } })}
@@ -241,6 +258,19 @@ export function EventDetailScreen() {
             >
               <Icon name="magnify" size={13} />
               {t('events.findMore', { n: view.suggestions.length })}
+            </button>
+          )}
+          {/* #570 (user): add from every transaction — dated event or not */}
+          {canEdit && (
+            <button
+              data-testid="eventdetail-add"
+              onClick={() => void navigate({ to: '/events/$eventId/add', params: { eventId: event.id } })}
+              className={`m-tap flex items-center gap-1 border-none bg-transparent p-0 text-[11px] font-semibold text-accent-deep normal-case ${
+                view.suggestions.length > 0 && view.list.length > 0 ? '' : 'ml-auto'
+              }`}
+            >
+              <Icon name="plus" size={13} />
+              {t('events.addTxs')}
             </button>
           )}
           {drillMain && (
@@ -274,7 +304,7 @@ export function EventDetailScreen() {
                       tx={tx}
                       part={e.part}
                       index={e.ordinal}
-                      amountText={money(sign * Math.abs(e.part.amountCents))}
+                      amountText={money(sign * partNetCents(e.part))}
                       onClick={() =>
                         void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: e.part.id } })
                       }
@@ -283,7 +313,13 @@ export function EventDetailScreen() {
                   ));
               }
               return (
-                <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+                <TxRow
+                  key={tx.id}
+                  tx={tx}
+                  showDate
+                  givenCents={givenByCredit.get(tx.id) ?? 0}
+                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                />
               );
             })}
           </div>

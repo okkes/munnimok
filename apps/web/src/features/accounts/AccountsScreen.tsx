@@ -13,13 +13,16 @@ import { ReconcileSheet } from './ReconcileSheet';
 import { StatementImportFlow } from './StatementImportFlow';
 import { normalizeIban } from '@/domain/feedIds';
 import { takeAccountOpenHandoff } from './openHandoff';
+import { BANK_KINDS, ConnectionHub } from '@/features/connectors/ConnectionsScreen';
+import { takeCatalogueIntent } from '@/features/connectors/catalogueIntent';
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
 import { institutionLogoUrl } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { SpacePicture } from '@/features/spaces/SpacePicture';
 import { useData } from '@/app/data';
-import { fmtCents } from '@/lib/money';
+import { useCanEdit } from '@/app/useCanEdit';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow, SpaceRow } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -27,6 +30,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Sheet } from '@/ui/Sheet';
 
 import { typeDef } from './accountTypes';
@@ -131,6 +135,7 @@ function AccountRowButton({
   onOpen: (entry: GlobalAccount) => void;
 }) {
   const { t } = useLang();
+  const { fmtSensitive } = useDisplayMoney();
   const { account, feedSpaceId, sharedVia } = entry;
   // the user's own pick wins over the institution logo (user request)
   const bankLogo = account.logo ?? institutionLogoUrl(account);
@@ -149,7 +154,7 @@ function AccountRowButton({
           owns the tile — space-owned rows only (r2) */}
       <span className="relative shrink-0">
         {bankLogo ? (
-          <img
+          <Picture
             src={bankLogo}
             alt=""
             className="h-7 w-7 rounded-lg object-contain"
@@ -237,7 +242,7 @@ function AccountRowButton({
       </span>
       {archivedOnly && <Icon name="archive-outline" size={16} color="var(--m-warning)" />}
       <span className="m-num text-[15px] font-semibold text-ink">
-        {fmtCents(account.balanceCents, account.currency, lang)}
+        {fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })}
       </span>
     </button>
   );
@@ -312,6 +317,7 @@ function SharedAccountSheet({
   lang: ReturnType<typeof useLang>['lang'];
 }) {
   const { t } = useLang();
+  const { fmtSensitive } = useDisplayMoney();
   const account = info?.entry.account;
   const bankLogo = account ? (account.logo ?? institutionLogoUrl(account)) : undefined;
   return (
@@ -320,7 +326,7 @@ function SharedAccountSheet({
         <div className="flex flex-col gap-3 pt-1" data-testid="shared-account-info">
           <div className="flex items-center gap-2.5">
             {bankLogo ? (
-              <img src={bankLogo} alt="" className="h-7 w-7 rounded-lg object-contain" data-testid="shared-info-logo" />
+              <Picture src={bankLogo} className="h-7 w-7 rounded-lg object-contain" data-testid="shared-info-logo" />
             ) : (
               <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
             )}
@@ -334,7 +340,7 @@ function SharedAccountSheet({
               account.iban ? ([t('accounts.ibanLabel'), account.iban] as const) : null,
               // #152: the type is the SPACE's reading of the attachment
               [t('acct.typeRow'), t(typeDef(info.via.type ?? account.type).labelKey)] as const,
-              [t('acct.balanceNow'), fmtCents(account.balanceCents, account.currency, lang)] as const,
+              [t('acct.balanceNow'), fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })] as const,
               account.dataThroughDate ? ([t('acct.dataThroughLabel'), account.dataThroughDate] as const) : null,
               account.lastSyncedAt ? ([t('acct.lastSyncedLabel'), fmtTimeAgo(account.lastSyncedAt, lang)] as const) : null,
               info.via.attachedByName ? ([t('acct.attachedBy'), info.via.attachedByName] as const) : null,
@@ -363,17 +369,16 @@ function EchoRow({
   spaceId,
   echo,
   shared,
-  lang,
   onOpenShared,
 }: {
   spaceId: string;
   echo: EchoEntry;
   /** #305: reachable only through someone else's attachment */
   shared: boolean;
-  lang: ReturnType<typeof useLang>['lang'];
   onOpenShared: (echo: EchoEntry) => void;
 }) {
   const { t } = useLang();
+  const { fmtSensitive } = useDisplayMoney();
   const { account } = echo.entry;
   // #305 (user): the owner's icon pick lives on the SYNCED account row —
   // the echo used to draw a hardcoded bank tile, so consumers never saw it
@@ -395,7 +400,7 @@ function EchoRow({
     >
       <span className="shrink-0">
         {bankLogo ? (
-          <img
+          <Picture
             src={bankLogo}
             alt=""
             className="h-7 w-7 rounded-lg object-contain"
@@ -438,15 +443,13 @@ function EchoRow({
         </span>
       )}
       <span className="m-num text-[15px] font-semibold text-ink">
-        {fmtCents(account.balanceCents, account.currency, lang)}
+        {fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })}
       </span>
     </button>
   );
 }
 
-/** #227: one space's cluster — real rows first, bank-fed echoes next,
- *  and the default pots folded behind a quiet toggle (closed by default:
- *  six system rows per space drowned the accounts people actually made).
+/** #227: one space's cluster — real rows first, bank-fed echoes next.
  *  #314 r2 (user): every space is its OWN card again, stacked with no
  *  captions in between — and COLLAPSED to just its face by default: the
  *  header row (avatar + name + chevron) is the toggle. Nothing persists;
@@ -476,12 +479,9 @@ function SpaceSection({
   const { t } = useLang();
   // #314 r2: closed on every mount — deliberately not persisted
   const [expanded, setExpanded] = useState(false);
-  const [showDefaults, setShowDefaults] = useState(false);
-  const visible = segment.accounts.filter((e) => !e.account.archived);
-  const regular = visible.filter((e) => !e.account.defaultFor);
-  const defaults = visible.filter((e) => !!e.account.defaultFor);
+  // #546: the default pots retired — the cash wallet is one of the space's accounts
+  const regular = segment.accounts.filter((e) => !e.account.archived);
   const aboveEchoes = regular.length > 0;
-  const aboveToggle = aboveEchoes || echoes.length > 0;
   // #314: name the creator only when the space is someone else's work
   const creator = space?.kind === 'shared' && space.createdByName && space.createdByName !== ownName
     ? space.createdByName
@@ -523,31 +523,10 @@ function SpaceSection({
                 spaceId={segment.spaceId}
                 echo={echo}
                 shared={sharedIds.has(echo.entry.account.id)}
-                lang={lang}
                 onOpenShared={onOpenShared}
               />
             </div>
           ))}
-          {defaults.length > 0 && (
-            <>
-              {aboveToggle && <div className="mx-4 h-px bg-line-2" />}
-              <button
-                data-testid={`accounts-defaults-toggle-${segment.spaceId}`}
-                onClick={() => setShowDefaults((v) => !v)}
-                className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-4 py-3 text-left text-[12px] font-medium text-ink-4"
-              >
-                <Icon name={showDefaults ? 'chevron-up' : 'chevron-down'} size={14} />
-                {showDefaults ? t('acct.hideDefaults') : t('acct.showDefaults', { n: defaults.length })}
-              </button>
-              {showDefaults &&
-                defaults.map((entry) => (
-                  <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
-                    <div className="mx-4 h-px bg-line-2" />
-                    <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
-                  </div>
-                ))}
-            </>
-          )}
         </>
       )}
     </div>
@@ -576,6 +555,8 @@ export function AccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
   const [addOpen, setAddOpen] = useState(false);
+  // #527: the bank picker of the bank connections below — a Connect door elsewhere arrives with it open
+  const [bankPick, setBankPick] = useState(() => takeCatalogueIntent());
   const [editing, setEditing] = useState<AccountRow | null>(null);
   // the whole import journey lives in StatementImportFlow (extracted
   // 2026-08-01); this screen only opens its format-pick sheet
@@ -585,10 +566,13 @@ export function AccountsScreen() {
   // party-fed accounts arrive via sync, so there is no local "account
   // created" moment to hook — reconcile whenever this screen opens
   // instead (idempotent; rows with links are skipped)
+  const canEditActive = useCanEdit();
   useEffect(() => {
-    void linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
-    void linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
-    void applyTitleMemory(store, repo, spaceId).catch(() => undefined);
+    // #505: upkeep — a space this identity only reads is reconciled by its writers
+    const upkeep = repo.upkeep();
+    void linkAllCounterparties(store, upkeep, spaceId).catch(() => undefined);
+    void linkPaypalFunding(store, upkeep, spaceId).catch(() => undefined);
+    void applyTitleMemory(store, upkeep, spaceId).catch(() => undefined);
   }, [store, repo, spaceId]);
   const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
   const [attaching, setAttaching] = useState<GlobalAccount | null>(null);
@@ -781,10 +765,13 @@ export function AccountsScreen() {
                   <Icon name="plus" size={16} />
                   {t('acct.addAccount')}
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-                  <Icon name="file-upload-outline" size={16} />
-                  {t('import.statement')}
-                </Button>
+                {/* #505: an import lands in the active space — never one this identity only reads */}
+                {canEditActive && (
+                  <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+                    <Icon name="file-upload-outline" size={16} />
+                    {t('import.statement')}
+                  </Button>
+                )}
               </div>
             }
           />
@@ -840,6 +827,10 @@ export function AccountsScreen() {
             )}
           </>
         )}
+        {/* #527: the banks are connected and managed here, not under Connected services */}
+        <div className="mt-2">
+          <ConnectionHub kinds={BANK_KINDS} route="/accounts" picker={{ open: bankPick, onOpenChange: setBankPick }} />
+        </div>
       </div>
 
       {/* attach one of my feed accounts to/from my spaces */}
@@ -860,8 +851,8 @@ export function AccountsScreen() {
       {/* AE1: the ONE Add-account chooser (intent-routed). Manual is a
           DOOR here: this screen is the global overview, and manual
           accounts live inside a space (user ruling 2026-07-28); Connect
-          is a door too — the Connections hub's catalogue (#414) */}
-      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} hideManual onImport={() => setImportOpen(true)} />
+          opens the bank picker of this screen's own bank connections (#527) */}
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} hideManual onImport={() => setImportOpen(true)} onConnect={() => setBankPick(true)} />
 
       <ReconcileSheet
         open={reconcileOffer !== null}

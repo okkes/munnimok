@@ -6,6 +6,9 @@ import { when } from '../../lib/format';
 import type { OperatorJob, TraceSummary } from '../../types';
 import { stateChip, triggerWord, whoLine } from './jobFacts';
 
+/** a run not over yet — a lab sign-in in one of these is picked up on the bench (#576) */
+const OPEN_STATES = new Set(['queued', 'leased', 'running', 'awaiting_input']);
+
 /** the picture a retained report holds, fetched with the lab's credentials and shown in place */
 function useScreenshot(call: ScreenProps['call'], jobId: string, wanted: boolean): string | null {
   const [url, setUrl] = useState<string | null>(null);
@@ -65,6 +68,22 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
         <span className="sub mono">{job.jobId}</span>
         <span className="spacer" />
       </div>
+
+      {job.trigger === 'lab' && job.kind === 'login' && OPEN_STATES.has(job.state) && (
+        <section className="card" data-testid="job-bench-run">
+          <div className="card-head">
+            <h2>{job.providerId === 'explore' ? 'This explore run is live on the bench' : 'This sign-in is the bench’s'}</h2>
+            <button className="btn" data-testid="job-open-bench" onClick={() => navigate(`bench/sessions/${encodeURIComponent(job.sessionId)}`)}>
+              open it on the bench
+            </button>
+          </div>
+          <p className="hint">
+            {job.state === 'awaiting_input'
+              ? 'It waits for you: the live view or the question it asks is answered on the bench session.'
+              : 'It is still running; the bench session follows it and shows what it asks the moment it asks.'}
+          </p>
+        </section>
+      )}
 
       <section className="card" data-testid="job-facts">
         <h2>The run</h2>

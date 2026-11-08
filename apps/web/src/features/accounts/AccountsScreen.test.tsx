@@ -878,8 +878,9 @@ describe('AccountsScreen (demo identity)', () => {
     // the GLOBAL screen offers manual only as a DOOR into the space
     // (user ruling 2026-07-28) — creation happens on the space screen
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
-    // "Add a manual account" opens the type grid directly (redesign ss13)
+    // #527: the space's own Add door offers connect, import and manual — manual creates in place
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-cash'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Wallet' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '25,50' } });
@@ -893,6 +894,7 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Visa' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
@@ -914,6 +916,7 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Amex' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
@@ -1014,20 +1017,20 @@ describe('AccountsScreen (demo identity)', () => {
     const note = await screen.findByTestId('acctedit-uncovered');
     expect(note.textContent).toContain('Not fetched any more');
     expect(note.textContent).toContain('Enable Banking');
-    // the door leads to the hub, with the party named
+    // #528: the door leads to the account among the bank connections, brought into view and flashed
     fireEvent.click(screen.getByTestId('acctedit-reconnect'));
-    await screen.findByTestId('screen-connections');
+    const row = await screen.findByTestId('conn-uncovered-gone-acc', {}, { timeout: 5000 });
+    await waitFor(() => expect(row.dataset.flash).toBe('1'), { timeout: 3000 });
+    expect(screen.getByTestId('screen-accounts')).toBeTruthy();
   }, 15_000);
 
-  it('#221: a DEFAULT account offers no delete — and its balance edit leaves an adjustment row', async () => {
+  it('#546: the cash wallet stands among the space\'s accounts — deletable, a balance edit leaves an adjustment row', async () => {
     renderApp('/accounts');
     await openDemoCluster();
-    // #227: the six defaults sit folded behind the section's toggle
-    fireEvent.click(await screen.findByTestId('accounts-defaults-toggle-demo_space'));
-    // the demo space is born with its six defaults (eager mint)
-    fireEvent.click(await screen.findByTestId('account-row-defaultacct_saving_demo_space'));
+    // the default pots retired: nothing folds away any more
+    fireEvent.click(await screen.findByTestId('account-row-defaultacct_cash_demo_space'));
     await screen.findByTestId('acctedit-name');
-    expect(screen.queryByTestId('acctedit-delete')).toBeNull();
+    expect(screen.getByTestId('acctedit-delete')).toBeTruthy();
 
     fireEvent.change(screen.getByTestId('acctedit-balance'), { target: { value: '25' } });
     fireEvent.click(screen.getByTestId('acctedit-save'));
@@ -1035,9 +1038,9 @@ describe('AccountsScreen (demo identity)', () => {
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
-      expect((await db.accounts.get('defaultacct_saving_demo_space'))?.balanceCents).toBe(2500);
+      expect((await db.accounts.get('defaultacct_cash_demo_space'))?.balanceCents).toBe(2500);
       const adjustment = await db.transactions
-        .filter((t) => t.accountId === 'defaultacct_saving_demo_space' && t.catId === 'balanceAdjustment')
+        .filter((t) => t.accountId === 'defaultacct_cash_demo_space' && t.catId === 'balanceAdjustment')
         .first();
       // the delta, recorded with the adjustment category — the ledger
       // stays coherent without a hand on it
@@ -1046,26 +1049,13 @@ describe('AccountsScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('#227: the default pots sit folded — closed by default, the toggle reveals them', async () => {
-    renderApp('/accounts');
-    await openDemoCluster();
-    // folded: no default row in the DOM; the quiet toggle counts them
-    expect(screen.queryByTestId('account-row-defaultacct_saving_demo_space')).toBeNull();
-    const toggle = await screen.findByTestId('accounts-defaults-toggle-demo_space');
-    expect(toggle.textContent).toContain('Show default accounts (');
-    fireEvent.click(toggle);
-    expect(await screen.findByTestId('account-row-defaultacct_saving_demo_space')).toBeTruthy();
-    expect(screen.getByTestId('accounts-defaults-toggle-demo_space').textContent).toContain('Hide default accounts');
-    fireEvent.click(screen.getByTestId('accounts-defaults-toggle-demo_space'));
-    await waitFor(() => expect(screen.queryByTestId('account-row-defaultacct_saving_demo_space')).toBeNull());
-  }, 15_000);
-
-  it('#179: a pending add-account intent opens the manual chooser on arrival', async () => {
+  it('#179: a pending add-account intent opens the chooser on arrival', async () => {
     const { setSpaceAddAccountIntent } = await import('@/features/spaces/spaceAccountsHandoff');
     setSpaceAddAccountIntent();
     renderApp('/spaces/demo_space/accounts');
     await screen.findByTestId('screen-space-accounts');
-    // the chooser opened by itself, straight on its manual type grid
+    // the chooser opened by itself; a manual account is one tap further (#527: import and connect beside it)
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
     expect(await screen.findByTestId('chooser-accttype-cash')).toBeTruthy();
   }, 15_000);
 
@@ -1224,14 +1214,14 @@ describe('AccountsScreen (demo identity)', () => {
       const eta = await screen.findByTestId('import-eta', {}, { timeout: 10_000 });
       expect(eta.textContent).toMatch(/about .+ left/);
       // …and the run still completes (generous: 320 rows under full-
-      // suite coverage load run slow — the CI-load lesson)
-      await screen.findByTestId('import-result', {}, { timeout: 30_000 });
+      // suite coverage load run slow — the CI-load lesson; ~4 s alone)
+      await screen.findByTestId('import-result', {}, { timeout: 75_000 });
     } finally {
       nowSpy.mockRestore();
     }
     // the estimate leaves with the progress narration
     expect(screen.queryByTestId('import-eta')).toBeNull();
-  }, 45_000);
+  }, 100_000);
 
   it('#226 r2: the ING row carries its download route and a real logo image', async () => {
     renderApp('/accounts');
@@ -1614,23 +1604,41 @@ describe('#300 etaSecondsLeft (unit)', () => {
     expect(etaSecondsLeft(state, 1200, 2000, 12_000)).toBe(8);
   });
 });
-describe('AccountsScreen — the Connect door (#414)', () => {
+describe('AccountsScreen — the Connect door (#527)', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
   });
 
-  it('the chooser’s Connect row leads to the Connections hub with the catalogue already open', async () => {
+  it('the chooser’s Connect offers only the ways to a bank — open banking, then munni’s connector with its banks — and goes on into the one picked', async () => {
     const { catalogueOf, manifestOf } = await import('@/test/connectorFixtures');
+    const consent = { ...manifestOf().auth, flow: 'oauth_redirect' as const, steps: [] };
     renderAppAsUser('/accounts', {
-      api: { 'GET /connectors/providers': () => catalogueOf(manifestOf({ id: 'gocardless', name: 'GoCardless', kind: 'bank' })) },
+      api: {
+        'GET /connectors/providers': () =>
+          catalogueOf(
+            manifestOf({ id: 'gocardless', name: 'GoCardless', kind: 'bank', auth: consent }),
+            manifestOf({ id: 'enablebanking', name: 'Enable Banking', kind: 'bank', auth: consent }),
+            manifestOf({ id: 'ing-nl', name: 'ING', kind: 'bank' }),
+            manifestOf(),
+          ),
+      },
     });
     await screen.findByTestId('screen-accounts');
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-connect'));
-    await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
-    // the catalogue is open on arrival — the choice was already made on the accounts screen
-    expect(await screen.findByTestId('conn-party-gocardless', {}, { timeout: 5000 })).toBeTruthy();
-  }, 15_000);
+    // the picker opens right here — no detour through the hub, and no shop on offer
+    const picker = await screen.findByTestId('bank-picker', {}, { timeout: 5000 });
+    const openBanking = await screen.findByTestId('bank-picker-open-banking', {}, { timeout: 5000 });
+    expect(openBanking.querySelector('[data-testid="conn-party-gocardless"]')).toBeTruthy();
+    expect(openBanking.querySelector('[data-testid="conn-party-enablebanking"]')).toBeTruthy();
+    expect(picker.querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeNull();
+    expect(screen.queryByTestId('screen-connections')).toBeNull();
+    // munni's own connector lists its banks on a sheet of its own; picking one opens its sign-in
+    expect(screen.getByTestId('bank-picker-munni').textContent).toContain('ING');
+    fireEvent.click(screen.getByTestId('bank-picker-munni'));
+    fireEvent.click(await screen.findByTestId('conn-party-ing-nl'));
+    expect(await screen.findByTestId('connect-form', {}, { timeout: 5000 })).toBeTruthy();
+  }, 20_000);
 });

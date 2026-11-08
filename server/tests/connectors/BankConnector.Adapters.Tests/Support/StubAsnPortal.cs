@@ -255,8 +255,11 @@ internal sealed class StubAsnPortal : IAsnPortal
         return Task.FromResult((!LabelsNeedNavigation || _navigated) && Labels.Contains(label));
     }
 
-    /// <summary>Selectors this page does NOT have. Everything else is present.</summary>
-    public HashSet<string> AbsentSelectors { get; } = new(StringComparer.Ordinal);
+    /// <summary>ASN's outdated-browser notice (#562): a page shows it only where a test says so.</summary>
+    public static readonly string BrowserNotice = new AsnOptions().BrowserNoticeContinueSelectors[0];
+
+    /// <summary>Selectors this page does NOT have. Everything else is present - but the outdated-browser notice.</summary>
+    public HashSet<string> AbsentSelectors { get; } = new(StringComparer.Ordinal) { BrowserNotice };
 
     /// <summary>
     /// How long a selector takes to turn up, for the ones that are not there
@@ -303,6 +306,8 @@ internal sealed class StubAsnPortal : IAsnPortal
         _calls.Add(call);
 
         if (hit) Reveal(call);
+        // the notice's button goes on to online banking: the notice is behind us
+        if (hit && string.Equals(selectors[0], BrowserNotice, StringComparison.Ordinal)) AbsentSelectors.Add(BrowserNotice);
 
         return Task.FromResult(hit);
     }

@@ -281,6 +281,31 @@ export function sharedOf(stack) {
 /** every environment stack of a platform, by slot */
 export const platformEnvStacks = (platform) => platformEnvs(platform).map((e) => loadStack(stackName(platform, e.env)));
 
+/* ── the services a stack answers on, as the operator opens them (#560) ── */
+// names and the page worth opening per host key of hostsFor; a key missing here still shows, under its own name
+const SERVICE_INFO = {
+  web: { name: 'munni app', what: 'the app people use' },
+  admin: { name: 'Admin portal', what: 'users, invitations, bank connections' },
+  lab: { name: 'Lab', what: 'the connector workbench: parties, agents, the test bench' },
+  api: { name: 'API', what: 'the sync API — its health', path: '/health', extras: [{ key: 'apiDocs', name: 'API docs', what: 'the API reference', path: '/scalar' }] },
+  connector: { name: 'Connector control plane', what: 'where household agents dial in — its health', path: '/v1/health' },
+  logto: { name: 'Logto', what: 'the sign-in endpoint — its OpenID configuration', path: '/oidc/.well-known/openid-configuration' },
+  logtoAdmin: { name: 'Logto console', what: 'the sign-in admin console' },
+  glitchtip: { name: 'GlitchTip', what: 'crash reports and performance of every environment' },
+  vault: { name: 'Vault', what: 'every generated password (Vaultwarden)' },
+  control: { name: 'Control cockpit', what: 'the cross-environment view: parties, bank consents' },
+  pgadmin: { name: 'pgAdmin', what: 'one console over every database of the platform' },
+};
+
+/** every service of a loaded stack with its name, what it is and the url to open — from the stack's own urls, so a new host appears by itself */
+export function stackServices(stack) {
+  return Object.entries(stack.urls).flatMap(([key, base]) => {
+    const info = SERVICE_INFO[key] ?? { name: key, what: '' };
+    const own = { key, name: info.name, what: info.what, url: `${base}${info.path ?? ''}` };
+    return [own, ...(info.extras ?? []).map((x) => ({ key: x.key, name: x.name, what: x.what, url: `${base}${x.path}` }))];
+  });
+}
+
 /* ── the helper's self-update settings (lcl) ─────────────────────────── */
 const AUTONOMY_FILE = () => join(RENDER_DIR(), 'local-autonomy.json');
 export const AUTONOMY_DEFAULTS = Object.freeze({ enabled: false, intervalMinutes: 10, lastCheckAt: null, lastResult: null });

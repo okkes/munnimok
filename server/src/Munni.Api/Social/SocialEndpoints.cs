@@ -244,7 +244,7 @@ public static class SocialEndpoints
         await push.NotifyFriendAcceptedAsync(f.RequestedBy, myName, ct);
         if (joinsSpace)
         {
-            await push.NotifySpaceJoinAsync(f.RequestedBy, myName, f.SpaceName, ct);
+            await push.NotifySpaceJoinAsync(f.RequestedBy, myName, f.SpaceId!, f.SpaceName, ct);
         }
         return Results.Ok();
     }
@@ -349,7 +349,7 @@ public static class SocialEndpoints
         await db.SaveChangesAsync(ct);
         if (invite.Status == StatusAccepted)
         {
-            await push.NotifySpaceJoinAsync(invite.FromUserId, await NameOf(db, me, ct), invite.SpaceName, ct);
+            await push.NotifySpaceJoinAsync(invite.FromUserId, await NameOf(db, me, ct), invite.SpaceId, invite.SpaceName, ct);
         }
         return Results.Ok();
     }
@@ -389,7 +389,7 @@ public static class SocialEndpoints
         // #172: the affected member hears about it on their own devices
         if (userId != me)
         {
-            await push.NotifyMemberRoleChangedAsync(userId, request.SpaceName, request.Role, ct);
+            await push.NotifyMemberRoleChangedAsync(userId, spaceId, request.SpaceName, request.Role, ct);
         }
         return Results.Ok();
     }

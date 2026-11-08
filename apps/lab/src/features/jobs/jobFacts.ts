@@ -16,6 +16,7 @@ export const stateChip = (state: string): string => STATE_CHIP[state] ?? '';
 const TRIGGER_WORD: Record<string, string> = {
   user: 'a person',
   schedule: 'the schedule',
+  backfill: "the schedule's older-history pass",
   lab: 'the lab',
   canary: 'a canary',
 };

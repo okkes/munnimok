@@ -11,6 +11,7 @@ using Connector.Kit.Hosting.Sessions;
 using Connector.Kit.Sessions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
@@ -18,13 +19,15 @@ using Microsoft.Extensions.Options;
 namespace Connector.Kit.Hosting.Endpoints;
 
 /// <summary>
-/// The streamed login's four routes: pictures out, pointer and keys back.
+/// The streamed login's five routes: pictures out, pointer and keys back.
 ///
 /// Two legs, and they are not symmetric. The agent's leg is outbound like
 /// every other agent call - it POSTs the picture it just took and long-polls
 /// for what the human has done since - so nothing has to dial in to a machine
-/// on somebody's home line. The consumer's leg is a long-poll for the newest
-/// frame and a POST of what its owner did to it.
+/// on somebody's home line. The consumer's leg is one pushed stream of frames
+/// (or, where a stream cannot be held, a long-poll for the newest one) and a
+/// POST of what its owner did to it. The consumer is munni's API, never a
+/// device: the app reaches these routes only through the relay (#429).
 ///
 /// Everything both legs touch lives in <see cref="LiveChannel"/> and therefore
 /// in memory. No frame and no keystroke reaches a table, which is the whole
@@ -110,6 +113,31 @@ internal static class LiveEndpoints
         // out with no newer frame is this route working, not failing.
         .Produces<byte[]>(StatusCodes.Status200OK, "image/jpeg")
         .Produces(StatusCodes.Status204NoContent);
+
+        // The same pictures pushed (#429): one response per live view rather
+        // than one request per frame. Refused before the first byte exactly as
+        // the poll is, so "over", "not yours" and "no such" keep their statuses
+        // and a consumer that cannot stream still has the poll beside it.
+        live.MapGet("/stream", (
+            HttpContext http,
+            string provider,
+            string sessionId,
+            string challengeId,
+            IProviderRegistry registry,
+            SessionService sessions,
+            ChallengeService challenges,
+            ViewBuilder views,
+            LiveChannel channel,
+            ConnectorDbContext db,
+            IOptions<ConnectorOptions> options,
+            TimeProvider time,
+            CancellationToken ct) => StreamAsync(
+                http,
+                new LiveLookup(provider, sessionId, challengeId, RequestContext.RequireSubject(http)),
+                new LiveRows(registry, sessions, challenges, views, time),
+                new LivePipe(channel, db, options.Value.Timeouts),
+                ct))
+        .Produces<LiveStreamFrame>(StatusCodes.Status200OK, LiveStream.ContentType);
 
         live.MapPost("/input", async (
             HttpContext http,
@@ -277,8 +305,177 @@ internal static class LiveEndpoints
         ChallengeService challenges,
         ViewBuilder views,
         TimeProvider time,
-        CancellationToken ct)
+        CancellationToken ct) =>
+        (await RequireLiveRunAsync(
+            new LiveLookup(provider, sessionId, challengeId, subject),
+            new LiveRows(registry, sessions, challenges, views, time),
+            ct)).Job;
+
+    /// <summary>What a live route is asked about: the run's coordinates and whose they are.</summary>
+    private sealed record LiveLookup(string Provider, string SessionId, string ChallengeId, string Subject);
+
+    /// <summary>What a live route reads them with.</summary>
+    private sealed record LiveRows(
+        IProviderRegistry Registry, SessionService Sessions, ChallengeService Challenges, ViewBuilder Views, TimeProvider Time);
+
+    /// <summary>What the pushed stream reads its pictures from, re-reads its rows with, and is timed by.</summary>
+    private sealed record LivePipe(LiveChannel Channel, ConnectorDbContext Db, ConnectorTimeouts Timeouts);
+
+    /// <summary>
+    /// The pushed live view: frames as they are published, a keep-alive in
+    /// the quiet, <c>end</c> when the run says the view is over.
+    ///
+    /// Everything that can refuse happens before the first byte, so a refusal
+    /// keeps its status and envelope. After it nothing throws back at the
+    /// framework: a consumer that goes away is the ordinary end of a stream,
+    /// and a write onto a response whose headers are long gone would bury the
+    /// cause (see <see cref="EventStream"/>).
+    /// </summary>
+    private static async Task<IResult> StreamAsync(
+        HttpContext http, LiveLookup lookup, LiveRows rows, LivePipe pipe, CancellationToken ct)
     {
+        var (job, expiresAt) = await RequireLiveRunAsync(lookup, rows, ct);
+        var after = LiveStream.After(http.Request);
+        var time = rows.Time;
+        var keepAlive = TimeSpan.FromSeconds(Math.Max(1, pipe.Timeouts.LiveStreamKeepAliveSeconds));
+
+        http.Response.Headers.ContentType = LiveStream.ContentType;
+        http.Response.Headers.CacheControl = LiveHeaders.NoStore;
+        // nginx - the NAS's reverse proxy among them - holds a proxied response
+        // until its buffer fills unless the upstream says not to
+        http.Response.Headers["X-Accel-Buffering"] = "no";
+        http.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+
+        var now = time.GetUtcNow();
+        var stream = new StreamState
+        {
+            JobId = job.Id,
+            After = after,
+            ExpiresAt = expiresAt,
+            CloseAt = Earliest(now.AddSeconds(Math.Max(1, pipe.Timeouts.LiveStreamSeconds)), expiresAt),
+            KeepAlive = keepAlive,
+            LastWrite = now,
+            RecheckAt = now + LiveStream.RecheckEvery,
+        };
+
+        try
+        {
+            await LiveStream.WriteAsync(http.Response, LiveStream.Retry, ct);
+            while (!ct.IsCancellationRequested && await TickAsync(http.Response, stream, lookup, rows, pipe, ct))
+            {
+                // one frame, one keep-alive or one look at the rows per tick
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The consumer went, or the host is stopping.
+        }
+        catch (IOException)
+        {
+            // The socket went while a frame was half written.
+        }
+
+        return Results.Empty;
+    }
+
+    /// <summary>Where one pushed stream stands between ticks.</summary>
+    private sealed class StreamState
+    {
+        public required string JobId { get; init; }
+
+        public required DateTimeOffset ExpiresAt { get; init; }
+
+        public required DateTimeOffset CloseAt { get; init; }
+
+        public required TimeSpan KeepAlive { get; init; }
+
+        public long After { get; set; }
+
+        public DateTimeOffset LastWrite { get; set; }
+
+        public DateTimeOffset RecheckAt { get; set; }
+    }
+
+    /// <summary>One step of a pushed stream; false once the stream is over.</summary>
+    private static async Task<bool> TickAsync(
+        HttpResponse response, StreamState stream, LiveLookup lookup, LiveRows rows, LivePipe pipe, CancellationToken ct)
+    {
+        var time = rows.Time;
+        var now = time.GetUtcNow();
+
+        // The challenge's own clock ends the view; the response's own limit
+        // only closes it, and the consumer reconnects past the frame it drew.
+        if (now >= stream.ExpiresAt) return await EndAsync(response, ErrorCode.ChallengeExpired, ct);
+        if (now >= stream.CloseAt) return false;
+
+        if (now >= stream.RecheckAt)
+        {
+            if (await RefusalAsync(lookup, rows, pipe.Db, ct) is { } over) return await EndAsync(response, over, ct);
+            stream.RecheckAt = time.GetUtcNow() + LiveStream.RecheckEvery;
+        }
+
+        var keepAliveAt = stream.LastWrite + stream.KeepAlive;
+        if (now >= keepAliveAt)
+        {
+            await LiveStream.WriteAsync(response, LiveStream.KeepAlive, ct);
+            stream.LastWrite = time.GetUtcNow();
+            return true;
+        }
+
+        var window = Earliest(Earliest(keepAliveAt, stream.RecheckAt), stream.CloseAt) - now;
+        var wait = await pipe.Channel.NextFrameAsync(stream.JobId, stream.After, window > MinWait ? window : MinWait, ct);
+
+        if (wait.Frame is { } frame)
+        {
+            await LiveStream.WriteAsync(response, LiveStream.Frame(frame), ct);
+            stream.After = frame.Sequence;
+            stream.LastWrite = time.GetUtcNow();
+        }
+        else if (wait.Ended)
+        {
+            // The run's entry went - a terminal state drops it - so the rows
+            // are read now rather than at the next tick.
+            stream.RecheckAt = time.GetUtcNow();
+        }
+
+        return true;
+    }
+
+    private static async Task<bool> EndAsync(HttpResponse response, ErrorCode code, CancellationToken ct)
+    {
+        await LiveStream.WriteAsync(response, LiveStream.End(code), ct);
+        return false;
+    }
+
+    /// <summary>The code the frame route would refuse with now, or null while the view is still live.</summary>
+    private static async Task<ErrorCode?> RefusalAsync(LiveLookup lookup, LiveRows rows, ConnectorDbContext db, CancellationToken ct)
+    {
+        // One context for the length of the response: without this the rows
+        // read a second time are the tracked copies of the first, and a
+        // challenge answered since would never read as answered.
+        db.ChangeTracker.Clear();
+
+        try
+        {
+            await RequireLiveRunAsync(lookup, rows, ct);
+            return null;
+        }
+        catch (ConnectorException ex)
+        {
+            return ex.Code;
+        }
+    }
+
+    private static DateTimeOffset Earliest(DateTimeOffset a, DateTimeOffset b) => a <= b ? a : b;
+
+    private static readonly TimeSpan MinWait = TimeSpan.FromMilliseconds(10);
+
+    private static async Task<(JobRow Job, DateTimeOffset ExpiresAt)> RequireLiveRunAsync(
+        LiveLookup lookup, LiveRows rows, CancellationToken ct)
+    {
+        var (provider, sessionId, challengeId, subject) = lookup;
+        var (registry, sessions, challenges, views, time) = rows;
+
         var manifest = registry.RequireManifest(provider);
         var session = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
 
@@ -311,7 +508,7 @@ internal static class LiveEndpoints
             throw new ConnectorException(ErrorCode.ChallengeExpired, $"live view '{challengeId}' is over");
         }
 
-        return job;
+        return (job, challenge.ExpiresAt);
     }
 
     /// <summary>

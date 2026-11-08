@@ -1,6 +1,3 @@
-import type { ReviewDraft } from '@/domain/reviewDraft';
-import type { ReceiptStage } from './reviewReceipt';
-
 /**
  * #275 (user): creating a category mid-review detours to /categories and
  * back — the deck must return to the SAME card with the category editor
@@ -12,11 +9,6 @@ export interface ReviewReturnState {
   skippedIds: readonly string[];
   txId: string;
   reopenCats: boolean;
-  /** 2026-10-06 (user): the receipt detour brings the card's staged picks back with it */
-  draft?: ReviewDraft | null;
-  note?: string | null;
-  receipt?: ReceiptStage;
-  bulk?: readonly string[];
 }
 
 let pending: ReviewReturnState | null = null;

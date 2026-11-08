@@ -1,8 +1,27 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
+
+/** #348: the category first — a movement picked in the editor, its ask
+ *  answered with `pot` (or walked away from with null) */
+const pickMovement = async (catId: string, pot: string | null) => {
+  fireEvent.click(screen.getByTestId('txform-category'));
+  fireEvent.click(await screen.findByTestId('part-cat-0'));
+  fireEvent.click(await screen.findByTestId(`catpicker-${catId}`));
+  if (pot) fireEvent.click(await screen.findByTestId(`counter-pick-${pot}`));
+  else {
+    await screen.findByTestId('counter-accounts');
+    fireEvent.keyDown(window, { key: 'Escape' });
+  }
+  fireEvent.click(await screen.findByTestId('part-cat-save'));
+  await waitFor(() => expect((screen.getByTestId('txform-counter') as HTMLButtonElement).disabled).toBe(false));
+};
+
+/** the form's own counterparty sheet: once the category editor's ask has
+ *  been open its rows stay mounted too, and the form's sheet renders first */
+const formCounterSheet = (testId: string): HTMLElement => screen.getAllByTestId(testId)[0];
 
 const openForm = async () => {
   renderApp('/transactions');
@@ -61,8 +80,9 @@ describe('TxFormSheet (demo identity)', () => {
     expect(amount.value).toBe('550,7');
   });
 
-  it('adds an expense with a picked category and shows it in the list', async () => {
+  it('#348: adding is a screen of its own — the saved expense opens as its own page', async () => {
     await openForm();
+    expect(screen.getByTestId('screen-tx-create')).toBeTruthy();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker Bart' } });
 
@@ -75,20 +95,68 @@ describe('TxFormSheet (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Grocery'));
 
     fireEvent.click(screen.getByTestId('txform-save'));
-    // generous timeout: coverage instrumentation slows the liveQuery round-trip
+    // the new row's own page replaces the form — every other door is there
+    // (generous timeout: coverage instrumentation slows the liveQuery round-trip)
     await waitFor(
       () => {
-        const row = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].find((r) =>
-          r.textContent?.includes('Bakker Bart'),
-        );
-        expect(row).toBeTruthy();
-        expect(row!.textContent).toContain('-€12.34');
-        expect(row!.textContent).toContain('Grocery');
+        const detail = screen.getByTestId('screen-tx-detail');
+        expect(detail.textContent).toContain('Bakker Bart');
+        expect(screen.getByTestId('tx-detail-amount').textContent).toContain('12.34');
+        expect(detail.textContent).toContain('Grocery');
       },
       { timeout: 5000 },
     );
+    expect(screen.queryByTestId('screen-tx-create')).toBeNull();
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
+
+  it('#348 (user): the counterparty waits for the category — an ordinary filing leaves it shut, a movement opens it', async () => {
+    await openForm();
+    const counter = () => screen.getByTestId('txform-counter') as HTMLButtonElement;
+    // category first: nothing picked yet, so there is no other side to name
+    expect(counter().disabled).toBe(true);
+    fireEvent.click(counter());
+    expect(screen.queryByTestId('counter-accounts')).toBeNull();
+    // a movement category asks its counterparty (in the editor) and the row opens
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
+    await waitFor(() => expect(counter().textContent).toContain('Demo Savings'));
+    expect(counter().disabled).toBe(false);
+    expect(screen.getByTestId('txform-category').textContent).toContain('Set aside');
+  }, 15_000);
+
+  it('#348 (user): the event and the note are set while adding; a reimbursement link follows the save', async () => {
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    await openForm();
+    const seed = new MunniDB('munni_demo');
+    await new Repo(new DexieBackend(seed), new HlcClock('ev348'), { trackOutbox: false }).upsert('event', 'demo_space', 'ev348', { name: 'Wedding' });
+    seed.close();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '80,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Flowers for Anna' } });
+    fireEvent.click(screen.getByTestId('txform-event'));
+    fireEvent.click(await screen.findByTestId('txform-event-ev348'));
+    await waitFor(() => expect(screen.getByTestId('txform-event').textContent).toContain('Wedding'));
+    fireEvent.change(screen.getByTestId('txform-notes'), { target: { value: 'Half is Bas’s share' } });
+    // the reimbursement door saves first, then opens the link picker for the new row
+    fireEvent.click(screen.getByTestId('txform-link-reimb'));
+    await screen.findByTestId('screen-reimb-link', {}, { timeout: 5000 });
+    expect((await screen.findByTestId('reimb-link-anchor', {}, { timeout: 5000 })).textContent).toContain('Flowers for Anna');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Flowers for Anna');
+      expect(row).toMatchObject({ eventId: 'ev348', notes: 'Half is Bas’s share', amountCents: -8000 });
+    }, { timeout: 5000 });
+    db.close();
+  }, 20_000);
 
   it('#228: a lone ◆ pick in the editor becomes the FORM\'s counterparty; save mints the row-key leg', async () => {
     await openForm();
@@ -100,7 +168,6 @@ describe('TxFormSheet (demo identity)', () => {
     // the single entry spans the whole, so the ADD door shuts
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // a loaded CI runner (coverage on) can take longer than RTL's 1 s
     // default to settle the pick — the file's other waits allow 5 s too
@@ -145,7 +212,8 @@ describe('TxFormSheet (demo identity)', () => {
     expect(await screen.findByTestId('txform-no-accounts')).toBeTruthy();
     fireEvent.click(screen.getByTestId('txform-add-account'));
     expect(await screen.findByTestId('screen-space-accounts')).toBeTruthy();
-    expect(await screen.findByTestId('chooser-manual-form', {}, { timeout: 5000 })).toBeTruthy();
+    // the add chooser is open on arrival (whichever of its steps leads)
+    await waitFor(() => expect(document.querySelector('[data-testid^="chooser-manual"]')).toBeTruthy(), { timeout: 5000 });
   }, 15_000);
 
   it('a manual expense adjusts the account balance live (user bug: it froze)', async () => {
@@ -191,17 +259,18 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('a counterparty picked first derives the story: a savings pot fills Set aside; the Adjustment mark writes through', async () => {
+  it('a movement keeps its story when the counterparty is re-picked; the Adjustment mark writes through', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
 
-    // the always-there counterparty row IS the transfer door: the bare
-    // door lists every tracked account, and a savings pick on an outgoing
-    // row can only mean Set aside — the category fills by itself
+    // #348: the category first — Set aside, its pot named on the spot
+    await pickMovement('savingDeposit', 'demo_save');
+    // the counterparty row re-picks the pot (the editor's ask, closed,
+    // keeps its rows mounted — the form's own sheet renders first)
     fireEvent.click(screen.getByTestId('txform-counter'));
-    await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getAllByTestId('counter-accounts')).toHaveLength(2));
+    fireEvent.click(formCounterSheet('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
     expect(screen.getByTestId('txform-category').textContent).toContain('Set aside');
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
@@ -220,12 +289,14 @@ describe('TxFormSheet (demo identity)', () => {
 
   it('the Create door builds a missing counterparty through the full chooser', async () => {
     await openForm();
+    // #348: a movement category first (its ask walked away from) opens the counterparty row
+    await pickMovement('savingDeposit', null);
     fireEvent.click(screen.getByTestId('txform-counter'));
-    await screen.findByTestId('counter-accounts');
+    await waitFor(() => expect(screen.getAllByTestId('counter-accounts')).toHaveLength(2));
 
     // one creation door now (user redesign 2026-08-01): the chooser's
     // manual path, built in place and handed straight back
-    fireEvent.click(screen.getByTestId('counter-full-setup'));
+    fireEvent.click(formCounterSheet('counter-full-setup'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-savings'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Vakantiepot' } });
@@ -275,10 +346,8 @@ describe('TxFormSheet (demo identity)', () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '100,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
-    // #133 D: the counterparty row is the transfer door now
-    fireEvent.click(screen.getByTestId('txform-counter'));
-    await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    // #348: the category first, its pot named on the spot
+    await pickMovement('savingDeposit', 'demo_save');
     // the mirror checkbox retired (typed-splits v2): a MANUAL counter's
     // leg is ALWAYS minted — the pot's own ledger is the record
     expect(screen.queryByTestId('txform-mirror')).toBeNull();
@@ -300,7 +369,12 @@ describe('TxFormSheet (demo identity)', () => {
     }, { timeout: 5000 });
 
     // the LIST shows the pair as ONE row: the outgoing leg with the
-    // "From → To" note; the incoming leg stays hidden
+    // "From → To" note; the incoming leg stays hidden (the save landed
+    // on the new row's page — the list is a tab away)
+    await screen.findByTestId('screen-tx-detail');
+    cleanup();
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
     await waitFor(() => {
       const rows = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].filter((r) =>
         r.textContent?.includes('Naar spaarpot'),
@@ -323,7 +397,7 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     // the ask opens on the pick — walking away keeps the bare story
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Set aside'));
@@ -333,9 +407,11 @@ describe('TxFormSheet (demo identity)', () => {
     expect((await screen.findByTestId('txform-save-blocker')).textContent).toContain('Counterparty required');
     expect(screen.getByTestId('txform-counter').className).toContain('ring-negative');
 
-    // answering through the field: the pinned Default is the one tap
+    // answering through the field: the pot is one tap away (the editor's
+    // closed ask keeps its rows mounted — the form's own sheet is the last)
     fireEvent.click(screen.getByTestId('txform-counter'));
-    fireEvent.click(await screen.findByTestId('counter-default'));
+    await waitFor(() => expect(screen.getAllByTestId('counter-pick-demo_save')).toHaveLength(2));
+    fireEvent.click(formCounterSheet('counter-pick-demo_save'));
     await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
     fireEvent.click(screen.getByTestId('txform-save'));
     const { MunniDB } = await import('@/db/schema');
@@ -421,14 +497,6 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Refund BV' } });
     fireEvent.click(screen.getByTestId('txform-save'));
-    await waitFor(
-      () => {
-        const row = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].find((r) =>
-          r.textContent?.includes('Refund BV'),
-        );
-        expect(row!.textContent).toContain('+€50.00');
-      },
-      { timeout: 5000 },
-    );
-  });
+    await waitFor(() => expect(screen.getByTestId('tx-detail-amount').textContent).toContain('+€50.00'), { timeout: 5000 });
+  }, 15_000);
 });

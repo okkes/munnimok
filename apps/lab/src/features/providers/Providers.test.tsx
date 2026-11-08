@@ -55,6 +55,20 @@ describe('Providers', () => {
     expect(screen.getByTestId('provider-mock-bank-consent')).toBeTruthy();
   });
 
+  it('#526: the platform\'s stand-in parties are listed apart as test fixtures, still with their kill switch', async () => {
+    const marked = { ...CATALOGUE, providers: CATALOGUE.providers.map((p) => (p.id.startsWith('mock-') ? { ...p, fixture: true } : p)) };
+    scriptFetch({ ...HAPPY(), 'GET /lab/providers': () => ({ body: marked }) });
+    renderLab('#/providers');
+    const parties = await screen.findByTestId('providers-table');
+    expect([...parties.querySelectorAll('tbody tr')].map((r) => r.getAttribute('data-testid'))).toEqual(['provider-ah']);
+    const fixtures = screen.getByTestId('providers-fixtures-table');
+    expect([...fixtures.querySelectorAll('tbody tr')].map((r) => r.getAttribute('data-testid'))).toEqual([
+      'provider-mock-bank-consent',
+      'provider-mock-store-simple',
+    ]);
+    expect(screen.getByTestId('provider-state-mock-bank-consent').textContent).toBe('degraded');
+  });
+
   it('the kill switch: resume a paused party, pause with a reason, mark healthy, retire behind the typed id', async () => {
     let state: Record<string, string> = { ah: 'paused', 'mock-store-simple': 'healthy', 'mock-bank-consent': 'degraded' };
     const bodies: unknown[] = [];

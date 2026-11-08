@@ -3,8 +3,8 @@ import { isNativeApp } from '@/lib/platform';
 import { ConnectorError } from './api';
 
 /**
- * Custody of a connection's credential bundle (docs/connector-integration-plan.md
- * §10.3): on the phone it rests in the encrypted store's device-only
+ * Custody of a connection's credential bundle (docs/connectors/client.md,
+ * "Custody"): on the phone it rests in the encrypted store's device-only
  * row; on the web it lives in sessionStorage and dies with the tab —
  * the row stays, the connection reads "sign in to sync" next time. The
  * bundle is never synced through spaces and never exported.

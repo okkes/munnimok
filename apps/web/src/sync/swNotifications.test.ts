@@ -4,22 +4,32 @@ import { describe, expect, it } from 'vitest';
 import { buildNotification, readWorkerLang } from './swNotifications';
 
 describe('buildNotification', () => {
-  it('renders the Settings test push in every language, landing back on the notifications row', () => {
-    expect(buildNotification({ type: 'test' }, 'en')).toMatchObject({ body: 'Test notification — push reaches this device ✓', tag: 'test', url: './#/settings/global', pull: false });
+  it('renders the test push in every language, landing back on its space’s notifications row', () => {
+    expect(buildNotification({ type: 'test' }, 'en')).toMatchObject({ title: 'munni', body: 'Test notification — push reaches this device ✓', tag: 'test', url: './#/settings', pull: false });
     expect(buildNotification({ type: 'test' }, 'nl')!.body).toContain('Testmelding');
     expect(buildNotification({ type: 'test' }, 'tr')!.body).toContain('Test bildirimi');
+    // #551: sent from a space's settings it names that space and returns there
+    expect(buildNotification({ type: 'test', spaceId: 's2', spaceName: 'Trip' }, 'en')).toMatchObject({ title: 'Trip', url: './#/settings?space=s2' });
   });
 
   it('announces new transactions with count, per-space tag and a pre-sync pull', () => {
-    const one = buildNotification({ type: 'new-transactions', spaceId: 's1', count: 1 }, 'en')!;
+    const one = buildNotification({ type: 'new-transactions', spaceId: 's1', spaceName: 'Household', count: 1 }, 'en')!;
     expect(one).toMatchObject({ body: '1 new transaction arrived', tag: 'new-tx-s1', pull: true, pullSpaceId: 's1' });
+    // #551: the lock screen says which space the transactions landed in
+    expect(one.title).toBe('Household');
     // #132: the tap lands in the announced space's REVIEW — the space
     // rides the hash query so cold starts carry it too
     expect(one.url).toBe('./#/review?space=s1');
     const many = buildNotification({ type: 'new-transactions', count: 7 }, 'nl')!;
     expect(many.body).toBe('7 nieuwe transacties ontvangen');
+    expect(many.title).toBe('munni'); // no name to give
     expect(many.tag).toBe('new-tx-all');
     expect(many.url).toBe('./#/review');
+  });
+
+  it('a space id that is not an id never rides into a route', () => {
+    const odd = buildNotification({ type: 'new-transactions', spaceId: '../x?y', count: 1 }, 'en')!;
+    expect(odd).toMatchObject({ url: './#/review', tag: 'new-tx-all', pullSpaceId: undefined });
   });
 
   it('localizes social events and routes their clicks', () => {
@@ -33,6 +43,8 @@ describe('buildNotification', () => {
 
     const join = buildNotification({ type: 'space-join', spaceName: 'Big Family' }, 'nl')!;
     expect(join.body).toBe('Iemand doet nu mee in "Big Family"'); // missing name falls back
+    // #551: with the space named, the tap opens that space's members
+    expect(buildNotification({ type: 'space-join', fromName: 'Bob', spaceId: 'sp7', spaceName: 'Big Family' }, 'en')!.url).toBe('./#/spaces/sp7/members');
   });
 
   it('localizes membership pushes for the affected member (#172/#173)', () => {
@@ -45,6 +57,7 @@ describe('buildNotification', () => {
     expect(role.body).toBe('"Aile" alanındaki rolün artık okuyucu');
     const roleNl = buildNotification({ type: 'member-role', spaceName: 'Huis', role: 'wizard' }, 'nl')!;
     expect(roleNl.body).toBe('Je rol in "Huis" is nu wizard');
+    expect(buildNotification({ type: 'member-role', spaceId: 'sp7', spaceName: 'Huis', role: 'reader' }, 'en')!.url).toBe('./#/spaces/sp7/members');
   });
 
   it('unknown payloads and unknown languages degrade safely', () => {

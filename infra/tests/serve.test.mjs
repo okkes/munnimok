@@ -162,6 +162,39 @@ test('status: the platforms, the lcl stacks, and the stores by NAME — never a 
   assert.equal(typeof body.autonomy.enabled, 'boolean');
 });
 
+test('services (#560): every service of a platform with the address to open — the shared stack, then each environment; a nas platform without its domain says so', async () => {
+  assert.equal((await call(app, { url: '/api/services?platform=moon' })).statusCode, 400);
+  const lcl = (await call(app, { url: '/api/services?platform=lcl' })).json();
+  assert.equal(lcl.domainMissing, false);
+  assert.equal(lcl.controlEnv, 'prod', 'the cockpit signs in through the lowest slot');
+  assert.deepEqual(lcl.shared.services.map((s) => [s.key, s.url]), [
+    ['glitchtip', 'http://localhost:8383'],
+    ['vault', 'https://localhost:8384'],
+    ['control', 'http://localhost:8385'],
+    ['pgadmin', 'http://localhost:8386'],
+  ]);
+  const prod = lcl.envs.find((e) => e.env === 'prod');
+  assert.equal(prod.stack, 'munni-lcl-prod');
+  const byKey = Object.fromEntries(prod.services.map((s) => [s.key, s]));
+  assert.equal(byKey.web.url, 'http://localhost:8380');
+  assert.equal(byKey.admin.url, 'http://localhost:8381');
+  assert.equal(byKey.lab.url, 'http://localhost:8388');
+  assert.equal(byKey.api.url, 'http://localhost:8382/health');
+  assert.equal(byKey.apiDocs.url, 'http://localhost:8382/scalar', 'a page of a service worth its own link');
+  assert.equal(byKey.logtoAdmin.name, 'Logto console');
+  assert.equal(byKey.connector, undefined, 'no control plane host where the environment runs no connectors');
+
+  // nas: under the platform's domain, from the wizard's store — and without it, nothing to link yet
+  assert.equal((await post(app, '/api/wizard/values', { values: { PLATFORM_DOMAIN: 'nas.example' }, platform: 'nas' })).statusCode, 200);
+  const nas = (await call(app, { url: '/api/services?platform=nas' })).json();
+  assert.equal(nas.shared.services.find((s) => s.key === 'vault').url, 'https://vault-nas.nas.example');
+  assert.equal(process.env.PLATFORM_DOMAIN, undefined, 'the borrowed domain is given back');
+  forgetWizardValues(['PLATFORM_DOMAIN'], 'nas');
+  const bare = (await call(app, { url: '/api/services?platform=nas' })).json();
+  assert.deepEqual([bare.domainMissing, bare.shared, bare.envs], [true, null, []]);
+  assert.equal((await post(app, '/api/wizard/values', { values: { PLATFORM_DOMAIN: 'nas.example' }, platform: 'nas' })).statusCode, 200);
+});
+
 test('vault account: generated once into the platform section, the same on a second call; an unknown platform is refused', async () => {
   assert.equal((await post(app, '/api/platforms/vault-account', { platform: 'moon' })).statusCode, 400);
   const first = (await post(app, '/api/platforms/vault-account', { platform: 'lcl' })).json();

@@ -43,8 +43,8 @@ public sealed record ConnectorIngestResult(
 /// <summary>
 /// Turns the connector's normalised records into sync ops — the server
 /// acting as one more device, as the api's own open-banking ingest did
-/// before the banks became parties (docs/connector-integration-plan.md
-/// §5.6, §15). Receipts land in
+/// before the banks became parties (docs/connectors/relay.md, "Ingest" and
+/// "Bank rows"). Receipts land in
 /// the owner's store feed, bank accounts and their transactions in the
 /// account's IBAN feed (a card or wallet without one in a personal feed),
 /// registry positions as liability accounts in a personal registry feed.
@@ -73,6 +73,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     private const string CreditAccountType = "credit";
     private const string SourceField = "source";
     private const string CurrencyField = "currency";
+    private const string AmountField = "amount";
     private const string ProviderField = "provider";
     private const string NameField = "name";
     private const string TypeField = "type";
@@ -266,7 +267,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                 continue;
             }
             written += landed.Accepted;
-            if (landed.AccountRef is { } accountRef) reached.Add(accountRef);
+            if (landed.AccountRef is { } accountRef && landed.NamesTheAccount) reached.Add(accountRef);
         }
 
         // the accounts this connection reaches: another session of the same party that
@@ -276,8 +277,14 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestCounts(0, written, 0, 0, dropped);
     }
 
-    /// <summary>What one account record left: how many ops landed, and the reference it is filed under (null when the party still lists an account the person dropped).</summary>
-    private sealed record AccountLanding(int Accepted, string? AccountRef);
+    /// <summary>
+    /// What one account record left: how many ops landed, the reference it is
+    /// filed under (null when the party still lists an account the person
+    /// dropped), and whether that reference names the account itself — an
+    /// IBAN or a party's identity — so another session holding it reached the
+    /// same account.
+    /// </summary>
+    private sealed record AccountLanding(int Accepted, string? AccountRef, bool NamesTheAccount = false);
 
     /// <summary>
     /// One account: its feed, its row, and the reference the transactions
@@ -295,7 +302,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         if (await db.ConnectorAccountRefs.AnyAsync(a => a.Id == id && a.Excluded, ct)) return new AccountLanding(0, null);
 
         var iban = account.Text("iban");
-        var accountRef = string.IsNullOrWhiteSpace(iban) ? $"CONN:{provider}:{externalId}" : ImportIds.Normalize(iban);
+        var identity = account.Text("identity") is { Length: > 0 } stated ? stated : null;
+        var accountRef = string.IsNullOrWhiteSpace(iban)
+            ? await CardRefAsync(user.Id, provider, id, externalId, identity, ct)
+            : ImportIds.Normalize(iban);
         var isIban = !accountRef.StartsWith("CONN:", StringComparison.Ordinal);
         var feed = isIban
             ? await EnsureIbanFeedAsync(user, accountRef, ct)
@@ -314,6 +324,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             AccountEntityId = accountEntityId,
             Currency = account.Text(CurrencyField) ?? "EUR",
             SeenAt = now,
+            Identity = identity,
         };
         var fields = await AccountFieldsAsync(reference, account, ct);
         // minute-grained seed, per party: a balance refresh must re-emit while the
@@ -323,7 +334,28 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var accepted = await ApplyAsync(feed, [op], touched);
 
         await RememberAccountAsync(reference, ct);
-        return new AccountLanding(accepted, accountRef);
+        return new AccountLanding(accepted, accountRef, isIban || identity is not null);
+    }
+
+    /// <summary>
+    /// The reference a card or wallet without an IBAN is filed under. Its
+    /// external id is per session, so on its own every new consent filed the
+    /// same wallet as a new account (#491: a reconnected PayPal landed beside
+    /// the old one, its rows twice). The record's own earlier ref keeps its
+    /// reference (a consent from before identities were read), and otherwise
+    /// an earlier consent's ref with the same identity lends its own.
+    /// </summary>
+    private async Task<string> CardRefAsync(Guid userId, string provider, string id, string externalId, string? identity, CancellationToken ct)
+    {
+        var perSession = $"CONN:{provider}:{externalId}";
+        if (identity is null) return perSession;
+        var known = await db.ConnectorAccountRefs
+            .Where(a => a.UserId == userId && a.Provider == provider && (a.Id == id || a.Identity == identity))
+            .Select(a => new { a.Id, a.AccountRef, a.SeenAt })
+            .ToListAsync(ct);
+        var own = known.Find(a => a.Id == id);
+        if (own is not null) return own.AccountRef;
+        return known.OrderByDescending(a => a.SeenAt).Select(a => a.AccountRef).FirstOrDefault() ?? $"CONN:{provider}:{identity}";
     }
 
     /// <summary>The feed account row's fields: the party's facts, the seed-only name and type, the balance when stated.</summary>
@@ -366,7 +398,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             fields[NameField] = Json(account.Text("display_name") ?? (isIban ? $"Bank · {reference.AccountRef[^4..]}" : "Card"));
             fields[TypeField] = Json(AccountTypeOf(account.Text(TypeField)));
         }
-        if (account["balance"] is JsonObject balance && Money(balance["amount"]) is { } money)
+        if (account["balance"] is JsonObject balance && Money(balance[AmountField]) is { } money)
         {
             fields[BalanceField] = Json(money.Value);
             var asOf = balance["as_of"]?.GetValue<DateTimeOffset>() ?? reference.SeenAt;
@@ -492,7 +524,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     {
         var externalId = tx.Text(ExternalIdField);
         var bookedAt = tx.Text("booked_at");
-        var amount = Money(tx["amount"]);
+        var amount = Money(tx[AmountField]);
         if (externalId is null || bookedAt is null || amount is null) return null;
 
         var entityId = ImportIds.TransactionId(account.AccountRef, externalId);
@@ -613,6 +645,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             known.Currency = fresh.Currency;
             known.SeenAt = fresh.SeenAt;
             known.ConnectionId = fresh.ConnectionId ?? known.ConnectionId;
+            known.Identity = fresh.Identity ?? known.Identity;
         }
         await db.SaveChangesAsync(ct);
     }
@@ -655,7 +688,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         foreach (var credit in records)
         {
             var externalId = credit.Text(ExternalIdField);
-            var amount = Money(credit["amount"]);
+            var amount = Money(credit[AmountField]);
             if (externalId is null || amount is null)
             {
                 dropped++;
@@ -721,7 +754,9 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                 [NoteField] = Json(StudentDebtNote(debt)),
             };
             if (debt["interest_rate"]?.GetValue<decimal>() is { } rate) fields["interestPctYear"] = Json(rate);
-            if (debt.Text("interest_calculated_until") is { } until) fields[BalanceAsOfField] = Json(until);
+            // #566: the record's day (DUO's "rente is berekend tot") is as_of — the name read before never existed
+            if (debt.Text("as_of") is { } asOf) fields[BalanceAsOfField] = Json(asOf);
+            AddRepaymentPlan(debt, fields);
 
             ops.Add(Op(feed.Id, AccountEntity, entityId, fields, Seed(entityId, debt, fields)));
         }
@@ -748,13 +783,35 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return string.Join(" · ", parts);
     }
 
+    /// <summary>The registry's own words for where the debt stands: its phase and its regime (#566: no wording of ours in one language).</summary>
     private static string StudentDebtNote(JsonObject debt)
     {
         var parts = new List<string>();
         if (debt.Text("phase_label") is { Length: > 0 } phase) parts.Add(phase);
-        if (debt["total_is_derived"]?.GetValue<bool>() == true) parts.Add("som van de onderdelen");
         if (debt.Text("interest_regime") is { Length: > 0 } regime) parts.Add(regime);
         return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// #566: the loan facts the registry states beside the balance — what was
+    /// owed when repayment began (the size the progress measures against), the
+    /// monthly instalment and the day it falls due — so the debt reads as the
+    /// loan it is rather than a bare figure.
+    /// </summary>
+    private static void AddRepaymentPlan(JsonObject debt, Dictionary<string, JsonElement> fields)
+    {
+        var started = (debt["history"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .FirstOrDefault(h => string.Equals(h.Text("kind")?.Replace("_", string.Empty, StringComparison.Ordinal), "repaymentstart", StringComparison.OrdinalIgnoreCase));
+        if (Money(started?[AmountField]) is { Value: > 0 } original) fields["originalCents"] = Json(original.Value);
+
+        if (Money(debt["monthly_amount"]) is not { Value: > 0 } monthly) return;
+        fields["paymentCents"] = Json(monthly.Value);
+        fields["paymentEvery"] = Json("month");
+        if (DateOnly.TryParseExact(debt.Text("next_payment_due"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var due))
+        {
+            fields["paymentDay"] = Json(due.Day);
+        }
     }
 
     // ── feeds ────────────────────────────────────────────────────────────

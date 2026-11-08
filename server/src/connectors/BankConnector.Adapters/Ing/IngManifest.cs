@@ -90,6 +90,11 @@ internal static class IngManifest
         // - it cannot be renewed, so leaving it to expire means leaving a live
         // session lying around for its whole lifetime.
         Logout = LogoutSupport.Session,
+        // A sealed copy of the username and password for the person's own
+        // device (#543, Jumbo's arrangement): a fifteen-minute session that
+        // signs out after every job means every sync is a sign-in, and the
+        // push to their phone — not the typing — is the part only they can do.
+        OffersCredentialStore = true,
         SecretCustody = SecretCustody.Client,
         // EPHEMERAL, which this said None for one commit and should not have.
         //

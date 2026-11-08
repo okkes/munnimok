@@ -1,7 +1,8 @@
-import { visibleTransactions, writeTxTransform } from '@/db/joined';
+import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
+import type { AccountType } from '@/db/types';
 import { kindOf } from '@/domain/txKind';
 import { autoSubFor, stampMovementSub } from '@/domain/categories';
 import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
@@ -32,6 +33,10 @@ export async function linkTransferPairs(store: StorageBackend, repo: Repo): Prom
 async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   const all = await visibleTransactions(store, spaceId);
   const byId = new Map(all.map((tx) => [tx.id, tx]));
+  // #536: an account's type is the SPACE's reading (an attachment's) — a
+  // global account carries none of its own
+  const types = new Map((await visibleAccounts(store, spaceId)).map((a) => [a.id, a.type]));
+  const typeOf: TypeOf = (accountId) => types.get(accountId);
   const asLeg = (tx: SpaceTx): TransferLeg => ({
     id: tx.id,
     accountId: tx.accountId,
@@ -47,7 +52,7 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
   const pairs = matchTransferPairs(typed.map(asLeg));
   let linked = 0;
   for (const [outId, incId] of pairs) {
-    await writePair(store, repo, byId.get(outId), byId.get(incId), {});
+    await writePair(typeOf, repo, byId.get(outId), byId.get(incId), {});
     linked++;
   }
 
@@ -73,9 +78,9 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     // flag stays as it was (user 2026-10-09): this is the machine pairing
     // on a boot or an import, so the twin waits in the deck with the pair
     // prefilled and the person confirms it there.
-    const stamp = accountStamp((await store.get('account', twin.accountId))?.type);
-    const outType = (await store.get('account', out.accountId))?.type;
-    await writePair(store, repo, out, twin, {
+    const stamp = accountStamp(typeOf(twin.accountId));
+    const outType = typeOf(out.accountId);
+    await writePair(typeOf, repo, out, twin, {
       linkedAccountId: out.accountId,
       catId:
         (stamp ? stampMovementSub(stamp, twin.amountCents) : undefined) ??
@@ -86,7 +91,10 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
   return linked;
 }
 
-async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undefined, inc: SpaceTx | undefined, incExtra: Parameters<typeof writeTxTransform>[2]): Promise<void> {
+/** an account's type as the pairing space reads it */
+type TypeOf = (accountId: string) => AccountType | undefined;
+
+async function writePair(typeOf: TypeOf, repo: Repo, out: SpaceTx | undefined, inc: SpaceTx | undefined, incExtra: Parameters<typeof writeTxTransform>[2]): Promise<void> {
   if (!out || !inc) return;
   // the model's pairing rules (typed-splits v2): a null counterparty
   // auto-fills from the other leg, and a STAMPED leg stores its stamp +
@@ -99,23 +107,23 @@ async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undef
   // leg's review flag moves (user 2026-10-09): the pairing runs by itself
   // on boot and after imports — the deck shows the stored pair and the
   // person confirms each leg there.
-  const enrich = async (leg: SpaceTx, other: SpaceTx): Promise<Parameters<typeof writeTxTransform>[2]> => {
-    const stamp = accountStamp((await store.get('account', leg.accountId))?.type);
+  const enrich = (leg: SpaceTx, other: SpaceTx): Parameters<typeof writeTxTransform>[2] => {
+    const stamp = accountStamp(typeOf(leg.accountId));
     if (stamp) {
       return {
         ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
         catId: stampMovementSub(stamp, leg.amountCents),
       };
     }
-    const counterType = (await store.get('account', other.accountId))?.type;
+    const counterType = typeOf(other.accountId);
     const family = counterType ? familyForCounter(counterType) : 'transfer';
     return {
       ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
       ...(family !== 'transfer' && counterType ? { catId: movementCatFor(counterType, leg.amountCents) } : {}),
     };
   };
-  await writeTxTransform(repo, out, { ...(await enrich(out, inc)), transferPeerId: inc.id });
-  await writeTxTransform(repo, inc, { ...(await enrich(inc, out)), ...incExtra, transferPeerId: out.id });
+  await writeTxTransform(repo, out, { ...enrich(out, inc), transferPeerId: inc.id });
+  await writeTxTransform(repo, inc, { ...enrich(inc, out), ...incExtra, transferPeerId: out.id });
 }
 
 // createCounterTransaction retired 2026-08-05 (typed-splits v2): the

@@ -55,17 +55,21 @@ public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
 
     protected override async Task<IReadOnlyList<Institution>> InstitutionsAsync(HttpClient http, string country, CancellationToken ct) =>
         [.. (await _client.InstitutionsAsync(http, country, ct).ConfigureAwait(false))
-            .Select(i => new Institution(i.Id, i.Name, i.Logo, int.TryParse(i.TransactionTotalDays, out var days) ? days : null))];
+            .Select(i => new Institution(i.Id, i.Name, i.Logo, DaysOf(i.TransactionTotalDays), DaysOf(i.MaxAccessValidForDays)))];
 
-    protected override async Task<(string Url, string PendingId)> StartConsentAsync(
-        HttpClient http, Institution institution, string returnUrl, string reference, CancellationToken ct)
+    private static int? DaysOf(string? text) => int.TryParse(text, out var days) ? days : null;
+
+    protected override async Task<(string Url, string PendingId, int ConsentDays)> StartConsentAsync(
+        HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct)
     {
-        // deep history is an agreement the institution may refuse; the
-        // default 90 days is still a consent worth having
+        // deep history and a long consent are an agreement the institution may
+        // refuse; without one the requisition still holds the default 90 days
         var wanted = Math.Min(institution.HistoryDays ?? 90, MaxHistoryDays);
-        var agreement = wanted > 90 ? await _client.AgreementAsync(http, institution.Id, wanted, ct).ConfigureAwait(false) : null;
+        var agreement = wanted > 90 || consentDays > OpenBankingManifests.ConsentDays
+            ? await _client.AgreementAsync(http, institution.Id, wanted, consentDays, ct).ConfigureAwait(false)
+            : null;
         var created = await _client.CreateRequisitionAsync(http, institution.Id, returnUrl, reference, agreement, ct).ConfigureAwait(false);
-        return (created.Link, created.Id);
+        return (created.Link, created.Id, agreement is null ? OpenBankingManifests.ConsentDays : consentDays);
     }
 
     protected override async Task<(string ConsentId, IReadOnlyList<string> AccountIds)> CompleteConsentAsync(
@@ -82,10 +86,11 @@ public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
         };
     }
 
-    protected override async Task<(string? Iban, string? Name, string? Currency)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct)
+    /// <summary>GoCardless names no account across requisitions: an account without an IBAN stays keyed per consent.</summary>
+    protected override async Task<(string? Iban, string? Name, string? Currency, string? Identity)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct)
     {
         var details = await _client.DetailsAsync(http, accountId, ct).ConfigureAwait(false);
-        return (details.Iban, details.Name ?? details.OwnerName, details.Currency);
+        return (details.Iban, details.Name ?? details.OwnerName, details.Currency, null);
     }
 
     protected override async Task<IReadOnlyList<(string Type, string Amount, string Currency, string? Date)>> BalancesAsync(
@@ -93,14 +98,15 @@ public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
         [.. (await _client.BalancesAsync(http, accountId, ct).ConfigureAwait(false))
             .Select(b => (b.BalanceType, b.BalanceAmount.Amount, b.BalanceAmount.Currency, b.ReferenceDate))];
 
-    protected override async Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota)> TransactionsAsync(
-        HttpClient http, string accountId, DateOnly from, CancellationToken ct)
+    /// <summary>GoCardless answers a whole window in one response, so a pass is always complete.</summary>
+    protected override async Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota, bool Complete)> TransactionsAsync(
+        HttpClient http, string accountId, DateOnly from, DateOnly? to, CancellationToken ct)
     {
-        var (booked, pending, quota) = await _client.TransactionsAsync(http, accountId, from, ct).ConfigureAwait(false);
+        var (booked, pending, quota) = await _client.TransactionsAsync(http, accountId, from, to, ct).ConfigureAwait(false);
         var rows = new List<AggregatorTransaction>(booked.Count + pending.Count);
         rows.AddRange(booked.Select(t => Row(t, pending: false)));
         rows.AddRange(pending.Select(t => Row(t, pending: true)));
-        return (rows, quota);
+        return (rows, quota, true);
     }
 
     protected override Task RevokeAsync(HttpClient http, string consentId, CancellationToken ct) =>

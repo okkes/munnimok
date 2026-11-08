@@ -2,7 +2,7 @@ namespace Munni.Api.Connectors;
 
 /// <summary>
 /// <c>Connectors:*</c> — the one connector control plane of this environment
-/// (docs/connector-integration-plan.md §5). Absent <see cref="BaseUrl"/>
+/// (docs/connectors/relay.md, "Configuration"). Absent <see cref="BaseUrl"/>
 /// means this environment runs no connectors: the relay is not mapped and
 /// <c>/health</c> says so. Present, every other setting it needs is required
 /// and a missing one refuses to start — a control plane that is reachable
@@ -68,6 +68,15 @@ public sealed class ConnectorOptions
     /// interval guards the parties; this one guards the relay.
     /// </remarks>
     public int SyncsPerHour { get; set; } = 60;
+
+    /// <summary>
+    /// Whether the app's catalogue offers the platform's stand-in parties
+    /// (the mocks, #526). Off: no person is offered a party that is no real
+    /// shop or bank, and the relay refuses to sign one in; the lab's bench
+    /// reaches them through its own door either way. The test host turns it
+    /// on to exercise the protocol end to end.
+    /// </summary>
+    public bool OfferFixtures { get; set; }
 
     /// <summary>
     /// One call's ceiling. A fetch waits up to the control plane's own window

@@ -33,6 +33,11 @@
   --m-info-soft: #dde2ea;
   --m-special: #5e4a78; /* violet */
   --m-special-soft: #e3dced;
+
+  /* #522: the backdrops a see-through picture may get (ui/Picture) — never
+     flipped by the theme: a dark logo needs the light one in dark mode */
+  --m-plate-light: #f7f4ee;
+  --m-plate-dark: #262420;
 }
 
 [data-theme='dark'] {

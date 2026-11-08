@@ -85,3 +85,32 @@ export function applyOp<T extends Record<string, unknown>>(
   merged.deleted = deriveDeleted(fieldVersions);
   return { row: merged as T & SyncEnvelope, appliedFields, changed: true };
 }
+
+/**
+ * #505, undoing writes the server never took: the fields those writes
+ * stamped lose their version but keep their value (the row still renders
+ * whole), so any op on them wins — a pull from the start lays the
+ * server's values back over them.
+ */
+export function unstampWrites<T extends SyncEnvelope>(row: T, hlcs: ReadonlySet<string>): T {
+  const fieldVersions = Object.fromEntries(
+    Object.entries(row.fieldVersions ?? {}).map(([field, version]) => [field, hlcs.has(version) ? '' : version]),
+  );
+  return { ...row, fieldVersions, deleted: deriveDeleted(fieldVersions) };
+}
+
+/**
+ * …and once that pull is through: what no op ever wrote again is gone
+ * from the row — null when nothing of it is left (only this device ever
+ * had it).
+ */
+export function dropUnstamped<T extends SyncEnvelope>(row: T): T | null {
+  const merged: Record<string, unknown> = { ...(row as SyncEnvelope & Record<string, unknown>) };
+  const fieldVersions: Record<string, string> = {};
+  for (const [field, version] of Object.entries(row.fieldVersions ?? {})) {
+    if (version) fieldVersions[field] = version;
+    else if (field !== DELETED_FIELD) delete merged[field];
+  }
+  if (Object.keys(fieldVersions).length === 0) return null;
+  return { ...merged, fieldVersions, deleted: deriveDeleted(fieldVersions) } as T;
+}

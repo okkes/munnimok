@@ -8,13 +8,18 @@ export interface AmountSuggestion {
   cents: number;
 }
 
+/** one chip per amount (user 2026-10-21, #519): a later suggestion with the same money as an earlier one adds nothing */
+export const distinctAmounts = (items: readonly AmountSuggestion[]): AmountSuggestion[] =>
+  items.filter((item, index) => items.findIndex((other) => other.cents === item.cents) === index);
+
 /**
  * Amounts a form can take over with one tap: a small label over the money,
  * the same face under the target field and in the funding sheet. They read
  * as buttons (user 2026-10-08: "it's not clear those are interactable, or
  * what they do") — a caption says what a tap does, an arrow leads each chip,
  * and the chip whose amount the field already holds lights up, so the
- * effect of a tap is visible.
+ * effect of a tap is visible. The callers list the most telling first (the
+ * target before the spending), so a twin keeps that one.
  */
 export function AmountSuggestions({
   items,
@@ -33,14 +38,15 @@ export function AmountSuggestions({
   onPick: (cents: number) => void;
 }>) {
   const { t } = useLang();
-  if (items.length === 0) return null;
+  const chips = distinctAmounts(items);
+  if (chips.length === 0) return null;
   return (
     <div data-testid={`${testIdPrefix}s`}>
       <p className="mb-1.5 px-1 text-[11px] text-ink-4" data-testid={`${testIdPrefix}s-hint`}>
         {t('plan.suggestions.hint')}
       </p>
       <div className="flex flex-wrap gap-2">
-        {items.map((item) => {
+        {chips.map((item) => {
           const pressed = selectedCents !== null && item.cents === selectedCents;
           return (
             <button

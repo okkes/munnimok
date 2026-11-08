@@ -5,6 +5,8 @@ import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { ensureSpaceShared, healSharedKind, stampJoinedSharedSpace } from '@/application/spaces';
+import { useSpaceRole } from '@/app/useCanEdit';
+import type { SpaceRole } from '@/sync/spaceAccess';
 import { apiFetch } from '@/lib/api';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
@@ -21,7 +23,7 @@ import { Sheet } from '@/ui/Sheet';
 import { RolePicker } from './InviteFriendSheet';
 import { MemberSheet } from './MemberSheet';
 
-export type SpaceRole = 'owner' | 'contributor' | 'reader';
+export type { SpaceRole } from '@/sync/spaceAccess';
 
 interface InviteDto {
   id: string;
@@ -67,16 +69,16 @@ const short = (id: string) => `${id.slice(0, 8)}…`;
 const roleKey = (role: string): TranslationKey => `space.role.${role}` as TranslationKey;
 
 /**
- * The signed-in user's role in a space. Non-synced identities (demo,
- * offline) own everything they see; while the members call is in
- * flight — or offline — we optimistically assume owner, matching the
- * server's enforcement as the real gate.
+ * The signed-in user's role in a space. #505: the role the server last
+ * named (sync/spaceAccess — known offline too); this screen's members call
+ * refreshes it. Non-synced identities (demo, offline) own everything they
+ * see, and a space the server never named reads as owner — the server's
+ * enforcement stays the real gate.
  */
 export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceRole {
-  const { store, repo } = useData();
-  const [role, setRole] = useState<SpaceRole>('owner');
+  const { store, repo, access } = useData();
+  const known = useSpaceRole(spaceId);
   useEffect(() => {
-    setRole('owner');
     if (!syncing || !spaceId) return;
     void (async () => {
       const [membersRes, meRes] = await Promise.all([
@@ -90,10 +92,10 @@ export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceR
       void healSharedKind(store, repo, spaceId, members);
       const me = ((await meRes.json()) as { userId: string }).userId;
       const mine = members.find((m) => m.userId === me)?.role;
-      if (mine) setRole(mine);
+      if (mine) await access.note(spaceId, mine);
     })();
-  }, [spaceId, syncing, store, repo]);
-  return role;
+  }, [spaceId, syncing, store, repo, access]);
+  return known ?? 'owner';
 }
 
 /**
@@ -280,7 +282,7 @@ function InviteLockRow({ locked, onWrite }: Readonly<{ locked: boolean; onWrite:
 
 export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
-  const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
+  const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId, access } = useData();
   // the private lock (arc 4): a locked space renders the invite tools as
   // an explainer — unlocking is an explicit owner act in space settings
   const spaceRow = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
@@ -338,8 +340,10 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
 
   const myRole = members?.find((m) => m.userId === me)?.role;
   useEffect(() => {
-    if (myRole) onMyRole?.(myRole);
-  }, [myRole, onMyRole]);
+    if (!myRole) return;
+    onMyRole?.(myRole);
+    void access.note(spaceId, myRole); // #505: the screen's fresh answer is the guard's too
+  }, [myRole, onMyRole, access, spaceId]);
 
   if (members === null) return null; // not a member / offline — hide section
   const isOwner = myRole === 'owner';

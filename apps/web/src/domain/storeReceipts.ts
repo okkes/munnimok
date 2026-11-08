@@ -53,6 +53,9 @@ export type AccountTailOf = (tx: TxView) => string | undefined;
 
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
+/** how far a payment may sit from the receipt's total and still be its candidate */
+const AMOUNT_SLACK_CENTS = 2;
+
 /**
  * Payment awareness (R5 ruling): when the receipt names the paying
  * account's tail AND at least one candidate's account matches it, the
@@ -81,11 +84,33 @@ export function matchCandidates(
       (tx) =>
         tx.deleted === 0 &&
         tx.txType === 'expense' &&
-        Math.abs(-tx.amountCents - receipt.totalCents) <= 2 &&
+        Math.abs(-tx.amountCents - receipt.totalCents) <= AMOUNT_SLACK_CENTS &&
         dayDiff(tx.date, receipt.date) <= 2,
     )
     .sort((a, b) => scoreOf(receipt, b) - scoreOf(receipt, a));
   return applyPaymentFilter(receipt, base, tailOf);
+}
+
+/**
+ * #554: the expenses by what they cost — a matching pass looks up each
+ * receipt's neighbours instead of walking every row (receipts × rows grew
+ * with every month of history). Hands back exactly the rows the amount
+ * rule of `matchCandidates` lets through, for any total.
+ */
+export function expensesByCost(txs: readonly TxView[]): (totalCents: number) => TxView[] {
+  const byCost = new Map<number, TxView[]>();
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
+    const bucket = byCost.get(-tx.amountCents);
+    if (bucket) bucket.push(tx);
+    else byCost.set(-tx.amountCents, [tx]);
+  }
+  return (totalCents) => {
+    const near: TxView[] = [];
+    const last = Math.floor(totalCents + AMOUNT_SLACK_CENTS);
+    for (let cost = Math.ceil(totalCents - AMOUNT_SLACK_CENTS); cost <= last; cost++) near.push(...(byCost.get(cost) ?? []));
+    return near;
+  };
 }
 
 const merchantHit = (source: string, tx: TxView): boolean =>

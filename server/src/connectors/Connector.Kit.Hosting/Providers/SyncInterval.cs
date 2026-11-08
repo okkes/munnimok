@@ -34,7 +34,7 @@ public sealed class SyncInterval(ConnectorDbContext db, TimeProvider time)
     {
         ArgumentNullException.ThrowIfNull(manifest);
 
-        if (trigger != FetchTrigger.Schedule) return;
+        if (trigger is not (FetchTrigger.Schedule or FetchTrigger.Backfill)) return;
 
         var interval = manifest.Limits.MinIntervalSeconds;
         if (interval <= 0) return;
@@ -47,10 +47,13 @@ public sealed class SyncInterval(ConnectorDbContext db, TimeProvider time)
         // (four a day under PSD2) does not count - and counting it here made the
         // app's own syncs refuse the nightly scheduled one as rate_limited,
         // which the hub then read as "the party asked for a pause" (prod,
-        // 2026-10-04).
+        // 2026-10-04). A backfill pass (#460) keeps a clock of its own, so the
+        // schedule's pass and one pass over older history fit each interval -
+        // two unattended reads where PSD2 allows four.
+        var counted = trigger == FetchTrigger.Backfill ? JobRow.BackfillTrigger : JobRow.ScheduleTrigger;
         var last = await db.Jobs
             .Where(j => j.ProviderId == manifest.Id && j.Kind == kind && j.State == JobState.Succeeded && j.UpdatedAt > since)
-            .Where(j => j.Trigger == JobRow.ScheduleTrigger)
+            .Where(j => j.Trigger == counted)
             .Where(j => resourceId == null || j.ResourceId == resourceId)
             .Join(db.Sessions.Where(s => s.Subject == subject), j => j.SessionId, s => s.Id, (j, _) => (DateTimeOffset?)j.UpdatedAt)
             .MaxAsync(ct);
@@ -61,7 +64,7 @@ public sealed class SyncInterval(ConnectorDbContext db, TimeProvider time)
 
         throw new ConnectorException(
             ErrorCode.RateLimited,
-            $"a scheduled {kind} for provider '{manifest.Id}' ran {(int)(now - last.Value).TotalSeconds}s ago; " +
+            $"a {counted} {kind} for provider '{manifest.Id}' ran {(int)(now - last.Value).TotalSeconds}s ago; " +
             $"the provider asks for {interval}s between syncs")
         {
             RetryAfterSeconds = Math.Max(1, retryAfter),

@@ -9,8 +9,10 @@ import { storeConnLinkId } from '@/domain/feedIds';
 import { NO_INGEST } from '@/test/connectorFixtures';
 import { ConnectorError, connectorApi } from './api';
 import { readBundle } from './bundles';
-import { noteSignInFailure, settleQuestion, syncConnection, syncTuning } from './connectorSync';
+import { MAX_OLDER_PASSES, nextBackfill, noteSignInFailure, settleQuestion, syncConnection, syncTuning } from './connectorSync';
+import { activityLine } from './ConnectionReceiptsScreen';
 import { publishConnectorFrame, resetConnectorFrames, subscribeConnectorFrames } from './events';
+import { useSyncActivity } from './syncActivity';
 import type { ErrorEnvelope, JobView } from './types';
 
 const SPACE = 's1';
@@ -111,8 +113,8 @@ describe('syncConnection — one pass through the relay', () => {
     } finally {
       clearInterval(publishSoon);
     }
-    // the collect carries the sync's `since` too (none here: the row was never synced)
-    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.rotated', undefined);
+    // the collect carries the sync's window too (none here: the row was never synced)
+    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.rotated', undefined, undefined);
     expect(await readBundle(backend, CONN)).toBe('sb_v1.rotated');
   });
 
@@ -183,7 +185,7 @@ describe('syncConnection — one pass through the relay', () => {
     const report = await syncConnection(backend, repo, CONN);
     expect(report).toMatchObject({ status: 'ok', added: 3 });
     expect(sync).not.toHaveBeenCalled();
-    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.old', undefined);
+    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.old', undefined, undefined);
     expect((await backend.connectorConnGet(CONN))?.pendingJob).toBeUndefined();
 
     // a remembered job the relay no longer holds is forgotten, and the sync starts afresh
@@ -245,6 +247,144 @@ describe('syncConnection — one pass through the relay', () => {
     expect((await backend.connectorConnGet(CONN))?.lastError?.artifactsJobId).toBeUndefined();
     expect(await noteSignInFailure(backend, CONN, failure)).toBe('none');
     expect(share).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('#460 — older history after a partial pass', () => {
+  const outcome = (fields: { transactions?: number; receipts?: number; complete: boolean; oldest?: string }) => ({
+    accepted: false as const,
+    outcome: {
+      sessionId: 'ses_1',
+      state: 'active' as const,
+      ingested: { ...NO_INGEST, transactions: fields.transactions ?? 0, receipts: fields.receipts ?? 0 },
+      complete: fields.complete,
+      ...(fields.oldest ? { oldest: fields.oldest } : {}),
+    },
+  });
+
+  it('goes on to older history right away, pass after pass, the hub line following how far back it reached', async () => {
+    const reached: (string | undefined)[] = [];
+    const sync = vi.spyOn(connectorApi, 'sync').mockImplementation(async () => {
+      reached.push(useSyncActivity.getState().activity[CONN]?.older);
+      switch (sync.mock.calls.length) {
+        case 1:
+          return outcome({ transactions: 200, complete: false, oldest: '2026-03-10' });
+        case 2:
+          return outcome({ transactions: 200, complete: false, oldest: '2025-11-02' });
+        default:
+          return outcome({ transactions: 40, complete: true });
+      }
+    });
+
+    const report = await syncConnection(backend, repo, CONN);
+
+    expect(sync.mock.calls.map((c) => c[1])).toEqual([
+      { connectionId: CONN, bundle: 'sb_v1.old', since: undefined },
+      // the frontier day is asked again: a pass's cap can cut a day in half
+      { connectionId: CONN, bundle: 'sb_v1.old', since: undefined, until: '2026-03-10' },
+      { connectionId: CONN, bundle: 'sb_v1.old', since: undefined, until: '2025-11-02' },
+    ]);
+    expect(reached).toEqual([undefined, '2026-03-10', '2025-11-02']);
+    expect(report).toMatchObject({ status: 'ok', transactions: 440, partial: false, olderPending: false });
+    expect((await backend.connectorConnGet(CONN))?.backfill).toBeUndefined();
+  });
+
+  it('a regular sync that comes back partial reaches down to its own since, never past it', async () => {
+    await backend.connectorConnPut({ ...(await backend.connectorConnGet(CONN))!, lastSyncAt: '2026-11-01T10:00:00Z' });
+    const sync = vi.spyOn(connectorApi, 'sync')
+      .mockResolvedValueOnce(outcome({ receipts: 2000, complete: false, oldest: '2026-11-04' }))
+      .mockResolvedValue(outcome({ receipts: 12, complete: true }));
+
+    await syncConnection(backend, repo, CONN);
+
+    expect(sync.mock.calls[1][1]).toEqual({ connectionId: CONN, bundle: 'sb_v1.old', since: '2026-10-31', until: '2026-11-04' });
+  });
+
+  it('a refusal mid-way leaves the rest on the row, and the next sync goes on with it', async () => {
+    const sync = vi.spyOn(connectorApi, 'sync')
+      .mockResolvedValueOnce(outcome({ transactions: 200, complete: false, oldest: '2026-03-10' }))
+      .mockRejectedValueOnce(new ConnectorError(429, envelope('rate_limited', { retriable: true, userAction: 'wait', retryAfterSeconds: 600 })));
+
+    const first = await syncConnection(backend, repo, CONN);
+    // the newest rows landed and say so; the party's pause is no failure of the sync
+    expect(first).toMatchObject({ status: 'ok', transactions: 200, olderPending: true });
+    expect((await backend.connectorConnGet(CONN))?.backfill).toEqual({ until: '2026-03-10' });
+
+    sync.mockReset();
+    sync.mockResolvedValueOnce(outcome({ complete: true })).mockResolvedValue(outcome({ transactions: 80, complete: true }));
+    const second = await syncConnection(backend, repo, CONN);
+    expect(sync.mock.calls[1][1]).toMatchObject({ until: '2026-03-10' });
+    expect(second).toMatchObject({ status: 'ok', transactions: 80, olderPending: false });
+    expect((await backend.connectorConnGet(CONN))?.backfill).toBeUndefined();
+  });
+
+  it('a pass that reaches no further ends it, and a sign-in refusal mid-way is the sync’s to speak', async () => {
+    const sync = vi.spyOn(connectorApi, 'sync')
+      .mockResolvedValueOnce(outcome({ transactions: 200, complete: false, oldest: '2026-03-10' }))
+      // a cap filled by the frontier day alone: nothing older came
+      .mockResolvedValueOnce(outcome({ transactions: 200, complete: false, oldest: '2026-03-10' }));
+    expect((await syncConnection(backend, repo, CONN)).olderPending).toBe(false);
+    expect(sync).toHaveBeenCalledTimes(2);
+
+    sync.mockReset();
+    sync
+      .mockResolvedValueOnce(outcome({ transactions: 5, complete: false, oldest: '2026-03-10' }))
+      .mockRejectedValueOnce(new ConnectorError(401, envelope('session_expired', { userAction: 'reauth' })));
+    expect((await syncConnection(backend, repo, CONN)).status).toBe('signin');
+    expect((await backend.connectorConnGet(CONN))?.state).toBe('needs_reauth');
+  });
+
+  it('a pass over older history that became a job is collected with its window — and remembered with it', async () => {
+    vi.spyOn(connectorApi, 'sync')
+      .mockResolvedValueOnce(outcome({ transactions: 200, complete: false, oldest: '2026-03-10' }))
+      .mockResolvedValueOnce({ accepted: true, job: job({ jobId: 'job_old', state: 'running' }) });
+    vi.spyOn(connectorApi, 'job').mockImplementation(async () => {
+      expect((await backend.connectorConnGet(CONN))?.pendingJob).toMatchObject({ jobId: 'job_old', until: '2026-03-10' });
+      return job({ jobId: 'job_old', state: 'succeeded', complete: true });
+    });
+    const collect = vi.spyOn(connectorApi, 'collect').mockResolvedValue({
+      running: false,
+      job: job({ jobId: 'job_old', state: 'succeeded', complete: true, ingested: { ...NO_INGEST, transactions: 31 } }),
+    });
+    const publishSoon = setInterval(() => publishConnectorFrame({ kind: 'connector', provider: PROVIDER, sessionId: 'ses_1', jobId: 'job_old', state: 'succeeded' }), 20);
+    try {
+      expect(await syncConnection(backend, repo, CONN)).toMatchObject({ status: 'ok', transactions: 231, olderPending: false });
+    } finally {
+      clearInterval(publishSoon);
+    }
+    expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_old', 'sb_v1.old', undefined, '2026-03-10');
+  });
+
+  it('one sync makes a bounded number of passes; the rest follows on the next sync', async () => {
+    // every pass partial and reaching a month further back: only the cap stops the run
+    let month = 12;
+    const sync = vi.spyOn(connectorApi, 'sync').mockImplementation(async () => {
+      month -= 1;
+      return outcome({ transactions: 10, complete: false, oldest: `2025-${String(month).padStart(2, '0')}-01` });
+    });
+    const report = await syncConnection(backend, repo, CONN);
+    expect(sync).toHaveBeenCalledTimes(1 + MAX_OLDER_PASSES);
+    expect(report.olderPending).toBe(true);
+    expect((await backend.connectorConnGet(CONN))?.backfill).toEqual({ until: '2025-01-01' });
+  });
+
+  it('the rule: a whole pass leaves a pending backfill as it was; a new partial one joins it; a pass over older history moves or ends it', () => {
+    const pending = { since: '2025-01-01', until: '2025-06-01' };
+    expect(nextBackfill(pending, { since: '2026-11-01' }, { partial: false })).toBe(pending);
+    expect(nextBackfill(pending, { since: '2026-11-01' }, { partial: true, oldest: '2026-11-05' })).toEqual({ since: '2025-01-01', until: '2026-11-05' });
+    expect(nextBackfill(pending, {}, { partial: true, oldest: '2026-11-05' })).toEqual({ until: '2026-11-05' });
+    expect(nextBackfill(undefined, { since: '2026-11-01' }, { partial: true })).toBeUndefined();
+    expect(nextBackfill(pending, pending, { partial: true, oldest: '2025-03-01' })).toEqual({ since: '2025-01-01', until: '2025-03-01' });
+    expect(nextBackfill(pending, pending, { partial: false, oldest: '2025-03-01' })).toBeUndefined();
+    expect(nextBackfill(pending, pending, { partial: true })).toBeUndefined();
+  });
+
+  it('the receipts screen says how far back a running sync reached, and that older history follows', () => {
+    const t = (key: string, vars?: Record<string, unknown>) => `${key}${vars ? JSON.stringify(vars) : ''}`;
+    const base = { connectionId: CONN, found: 5, startedAt: 0 };
+    expect(activityLine({ ...base, phase: 'fetching', older: '2025-11-02' }, t as never, 'en')?.text).toContain('conn.syncOlder');
+    const done = { ...base, phase: 'done' as const, finishedAt: Date.now(), report: { status: 'ok' as const, added: 3, accounts: 0, transactions: 0, linked: 0, proposed: 0, olderPending: true } };
+    expect(activityLine(done, t as never, 'en')?.text).toContain('conn.syncOlderLater');
   });
 });
 

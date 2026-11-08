@@ -57,8 +57,8 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 | `GET /lab/status`, `GET /control/connectors/status` | the control plane's status: providers with their health and budget, agents online, the queue, plus `relay.openStreams` |
 | `GET /lab/providers`, `GET /lab/providers/{id}` | the catalogue with every manifest and its status beside it — what the Providers screen and the test bench read |
 | `POST /lab/providers/{id}/status` | the kill switch: `{ state: healthy\|degraded\|paused\|retired, reasonKey? }`; the operator and the reason go to the server log |
-| `GET /lab/providers/{id}/remote-consents`, `DELETE …/{consentId}` | what the operator's account at the party holds (§15), every consent with its `origin`; a revoke, logged with the operator |
-| `GET /lab/agents`, `DELETE /lab/agents/{id}` | every agent whoever owns it (the fleet, the people's own machines, the hosted slots); revoke any |
+| `GET /lab/providers/{id}/remote-consents`, `DELETE …/{consentId}` | what the operator's account at the party holds (#414), every consent with its `origin`; a revoke, logged with the operator |
+| `GET /lab/agents`, `DELETE /lab/agents/{id}` | every agent whoever owns it (the fleet, the people's own machines, the hosted slots), each with `lab: true` when it was enrolled under the caller's lab subject — the machines that take the lab's runs beside the fleet (#576); revoke any |
 | `POST /lab/agents/enrollment` | a one-time enrollment code **under the lab subject** with the household compose line — the operator's own test machine, serving the lab's runs and nobody else's |
 | `GET /lab/private-agents`, `POST …/requests/{id}/approve`, `POST …/requests/{id}/deny`, `POST …/{agentId}/release` | hosted private agents (#420 A2), with who holds each slot (the relay maps the pseudonym to the person per call and stores it nowhere) |
 | `GET /lab/canaries` | the operator's own connections that prove a party still works |
@@ -114,8 +114,9 @@ twin: the status and an aggregator's inventory, never a write.
 - **Bench** (L2) — the test bench: the operator's own connections at the
   parties, made under the lab subject. Pick a party and sign in on the
   manifest's own form (its steps and fields, the party's config, a label),
-  say where the run happens (no preference, the fleet, or one agent from
-  the Agents list), and watch the run: the step, the queue position, the
+  say where the run happens (no preference, munni's pooled agents, or —
+  for a party that keeps its browser on one machine, the only runs the
+  queue pins — one of the lab's own machines), and watch the run: the step, the queue position, the
   notes, and whatever the party asks — a code, a picture to tap (the taps
   encoded as the control plane reads them), a choice, a page to open and
   the address it returns, or the live browser (the lab's own live view:
@@ -152,7 +153,11 @@ twin: the status and an aggregator's inventory, never a write.
   *done* ends it (*another 30 minutes* extends the window), and the
   recording opens. The control plane's `explore` provider is
   operator-only: out of every catalogue, refused on every door but the
-  lab's, and navigation is refused on every live view but its own.
+  lab's, and navigation is refused on every live view but its own. A run
+  left behind is never lost (#576): the bench asks a session still
+  signing in for its state afresh, its session page carries the run
+  itself — the live view to drive — and a lab sign-in still open on the
+  job page links there.
 - **Agent** (L4) — one machine in full: its class, heartbeat, catalogue
   match, the hosted slot's holder, what it claimed on its last heartbeat
   (the parties and runtimes it serves, its egress, its concurrency), the

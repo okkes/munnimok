@@ -395,6 +395,65 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(["acc_sib_b", "acc_sib_b2", "acc_sib_card_a", "acc_sib_card_b"], refs);
     }
 
+    /// <summary>
+    /// #508: the tracking of a reserved row went with the references of a
+    /// superseded or disconnected connection, and nothing settled the row
+    /// again - once booked, it stood beside its twin for good. The new
+    /// connection's references take it over; with none left, it is tombstoned.
+    /// </summary>
+    [Fact]
+    public async Task A_reserved_row_outlives_its_connection_only_as_long_as_another_one_tracks_it()
+    {
+        const string sub = "reserved-handover";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);   // provisions the user
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        factory.Write(db => db.ConnectorSessions.AddRange(
+            new ConnectorSession { Id = "ses_res_a", UserId = userId, Provider = Consent, ConnectionId = "conn-res-a", State = "active" },
+            new ConnectorSession { Id = "ses_res_b", UserId = userId, Provider = Consent, ConnectionId = "conn-res-b", State = "active" }));
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        const string iban = "NL91MOCK0000000790";
+        static JsonObject Account(string id) => new() { ["id"] = id, ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current" };
+        static JsonObject Reserved(string account, string reference) => new()
+        {
+            ["id"] = $"txn_{reference}",
+            ["external_id"] = $"pending:{reference}",
+            ["account_id"] = account,
+            ["booked_at"] = "2026-10-06",
+            ["amount"] = new JsonObject { ["value"] = -1300L, ["currency"] = "EUR" },
+            ["counterparty"] = new JsonObject { ["name"] = "PAY.nl*X TU DELFT" },
+            ["description"] = "PAY.nl*X TU DELFT",
+        };
+        bool Deleted(string id) => factory.Read(db => db.EntityRows.Single(r => r.EntityId == id && r.Entity == "transaction").Deleted);
+        List<string> TrackedBy(string id) => factory.Read(db => db.ConnectorPendingTxs.Where(p => p.EntityId == id).Select(p => p.AccountRefId).ToList());
+
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-a", "account", [Account("acc_res_a")], ct);
+        var first = await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-a", "transaction", [Reserved("acc_res_a", "R-1")], ct);
+        await ingest.SettlePendingAsync(userId, Consent, "conn-res-a", first.PendingRows, ct);
+        var reservedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:R-1");
+        Assert.Equal(["acc_res_a"], TrackedBy(reservedId));
+
+        // a reconnect into a new connection reaches the same IBAN: the old one is superseded, its row handed over
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-b", "account", [Account("acc_res_b")], ct);
+        Assert.Equal(["acc_res_b"], TrackedBy(reservedId));
+        Assert.False(Deleted(reservedId));
+        // the new connection's complete pass no longer reports it: settled
+        Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", [], ct));
+        Assert.True(Deleted(reservedId));
+
+        // the last connection reaching the account is disconnected: its reserved row has nobody left to settle it
+        var second = await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-b", "transaction", [Reserved("acc_res_b", "R-2")], ct);
+        await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", second.PendingRows, ct);
+        var lastId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:R-2");
+        Assert.False(Deleted(lastId));
+        var disconnector = scope.ServiceProvider.GetRequiredService<ConnectorDisconnector>();
+        Assert.NotNull(await disconnector.DisconnectSessionAsync("ses_res_b", ct));
+        Assert.True(Deleted(lastId));
+        Assert.Empty(TrackedBy(lastId));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     /// <summary>A login through the relay: the redirect challenge, answered with the bank's return, settles to an active consent.</summary>

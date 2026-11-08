@@ -1,5 +1,5 @@
 import { clearStaleLogtoState } from '@/lib/authState';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto, Prompt } from '@logto/react';
 import * as Sentry from '@sentry/react';
@@ -24,7 +24,7 @@ import {
   watchForRevival,
 } from '@/app/sessionExpiry';
 import { useSession } from '@/app/session';
-import { rememberLastAccount } from './lastAccount';
+import { continueOptions, readLastAccount, readSignInWay, rememberLastAccount } from './lastAccount';
 import { Logo } from '@/ui/Logo';
 
 /**
@@ -52,6 +52,9 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
         endpoint: config.logto.endpoint,
         appId: config.logto.appId,
         resources: config.logto.resource ? [config.logto.resource] : [],
+        // #559: userinfo names the account's social identities — how "Continue as" gets back in.
+        // A refresh never sends scopes, so the sessions granted before this keep working.
+        scopes: ['identities'],
       }}
       // the phone's client navigates through the platform auth session (ASWebAuthenticationSession / Custom Tab)
       LogtoClientClass={isNativeApp() ? NativeLogtoClient : undefined}
@@ -65,18 +68,21 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
 /** exposes Logto access tokens + signIn/signOut to non-React code */
 function TokenBridge() {
   const { error, getAccessToken, isAuthenticated, isLoading, signIn, signOut } = useLogto();
+  // #559: the same person signing in again goes the way they came in (Logto's
+  // session continues silently; once it is gone, straight to their provider)
+  const continueSignIn = useCallback((uri: string) => signIn({ redirectUri: uri, ...continueOptions(readLastAccount()) }), [signIn]);
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
     // the 401 self-heal (data.tsx) re-enters the OIDC flow from outside React
     // "use another account" (user 2026-10-07): prompt=login makes Logto ask
     // for credentials even with its session alive; consent keeps the refresh
     // token (login alone issues none)
-    setOidcSignIn((uri, fresh) => (fresh ? signIn({ redirectUri: uri, prompt: [Prompt.Login, Prompt.Consent] }) : signIn(uri)));
+    setOidcSignIn((uri, fresh) => (fresh ? signIn({ redirectUri: uri, prompt: [Prompt.Login, Prompt.Consent] }) : continueSignIn(uri)));
     return () => {
       setOidcSignOut(null);
       setOidcSignIn(null);
     };
-  }, [signIn, signOut]);
+  }, [signIn, signOut, continueSignIn]);
   useEffect(() => {
     // #222: the SDK swallows refresh failures into the SHARED context
     // error — `invalid_grant` is Logto's verdict that the refresh grant
@@ -92,9 +98,9 @@ function TokenBridge() {
       // event (GlitchTip 4/8/9/11/12, user rule 2026-10-05); a sign-in
       // that then fails reports from where it fails
       console.warn('refresh grant dead: invalid_grant on token refresh — re-entering sign-in');
-      void attemptSilentReentry(() => signIn(callbackUri()));
+      void attemptSilentReentry(() => continueSignIn(callbackUri()));
     }
-  }, [error, signIn]);
+  }, [error, continueSignIn]);
   useEffect(() => {
     // the SDK flips isLoading for EVERY call it runs, its own getAccessToken
     // included (user ss 2026-10-07: "Offline" for the first seconds after a
@@ -127,7 +133,7 @@ function TokenBridge() {
           // the hammering — a breadcrumb, not an event (user rule 2026-10-05)
           if (isInvalidGrantError(err) && markSessionExpired()) {
             console.warn('refresh grant dead: invalid_grant from the token getter — asking for a sign-in');
-            void attemptSilentReentry(() => signIn(callbackUri())).catch(() => undefined);
+            void attemptSilentReentry(() => continueSignIn(callbackUri())).catch(() => undefined);
           }
           return undefined;
         }
@@ -137,7 +143,7 @@ function TokenBridge() {
     }
     signalAuthReady(); // restore finished (either outcome) — sync may start
     return () => setAccessTokenGetter(null);
-  }, [getAccessToken, isAuthenticated, isLoading, signIn]);
+  }, [getAccessToken, isAuthenticated, isLoading, continueSignIn]);
   useEffect(() => {
     if (!isAuthenticated) return;
     return watchForRevival(async () => {
@@ -150,16 +156,17 @@ function TokenBridge() {
 }
 
 /** shared post-exchange step: adopt the session, then re-enter the app */
-function useFinishSignIn(): () => Promise<boolean> {
+function useFinishSignIn(): (getToken?: () => Promise<string | null | undefined>) => Promise<boolean> {
   const { getIdTokenClaims } = useLogto();
   const login = useSession((s) => s.login);
-  return async () => {
+  return async (getToken) => {
     const claims = await getIdTokenClaims();
     // exchange ok but no readable identity — caller shows retry instead of
     // bouncing a session-less user into the app shell
     if (!claims?.sub) return false;
     login({ kind: 'user', sub: claims.sub });
-    rememberLastAccount(claims.name ?? claims.username ?? claims.email);
+    // #559: how this account gets back in — asked beside the display-name write below, never after it
+    const way = readSignInWay(config.logto.endpoint, claims.username, getToken);
     // best-effort display name for friends/space members. AWAITED (with a
     // cap): fire-and-forget raced the /#/home navigation — iOS WebKit
     // cancels the in-flight fetch ('Load failed'), which set the shared
@@ -172,6 +179,7 @@ function useFinishSignIn(): () => Promise<boolean> {
         new Promise((resolve) => setTimeout(resolve, 4000)),
       ]);
     }
+    rememberLastAccount(name, await way);
     window.location.replace(`${window.location.origin}/#/home`);
     return true;
   };
@@ -230,7 +238,8 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
       // the public origin so it matches the registered redirect_uri
       await client.handleSignInCallback(url.startsWith('/') ? `${publicOrigin()}${url}` : url);
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
-      if (!(await finish())) setFailed('no identity claims');
+      // this client holds the token the exchange minted — the provider's own would refresh for it
+      if (!(await finish(() => client.getAccessToken()))) setFailed('no identity claims');
     })().catch((err: unknown) => {
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
       // shown on screen AND reported: a native user cannot open devtools —
@@ -260,9 +269,11 @@ export function isStaleCallbackError(err: unknown): boolean {
 
 function WebCallbackScreen() {
   const finish = useFinishSignIn();
+  const { getAccessToken } = useLogto();
   const [noClaims, setNoClaims] = useState(false);
   const { error, isAuthenticated } = useHandleSignInCallback(() => {
-    void finish().then((ok) => {
+    // the exchange's own token, still cached — no refresh behind it
+    void finish(() => getAccessToken()).then((ok) => {
       if (!ok) setNoClaims(true);
     });
   });

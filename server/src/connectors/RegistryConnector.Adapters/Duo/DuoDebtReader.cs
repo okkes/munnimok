@@ -134,10 +134,11 @@ internal static class DuoDebtReader
         ArgumentNullException.ThrowIfNull(payloads);
         ArgumentNullException.ThrowIfNull(options);
 
-        var (components, total) = Components(payloads.Debt, options, note);
+        var (components, summed) = Components(payloads.Debt, options, note);
         var positions = Positions(payloads.Positions);
         var history = History(payloads.History, options);
         var (ledger, monthly, due) = Dossier(payloads.Dossier, today, options);
+        var (total, derived) = Total(summed, ledger, history, note);
 
         var externalId = DuoAdapter.DebtResource;
 
@@ -148,12 +149,13 @@ internal static class DuoDebtReader
 
             Total = new Money(total, options.Currency),
 
-            // ALWAYS derived, on this provider. DUO publishes the components
-            // and states no total anywhere; the "Totaal studieschuld" its
+            // Derived, on this provider, but for one case. DUO publishes the
+            // components and states no total; the "Totaal studieschuld" its
             // portal prints is summed in the browser, from the dossier. So
             // this is our sum, and a consumer must be told that rather than
-            // shown a number that looks like DUO's own.
-            TotalIsDerived = true,
+            // shown a number that looks like DUO's own - except where the
+            // balance DUO states as current stands in (see Total).
+            TotalIsDerived = derived,
 
             Components = components,
             Phase = Phase(positions, out var phaseLabel),
@@ -193,6 +195,34 @@ internal static class DuoDebtReader
         debt = debt with { InterestRate = current?.Rate, InterestRegime = current?.Regime };
 
         return debt with { ContentHash = ContentHash.Of(debt) };
+    }
+
+    /// <summary>
+    /// What is owed: the components' sum - unless they add up to nothing
+    /// while DUO itself says otherwise. A debt in its repayment phase came
+    /// through as €0.00 that way (#566). The booked movements then sum to
+    /// what the portal shows, and without them the balance DUO states as
+    /// current is its own figure, so not a derived one.
+    /// </summary>
+    private static (long Total, bool Derived) Total(
+        long summed, IReadOnlyList<StudentDebtEntry> ledger, IReadOnlyList<StudentDebtBalance> history, Action<string>? note)
+    {
+        if (summed != 0) return (summed, true);
+
+        var booked = ledger.Sum(e => e.Amount.Value);
+        if (booked != 0)
+        {
+            note?.Invoke($"{ProviderId}: the debt amounts add up to nothing; the total is the sum of DUO's booked movements, as its portal sums it");
+            return (booked, true);
+        }
+
+        if (history.FirstOrDefault(h => h.Kind == StudentDebtBalanceKind.Current) is { Amount.Value: not 0 } current)
+        {
+            note?.Invoke($"{ProviderId}: the debt amounts add up to nothing; the total is the current balance DUO states");
+            return (current.Amount.Value, false);
+        }
+
+        return (0, true);
     }
 
     /// <summary>

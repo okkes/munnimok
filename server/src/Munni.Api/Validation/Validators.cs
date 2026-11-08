@@ -193,6 +193,7 @@ public sealed class ConnectorSyncRequestValidator : AbstractValidator<Connectors
         RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(ConnectionIds.MaxLength).Matches(ConnectionIds.Pattern);
         RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
         RuleFor(r => r.Since).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Since is not null).WithMessage("since must be yyyy-mm-dd");
+        RuleFor(r => r.Until).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Until is not null).WithMessage("until must be yyyy-mm-dd");
     }
 }
 
@@ -201,6 +202,8 @@ public sealed class ConnectorCollectRequestValidator : AbstractValidator<Connect
     public ConnectorCollectRequestValidator()
     {
         RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+        RuleFor(r => r.Since).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Since is not null).WithMessage("since must be yyyy-mm-dd");
+        RuleFor(r => r.Until).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Until is not null).WithMessage("until must be yyyy-mm-dd");
     }
 }
 

@@ -3,6 +3,8 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday, useRecurringOps } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
@@ -29,6 +31,7 @@ export function RecurringDetailScreen() {
   const { recId } = useParams({ strict: false }) as { recId: string };
   const navigate = useNavigate();
   const ops = useRecurringOps();
+  const canEdit = useCanEdit(); // #505
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
   // user 2026-10-06: a door to link a charge by hand, after the creation
   // flow's one-time proposal list is long gone
@@ -87,12 +90,15 @@ export function RecurringDetailScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('recurring.edit')} testId="recdetail-edit" onClick={() => setFormInitial(formFromRec(rec))}>
-            <Icon name="pencil-outline" size={20} />
-          </IconButton>
+          canEdit && (
+            <IconButton label={t('recurring.edit')} testId="recdetail-edit" onClick={() => setFormInitial(formFromRec(rec))}>
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          )
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mb-3" testId="recdetail-readonly-note" />
         {/* hero: what this cost is */}
         <HeroCard
           className="mt-1"
@@ -158,7 +164,7 @@ export function RecurringDetailScreen() {
             </span>
             {/* one-tap adoption (2026-07-24 ruling): the system only
                 RECOMMENDS — the amount stays the user's until this tap */}
-            {priceChange.toCents !== rec.amountCents && (
+            {canEdit && priceChange.toCents !== rec.amountCents && (
               <button
                 data-testid="recdetail-price-apply"
                 onClick={() => void ops.save(rec.id, { amountCents: priceChange.toCents })}
@@ -200,15 +206,17 @@ export function RecurringDetailScreen() {
             {t('recurring.detailNoPayments')}
           </p>
         )}
-        <button
-          type="button"
-          data-testid="recdetail-link-payment"
-          onClick={() => setLinking(true)}
-          className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-3 py-2.5 text-[13px] font-medium text-accent-deep"
-        >
-          <Icon name="link-variant-plus" size={16} />
-          {t('recurring.linkPayment')}
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            data-testid="recdetail-link-payment"
+            onClick={() => setLinking(true)}
+            className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-3 py-2.5 text-[13px] font-medium text-accent-deep"
+          >
+            <Icon name="link-variant-plus" size={16} />
+            {t('recurring.linkPayment')}
+          </button>
+        )}
       </div>
 
       <RecurringFormSheet

@@ -228,4 +228,26 @@ public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.Equal(HttpStatusCode.NotFound, (await operatorClient.GetAsync("/lab/users/nobody-here/sessions")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await operatorClient.DeleteAsync("/lab/agents/agt_00000000000000000000000000")).StatusCode);
     }
+
+    [Fact]
+    public async Task The_fleet_marks_the_machines_enrolled_for_the_operators_lab()
+    {
+        using var operatorClient = factory.ClientFor("lab-machine-operator", scope: Admin);
+        using var minted = await operatorClient.PostAsJsonAsync("/lab/agents/enrollment", new { name = "the operator's lab box" });
+        var code = (await minted.Content.ReadFromJsonAsync<JsonObject>())!["code"]!.GetValue<string>();
+        using var agentWire = factory.ControlPlane.Server.CreateClient();
+        using var enrolled = await agentWire.PostAsJsonAsync("/agent/v1/enroll", new { code, name = "the operator's lab box", capabilities = new { providers = Array.Empty<string>(), @class = "byo" } });
+        enrolled.EnsureSuccessStatusCode();
+        var labBox = (await enrolled.Content.ReadFromJsonAsync<JsonObject>())!["agent_id"]!.GetValue<string>();
+        var slot = await factory.ControlPlane.EnrollPrivateSlotAsync("munni test private agent 9");
+
+        var agents = (await operatorClient.GetFromJsonAsync<JsonObject>("/lab/agents"))!["agents"]!.AsArray();
+        Assert.True(agents.Single(a => a!["id"]!.GetValue<string>() == labBox)!["lab"]!.GetValue<bool>());
+        Assert.False(agents.Single(a => a!["id"]!.GetValue<string>() == slot)!["lab"]!.GetValue<bool>());
+
+        // another operator's lab is another subject: the same box is not theirs
+        using var other = factory.ClientFor("another-lab-operator", scope: Admin);
+        var theirs = (await other.GetFromJsonAsync<JsonObject>("/lab/agents"))!["agents"]!.AsArray();
+        Assert.False(theirs.Single(a => a!["id"]!.GetValue<string>() == labBox)!["lab"]!.GetValue<bool>());
+    }
 }

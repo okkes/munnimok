@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LOCALES, useLang } from '@/i18n';
 import { linkAsEntry } from '@/application/receiptLinks';
@@ -13,15 +13,17 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
-import { filterReceipts, receiptParties } from './receiptPick';
+import { ReceiptPeekSheet } from './ReceiptPeekSheet';
+import { filterReceipts, receiptFilter, receiptParties } from './receiptPick';
 
 /**
  * The receipt picker (user 2026-10-06 for the review card, user 2026-10-07
- * everywhere a receipt is searched): the proposal's yes / no, the None
- * option, the suggestions, the screen's own rungs, and every receipt
- * behind a search and the parties' chips. The sheet only names what is
- * selected and reports taps — the review stages a pick for its confirm,
- * the detail links or swaps at once.
+ * everywhere a receipt is searched): the proposal's yes / no, then — #542 —
+ * the None option, the search with the parties' chips over everything
+ * below it, the suggestions, the host's own rungs and every receipt. #496:
+ * a row opens the receipt in a sheet over the list, whose Attach is the
+ * pick. The sheet only reports picks — the review stages one for its
+ * confirm, the detail and the bulk walk link or swap at once.
  */
 export interface ReceiptPickSheetProps {
   open: boolean;
@@ -35,10 +37,13 @@ export interface ReceiptPickSheetProps {
   /** the transaction the proposal fits, when the host has it: the card shows both rows (user 2026-10-09) — behind a
    *  full-height sheet the transaction is out of sight, so the comparison must sit on the card */
   proposalTx?: SpaceTx;
+  /** the suggestions, ranked by the host (`suggestionsFor`) */
   candidates: readonly ReceiptRow[];
   all: readonly ReceiptRow[];
   /** the receipt wearing the check: the attached one on the detail, the staged one on the review card */
   selectedId: string | null;
+  /** the receipt already attached to the transaction — its look offers no second attach */
+  attachedId?: string | null;
   /** the None option wears the check instead (the review card staged "no receipt") */
   noneSelected?: boolean;
   /** the None option is on offer at all (the detail hides it until a receipt is attached) */
@@ -52,13 +57,9 @@ export interface ReceiptPickSheetProps {
   onAccept: (link: ReceiptLinkRow) => void;
   onReject: (link: ReceiptLinkRow) => void;
   onPick: (row: ReceiptRow | null) => void;
-  onView: (receiptId: string) => void;
-  /** user 2026-10-09: the eye opens the receipt in a sheet OVER this one and the list keeps its place; a host
-   *  without it (the review, whose detour restores the card) keeps the eye on `onView` */
-  onPeek?: (receipt: ReceiptRow) => void;
-  /** the receipt whose row stays lit while its peek is open */
-  peekedId?: string | null;
-  /** the screen's own rungs (the detail's capture, upload and connections doors), between the suggestions and the search */
+  /** #495: the bulk walk's head — which transaction is matching, and how far the walk is */
+  context?: ReactNode;
+  /** the host's own rungs (capture, upload, the connections door), between the suggestions and every receipt */
   children?: ReactNode;
 }
 
@@ -194,7 +195,8 @@ export function ReceiptProposalCard({
   );
 }
 
-/** one receipt in a list: the tap picks it, the eye opens it; a note says where it is attached already */
+/** one receipt in a list: a tap opens it over the list (#496), where Attach picks it; a note says where it is
+ *  attached already */
 function ReceiptPickRow({
   receipt,
   selected,
@@ -202,9 +204,7 @@ function ReceiptPickRow({
   currency,
   note,
   pickTestId,
-  viewTestId,
-  onPick,
-  onView,
+  onLook,
 }: Readonly<{
   receipt: ReceiptRow;
   selected: boolean;
@@ -214,9 +214,7 @@ function ReceiptPickRow({
   /** "Attached to …" (user 2026-10-08) — the receipt proves another transaction already */
   note?: string;
   pickTestId: string;
-  viewTestId: string;
-  onPick: () => void;
-  onView: () => void;
+  onLook: () => void;
 }>) {
   const { t, lang } = useLang();
   const items = receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : '';
@@ -229,7 +227,7 @@ function ReceiptPickRow({
       <button
         data-testid={pickTestId}
         aria-pressed={selected}
-        onClick={onPick}
+        onClick={onLook}
         className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
       >
         <Icon name={selected ? 'check-circle' : sourceIcon(receipt)} size={16} color={selected ? 'var(--m-accent)' : 'var(--m-ink-3)'} />
@@ -244,14 +242,7 @@ function ReceiptPickRow({
           )}
         </span>
         <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>
-      </button>
-      <button
-        data-testid={viewTestId}
-        aria-label={t('review.receiptView')}
-        onClick={onView}
-        className="m-tap flex h-10 w-10 shrink-0 items-center justify-center border-none bg-transparent"
-      >
-        <Icon name="eye-outline" size={16} color="var(--m-ink-4)" />
+        <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
       </button>
     </div>
   );
@@ -284,6 +275,7 @@ export function ReceiptPickSheet({
   candidates,
   all,
   selectedId,
+  attachedId = null,
   noneSelected = false,
   showNone = true,
   currency,
@@ -292,16 +284,22 @@ export function ReceiptPickSheet({
   onAccept,
   onReject,
   onPick,
-  onView,
-  onPeek,
-  peekedId = null,
+  context,
   children,
 }: Readonly<ReceiptPickSheetProps>) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
   const [party, setParty] = useState<string | null>(null);
+  // #496: a row opens the receipt over the list; the receipt outlives the close flag so the peek never empties mid-slide
+  const [peeked, setPeeked] = useState<ReceiptRow | null>(null);
+  const [peekOpen, setPeekOpen] = useState(false);
+  useEffect(() => {
+    if (!open) setPeekOpen(false);
+  }, [open]);
   const parties = useMemo(() => receiptParties(all), [all]);
   const listed = useMemo(() => filterReceipts(all, query, party).slice(0, 100), [all, query, party]);
+  // #542: the search sits above the suggestions and narrows them too (in their ranked order)
+  const suggested = useMemo(() => candidates.filter(receiptFilter(query, party)), [candidates, query, party]);
   const id = (suffix: string): string => `${testIdPrefix}-${suffix}`;
   const pickPrefix = pickTestIdPrefix ?? id('pick');
   /** "Attached to 29 May · bol.com · €157.33" for one named transaction, the count otherwise (user 2026-10-08) */
@@ -311,79 +309,100 @@ export function ReceiptPickSheet({
     const face = others.length === 1 ? describeTx?.(others[0]) : undefined;
     return face ? t('receipt.attachedTo', { tx: face }) : t('receipt.attachedToN', { n: others.length });
   };
-  /** the eye: a peek over this sheet where the host offers one, the receipt screen otherwise */
-  const look = (row: ReceiptRow) => (onPeek ? onPeek(row) : onView(row.id));
-  // a receipt sits in the suggestions AND the full list: each list's rows and eyes carry their own prefix
-  const rows = (list: readonly ReceiptRow[], rowPrefix: string, viewPrefix: string) =>
+  const look = (row: ReceiptRow) => {
+    setPeeked(row);
+    setPeekOpen(true);
+  };
+  /** "Attach this one" in the peek: the pick lands like a tap on None does — the host closes the picker */
+  const attach = (row: ReceiptRow) => {
+    setPeekOpen(false);
+    onPick(row);
+  };
+  // a receipt sits in the suggestions AND the full list: each list's rows carry their own prefix
+  const rows = (list: readonly ReceiptRow[], rowPrefix: string) =>
     list.map((r) => (
       <ReceiptPickRow
         key={r.id}
         receipt={r}
         selected={selectedId === r.id}
-        peeked={peekedId === r.id}
+        peeked={peekOpen && peeked?.id === r.id}
         currency={currency}
         note={attachedNote(r.id)}
         pickTestId={`${rowPrefix}-${r.id}`}
-        viewTestId={`${viewPrefix}-${r.id}`}
-        onPick={() => onPick(r)}
-        onView={() => look(r)}
+        onLook={() => look(r)}
       />
     ));
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={title} size="full">
-      <div className="flex flex-col gap-3 pt-1" data-testid={id('sheet')}>
-        {proposal && (
-          <ReceiptProposalCard
-            link={proposal}
-            tx={proposalTx}
-            currency={currency}
-            ids={{ card: id('proposal'), accept: id('accept'), reject: id('reject') }}
-            onAccept={onAccept}
-            onReject={onReject}
-            onOpenReceipt={() => look(linkAsEntry(proposal).data)}
-          />
-        )}
-        {showNone && <ReceiptNoneOption testId={id('none')} selected={noneSelected} onPick={() => onPick(null)} />}
-        {candidates.length > 0 && (
-          <>
-            <div className="m-cap px-1">{proposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`${pickPrefix}-list`}>
-              {rows(candidates, pickPrefix, id('view'))}
-            </div>
-          </>
-        )}
-        {children}
-        {/* nothing fetched yet (a photo-only person): no search over an empty list */}
-        {all.length > 0 && (
-          <>
-            <div className="m-cap px-1">
-              {t('review.receiptAll')} · {listed.length}
-            </div>
-            <SearchField testId={id('search')} value={query} onChange={setQuery} placeholder={t('review.receiptSearch')} />
-            {parties.length > 1 && (
-              <div className="flex flex-wrap gap-2" data-testid={id('parties')}>
-                <Chip testId={id('party-all')} selected={party === null} onClick={() => setParty(null)}>
-                  {t('review.receiptEvery')}
-                </Chip>
-                {parties.map((p) => (
-                  <Chip key={p.source} testId={id(`party-${p.source}`)} selected={party === p.source} onClick={() => setParty((v) => (v === p.source ? null : p.source))}>
-                    {p.label}
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange} title={title} size="full">
+        <div className="flex flex-col gap-3 pt-1" data-testid={id('sheet')}>
+          {context}
+          {proposal && (
+            <ReceiptProposalCard
+              link={proposal}
+              tx={proposalTx}
+              currency={currency}
+              ids={{ card: id('proposal'), accept: id('accept'), reject: id('reject') }}
+              onAccept={onAccept}
+              onReject={onReject}
+              onOpenReceipt={() => look(linkAsEntry(proposal).data)}
+            />
+          )}
+          {showNone && <ReceiptNoneOption testId={id('none')} selected={noneSelected} onPick={() => onPick(null)} />}
+          {/* nothing fetched yet (a photo-only person): no search over an empty list */}
+          {all.length > 0 && (
+            <>
+              <SearchField testId={id('search')} value={query} onChange={setQuery} placeholder={t('review.receiptSearch')} />
+              {parties.length > 1 && (
+                <div className="flex flex-wrap gap-2" data-testid={id('parties')}>
+                  <Chip testId={id('party-all')} selected={party === null} onClick={() => setParty(null)}>
+                    {t('review.receiptEvery')}
                   </Chip>
-                ))}
+                  {parties.map((p) => (
+                    <Chip key={p.source} testId={id(`party-${p.source}`)} selected={party === p.source} onClick={() => setParty((v) => (v === p.source ? null : p.source))}>
+                      {p.label}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {suggested.length > 0 && (
+            <>
+              <div className="m-cap px-1">{proposal ? t('review.receiptPick') : t('receipt.suggested')}</div>
+              <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`${pickPrefix}-list`}>
+                {rows(suggested, pickPrefix)}
               </div>
-            )}
-            {listed.length > 0 ? (
-              <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={id('all-list')}>
-                {rows(listed, id('all'), id('all-view'))}
+            </>
+          )}
+          {children}
+          {all.length > 0 && (
+            <>
+              <div className="m-cap px-1">
+                {t('review.receiptAll')} · {listed.length}
               </div>
-            ) : (
-              <p className="px-1 py-4 text-center text-[12px] text-ink-4" data-testid={id('all-empty')}>
-                {t('review.receiptNoneFound')}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </Sheet>
+              {listed.length > 0 ? (
+                <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={id('all-list')}>
+                  {rows(listed, id('all'))}
+                </div>
+              ) : (
+                <p className="px-1 py-4 text-center text-[12px] text-ink-4" data-testid={id('all-empty')}>
+                  {t('review.receiptNoneFound')}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </Sheet>
+      {/* the look over the list; the attached receipt itself offers no second attach */}
+      <ReceiptPeekSheet
+        open={open && peekOpen}
+        onOpenChange={setPeekOpen}
+        receipt={peeked}
+        currency={currency}
+        onPick={peeked && peeked.id !== attachedId ? attach : undefined}
+        testIdPrefix={id('peek')}
+      />
+    </>
   );
 }

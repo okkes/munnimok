@@ -22,6 +22,25 @@ describe('AmountSuggestions (user 2026-10-08: the chips must read as buttons, an
     expect(onPick).toHaveBeenCalledWith(12_000);
   });
 
+  it('one chip per amount (user 2026-10-21, #519): a target and a spending of the same money show the target only', () => {
+    renderWithProviders(
+      <AmountSuggestions
+        items={[
+          { id: 'target', label: 'Target', cents: 3_200 },
+          { id: 'spent', label: 'Spent', cents: 3_200 },
+          { id: 'avg', label: 'Average', cents: 2_900 },
+        ]}
+        fmt={fmt}
+        currency="EUR"
+        testIdPrefix="chip"
+        onPick={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('chip-target')).toBeTruthy();
+    expect(screen.queryByTestId('chip-spent')).toBeNull();
+    expect(screen.getByTestId('chip-avg')).toBeTruthy();
+  });
+
   it('nothing is pressed while the field holds no amount, and nothing renders without items', () => {
     renderWithProviders(<AmountSuggestions items={items} fmt={fmt} currency="EUR" testIdPrefix="chip" onPick={() => undefined} />);
     expect(screen.getByTestId('chip-avg').getAttribute('aria-pressed')).toBe('false');

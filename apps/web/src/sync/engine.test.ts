@@ -4,7 +4,7 @@ import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { HlcClock } from './hlc';
 import { applyOp } from './merge';
 import type { Op, SyncEnvelope } from './merge';
-import type { PullResult, PushResult, SyncBackend } from './backend';
+import type { PullResult, PushResult, SpaceHead, SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
 import { reportError } from '@/lib/report';
 
@@ -24,12 +24,13 @@ vi.mock('@/lib/perf', () => ({
     });
   },
 }));
-import { SyncEngine } from './engine';
+import { DEFAULT_PAUSE_MS, SyncEngine } from './engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { useEvicted } from '@/app/evicted';
 import type { AccountRow } from '@/db/types';
+import { SpaceAccess, SpaceReadOnlyError, readUnsavedUndone } from './spaceAccess';
 
 /** Minimal in-memory server with the same semantics as Munni.Api. */
 class InMemoryServer implements SyncBackend {
@@ -41,8 +42,13 @@ class InMemoryServer implements SyncBackend {
   /** #306: reader role — push 403s while pull/list stay granted */
   readerSpaces = new Set<string>();
   rejectedSpaces = new Set<string>(); // 400s (a poisoned op) — never 403
-  /** the pull answers with this status instead of ops (429: the server's pause, 500: a fault) */
+  /** the pull (and the heads) answer with this status instead (429: the server's pause, 500: a fault) */
   pullStatus: number | null = null;
+  /** the pause a 429 names (Retry-After), when it names one */
+  retryAfterMs: number | undefined = undefined;
+  headsCalls = 0;
+  /** the spaces each pull asked for, in order */
+  pulledSpaces: string[] = [];
   pushCalls: number[] = [];
   /** every push REQUEST that arrived, denied ones included */
   pushAttempts: string[] = [];
@@ -71,8 +77,9 @@ class InMemoryServer implements SyncBackend {
 
   async pull(spaceId: string, since: number): Promise<PullResult> {
     if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
-    if (this.pullStatus !== null) throw new SyncHttpError(this.pullStatus);
+    if (this.pullStatus !== null) throw new SyncHttpError(this.pullStatus, this.retryAfterMs);
     this.pullCalls++;
+    this.pulledSpaces.push(spaceId);
     const all = this.ops.filter((o) => o.seq > since && o.spaceId === spaceId);
     const page = all.slice(0, this.pageSize);
     const nextSince = page.length > 0 ? page.at(-1)!.seq : since;
@@ -86,16 +93,32 @@ class InMemoryServer implements SyncBackend {
   async listSpaces(): Promise<string[]> {
     return [...new Set(this.ops.map((o) => o.spaceId))].filter((id) => !this.forbiddenSpaces.has(id));
   }
+
+  /** #569: every granted space with its head — the seq of its newest op; #505: and the caller's role */
+  async heads(): Promise<SpaceHead[]> {
+    this.headsCalls++;
+    if (this.pullStatus !== null) throw new SyncHttpError(this.pullStatus, this.retryAfterMs);
+    return (await this.listSpaces()).map((spaceId) => ({
+      spaceId,
+      latestSeq: Math.max(0, ...this.ops.filter((o) => o.spaceId === spaceId).map((o) => o.seq)),
+      role: this.readerSpaces.has(spaceId) ? 'reader' : 'owner',
+    }));
+  }
 }
 
 let dbCounter = 0;
 
-function device(name: string, wall: () => number, server: InMemoryServer) {
+/** `guarded`: the app's wiring (#505) — the engine records roles and the repo refuses a reader's writes */
+function device(name: string, wall: () => number, server: InMemoryServer, now?: () => number, guarded = false) {
   const db = new MunniDB(`engine_test_${name}_${dbCounter}`);
   const storeBackend = new DexieBackend(db);
-  const repo = new Repo(storeBackend, new HlcClock(name, undefined, wall), { trackOutbox: true });
-  const engine = new SyncEngine(storeBackend, repo, server, name);
-  return { db, repo, engine, storeBackend };
+  const access = new SpaceAccess(storeBackend);
+  const repo = new Repo(storeBackend, new HlcClock(name, undefined, wall), {
+    trackOutbox: true,
+    ...(guarded ? { readOnly: (spaceId: string) => access.isReadOnly(spaceId) } : {}),
+  });
+  const engine = new SyncEngine(storeBackend, repo, server, name, { ...(now ? { now } : {}), ...(guarded ? { access } : {}) });
+  return { db, repo, engine, storeBackend, access };
 }
 
 describe('SyncEngine', () => {
@@ -140,9 +163,10 @@ describe('SyncEngine', () => {
     off();
   });
 
-  it('a pause the server asked for (429) or a gateway answer (502/503/504) is the next tick\'s business — no report, status offline; a 500 is a fault and reports (user rule 2026-10-05)', async () => {
+  it('a pause the server asked for (429) or a gateway answer (502/503/504) is waited out — no report, status offline; a 500 is a fault and reports (user rule 2026-10-05)', async () => {
     let w = 1_000_000;
-    const a = device('devA', () => ++w, server);
+    let now = 0;
+    const a = device('devA', () => ++w, server, () => now);
     dbs.push(a.db);
     await a.repo.upsert('space', 's1', 's1', { name: 'Paced', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await a.engine.syncAll();
@@ -154,6 +178,7 @@ describe('SyncEngine', () => {
       server.pullStatus = status;
       await a.engine.syncAll();
       expect(statuses.at(-1)).toBe('offline');
+      now += DEFAULT_PAUSE_MS; // the pause is over before the next one
     }
     expect(reportError).not.toHaveBeenCalled();
 
@@ -166,6 +191,84 @@ describe('SyncEngine', () => {
     await a.engine.syncAll();
     expect(statuses.at(-1)).toBe('idle');
     off();
+  });
+
+  it('#569: a round asks every space’s head at once and pulls only the spaces that moved', async () => {
+    let wa = 1_000_000;
+    let wb = 2_000_000;
+    const a = device('devA', () => ++wa, server);
+    const b = device('devB', () => ++wb, server);
+    dbs.push(a.db, b.db);
+    for (const id of ['s1', 's2', 's3']) {
+      await a.repo.upsert('space', id, id, { name: id, kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    }
+    await a.engine.syncAll();
+    await b.engine.syncAll();
+
+    // nothing moved: one request for the heads, not one per space
+    server.pulledSpaces = [];
+    await a.engine.syncAll();
+    expect(server.pulledSpaces).toEqual([]);
+
+    // another device writes into s2: only s2 is pulled — and a space this device pushed to reads its ops back
+    await b.repo.upsert('account', 's2', 'acc-b', { name: 'From B' });
+    await b.engine.syncAll();
+    await a.repo.upsert('account', 's3', 'acc-a', { name: 'From A' });
+    server.pulledSpaces = [];
+    await a.engine.syncAll();
+    expect([...new Set(server.pulledSpaces)].sort()).toEqual(['s2', 's3']);
+    expect((await a.db.accounts.get('acc-b'))?.name).toBe('From B');
+  });
+
+  it('#569: a 429 ends the round at once and the engine waits out its Retry-After; a trigger meanwhile runs once it is over', async () => {
+    let w = 1_000_000;
+    let now = 0;
+    const a = device('devA', () => ++w, server, () => now);
+    dbs.push(a.db);
+    for (const id of ['s1', 's2', 's3']) {
+      await a.repo.upsert('space', id, id, { name: id, kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    }
+    await a.engine.syncAll();
+    // a burst of writes in every space, then the limiter answers
+    for (const id of ['s1', 's2', 's3']) await a.repo.upsert('account', id, `acc-${id}`, { name: id });
+    server.pullStatus = 429;
+    server.retryAfterMs = 30_000;
+    const pushesBefore = server.pushAttempts.length;
+    await a.engine.syncAll();
+
+    // the first space met the pause; none after it was asked
+    expect(server.pushAttempts.length - pushesBefore).toBeLessThanOrEqual(1);
+    expect(a.engine.getStatus()).toBe('offline');
+
+    // inside the pause no request leaves, whatever asks
+    const heads = server.headsCalls;
+    now += 29_000;
+    await a.engine.syncAll();
+    expect(server.headsCalls).toBe(heads);
+
+    // past it, the round runs and drains every space
+    server.pullStatus = null;
+    now += 2_000;
+    await a.engine.syncAll();
+    expect(server.headsCalls).toBe(heads + 1);
+    expect(await a.db.outbox.count()).toBe(0);
+    expect(a.engine.getStatus()).toBe('idle');
+  });
+
+  it('#569: a trigger that meets a running round is folded into one more round after it, never dropped', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Busy', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    const first = a.engine.syncAll();
+    // two triggers while the round is out (a write's nudge, a frame from the stream): neither starts a round now…
+    await a.engine.syncAll();
+    await a.engine.syncAll();
+    await first;
+    // …but ONE more round follows by itself — never dropped, never stacked
+    await vi.waitFor(() => expect(server.headsCalls).toBe(2));
+    await vi.waitFor(() => expect(a.engine.getStatus()).toBe('idle'));
+    expect(server.headsCalls).toBe(2);
   });
 
   it('two devices editing offline converge regardless of sync order', async () => {
@@ -232,14 +335,19 @@ describe('SyncEngine', () => {
     expect(await a.db.outbox.count()).toBe(0);
   });
 
-  it('#306: a read-only member (push 403, pull OK) is NOT an eviction — ops park, data stays', async () => {
+  /** an owner's shared space s1 on the server, with an account and an event */
+  async function sharedSpace() {
     let wa = 1_000_000;
     const owner = device('owner', () => ++wa, server);
     dbs.push(owner.db);
     await owner.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await owner.repo.upsert('account', 's1', 'acc1', { name: 'Theirs', balanceCents: 7 });
     await owner.engine.syncAll();
+    return owner;
+  }
 
+  it('#306/#505: a read-only member (push 403, pull OK) is no eviction — the refused change is undone and said once', async () => {
+    await sharedSpace();
     // the reader device discovers and pulls the space fine…
     let wb = 2_000_000;
     const reader = device('reader', () => ++wb, server);
@@ -248,21 +356,84 @@ describe('SyncEngine', () => {
     await reader.engine.syncAll();
     expect((await reader.db.spaces.get('s1'))?.name).toBe('Shared');
 
-    // …then writes locally (a boot heal, a tap) — that push is denied
-    await reader.repo.upsert('account', 's1', 'acc1', { color: '#abc' });
+    // …then writes locally — an unguarded write (an older build) whose push is denied
+    await reader.repo.upsert('account', 's1', 'acc1', { name: 'Mine now', color: '#abc' });
+    await reader.repo.upsert('event', 's1', 'ev1', { name: 'Trip', from: '2026-07-01', to: '2026-07-03' });
     await reader.engine.syncAll();
 
     // no "removed from space" sheet, nothing purged (the old code
     // popped the sheet and wiped the space on every cycle — user4 loop)
     expect(useEvicted.getState().evicted).toBeNull();
     expect((await reader.db.spaces.get('s1'))?.name).toBe('Shared');
-    expect((await reader.db.accounts.get('acc1'))?.color).toBe('#abc');
-    // the unlandable ops are parked, not retried forever
+    // #505: the device shows what the other members see again — the
+    // server's value back, what only this device wrote gone
+    const account = await reader.db.accounts.get('acc1');
+    expect(account?.name).toBe('Theirs');
+    expect(account?.color).toBeUndefined();
+    expect(await reader.db.events.get('ev1')).toBeUndefined();
     expect(await reader.db.outbox.count()).toBe(0);
-    expect(((await reader.db.meta.get('parkedOps_s1'))?.value as unknown[]).length).toBeGreaterThan(0);
+    expect(await reader.db.meta.get('parkedOps_s1')).toBeUndefined();
+    expect(await readUnsavedUndone(reader.storeBackend)).toEqual([{ spaceId: 's1', spaceName: 'Shared', count: 2 }]);
     const attempts = server.pushAttempts.filter((s) => s === 's1').length;
     await reader.engine.syncAll();
     expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts); // quiet now
+  });
+
+  it('#505: the heads name the role — a reader’s device refuses its own writes and asks the server nothing', async () => {
+    await sharedSpace();
+    const ownersPushes = server.pushAttempts.length;
+    server.readerSpaces.add('s1');
+    let wb = 2_000_000;
+    const reader = device('reader', () => ++wb, server, undefined, true);
+    dbs.push(reader.db);
+    await reader.engine.syncAll();
+
+    expect(reader.access.roleOf('s1')).toBe('reader');
+    expect((await reader.db.meta.get('spaceRoles'))?.value).toEqual({ s1: 'reader' });
+    await expect(reader.repo.upsert('account', 's1', 'acc1', { color: '#abc' })).rejects.toBeInstanceOf(SpaceReadOnlyError);
+    // the upkeep view leaves the space alone instead of failing
+    await reader.repo.upkeep().upsert('account', 's1', 'acc1', { color: '#abc' });
+    expect((await reader.db.accounts.get('acc1'))?.color).toBeUndefined();
+    expect(await reader.db.outbox.count()).toBe(0);
+    await reader.engine.syncAll();
+    expect(server.pushAttempts.slice(ownersPushes)).not.toContain('s1');
+  });
+
+  it('#505: changes parked before the role was known are undone on the first round that knows it, once', async () => {
+    await sharedSpace();
+    const ownersPushes = server.pushAttempts.length;
+    let wb = 2_000_000;
+    const reader = device('reader', () => ++wb, server, undefined, true);
+    dbs.push(reader.db);
+    await reader.engine.syncAll(); // still a contributor here
+    await reader.repo.upsert('account', 's1', 'acc1', { name: 'Edited offline' });
+    // demoted while the change waited in the outbox
+    server.readerSpaces.add('s1');
+    await reader.engine.syncAll();
+
+    expect((await reader.db.accounts.get('acc1'))?.name).toBe('Theirs');
+    expect(await reader.db.outbox.count()).toBe(0);
+    expect(await readUnsavedUndone(reader.storeBackend)).toEqual([{ spaceId: 's1', spaceName: 'Shared', count: 1 }]);
+    expect(await reader.db.meta.get('undoPending_s1')).toBeUndefined();
+    expect(server.pushAttempts.slice(ownersPushes)).not.toContain('s1');
+  });
+
+  it('#505: promoted again, the device writes and pushes as before', async () => {
+    await sharedSpace();
+    server.readerSpaces.add('s1');
+    let wb = 2_000_000;
+    const member = device('member', () => ++wb, server, undefined, true);
+    dbs.push(member.db);
+    await member.engine.syncAll();
+    expect(member.repo.canWrite('s1')).toBe(false);
+
+    server.readerSpaces.delete('s1');
+    await member.engine.syncAll();
+    await member.repo.upsert('account', 's1', 'acc1', { color: '#0a0' });
+    await member.engine.syncAll();
+
+    expect(member.repo.canWrite('s1')).toBe(true);
+    expect((await server.pull('s1', 0)).ops.some((op) => op.fields.color === '#0a0')).toBe(true);
   });
 
   it('#306: eviction (push AND pull 403) reports ONCE — stragglers never re-raise or re-push', async () => {
@@ -370,16 +541,16 @@ describe('SyncEngine', () => {
     await a.engine.syncAll(); // clean baseline
 
     // the import lands right after the cycle fetched the server's list
-    const origList = server.listSpaces.bind(server);
-    server.listSpaces = async () => {
-      const res = await origList();
+    const origHeads = server.heads.bind(server);
+    server.heads = async () => {
+      const res = await origHeads();
       await a.repo.upsert('account', 'feed-1', 'facc', { name: 'ING import', balanceCents: 0 });
       await a.repo.upsert('transaction', 'feed-1', 'ftx', { accountId: 'facc', date: '2026-07-01', amountCents: -100, currency: 'EUR', merchant: 'X', needsReview: 1 });
       await a.repo.upsert('accountLink', 's1', 'link1', { feedSpaceId: 'feed-1', accountId: 'facc' });
       return res;
     };
     await a.engine.syncAll();
-    server.listSpaces = origList;
+    server.heads = origHeads;
 
     // nothing was purged — the fresh import survived the sweep…
     expect(await a.db.accounts.get('facc')).toBeTruthy();

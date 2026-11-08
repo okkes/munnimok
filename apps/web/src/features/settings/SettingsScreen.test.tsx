@@ -211,14 +211,15 @@ describe('Settings screens (user identity, scripted server)', () => {
   });
 
   /** the push-capable browser surface happy-dom lacks */
-  const installPushEnv = () => {
+  /** a push-capable browser; `registered` = this device already has its subscription */
+  const installPushEnv = (registered = false) => {
     const subscription = {
       endpoint: 'https://push.example/settings',
       toJSON: () => ({ keys: { p256dh: 'p', auth: 'a' } }),
       unsubscribe: vi.fn().mockResolvedValue(true),
     };
     const pushManager = {
-      getSubscription: vi.fn().mockResolvedValue(null),
+      getSubscription: vi.fn().mockResolvedValue(registered ? subscription : null),
       subscribe: vi.fn().mockResolvedValue(subscription),
     };
     Object.defineProperty(navigator, 'serviceWorker', {
@@ -258,17 +259,25 @@ describe('Settings screens (user identity, scripted server)', () => {
     await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
   }, 15_000);
 
-  it('push toggle subscribes with the server VAPID key and registers the endpoint', async () => {
+  const pushHealth = () => ({
+    status: 'ok',
+    capabilities: { push: true, vapidPublicKey: 'BPtest-key_123' },
+    protocol: CLIENT_PROTOCOL,
+    minClientProtocol: 1,
+  });
+
+  it('#549: the space’s notifications switch registers this device the first time — the space was on already', async () => {
     const pushManager = installPushEnv();
     const registrations: unknown[] = [];
-    renderAppAsUser('/settings/global', {
+    const switches: unknown[] = [];
+    renderAppAsUser('/settings', {
       api: {
-        'GET /health': () => ({
-          status: 'ok',
-          capabilities: { push: true, vapidPublicKey: 'BPtest-key_123' },
-          protocol: CLIENT_PROTOCOL,
-          minClientProtocol: 1,
-        }),
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: [] }),
+        'PUT /me/space-notifications/s-user': (body) => {
+          switches.push(body);
+          return body;
+        },
         'POST /me/push-subscriptions': (body) => {
           registrations.push(body);
           return {};
@@ -276,35 +285,87 @@ describe('Settings screens (user identity, scripted server)', () => {
       },
     });
 
-    fireEvent.click(await screen.findByTestId('settings-push-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('settings-push-toggle'));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect(pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
     expect(registrations[0]).toMatchObject({ endpoint: 'https://push.example/settings' });
-    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent?.length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'));
+    expect(switches).toHaveLength(0);
   }, 15_000);
 
-  it('a registered device can be sent a test notification from the row under the notifications switch', async () => {
-    installPushEnv();
-    let tests = 0;
-    renderAppAsUser('/settings/global', {
+  it('#549: switching a space off keeps the device registered and tells the server — and back on', async () => {
+    const pushManager = installPushEnv(true);
+    const switches: unknown[] = [];
+    renderAppAsUser('/settings', {
       api: {
-        'GET /health': () => ({
-          status: 'ok',
-          capabilities: { push: true, vapidPublicKey: 'BPtest-key_123' },
-          protocol: CLIENT_PROTOCOL,
-          minClientProtocol: 1,
-        }),
-        'POST /me/push-subscriptions': () => ({}),
-        'POST /me/push-subscriptions/test': () => {
-          tests++;
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: [] }),
+        'PUT /me/space-notifications/s-user': (body) => {
+          switches.push(body);
+          return body;
+        },
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('settings-push-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'));
+    expect(switches).toEqual([{ on: false }]);
+    // the device stays registered: the person's other spaces may still want it
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('settings-push-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'));
+    expect(switches).toEqual([{ on: false }, { on: true }]);
+  }, 15_000);
+
+  it('#549: a space switched off on another device reads off here', async () => {
+    installPushEnv(true);
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: ['s-user'] }),
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'), { timeout: 5000 });
+    expect(screen.queryByTestId('settings-push-test')).toBeNull();
+  }, 15_000);
+
+  it('a registered device can be sent a test notification naming the space, from the row under its switch', async () => {
+    installPushEnv(true);
+    const tests: string[] = [];
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: [] }),
+        'POST /me/push-subscriptions/test': (_body, url) => {
+          tests.push(url.searchParams.get('spaceId') ?? '');
           return { sent: 1 };
         },
       },
     });
-    fireEvent.click(await screen.findByTestId('settings-push-toggle'));
-    fireEvent.click(await screen.findByTestId('settings-push-test'));
-    await waitFor(() => expect(tests).toBe(1));
+    fireEvent.click(await screen.findByTestId('settings-push-test', {}, { timeout: 5000 }));
+    await waitFor(() => expect(tests).toEqual(['s-user']));
     await waitFor(() => expect(screen.getByTestId('settings-push-test').textContent).toContain('Sent to 1'));
+  }, 15_000);
+
+  it('#549: signing out lets go of this device’s notifications', async () => {
+    installPushEnv(true);
+    const removed: string[] = [];
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': pushHealth,
+        'DELETE /me/push-subscriptions': (_body, url) => {
+          removed.push(url.searchParams.get('endpoint') ?? '');
+          return {};
+        },
+      },
+    });
+    await screen.findByTestId('screen-settings');
+    fireEvent.click(screen.getByTestId('settings-signout'));
+    expect(await screen.findByTestId('screen-login', {}, { timeout: 5000 })).toBeTruthy();
+    expect(removed).toEqual(['https://push.example/settings']);
   }, 15_000);
 
   it('user sign-out keeps the local database (sync is the source of truth)', async () => {

@@ -41,12 +41,11 @@ export interface CatsApplyEntry extends TxSplitCat {
 }
 
 /** #133 r4: does this category ask a counterparty, and which face of
- *  the sheet answers it? #221: EVERY ask pins its default — the transfer
- *  family gets the default bank account, the ATM pair its cash wallet,
- *  funding its shared pot. #133 r5: every ask lists only the account
- *  types its category can mean (the bijection). Transfer stays the
- *  mandatory ask (dismiss rolls back — bare transfer is
- *  unrepresentable); the pinned default is its one-tap answer. */
+ *  the sheet answers it? The ATM pair's ask pins the cash wallet (#546:
+ *  no other family has a default). #133 r5: every ask lists only the
+ *  account types its category can mean (the bijection). Transfer stays
+ *  the mandatory ask (dismiss rolls back — bare transfer is
+ *  unrepresentable). */
 function counterAskFor(catId: string): { defaultFamily?: DefaultFamily; counterTypes?: readonly AccountType[]; mandatory: boolean } | null {
   const family = specialCatType(catId);
   if (!family) return null;
@@ -113,6 +112,13 @@ const detachPatch = (catId: string | undefined): Partial<CatEntry> => ({
  *  and a Create-door kind mismatch refiles honestly (S3776) */
 const answeredCatFor = (current: CatEntry | undefined, accountType: AccountType, sign: 1 | -1): string | undefined =>
   current && (current.catId === UNCATEGORIZED_ID || specialCatType(current.catId)) ? movementCatFor(accountType, sign) : undefined;
+
+/** the leftover pill (#130): money still to place, or placed past the
+ *  whole (S3776) */
+const remainderPill = (remainder: number) =>
+  remainder > 0
+    ? ({ tone: 'bg-warning-soft text-warning', key: 'split.remaining' } as const)
+    : ({ tone: 'bg-negative-soft text-negative', key: 'split.over' } as const);
 
 let entryCounter = 0;
 const newKey = () => `pc${entryCounter++}`;
@@ -304,8 +310,6 @@ export function CatsSheet({
   // (an unlinked transfer is unrepresentable, same rule as whole rows)
   const [counterFor, setCounterFor] = useState<number | null>(null);
   const rollbackRef = useRef<{ index: number; catId: string; linkedAccountId?: string; transferPeerId?: string } | null>(null);
-  // #339: the pick-by-counter chip's account — preselected in the ask
-  const preferredCounter = useRef<string | null>(null);
   // focusing empties the field so typing replaces; blurring an untouched
   // empty field restores the stashed value (split-editor behavior)
   const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
@@ -329,7 +333,6 @@ export function CatsSheet({
     setCounterFor(null);
     setAttempted(false);
     rollbackRef.current = null;
-    preferredCounter.current = null;
     // deliberately only on open: the sheet owns its rows while open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, subject?.id]);
@@ -358,6 +361,17 @@ export function CatsSheet({
         : null;
       setCounterFor(pickerFor);
     }
+  };
+  /** #339 r2 (user): a pick made through a counter chip already names the
+   *  counterparty — it links right away, no second question. A stamped
+   *  row's chips only narrow (the stamp owns its story). */
+  const applyPickWithCounter = (catId: string, accountId: string) => {
+    if (pickerFor === null) return;
+    if (askDisabled) {
+      applyPick(catId);
+      return;
+    }
+    patchEntry(pickerFor, { catId, linkedAccountId: accountId, transferPeerId: undefined });
   };
   const valueOf = (entry: CatEntry) => (mode === 'pct' ? parsePct(entry.amount) : (parseCents(entry.amount) ?? 0));
   /** the entry's share in CENTS — anchors the pick-existing fork */
@@ -508,14 +522,15 @@ export function CatsSheet({
   };
 
   const shownRemainder = mode === 'pct' ? `${remainder}%` : fmtCents(Math.abs(remainder), currency, lang);
+  const pill = remainderPill(remainder);
   // #133 r5: the owning account's type is the picker's context — the
   // matrix narrows the movement subs to the ones this row can mean
   const sourceType = (accounts ?? []).find((a) => a.id === excludeAccountId)?.type;
-  const pickedCatId = pickerFor === null ? undefined : entries[pickerFor]?.catId;
+  const pickerEntry = pickerFor === null ? undefined : entries[pickerFor];
+  const pickedCatId = pickerEntry?.catId;
   // #218 (user): with a counterparty already on the entry the picker
   // narrows to what THAT counter can mean (credit card: transfer or
   // debt payment) — anything else needs the detach door first
-  const pickerEntry = pickerFor === null ? undefined : entries[pickerFor];
   const counterNarrowedIds = counterNarrowFor(accounts, pickerEntry, direction);
   const pickerTxType = pickerTxTypeFor(askDisabled, txType);
   const excluded = entries
@@ -636,13 +651,9 @@ export function CatsSheet({
                 pendingTarget.current = focusStash?.index ?? null;
               }}
               onClick={balance}
-              className={`m-tap rounded-card border-none px-3 py-2 text-left text-[13px] ${
-                remainder > 0 ? 'bg-warning-soft text-warning' : 'bg-negative-soft text-negative'
-              }`}
+              className={`m-tap rounded-card border-none px-3 py-2 text-left text-[13px] ${pill.tone}`}
             >
-              {remainder > 0
-                ? t('split.remaining', { amount: shownRemainder })
-                : t('split.over', { amount: shownRemainder })}
+              {t(pill.key, { amount: shownRemainder })}
             </button>
           )}
           {/* the remainder pill above already explains an unbalanced
@@ -689,15 +700,12 @@ export function CatsSheet({
               }
             : undefined
         }
-        counterAccounts={counterPickAccounts}
-        onPickWithCounter={(catId, accountId) => {
-          // #339: the pick-by-counter chip rides into the ask below as
-          // the preselected answer — one confirming tap, every mint
-          // semantic intact
-          preferredCounter.current = accountId;
-          applyPick(catId);
-        }}
+        // #339: chips only where ONE story is told — a spread holds regular
+        // categories alone
+        counterAccounts={entries.length > 1 ? undefined : counterPickAccounts}
+        onPickWithCounter={applyPickWithCounter}
         onPick={applyPick}
+        counterLinked={!!pickerEntry?.linkedAccountId}
       />
       <EntryCounterAsk
         counterFor={counterFor}
@@ -710,11 +718,13 @@ export function CatsSheet({
         direction={direction}
         anchor={anchor}
         centsOf={centsOf}
-        preferredId={preferredCounter.current ?? undefined}
       />
     </>
   );
 }
+
+/** an entry's money in the row's direction */
+const signedCents = (direction: 'debit' | 'credit', cents: number): number => (direction === 'debit' ? -cents : cents);
 
 /** #133 r4/#218: the per-entry counterparty question — the same sheet
  *  every surface uses, scoped to ONE entry's money; open/dismiss/
@@ -730,7 +740,6 @@ function EntryCounterAsk({
   direction,
   anchor,
   centsOf,
-  preferredId,
 }: Readonly<{
   counterFor: number | null;
   setCounterFor: (next: number | null) => void;
@@ -742,10 +751,6 @@ function EntryCounterAsk({
   direction: 'debit' | 'credit';
   anchor?: { id: string; date: string };
   centsOf: (entry: CatEntry) => number;
-  /** #339: the pick-by-counter chip's account — shown preselected (the
-   *  confirming tap runs the full choose semantics; no detach door
-   *  appears, since no real link stands yet) */
-  preferredId?: string;
 }>) {
   const counterEntry = counterFor === null ? undefined : entries[counterFor];
   const counterAsk = counterEntry && !askDisabled ? counterAskFor(counterEntry.catId) : null;
@@ -766,7 +771,8 @@ function EntryCounterAsk({
         setCounterFor(null);
       }}
       excludeAccountId={excludeAccountId}
-      currentLinkedId={counterEntry?.linkedAccountId ?? preferredId}
+      currentLinkedId={counterEntry?.linkedAccountId}
+      amountCents={counterEntry ? signedCents(direction, centsOf(counterEntry)) : undefined}
       defaultFamily={counterAsk?.defaultFamily}
       counterTypes={counterAsk?.counterTypes}
       onDetach={
@@ -782,7 +788,7 @@ function EntryCounterAsk({
         anchor && counterEntry
           ? {
               id: anchor.id,
-              amountCents: direction === 'debit' ? -centsOf(counterEntry) : centsOf(counterEntry),
+              amountCents: signedCents(direction, centsOf(counterEntry)),
               date: anchor.date,
             }
           : undefined

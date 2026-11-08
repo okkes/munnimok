@@ -22,6 +22,7 @@ export type TourId =
   | 'spaces'
   | 'categories'
   | 'period'
+  | 'navigation'
   | 'periods'
   | 'overview'
   | 'portfolio'
@@ -125,6 +126,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.goals.1t', bodyKey: 'tour.goals.1b', illustration: '🚩' },
       { titleKey: 'tour.goals.2t', bodyKey: 'tour.goals.2b', illustration: '➕', anchor: 'goals-add' },
       { titleKey: 'tour.goals.3t', bodyKey: 'tour.goals.3b', illustration: '⚖️' },
+      { titleKey: 'tour.goals.4t', bodyKey: 'tour.goals.4b', illustration: '🏁' },
     ],
   },
   {
@@ -185,6 +187,8 @@ export const TOURS: Tour[] = [
       // #317: the header upload icon is gone — import lives behind the +
       { titleKey: 'tour.acct.2t', bodyKey: 'tour.acct.2b', illustration: '📄', anchor: 'accounts-add' },
       { titleKey: 'tour.acct.3t', bodyKey: 'tour.acct.3b', illustration: '⏰' },
+      // #527: the banks are connected and managed here
+      { titleKey: 'tour.acct.4t', bodyKey: 'tour.acct.4b', illustration: '🔗', anchor: 'bank-connections' },
     ],
   },
   {
@@ -223,6 +227,19 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.period.2t', bodyKey: 'tour.period.2b', illustration: '📆', anchor: 'space-period-month' },
       { titleKey: 'tour.period.3t', bodyKey: 'tour.period.3b', illustration: '📌', anchor: 'space-period-day' },
       { titleKey: 'tour.period.4t', bodyKey: 'tour.period.4b', illustration: '⚡' },
+    ],
+  },
+  {
+    // #577: the space's phone bar; 'current' — the screen carries a spaceId param
+    id: 'navigation',
+    titleKey: 'nav.title',
+    icon: 'dock-bottom',
+    screen: 'current',
+    steps: [
+      { titleKey: 'tour.nav.1t', bodyKey: 'tour.nav.1b', illustration: '🧭', anchor: 'nav-edit-bar' },
+      { titleKey: 'tour.nav.2t', bodyKey: 'tour.nav.2b', illustration: '👁️', anchor: 'nav-edit-more' },
+      { titleKey: 'tour.nav.3t', bodyKey: 'tour.nav.3b', illustration: '🔤' },
+      { titleKey: 'tour.nav.4t', bodyKey: 'tour.nav.4b', illustration: '🗝️' },
     ],
   },
   {

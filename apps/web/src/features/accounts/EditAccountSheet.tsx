@@ -1,21 +1,26 @@
 import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { removeManualAccount } from '@/application/accountPurge';
+import { isPristineLoan, settlePristineLoan } from '@/application/loanBalance';
 import { newestTxDate } from '@/application/accounts';
-import { useLiveConnectionIds, useMyFeedIds } from '@/application/connections';
-import { ownsFeed, uncoveredSince } from '@/domain/accountCoverage';
-import { partyName } from '@/features/connectors/logos';
-import { uncoveredDateText } from './coverage';
+import { useMyFeedIds } from '@/application/connections';
+import { ownsFeed } from '@/domain/accountCoverage';
+import { useReconnectReader } from '@/features/connectors/useReconnect';
+import { ReconnectNote } from './ReconnectNote';
 import { isDebtTracked } from '@/domain/debts';
-import { fmtCents, parseCents } from '@/lib/money';
+import { parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { sourceKeyFor, sourceParamsFor } from './AttachSheet';
@@ -99,43 +104,42 @@ const stressLabel = (t: (key: 'debtplan.stress1' | 'debtplan.stress5') => string
 const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
   manual && (!defaultFor || defaultFor === 'cash');
 
-/** #445 (prod 2026-10-04): the connection that fetched this row is gone - say
- *  so, and offer the way back: a sign-in again as that same connection, so
- *  the new consent lands on this row, history included, and the server
- *  retires the old session instead of keeping two (prod 2026-10-08). Nothing
- *  while a live connection covers it, and only when the row's feed is known
- *  to be the viewer's own (user ss 2026-10-09: the feed set decides, never a
- *  default — a friend's row that reaches this editor stays quiet). */
+/** #530: a money field reads as dots while the device hides them (S3776) */
+const moneyInputType = (hide: boolean, plain: 'text' | 'number'): 'password' | 'text' | 'number' => (hide ? 'password' : plain);
+
+/** the icon row without a logo: the account type's own icon (S3776) */
+const typeIconOf = (account: AccountRow | null): string => (account ? typeDef(account.type).icon : 'bank-outline');
+
+/** #445/#528: a row nothing fetches any more, or whose connection lost its
+ *  consent, says so and leads to that connection (on the screen that
+ *  manages it). Only when the row's feed is known to be the viewer's own
+ *  (user ss 2026-10-09: the feed set decides, never a default — a friend's
+ *  row that reaches this editor stays quiet). */
 function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onClose: () => void }>) {
-  const { t, lang } = useLang();
-  const navigate = useNavigate();
-  const liveIds = useLiveConnectionIds();
+  const reader = useReconnectReader();
   const myFeeds = useMyFeedIds();
-  const uncovered = liveIds ? uncoveredSince(account, liveIds, ownsFeed(account.spaceId, myFeeds, [], undefined)) : null;
-  if (uncovered === null) return null;
-  const party = partyName(account.provider ?? account.source);
+  const need = reader?.needOf(account, ownsFeed(account.spaceId, myFeeds, [], undefined)) ?? null;
+  if (!reader || !need) return null;
   return (
-    <div className="border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-uncovered">
-      <span className="block text-ink-2">{t('acct.uncovered', { date: uncoveredDateText(uncovered, lang), party })}</span>
-      <Button
-        size="sm"
-        variant="outline"
-        className="mt-2"
-        data-testid="acctedit-reconnect"
-        onClick={() => {
-          onClose();
-          void navigate({ to: '/connections', search: { connect: account.provider ?? account.source, reconnect: account.connectionId } });
-        }}
-      >
-        {t('acct.reconnect', { party })}
-      </Button>
-    </div>
+    <ReconnectNote
+      account={account}
+      need={need}
+      door={reader.doorOf(account, need)}
+      onLeave={onClose}
+      testId="acctedit-uncovered"
+      actionTestId="acctedit-reconnect"
+      className="border-b border-line-2 px-4 py-3 text-[13px] text-ink-2 last:border-0"
+    />
   );
 }
 
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
+  // #530: the balance and a loan's size stay editable, read as dots while the device hides them
+  const { fmtSensitive, hideSensitive } = useDisplayMoney();
   const { store, repo } = useData();
+  // #505: the account's own space decides — a manual row of a space this identity only reads, or a feed someone else owns
+  const canEdit = useCanEdit(account?.spaceId);
   const [seedId, setSeedId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
@@ -221,11 +225,17 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const save = () => {
     if (!account || !name.trim()) return;
     const changes: Partial<AccountRow> = { name: name.trim() };
+    const story = liability ? storyChanges() : {};
     if (manual) {
       const delta = balanceDelta(account, balance, negative);
       if (delta !== null) {
         changes.balanceCents = account.balanceCents + delta;
-        changes.balanceAsOf = manualBalanceDate();
+        // #509 (user): typed back to its original amount, a loan holds no
+        // payment — no cut-off date, every payment linked to it counts
+        const originalCents = liability ? (story.originalCents ?? undefined) : account.originalCents;
+        changes.balanceAsOf = isPristineLoan({ originalCents, balanceCents: changes.balanceCents })
+          ? (null as never)
+          : manualBalanceDate();
         // #269 (grown from #221's defaults-only rule): EVERY manual
         // balance edit records its delta as an adjustment row, so the
         // ledger explains the jump instead of silently rewriting
@@ -241,14 +251,18 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
         });
       }
     }
-    void repo.upsert('account', account.spaceId, account.id, { ...changes, ...(liability ? storyChanges() : {}) });
+    // #509: an original amount that now matches a loan nobody paid on lifts its date too
+    void repo
+      .upsert('account', account.spaceId, account.id, { ...changes, ...story })
+      .then(() => (liability && manual ? settlePristineLoan(store, repo, account.id) : false));
     void logActivity(store, repo, account.spaceId, 'accountEdit', name.trim());
     onClose();
   };
 
   const remove = () => {
     if (!account) return;
-    void repo.remove('account', account.spaceId, account.id);
+    // #544: the rows that named it as their counterparty let go with it
+    void removeManualAccount(store, repo, account);
     void logActivity(store, repo, account.spaceId, 'accountRemove', account.name);
     setConfirmRemove(false);
     onClose();
@@ -276,9 +290,9 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
           >
             {logo ? (
-              <img src={logo} alt="" className="h-6 w-6 rounded object-contain" />
+              <Picture src={logo} className="h-6 w-6 rounded object-contain" />
             ) : (
-              <Icon name={account ? typeDef(account.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
+              <Icon name={typeIconOf(account)} size={20} color="var(--m-ink-3)" />
             )}
             <span className="flex-1">{t('acct.changeIcon')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
@@ -311,6 +325,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   data-testid="acctedit-balance"
                   value={balance}
                   onChange={(e) => setBalance(e.target.value)}
+                  type={moneyInputType(hideSensitive, 'text')}
+                  autoComplete="off"
                   inputMode="decimal"
                   placeholder={`${t('acct.balanceNow')} (${account?.currency ?? 'EUR'})`}
                   className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
@@ -318,7 +334,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
               </div>
               {account && adjustDelta !== null && (
                 <p className="px-1 text-[11px] leading-snug text-warning" data-testid="acctedit-adjust-note">
-                  {t('acct.adjustNote', { delta: fmtCents(adjustDelta, account.currency, lang, { sign: true }) })}
+                  {t('acct.adjustNote', { delta: fmtSensitive(adjustDelta, account.currency, { sign: true, asRecorded: true }) })}
                 </p>
               )}
               {account?.balanceAsOf && (
@@ -346,7 +362,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   {t('debts.original')}
                   <input
                     data-testid="acctedit-original"
-                    type="number"
+                    type={moneyInputType(hideSensitive, 'number')}
+                    autoComplete="off"
                     inputMode="decimal"
                     step="0.01"
                     min="0"
@@ -456,14 +473,15 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
               </div>
             </>
           )}
-          <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim()}>
+          <ReadOnlyNote spaceId={account?.spaceId} testId="acctedit-readonly-note" />
+          <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim() || !canEdit}>
             {t('action.save')}
           </Button>
           {/* #221: the default accounts are the space's fixtures — no
               delete door; their balance stays adjustable above.
               #348: the cash wallet is the user's own — deletable (and
               the boot heal no longer re-mints a deliberate delete) */}
-          {deletableAccount(manual, account?.defaultFor) && (
+          {canEdit && deletableAccount(manual, account?.defaultFor) && (
             <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
               {t('action.delete')}
             </Button>

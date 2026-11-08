@@ -53,18 +53,24 @@ public sealed class EnableBankingAdapter : OpenBankingAdapter
 
     protected override string ReferencePrefix => "ebr";
 
+    /// <summary>Enable Banking's identification hash names an account across sessions — the uid does not.</summary>
+    protected override bool KnowsIdentity => true;
+
     protected override async Task<IReadOnlyList<Institution>> InstitutionsAsync(HttpClient http, string country, CancellationToken ct) =>
         [.. (await _client.AspspsAsync(http, country, ct).ConfigureAwait(false))
-            .Select(a => new Institution($"{a.Name}|{a.Country}", a.Name, a.Logo, a.TransactionTotalDays))];
+            .Select(a => new Institution($"{a.Name}|{a.Country}", a.Name, a.Logo, a.TransactionTotalDays, ConsentDaysOf(a.MaximumConsentValidity)))];
 
-    protected override async Task<(string Url, string PendingId)> StartConsentAsync(
-        HttpClient http, Institution institution, string returnUrl, string reference, CancellationToken ct)
+    /// <summary>The bank's maximum consent, which the aspsp list states in seconds.</summary>
+    internal static int? ConsentDaysOf(long? seconds) => seconds is > 0 ? (int)Math.Min(seconds.Value / 86_400, int.MaxValue) : null;
+
+    protected override async Task<(string Url, string PendingId, int ConsentDays)> StartConsentAsync(
+        HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct)
     {
         var separator = institution.Id.LastIndexOf('|');
         if (separator < 0) throw ConnectorException.InvalidRequest($"{ProviderId}: '{institution.Id}' is not a name|country institution id");
-        var url = await _client.AuthUrlAsync(http, institution.Id[..separator], institution.Id[(separator + 1)..], reference, returnUrl, ct).ConfigureAwait(false);
+        var url = await _client.AuthUrlAsync(http, institution.Id[..separator], institution.Id[(separator + 1)..], reference, returnUrl, consentDays, ct).ConfigureAwait(false);
         // no id at the aggregator yet: the consent is born when the bank comes back
-        return (url, reference);
+        return (url, reference, consentDays);
     }
 
     protected override async Task<(string ConsentId, IReadOnlyList<string> AccountIds)> CompleteConsentAsync(
@@ -77,16 +83,19 @@ public sealed class EnableBankingAdapter : OpenBankingAdapter
         return await _client.SessionAsync(http, code, ct).ConfigureAwait(false);
     }
 
-    protected override Task<(string? Iban, string? Name, string? Currency)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct) =>
+    protected override Task<(string? Iban, string? Name, string? Currency, string? Identity)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct) =>
         _client.DetailsAsync(http, accountId, ct);
 
     protected override Task<IReadOnlyList<(string Type, string Amount, string Currency, string? Date)>> BalancesAsync(
         HttpClient http, string accountId, CancellationToken ct) =>
         _client.BalancesAsync(http, accountId, ct);
 
-    protected override async Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota)> TransactionsAsync(
-        HttpClient http, string accountId, DateOnly from, CancellationToken ct) =>
-        (await _client.TransactionsAsync(http, accountId, from, ct).ConfigureAwait(false), null);   // no budget headers at this aggregator
+    protected override async Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota, bool Complete)> TransactionsAsync(
+        HttpClient http, string accountId, DateOnly from, DateOnly? to, CancellationToken ct)
+    {
+        var (rows, complete) = await _client.TransactionsAsync(http, accountId, from, to, ct).ConfigureAwait(false);
+        return (rows, null, complete);   // no budget headers at this aggregator
+    }
 
     protected override Task RevokeAsync(HttpClient http, string consentId, CancellationToken ct) =>
         _client.DeleteSessionAsync(http, consentId, ct);

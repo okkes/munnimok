@@ -91,6 +91,16 @@ export interface WorkerNotification {
   pull: boolean;
 }
 
+/** a space id that may ride a url — anything else is dropped, never echoed into a route */
+const spaceIdOf = (payload: PushPayload): string | undefined =>
+  payload.spaceId && /^[A-Za-z0-9_-]+$/.test(payload.spaceId) ? payload.spaceId : undefined;
+
+/** #551: the members of the space the event happened in, when the push names it */
+const membersUrl = (payload: PushPayload): string => {
+  const spaceId = spaceIdOf(payload);
+  return spaceId ? `./#/spaces/${spaceId}/members` : './#/spaces';
+};
+
 function socialBody(payload: PushPayload, texts: PushTexts): { body: string; url: string; tag: string } | null {
   const name = payload.fromName ?? texts.someone;
   const space = payload.spaceName ?? texts.aSpace;
@@ -102,13 +112,13 @@ function socialBody(payload: PushPayload, texts: PushTexts): { body: string; url
     case 'space-invite':
       return { body: texts.spaceInvite.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-invite' };
     case 'space-join':
-      return { body: texts.spaceJoin.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-join' };
+      return { body: texts.spaceJoin.replace('{name}', name).replace('{space}', space), url: membersUrl(payload), tag: 'space-join' };
     // #172/#173: membership changes reach the AFFECTED member's devices
     case 'member-removed':
       return { body: texts.memberRemoved.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'member-removed' };
     case 'member-role': {
       const role = texts.roles[payload.role ?? ''] ?? payload.role ?? '';
-      return { body: texts.memberRole.replace('{space}', space).replace('{role}', role), url: './#/spaces', tag: 'member-role' };
+      return { body: texts.memberRole.replace('{space}', space).replace('{role}', role), url: membersUrl(payload), tag: 'member-role' };
     }
     default:
       return null;
@@ -118,22 +128,26 @@ function socialBody(payload: PushPayload, texts: PushTexts): { body: string; url
 /** what (if anything) to show for a push payload, localized */
 export function buildNotification(payload: PushPayload, lang: string): WorkerNotification | null {
   const texts = TEXTS[lang] ?? TEXTS.en;
+  const spaceId = spaceIdOf(payload);
+  // #551: a notification about one space wears its name as the title — the
+  // social ones name their space in the sentence
+  const spaceTitle = payload.spaceName?.trim() || texts.title;
   if (payload.type === 'new-transactions') {
     const count = payload.count ?? 1;
     return {
-      title: texts.title,
+      title: spaceTitle,
       body: count === 1 ? texts.one : texts.many.replace('{n}', String(count)),
-      tag: `new-tx-${payload.spaceId ?? 'all'}`, // coalesce per space
+      tag: `new-tx-${spaceId ?? 'all'}`, // coalesce per space
       // #132 (user request): the tap lands IN the announced space's
       // review — the space rides the hash query for cold starts
-      url: payload.spaceId ? `./#/review?space=${payload.spaceId}` : './#/review',
-      pullSpaceId: payload.spaceId,
+      url: spaceId ? `./#/review?space=${spaceId}` : './#/review',
+      pullSpaceId: spaceId,
       pull: true,
     };
   }
   if (payload.type === 'test') {
-    // the Settings row's proof that push reaches this device — the tap lands back on that row
-    return { title: texts.title, body: texts.test, tag: 'test', url: './#/settings/global', pull: false };
+    // the proof that push reaches this device — the tap lands back on the space's notifications row
+    return { title: spaceTitle, body: texts.test, tag: 'test', url: spaceId ? `./#/settings?space=${spaceId}` : './#/settings', pull: false };
   }
   const social = socialBody(payload, texts);
   return social ? { title: texts.title, ...social, pull: false } : null;

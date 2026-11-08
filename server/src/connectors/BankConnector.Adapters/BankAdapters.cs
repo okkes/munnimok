@@ -25,7 +25,7 @@ public static class BankAdapters
     /// </summary>
     public static IReadOnlyList<IProviderAdapter> All(
         BankAdapterOptions? options = null, TimeProvider? time = null) =>
-        [.. Real(options, time), .. MockFleet(time)];
+        [.. Real(options, time), .. MockFleet(time, options?.MockRecordCap)];
 
     /// <summary>
     /// The banks with somebody's money behind them.
@@ -91,15 +91,16 @@ public static class BankAdapters
     /// against, and the only way to exercise every runtime tier and
     /// challenge type without five live bank accounts.
     /// </summary>
-    public static IReadOnlyList<IProviderAdapter> MockFleet(TimeProvider? time = null) =>
+    /// <param name="recordCap">A per-fetch ceiling below the manifest's, so a test can make a pass partial (#460); null everywhere else.</param>
+    public static IReadOnlyList<IProviderAdapter> MockFleet(TimeProvider? time = null, int? recordCap = null) =>
     [
-        new MockBankSimpleAdapter(time),
-        new MockBankScaAdapter(time),
-        new MockBankSlowAdapter(time),
-        new MockBankBrokenAdapter(time),
-        new MockBankPersistentAdapter(time),
+        new MockBankSimpleAdapter(time) { RecordCap = recordCap },
+        new MockBankScaAdapter(time) { RecordCap = recordCap },
+        new MockBankSlowAdapter(time) { RecordCap = recordCap },
+        new MockBankBrokenAdapter(time) { RecordCap = recordCap },
+        new MockBankPersistentAdapter(time) { RecordCap = recordCap },
         // the aggregator shape with nothing behind it (#414): lookup, redirect, server custody, quota, inventory
-        new MockBankConsentAdapter(time),
+        new MockBankConsentAdapter(time) { RecordCap = recordCap },
     ];
 
     /// <summary>
@@ -136,4 +137,7 @@ public sealed record BankAdapterOptions
     public GoCardlessOptions GoCardless { get; init; } = new();
 
     public EnableBankingOptions EnableBanking { get; init; } = new();
+
+    /// <summary>Test-only: the mock banks' per-fetch ceiling, so their passes come back partial (#460). Null in every environment.</summary>
+    public int? MockRecordCap { get; init; }
 }

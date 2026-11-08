@@ -403,8 +403,8 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('space-accounts');
 
     fireEvent.click(screen.getByTestId('space-accounts-add'));
-    // "Add a manual account" opens the type grid DIRECTLY (redesign
-    // ss13/ss14) — no intent step in between
+    // #527: the space's Add door offers connect, import and manual — a manual account lives in this space
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
     expect(await screen.findByTestId('chooser-manual-form')).toBeTruthy();
     fireEvent.click(screen.getByTestId('chooser-accttype-cash'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Holiday jar' } });

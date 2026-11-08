@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
+import { SpaceReadOnlyError } from '@/sync/spaceAccess';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
 import { DexieBackend } from './backend';
@@ -69,6 +70,46 @@ describe('Repo', () => {
     await repo.upsert('account', 's1', 'a1', { name: 'Cash' });
     expect(await db.accounts.count()).toBe(1);
     expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('upsertMany lands many rows in one transaction, each merged and queued like an upsert', async () => {
+    const store = new DexieBackend(db);
+    let transactions = 0;
+    const transact = store.transact.bind(store);
+    store.transact = (tables, fn) => {
+      transactions += 1;
+      return transact(tables, fn);
+    };
+    let writes = 0;
+    const repo = new Repo(store, new HlcClock('devA', undefined, () => ++wallMs), { trackOutbox: true, onWrite: () => (writes += 1) });
+    await repo.upsert('account', 's1', 'a1', { name: 'Checking', balanceCents: 100 });
+    transactions = 0;
+    writes = 0;
+
+    await repo.upsertMany('account', [
+      { spaceId: 's1', entityId: 'a1', fields: { balanceCents: 200 } },
+      { spaceId: 's1', entityId: 'a2', fields: { name: 'Savings', balanceCents: 900 } },
+      { spaceId: 's2', entityId: 'a3', fields: { name: 'Shared' } },
+    ]);
+    expect(transactions).toBe(1);
+    expect(writes).toBe(1);
+    expect(await db.accounts.get('a1')).toMatchObject({ name: 'Checking', balanceCents: 200 }); // merged, not replaced
+    expect(await db.accounts.get('a3')).toMatchObject({ spaceId: 's2', name: 'Shared', deleted: 0 });
+    const ops = await db.outbox.toArray();
+    expect(ops.map((o) => o.entityId)).toEqual(['a1', 'a1', 'a2', 'a3']);
+    expect(new Set(ops.map((o) => o.hlc)).size).toBe(4); // every op its own stamp
+
+    // one malformed row refuses the set
+    await expect(
+      repo.upsertMany('transaction', [
+        { spaceId: 's1', entityId: 't1', fields: { accountId: 'a', date: '2026-07-01', amountCents: -100, currency: 'EUR', merchant: 'X', needsReview: 0 } },
+        { spaceId: 's1', entityId: 't2', fields: { accountId: 'a', date: '2026-07-01', amountCents: 10.5, currency: 'EUR', merchant: 'X', needsReview: 0 } },
+      ]),
+    ).rejects.toMatchObject({ name: 'InvariantViolation' });
+    expect(await db.transactions.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(4);
+    await repo.upsertMany('account', []); // nothing to write: no transaction
+    expect(transactions).toBe(2);
   });
 
   it('applyRemoteOps merges remote edits; local newer fields win', async () => {
@@ -210,5 +251,58 @@ describe('Repo', () => {
     ]);
     // the row landed as sent — every device converges on the same rows
     expect((await db.transactions.get('remote1'))?.merchant).toBe('X');
+  });
+
+  describe('#505: a space this identity only reads', () => {
+    const readerRepo = () =>
+      new Repo(new DexieBackend(db), new HlcClock('devR', undefined, () => ++wallMs), {
+        trackOutbox: true,
+        readOnly: (spaceId) => spaceId === 'shared',
+      });
+
+    it('refuses every write there before anything changes', async () => {
+      const repo = readerRepo();
+      await expect(repo.upsert('event', 'shared', 'ev1', { name: 'Trip' })).rejects.toBeInstanceOf(SpaceReadOnlyError);
+      await expect(repo.remove('event', 'shared', 'ev1')).rejects.toBeInstanceOf(SpaceReadOnlyError);
+      expect(await db.events.get('ev1')).toBeUndefined();
+      expect(await db.outbox.count()).toBe(0);
+      expect(repo.canWrite('shared')).toBe(false);
+    });
+
+    it('refuses a batch that touches it as a whole', async () => {
+      const repo = readerRepo();
+      await expect(
+        repo.upsertMany('event', [
+          { spaceId: 'mine', entityId: 'ev-mine', fields: { name: 'Mine' } },
+          { spaceId: 'shared', entityId: 'ev-shared', fields: { name: 'Theirs' } },
+        ]),
+      ).rejects.toBeInstanceOf(SpaceReadOnlyError);
+      expect(await db.events.count()).toBe(0);
+    });
+
+    it('leaves every other space as writable as ever', async () => {
+      const repo = readerRepo();
+      await repo.upsert('event', 'mine', 'ev1', { name: 'Trip' });
+      expect((await db.events.get('ev1'))?.name).toBe('Trip');
+      expect(await db.outbox.count()).toBe(1);
+    });
+
+    it('the upkeep view skips its rows and writes the rest', async () => {
+      const upkeep = readerRepo().upkeep();
+      await upkeep.upsert('event', 'shared', 'ev-shared', { name: 'Theirs' });
+      await upkeep.upsertMany('event', [
+        { spaceId: 'mine', entityId: 'ev-mine', fields: { name: 'Mine' } },
+        { spaceId: 'shared', entityId: 'ev-shared2', fields: { name: 'Theirs' } },
+      ]);
+      expect((await db.events.toArray()).map((e) => e.id)).toEqual(['ev-mine']);
+      expect(upkeep.upkeep()).toBe(upkeep);
+    });
+
+    it('pulled ops still land there — the server’s rows are the reader’s view', async () => {
+      await readerRepo().applyRemoteOps([
+        { opId: 'op1', spaceId: 'shared', entity: 'event', entityId: 'ev1', fields: { name: 'Theirs' }, hlc: '000000100-0000-owner' },
+      ]);
+      expect((await db.events.get('ev1'))?.name).toBe('Theirs');
+    });
   });
 });

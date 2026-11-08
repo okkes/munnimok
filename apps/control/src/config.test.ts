@@ -22,6 +22,7 @@ describe('control runtime config overlay', () => {
     const { config, glitchtipDsn } = await withOverlay(undefined);
     expect(config.apiUrl).toBe('http://localhost:8180');
     expect(config.logtoEndpoint).toBe('');
+    expect(config.labUrl).toBe('');
     expect(glitchtipDsn).toBe('');
   });
 
@@ -32,12 +33,14 @@ describe('control runtime config overlay', () => {
       LOGTO_APP_ID: 'iac-control-app',
       LOGTO_RESOURCE: 'https://munni-iac-api.example.test',
       GLITCHTIP_DSN: 'https://key@glitchtip-iac.example.test/3',
+      LAB_URL: 'https://munni-iac-lab.example.test',
     });
     expect(config).toEqual({
       apiUrl: 'https://munni-iac-api.example.test',
       logtoEndpoint: 'https://logto-iac.example.test',
       logtoAppId: 'iac-control-app',
       logtoResource: 'https://munni-iac-api.example.test',
+      labUrl: 'https://munni-iac-lab.example.test',
     });
     expect(glitchtipDsn).toBe('https://key@glitchtip-iac.example.test/3');
   });

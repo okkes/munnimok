@@ -87,7 +87,7 @@ describe('ConnectorReturnScreen — the page a party brings the person back to (
     expect(name.value).toBe('GoCardless');
     fireEvent.change(name, { target: { value: 'Mijn bank' } });
     fireEvent.click(screen.getByTestId('connector-return-continue'));
-    await waitFor(() => expect(assign).toHaveBeenCalledWith('/#/connections'));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/#/accounts'));
 
     const db = await userDb();
     const meta = (await db.storeConns.toArray()).find((c) => c.id === 'conn-return-1');
@@ -113,7 +113,7 @@ describe('ConnectorReturnScreen — the page a party brings the person back to (
     await waitFor(() => expect(stateOf()).toBe('cancelled'), { timeout: 5000 });
     await waitFor(() => expect(cancelled).toBe(true));
     expect(localStorage.getItem('munni_connector_return')).toBeNull();
-    expect((screen.getByTestId('connector-return-back') as HTMLAnchorElement).getAttribute('href')).toBe('/#/connections');
+    expect((screen.getByTestId('connector-return-back') as HTMLAnchorElement).getAttribute('href')).toBe('/#/accounts');
   }, 15_000);
 
   it('the party’s refusal of the landing address is worded in munni words', async () => {

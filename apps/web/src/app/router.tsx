@@ -8,64 +8,79 @@ import {
   redirect,
   useNavigate,
 } from '@tanstack/react-router';
+import type { RouterHistory } from '@tanstack/react-router';
 import { MasterDetailLayout } from '@/ui/SplitPane';
 import { AppLayout } from './AppLayout';
 import { readSessionIdentity } from './session';
+import { ScreenPending, lazyScreen, withScreens } from './lazyScreen';
+import type { LazyScreen } from './lazyScreen';
 import { LoginScreen } from '@/features/auth/LoginScreen';
-import { InviteScreen } from '@/features/auth/InviteScreen';
-import { HomeScreen } from '@/features/home/HomeScreen';
-import { HomeCustomizeScreen } from '@/features/home/HomeCustomizeScreen';
-import { TxDetailCustomizeScreen } from '@/features/transactions/TxDetailCustomizeScreen';
-import { TransactionsScreen } from '@/features/transactions/TransactionsScreen';
-import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
-import { ReimburseLinkScreen } from '@/features/transactions/ReimburseLinkScreen';
-import { SpacesScreen } from '@/features/spaces/SpacesScreen';
-import { SpaceSettingsScreen } from '@/features/spaces/SpaceSettingsScreen';
-import { PeriodSettingsScreen } from '@/features/spaces/PeriodSettingsScreen';
-import { SpaceAccountsScreen } from '@/features/spaces/SpaceAccountsScreen';
-import { SpaceMembersScreen } from '@/features/spaces/SpaceMembersScreen';
-import { SettingsScreen } from '@/features/settings/SettingsScreen';
-import { GlobalSettingsScreen } from '@/features/settings/GlobalSettingsScreen';
-import { GoOfflineScreen } from '@/features/auth/GoOfflineScreen';
-import { ReviewScreen } from '@/features/review/ReviewScreen';
-import { AccountsScreen } from '@/features/accounts/AccountsScreen';
-import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
-import { FriendsScreen } from '@/features/friends/FriendsScreen';
-import { SplitDetailScreen, SplitsScreen } from '@/features/splits/SplitsScreen';
-import { SplitJoinScreen } from '@/features/splits/SplitJoinScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
-import { OverviewScreen } from '@/features/overview/OverviewScreen';
-import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
-import { BudgetsScreen } from '@/features/budgets/BudgetsScreen';
-import { BudgetFormScreen } from '@/features/budgets/BudgetFormScreen';
-import { BudgetDetailScreen } from '@/features/budgets/BudgetDetailScreen';
-import { EventsScreen } from '@/features/events/EventsScreen';
-import { EventDetailScreen } from '@/features/events/EventDetailScreen';
-import { EventAttachScreen } from '@/features/events/EventAttachScreen';
-import { GoalsScreen } from '@/features/goals/GoalsScreen';
-import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
-import { DebtsScreen } from '@/features/debts/DebtsScreen';
-import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
-import { DebtPlanScreen } from '@/features/debts/DebtPlanScreen';
-import { PlanningScreen } from '@/features/planning/PlanningScreen';
-import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
-import { ConnectionsScreen } from '@/features/connectors/ConnectionsScreen';
-import { AgentsScreen } from '@/features/connectors/AgentsScreen';
-import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
+import { HomeScreen } from '@/features/home/HomeScreen';
 import { UpdateGate } from '@/app/UpdateGate';
-import { ReceiptScreen } from '@/features/shopping/ReceiptScreen';
-import { ConnectionReceiptsScreen } from '@/features/connectors/ConnectionReceiptsScreen';
-import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
-import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
-import { InsightsScreen } from '@/features/insights/InsightsScreen';
-import { TrendsScreen } from '@/features/trends/TrendsScreen';
-import { ProfileScreen } from '@/features/profile/ProfileScreen';
-import { DevicesScreen } from '@/features/profile/DevicesScreen';
-import { UpcomingScreen } from '@/features/home/UpcomingScreen';
-import { PeriodsScreen } from '@/features/overview/PeriodsScreen';
-import { RecurringScreen } from '@/features/recurring/RecurringScreen';
-import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
-import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
+
+// #554: the first paint carries the shell, sign-in, onboarding and Home; every
+// other screen is a chunk of its own, fetched on its first visit (the service
+// worker precaches every chunk, so an offline start opens any screen)
+const InviteScreen = lazyScreen(() => import('@/features/auth/InviteScreen'), 'InviteScreen');
+const HomeCustomizeScreen = lazyScreen(() => import('@/features/home/HomeCustomizeScreen'), 'HomeCustomizeScreen');
+const TxDetailCustomizeScreen = lazyScreen(() => import('@/features/transactions/TxDetailCustomizeScreen'), 'TxDetailCustomizeScreen');
+const TransactionsScreen = lazyScreen(() => import('@/features/transactions/TransactionsScreen'), 'TransactionsScreen');
+const TxDetailScreen = lazyScreen(() => import('@/features/transactions/TxDetailScreen'), 'TxDetailScreen');
+const TxCreateScreen = lazyScreen(() => import('@/features/transactions/TxFormSheet'), 'TxCreateScreen');
+const ReimburseLinkScreen = lazyScreen(() => import('@/features/transactions/ReimburseLinkScreen'), 'ReimburseLinkScreen');
+const SpacesScreen = lazyScreen(() => import('@/features/spaces/SpacesScreen'), 'SpacesScreen');
+const SpaceSettingsScreen = lazyScreen(() => import('@/features/spaces/SpaceSettingsScreen'), 'SpaceSettingsScreen');
+const PeriodSettingsScreen = lazyScreen(() => import('@/features/spaces/PeriodSettingsScreen'), 'PeriodSettingsScreen');
+const NavigationSettingsScreen = lazyScreen(() => import('@/features/navigation/NavigationSettingsScreen'), 'NavigationSettingsScreen');
+const SpaceAccountsScreen = lazyScreen(() => import('@/features/spaces/SpaceAccountsScreen'), 'SpaceAccountsScreen');
+const SpaceMembersScreen = lazyScreen(() => import('@/features/spaces/SpaceMembersScreen'), 'SpaceMembersScreen');
+const SettingsScreen = lazyScreen(() => import('@/features/settings/SettingsScreen'), 'SettingsScreen');
+const GlobalSettingsScreen = lazyScreen(() => import('@/features/settings/GlobalSettingsScreen'), 'GlobalSettingsScreen');
+const GoOfflineScreen = lazyScreen(() => import('@/features/auth/GoOfflineScreen'), 'GoOfflineScreen');
+const ReviewScreen = lazyScreen(() => import('@/features/review/ReviewScreen'), 'ReviewScreen');
+const AccountsScreen = lazyScreen(() => import('@/features/accounts/AccountsScreen'), 'AccountsScreen');
+const ManageCategoriesScreen = lazyScreen(() => import('@/features/categories/ManageCategoriesScreen'), 'ManageCategoriesScreen');
+const FriendsScreen = lazyScreen(() => import('@/features/friends/FriendsScreen'), 'FriendsScreen');
+const SplitsScreen = lazyScreen(() => import('@/features/splits/SplitsScreen'), 'SplitsScreen');
+const SplitDetailScreen = lazyScreen(() => import('@/features/splits/SplitsScreen'), 'SplitDetailScreen');
+const SplitJoinScreen = lazyScreen(() => import('@/features/splits/SplitJoinScreen'), 'SplitJoinScreen');
+const OverviewScreen = lazyScreen(() => import('@/features/overview/OverviewScreen'), 'OverviewScreen');
+const CategoryDrillScreen = lazyScreen(() => import('@/features/overview/CategoryDrillScreen'), 'CategoryDrillScreen');
+const BudgetsScreen = lazyScreen(() => import('@/features/budgets/BudgetsScreen'), 'BudgetsScreen');
+const BudgetFormScreen = lazyScreen(() => import('@/features/budgets/BudgetFormScreen'), 'BudgetFormScreen');
+const BudgetDetailScreen = lazyScreen(() => import('@/features/budgets/BudgetDetailScreen'), 'BudgetDetailScreen');
+const EventsScreen = lazyScreen(() => import('@/features/events/EventsScreen'), 'EventsScreen');
+const EventDetailScreen = lazyScreen(() => import('@/features/events/EventDetailScreen'), 'EventDetailScreen');
+const EventAttachScreen = lazyScreen(() => import('@/features/events/EventAttachScreen'), 'EventAttachScreen');
+const EventAddScreen = lazyScreen(() => import('@/features/events/EventAttachScreen'), 'EventAddScreen');
+const GoalsScreen = lazyScreen(() => import('@/features/goals/GoalsScreen'), 'GoalsScreen');
+const GoalDetailScreen = lazyScreen(() => import('@/features/goals/GoalDetailScreen'), 'GoalDetailScreen');
+const GoalCashOutScreen = lazyScreen(() => import('@/features/goals/GoalCashOutScreen'), 'GoalCashOutScreen');
+const DebtsScreen = lazyScreen(() => import('@/features/debts/DebtsScreen'), 'DebtsScreen');
+const DebtDetailScreen = lazyScreen(() => import('@/features/debts/DebtDetailScreen'), 'DebtDetailScreen');
+const DebtPlanScreen = lazyScreen(() => import('@/features/debts/DebtPlanScreen'), 'DebtPlanScreen');
+const PlanningScreen = lazyScreen(() => import('@/features/planning/PlanningScreen'), 'PlanningScreen');
+const HelpIndexScreen = lazyScreen(() => import('@/features/help/HelpIndexScreen'), 'HelpIndexScreen');
+const ConnectionsScreen = lazyScreen(() => import('@/features/connectors/ConnectionsScreen'), 'ConnectionsScreen');
+const AgentsScreen = lazyScreen(() => import('@/features/connectors/AgentsScreen'), 'AgentsScreen');
+const ReceiptsScreen = lazyScreen(() => import('@/features/shopping/ReceiptsScreen'), 'ReceiptsScreen');
+const ReceiptScreen = lazyScreen(() => import('@/features/shopping/ReceiptScreen'), 'ReceiptScreen');
+const ConnectionReceiptsScreen = lazyScreen(() => import('@/features/connectors/ConnectionReceiptsScreen'), 'ConnectionReceiptsScreen');
+const PortfolioScreen = lazyScreen(() => import('@/features/portfolio/PortfolioScreen'), 'PortfolioScreen');
+const HoldingDetailScreen = lazyScreen(() => import('@/features/portfolio/HoldingDetailScreen'), 'HoldingDetailScreen');
+const InsightsScreen = lazyScreen(() => import('@/features/insights/InsightsScreen'), 'InsightsScreen');
+const TrendsScreen = lazyScreen(() => import('@/features/trends/TrendsScreen'), 'TrendsScreen');
+const ProfileScreen = lazyScreen(() => import('@/features/profile/ProfileScreen'), 'ProfileScreen');
+const DevicesScreen = lazyScreen(() => import('@/features/profile/DevicesScreen'), 'DevicesScreen');
+const UpcomingScreen = lazyScreen(() => import('@/features/home/UpcomingScreen'), 'UpcomingScreen');
+const PeriodsScreen = lazyScreen(() => import('@/features/overview/PeriodsScreen'), 'PeriodsScreen');
+const RecurringScreen = lazyScreen(() => import('@/features/recurring/RecurringScreen'), 'RecurringScreen');
+const RecurringDetailScreen = lazyScreen(() => import('@/features/recurring/RecurringDetailScreen'), 'RecurringDetailScreen');
+const RecurringSuggestionsScreen = lazyScreen(() => import('@/features/recurring/RecurringSuggestionsScreen'), 'RecurringSuggestionsScreen');
+
+/** a list route: the list stays mounted while a detail child slides in beside it at lg (§4.2) */
+const masterDetail = (List: LazyScreen) => withScreens(() => <MasterDetailLayout list={<List />} />, List);
 
 /** every route, with the forced update above it all: a server that no longer speaks this build gates even a device stuck on its first sync */
 function RootShell() {
@@ -139,7 +154,7 @@ const periodsRoute = createRoute({ getParentRoute: () => appRoute, path: '/perio
 const transactionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/transactions',
-  component: () => <MasterDetailLayout list={<TransactionsScreen />} />,
+  component: masterDetail(TransactionsScreen),
 });
 const txDetailRoute = createRoute({
   getParentRoute: () => transactionsRoute,
@@ -149,6 +164,18 @@ const txDetailRoute = createRoute({
   // part as its own transaction page
   validateSearch: (search: Record<string, unknown>): { part?: string } =>
     typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
+});
+// #348 (user): creating a manual transaction is a screen of its own — a
+// static child, so it outranks $txId and owns the detail pane on desktop;
+// a caller may stage a payment onto a counterparty (?counter=&title=)
+const txCreateRoute = createRoute({
+  getParentRoute: () => transactionsRoute,
+  path: 'new',
+  component: TxCreateScreen,
+  validateSearch: (search: Record<string, unknown>): { counter?: string; title?: string } => ({
+    ...(typeof search.counter === 'string' && search.counter.length > 0 ? { counter: search.counter } : {}),
+    ...(typeof search.title === 'string' && search.title.length > 0 ? { title: search.title } : {}),
+  }),
 });
 // full-screen counterpart picker (user redesign 2026-07-28) — a sibling
 // of the detail under /transactions, so it owns the detail pane on
@@ -164,7 +191,7 @@ const reimburseLinkRoute = createRoute({
 const recurringRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/recurring',
-  component: () => <MasterDetailLayout list={<RecurringScreen />} />,
+  component: masterDetail(RecurringScreen),
 });
 // static beats the $recId param in TanStack's ranking — order here is cosmetic
 const recurringSuggestionsRoute = createRoute({
@@ -185,7 +212,7 @@ const recurringDetailRoute = createRoute({
 const recurringTxRoute = createRoute({
   getParentRoute: () => recurringRoute,
   path: 'tx/$txId',
-  component: () => <TxDetailScreen backTo="/recurring" />,
+  component: withScreens(() => <TxDetailScreen backTo="/recurring" />, TxDetailScreen),
   validateSearch: (search: Record<string, unknown>): { part?: string } =>
     typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
@@ -210,7 +237,13 @@ const spaceAccountsRoute = createRoute({
   path: '/spaces/$spaceId/accounts',
   component: SpaceAccountsScreen,
 });
-const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsScreen });
+// #577: the space's phone bar — what follows Home, and in which order
+const spaceNavigationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/spaces/$spaceId/navigation',
+  component: NavigationSettingsScreen,
+});
+const settingsRoute =createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsScreen });
 const settingsGlobalRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings/global',
@@ -230,7 +263,14 @@ const reviewRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): { space?: string } =>
     typeof search.space === 'string' && search.space.length > 0 ? { space: search.space } : {},
 });
-const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
+/** #527/#528: the hubs' deep links — a party to connect (as a connection to sign in again), a connection or a no-longer-fetched account to bring into view */
+const hubSearch = (search: Record<string, unknown>): { connect?: string; reconnect?: string; connection?: string; uncovered?: string } => {
+  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined);
+  const connect = text(search.connect);
+  const out = { connect, reconnect: connect ? text(search.reconnect) : undefined, connection: text(search.connection), uncovered: text(search.uncovered) };
+  return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== undefined));
+};
+const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen, validateSearch: hubSearch });
 const categoriesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/categories',
@@ -247,7 +287,7 @@ const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/over
 const budgetsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/budgets',
-  component: () => <MasterDetailLayout list={<BudgetsScreen />} />,
+  component: masterDetail(BudgetsScreen),
 });
 // static 'new' outranks the $budgetId param in TanStack's ranking
 const budgetNewRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/new', component: BudgetFormScreen });
@@ -257,8 +297,12 @@ const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events
 const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
 // #144: attaching is a full screen, not a sheet
 const eventAttachRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId/attach', component: EventAttachScreen });
+// #570: adding from every transaction, dated event or not
+const eventAddRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId/add', component: EventAddScreen });
 const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals', component: GoalsScreen });
 const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
+// #455: picking what paid for a goal is a full screen, like attaching to an event
+const goalCashOutRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId/cashout', component: GoalCashOutScreen });
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
 const debtPlanRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/plan', component: DebtPlanScreen });
@@ -270,10 +314,7 @@ const connectionsRoute = createRoute({
   component: ConnectionsScreen,
   // #445: an accounts sheet's Reconnect door names the party; the hub opens the flow for it —
   // and the connection to sign in again as, so the sign-in reuses it instead of making a second one (prod 2026-10-08)
-  validateSearch: (search: Record<string, unknown>): { connect?: string; reconnect?: string } => {
-    if (typeof search.connect !== 'string' || !search.connect) return {};
-    return typeof search.reconnect === 'string' && search.reconnect ? { connect: search.connect, reconnect: search.reconnect } : { connect: search.connect };
-  },
+  validateSearch: hubSearch,
 });
 const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
@@ -286,7 +327,7 @@ function SpaceReceipt() {
 const receiptDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/receipts/$receiptId',
-  component: SpaceReceipt,
+  component: withScreens(SpaceReceipt, ReceiptScreen),
   validateSearch: (search: Record<string, unknown>): { from?: string } => ({
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
@@ -297,11 +338,11 @@ function ConnectionReceipt() {
   const { receiptId } = connectionReceiptDetailRoute.useParams();
   return <ReceiptScreen scope="global" receiptId={receiptId} />;
 }
-const connectionReceiptDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/receipts/$receiptId', component: ConnectionReceipt });
+const connectionReceiptDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/receipts/$receiptId', component: withScreens(ConnectionReceipt, ReceiptScreen) });
 const portfolioRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/portfolio',
-  component: () => <MasterDetailLayout list={<PortfolioScreen />} />,
+  component: masterDetail(PortfolioScreen),
 });
 const holdingDetailRoute = createRoute({ getParentRoute: () => portfolioRoute, path: '$holdingId', component: HoldingDetailScreen });
 const insightsRoute = createRoute({ getParentRoute: () => appRoute, path: '/insights', component: InsightsScreen });
@@ -311,7 +352,7 @@ const categoryDrillRoute = createRoute({
   path: '/overview/$kind/$catId',
   // #351 (user): a master-detail host — at lg a tapped transaction opens
   // in the right pane while this drill stays put
-  component: () => <MasterDetailLayout list={<CategoryDrillScreen />} />,
+  component: masterDetail(CategoryDrillScreen),
   // the overview hands over its selected period
   validateSearch: (search: Record<string, unknown>): { from?: string } => ({
     from: typeof search.from === 'string' ? search.from : undefined,
@@ -334,7 +375,7 @@ function OverviewTxDetail() {
 const overviewTxRoute = createRoute({
   getParentRoute: () => categoryDrillRoute,
   path: 'tx/$txId',
-  component: OverviewTxDetail,
+  component: withScreens(OverviewTxDetail, TxDetailScreen),
   validateSearch: (search: Record<string, unknown>): { part?: string; from?: string } => ({
     ...(typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {}),
     from: typeof search.from === 'string' ? search.from : undefined,
@@ -351,7 +392,7 @@ export const routeTree = rootRoute.addChildren([
     txCustomizeRoute,
     upcomingRoute,
     periodsRoute,
-    transactionsRoute.addChildren([txDetailRoute, reimburseLinkRoute]),
+    transactionsRoute.addChildren([txCreateRoute, txDetailRoute, reimburseLinkRoute]),
     recurringRoute.addChildren([recurringDetailRoute, recurringTxRoute]),
     recurringSuggestionsRoute,
     spacesRoute,
@@ -359,6 +400,7 @@ export const routeTree = rootRoute.addChildren([
     spacePeriodRoute,
     spaceMembersRoute,
     spaceAccountsRoute,
+    spaceNavigationRoute,
     settingsRoute,
     settingsGlobalRoute,
     goOfflineRoute,
@@ -380,8 +422,10 @@ export const routeTree = rootRoute.addChildren([
     eventsRoute,
     eventDetailRoute,
     eventAttachRoute,
+    eventAddRoute,
     goalsRoute,
     goalDetailRoute,
+    goalCashOutRoute,
     debtsRoute,
     debtPlanRoute,
     debtDetailRoute,
@@ -399,9 +443,21 @@ export const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
+/** the app's router over a history — the test harness builds the same one over memory */
+export function createAppRouter(history: RouterHistory) {
+  return createRouter({
+    routeTree,
+    history,
+    // #554: a hovered or touched link fetches its screen before the tap lands;
+    // a chunk slower than the router's pending delay shows a spinner in the shell
+    defaultPreload: 'intent',
+    defaultPendingComponent: ScreenPending,
+  });
+}
+
 // Hash history: works on any static host (GitHub Pages, nginx) without
 // rewrite rules. Swap for createBrowserHistory once nginx hosting lands.
-export const router = createRouter({ routeTree, history: createHashHistory() });
+export const router = createAppRouter(createHashHistory());
 
 declare module '@tanstack/react-router' {
   interface Register {

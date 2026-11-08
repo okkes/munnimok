@@ -9,8 +9,8 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>One institution as an aggregator lists it.</summary>
-public sealed record Institution(string Id, string Name, string? LogoUrl, int? HistoryDays);
+/// <summary>One institution as an aggregator lists it; <c>MaxConsentDays</c> is the longest consent the bank grants, where the party says.</summary>
+public sealed record Institution(string Id, string Name, string? LogoUrl, int? HistoryDays, int? MaxConsentDays = null);
 
 /// <summary>
 /// An open-banking aggregator as a bank party: the person picks the bank
@@ -46,21 +46,39 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
 
     protected abstract Task<IReadOnlyList<Institution>> InstitutionsAsync(HttpClient http, string country, CancellationToken ct);
 
-    /// <summary>Asks the aggregator for a consent; returns where to send the person and what to complete with.</summary>
-    protected abstract Task<(string Url, string PendingId)> StartConsentAsync(
-        HttpClient http, Institution institution, string returnUrl, string reference, CancellationToken ct);
+    /// <summary>Asks the aggregator for a consent of <paramref name="consentDays"/>; returns where to send the person, what to complete with, and the days the consent was asked for.</summary>
+    protected abstract Task<(string Url, string PendingId, int ConsentDays)> StartConsentAsync(
+        HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct);
 
     /// <summary>The bank came back: the consent's id at the aggregator and the accounts it reaches.</summary>
     protected abstract Task<(string ConsentId, IReadOnlyList<string> AccountIds)> CompleteConsentAsync(
         HttpClient http, string pendingId, IReadOnlyDictionary<string, string> landing, CancellationToken ct);
 
-    protected abstract Task<(string? Iban, string? Name, string? Currency)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct);
+    protected abstract Task<(string? Iban, string? Name, string? Currency, string? Identity)> DetailsAsync(HttpClient http, string accountId, CancellationToken ct);
+
+    /// <summary>The party names an account across consents in its details: a consent read before that was asked gets its details once more.</summary>
+    protected virtual bool KnowsIdentity => false;
+
+    /// <summary>
+    /// The longest consent the bank grants, up to the 180 days PSD2 allows
+    /// (#491: the 90 days asked until now ended a consent the person expected
+    /// to last half a year); the old 90 where the party does not say.
+    /// </summary>
+    internal static int ConsentDaysFor(Institution institution) =>
+        institution.MaxConsentDays is { } max and > 0
+            ? Math.Min(max, OpenBankingManifests.MaxConsentDays)
+            : OpenBankingManifests.ConsentDays;
 
     protected abstract Task<IReadOnlyList<(string Type, string Amount, string Currency, string? Date)>> BalancesAsync(
         HttpClient http, string accountId, CancellationToken ct);
 
-    protected abstract Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota)> TransactionsAsync(
-        HttpClient http, string accountId, DateOnly from, CancellationToken ct);
+    /// <summary>
+    /// One account's rows from <paramref name="from"/>, up to <paramref name="to"/>
+    /// when the caller named an end (a backfill pass, #460); <c>Complete</c> is
+    /// false when the party held more than the walk took.
+    /// </summary>
+    protected abstract Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota, bool Complete)> TransactionsAsync(
+        HttpClient http, string accountId, DateOnly from, DateOnly? to, CancellationToken ct);
 
     protected abstract Task RevokeAsync(HttpClient http, string consentId, CancellationToken ct);
 
@@ -77,7 +95,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         var institution = await InstitutionAsync(ctx.Http, country, institutionId, ct).ConfigureAwait(false);
 
         var reference = Ids.New(ReferencePrefix);
-        var (url, pendingId) = await StartConsentAsync(ctx.Http, institution, returnUrl, reference, ct).ConfigureAwait(false);
+        var (url, pendingId, consentDays) = await StartConsentAsync(ctx.Http, institution, returnUrl, reference, ConsentDaysFor(institution), ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.AwaitingHuman);
         var answer = await ctx.AskAsync(
@@ -116,7 +134,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
                 Type = AccountTypes.Wire(a.Iban is null ? AccountType.Unknown : AccountType.Current),
                 DisplayName = a.Name ?? a.Iban ?? institution.Name,
             })],
-            ExpiresAt = Time.GetUtcNow().AddDays(OpenBankingManifests.ConsentDays),
+            ExpiresAt = Time.GetUtcNow().AddDays(consentDays),
         };
     }
 
@@ -142,15 +160,18 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
             {
                 var window = BankWindow.Resolve(request, Describe(), today);
                 var transactions = new List<Transaction>();
+                var complete = true;
                 foreach (var account in selected)
                 {
-                    transactions.AddRange(await RowsAsync(ctx, account, window, ct).ConfigureAwait(false));
+                    var (rows, whole) = await RowsAsync(ctx, account, window, request.Until is not null, ct).ConfigureAwait(false);
+                    transactions.AddRange(rows);
+                    complete &= whole;
                     ctx.Found(transactions.Count);
                 }
                 ctx.Progress(JobStep.Normalizing);
                 var ordered = transactions.OrderBy(t => t.BookedAt).ThenBy(t => t.ExternalId, StringComparer.Ordinal).ToList();
                 ctx.Progress(JobStep.Finalizing);
-                return BankEmission.Verified(PartyId, selected, ordered, complete: true, via: "api", refreshedMaterial: refreshed);
+                return BankEmission.Verified(PartyId, selected, ordered, complete: complete, via: "api", refreshedMaterial: refreshed);
             }
             default:
                 throw ConnectorException.Unsupported($"{PartyId} has no resource '{request.ResourceId}'");
@@ -166,8 +187,9 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         var accounts = new List<Account>(consent.Accounts.Count);
         foreach (var known in consent.Accounts)
         {
-            var account = known.Detailed ? known : await DetailedAsync(ctx, known, ct).ConfigureAwait(false);
-            learned |= !known.Detailed && account.Detailed;
+            var stale = !known.Detailed || (KnowsIdentity && !known.IdentityRead);
+            var account = stale ? await DetailedAsync(ctx, known, ct).ConfigureAwait(false) : known;
+            learned |= account != known;
             detailed.Add(account);
             accounts.Add(BankRecords.NewAccount(ctx.SessionId,
                 OpenBankingRecords.ToAccount(account, consent, await BalanceAsync(ctx, account, today, ct).ConfigureAwait(false))));
@@ -204,17 +226,22 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         }
     }
 
-    /// <summary>One account's rows over the window; a pending row is kept whatever its day, and what the party said about its budget is reported.</summary>
-    private async Task<List<Transaction>> RowsAsync(IJobContext ctx, Account account, FetchWindow window, CancellationToken ct)
+    /// <summary>
+    /// One account's rows over the window; a pending row is kept whatever its
+    /// day — except on a backfill pass (#460), which ends long before today —
+    /// and what the party said about its budget is reported.
+    /// </summary>
+    private async Task<(List<Transaction> Rows, bool Complete)> RowsAsync(IJobContext ctx, Account account, FetchWindow window, bool backfill, CancellationToken ct)
     {
-        var (rows, quota) = await TransactionsAsync(ctx.Http, account.ExternalId, window.From, ct).ConfigureAwait(false);
+        var (rows, quota, complete) = await TransactionsAsync(ctx.Http, account.ExternalId, window.From, backfill ? window.To : null, ct).ConfigureAwait(false);
         if (quota is not null) ctx.ReportQuota(quota with { SeenAt = Time.GetUtcNow() });
+        if (!complete) ctx.Note($"{account.ExternalId}: the party holds more rows than one walk takes; an older pass asks for the rest");
         var transactions = new List<Transaction>(rows.Count);
         var dropped = 0;
         foreach (var row in rows)
         {
             var draft = OpenBankingRecords.ToDraft(row);
-            if (draft is null || (!row.Pending && !window.Contains(draft.BookedAt)))
+            if (draft is null || ((!row.Pending || backfill) && !window.Contains(draft.BookedAt)))
             {
                 dropped++;
                 continue;
@@ -222,7 +249,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
             transactions.Add(BankRecords.NewTransaction(ctx.SessionId, account.Id, draft));
         }
         if (dropped > 0) ctx.Note($"{account.ExternalId}: {dropped} row(s) without a reference, a day, or outside the window were left out");
-        return transactions;
+        return (transactions, complete);
     }
 
     public async Task LogoutAsync(IJobContext ctx, CancellationToken ct)
@@ -275,8 +302,8 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
     {
         try
         {
-            var (iban, name, currency) = await DetailsAsync(ctx.Http, account.Id, ct).ConfigureAwait(false);
-            return account with { Iban = iban, Name = name, Currency = currency, Detailed = true };
+            var (iban, name, currency, identity) = await DetailsAsync(ctx.Http, account.Id, ct).ConfigureAwait(false);
+            return account with { Iban = iban, Name = name, Currency = currency, Identity = identity ?? account.Identity, Detailed = true, IdentityRead = KnowsIdentity };
         }
         catch (ConnectorException ex) when (ex.Code == ErrorCode.RateLimited)
         {

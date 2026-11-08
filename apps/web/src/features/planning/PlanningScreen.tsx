@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { usePlanning, usePlanningOps } from '@/application/planning';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import type { PlanRow, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
@@ -24,6 +26,7 @@ import { AddSourceSheet } from './AddSourceSheet';
 import { AheadSheet, aheadDiffers, periodLabel } from './AheadSheet';
 import { BlueprintsSheet } from './BlueprintsSheet';
 import { InsightsSheet } from './InsightsSheet';
+import { OverspentReview } from './OverspentReview';
 import { PlanHeader } from './PlanHeader';
 import { PoolSheet } from './PoolSheet';
 import { ReorderSheet } from './ReorderSheet';
@@ -37,7 +40,7 @@ import { StartPlanCard } from './StartPlanCard';
 import { SubjectEditor } from './SubjectEditor';
 import type { EditorPreset } from './SubjectEditor';
 import { SubjectSheet } from './SubjectSheet';
-import { UnplannedSheet, unplannedAmount } from './UnplannedSheet';
+import { UnplannedSheet, unplannedPill } from './UnplannedSheet';
 import { SEGMENT_META, UNPLANNED_KIND_KEY, UNPLANNED_SEGMENT } from './planningUi';
 
 type MenuItem = 'blueprints' | 'sandbox' | 'segments' | 'reorder' | 'pool' | 'insights' | 'startOver';
@@ -80,25 +83,38 @@ function viewedPlan(model: PlanningModel, viewBack: number, sandboxMode: boolean
 
 const UNPLANNED_ROW_CLASS = 'm-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0';
 
+/** a row funded for this period only (#494): what it holds against what it spent, under the name */
+function OneOffLine({ row, fmt, currency }: Readonly<{ row: UnplannedRow; fmt: MoneyFmt; currency: string }>) {
+  const { t } = useLang();
+  if (!row.fundedCents) return null;
+  return (
+    <span className="mt-0.5 block text-[11px] text-ink-4" data-testid={`plan-unplanned-oneoff-${row.kind === 'category' ? row.mainId : row.sourceId}`}>
+      {t('plan.oneOff.line', { funded: fmt(row.fundedCents, currency), spent: fmt(row.cents, currency) })}
+    </span>
+  );
+}
+
 /** an unplanned main: its tile, its name, what it spent, its subs */
 function UnplannedCategoryRow({ row, fmt, currency, onOpen }: Readonly<{ row: Extract<UnplannedRow, { kind: 'category' }>; fmt: MoneyFmt; currency: string; onOpen: () => void }>) {
   const { t } = useLang();
   const cats = useCategories();
   const main = cats.byId(row.mainId);
   const subs = row.subs.filter((s) => s.catId !== row.mainId);
+  const pill = unplannedPill(row, t, fmt, currency);
   return (
     <button type="button" onClick={onOpen} className={UNPLANNED_ROW_CLASS} data-testid={`plan-unplanned-${row.mainId}`}>
       <Tile icon={main.icon} bg={`color-mix(in srgb, ${main.color} 14%, transparent)`} color={main.color} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{catName(main, t)}</span>
-          <Pill tone="negative">{t('plan.unplannedSpent', { amount: fmt(row.cents, currency) })}</Pill>
+          <Pill tone={pill.tone}>{pill.text}</Pill>
         </span>
         {subs.length > 0 && (
           <span className="mt-0.5 block truncate text-[11px] text-ink-4">
             {subs.map((s) => `${catName(cats.byId(s.catId), t)} ${fmt(s.cents, currency)}`).join(' · ')}
           </span>
         )}
+        <OneOffLine row={row} fmt={fmt} currency={currency} />
       </span>
       <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
     </button>
@@ -114,6 +130,7 @@ function UnplannedSourceRow({
   onOpen,
 }: Readonly<{ row: Exclude<UnplannedRow, { kind: 'category' }>; model: PlanningModel; fmt: MoneyFmt; currency: string; onOpen: () => void }>) {
   const { t } = useLang();
+  const pill = unplannedPill(row, t, fmt, currency);
   return (
     <button type="button" onClick={onOpen} className={UNPLANNED_ROW_CLASS} data-testid={`plan-unplanned-${row.kind}-${row.sourceId}`}>
       <SourceTile
@@ -127,9 +144,10 @@ function UnplannedSourceRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{row.name}</span>
-          <Pill tone="negative">{unplannedAmount(row, t, fmt, currency)}</Pill>
+          <Pill tone={pill.tone}>{pill.text}</Pill>
         </span>
         <span className="mt-0.5 block truncate text-[11px] text-ink-4">{t(UNPLANNED_KIND_KEY[row.kind])}</span>
+        <OneOffLine row={row} fmt={fmt} currency={currency} />
       </span>
       <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
     </button>
@@ -274,6 +292,8 @@ export function PlanningScreen() {
   const currency = space?.currency ?? 'EUR';
   const model = usePlanning();
   const ops = usePlanningOps();
+  // #505 (user): a space this identity only reads shows its plan like a past period — nothing to change
+  const canEdit = useCanEdit();
 
   const [viewBack, setViewBack] = useState(0);
   const [sandboxMode, setSandboxMode] = useState(false);
@@ -285,8 +305,27 @@ export function PlanningScreen() {
   const [adding, setAdding] = useState<Exclude<PlanSegmentKind, 'expenses'> | null>(null);
   const [unplannedOpen, setUnplannedOpen] = useState<UnplannedRow | null>(null);
   const [startOverOpen, setStartOverOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const cats = useCategories();
   const overBudget = useOverBudgetGuard(spaceId);
+
+  // #557 (user 2026-10-23): a new period carries the last plan over by itself instead of showing the
+  // start screen — once per period here; while it runs the start screen stays away
+  const carried = useRef<string | null>(null);
+  const [carry, setCarry] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
+  const continuable = !!model?.continuable;
+  const carryKey = model ? `${spaceId}:${model.period.start}` : null;
+  useEffect(() => {
+    // #505: the carry-over writes the plan — the devices of those who may write it carry it
+    if (!canEdit || !continuable || !carryKey || carried.current === carryKey) return;
+    carried.current = carryKey;
+    setCarry('running');
+    ops
+      .continuePlan()
+      .then((done) => setCarry(done ? 'done' : 'failed'))
+      .catch(() => setCarry('failed'));
+  }, [canEdit, continuable, carryKey, ops]);
+  const carrying = carry === 'running' || (carry === 'done' && continuable);
   // which segments are folded: this device remembers (user 2026-10-07)
   const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
   const toggleSegmentFold = (kind: PlanSegmentKind) =>
@@ -299,7 +338,7 @@ export function PlanningScreen() {
   const plan = useMemo(() => (model ? viewedPlan(model, viewBack, sandboxMode) : null), [model, viewBack, sandboxMode]);
   const views = useMemo(() => (model && plan ? model.viewsOf(plan) : []), [model, plan]);
   const openView: SubjectView | null = views.find((v) => v.subject.id === openSubjectId) ?? null;
-  const editability = model && plan ? model.editabilityOf(plan) : 'readOnly';
+  const editability = canEdit && model && plan ? model.editabilityOf(plan) : 'readOnly';
   const editable = editability === 'full';
   const canFill = editability !== 'readOnly';
 
@@ -359,6 +398,20 @@ export function PlanningScreen() {
   const body = () => {
     if (!model) return null;
     if (!plan) {
+      if (viewBack === 0 && carrying) {
+        return (
+          <p className="py-8 text-center text-[13px] text-ink-4" data-testid="plan-carrying">
+            {t('plan.carryingOver')}
+          </p>
+        );
+      }
+      if (viewBack === 0 && !canEdit) {
+        return (
+          <p className="py-8 text-center text-[13px] text-ink-4" data-testid="plan-none-readonly">
+            {t('plan.noPlanPast')}
+          </p>
+        );
+      }
       if (viewBack === 0) return <StartPlanCard model={model} ops={ops} currency={currency} />;
       if (viewBack > 0) {
         return (
@@ -371,7 +424,7 @@ export function PlanningScreen() {
       return (
         <div className="rounded-card border border-line bg-surface p-4 text-center" data-testid="plan-ahead-empty">
           <p className="text-[13px] text-ink-3">{t('plan.aheadEmpty')}</p>
-          {model.plan ? (
+          {model.plan && canEdit ? (
             <Button size="sm" className="mt-3" data-testid="plan-ahead-start" onClick={() => void ops.fundAhead(viewedPeriod(model, viewBack))}>
               {t('plan.aheadStart')}
             </Button>
@@ -391,20 +444,20 @@ export function PlanningScreen() {
           currency={currency}
           onFillAll={() => void ops.fillAll(plan)}
           onWithdrawAll={() => void ops.withdrawAll(plan)}
-          onAhead={() => setSheet('ahead')}
+          onAhead={() => canEdit && setSheet('ahead')}
         />
         {editability === 'moveOnly' && (
           <p className="mt-2 px-1 text-center text-[11px] text-ink-4" data-testid="plan-moveonly">
             {t('plan.previous')}
           </p>
         )}
-        {editability === 'readOnly' && (
+        {editability === 'readOnly' && canEdit && (
           <p className="mt-2 px-1 text-center text-[11px] text-ink-4" data-testid="plan-readonly">
             {t('plan.readOnly')}
           </p>
         )}
-        {viewBack === 0 && <SandboxStrip model={model} sandboxMode={sandboxMode} onMode={setSandboxMode} ops={ops} />}
-        {viewBack === 0 && plan.kind === 'actual' && aheadDiffers(model, plan) && (
+        {viewBack === 0 && canEdit && <SandboxStrip model={model} sandboxMode={sandboxMode} onMode={setSandboxMode} ops={ops} />}
+        {viewBack === 0 && canEdit && plan.kind === 'actual' && aheadDiffers(model, plan) && (
           <button
             data-testid="plan-ahead-differs-strip"
             onClick={() => setSheet('ahead')}
@@ -415,9 +468,19 @@ export function PlanningScreen() {
             <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         )}
+        {/* the red ones, one by one (#557): the pill opens a review that walks them — no auto-fix */}
         {model.attention.length > 0 && plan.kind === 'actual' && viewBack === 0 && (
           <div className="mt-3 px-1" data-testid="plan-attention">
-            <Pill tone="negative">{t('plan.home.red', { n: model.attention.length })}</Pill>
+            <button
+              type="button"
+              data-testid="plan-attention-review"
+              disabled={!canEdit}
+              onClick={() => setReviewOpen(true)}
+              className="m-tap inline-flex items-center gap-2 border-none bg-transparent p-0"
+            >
+              <Pill tone="negative">{t('plan.home.red', { n: model.attention.length })}</Pill>
+              {canEdit && <span className="text-[11px] font-semibold text-accent-deep">{t('plan.review.open')}</span>}
+            </button>
           </div>
         )}
         {segmentBlocks()}
@@ -446,13 +509,15 @@ export function PlanningScreen() {
       />
       <div ref={(el) => attachScrollMemory(el, 'planning')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="planning" />
+        <ReadOnlyNote className="mb-2" testId="plan-readonly-note" />
         {model && <PeriodPager model={model} viewBack={viewBack} onViewBack={setViewBack} />}
         {body()}
       </div>
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title={t('plan.menu.title')} size="form">
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-menu-sheet">
-          {MENU.filter((item) => item.id !== 'startOver' || editable).map((item) => (
+          {/* #505: a reader's menu keeps what only shows */}
+          {MENU.filter((item) => (item.id !== 'startOver' || editable) && (canEdit || item.id === 'insights')).map((item) => (
             <Row key={item.id} icon={item.icon} title={t(item.key)} testId={`plan-menu-${item.id}`} onClick={() => pick(item.id)} />
           ))}
         </div>
@@ -488,8 +553,11 @@ export function PlanningScreen() {
           <ReorderSheet segment={reorderSegment} model={model} plan={plan} ops={ops} onClose={() => setReorderSegment(null)} />
           <AddSourceSheet segment={adding} model={model} plan={plan} ops={ops} onClose={() => setAdding(null)} />
           <UnplannedSheet
-            row={editable ? unplannedOpen : null}
+            row={canFill ? unplannedOpen : null}
             model={model}
+            plan={plan}
+            ops={ops}
+            canPlan={editable}
             fmt={fmt}
             currency={currency}
             onPlan={(row) => {
@@ -505,6 +573,9 @@ export function PlanningScreen() {
             onClose={() => setUnplannedOpen(null)}
           />
           <OverBudgetSheet guard={overBudget} fmt={fmt} currency={currency} />
+          {reviewOpen && model.plan && (
+            <OverspentReview onClose={() => setReviewOpen(false)} model={model} plan={model.plan} ops={ops} fmt={fmt} currency={currency} />
+          )}
           {/* start over (user 2026-10-08): every subject goes — a big move, so it asks first, with no countdown */}
           <DangerConfirmSheet
             open={startOverOpen}

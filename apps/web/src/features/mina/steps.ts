@@ -2,7 +2,7 @@ import type { TranslationKey } from '@/i18n';
 import type { MinaArt, MinaExpr } from './assets';
 
 /**
- * The Mina onboarding tutorial (docs/mina-onboarding-tutorial.md):
+ * The Mina onboarding tutorial:
  * auto-starts after the onboarding form, walks the REAL navigation via
  * gated clicks, and never writes data — the user's own form submissions
  * complete the act-steps (store-diff detection, value-flexible).

@@ -473,9 +473,11 @@ describe('Debts (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('loanmatch-apply'));
     await waitFor(async () => {
-      expect((await db.transactions.get('auto1'))?.loanCounted).toBe(1);
+      expect((await db.transactions.get('auto1'))?.linkedAccountId).toBe(accountId);
       expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
     }, { timeout: 5000 });
+    // #509: a loan typed at its original amount carries no balance date — every payment counts by itself
+    expect((await db.accounts.get(accountId))?.balanceAsOf ?? undefined).toBeUndefined();
     db.close();
   }, 20_000);
 

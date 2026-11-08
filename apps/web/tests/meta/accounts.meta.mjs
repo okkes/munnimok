@@ -14,12 +14,12 @@ export const GROUPS = [
       {
         key: '17-accounts-add',
         title: 'Add manual account',
-        desc: 'The + button opens the type grid; picking Cash Wallet shows the manual form (name + starting balance, comma decimals accepted). The new account appears in the list and in the Home total.',
+        desc: 'A space’s Add account offers connect a bank, import a statement or a manual account (#527); Manual opens the type grid, and picking Cash Wallet shows the manual form (name + starting balance, comma decimals accepted). The new account appears in the list and in the Home total.',
         tags: ['state'],
         steps: [
+          'Add account: connect, import or manual',
           'Account type grid',
           'Manual account form',
-          'List with new account',
         ],
       },
     ],

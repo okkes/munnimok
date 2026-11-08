@@ -46,6 +46,11 @@ export const mirrorTxId = (txId: string): string => uuidv5(`mirror:${txId}`, IMP
  *  never occur inside real ids (uuid charset), so the key is unambiguous */
 export const partMirrorSourceId = (txId: string, partId: string): string => `${txId}:${partId}`;
 
+/** the app's own counter leg (a row's or a part's mint): its id IS the
+ *  mirror of the source it points back at — no bank row, nobody's decision */
+export const isMintedLeg = (tx: { id: string; transferPeerId?: string }): boolean =>
+  !!tx.transferPeerId && tx.id === mirrorTxId(tx.transferPeerId);
+
 /** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>
   uuidv5(`link:${spaceId}:${feedId}`, IMPORT_NS);

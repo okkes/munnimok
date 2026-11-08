@@ -6,13 +6,12 @@ import { reservationConflicts, subjectFamily } from '@/domain/planning';
 import type { Reservation } from '@/domain/planning';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { Cat } from '@/features/categories/useCategories';
-import { MDI_NAMES } from '@/generated/mdiNames';
 import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
-import { SearchField } from '@/ui/SearchField';
+import { IconPicker } from '@/ui/IconPicker';
 import { Sheet } from '@/ui/Sheet';
 import { SUBJECT_COLORS, SUBJECT_ICONS } from './planningUi';
 import type { MoneyFmt } from './SegmentSection';
@@ -57,33 +56,6 @@ const draftOf = (subject: PlanSubjectRow | null, preset: EditorPreset | null): D
   };
 };
 
-/** the icon grid: a first pick, or the whole font by search */
-function IconGrid({ icon, query, onQuery, onPick }: Readonly<{ icon: string; query: string; onQuery: (q: string) => void; onPick: (name: string) => void }>) {
-  const { t } = useLang();
-  const needle = query.trim().toLowerCase();
-  const candidates = needle ? MDI_NAMES.filter((n) => n.includes(needle)).slice(0, 48) : [...SUBJECT_ICONS];
-  return (
-    <>
-      <SearchField testId="plan-editor-icon-search" value={query} onChange={onQuery} placeholder={t('cats.iconSearch')} height="h-10" textSize="text-[13px]" />
-      <div className="grid max-h-40 grid-cols-6 gap-2 overflow-y-auto">
-        {candidates.map((candidate) => (
-          <button
-            key={candidate}
-            data-testid={`plan-editor-icon-${candidate}`}
-            title={candidate}
-            onClick={() => onPick(candidate)}
-            className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
-              icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-            }`}
-          >
-            <Icon name={candidate} size={19} />
-          </button>
-        ))}
-        {needle && candidates.length === 0 && <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>}
-      </div>
-    </>
-  );
-}
 
 /** a main's tick: chosen itself, half when only some of its subs are, off otherwise */
 const mainTick = (draft: Draft, main: Cat, subs: readonly Cat[]): TickState => {
@@ -104,12 +76,15 @@ function CategoryTree({
   onToggleMain,
   onToggleSub,
   onTakeOver,
+  onRemoveHolder,
 }: Readonly<{
   draft: Draft;
   conflicts: ReadonlyMap<string, Reservation>;
   onToggleMain: (main: Cat, subs: readonly Cat[]) => void;
   onToggleSub: (main: Cat, sub: Cat) => void;
   onTakeOver: (reservation: Reservation, catId: string) => void;
+  /** a budget holds the category (#535): it can leave the plan from right here */
+  onRemoveHolder: (reservation: Reservation) => void;
 }>) {
   const { t } = useLang();
   const cats = useCategories();
@@ -119,9 +94,20 @@ function CategoryTree({
     const reservation = conflicts.get(catId);
     if (!reservation) return null;
     if (reservation.segment === 'budgets') {
+      // a budget's categories come from the budget itself — it cannot hand one over, only leave the plan
       return (
-        <span className="block text-[10px] text-ink-4" data-testid={`plan-editor-budget-${catId}`}>
+        <span className="flex items-center gap-2 text-[10px] text-warning" data-testid={`plan-editor-budget-${catId}`}>
           {t('plan.subject.conflictBudget', { name: reservation.name })}
+          <button
+            data-testid={`plan-editor-remove-${catId}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveHolder(reservation);
+            }}
+            className="m-tap border-none bg-transparent p-0 font-semibold text-accent-deep"
+          >
+            {t('plan.overlapRemove', { name: reservation.name })}
+          </button>
         </span>
       );
     }
@@ -260,7 +246,8 @@ export function SubjectEditor({
   const estimate = useMemo(() => model.estimate(family), [family, model]);
   const target = parseCents(draft.target);
   const blocker = blockerOf(draft, target);
-  const expenseConflicts = [...conflicts.values()].some((r) => r.segment === 'expenses');
+  // first come keeps its place (#535): a category another subject — an expense or a budget — holds blocks the save
+  const anyConflict = conflicts.size > 0;
 
   const toggleMain = (main: Cat, subs: readonly Cat[]) => {
     const catIds = new Set(draft.catIds);
@@ -291,7 +278,7 @@ export function SubjectEditor({
 
   const save = async () => {
     setAttempted(true);
-    if (blocker || target === null || expenseConflicts) return;
+    if (blocker || target === null || anyConflict) return;
     const fields = {
       name: draft.name.trim(),
       icon: draft.icon,
@@ -319,7 +306,8 @@ export function SubjectEditor({
       }
     >
       <div className="flex flex-col gap-3" data-testid="plan-editor">
-        <IconGrid icon={draft.icon} query={iconQuery} onQuery={setIconQuery} onPick={(icon) => patch({ icon })} />
+        {/* #563: the subject suggestions lead, the whole icon font follows — to scroll or to search */}
+        <IconPicker value={draft.icon} onChange={(icon) => patch({ icon })} featured={SUBJECT_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="plan-editor-icon" />
         <ColorPicker colors={SUBJECT_COLORS} value={draft.color} onChange={(color) => patch({ color })} testIdPrefix="plan-editor-color" customLabel={t('plan.subject.customColor')} />
         <input
           data-testid="plan-editor-name"
@@ -338,9 +326,10 @@ export function SubjectEditor({
           onToggleMain={toggleMain}
           onToggleSub={toggleSub}
           onTakeOver={(reservation, catId) => void ops.freeCategories(reservation.subjectId, [catId])}
+          onRemoveHolder={(reservation) => void ops.removeSubject(reservation.subjectId)}
         />
         <FormBlockerNote show={attempted && blocker === 'cats'} text={t(BLOCKER_KEY.cats)} testId="plan-editor-blocker" />
-        <FormBlockerNote show={attempted && !blocker && expenseConflicts} text={t('plan.subject.blockerConflict')} testId="plan-editor-blocker" />
+        <FormBlockerNote show={attempted && !blocker && anyConflict} text={t('plan.subject.blockerConflict')} testId="plan-editor-blocker" />
 
         <div className="m-cap px-1">{t('plan.target')}</div>
         <input

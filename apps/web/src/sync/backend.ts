@@ -12,6 +12,14 @@ export interface PullResult {
   nextSince?: number;
 }
 
+/** #569: one space the caller reaches, with the head its pull would report */
+export interface SpaceHead {
+  spaceId: string;
+  latestSeq: number;
+  /** #505: the caller's role there ("reader" for a feed reached only through an attachment) */
+  role?: string;
+}
+
 /**
  * Transport to the sync server. Demo/offline identities simply never get
  * an engine, so no network code can even run for them.
@@ -21,6 +29,8 @@ export interface SyncBackend {
   pull(spaceId: string, since: number): Promise<PullResult>;
   /** space ids this user is a member of — how a fresh device discovers its data */
   listSpaces(): Promise<string[]>;
+  /** #569: every space the user reaches with its head, in one call — a round pulls only what moved */
+  heads(): Promise<SpaceHead[]>;
   /**
    * Optional long-lived change stream: resolves when the stream ends,
    * rejects on connection errors; `onEvent` fires per frame — a changed
@@ -52,10 +62,11 @@ export class ApiSyncBackend implements SyncBackend {
   }
 
   /** a failed answer — a 410 device-revoked raises the remote-disconnect
-   *  event (this browser was disconnected) before the error surfaces */
+   *  event (this browser was disconnected) before the error surfaces; a
+   *  pause the server asked for carries how long */
   private async failed(res: Response): Promise<SyncHttpError> {
     await noticeDeviceRevoked(res);
-    return new SyncHttpError(res.status);
+    return new SyncHttpError(res.status, retryAfterMs(res.headers.get('Retry-After')));
   }
 
   async push(spaceId: string, clientId: string, ops: Op[]): Promise<PushResult> {
@@ -80,6 +91,12 @@ export class ApiSyncBackend implements SyncBackend {
     const res = await fetch(`${this.options.baseUrl}/me/spaces`, { headers: await this.headers() });
     if (!res.ok) throw await this.failed(res);
     return (await res.json()) as string[];
+  }
+
+  async heads(): Promise<SpaceHead[]> {
+    const res = await fetch(`${this.options.baseUrl}/sync/heads`, { headers: await this.headers() });
+    if (!res.ok) throw await this.failed(res);
+    return (await res.json()) as SpaceHead[];
   }
 
   /**
@@ -130,7 +147,20 @@ function emitSseChunk(chunk: string, onEvent: (frame: SyncEventFrame) => void): 
 }
 
 export class SyncHttpError extends Error {
-  constructor(readonly status: number) {
+  /** `retryAfterMs`: the pause the server asked for (Retry-After), when it named one */
+  constructor(
+    readonly status: number,
+    readonly retryAfterMs?: number,
+  ) {
     super(`sync request failed: ${status}`);
   }
+}
+
+/** a Retry-After header in milliseconds — seconds or an HTTP date; undefined when absent or unreadable */
+export function retryAfterMs(header: string | null, now = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }

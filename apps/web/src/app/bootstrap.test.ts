@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
-import type { PullResult, PushResult, SyncBackend } from '@/sync/backend';
+import type { PullResult, PushResult, SpaceHead, SyncBackend } from '@/sync/backend';
 import { SyncHttpError } from '@/sync/backend';
 import { SyncEngine } from '@/sync/engine';
 import { MunniDB } from '@/db/schema';
@@ -46,6 +46,10 @@ class FlakyServer implements SyncBackend {
       throw new SyncHttpError(401); // the cold-start signature
     }
     return this.serverSpaces;
+  }
+  /** the round's discovery (#569): the same spaces, each one move ahead of a fresh cursor */
+  async heads(): Promise<SpaceHead[]> {
+    return (await this.listSpaces()).map((spaceId) => ({ spaceId, latestSeq: 1 }));
   }
 }
 

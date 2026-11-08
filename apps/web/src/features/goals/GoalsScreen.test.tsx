@@ -116,6 +116,25 @@ describe('Goals (demo identity)', () => {
     expect(note.textContent).toMatch(/3[.,]000/);
   }, 15_000);
 
+  it('#455: savings that shrank under a reached goal point at cashing it out', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    const card = await createGoal('Car', '8000');
+    fireEvent.click(card);
+    await screen.findByTestId('goaldetail-hero');
+    await fund('goaldetail-fund', '8000', /€8[.,]000[.,]00/);
+    // the car was bought: the savings account dropped to €2,000
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await db.accounts.update('demo_save', { balanceCents: 200_000 });
+    db.close();
+
+    cleanup();
+    renderApp('/goals');
+    await screen.findByTestId('goals-negative-note', {}, { timeout: 5000 });
+    expect(screen.getByTestId('goals-cashout-hint').textContent).toMatch(/Cash it out/);
+  }, 15_000);
+
   it('#368: funding beyond the savings pool is refused with what is left; the pool is the ticked savings accounts', async () => {
     renderApp('/goals');
     await screen.findByTestId('screen-goals');
@@ -149,6 +168,76 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(screen.getByTestId('goalform-shortterm-go'));
     expect(await screen.findByTestId('screen-planning')).toBeTruthy();
   }, 15_000);
+
+  it('#455: a reached goal cashes out — the picked withdrawal leaves the saving, the rest goes back to the pool, undo restores it', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    const card = await createGoal('Car', '1000');
+    fireEvent.click(card);
+    await screen.findByTestId('goaldetail-hero');
+    // not reached yet: no cash-out door
+    expect(screen.queryByTestId('goaldetail-cashout')).toBeNull();
+    await fund('goaldetail-fund', '1000', /€1[.,]000[.,]00/);
+
+    // €900 left the savings account to pay for the car
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { localToday } = await import('@/application/recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('transaction', 'demo_space', 'car-withdrawal', {
+      accountId: 'demo_save',
+      date: localToday(),
+      amountCents: -90_000,
+      currency: 'EUR',
+      merchant: 'Naar betaalrekening',
+      catId: 'savingWithdraw',
+      needsReview: 0,
+    });
+
+    fireEvent.click(await screen.findByTestId('goaldetail-cashout'));
+    await screen.findByTestId('screen-goal-cashout');
+    const confirm = screen.getByTestId('goalcashout-confirm') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(await screen.findByTestId('goalcashout-pick-car-withdrawal', {}, { timeout: 5000 }));
+    expect(screen.getByTestId('goalcashout-fig-selected').textContent).toMatch(/€900[.,]00/);
+    expect(screen.getByTestId('goalcashout-fig-back').textContent).toMatch(/€100[.,]00/);
+    fireEvent.click(confirm);
+
+    // the goal page says what paid for it and where the rest went
+    const done = await screen.findByTestId('goaldetail-cashedout', {}, { timeout: 5000 });
+    expect(screen.getByTestId('goaldetail-cashedout-sum').textContent).toMatch(/€900[.,]00/);
+    expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€100[.,]00/);
+    expect(done.textContent).toContain('Naar betaalrekening');
+    expect(screen.queryByTestId('goaldetail-fund')).toBeNull();
+    const activity = (await db.activities.toArray()).map((row) => row.kind);
+    expect(activity).toContain('goalCashOut');
+
+    // the period's saving does not count it — the drill names the goal instead
+    cleanup();
+    renderApp('/overview/saving');
+    const cashouts = await screen.findByTestId('overview-cashouts', {}, { timeout: 5000 });
+    expect(cashouts.textContent).toContain('Car');
+    expect(cashouts.textContent).toMatch(/€900[.,]00/);
+    expect(screen.queryByTestId('overview-sub-savingWithdraw')).toBeNull();
+    // …and Home's tile and the Periods card mark it without counting it
+    cleanup();
+    renderApp('/home');
+    expect(await screen.findByTestId('home-overview-cashout', {}, { timeout: 5000 })).toBeTruthy();
+    cleanup();
+    renderApp('/periods');
+    expect((await screen.findByTestId('periods-cashout-saving', {}, { timeout: 5000 })).textContent).toMatch(/€900[.,]00/);
+
+    // undo: the goal is back as it was
+    cleanup();
+    renderApp('/goals');
+    fireEvent.click(await screen.findByTestId(card.getAttribute('data-testid')!, {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('goaldetail-undo-cashout'));
+    await screen.findByTestId('goaldetail-cashout', {}, { timeout: 5000 });
+    db.close();
+  }, 30_000);
 
   it('the home block surfaces progress; the settings row reaches goals', async () => {
     renderApp('/goals');

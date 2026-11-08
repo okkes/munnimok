@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { useData } from '@/app/data';
-import { appendNotification } from './notifications';
+import { appendNotification, notificationTitle } from './notifications';
+import { spaceNotifyOn } from './spaceNotifications';
 import { LOCALES, useLang } from '@/i18n';
+import type { Lang, TFunc } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
-import { isDebtTracked } from '@/domain/debts';
+import { debtsMissingRate } from './debts';
 import { merchantKey } from '@/domain/merchantKey';
 import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
@@ -13,7 +15,7 @@ import { txTitle } from '@/lib/text';
 import type { StorageBackend } from '@/db/backend';
 import { useQuery } from '@/db/useQuery';
 import type { Repo } from '@/db/repo';
-import type { RecurringRow } from '@/db/types';
+import type { AccountRow, RecurringRow } from '@/db/types';
 
 /** Application layer for recurring costs (architecture R1). */
 
@@ -207,6 +209,7 @@ const adoptionPatch = (rec: RecurringRow, tx: SpaceTx): { catId?: string; linked
  * and on opening the Recurring screen.
  */
 export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  if (!repo.canWrite(spaceId)) return 0; // #505: the linker of a space this identity only reads runs on its writers' devices
   const recs = (await store.bySpace('recurring', spaceId)).filter(
     (r) => r.deleted === 0 && r.active === 1 && !!r.merchantKey,
   );
@@ -243,6 +246,67 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
   return linked;
 }
 
+/** #551: the space a debt is held in — the attachment's for a linked account, its own otherwise */
+const holdingSpace = (loan: AccountRow & { link?: { spaceId: string } }): string => loan.link?.spaceId ?? loan.spaceId;
+
+/** one reminder per due date for every recurring whose reminder window has started (S3776: out of the hook) */
+async function remindDueRecurrings(store: StorageBackend, registration: ServiceWorkerRegistration | undefined, t: TFunc, lang: Lang): Promise<void> {
+  const today = localToday();
+  const recs = (await store.allRows('recurring')).filter(
+    (r) => r.deleted === 0 && r.active === 1 && (r.notifyDaysBefore ?? 0) > 0,
+  );
+  for (const rec of recs) {
+    const next = nextDueDate(rec, today);
+    if (!next || next > addDays(today, rec.notifyDaysBefore ?? 0)) continue;
+    const key = `recNotified_${rec.id}_${next}`;
+    if (await store.metaGet(key)) continue; // one reminder per due date
+    await store.metaPut(key, Date.now());
+    const date = new Date(next).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+    // #551: the row and the notification say which space, and open its recurring costs
+    await appendNotification(store, 'recurringDue', { name: rec.name, date, spaceId: rec.spaceId }, key);
+    // #549: the OS outlet only where that space's notifications are on
+    if (registration && (await spaceNotifyOn(store, rec.spaceId))) {
+      await registration.showNotification(await notificationTitle(store, rec.spaceId), {
+        body: t('recurring.reminderBody', { name: rec.name, date }),
+        icon: 'icon-192.png',
+        badge: 'icon-192.png',
+        tag: `rec-remind-${rec.id}`,
+        data: { url: `./#/recurring?space=${rec.spaceId}` },
+      });
+    }
+  }
+}
+
+/**
+ * Loans saved without an interest rate get a WEEKLY nudge to fill it in —
+ * 0% is an answer, an empty rate is a question (user rule 2026-07-28);
+ * quick-add now, find out the rate later. Loans v2: the tracked liability
+ * ACCOUNTS are the debts now. #536: only a debt a space holds — never a
+ * global account nobody attached.
+ */
+async function nudgeMissingRates(store: StorageBackend, registration: ServiceWorkerRegistration | undefined, t: TFunc): Promise<void> {
+  const loans = await debtsMissingRate(store);
+  for (const loan of loans) {
+    const key = `debtPctReminded_${loan.id}`;
+    // metaGet returns the {key, value} row — reading the row itself as
+    // a number made the 7-day check NaN and the nudge fired every open
+    const last = (await store.metaGet(key))?.value as number | undefined;
+    if (last && Date.now() - last < 7 * 86_400_000) continue;
+    await store.metaPut(key, Date.now());
+    const spaceId = holdingSpace(loan);
+    await appendNotification(store, 'debtRate', { name: loan.name, spaceId }, `${key}_${Date.now()}`);
+    if (registration && (await spaceNotifyOn(store, spaceId))) {
+      await registration.showNotification(await notificationTitle(store, spaceId), {
+        body: t('debts.rateReminderBody', { name: loan.name }),
+        icon: 'icon-192.png',
+        badge: 'icon-192.png',
+        tag: `debt-rate-${loan.id}`,
+        data: { url: `./#/debts?space=${spaceId}` },
+      });
+    }
+  }
+}
+
 /**
  * Local reminders: while the app is open (or being opened), recurrings
  * with a reminder window that has started fire one notification per due
@@ -258,56 +322,8 @@ export function useRecurringReminders(): void {
       // notification is the optional second outlet, permission allowing
       const granted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
       const registration = granted ? await navigator.serviceWorker?.ready.catch(() => undefined) : undefined;
-
-      const today = localToday();
-      const recs = (await store.allRows('recurring')).filter(
-        (r) => r.deleted === 0 && r.active === 1 && (r.notifyDaysBefore ?? 0) > 0,
-      );
-      for (const rec of recs) {
-        const next = nextDueDate(rec, today);
-        if (!next || next > addDays(today, rec.notifyDaysBefore ?? 0)) continue;
-        const key = `recNotified_${rec.id}_${next}`;
-        if (await store.metaGet(key)) continue; // one reminder per due date
-        await store.metaPut(key, Date.now());
-        const date = new Date(next).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
-        await appendNotification(store, 'recurringDue', { name: rec.name, date }, key);
-        if (registration) {
-          await registration.showNotification('munni', {
-            body: t('recurring.reminderBody', { name: rec.name, date }),
-            icon: 'icon-192.png',
-            badge: 'icon-192.png',
-            tag: `rec-remind-${rec.id}`,
-            data: { url: './#/recurring' },
-          });
-        }
-      }
-
-      // loans saved without an interest rate get a WEEKLY nudge to fill
-      // it in — 0% is an answer, an empty rate is a question (user rule
-      // 2026-07-28); quick-add now, find out the rate later. Loans v2:
-      // the tracked liability ACCOUNTS are the debts now. #221: the
-      // minted DEFAULT pot is munni's fixture, not a user loan — no nag.
-      const loans = (await store.allRows('account')).filter(
-        (a) => a.deleted === 0 && a.archived !== 1 && !a.defaultFor && a.interestPctYear === undefined && isDebtTracked(a),
-      );
-      for (const loan of loans) {
-        const key = `debtPctReminded_${loan.id}`;
-        // metaGet returns the {key, value} row — reading the row itself as
-        // a number made the 7-day check NaN and the nudge fired every open
-        const last = (await store.metaGet(key))?.value as number | undefined;
-        if (last && Date.now() - last < 7 * 86_400_000) continue;
-        await store.metaPut(key, Date.now());
-        await appendNotification(store, 'debtRate', { name: loan.name }, `${key}_${Date.now()}`);
-        if (registration) {
-          await registration.showNotification('munni', {
-            body: t('debts.rateReminderBody', { name: loan.name }),
-            icon: 'icon-192.png',
-            badge: 'icon-192.png',
-            tag: `debt-rate-${loan.id}`,
-            data: { url: './#/debts' },
-          });
-        }
-      }
+      await remindDueRecurrings(store, registration, t, lang);
+      await nudgeMissingRates(store, registration, t);
     })().catch(() => undefined); // reminders are best-effort; a closing db must not throw
   }, [store, t, lang]);
 }

@@ -57,7 +57,7 @@ test('shared stack on lcl: glitchtip with its own database, vault, control, pgad
   assert.equal(envOf(block(compose, 'vaultwarden')).DOMAIN, 'https://localhost:8384');
   assert.deepEqual(portsOf(block(compose, 'family-tls')), ['8384:8384'], 'the family Caddy publishes the vault\'s https port; no 443 without LAN mode');
   const control = envOf(block(compose, 'control'));
-  assert.deepEqual(control, { MUNNI_API_URL: 'http://localhost:8382', MUNNI_LOGTO_ENDPOINT: 'http://localhost:3201', MUNNI_LOGTO_APP_ID: '${CONTROL_LOGTO_APP_ID}', MUNNI_LOGTO_RESOURCE: 'http://localhost:8382' }, 'the cockpit signs in through the control environment (prod, the lowest slot)');
+  assert.deepEqual(control, { MUNNI_API_URL: 'http://localhost:8382', MUNNI_LOGTO_ENDPOINT: 'http://localhost:3201', MUNNI_LOGTO_APP_ID: '${CONTROL_LOGTO_APP_ID}', MUNNI_LOGTO_RESOURCE: 'http://localhost:8382', MUNNI_LAB_URL: 'http://localhost:8388' }, 'the cockpit signs in through the control environment (prod, the lowest slot) and links to its lab, where a consent is revoked');
   assert.deepEqual(portsOf(block(compose, 'control')), ['8385:80']);
   assert.deepEqual(portsOf(block(compose, 'pgadmin')), ['8386:80']);
   assert.match(block(compose, 'pgadmin'), /pgadmin-servers\.json:\/pgadmin4\/servers\.json:ro/);
@@ -136,7 +136,7 @@ test('shared stack with no environment yet (mid create/delete): renders with the
   for (const e of envs) fx.removeEnv('lcl', e);
   try {
     const { compose, read } = render('munni-lcl-shared');
-    assert.deepEqual(envOf(block(compose, 'control')), { MUNNI_API_URL: '', MUNNI_LOGTO_ENDPOINT: '', MUNNI_LOGTO_APP_ID: '${CONTROL_LOGTO_APP_ID}', MUNNI_LOGTO_RESOURCE: '' });
+    assert.deepEqual(envOf(block(compose, 'control')), { MUNNI_API_URL: '', MUNNI_LOGTO_ENDPOINT: '', MUNNI_LOGTO_APP_ID: '${CONTROL_LOGTO_APP_ID}', MUNNI_LOGTO_RESOURCE: '', MUNNI_LAB_URL: '' });
     assert.deepEqual(Object.values(JSON.parse(read('pgadmin-servers.json')).Servers).map((s) => s.Host), ['glitchtip-db']);
   } finally {
     fx.writeEnv('lcl', { env: 'prod', slot: 0, channel: 'dev', features: { push: true, banking: ['gocardless'], signin: ['google'] } });

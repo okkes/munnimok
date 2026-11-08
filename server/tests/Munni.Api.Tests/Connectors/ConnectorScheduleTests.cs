@@ -11,7 +11,7 @@ using Munni.Api.Accounts;
 namespace Munni.Api.Tests.Connectors;
 
 /// <summary>
-/// The scheduler of docs/connector-integration-plan.md §5.5: a session
+/// The scheduler of docs/connectors/relay.md ("Scheduled syncs"): a session
 /// whose bundle the relay keeps (household-agent custody) syncs by itself,
 /// on the provider's interval, and a refusal the person must act on drops
 /// the kept bundle. No agent runs in this suite, so a kept bundle is

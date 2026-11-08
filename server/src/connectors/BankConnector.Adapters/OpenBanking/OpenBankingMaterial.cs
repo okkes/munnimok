@@ -82,4 +82,12 @@ internal sealed record ConsentAccount
     /// <summary>Details were read once already; a fetch need not spend budget on them again.</summary>
     [JsonPropertyName("detailed")]
     public bool Detailed { get; init; }
+
+    /// <summary>The party's identity for the account across consents (Enable Banking's identification hash).</summary>
+    [JsonPropertyName("identity")]
+    public string? Identity { get; init; }
+
+    /// <summary>The details were read by a build that asks for the identity: a consent from before is read once more.</summary>
+    [JsonPropertyName("identity_read")]
+    public bool IdentityRead { get; init; }
 }

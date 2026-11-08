@@ -1,7 +1,7 @@
 import { useLang } from '@/i18n';
 import { useSpaceAccounts } from '@/application/transactions';
 import { isLiability, typeDef } from '@/features/accounts/accountTypes';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -23,7 +23,8 @@ export function LoanPickSheet({
   onPick: (accountId: string) => void;
   onSkip: () => void;
 }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
+  const { fmtSensitive } = useDisplayMoney();
   const accounts = useSpaceAccounts();
   const loans = (accounts ?? []).filter((a) => isLiability(a.type) && !a.archived);
   return (
@@ -42,7 +43,7 @@ export function LoanPickSheet({
           >
             <Icon name={typeDef(account.type).icon} size={18} color="var(--m-ink-2)" />
             <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{account.name}</span>
-            <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+            <span className="m-num text-[12px] text-ink-3">{fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })}</span>
           </button>
         ))}
         {loans.length === 0 && (

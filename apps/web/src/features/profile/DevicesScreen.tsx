@@ -41,7 +41,7 @@ export function browserLabel(): string | null {
 }
 
 /**
- * Logged-in devices (docs/logged-in-devices-plan.md, approved answers):
+ * Logged-in devices (user rulings 2026-07-24):
  * every device this account is signed in on — auto-named but renamable,
  * last seen, and a remote disconnect that WIPES the other device on its
  * next connection. This device itself signs out via the profile.

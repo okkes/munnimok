@@ -34,6 +34,13 @@
       "description": "majors stay individual PRs — release-notes check for required code changes is part of the merge procedure",
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "#562: the connector agents' browser is ONE version in two places — the Playwright image the agent runs on and the Microsoft.Playwright package that drives its bundled Chromium. A drift between them fails every agent at launch, so they move together in one PR, raised as soon as Playwright releases: that Chromium is what a bank judges outdated (docs/connectors/deploy.md, 'Keeping the agents' browsers current')",
+      "matchPackageNames": ["mcr.microsoft.com/playwright/dotnet", "Microsoft.Playwright"],
+      "groupName": "playwright (agent browsers)",
+      "schedule": ["at any time"],
+      "prPriority": 10
     }
   ],
   "vulnerabilityAlerts": { "enabled": true },

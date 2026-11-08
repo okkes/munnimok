@@ -156,6 +156,8 @@ export function ConnectFlowSheet({
   const [agentId, setAgentId] = useState<string | null>(null);
   // a landscape page (a party that wants a desktop browser) gets the wider dialog
   const [landscape, setLandscape] = useState(false);
+  // #543: signing in again with the login this device keeps sealed (the party offers the store) — nothing to type
+  const [savedLogin, setSavedLogin] = useState(false);
   const connectionId = useRef('');
   const attempt = useRef(0);
   const stopFollowing = useRef<() => void>(() => {});
@@ -176,6 +178,7 @@ export function ConnectFlowSheet({
     setAgents(null);
     setAgentId(null);
     setLandscape(false);
+    setSavedLogin(false);
     attempt.current += 1;
     if (resume) {
       connectionId.current = resume.connectionId;
@@ -192,6 +195,18 @@ export function ConnectFlowSheet({
       usePendingLogins.getState().patch(connectionId.current, { attached: false });
     };
   }, [open, reconnectId, resume, draftKey]);
+
+  useEffect(() => {
+    if (!open || !reconnectId || resume || !manifest?.offersCredentialStore) return;
+    let alive = true;
+    store
+      .connectorConnGet(reconnectId)
+      .then((row) => alive && setSavedLogin(!!row?.credentialBundle))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [open, reconnectId, resume, manifest, store]);
 
   useEffect(() => {
     if (!open || !ownComputer) return;
@@ -236,6 +251,8 @@ export function ConnectFlowSheet({
     stopFollowing.current();
     // the person reads the failure here; the hub needs no second copy of it
     pending.remove(connectionId.current);
+    // a kept login the party refused (or one past its life) is typed afresh on the retry
+    setSavedLogin(false);
     setReport('pending');
     setPhase({ kind: 'failed', error, artifactsJobId });
     void noteFailure(error, artifactsJobId);
@@ -344,7 +361,8 @@ export function ConnectFlowSheet({
       startedAt.current = new Date().toISOString();
       const { view } = await connectorApi.startLogin(provider, {
         connectionId: connectionId.current,
-        inputs: Object.keys(inputs).length ? inputs : undefined,
+        // #543: no inputs with a kept login — the connector opens the sealed one in their place
+        inputs: !savedLogin && Object.keys(inputs).length ? inputs : undefined,
         config: Object.keys(config).length ? config : undefined,
         credentialBundle: device?.credentialBundle,
         preferAgent: ownComputer ? (agentId ?? undefined) : undefined,
@@ -359,6 +377,10 @@ export function ConnectFlowSheet({
   };
 
   const next = () => {
+    if (savedLogin) {
+      void start();
+      return;
+    }
     if (Object.keys(problems).length > 0 || (ownComputer && !agentId)) {
       setAttempted(true);
       return;
@@ -522,18 +544,34 @@ export function ConnectFlowSheet({
           <FormBlockerNote show={attempted && !agentId} text={t('connect.agentNone')} testId="connect-agent-blocker" />
         </div>
       )}
-      {step && (
-        <>
-          {steps.length > 1 && (
-            <div className="m-cap px-1" data-testid="connect-step-title">
-              {stepIndex + 1}/{steps.length} · {t(step.labelKey)}
-            </div>
-          )}
-          {step.fields.map(renderField)}
-        </>
+      {savedLogin ? (
+        <div className="flex flex-col gap-1 rounded-card bg-bg-2 px-3 py-2.5" data-testid="connect-saved-login">
+          <span className="flex items-center gap-2 text-[13px] text-ink-2">
+            <Icon name="key-chain-variant" size={16} color="var(--m-accent-deep)" />
+            {t('connect.savedLogin')}
+          </span>
+          <button
+            data-testid="connect-saved-login-other"
+            onClick={() => setSavedLogin(false)}
+            className="m-tap self-start border-none bg-transparent p-0 text-[12px] font-medium text-accent-deep"
+          >
+            {t('connect.savedLoginOther')}
+          </button>
+        </div>
+      ) : (
+        step && (
+          <>
+            {steps.length > 1 && (
+              <div className="m-cap px-1" data-testid="connect-step-title">
+                {stepIndex + 1}/{steps.length} · {t(step.labelKey)}
+              </div>
+            )}
+            {step.fields.map(renderField)}
+          </>
+        )
       )}
       <Button data-testid="connect-next" disabled={busy} onClick={next}>
-        {stepIndex < steps.length - 1 ? t('connect.next') : t('connect.start')}
+        {savedLogin || stepIndex >= steps.length - 1 ? t('connect.start') : t('connect.next')}
       </Button>
     </div>
   );

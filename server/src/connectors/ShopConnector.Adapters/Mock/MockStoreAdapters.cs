@@ -18,6 +18,13 @@ public static class MockStoreAdapters
 
     public static IReadOnlyList<string> Ids { get; } = [Simple, Sms, Captcha, Slow, Broken, Persistent];
 
+    /// <summary>
+    /// How often the fixture's receipts repeat: four weeks, from the days the
+    /// file states, so a Sunday shop stays a Sunday shop. Any window this
+    /// long that ends yesterday holds each of the file's receipts exactly once.
+    /// </summary>
+    public const int ReceiptCycleDays = 28;
+
     public static IReadOnlyList<IProviderAdapter> All(MockStoreOptions? options = null, TimeProvider? time = null) =>
         [.. Profiles(options).Select(p => new MockStoreAdapter(p, time))];
 

@@ -22,6 +22,7 @@ import type { ImportResult } from './importCamt';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { partyName } from '@/features/connectors/logos';
@@ -333,7 +334,7 @@ export function StatementImportFlow({
               }}
               className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
             >
-              <img src={bank.logo} alt="" className="h-8 w-8 rounded-lg object-contain" />
+              <Picture src={bank.logo} className="h-8 w-8 rounded-lg object-contain" />
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] font-semibold text-ink">{bank.name}</span>
                 <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(bank.subKey)}</span>

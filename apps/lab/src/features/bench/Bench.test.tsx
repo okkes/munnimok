@@ -1,8 +1,14 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BENCH_SESSIONS, CATALOGUE, HAPPY, JOBS, renderLab, scriptFetch } from '../../test/harness';
+import { AGENTS, BENCH_SESSIONS, CATALOGUE, HAPPY, HOSTED_AGENT, JOBS, renderLab, scriptFetch } from '../../test/harness';
+import { signingInLine } from './BenchScreen';
 import { cellText, columnsOf, encodeTaps, paramsBody } from './benchFacts';
+import { agentWhere, waitingLine } from './ConnectScreen';
 import { parseSize } from './LiveView';
+
+/** an explore run the relay last read while it was starting (#576: the operator walked away before the live view came up) */
+const EXPLORE_ROW = { sessionId: 'ses_x', provider: 'explore', label: null, state: 'running', hasBundle: false, preferAgent: null, createdAt: '2026-11-02T15:08:04Z', lastUsedAt: '2026-11-02T15:08:04Z', lastError: null };
+const EXPLORE_JOB = (over: Record<string, unknown>) => ({ ...JOBS.jobs[2], jobId: 'job_x', sessionId: 'ses_x', providerId: 'explore', kind: 'login', resource: null, ...over });
 
 const RECEIPTS = [
   { id: 'rcp_1', externalId: 'A1', merchant: 'Mock store', purchasedAt: '2026-09-30T10:00:00Z', total: { amount: '12.50', currency: 'EUR' }, items: [{ name: 'x' }] },
@@ -64,11 +70,15 @@ describe('Bench', () => {
     fireEvent.change(screen.getByTestId('bench-input-username'), { target: { value: 'shopper' } });
     fireEvent.change(screen.getByTestId('bench-input-password'), { target: { value: 'hunter2' } });
     fireEvent.change(screen.getByTestId('bench-label'), { target: { value: 'a bench run' } });
-    fireEvent.change(screen.getByTestId('bench-run-on'), { target: { value: 'agt_fleet1' } });
+    // #576: a party that pins no machine runs on the first free agent of the choice — no single agent is offered as if it could be named
+    const runOn = screen.getByTestId('bench-run-on') as HTMLSelectElement;
+    expect([...runOn.options].map((o) => o.value)).toEqual(['', 'fleet']);
+    expect(screen.getByTestId('bench-run-on-hint').textContent).toContain('munni dev pooled agent 1 (online)');
+    fireEvent.change(runOn, { target: { value: 'fleet' } });
     fireEvent.click(start);
 
     await screen.findByTestId('bench-challenge-mfa_code');
-    expect(posted[0]).toMatchObject({ inputs: { username: 'shopper', password: 'hunter2' }, label: 'a bench run', preferAgent: 'agt_fleet1' });
+    expect(posted[0]).toMatchObject({ inputs: { username: 'shopper', password: 'hunter2' }, label: 'a bench run', preferAgent: 'fleet' });
     expect(screen.getByTestId('bench-run').textContent).toContain('the password form appeared');
     fireEvent.change(screen.getByTestId('bench-answer'), { target: { value: '123456' } });
     fireEvent.click(screen.getByTestId('bench-answer-send'));
@@ -475,6 +485,90 @@ describe('Bench — explore and record', () => {
     fireEvent.click(screen.getByTestId('bench-open-recording'));
     expect(globalThis.location.hash).toBe('#/jobs/job_lab1/trace');
   }, 12_000);
+
+  it('#576: an explore run left behind is picked up on its bench page — the live view to drive, the recording instead of a fetch', async () => {
+    scriptFetch({
+      ...HAPPY(),
+      'GET /lab/bench/sessions': () => ({ body: [EXPLORE_ROW] }),
+      'GET /lab/bench/explore/login/ses_x': () => ({ body: { sessionId: 'ses_x', state: 'awaiting_input', challenge: { id: 'cx', type: 'live_view', promptKey: 'lab.explore.drive', expiresAt: '2026-11-02T15:41:03Z' } } }),
+      'GET /lab/bench/explore/login/ses_x/challenges/cx/live/frame': () => ({ raw: 'jpeg', contentType: 'image/jpeg' }),
+      'GET /lab/jobs': () => ({ body: { jobs: [EXPLORE_JOB({ state: 'awaiting_input', trace: null })], truncated: false } }),
+    });
+    renderLab('#/bench/sessions/ses_x');
+    await screen.findByTestId('bench-live-surface');
+    expect(screen.getByTestId('bench-session-state').textContent).toBe('awaiting_input'); // the run read just now, not the relay's older word
+    expect(screen.getByTestId('bench-live-nav')).toBeTruthy(); // the explore vocabulary: an address, back, reload
+    expect(screen.getByTestId('bench-explore-done')).toBeTruthy();
+    expect(screen.getByTestId('bench-run').textContent).toContain('yours to drive');
+    expect(screen.queryByTestId('bench-fetch-card')).toBeNull();
+    expect(screen.queryByTestId('bench-canary-card')).toBeNull();
+    expect(screen.getByTestId('bench-session-facts').textContent).toContain('the sign-in is still running');
+    expect((await screen.findByTestId('bench-explore-recording')).textContent).toContain('written when you press done');
+  });
+
+  it('#576: a settled explore session opens its recording and shows no run any more', async () => {
+    scriptFetch({
+      ...HAPPY(),
+      'GET /lab/bench/sessions': () => ({ body: [{ ...EXPLORE_ROW, state: 'active', hasBundle: true }] }),
+      'GET /lab/jobs': () => ({ body: { jobs: [EXPLORE_JOB({})], truncated: false } }),
+    });
+    renderLab('#/bench/sessions/ses_x');
+    const open = await screen.findByTestId('bench-session-recording');
+    expect(screen.queryByTestId('bench-run')).toBeNull();
+    expect(screen.getByTestId('bench-session-job').getAttribute('href')).toBe('#/jobs/job_x');
+    fireEvent.click(open);
+    expect(globalThis.location.hash).toBe('#/jobs/job_x/trace');
+  });
+
+  it('#576: the bench reads a session still signing in afresh and says what it waits for', async () => {
+    scriptFetch({
+      ...HAPPY(),
+      'GET /lab/bench/sessions': () => ({ body: [EXPLORE_ROW, BENCH_SESSIONS[0]] }),
+      'GET /lab/bench/explore/login/ses_x': () => ({ body: { sessionId: 'ses_x', state: 'awaiting_input', challenge: { id: 'cx', type: 'live_view', expiresAt: '2026-11-02T15:41:03Z' } } }),
+    });
+    renderLab('#/bench');
+    expect((await screen.findByTestId('bench-state-ses_x')).textContent).toBe('awaiting_input');
+    expect(screen.getByTestId('bench-signing-in-ses_x').textContent).toContain('the live view waits for you');
+    expect(screen.queryByTestId('bench-signing-in-ses_lab1')).toBeNull();
+  });
+
+  it('#576: a party that keeps its browser on one machine names it — the lab’s own machines alone, and the run says it is on its way', async () => {
+    const labBox = { id: 'agt_labbox', name: 'the lab box', class: 'byo', lab: true, revoked: false, lastHeartbeatAt: new Date().toISOString(), online: true, stale: false, profiles: [] };
+    const posted: Record<string, unknown>[] = [];
+    scriptFetch({
+      ...HAPPY(),
+      'GET /lab/agents': () => ({ body: { agents: [...AGENTS.agents, labBox, HOSTED_AGENT] } }),
+      'POST /lab/bench/asn-persistent/login': (init) => {
+        posted.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return { status: 202, body: { sessionId: 'ses_p', state: 'running', progress: { step: 'agent_assigned', stepsDone: ['queued'] } } };
+      },
+      'GET /lab/bench/asn-persistent/login/ses_p': () => ({ body: { sessionId: 'ses_p', state: 'running', progress: { step: 'agent_assigned', stepsDone: ['queued'] } } }),
+    });
+    renderLab('#/bench/connect/asn-persistent');
+    fireEvent.change(await screen.findByTestId('bench-input-username'), { target: { value: 'u' } });
+    const runOn = screen.getByTestId('bench-run-on') as HTMLSelectElement;
+    // not the fleet (it may never run this party), not a person's computer nor a hosted slot (they serve their owner alone)
+    expect([...runOn.options].map((o) => o.value)).toEqual(['', 'agt_labbox']);
+    expect(runOn.options[1].textContent).toContain('your lab machine');
+    expect(screen.getByTestId('bench-run-on-hint').textContent).toContain('the machine named here');
+    const start = screen.getByTestId('bench-start') as HTMLButtonElement;
+    expect(start.disabled).toBe(true); // the login is refused without the machine that keeps the browser
+    fireEvent.change(runOn, { target: { value: 'agt_labbox' } });
+    fireEvent.click(start);
+    expect((await screen.findByTestId('bench-run-waiting')).textContent).toContain('keeps going if you leave');
+    expect(posted[0]).toMatchObject({ preferAgent: 'agt_labbox' });
+  });
+
+  it('the words: where an agent runs, what a waiting run does, what a session still signing in waits for', () => {
+    expect(agentWhere({ ...AGENTS.agents[0] })).toBe('munni’s pooled agent');
+    expect(agentWhere(HOSTED_AGENT)).toBe('hosted private slot');
+    expect(agentWhere({ ...AGENTS.agents[1], lab: true })).toBe('your lab machine');
+    expect(agentWhere({ ...AGENTS.agents[1] })).toBe('someone’s own computer');
+    expect(waitingLine({ sessionId: 's', state: 'queued', progress: { step: 'queued', stepsDone: [], ahead: 3 } }, false)).toContain('3 ahead in the queue');
+    expect(waitingLine({ sessionId: 's', state: 'running' }, true)).toContain('the live view appears right here');
+    expect(signingInLine({ provider: 'ah', state: 'running' })).toContain('still signing in');
+    expect(signingInLine({ provider: 'ah', state: 'awaiting_input' })).toContain('waiting for your answer');
+  });
 
   it('a sign-in and a fetch carry the record flag only when it is switched on', async () => {
     const logins: Record<string, unknown>[] = [];

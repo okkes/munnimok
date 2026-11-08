@@ -114,6 +114,9 @@ public sealed class ConnectorClient(HttpClient http, ConnectorAuthSource auth)
         return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
+    /// <summary>A stream the control plane refused, read as any other answer: its status and envelope.</summary>
+    public static Task<ConnectorReply> RefusalOfAsync(HttpResponseMessage response, CancellationToken ct) => ReadAsync(response, ct);
+
     private async Task<HttpRequestMessage> BuildAsync(HttpMethod method, string path, ConnectorCall call, CancellationToken ct)
     {
         var request = new HttpRequestMessage(method, path);

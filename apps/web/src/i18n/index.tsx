@@ -26,7 +26,7 @@ interface LangContextValue {
   setLang: (lang: Lang) => void;
   /** true when the user pinned a language; false = following the device */
   langOverridden: boolean;
-  /** drop the pinned language and track the device again (native-benefits §3) */
+  /** drop the pinned language and track the device again */
   followDeviceLang: () => void;
   t: TFunc;
 }
@@ -52,8 +52,8 @@ function readStoredLang(): Lang {
   if (typeof localStorage === 'undefined') return typeof navigator === 'undefined' ? 'en' : deviceLang();
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'en' || stored === 'nl' || stored === 'tr') return stored;
-  // first launch: follow the device language when it maps to one we speak
-  // (native-benefits §3). A deliberate pick in Settings wins forever.
+  // first launch: follow the device language when it maps to one we
+  // speak. A deliberate pick in Settings wins forever.
   return deviceLang();
 }
 

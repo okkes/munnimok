@@ -7,8 +7,11 @@ import { StatementImportFlow } from './StatementImportFlow';
 import { useLang } from '@/i18n';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useSession } from '@/app/session';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { logActivity } from '@/application/activity';
+import { isPristineLoan } from '@/application/loanBalance';
 import { CURRENCIES } from '@/domain/countries';
 import { evalAmountCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
@@ -75,8 +78,8 @@ export function AddAccountChooser({
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** hosts with an in-place connect flow pass it; others go to the
-   *  Connections hub with the catalogue open (#414: banks are parties) */
+  /** hosts with an in-place bank connect pass it; others go to All
+   *  accounts with its bank picker open (#527) */
   onConnect?: () => void;
   /** hosts with an in-place import flow pass it; others get the door */
   onImport?: () => void;
@@ -102,6 +105,7 @@ export function AddAccountChooser({
 }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
+  const canEdit = useCanEdit(); // #505
   const navigate = useNavigate();
   const syncing = useSession((s) => s.identity?.kind === 'user');
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
@@ -229,14 +233,18 @@ export function AddAccountChooser({
     const cents = newType === 'funding' ? 0 : parseCents(balance || '0');
     if (!newType || saveDisabled || cents === null) return;
     const id = repo.newId();
+    const balanceCents = negative ? -Math.abs(cents) : Math.abs(cents);
+    const story: Partial<AccountRow> = isLiability(newType) ? liabilityFields() : {};
     void repo.upsert('account', spaceId, id, {
       name: name.trim(),
       type: newType,
       source: 'manual',
       currency: effectiveCurrency,
-      balanceCents: negative ? -Math.abs(cents) : Math.abs(cents),
-      balanceAsOf: manualBalanceDate(),
-      ...(isLiability(newType) ? liabilityFields() : {}),
+      balanceCents,
+      // #509 (user): a loan typed at its original amount holds no payment
+      // yet — no cut-off date, every payment linked to it counts
+      ...(isPristineLoan({ originalCents: story.originalCents, balanceCents }) ? {} : { balanceAsOf: manualBalanceDate() }),
+      ...story,
     });
     void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
     onCreated?.({ id, type: newType });
@@ -265,25 +273,29 @@ export function AddAccountChooser({
                   onConnect();
                   return;
                 }
-                // the bank is a party of the Connections hub (#414): its
-                // catalogue opens right away, the choice already made here
+                // #527: banks are connected on All accounts — its bank
+                // picker opens right away, the choice already made here
                 setCatalogueIntent();
-                void navigate({ to: '/connections' });
+                void navigate({ to: '/accounts' });
               }}
             />
           )}
-          <IntentRow
-            testId="chooser-import"
-            icon="file-upload-outline"
-            title={t('chooser.import')}
-            sub={t('chooser.importSub')}
-            onClick={() => {
-              close(false);
-              if (onImport) onImport();
-              else setImportOpen(true);
-            }}
-          />
-          {hideManual ? (
+          {/* #505: an import and a manual account land in THIS space — not one this identity only reads */}
+          <ReadOnlyNote testId="chooser-readonly-note" />
+          {canEdit && (
+            <IntentRow
+              testId="chooser-import"
+              icon="file-upload-outline"
+              title={t('chooser.import')}
+              sub={t('chooser.importSub')}
+              onClick={() => {
+                close(false);
+                if (onImport) onImport();
+                else setImportOpen(true);
+              }}
+            />
+          )}
+          {canEdit && hideManual && (
             <button
               data-testid="chooser-manual-door"
               onClick={() => {
@@ -299,7 +311,8 @@ export function AddAccountChooser({
               </span>
               <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
             </button>
-          ) : (
+          )}
+          {canEdit && !hideManual && (
             <IntentRow
               testId="chooser-manual"
               icon="pencil-plus-outline"
@@ -378,7 +391,7 @@ export function AddAccountChooser({
               )}
               <FormBlockerNote show={!nameBad && balanceBad} text={t('form.needAmount')} testId="chooser-acctform-save-blocker" />
               <div className="m-cap px-1">{t('space.currency')}</div>
-              <ScrollRow tone="surface">
+              <ScrollRow>
                 {CURRENCIES.map((c) => (
                   <Chip key={c} className="font-mono" testId={`chooser-currency-${c}`} selected={effectiveCurrency === c} onClick={() => setCurrency(c)}>
                     {c}

@@ -3,6 +3,8 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { logActivity } from '@/application/activity';
 import { useLoanStatuses } from '@/application/debts';
 import { useSpaceHistoryTransactions } from '@/application/transactions';
@@ -12,7 +14,6 @@ import { merchantKey } from '@/domain/merchantKey';
 import type { AccountRow } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
-import { TxFormSheet } from '@/features/transactions/TxFormSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -35,8 +36,8 @@ export function DebtDetailScreen() {
   const txs = useSpaceHistoryTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  const [paymentOpen, setPaymentOpen] = useState(false);
   const [matchOpen, setMatchOpen] = useState(false);
+  const canEdit = useCanEdit(); // #505
 
   const status = statuses?.find((s) => s.account.id === debtId);
   // deleted or untracked here or on another device: leave the orphan
@@ -66,12 +67,14 @@ export function DebtDetailScreen() {
       .slice(0, 50);
   }, [status, txs]);
 
-  const { fmt } = useDisplayMoney();
+  const { fmt, fmtSensitive } = useDisplayMoney();
   if (!status) return <div className="h-full" data-testid="screen-debt-detail" />;
 
   const { account, remainingCents, progress } = status;
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmt(cents, currency);
+  // #530: what is owed and the loan's size hide with the sensitive figures; payments stay
+  const owed = (cents: number) => fmtSensitive(cents, currency);
   // the explicit plan wins; with the fields empty, ≥3 payments speak for
   // themselves ("estimated from payments", arc 3) — never stored
   const estimate = account.paymentCents ? null : estimatePaymentPlan(payments);
@@ -102,19 +105,22 @@ export function DebtDetailScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('acct.editAccount')} testId="debtdetail-edit" onClick={() => setEditing(account)}>
-            <Icon name="pencil-outline" size={20} />
-          </IconButton>
+          canEdit && (
+            <IconButton label={t('acct.editAccount')} testId="debtdetail-edit" onClick={() => setEditing(account)}>
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          )
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mb-3" testId="debtdetail-readonly-note" />
         <HeroCard
           testId="debtdetail-hero"
           tile={<LoanTile account={account} size={48} />}
-          number={<span data-testid="debtdetail-remaining">{money(remainingCents)}</span>}
+          number={<span data-testid="debtdetail-remaining">{owed(remainingCents)}</span>}
           // without the original size there is no "of …" story and no
           // honest progress — the hero stays a plain remaining figure
-          sub={account.originalCents ? t('debts.remainingOf', { amount: money(account.originalCents) }) : undefined}
+          sub={account.originalCents ? t('debts.remainingOf', { amount: owed(account.originalCents) }) : undefined}
           right={
             account.originalCents ? (
               <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
@@ -155,12 +161,14 @@ export function DebtDetailScreen() {
 
         {/* a hand-entered payment, pre-staged onto this loan (arc 3):
             the manual form opens as a transfer to the loan account */}
+        {canEdit && (
         <div className="mt-4 flex gap-2">
           <Button
             variant="outline"
             className="min-w-0 flex-1"
             data-testid="debtdetail-add-payment"
-            onClick={() => setPaymentOpen(true)}
+            // #348: the create screen, staged onto this loan
+            onClick={() => void navigate({ to: '/transactions/new', search: { counter: account.id, title: account.name } })}
           >
             <Icon name="plus" size={16} /> {t('debts.addPayment')}
           </Button>
@@ -174,6 +182,7 @@ export function DebtDetailScreen() {
             <Icon name="magnify" size={16} /> {t('debts.matchFind')}
           </Button>
         </div>
+        )}
 
         <div className="m-cap mt-5 mb-1 px-1">
           {t('debts.payments')} · {payments.length}
@@ -190,16 +199,13 @@ export function DebtDetailScreen() {
           </p>
         )}
 
-        <Button variant="outline" className="mt-5 w-full" data-testid="debtdetail-archive" onClick={wayOut}>
-          <Icon name={isCredit ? 'eye-off-outline' : 'flag-checkered'} size={16} /> {wayOutLabel()}
-        </Button>
+        {canEdit && (
+          <Button variant="outline" className="mt-5 w-full" data-testid="debtdetail-archive" onClick={wayOut}>
+            <Icon name={isCredit ? 'eye-off-outline' : 'flag-checkered'} size={16} /> {wayOutLabel()}
+          </Button>
+        )}
       </div>
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
-      <TxFormSheet
-        open={paymentOpen}
-        onOpenChange={setPaymentOpen}
-        prefill={{ linkedAccountId: account.id, merchant: account.name }}
-      />
       <LoanMatchSheet accountId={matchOpen ? account.id : null} onClose={() => setMatchOpen(false)} />
     </div>
   );

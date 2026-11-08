@@ -68,6 +68,17 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     expect((await db.accounts.get('loan'))?.balanceCents).toBe(-40_000); // paid down
   });
 
+  it('#536: an attached source files the mint by the SPACE\'s reading of it — never the global row\'s type', async () => {
+    // the global row says checking; this space attached it as its savings
+    await repo.upsert('account', 'feedS', 'fsav', { name: 'Spaarrekening', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('accountLink', 'priv', 'link-sav', { feedSpaceId: 'feedS', accountId: 'fsav', type: 'savings' });
+    await repo.upsert('account', 'priv', 'wallet', { name: 'Wallet', type: 'cash', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    const plan = await planMirrorChange(store, sourceTx({ id: 'fsrc', accountId: 'fsav' }), undefined, 'wallet', undefined, undefined);
+    await plan.execute(repo);
+    // money taken out of savings into the wallet: "Take out", not a plain transfer in
+    expect(await db.transactions.get(mirrorTxId('fsrc'))).toMatchObject({ accountId: 'wallet', amountCents: 10_000, catId: 'savingWithdraw' });
+  });
+
   it('unlink retires the mint and refunds; a picked existing peer mints nothing', async () => {
     const link = await planMirrorChange(store, sourceTx(), undefined, 'pot', undefined, undefined);
     await link.execute(repo);

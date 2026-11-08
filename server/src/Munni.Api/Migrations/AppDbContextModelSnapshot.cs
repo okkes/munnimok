@@ -141,6 +141,9 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Identity")
+                        .HasColumnType("text");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasColumnType("text");
@@ -175,6 +178,12 @@ namespace Munni.Api.Migrations
                 {
                     b.Property<string>("Id")
                         .HasColumnType("text");
+
+                    b.Property<DateOnly?>("BackfillSince")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("BackfillUntil")
+                        .HasColumnType("date");
 
                     b.Property<string>("ConnectionId")
                         .IsRequired()
@@ -355,6 +364,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Notify")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -570,6 +582,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<string>("Email")
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("NotificationsClearedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Picture")
                         .HasColumnType("text");

@@ -33,7 +33,8 @@ jobs:
 
       - run: npm ci
 
-      # Chromium runs the gallery; WebKit runs the sheet-geometry guard
+      # Chromium runs the critical happy flows (tests/e2e; the guide's other
+      # scenes are local captures, npm run shots); WebKit runs the sheet-geometry guard
       # (all of iOS is WebKit — its layout bugs are invisible to Blink).
       # Installing on the ephemeral runner is the cheap path here; the
       # local equivalent is dockerized instead: deploy/webkit-e2e.ps1

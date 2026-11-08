@@ -14,6 +14,8 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Tile } from '@/ui/primitives';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useQuery } from '@/db/useQuery';
 
 /**
@@ -34,6 +36,7 @@ export function RecurringSuggestionsScreen() {
   // the VISIBLE rows; the older charges stay stored-but-hidden.
   const txs = useSpaceHistoryTransactions();
   const ops = useRecurringOps();
+  const canEdit = useCanEdit(); // #505
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
   // #257: the accepted suggestion hands its saved id to the occurrence
@@ -82,6 +85,7 @@ export function RecurringSuggestionsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mt-3" testId="recsuggest-readonly-note" />
         {suggestions.map((s) => (
           <div key={s.key} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
             <div className="flex items-center gap-3 px-4 pt-3.5">
@@ -109,6 +113,7 @@ export function RecurringSuggestionsScreen() {
               ))}
             </div>
 
+            {canEdit && (
             <div className="flex gap-2 border-t border-line-2 p-3">
               <Button
                 data-testid={`recurring-accept-${s.merchantKey}`}
@@ -128,6 +133,7 @@ export function RecurringSuggestionsScreen() {
                 {t('recurring.notRecurring')}
               </Button>
             </div>
+            )}
           </div>
         ))}
 

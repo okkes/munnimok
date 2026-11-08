@@ -14,8 +14,9 @@ namespace Munni.Api.Connectors;
 /// run of either burnt what the other needed, and "auto syncing keeps
 /// stopping". When a connection's accounts pass lands an account, every
 /// other session of the same person and party that reached the same account
-/// (the same IBAN; a card or wallet without one is keyed per session and
-/// proves nothing) is superseded: its binding goes, the way a re-login of
+/// (the same IBAN, or a card or wallet the party names across consents; one
+/// keyed by a per-session id proves nothing) is
+/// superseded: its binding goes, the way a re-login of
 /// the same connection replaces it in <c>BindAsync</c>, its references to
 /// those accounts go with it, and the control plane is told to end it —
 /// without its bundle, so the party's consent is left alone (the new one
@@ -25,19 +26,20 @@ namespace Munni.Api.Connectors;
 /// </remarks>
 public sealed class ConnectorSupersession(AppDbContext db, ConnectorClient client, SubjectMinter minter, ILogger<ConnectorSupersession> logger)
 {
-    private const string CardPrefix = "CONN:";
-
     /// <summary>The codes the control plane answers for a session it no longer has: nothing to end, nothing to say.</summary>
     private static readonly HashSet<string> AlreadyGone = new(StringComparer.Ordinal) { "unsupported_resource", "session_expired" };
 
     /// <summary>
     /// Retires every other session of the user and party whose references
     /// share one of <paramref name="accountRefs"/>; returns how many went.
+    /// Each reference handed in must name the account itself — an IBAN, or a
+    /// card the party names across consents; the caller leaves out a card
+    /// keyed by an id that may mean another account in another session.
     /// </summary>
     public async Task<int> RetireAsync(Guid userId, string provider, string connectionId, IReadOnlyCollection<string> accountRefs, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(accountRefs);
-        var shared = accountRefs.Where(r => !r.StartsWith(CardPrefix, StringComparison.Ordinal)).Distinct().ToList();
+        var shared = accountRefs.Distinct().ToList();
         if (shared.Count == 0) return 0;
 
         var reached = await db.ConnectorAccountRefs
@@ -64,8 +66,9 @@ public sealed class ConnectorSupersession(AppDbContext db, ConnectorClient clien
             db.ConnectorSessions.Remove(session);
         }
 
-        var ids = reached.Select(a => a.Id).ToList();
-        db.ConnectorPendingTxs.RemoveRange(await db.ConnectorPendingTxs.Where(p => ids.Contains(p.AccountRefId)).ToListAsync(ct));
+        // the reserved rows the old connection tracked go to the new one's references of
+        // the same accounts, whose next complete pass settles them (#508)
+        await PendingHandover.HandOverAsync(db, reached, ct);
         db.ConnectorAccountRefs.RemoveRange(reached);
         await db.SaveChangesAsync(ct);
         return superseded.Count;

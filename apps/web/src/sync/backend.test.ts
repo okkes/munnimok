@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiSyncBackend, SyncHttpError } from './backend';
+import { ApiSyncBackend, SyncHttpError, retryAfterMs } from './backend';
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -59,5 +59,26 @@ describe('ApiSyncBackend', () => {
   it('listSpaces returns the id array', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(['a', 'b']));
     expect(await backend({ testSub: 'x' }).listSpaces()).toEqual(['a', 'b']);
+  });
+
+  it('#569: heads read every space with its head in one call', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([{ spaceId: 'a', latestSeq: 4 }]));
+    expect(await backend({ testSub: 'x' }).heads()).toEqual([{ spaceId: 'a', latestSeq: 4 }]);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://api/sync/heads');
+  });
+
+  it('#569: a 429 carries the pause the server named', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 429, headers: { 'Retry-After': '10' } }));
+    await expect(backend({ testSub: 'x' }).heads()).rejects.toMatchObject({ status: 429, retryAfterMs: 10_000 });
+  });
+});
+
+describe('retryAfterMs', () => {
+  it('reads seconds or an HTTP date, and nothing it cannot read', () => {
+    const now = Date.parse('2026-11-08T12:00:00Z');
+    expect(retryAfterMs('30', now)).toBe(30_000);
+    expect(retryAfterMs('Sun, 08 Nov 2026 12:00:20 GMT', now)).toBe(20_000);
+    expect(retryAfterMs('soon', now)).toBeUndefined();
+    expect(retryAfterMs(null, now)).toBeUndefined();
   });
 });

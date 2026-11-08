@@ -24,11 +24,33 @@ public class LiveViewMeterTests
         var window = meter.Close();
 
         Assert.Equal(20, window.Posted);
-        Assert.Equal(10, window.ShutterMedian);
-        Assert.Equal(19, window.ShutterP95);
+        Assert.Equal(10, window.AgeMedian);
+        Assert.Equal(19, window.AgeP95);
         Assert.Equal(20, window.PostMedian);
         Assert.Equal(38, window.PostP95);
         Assert.Equal(1000, window.MeanBytes);
+    }
+
+    /// <summary>
+    /// What the browser drew and never had to send is counted beside what was
+    /// sent, so a window says how much the pacing kept off the wire - and a
+    /// window in which only that happened is still a window worth writing down.
+    /// </summary>
+    [Fact]
+    public void Frames_that_never_left_are_counted_beside_those_that_did()
+    {
+        var meter = new LiveViewMeter(TimeProvider.System, TimeSpan.Zero);
+
+        meter.Superseded(7);
+        meter.Missed(2);
+        var window = meter.Close();
+
+        Assert.True(window.HasSamples);
+        Assert.Equal(0, window.Posted);
+        Assert.Equal(7, window.Superseded);
+        Assert.Equal(2, window.Missed);
+        Assert.Contains("7 superseded", window.ToString(), StringComparison.Ordinal);
+        Assert.Contains("2 withheld", window.ToString(), StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -49,8 +71,9 @@ public class LiveViewMeterTests
     }
 
     /// <summary>
-    /// A window with no shutters in it says so, so the session does not print a
-    /// line of zeroes under a stream that had just reported a good second.
+    /// A window with nothing in it says so, so the session does not print a
+    /// line of zeroes under a still page or a stream that had just reported a
+    /// good second.
     /// </summary>
     [Fact]
     public void An_empty_window_reports_that_it_is_empty()
@@ -79,7 +102,7 @@ public class LiveViewMeterTests
 
             var line = meter.Close().ToString();
 
-            Assert.Contains("shutter 12.5/12.5 ms", line, StringComparison.Ordinal);
+            Assert.Contains("age 12.5/12.5 ms", line, StringComparison.Ordinal);
             Assert.Contains("post 3.4/3.4 ms", line, StringComparison.Ordinal);
         }
         finally

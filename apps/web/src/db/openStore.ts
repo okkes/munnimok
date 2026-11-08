@@ -1,4 +1,5 @@
 import { isNativeApp } from '@/lib/platform';
+import { reportError } from '@/lib/report';
 import { DexieBackend } from './backend';
 import type { StorageBackend } from './backend';
 import Dexie from 'dexie';
@@ -40,8 +41,8 @@ export async function openStorageBackend(name: string): Promise<StorageBackend> 
       return backend;
     } catch (err) {
       console.error('encrypted store failed to open — falling back to Dexie', err);
-      const { captureException } = await import('@sentry/react').catch(() => ({ captureException: () => undefined }));
-      captureException(err);
+      // #554: static — a dynamic import of the SDK kept every export (Replay, Feedback) in the first load
+      reportError('store', err);
       // '0': remember the failure so the fallback is stable across launches
       localStorage.setItem(FLAG_KEY, '0');
     }

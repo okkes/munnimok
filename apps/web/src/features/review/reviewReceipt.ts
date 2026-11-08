@@ -1,5 +1,5 @@
 import type { SpaceTx } from '@/application/transactions';
-import type { ReceiptRow } from '@/db/types';
+import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
 import { rankForTx } from '@/features/shopping/receiptPick';
 
 /**
@@ -35,4 +35,48 @@ export function autoReceiptFor(tx: Pick<SpaceTx, 'date' | 'amountCents'>, candid
   const tolerance = Math.max(100, Math.round(target * 0.01));
   const fits = Math.abs(best.totalCents - target) <= tolerance && Math.abs(dayOf(best.date) - dayOf(tx.date)) <= AUTO_DAYS;
   return fits ? best : null;
+}
+
+/** the receipt the card's sheet marks: the person's pick, nothing after "no receipt", else the attached one or the
+ *  best match the card holds */
+export function markedReceiptId(stage: ReceiptStage, attachedId: string | null | undefined, autoId: string | null | undefined): string | null {
+  if (stage.kind === 'picked') return stage.receipt.id;
+  if (stage.kind === 'none') return null;
+  return attachedId ?? autoId ?? null;
+}
+
+/** what the confirm writes for the card's receipt */
+export type ReceiptSettlement =
+  | { kind: 'keep' }
+  | { kind: 'accept'; proposal: ReceiptLinkRow }
+  | { kind: 'reject'; proposal: ReceiptLinkRow }
+  /** the receipt goes on the transaction (in the attached one's place), or — null — the attached one lets go; a
+   *  proposal the person passed over is turned down first */
+  | { kind: 'pick'; receipt: ReceiptRow | null; reject?: ReceiptLinkRow };
+
+/**
+ * The card's receipt on confirm (user 2026-10-06): a proposal accepted, the
+ * best match linked, the person's own pick honoured (a passed-over proposal
+ * turned down), "no receipt" left alone. #496: an attached receipt can be
+ * changed on the card too — another pick takes its place, "no receipt"
+ * lets it go, untouched it stays.
+ */
+export function receiptSettlement(
+  stage: ReceiptStage,
+  attached: ReceiptRow | null | undefined,
+  proposal: ReceiptLinkRow | undefined,
+  auto: ReceiptRow | null,
+): ReceiptSettlement {
+  if (attached) {
+    if (stage.kind === 'picked' && stage.receipt.id !== attached.id) return { kind: 'pick', receipt: stage.receipt };
+    return stage.kind === 'none' ? { kind: 'pick', receipt: null } : { kind: 'keep' };
+  }
+  if (stage.kind === 'picked') {
+    // picking the proposal's own receipt is its yes
+    if (proposal && (proposal.receiptId ?? proposal.id) === stage.receipt.id) return { kind: 'accept', proposal };
+    return { kind: 'pick', receipt: stage.receipt, reject: proposal };
+  }
+  if (stage.kind === 'none') return proposal ? { kind: 'reject', proposal } : { kind: 'keep' };
+  if (proposal) return { kind: 'accept', proposal };
+  return auto ? { kind: 'pick', receipt: auto } : { kind: 'keep' };
 }

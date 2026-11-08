@@ -6,7 +6,7 @@ import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 
 export const DEMO_SPACE_ID = 'demo_space';
 // bump when the demo dataset changes so returning demo users reseed
-const SEED_FLAG = 'seeded_demo_v5';
+const SEED_FLAG = 'seeded_demo_v6';
 
 // local date, matching the local-time period math in domain/periods.ts —
 // a daysAgo:0 row must always fall inside the current local budget period
@@ -34,9 +34,9 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     periodDay: 1,
   });
 
-  // #221: a space is born with its six default accounts — demo included
-  const { ensureSpaceDefaultAccounts } = await import('@/application/defaultAccounts');
-  await ensureSpaceDefaultAccounts(repo.store, repo, DEMO_SPACE_ID);
+  // #546: a space is born with its cash wallet — demo included
+  const { ensureCashWallet } = await import('@/application/defaultAccounts');
+  await ensureCashWallet(repo.store, repo, DEMO_SPACE_ID);
 
   for (const account of DEMO_ACCOUNTS) {
     await repo.upsert('account', DEMO_SPACE_ID, account.id, {

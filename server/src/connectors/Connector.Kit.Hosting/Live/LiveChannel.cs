@@ -84,6 +84,13 @@ public sealed class LiveChannel(TimeProvider time)
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// The streams waiting on a job's next picture (#429). Kept beside the
+    /// entries rather than in them: a waiter must not admit an entry, because
+    /// reads never keep a login alive (see <see cref="Sweep"/>).
+    /// </summary>
+    private readonly Dictionary<string, Pulse> _pulses = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Stores the newest picture of a job, and says whether it was kept.
     ///
     /// False means the frame was older than the one already held. Two POSTs
@@ -104,6 +111,7 @@ public sealed class LiveChannel(TimeProvider time)
 
             entry.Frame = frame;
             entry.WrittenAt = time.GetUtcNow();
+            Wake(jobId, ended: false);
             return true;
         }
     }
@@ -114,6 +122,65 @@ public sealed class LiveChannel(TimeProvider time)
         lock (_gate)
         {
             return _entries.TryGetValue(jobId, out var entry) ? entry.Frame : null;
+        }
+    }
+
+    /// <summary>
+    /// The newest picture numbered past <paramref name="after"/>, waiting up
+    /// to <paramref name="window"/> for one to be published (#429, the
+    /// pushed stream).
+    ///
+    /// The check and the registration happen under the lock
+    /// <see cref="Publish"/> takes, so a frame published between "nothing
+    /// newer" and "wait" still wakes the waiter - the signal-then-sleep
+    /// pattern elsewhere in this service can lose that one, and at a dozen
+    /// frames a second a lost wake-up is a visible stall.
+    ///
+    /// No frame when the window passed with nothing newer, or when the job's
+    /// entry went (dropped at a terminal state, swept, evicted) - which wakes
+    /// the waiter at once and says so, so the caller reads the run again
+    /// instead of waiting out its window.
+    /// </summary>
+    public async Task<LiveWait> NextFrameAsync(string jobId, long after, TimeSpan window, CancellationToken ct)
+    {
+        Pulse pulse;
+        lock (_gate)
+        {
+            if (Newer(jobId, after) is { } ready) return new LiveWait(ready, Ended: false);
+
+            if (!_pulses.TryGetValue(jobId, out var existing))
+            {
+                existing = new Pulse();
+                _pulses[jobId] = existing;
+            }
+
+            pulse = existing;
+            pulse.Waiters++;
+        }
+
+        try
+        {
+            await pulse.Source.Task.WaitAsync(window, time, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // The window, not a failure: the caller writes a keep-alive.
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                pulse.Waiters--;
+                if (pulse.Waiters == 0 && _pulses.TryGetValue(jobId, out var current) && ReferenceEquals(current, pulse))
+                {
+                    _pulses.Remove(jobId);
+                }
+            }
+        }
+
+        lock (_gate)
+        {
+            return new LiveWait(Newer(jobId, after), pulse.Ended);
         }
     }
 
@@ -209,6 +276,8 @@ public sealed class LiveChannel(TimeProvider time)
     {
         lock (_gate)
         {
+            // A stream waiting on this job wakes to find nothing, and ends.
+            Wake(jobId, ended: true);
             return _entries.Remove(jobId);
         }
     }
@@ -231,7 +300,12 @@ public sealed class LiveChannel(TimeProvider time)
         lock (_gate)
         {
             var stale = _entries.Where(e => e.Value.WrittenAt <= cutoff).Select(e => e.Key).ToList();
-            foreach (var jobId in stale) _entries.Remove(jobId);
+            foreach (var jobId in stale)
+            {
+                _entries.Remove(jobId);
+                Wake(jobId, ended: true);
+            }
+
             return stale.Count;
         }
     }
@@ -259,6 +333,7 @@ public sealed class LiveChannel(TimeProvider time)
         {
             var oldest = _entries.MinBy(e => e.Value.WrittenAt).Key;
             _entries.Remove(oldest);
+            Wake(oldest, ended: true);
         }
 
         var entry = new Entry { WrittenAt = time.GetUtcNow() };
@@ -266,7 +341,34 @@ public sealed class LiveChannel(TimeProvider time)
         return entry;
     }
 
+    /// <summary>Under the lock: the held picture when it is past <paramref name="after"/>.</summary>
+    private LiveFrame? Newer(string jobId, long after) =>
+        _entries.TryGetValue(jobId, out var entry) && entry.Frame is { } frame && frame.Sequence > after ? frame : null;
+
+    /// <summary>
+    /// Under the lock: releases every stream waiting on the job. The
+    /// continuations run elsewhere, never inside the lock.
+    /// </summary>
+    private void Wake(string jobId, bool ended)
+    {
+        if (!_pulses.Remove(jobId, out var pulse)) return;
+
+        pulse.Ended = ended;
+        pulse.Source.TrySetResult();
+    }
+
     private static readonly LiveInputBatch Empty = new();
+
+    /// <summary>One job's waiters share one completion, counted so the last to leave removes it.</summary>
+    private sealed class Pulse
+    {
+        public TaskCompletionSource Source { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int Waiters { get; set; }
+
+        /// <summary>Woken because the entry went, not because a picture arrived.</summary>
+        public bool Ended { get; set; }
+    }
 
     /// <summary>
     /// One streamed login's worth of memory. A list rather than a queue
@@ -283,3 +385,6 @@ public sealed class LiveChannel(TimeProvider time)
         public DateTimeOffset WrittenAt { get; set; }
     }
 }
+
+/// <summary>What a wait for the next picture came back with: the picture, or nothing - and whether the run's entry ended.</summary>
+public readonly record struct LiveWait(LiveFrame? Frame, bool Ended);

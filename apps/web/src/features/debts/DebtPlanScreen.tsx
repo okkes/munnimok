@@ -6,29 +6,42 @@ import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import type { TranslationKey } from '@/i18n/en';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useLoanStatuses } from '@/application/debts';
 import type { LoanStatus } from '@/application/debts';
 import { localToday } from '@/application/recurring';
 import { logActivity } from '@/application/activity';
 import {
-  MONTH_TICKS_BELOW,
   STRATEGIES,
   STRESS_LEVELS,
-  chartHorizon,
+  axisTicks,
+  chartAxis,
   compareStrategies,
+  extraForDebtBy,
+  extraForPlanBy,
   extraLadder,
   monthAfter,
-  monthTicks,
+  monthsUntil,
   raisedPayment,
-  sampleMonths,
-  sampleStep,
+  sampleWalk,
   simulateBaseline,
   simulateDebtAlone,
   simulatePlan,
   toPlanDebts,
-  yearTicks,
 } from '@/domain/debtPlan';
-import type { AloneResult, ChartTick, DebtOutcome, DebtStress, PayoffStrategy, PlanDebt, PlanResult, RaisedPayment } from '@/domain/debtPlan';
+import type {
+  AloneResult,
+  ChartAxis,
+  ChartTick,
+  DebtOutcome,
+  DebtStress,
+  PayoffStrategy,
+  PlanDebt,
+  PlanResult,
+  RaisedPayment,
+  WalkPoint,
+} from '@/domain/debtPlan';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -140,26 +153,33 @@ const wordMonth = (lang: Lang, yyyymm: string): string => {
   return `${month} ’${yyyymm.slice(2, 4)}`;
 };
 
-/** the two walks of one chart on the same grid, with its labels */
+/** the two walks of one chart on the same axis, with its labels */
 interface ChartModel {
-  plan: number[];
-  base: number[];
+  axis: ChartAxis;
+  plan: WalkPoint[];
+  base: WalkPoint[];
+  planLanded: boolean;
+  baseLanded: boolean;
   ticks: ChartTick[];
 }
 
 /**
- * one chart's grid: the horizon follows the plan's walk (chartHorizon —
- * never the thirty-year minimums-only walk), both walks are sampled onto
- * it, and the labels are years, or months when the horizon is short
+ * one chart's axis (#513): the plan keeps an even scale with room, the
+ * axis always reaches the end of the minimums line — far ends on a
+ * compressed tail — and both walks stop where they land; month labels
+ * (yyyy-mm) are worded here, years stand as they are
  */
 function chartModel(planWalk: readonly number[], planEnd: number | null, baseWalk: readonly number[], baseEnd: number | null, today: string, lang: Lang): ChartModel {
-  const horizon = chartHorizon(planEnd ?? planWalk.length - 1, baseEnd ?? baseWalk.length - 1);
-  const step = sampleStep(horizon);
-  const ticks =
-    horizon < MONTH_TICKS_BELOW
-      ? monthTicks(horizon, step, today).map((tick) => ({ ...tick, label: wordMonth(lang, tick.label) }))
-      : yearTicks(horizon, step, today);
-  return { plan: sampleMonths(planWalk, step, horizon), base: sampleMonths(baseWalk, step, horizon), ticks };
+  const axis = chartAxis(planEnd ?? planWalk.length - 1, baseEnd ?? baseWalk.length - 1);
+  const ticks = axisTicks(axis, today).map((tick) => (tick.label.length === 7 ? { ...tick, label: wordMonth(lang, tick.label) } : tick));
+  return {
+    axis,
+    plan: sampleWalk(planWalk, planEnd !== null, axis),
+    base: sampleWalk(baseWalk, baseEnd !== null, axis),
+    planLanded: planEnd !== null,
+    baseLanded: baseEnd !== null,
+    ticks,
+  };
 }
 
 /**
@@ -191,13 +211,23 @@ function ChartLegend({ plan, base, testId }: Readonly<{ plan: string; base: stri
   );
 }
 
-/** one number with its small label — the planner's facts (user 2026-10-09: "I want to see actual numbers") */
+/**
+ * one number with its small label — the planner's facts (user 2026-10-09:
+ * "I want to see actual numbers"). #539 (user: "the boxes change in size"
+ * while the slider moves): the value and its sub line are one line each,
+ * and the sub line is always there — a number that grows or a sub that
+ * appears never pushes the card taller
+ */
 function Fact({ label, value, sub, testId }: Readonly<{ label: string; value: string; sub?: string; testId?: string }>) {
   return (
     <div className="min-w-0" data-testid={testId}>
       <div className="m-cap">{label}</div>
-      <div className="m-num text-[13px] font-semibold text-ink">{value}</div>
-      {sub && <div className="m-num text-[11px] text-ink-4">{sub}</div>}
+      <div className="m-num truncate text-[13px] font-semibold text-ink" title={value}>
+        {value}
+      </div>
+      <div className="m-num truncate text-[11px] text-ink-4" title={sub}>
+        {sub ?? <>&nbsp;</>}
+      </div>
     </div>
   );
 }
@@ -228,12 +258,15 @@ function aloneEnd(t: Translate, r: AloneResult, date: MonthName): string {
   return t('debtplan.paidOff', { date: date(r.months) });
 }
 
-/** what the extra buys this debt against its minimum alone */
-function vsMinimum(t: Translate, alone: AloneResult, minimum: AloneResult, extraCents: number, money: Money, date: MonthName): string {
-  if (extraCents <= 0) return t('debtplan.numbers.noExtra');
-  if (alone.months === null) return t('debtplan.freeNever');
-  if (minimum.months === null) return t('debtplan.ladderUnstuck', { date: date(alone.months) });
-  return t('debtplan.ladderGain', { months: minimum.months - alone.months, interest: money(Math.max(0, minimum.interestCents - alone.interestCents)) });
+/** what the extra buys this debt against its minimum alone — the months on the value line, the interest under it */
+function vsMinimum(t: Translate, alone: AloneResult, minimum: AloneResult, extraCents: number, money: Money, date: MonthName): { value: string; sub?: string } {
+  if (extraCents <= 0) return { value: t('debtplan.numbers.noExtra') };
+  if (alone.months === null) return { value: t('debtplan.numbers.never') };
+  if (minimum.months === null) return { value: t('debtplan.ladderUnstuck', { date: date(alone.months) }) };
+  return {
+    value: t('debtplan.numbers.earlier', { months: minimum.months - alone.months }),
+    sub: t('debtplan.numbers.lessInterest', { interest: money(Math.max(0, minimum.interestCents - alone.interestCents)) }),
+  };
 }
 
 interface DebtNumbersProps {
@@ -249,17 +282,57 @@ interface DebtNumbersProps {
 /** one debt's facts under its chart: what it owes, pays and costs, when it ends, and what the extra buys */
 function DebtNumbers({ debt, alone, minimum, extraCents, money, date, testId }: Readonly<DebtNumbersProps>) {
   const { t } = useLang();
+  // #530: what is owed hides with the sensitive figures; payments and interest stay
+  const owed = useDisplayMoney().sensitive(money);
   const perMonthSub = extraCents > 0 ? `${money(debt.minMonthlyCents)} + ${money(extraCents)}` : undefined;
   const paidOff = alone.months === null ? t('debtplan.numbers.never') : date(alone.months);
   const paidOffSub = alone.months === null ? undefined : t('debtplan.numbers.months', { months: alone.months });
+  const gain = vsMinimum(t, alone, minimum, extraCents, money, date);
+  // #539: two columns — a phone's third of a card wrapped "45 months earlier · €596 less interest" over three lines
   return (
-    <div className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2" data-testid={testId}>
-      <Fact label={t('debtplan.numbers.owed')} value={money(debt.balanceCents)} />
-      <Fact label={t('debtplan.numbers.perMonth')} value={money(alone.monthlyCents)} sub={perMonthSub} />
+    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2" data-testid={testId}>
+      <Fact label={t('debtplan.numbers.owed')} value={owed(debt.balanceCents)} />
       <Fact label={t('debtplan.numbers.rate')} value={debt.aprKnown ? `${debt.aprPct}%` : t('debtplan.numbers.noRate')} />
+      <Fact label={t('debtplan.numbers.perMonth')} value={money(alone.monthlyCents)} sub={perMonthSub} />
       <Fact label={t('debtplan.numbers.interest')} value={money(alone.interestCents)} />
       <Fact label={t('debtplan.numbers.paidOff')} value={paidOff} sub={paidOffSub} />
-      <Fact label={t('debtplan.numbers.vsMin')} value={vsMinimum(t, alone, minimum, extraCents, money, date)} />
+      <Fact label={t('debtplan.numbers.vsMin')} value={gain.value} sub={gain.sub} />
+    </div>
+  );
+}
+
+/** a picked end month and the extra it takes (null: no amount gets there — a month already here) */
+interface ByDate {
+  month: string;
+  extra: number | null;
+}
+
+const MONTH_INPUT = /^\d{4}-\d{2}$/;
+
+/** the line under the end-month input: what the pick worked out, or how it works */
+function byDateNote(t: Translate, byDate: ByDate | null, money: Money, date: MonthName, today: string): string {
+  if (!byDate) return t('debtplan.byDateHint');
+  if (byDate.extra === null) return t('debtplan.byDateTooSoon');
+  const when = date(monthsUntil(today, byDate.month));
+  return byDate.extra === 0 ? t('debtplan.byDateAsIs', { date: when }) : t('debtplan.byDateExtra', { amount: money(byDate.extra), date: when });
+}
+
+/**
+ * #514 (user: "provide an end date and get the calculation"): a month to
+ * be done by — the extra it takes is worked out and set, so the slider,
+ * the number and the chart follow. The note keeps two lines' room, so a
+ * pick never moves the card (#539).
+ */
+function EndMonthRow({ label, value, today, note, onPick, testId }: Readonly<{ label: string; value: string; today: string; note: string; onPick: (month: string) => void; testId: string }>) {
+  return (
+    <div className="mt-3">
+      <label className="block text-[12px] text-ink-3">
+        {label}
+        <input data-testid={testId} type="month" min={monthAfter(today, 1)} value={value} onChange={(e) => onPick(e.target.value)} placeholder="yyyy-mm" className={INPUT_CLASS} />
+      </label>
+      <p className="mt-1 min-h-[30px] text-[11px] leading-snug text-ink-4" data-testid={`${testId}-note`}>
+        {note}
+      </p>
     </div>
   );
 }
@@ -281,8 +354,8 @@ interface DebtCardProps {
   debt: PlanDebt;
   extraCents: number;
   onExtra: (cents: number) => void;
-  /** write the raised payment to the loan */
-  onApply: (paymentCents: number) => void;
+  /** write the raised payment to the loan — absent where the space is read-only (#505) */
+  onApply?: (paymentCents: number) => void;
   today: string;
   money: Money;
   /** the tsunami weight chips, when that order is on */
@@ -302,6 +375,8 @@ interface DebtCardProps {
  */
 function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today, money, stress }: Readonly<DebtCardProps>) {
   const { t, lang } = useLang();
+  // #530: the balance and the chart's scale hide with the sensitive figures
+  const owed = useDisplayMoney().sensitive(money);
   const [text, setText] = useState(() => eurosText(extraCents));
   const [confirming, setConfirming] = useState(false);
   const alone = useMemo(() => simulateDebtAlone(debt, extraCents), [debt, extraCents]);
@@ -309,13 +384,28 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
   const chart = useMemo(() => chartModel(alone.balances, alone.months, minimum.balances, minimum.months, today, lang), [alone, minimum, today, lang]);
   const date: MonthName = (months) => monthName(lang, today, months);
   const sliderMax = Math.max(DEBT_SLIDER_REACH, debt.minMonthlyCents * 2);
-  const pick = (amount: number) => {
+  const [byDate, setByDate] = useState<ByDate | null>(null);
+  const setAmount = (amount: number) => {
     setText(eurosText(amount));
     onExtra(amount);
   };
+  // an amount picked by hand is no longer the end month's answer
+  const pick = (amount: number) => {
+    setByDate(null);
+    setAmount(amount);
+  };
+  const pickMonth = (month: string) => {
+    if (!MONTH_INPUT.test(month)) {
+      setByDate(null);
+      return;
+    }
+    const extra = extraForDebtBy(debt, monthsUntil(today, month));
+    setByDate({ month, extra });
+    if (extra !== null) setAmount(extra);
+  };
   const raised = raisedPayment(account, extraCents);
   const apply = () => {
-    onApply(raised.paymentCents);
+    onApply?.(raised.paymentCents);
     setConfirming(false);
     // the extra IS the payment now: the card starts over from the raised minimum
     pick(0);
@@ -330,9 +420,10 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[14px] font-semibold text-ink">{account.name}</span>
-            <span className="m-num shrink-0 text-[13px] text-ink">{money(debt.balanceCents)}</span>
+            <span className="m-num shrink-0 text-[13px] text-ink">{owed(debt.balanceCents)}</span>
           </span>
-          <span className="block text-[11px] text-ink-4" data-testid={`debtplan-debt-end-${outcome.id}`}>
+          {/* one line whatever it says (#539) */}
+          <span className="block truncate text-[11px] text-ink-4" data-testid={`debtplan-debt-end-${outcome.id}`}>
             {rate} · {aloneEnd(t, alone, date)}
           </span>
         </span>
@@ -341,11 +432,12 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
         <PayoffChart
           testId={`debtplan-debt-chart-${outcome.id}`}
           height={90}
+          axis={chart.axis}
           ticks={chart.ticks}
-          amount={money}
+          amount={owed}
           series={[
-            { values: chart.base, color: 'var(--m-ink-4)', dashed: true },
-            { values: chart.plan, color: 'var(--m-accent)', testId: `debtplan-debt-chart-plan-${outcome.id}` },
+            { points: chart.base, landed: chart.baseLanded, color: 'var(--m-ink-4)', dashed: true, testId: `debtplan-debt-chart-min-${outcome.id}` },
+            { points: chart.plan, landed: chart.planLanded, color: 'var(--m-accent)', testId: `debtplan-debt-chart-plan-${outcome.id}` },
           ]}
         />
       </div>
@@ -375,6 +467,7 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
           step="5"
           value={text}
           onChange={(e) => {
+            setByDate(null);
             setText(e.target.value);
             onExtra(parseEuros(e.target.value));
           }}
@@ -389,9 +482,19 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
           </Chip>
         ))}
       </div>
-      <Button variant="outline" size="sm" className="mt-3 w-full" disabled={extraCents <= 0} data-testid={`debtplan-debt-apply-${outcome.id}`} onClick={() => setConfirming(true)}>
-        {t('debtplan.apply')}
-      </Button>
+      <EndMonthRow
+        label={t('debtplan.byDate')}
+        value={byDate?.month ?? ''}
+        today={today}
+        note={byDateNote(t, byDate, money, date, today)}
+        onPick={pickMonth}
+        testId={`debtplan-debt-by-${outcome.id}`}
+      />
+      {onApply && (
+        <Button variant="outline" size="sm" className="mt-1 w-full" disabled={extraCents <= 0} data-testid={`debtplan-debt-apply-${outcome.id}`} onClick={() => setConfirming(true)}>
+          {t('debtplan.apply')}
+        </Button>
+      )}
       {stress}
       {/* a raised payment is undone on the loan's edit sheet: no cooldown, the sheet is the pause */}
       <DangerConfirmSheet
@@ -415,8 +518,9 @@ interface PayoffOrderProps {
   strategy: PayoffStrategy;
   extraByDebt: Record<string, number>;
   onExtra: (id: string, cents: number) => void;
-  onApply: (id: string, paymentCents: number) => void;
-  onStress: (id: string, level: DebtStress) => void;
+  /** #505: Apply and the weights write the loan — both absent where the space is read-only */
+  onApply?: (id: string, paymentCents: number) => void;
+  onStress?: (id: string, level: DebtStress) => void;
   today: string;
   money: Money;
 }
@@ -425,13 +529,13 @@ interface PayoffOrderProps {
 function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, onApply, onStress, today, money }: Readonly<PayoffOrderProps>) {
   const { t } = useLang();
   const stressChips = (account: AccountRow) => (
-    <div className="mt-3 flex items-center gap-1.5">
+    <div className="mt-3 flex items-center gap-1.5" inert={onStress ? undefined : true}>
       <span className="mr-1 text-[11px] text-ink-4">{t('debtplan.stress')}</span>
       {STRESS_LEVELS.map((level) => (
         <Chip
           key={level}
           selected={account.debtStress === level}
-          onClick={() => onStress(account.id, level)}
+          onClick={() => onStress?.(account.id, level)}
           testId={`debtplan-stress-${account.id}-${level}`}
           className="px-2.5"
         >
@@ -457,7 +561,7 @@ function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, on
               debt={debt}
               extraCents={extraByDebt[outcome.id] ?? 0}
               onExtra={(amount) => onExtra(outcome.id, amount)}
-              onApply={(paymentCents) => onApply(outcome.id, paymentCents)}
+              onApply={onApply ? (paymentCents) => onApply(outcome.id, paymentCents) : undefined}
               today={today}
               money={money}
               stress={strategy === 'tsunami' ? stressChips(status.account) : undefined}
@@ -489,6 +593,8 @@ interface OverallCardProps {
  */
 function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, money, date }: Readonly<OverallCardProps>) {
   const { t } = useLang();
+  // #530: what is owed and the chart's scale hide with the sensitive figures
+  const owed = useDisplayMoney().sensitive(money);
   const free = (r: PlanResult) => (r.months === null ? t('debtplan.numbers.never') : date(r.months));
   const baseLegend = baseline.months === null ? t('debtplan.baselineNever') : t('debtplan.baselineFree', { date: date(baseline.months) });
   return (
@@ -498,11 +604,12 @@ function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, mone
         <PayoffChart
           testId="debtplan-chart"
           height={150}
+          axis={chart.axis}
           ticks={chart.ticks}
-          amount={money}
+          amount={owed}
           series={[
-            { values: chart.base, color: 'var(--m-ink-4)', dashed: true, testId: 'debtplan-chart-baseline' },
-            { values: chart.plan, color: 'var(--m-accent)', testId: 'debtplan-chart-plan' },
+            { points: chart.base, landed: chart.baseLanded, color: 'var(--m-ink-4)', dashed: true, testId: 'debtplan-chart-baseline' },
+            { points: chart.plan, landed: chart.planLanded, color: 'var(--m-accent)', testId: 'debtplan-chart-plan' },
           ]}
         />
       </div>
@@ -510,7 +617,7 @@ function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, mone
       <div className="mt-3 border-t border-line-2 pt-3" data-testid="debtplan-overall-numbers">
         <div className="flex items-baseline justify-between">
           <span className="m-cap">{t('debtplan.numbers.owed')}</span>
-          <span className="m-num text-[13px] font-semibold text-ink">{money(plan.balances[0] ?? 0)}</span>
+          <span className="m-num text-[13px] font-semibold text-ink">{owed(plan.balances[0] ?? 0)}</span>
         </div>
         <div className="mt-2 grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 text-[12px]">
           <span />
@@ -528,7 +635,8 @@ function OverallCard({ chart, plan, baseline, budget, rollover, onRollover, mone
           <span className="m-num text-right font-semibold text-ink">{money(plan.totalInterestCents)}</span>
           <span className="m-num text-right text-ink-3">{money(baseline.totalInterestCents)}</span>
         </div>
-        <p className="mt-2 text-[12px] text-ink-3" data-testid="debtplan-overall-saved">
+        {/* two lines' room whatever it says — the slider above never moves the cards below (#539) */}
+        <p className="mt-2 min-h-[34px] text-[12px] text-ink-3" data-testid="debtplan-overall-saved">
           {savings(t, plan, baseline, money, 'debtplan.ladderGain')}
         </p>
       </div>
@@ -554,6 +662,8 @@ export function DebtPlanScreen() {
   const { fmt } = useDisplayMoney();
   const money: Money = (amount) => fmt(amount, currency);
   const today = localToday();
+  // #505: the plan stays a what-if for a reader — what it writes to the loans does not
+  const canEdit = useCanEdit();
   const [inputs, setInputs] = useState<PlanInputs>(() => readInputs(spaceId));
   const [extraText, setExtraText] = useState(() => eurosText(inputs.extraCents));
   const [lumpText, setLumpText] = useState(() => eurosText(inputs.lumpCents));
@@ -564,12 +674,24 @@ export function DebtPlanScreen() {
       return next;
     });
   };
-  const setExtra = (amount: number) => {
+  const [freeBy, setFreeBy] = useState<ByDate | null>(null);
+  const applyExtra = (amount: number) => {
     update({ extraCents: amount });
     setExtraText(eurosText(amount));
   };
+  // an amount picked by hand is no longer the end month's answer
+  const setExtra = (amount: number) => {
+    setFreeBy(null);
+    applyExtra(amount);
+  };
+  /** a change to the plan itself: a debt-free month worked out before no longer holds */
+  const changePlan = (patch: Partial<PlanInputs>) => {
+    setFreeBy(null);
+    update(patch);
+  };
   /** the extra aimed at one debt; nothing stays stored for a cleared one */
   const setDebtExtra = (id: string, amount: number) => {
+    setFreeBy(null);
     setInputs((prev) => {
       const kept = Object.entries(prev.extraByDebt).filter(([debtId]) => debtId !== id);
       const extraByDebt = Object.fromEntries(amount > 0 ? [...kept, [id, amount]] : kept);
@@ -600,12 +722,23 @@ export function DebtPlanScreen() {
   const sliderMax = Math.max(100_000, plan.minimumsCents * 2);
   const budget = plan.minimumsCents + inputs.extraCents + sumExtras(inputs.extraByDebt, debts);
   const overall = chartModel(plan.balances, plan.months, baseline.balances, baseline.months, today, lang);
+  /** #514: a debt-free month instead of an amount — the plan's own order, per-debt extras and one-off stay as they are */
+  const pickFreeBy = (month: string) => {
+    if (!MONTH_INPUT.test(month)) {
+      setFreeBy(null);
+      return;
+    }
+    const extra = extraForPlanBy(debts, { ...options, strategy: inputs.strategy }, monthsUntil(today, month));
+    setFreeBy({ month, extra });
+    if (extra !== null) applyExtra(extra);
+  };
 
   const accountOf = (debtId: string) => statuses?.find((s) => s.account.id === debtId)?.account;
   const setStress = (debtId: string, value: DebtStress) => {
     const account = accountOf(debtId);
     if (!account) return;
-    void repo.upsert('account', account.spaceId, account.id, { debtStress: account.debtStress === value ? undefined : value });
+    // un-ticking writes null: JSON drops an undefined field, so the clear would never sync
+    void repo.upsert('account', account.spaceId, account.id, { debtStress: account.debtStress === value ? (null as never) : value });
     void logActivity(store, repo, account.spaceId, 'accountEdit', account.name);
   };
   /** Apply on a card: the raised payment becomes the loan's own (user 2026-10-09) */
@@ -628,6 +761,7 @@ export function DebtPlanScreen() {
         trailing={<HelpButton tourId="debts" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+        <ReadOnlyNote className="mb-3" testId="debtplan-readonly-note" />
         {statuses && debts.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="debtplan-empty">
             <Icon name="hand-coin-outline" size={34} color="var(--m-ink-4)" />
@@ -660,7 +794,7 @@ export function DebtPlanScreen() {
               <div className="m-cap">{t('debtplan.strategy')}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {STRATEGIES.map((s) => (
-                  <Chip key={s} selected={inputs.strategy === s} onClick={() => update({ strategy: s })} testId={`debtplan-strategy-${s}`}>
+                  <Chip key={s} selected={inputs.strategy === s} onClick={() => changePlan({ strategy: s })} testId={`debtplan-strategy-${s}`}>
                     {t(STRATEGY_COPY[s].name)}
                   </Chip>
                 ))}
@@ -693,6 +827,7 @@ export function DebtPlanScreen() {
                     step="5"
                     value={extraText}
                     onChange={(e) => {
+                      setFreeBy(null);
                       setExtraText(e.target.value);
                       update({ extraCents: parseEuros(e.target.value) });
                     }}
@@ -710,6 +845,7 @@ export function DebtPlanScreen() {
                     step="50"
                     value={lumpText}
                     onChange={(e) => {
+                      setFreeBy(null);
                       setLumpText(e.target.value);
                       update({ lumpCents: parseEuros(e.target.value) });
                     }}
@@ -736,7 +872,15 @@ export function DebtPlanScreen() {
                   </Chip>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-ink-4" data-testid="debtplan-budget">
+              <EndMonthRow
+                label={t('debtplan.freeBy')}
+                value={freeBy?.month ?? ''}
+                today={today}
+                note={byDateNote(t, freeBy, money, date, today)}
+                onPick={pickFreeBy}
+                testId="debtplan-free-by"
+              />
+              <p className="text-[11px] text-ink-4" data-testid="debtplan-budget">
                 {t('debtplan.minimums', { amount: money(plan.minimumsCents) })} · {t('debtplan.budget', { amount: money(budget) })}
               </p>
             </div>
@@ -747,7 +891,7 @@ export function DebtPlanScreen() {
               baseline={baseline}
               budget={budget}
               rollover={inputs.rollover}
-              onRollover={() => update({ rollover: !inputs.rollover })}
+              onRollover={() => changePlan({ rollover: !inputs.rollover })}
               money={money}
               date={date}
             />
@@ -782,8 +926,8 @@ export function DebtPlanScreen() {
               strategy={inputs.strategy}
               extraByDebt={inputs.extraByDebt}
               onExtra={setDebtExtra}
-              onApply={applyPayment}
-              onStress={setStress}
+              onApply={canEdit ? applyPayment : undefined}
+              onStress={canEdit ? setStress : undefined}
               today={today}
               money={money}
             />

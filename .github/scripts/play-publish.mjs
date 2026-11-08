@@ -69,16 +69,33 @@ async function publishOnce(access) {
   console.log(`released versionCode ${bundle.versionCode} to the ${TRACK} track ✓`);
 }
 
-const access = await token();
-try {
-  await publishOnce(access);
-} catch (e) {
-  // a CONCURRENT edit (store probe, an open Play Console tab) expires
-  // ours — one clean retry on a fresh edit wins the second time
-  if (/edit has expired|editExpired|editAlreadyCommitted/i.test(String(e.message))) {
-    console.log(`edit expired mid-flight (${e.message.slice(0, 120)}) — retrying once on a fresh edit`);
+/** a store-side setup step the user still has to take — not a defect of this build */
+function setupGap(message) {
+  return /→ 404:|Package not found|The caller does not have permission|has not been used in project|it is disabled/i.test(message);
+}
+
+async function publish() {
+  const access = await token();
+  try {
     await publishOnce(access);
-  } else {
-    throw e;
+  } catch (e) {
+    // a CONCURRENT edit (store probe, an open Play Console tab) expires
+    // ours — one clean retry on a fresh edit wins the second time
+    if (/edit has expired|editExpired|editAlreadyCommitted/i.test(String(e.message))) {
+      console.log(`edit expired mid-flight (${e.message.slice(0, 120)}) — retrying once on a fresh edit`);
+      await publishOnce(access);
+    } else {
+      throw e;
+    }
   }
+}
+
+try {
+  await publish();
+} catch (e) {
+  const message = String(e.message).replaceAll('\n', ' ');
+  if (!setupGap(message)) throw e;
+  // no app record yet, the service account not invited, or the API off: the signed
+  // .aab artifact on this run is the deliverable until the store accepts
+  console.log(`::warning title=Play upload waits for a store setup step::${PACKAGE}: ${message.slice(0, 400)}`);
 }

@@ -41,7 +41,7 @@ public sealed class RefreshLoopApiTests(ShopApiFactory factory)
         ["password"] = "hunter2",
     };
 
-    /// <summary>The shipped mock fixture is anchored to July 2026.</summary>
+    /// <summary>Before the mock store's first day; clamped to the year the store keeps, it reaches every receipt there is.</summary>
     private const string FixtureWindow = "2026-06-01";
 
     /// <summary>

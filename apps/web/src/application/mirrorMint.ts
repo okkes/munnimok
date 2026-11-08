@@ -3,6 +3,7 @@ import { mirrorTxId } from '@/domain/feedIds';
 import { accountStamp, movementCatFor } from '@/domain/txType';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { countsTowardLoan } from './loanBalance';
+import { asSpaceAccount } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { AccountRow } from '@/db/types';
@@ -142,8 +143,9 @@ export async function planMirrorChange(
       const stamp = accountStamp(nextAccount.type);
       // #133 r5: an unstamped mirror files by ITS counter's kind — the
       // source account (a savings row's leg on a manual regular account
-      // reads "Take out", not "Transfer in")
-      const sourceType = (await store.get('account', source.accountId))?.type;
+      // reads "Take out", not "Transfer in"); #536: as the mint's space
+      // reads it — an attached account's type is that space's
+      const sourceType = (await asSpaceAccount(store, nextAccount.spaceId, await store.get('account', source.accountId)))?.type;
       const mirrorAmount = -source.amountCents;
       steps.push(async (repo) => {
         if (!alreadyMinted) {

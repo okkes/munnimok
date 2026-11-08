@@ -1,4 +1,5 @@
 import type { TxType, TxView } from '@/db/types';
+import { REIMBURSED_ID } from './categories';
 import { txSliceViews } from './txSlices';
 import type { TxSliceView } from './txSlices';
 
@@ -25,10 +26,13 @@ export type MoneyFormat = (cents: number, currency: string, opts?: { sign?: bool
 export const eventNetText = (netCents: number, currency: string, fmt: MoneyFormat): string =>
   netCents < 0 ? fmt(-netCents, currency, { sign: true }) : fmt(netCents, currency);
 
-/** the row's parts that belong to this event, in any kind of event money */
+/** the row's parts that belong to this event, in any kind of event money —
+ *  never the settled value (#493): a paid-back expense and the credit that
+ *  paid it each carry it as bookkeeping, and counting it made the event
+ *  spend and receive the same money twice under "Reimbursement" */
 function eventViews(tx: TxView, eventId: string): TxSliceView[] {
   if (tx.deleted !== 0) return [];
-  return txSliceViews(tx).filter((view) => view.eventId === eventId && isEventMoney(view.effType));
+  return txSliceViews(tx).filter((view) => view.eventId === eventId && isEventMoney(view.effType) && view.catId !== REIMBURSED_ID);
 }
 
 /** the event's EXPENSE parts - where the money went */

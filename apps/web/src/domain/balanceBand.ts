@@ -1,12 +1,13 @@
 import type { AccountRow, SpaceRow } from '@/db/types';
+import { SPEND_TYPES, isSpendAccount } from './safeToSpend';
 
 /**
  * The Home balance band's meaning, per space (user design 2026-08-01):
  * net worth (every attached account — the pre-config behavior and the
- * default), total cash (liquid types only), safe-to-spend (the cashflow
- * forecast's number), or a hand-picked set of accounts. The first two
- * take per-account exclusions; custom carries its own include list;
- * spendable is a formula and takes no toggles.
+ * default), total cash (liquid types only), safe-to-spend (its number,
+ * over the accounts safe to spend sums — #541: those read highlighted), or
+ * a hand-picked set of accounts. Only custom takes toggles here; safe to
+ * spend picks its accounts on its own screen.
  */
 export type BalanceBandMode = 'networth' | 'cash' | 'spendable' | 'custom';
 
@@ -15,7 +16,8 @@ export const BAND_MODES: readonly BalanceBandMode[] = ['networth', 'cash', 'spen
 /** the account types that are money in hand — the balance trend reads the same set (user 2026-10-08) */
 export const LIQUID_TYPES: ReadonlySet<AccountRow['type']> = new Set<AccountRow['type']>(['checking', 'savings', 'cash']);
 
-type BandSpace = Pick<SpaceRow, 'balanceBandMode' | 'balanceBandAccounts'>;
+type BandSpace = Pick<SpaceRow, 'balanceBandMode' | 'balanceBandAccounts' | 'spendAccountIds'>;
+type BandAccount = Pick<AccountRow, 'id' | 'type' | 'deleted' | 'archived'>;
 
 export const bandModeOf = (space: BandSpace | undefined): BalanceBandMode => space?.balanceBandMode ?? 'networth';
 
@@ -29,7 +31,7 @@ export function bandEligible(mode: BalanceBandMode, account: Pick<AccountRow, 't
   // #152: a funding account is someone else's pot — its balance never
   // counts toward this space's numbers, under any mode
   if (account.type === 'funding') return false;
-  if (mode === 'spendable') return false;
+  if (mode === 'spendable') return SPEND_TYPES.has(account.type);
   if (mode === 'cash') return LIQUID_TYPES.has(account.type);
   return true;
 }
@@ -37,8 +39,9 @@ export function bandEligible(mode: BalanceBandMode, account: Pick<AccountRow, 't
 /** does the account count toward the band under this mode + config?
  *  #142: the premade sums ignore any stored exclusions — the formula is
  *  the formula; only custom reads its hand-picked list */
-export function bandIncludes(mode: BalanceBandMode, account: Pick<AccountRow, 'id' | 'type'>, space: BandSpace | undefined): boolean {
+export function bandIncludes(mode: BalanceBandMode, account: BandAccount, space: BandSpace | undefined): boolean {
   if (!bandEligible(mode, account)) return false;
   if (mode === 'custom') return (space?.balanceBandAccounts ?? []).includes(account.id);
+  if (mode === 'spendable') return isSpendAccount(account, space);
   return true;
 }

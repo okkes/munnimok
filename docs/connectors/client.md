@@ -4,8 +4,7 @@ The web app (and the native shells around it) never talks to the
 connector control plane. It talks to the munni API's relay
 ([relay.md](relay.md)) and renders what the catalogue declares. This page
 is written from `apps/web/src/features/connectors` and
-`apps/web/src/application/connections.ts` (slice M3 of
-docs/connector-integration-plan.md §10; §14 records where it departs).
+`apps/web/src/application/connections.ts`.
 
 ## What a connection is, on a device
 
@@ -84,7 +83,7 @@ Every question the party asks is rendered by its typed kind
 | `image`, taps | the picture; every tap marks a point | `tap.v1:x,y;…;submit`, or `tap.v1:` for "none match" |
 | `select_option` | the options | the option's value |
 | `redirect` | *Open the party's page* — iOS runs it in the auth session with the party's callback scheme and brings the return address back; Android and the web open it and take a paste; a party that comes back to the app's own return page (open banking, `/gc-callback`) never asks for a paste — on iOS the auth session runs with the APP's scheme and the return page hands the bank's query to it, so the landing address is answered at once; on Android a Custom Tab opens it and the return page re-enters the app through its App Link or its scheme; on the web this very tab goes and comes back | the return address |
-| `live_view` | the party's own page streamed as frames (`LiveView`): the sheet grows to the full height and the frame takes every pixel left after the one-line head and the bar (measured, with the page's own aspect — the box is the image, so a tap's fraction is the page's); taps (a down and an up within three percent are one tap, whatever the finger wobbled), moves and scrolls relayed as fractions, a text field, Enter and Backspace; an open keyboard takes its height off the frame instead of pushing it away, and the sheet's drag is locked so every pointer reaches the page; a close button, since a full-height sheet leaves no backdrop; the prompt shows on the desktop only | — (the agent ends the stream) |
+| `live_view` | the party's own page streamed as frames (`LiveView`): the sheet grows to the full height and the frame takes every pixel left after the one-line head and the bar (measured, with the page's own aspect — the box is the image, so a tap's fraction is the page's); taps (a down and an up within three percent are one tap, whatever the finger wobbled), moves and scrolls relayed as fractions, a text field, Enter and Backspace; an open keyboard takes its height off the frame instead of pushing it away, and the sheet's drag is locked so every pointer reaches the page; a close button, since a full-height sheet leaves no backdrop; the prompt shows on the desktop only. The frames arrive pushed (#429): `connectorApi.liveStream` opens the relay's `…/live/stream` over fetch (EventSource cannot send the bearer; the path `/sync/events` already proves in the shells) and `liveStream.ts` reads it — a stream that worked and dropped is reopened past the last picture (300 ms), one that fails to open is tried three times (1 s, 2 s), and the poll (`…/live/frame?after=`) serves the view from then on where no stream can be held: a refusal under 500 (an API without the route), a stream that says nothing for 6 s (a proxy buffering it), `superseded` (another tab took it). `end` or a 410 ends the view; closing the view aborts the fetch, and the API lets its upstream go | — (the agent ends the stream) |
 
 A settled login is adopted (`useConnectionOps().adopt`): the device row
 and custody first, then the synced `storeConn` row (named after the
@@ -105,6 +104,23 @@ from any view that shows it, a question answered through the caller
 when a human is there (*Sync now* in the hub opens the question in a
 sheet) and left for the hub otherwise (`asking`), then collected with
 the bundle.
+
+**Older history (#460).** A pass that comes back `complete: false` with
+an `oldest` day leaves the days below it — down to the pass's own `since`,
+or the party's floor on a first sync — on the device row
+(`ConnectorConnRow.backfill`, `nextBackfill`), and the sync goes on with
+them at once: pass after pass with `until = oldest` (the frontier day is
+asked again; a cap can cut a day in half), each one relay sync and,
+when it outruns its window, a job collected with that same window
+(`pendingJob.until`), until a pass comes back whole or reaches no
+further. The hub's line reads *Fetching older history… (date so far)*
+meanwhile. These passes run while the person is there — attended, so the
+party's unattended budget never sees them — and at most ten a sync (the
+relay's per-person budget is sixty an hour); a cap, the party's pause or
+a passing fault leaves the rest on the row for the next sync (*older
+history follows on the next sync*), and only a refusal that ends the
+session is spoken. The relay's scheduler takes one such pass per run for
+the connections it keeps (relay.md, "Scheduled syncs").
 
 A refusal is spoken in the connector's envelope: `session_expired`,
 `invalid_credentials`, `mfa_failed`, `consent_expired` and
@@ -142,9 +158,9 @@ party's accounts into the IBAN's feed (`feed:{iban}`, co-owned when
 someone else connected it first) or a personal `CONN:{provider}:{id}`
 feed for a card without an IBAN, with `source: 'connector'`, the party as
 `provider`, `lastSyncedAt`, the balance and its date, and the
-transactions behind them; the feed is listed by `/me/spaces` on the next
-pull, so a sync (`engine.syncAll()` after the relay answered) lands the
-rows without a client change.
+transactions behind them; the feed is listed by `/sync/heads` (with its
+head, #569) on the next round, so a sync (`engine.syncAll()` after the
+relay answered) lands the rows without a client change.
 
 The hub's bank card lists those accounts (`useConnectorAccounts`: every
 `source: 'connector'` account with the spaces it is attached to). An
@@ -190,7 +206,7 @@ fleet takes the oldest first), `opening_provider` says a fresh browser is
 starting and may take half a minute, and every waiting state shows the
 seconds passing, so a spinner is never a spinner.
 
-## Your own computer (`AgentsScreen`, §10.4)
+## Your own computer (`AgentsScreen`)
 
 Settings → Connections → *Your own computer*, route
 `/connections/agents`. Some parties will only ever talk to a browser on
@@ -234,7 +250,7 @@ hosted agent) returns the slot after the warning that it is wiped for the
 next person. The admin portal hands slots out and takes them back
 (relay.md, "Operator").
 
-## Scheduled syncs (§5.5)
+## Scheduled syncs
 
 For a household-agent party the bundle names an agent and a profile and
 holds no secret, so the relay keeps it (see relay.md, "Scheduled

@@ -88,6 +88,26 @@ describe('rich demo seed', () => {
     db.close();
   });
 
+  it('#352 (user): two accounts move money between them — the legs pair up on the same day', async () => {
+    const paypal = (await db.accounts.get('demo_paypal'))!;
+    expect(paypal.name).toBe('PayPal');
+    const txs = live(await db.transactions.toArray());
+    const byId = new Map(txs.map((t) => [t.id, t]));
+    const pairs = txs.filter((t) => t.accountId === 'demo_main' && t.linkedAccountId === 'demo_paypal');
+    expect(pairs.length).toBeGreaterThanOrEqual(2);
+    for (const out of pairs) {
+      const other = byId.get(out.transferPeerId ?? '')!;
+      // each leg points at the other, on the PayPal side, the same day
+      expect(other.transferPeerId).toBe(out.id);
+      expect(other.accountId).toBe('demo_paypal');
+      expect(other.date).toBe(out.date);
+    }
+    // both shapes: a top-up (out and in) and a wallet purchase (two outgoing legs)
+    expect(pairs.some((out) => byId.get(out.transferPeerId!)!.amountCents > 0)).toBe(true);
+    expect(pairs.some((out) => byId.get(out.transferPeerId!)!.amountCents < 0)).toBe(true);
+    db.close();
+  });
+
   it('re-seeds clean after a wipe (logout → login)', async () => {
     // mutate, then wipe + reseed as demo logout/login does
     await db.budgets.where('id').equals('demo_bud_groceries').delete();

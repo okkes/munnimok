@@ -1,3 +1,4 @@
+using System.Globalization;
 using BankConnector.Adapters.MockBank;
 using Connector.Kit.Errors;
 using Connector.Kit.Normalization;
@@ -19,8 +20,19 @@ public sealed class MockBankLedgerTests
     private const string SessionId = "ses_0123456789abcdef0123456789abcdef";
     private const string ProviderId = "mock-bank-simple";
 
+    /// <summary>
+    /// The day these tests read the ledger through - the adapters read it
+    /// through their clock's today. Pinned, so a window is a fixed range: a
+    /// day's rows are the same on every later day (see the test below).
+    /// </summary>
+    private static readonly DateOnly Today = new(2026, 7, 26);
+
+    private static MockBankLedger Consistent => MockBankLedger.Through(Today);
+
+    private static MockBankLedger Broken => MockBankLedger.BrokenThrough(Today);
+
     private static FetchWindow WholeHistory =>
-        new(MockBankLedger.Anchor.AddDays(-MockBankLedger.HistoryDays), MockBankLedger.Anchor);
+        new(Today.AddDays(-MockBankLedger.HistoryDays), Today);
 
     private static IReadOnlyList<Transaction> Rows(MockBankLedger ledger, FetchWindow? window = null)
     {
@@ -31,7 +43,7 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void The_consistent_ledger_s_balance_chain_holds_for_every_account()
     {
-        var rows = Rows(MockBankLedger.Consistent);
+        var rows = Rows(Consistent);
 
         Assert.NotEmpty(rows);
         BankEmission.VerifyPerAccount(ProviderId, rows);
@@ -40,7 +52,7 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void The_broken_ledger_fails_the_chain_and_names_the_offending_row()
     {
-        var rows = Rows(MockBankLedger.BrokenChain);
+        var rows = Rows(Broken);
 
         var error = Assert.Throws<ConnectorException>(
             () => BankEmission.VerifyPerAccount("mock-bank-broken", rows));
@@ -57,8 +69,8 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void The_two_ledgers_differ_in_exactly_one_stated_balance()
     {
-        var consistent = MockBankLedger.Consistent.Entries;
-        var broken = MockBankLedger.BrokenChain.Entries;
+        var consistent = Consistent.Entries;
+        var broken = Broken.Entries;
 
         Assert.Equal(consistent.Count, broken.Count);
 
@@ -74,19 +86,19 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void The_corruption_sits_inside_a_realistic_fetch_window()
     {
-        var recent = new FetchWindow(MockBankLedger.Anchor.AddDays(-104), MockBankLedger.Anchor);
+        var recent = new FetchWindow(Today.AddDays(-104), Today);
 
         // A default 90-day window widened by the 14-day settlement lag. A
         // corruption older than that would simply not be fetched, and the
         // provider would look healthy - which would defeat the fixture.
         Assert.Throws<ConnectorException>(
-            () => BankEmission.VerifyPerAccount("mock-bank-broken", Rows(MockBankLedger.BrokenChain, recent)));
+            () => BankEmission.VerifyPerAccount("mock-bank-broken", Rows(Broken, recent)));
     }
 
     [Fact]
     public void The_chain_must_be_verified_per_account_and_not_over_the_concatenation()
     {
-        var rows = Rows(MockBankLedger.Consistent);
+        var rows = Rows(Consistent);
 
         // Grouped, it holds. Concatenated, the balance jumps from one
         // account's closing figure to another's at every seam - so a naive
@@ -99,8 +111,8 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void Every_account_the_fixture_reaches_has_transactions_and_a_stated_balance()
     {
-        var accounts = MockBankLedger.Consistent.ToAccounts(SessionId);
-        var rows = Rows(MockBankLedger.Consistent);
+        var accounts = Consistent.ToAccounts(SessionId);
+        var rows = Rows(Consistent);
 
         Assert.Equal(3, accounts.Count);
         Assert.All(accounts, account =>
@@ -120,8 +132,8 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void The_last_row_of_each_account_matches_the_balance_the_account_reports()
     {
-        var accounts = MockBankLedger.Consistent.ToAccounts(SessionId);
-        var rows = Rows(MockBankLedger.Consistent);
+        var accounts = Consistent.ToAccounts(SessionId);
+        var rows = Rows(Consistent);
 
         foreach (var account in accounts)
         {
@@ -131,18 +143,41 @@ public sealed class MockBankLedgerTests
     }
 
     [Fact]
-    public void The_fixture_is_anchored_so_ids_and_hashes_never_move()
+    public void A_days_rows_never_move_as_the_ledger_grows()
     {
-        var first = Rows(MockBankLedger.Consistent);
-        var second = Rows(MockBankLedger.Consistent);
+        var then = Rows(Consistent);
+        var yearLater = Rows(MockBankLedger.Through(Today.AddDays(365)), WholeHistory);
 
-        // Anchored to a fixed date rather than to "today": a fixture whose
-        // transactions move with the clock produces a different content hash
-        // every day, which makes every idempotency assertion in the suite
-        // either flaky or vacuous.
-        Assert.Equal(first.Select(t => t.Id), second.Select(t => t.Id));
-        Assert.Equal(first.Select(t => t.ContentHash), second.Select(t => t.ContentHash));
-        Assert.Equal(new DateOnly(2026, 7, 26), MockBankLedger.Anchor);
+        // The first day is fixed and the last one follows the clock: a day's
+        // rows are a function of the days before it alone, so a ledger read a
+        // year later carries the same ids and content hashes for the days both
+        // cover. A fixture whose rows moved with the clock would make every
+        // idempotency assertion in the suite either flaky or vacuous.
+        Assert.Equal(then.Select(t => t.Id), yearLater.Select(t => t.Id));
+        Assert.Equal(then.Select(t => t.ContentHash), yearLater.Select(t => t.ContentHash));
+        Assert.Equal(new DateOnly(2026, 1, 27), MockBankLedger.Start);
+    }
+
+    /// <summary>
+    /// The history limit is always filled: whatever day the ledger is read
+    /// through, its rows reach from the limit's first week to the last week.
+    /// A ledger that ended on a fixed day held nothing in reach from
+    /// 2027-01-23 on, and every test expecting mock transactions turned red.
+    /// </summary>
+    [Theory]
+    [InlineData("2026-07-26")]
+    [InlineData("2027-01-23")]
+    [InlineData("2036-11-08")]
+    public void The_history_reaches_back_its_limit_on_any_day(string day)
+    {
+        var today = DateOnly.Parse(day, CultureInfo.InvariantCulture);
+        var floor = today.AddDays(-MockBankLedger.HistoryDays);
+
+        var rows = Rows(MockBankLedger.Through(today), new FetchWindow(floor, today));
+
+        Assert.InRange(rows.Min(t => t.BookedAt), floor, floor.AddDays(7));
+        Assert.InRange(rows.Max(t => t.BookedAt), today.AddDays(-7), today);
+        BankEmission.VerifyPerAccount(ProviderId, rows);
     }
 
     [Fact]
@@ -150,7 +185,7 @@ public sealed class MockBankLedgerTests
     {
         var window = new FetchWindow(new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
 
-        var rows = Rows(MockBankLedger.Consistent, window);
+        var rows = Rows(Consistent, window);
 
         Assert.NotEmpty(rows);
         Assert.All(rows, t => Assert.True(window.Contains(t.BookedAt), $"{t.BookedAt} is outside the window"));
@@ -160,7 +195,7 @@ public sealed class MockBankLedgerTests
     [Fact]
     public void Paging_keeps_a_contiguous_oldest_first_prefix_so_the_chain_survives()
     {
-        var rows = Rows(MockBankLedger.Consistent);
+        var rows = Rows(Consistent);
 
         var (page, complete) = BankEmission.Page(rows, 10);
 
@@ -176,10 +211,33 @@ public sealed class MockBankLedgerTests
         Assert.Equal(rows.Count, whole.Count);
     }
 
+    /// <summary>
+    /// #460: a capped mock pass walks the way a live party does - newest first -
+    /// so what it leaves behind is older history, which a pass with until asks
+    /// for; each account keeps a contiguous run of its newest rows and its chain.
+    /// </summary>
+    [Fact]
+    public void A_capped_pass_keeps_each_accounts_newest_rows_and_their_chain()
+    {
+        var rows = Rows(Consistent);
+
+        var (page, complete) = MockBankAdapter.Newest(rows, 10);
+
+        Assert.Equal(10, page.Count);
+        Assert.False(complete);
+        var cut = page.Min(t => t.BookedAt);
+        Assert.All(rows.Where(t => t.BookedAt > cut), t => Assert.Contains(t, page));
+        BankEmission.VerifyPerAccount(ProviderId, page);
+
+        var (whole, everything) = MockBankAdapter.Newest(rows, rows.Count);
+        Assert.True(everything);
+        Assert.Same(rows, whole);
+    }
+
     [Fact]
     public void The_reachable_set_names_the_account_types_a_caller_may_filter_on()
     {
-        var reachable = MockBankLedger.Consistent.Reachable;
+        var reachable = Consistent.Reachable;
 
         // Sealed into the bundle for cheap discovery without a provider round
         // trip, and spelled in the wire form the accounts parameter takes.

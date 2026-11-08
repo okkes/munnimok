@@ -6,7 +6,7 @@ using Munni.Api.Data;
 namespace Munni.Api.Connectors;
 
 /// <summary>
-/// The relay's own scheduler (docs/connector-integration-plan.md §5.5, §15):
+/// The relay's own scheduler (docs/connectors/relay.md, "Scheduled syncs"):
 /// syncs every session whose bundle the relay keeps — a household agent's
 /// pointer, an open-banking consent — on the provider's own interval, the
 /// way <c>GcFetchService</c> drove open banking. Hourly; each session is
@@ -36,6 +36,11 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
     private const string InternalCode = "internal";
     private const string RateLimitedCode = "rate_limited";
     private const string ScheduleTrigger = "schedule";
+    private const string BackfillTrigger = "backfill";
+    private const string DayFormat = "yyyy-MM-dd";
+
+    /// <summary>A pass's window and who asks for it: the schedule's own, or its pass over older history (#460).</summary>
+    private sealed record Pass(string? Since, string? Until, string Trigger);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -163,37 +168,79 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         row.ScheduleNotBefore = null;
         try
         {
-            var outcome = await sync.SyncAsync(row.UserId, subject, row.Provider, new ConnectorSyncRequest(row.ConnectionId, row.KeptBundle!, since), "native", ct, trigger: ScheduleTrigger);
-            if (outcome.Status == StatusCodes.Status202Accepted)
-            {
-                await FollowJobAsync(sync, row, subject, outcome.Body, since, ct);
-            }
-            else if (outcome.Status >= 400)
-            {
-                Refused(row, CodeOf(outcome.Body) ?? InternalCode, RetryAfterOf(outcome.Body));
-            }
-            else
+            var pass = new Pass(since, null, ScheduleTrigger);
+            var end = await PassAsync(sync, row, subject, pass, ct);
+            if (end.Finished is { } finished)
             {
                 row.LastScheduleError = null;
                 row.PendingArtifactsJobId = null;
+                NoteBackfill(row, pass.Since, pass.Until, finished);
             }
-        }
-        catch (ConnectorReplyException ex)
-        {
-            Refused(row, ex.Reply.Error?.Code ?? InternalCode, ex.Reply.Error?.RetryAfterSeconds);
+            else if (end.Asked)
+            {
+                // the person will find the question in the hub
+                row.State = "awaiting_input";
+                row.LastScheduleError = null;
+                row.PendingArtifactsJobId = null;
+            }
+            else if (end.TimedOut)
+            {
+                // the person will find it in the hub; the connector expires it by itself
+                row.LastScheduleError = "mfa_timeout";
+            }
+            else if (end.Code is { } code)
+            {
+                // the picture a failed run left behind waits on the person: the hub asks (#441 L1)
+                if (end.JobFailed) row.PendingArtifactsJobId = end.ArtifactsJobId;
+                Refused(row, code, end.RetryAfter);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "scheduled connector sync of {Provider} failed", row.Provider);
             row.LastScheduleError = InternalCode;
         }
+
+        // one pass over older history per run, after a run that went through (#460)
+        if (row is { BackfillUntil: not null, State: "active", KeptBundle: not null, LastScheduleError: null })
+        {
+            await BackfillAsync(sync, row, subject, ct);
+        }
         await relay.Db.SaveChangesAsync(ct);
     }
 
-    private async Task FollowJobAsync(ConnectorSyncService sync, ConnectorSession row, string subject, JsonObject accepted, string? since, CancellationToken ct)
+    /// <summary>How one pass ended: its finished view, the question it stopped at, or the refusal it met.</summary>
+    private sealed record PassEnd(
+        JsonObject? Finished = null,
+        bool Asked = false,
+        bool TimedOut = false,
+        string? Code = null,
+        int? RetryAfter = null,
+        bool JobFailed = false,
+        string? ArtifactsJobId = null);
+
+    /// <summary>One sync with the kept bundle over the pass's window, followed through every job its walk becomes.</summary>
+    private async Task<PassEnd> PassAsync(ConnectorSyncService sync, ConnectorSession row, string subject, Pass pass, CancellationToken ct)
+    {
+        try
+        {
+            var request = new ConnectorSyncRequest(row.ConnectionId, row.KeptBundle!, pass.Since, pass.Until);
+            var outcome = await sync.SyncAsync(row.UserId, subject, row.Provider, request, "native", ct, trigger: pass.Trigger);
+            if (outcome.Status == StatusCodes.Status202Accepted) return await FollowJobAsync(sync, row, subject, outcome.Body, pass, ct);
+            return outcome.Status >= 400
+                ? new PassEnd(Code: CodeOf(outcome.Body) ?? InternalCode, RetryAfter: RetryAfterOf(outcome.Body))
+                : new PassEnd(outcome.Body);
+        }
+        catch (ConnectorReplyException ex)
+        {
+            return new PassEnd(Code: ex.Reply.Error?.Code ?? InternalCode, RetryAfter: ex.Reply.Error?.RetryAfterSeconds);
+        }
+    }
+
+    private async Task<PassEnd> FollowJobAsync(ConnectorSyncService sync, ConnectorSession row, string subject, JsonObject accepted, Pass pass, CancellationToken ct)
     {
         var jobId = accepted["jobId"]?.GetValue<string>();
-        if (jobId is null) return;
+        if (jobId is null) return new PassEnd();
         var deadline = time.GetUtcNow() + JobPatience;
         while (time.GetUtcNow() < deadline)
         {
@@ -203,45 +250,133 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             {
                 case "succeeded":
                 {
-                    var next = await CollectAsync(sync, row, subject, jobId, since, ct);
-                    if (next is null) return;
-                    // the walk went on and the next pass became a job of its own: follow that one
-                    jobId = next;
-                    break;
+                    var call = new ConnectorCollectCall(new ConnectorCollectRequest(row.KeptBundle!, pass.Since, pass.Until), pass.Trigger);
+                    var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, call, ct);
+                    if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next)
+                    {
+                        // the walk went on and the next pass became a job of its own: follow that one
+                        jobId = next;
+                        break;
+                    }
+                    return collected.Status >= 400
+                        ? new PassEnd(Code: CodeOf(collected.Body) ?? InternalCode, RetryAfter: RetryAfterOf(collected.Body))
+                        : new PassEnd(collected.Body);
                 }
                 case "awaiting_input":
-                    // the person will find the question in the hub
-                    row.State = "awaiting_input";
-                    row.LastScheduleError = null;
-                    row.PendingArtifactsJobId = null;
-                    return;
+                    return new PassEnd(Asked: true);
                 case "failed" or "expired":
-                    // the picture the run left behind waits on the person: the hub asks (#441 L1)
-                    row.PendingArtifactsJobId = job.Body["artifactsJobId"]?.GetValue<string>();
-                    Refused(row, CodeOf(job.Body) ?? (state == "expired" ? "challenge_expired" : InternalCode), RetryAfterOf(job.Body));
-                    return;
+                    return new PassEnd(
+                        Code: CodeOf(job.Body) ?? (state == "expired" ? "challenge_expired" : InternalCode),
+                        RetryAfter: RetryAfterOf(job.Body),
+                        JobFailed: true,
+                        ArtifactsJobId: job.Body["artifactsJobId"]?.GetValue<string>());
                 default:
                     await Task.Delay(JobPoll, ct);
                     break;
             }
         }
-        // the person will find it in the hub; the connector expires it by itself
-        row.LastScheduleError = "mfa_timeout";
+        return new PassEnd(TimedOut: true);
     }
 
-    /// <summary>Collects a finished job: the id of the next job when the walk went on and its next pass became one; null once the walk is done, or refused.</summary>
-    private async Task<string?> CollectAsync(ConnectorSyncService sync, ConnectorSession row, string subject, string jobId, string? since, CancellationToken ct)
+    /// <summary>
+    /// One pass over the older history a partial run left (#460), declared to
+    /// the connector as <c>backfill</c>: it holds those to the party's interval
+    /// on a clock of their own, so a party sees the schedule's pass and one
+    /// backfill pass per interval. A refusal leaves the backfill for the next
+    /// run; only one the person must act on touches the session.
+    /// </summary>
+    private async Task BackfillAsync(ConnectorSyncService sync, ConnectorSession row, string subject, CancellationToken ct)
     {
-        var call = new ConnectorCollectCall(new ConnectorCollectRequest(row.KeptBundle!, since), ScheduleTrigger);
-        var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, call, ct);
-        if (collected.Status == StatusCodes.Status202Accepted && collected.Body["jobId"]?.GetValue<string>() is { } next) return next;
-        if (collected.Status >= 400) Refused(row, CodeOf(collected.Body) ?? InternalCode, RetryAfterOf(collected.Body));
-        else
+        var pass = new Pass(
+            row.BackfillSince?.ToString(DayFormat, CultureInfo.InvariantCulture),
+            row.BackfillUntil!.Value.ToString(DayFormat, CultureInfo.InvariantCulture),
+            BackfillTrigger);
+        PassEnd end;
+        try
         {
-            row.LastScheduleError = null;
-            row.PendingArtifactsJobId = null;
+            end = await PassAsync(sync, row, subject, pass, ct);
         }
-        return null;
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "backfill pass of {Provider} failed; it is asked again on the next scheduled run", row.Provider);
+            return;
+        }
+
+        if (end.Finished is { } finished)
+        {
+            NoteBackfill(row, pass.Since, pass.Until, finished);
+            return;
+        }
+        if (end.Asked)
+        {
+            row.State = "awaiting_input";
+            return;
+        }
+        if (end.JobFailed) row.PendingArtifactsJobId = end.ArtifactsJobId;
+        if (end.Code is { } code && (SignInCodes.Contains(code) || code == "blocked_by_provider"))
+        {
+            Refused(row, code, end.RetryAfter);
+        }
+        else if (end.Code is { } other && other != RateLimitedCode && logger.IsEnabled(LogLevel.Warning))
+        {
+            logger.LogWarning("backfill pass of {Provider} ended on {Code}; it is asked again on the next scheduled run", row.Provider, other);
+        }
+    }
+
+    /// <summary>
+    /// What a finished pass says about older history (#460) — the same rule as
+    /// the app's (connectorSync.nextBackfill). The schedule's own pass that came
+    /// back partial leaves the days below the oldest one it brought, down to its
+    /// since (joined with a backfill already pending); a whole one leaves a
+    /// pending backfill as it was. A backfill pass moves the frontier down to
+    /// the oldest day it brought, or ends the backfill when it came back whole,
+    /// brought nothing dated, or reached no further. The frontier day itself is
+    /// asked again: a pass's cap can cut a day in half, and the ingest absorbs
+    /// the overlap.
+    /// </summary>
+    internal static void NoteBackfill(ConnectorSession row, string? since, string? until, JsonObject finished)
+    {
+        var partial = finished["complete"]?.GetValue<bool>() == false;
+        if (!partial || Day(finished["oldest"]?.GetValue<string>()) is not { } oldest)
+        {
+            if (until is not null) Clear(row);
+            return;
+        }
+
+        // the party widens a since by its settlement lag, so a pass can bring days below it: never ask from above them
+        var from = Day(since) is { } stated && stated > oldest ? oldest : Day(since);
+        if (until is not null)
+        {
+            if (oldest < Day(until))
+            {
+                row.BackfillSince = from;
+                row.BackfillUntil = oldest;
+            }
+            else
+            {
+                Clear(row);
+            }
+            return;
+        }
+
+        row.BackfillSince = row.BackfillUntil is null ? from : Earliest(from, row.BackfillSince);
+        row.BackfillUntil = row.BackfillUntil is { } pending && pending > oldest ? pending : oldest;
+    }
+
+    private static void Clear(ConnectorSession row)
+    {
+        row.BackfillUntil = null;
+        row.BackfillSince = null;
+    }
+
+    private static DateOnly? Day(string? text) =>
+        DateOnly.TryParseExact(text, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
+
+    /// <summary>The earlier of two lower bounds, where null is the party's floor and so the earliest of all.</summary>
+    private static DateOnly? Earliest(DateOnly? a, DateOnly? b)
+    {
+        if (a is not { } first || b is not { } second) return null;
+        return first < second ? first : second;
     }
 
     private static string? CodeOf(JsonObject body) => body["error"]?["code"]?.GetValue<string>();

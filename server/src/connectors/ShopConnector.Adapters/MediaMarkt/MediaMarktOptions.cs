@@ -222,6 +222,25 @@ public sealed record MediaMarktOptions
     public int InvoiceProbeMs { get; init; } = 15_000;
 
     /// <summary>
+    /// What a rendered order page shows, whatever the order (the account
+    /// holder's screenshots, #430: "Mijn bestelling", "Overzicht bestelling").
+    /// The page is a client-rendered app, so these are waited for before the
+    /// invoice controls are looked for at all.
+    /// </summary>
+    public IReadOnlyList<string> OrderPageSelectors { get; init; } =
+    [
+        """h1:has-text("Mijn bestelling")""",
+        """body:has-text("Overzicht bestelling")""",
+        """body:has-text("Order overview")""",
+    ];
+
+    /// <summary>How long an order's page is given to render.</summary>
+    public int OrderPageMs { get; init; } = 15_000;
+
+    /// <summary>How long the invoice controls may trail the rendered order before the order is taken to offer none.</summary>
+    public int InvoiceControlsMs { get; init; } = 3_000;
+
+    /// <summary>
     /// What an invoice may be. A sign-in page answered to a document link is
     /// text/html with a name ending in .pdf, and is not attached.
     /// </summary>

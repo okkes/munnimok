@@ -444,7 +444,7 @@ internal static class OperatorEndpoints
         counts[key] = counts.GetValueOrDefault(key) + 1;
 
     private static string TriggerWord(string? trigger) =>
-        trigger is JobRow.UserTrigger or JobRow.ScheduleTrigger or JobRow.LabTrigger or JobRow.CanaryTrigger
+        trigger is JobRow.UserTrigger or JobRow.ScheduleTrigger or JobRow.BackfillTrigger or JobRow.LabTrigger or JobRow.CanaryTrigger
             ? trigger
             : "other";
 

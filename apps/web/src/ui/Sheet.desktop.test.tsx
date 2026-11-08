@@ -65,6 +65,23 @@ describe('desktop dialog', () => {
     }
   });
 
+  it('#389/#390: a pinned footer keeps the rounded bottom corners — the dialog clips what it holds', () => {
+    localStorage.setItem('munni_lang', 'en');
+    const restore = stubDesktop();
+    try {
+      const dialog = dialogFor(
+        <Sheet open onOpenChange={() => undefined} title="t" size="tall" footer={<button data-testid="footer-btn">ok</button>}>
+          <div />
+        </Sheet>,
+      );
+      expect(dialog.contains(screen.getByTestId('footer-btn'))).toBe(true);
+      expect(dialog.className).toContain('overflow-hidden');
+      expect(dialog.className).toContain('rounded-[20px]');
+    } finally {
+      restore();
+    }
+  });
+
   it('the content area is the scroller, so a taller-than-ceiling body scrolls inside', () => {
     localStorage.setItem('munni_lang', 'en');
     const restore = stubDesktop();

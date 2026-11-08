@@ -2,15 +2,18 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { useCashOutSet, useGoals } from '@/application/goals';
 import { useData } from '@/app/data';
+import { goalCashOutsIn } from '@/domain/goals';
 import { categoryBreakdown, contributionCents, txsForKind } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
-import { periodHistory } from '@/domain/periods';
+import { periodHistory, periodMonthsLabel } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { recallExpanded, recallPeriod, recallScroll, rememberExpanded, rememberPeriod, rememberScroll } from './periodMemory';
 import { LOCALES, useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
+import { SENSITIVE_KINDS } from '@/features/privacy/sensitive';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
 import { Collapse } from '@/ui/Collapse';
@@ -79,33 +82,30 @@ export function OverviewScreen() {
   }, [kind]);
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
+  // #455: what a reached goal cashed out leaves the saving — the card below names it
+  const goals = useGoals();
+  const cashedOut = useCashOutSet(txs);
 
   const barValues = useMemo(
     () =>
       periods.map((period) =>
-        txsForKind(kind, txs ?? [], accountsById, period).reduce((sum, tx) => sum + contributionCents(kind, tx), 0),
+        txsForKind(kind, txs ?? [], accountsById, period, cashedOut).reduce((sum, tx) => sum + contributionCents(kind, tx), 0),
       ),
-    [periods, txs, accountsById, kind],
+    [periods, txs, accountsById, kind, cashedOut],
   );
-  const barLabels = useMemo(
-    () =>
-      periods.map((period) => {
-        const start = new Date(period.start);
-        const end = new Date(period.end);
-        const from = start.toLocaleDateString(LOCALES[lang], { month: 'short' });
-        const to = end.toLocaleDateString(LOCALES[lang], { month: 'short' });
-        return from === to ? from : `${from}–${to}`;
-      }),
-    [periods, lang],
-  );
+  const barLabels = useMemo(() => periods.map((period) => periodMonthsLabel(period, LOCALES[lang])), [periods, lang]);
 
   const period = periods[periodIndex];
   // drill into the category's own screen, keeping the selected period
   const openCategory = (catId: string) =>
     void navigate({ to: '/overview/$kind/$catId', params: { kind, catId }, search: { from: period.start } });
   const groups = useMemo(
-    () => categoryBreakdown(kind, txs ?? [], accountsById, period, cats),
-    [kind, txs, accountsById, period, cats],
+    () => categoryBreakdown(kind, txs ?? [], accountsById, period, cats, cashedOut),
+    [kind, txs, accountsById, period, cats, cashedOut],
+  );
+  const cashOuts = useMemo(
+    () => (kind === 'saving' ? goalCashOutsIn(goals ?? [], txs ?? [], period) : []),
+    [kind, goals, txs, period],
   );
   // the remembered offset lands once the groups have rendered (the list's
   // height exists only then); a later scroll is the person's own
@@ -118,9 +118,11 @@ export function OverviewScreen() {
   const grandTotal = barValues[periodIndex] ?? 0;
   const positiveTotal = groups.reduce((sum, g) => sum + Math.max(g.totalCents, 0), 0);
   const currency = space?.currency ?? 'EUR';
-  const { fmt } = useDisplayMoney();
+  const { fmt: fmtAny, fmtSensitive } = useDisplayMoney();
+  // #530: income and savings are private — with the hide mode on, every amount of their drill reads as stars
+  const fmt = SENSITIVE_KINDS.has(kind) ? fmtSensitive : fmtAny;
 
-  const colorOf = (catId: string, i: number) => cats.byId(catId).color ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length];
+  const colorOf =(catId: string, i: number) => cats.byId(catId).color ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length];
   const periodLabel = `${new Date(period.start).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })} – ${new Date(period.end).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}`;
 
   return (
@@ -157,6 +159,34 @@ export function OverviewScreen() {
             valueLabels={barValues.map((v) => fmt(v, currency))}
           />
         </div>
+
+        {/* #455 (user): money that left savings for a reached goal shows — as the goal, not as a setback */}
+        {cashOuts.length > 0 && (
+          <div className="mt-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="overview-cashouts">
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+              <Icon name="flag-checkered" size={16} color="var(--m-accent-deep)" />
+              {t('overview.cashOutsTitle')}
+            </div>
+            <p className="mt-0.5 text-[12px] leading-snug text-ink-3">{t('overview.cashOutsSub')}</p>
+            {cashOuts.map(({ goal, cents }) => (
+              <button
+                key={goal.id}
+                data-testid={`overview-cashout-${goal.id}`}
+                onClick={() => void navigate({ to: '/goals/$goalId', params: { goalId: goal.id } })}
+                className="m-tap mt-2 flex w-full items-center gap-3 border-t border-line-2 bg-transparent pt-2 text-left"
+              >
+                {goal.picture ? (
+                  <img src={goal.picture} alt="" className="h-9 w-9 shrink-0 rounded-xl object-cover" />
+                ) : (
+                  <Tile icon={goal.icon ?? 'flag-outline'} />
+                )}
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{goal.name}</span>
+                <span className="m-num text-[13px] font-semibold text-accent-deep">{fmt(cents, currency)}</span>
+                <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="mt-4">
           <StackedBar segments={groups.map((g, i) => ({ id: g.catId, value: g.totalCents, color: colorOf(g.catId, i) }))} />

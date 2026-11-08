@@ -28,6 +28,9 @@ export interface TxSliceView {
    *  and aggregate absolutely; a whole row — its category spread
    *  included — contributes signed, so refunds keep reducing spend */
   fromParts: boolean;
+  /** the part itself, on a part's views — lists that show the counted
+   *  money show the part it came from (#579) */
+  part?: TxSplit;
   index: number;
   count: number;
 }
@@ -81,6 +84,7 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
       sliceId: part.id,
       label: part.label,
       fromParts: true,
+      part,
     };
     // v2.1: a part spread across categories fans one view per category
     // entry — the part's story (type/link/event/label) rides on each

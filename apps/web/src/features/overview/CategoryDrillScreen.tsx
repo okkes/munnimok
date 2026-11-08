@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { useCashOutSet } from '@/application/goals';
 import { useData } from '@/app/data';
 import { categoryContributionCents, txsForCategory } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
-import { periodHistory } from '@/domain/periods';
+import { periodHistory, periodMonthsLabel } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { recallDrillLinked, recallDrillPeriod, rememberDrillLinked, rememberDrillPeriod } from './periodMemory';
 import { LOCALES, useLang } from '@/i18n';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { SENSITIVE_KINDS } from '@/features/privacy/sensitive';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
@@ -106,26 +108,18 @@ export function CategoryDrillScreen() {
   };
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
+  // #455: the drill sums like its overview — a reached goal's cash-out is not in the saving
+  const cashedOut = useCashOutSet(txs);
   const perPeriod = useMemo(
-    () => periods.map((period) => txsForCategory(kind, txs ?? [], accountsById, period, catId, cats)),
-    [periods, kind, txs, accountsById, catId, cats],
+    () => periods.map((period) => txsForCategory(kind, txs ?? [], accountsById, period, catId, cats, cashedOut)),
+    [periods, kind, txs, accountsById, catId, cats, cashedOut],
   );
-  const barLabels = useMemo(
-    () =>
-      periods.map((period) => {
-        const start = new Date(period.start);
-        const end = new Date(period.end);
-        const fromLabel = start.toLocaleDateString(LOCALES[lang], { month: 'short' });
-        const toLabel = end.toLocaleDateString(LOCALES[lang], { month: 'short' });
-        return fromLabel === toLabel ? fromLabel : `${fromLabel}–${toLabel}`;
-      }),
-    [periods, lang],
-  );
+  const barLabels = useMemo(() => periods.map((period) => periodMonthsLabel(period, LOCALES[lang])), [periods, lang]);
 
   const selected = perPeriod[periodIndex];
   const period = periods[periodIndex];
   const currency = space?.currency ?? 'EUR';
-  const { fmt } = useDisplayMoney();
+  const { fmt, fmtSensitive } = useDisplayMoney();
   const cat = cats.byId(catId);
   const color = cat.color ?? cats.byId(cat.parentId)?.color ?? KIND_ACCENT[kind];
   const periodLabel = `${new Date(period.start).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })} – ${new Date(period.end).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}`;
@@ -149,7 +143,8 @@ export function CategoryDrillScreen() {
             <Icon name={cat.icon} size={22} />
           </span>
           <div className="m-num mt-2 text-4xl text-ink" data-testid="catdrill-total">
-            {fmt(selected.totalCents, currency)}
+            {/* #530: the total one level under a hidden tile stays hidden; the rows are the transactions themselves */}
+            {(SENSITIVE_KINDS.has(kind) ? fmtSensitive : fmt)(selected.totalCents, currency)}
           </div>
           <div className="mt-1 text-xs font-medium text-ink-3" data-testid="catdrill-period">
             {periodLabel}

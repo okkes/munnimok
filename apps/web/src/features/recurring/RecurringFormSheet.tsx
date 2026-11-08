@@ -18,10 +18,11 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
 import { BrandIconPicker } from './BrandIconPicker';
-import { KIND_ICON } from './RecurringVisual';
+import { KIND_ICON, RECURRING_ICONS, ownIcon } from './RecurringVisual';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
@@ -33,6 +34,8 @@ export interface FormState {
   kind: RecurringKind;
   amount: string; // major units as typed
   logo?: string;
+  /** #520: an icon the person picked; absent = the kind's icon (it follows a kind change) */
+  icon?: string;
   every: RecurringEvery;
   /** custom cadence: repeat every N units, anchored on firstDue */
   everyN: number;
@@ -83,6 +86,7 @@ export const formFromRec = (rec: RecurringRow): FormState => ({
   kind: rec.kind,
   amount: (rec.amountCents / 100).toFixed(2),
   logo: rec.logo || undefined,
+  icon: ownIcon(rec),
   every: rec.every,
   everyN: Math.max(1, rec.everyN ?? 1),
   custom: rec.every === 'week' || (rec.everyN ?? 1) > 1,
@@ -106,6 +110,19 @@ export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   dueDay: s.dueDay,
   merchantKey: s.merchantKey,
 });
+
+/** the cost's face: a logo, an icon the person picked (#520), or the kind's default */
+const faceOf = (form: Pick<FormState, 'logo' | 'icon'>): 'logo' | 'own' | 'default' => {
+  if (form.logo) return 'logo';
+  return form.icon ? 'own' : 'default';
+};
+const FACE_LABEL = { logo: 'recurring.iconChosen', own: 'recurring.iconOwn', default: 'recurring.iconNone' } as const;
+const faceLabelKey = (form: Pick<FormState, 'logo' | 'icon'>) => FACE_LABEL[faceOf(form)];
+/** a picked icon (#520) wears the accent, the kind's default stays quiet (S3776) */
+const faceIconColor = (icon: string | undefined): string => (icon ? 'var(--m-accent-deep)' : 'var(--m-ink-3)');
+
+/** the on/off switch's track: the knob rides right on the accent while on (S3776) */
+const switchTrack = (on: boolean): string => (on ? 'justify-end bg-accent' : 'justify-start bg-bg-2');
 
 // #195: the first failing requirement names the blocker (null form =
 // closed sheet, nothing blocks)
@@ -265,7 +282,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
       // already cleared the flag, the form never shows it for fixed
       luxury: form.luxury ? 1 : 0,
       amountCents,
-      icon: KIND_ICON[form.kind],
+      icon: form.icon ?? KIND_ICON[form.kind],
       logo: form.logo ?? '', // '' clears — an absent field would not sync
       ...cadence,
       active: form.active ? 1 : 0,
@@ -383,19 +400,19 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(amountBad)}`}
             />
 
-            <div className="m-cap px-1">{t('recurring.iconTitle')}</div>
+            <div className="m-cap px-1">{t('recurring.faceTitle')}</div>
             <button
               data-testid="recform-logo-open"
               onClick={() => setBrandPickerOpen(true)}
               className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[14px]"
             >
               {form.logo ? (
-                <img src={form.logo} alt="" className="h-6 w-6 object-contain" />
+                <Picture src={form.logo} className="h-6 w-6 rounded object-contain" />
               ) : (
-                <Icon name={KIND_ICON[form.kind]} size={18} color="var(--m-ink-3)" />
+                <Icon name={form.icon ?? KIND_ICON[form.kind]} size={18} color={faceIconColor(form.icon)} />
               )}
-              <span className={`min-w-0 flex-1 truncate ${form.logo ? 'text-ink' : 'text-ink-3'}`}>
-                {form.logo ? t('recurring.iconChosen') : t('recurring.iconNone')}
+              <span className={`min-w-0 flex-1 truncate ${form.logo || form.icon ? 'text-ink' : 'text-ink-3'}`} data-testid="recform-face">
+                {t(faceLabelKey(form))}
               </span>
               <Icon name="chevron-down" size={17} color="var(--m-ink-4)" />
             </button>
@@ -512,7 +529,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
                   <span className="block text-[11px] text-ink-4">{t('recurring.luxuryHint')}</span>
                 </span>
                 <span
-                  className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${form.luxury ? 'justify-end bg-accent' : 'justify-start bg-bg-2'}`}
+                  className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${switchTrack(form.luxury)}`}
                 >
                   <span className="h-5 w-5 rounded-full bg-surface shadow" />
                 </span>
@@ -536,7 +553,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               >
                 <span className="min-w-0 flex-1 text-[14px] text-ink">{t('recurring.activeLabel')}</span>
                 <span
-                  className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${form.active ? 'justify-end bg-accent' : 'justify-start bg-bg-2'}`}
+                  className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${switchTrack(form.active)}`}
                 >
                   <span className="h-5 w-5 rounded-full bg-surface shadow" />
                 </span>
@@ -569,8 +586,10 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
         open={brandPickerOpen}
         onOpenChange={setBrandPickerOpen}
         initialQuery={form?.name ?? ''}
-        onPick={({ logo }) => {
-          if (form) setForm({ ...form, logo: logo ?? undefined });
+        // #520 (user): the cost's own icon from the whole font, beside the logos
+        icons={form ? { value: form.icon ?? KIND_ICON[form.kind], featured: RECURRING_ICONS, face: faceOf(form) } : undefined}
+        onPick={({ logo, icon }) => {
+          if (form) setForm({ ...form, logo: logo ?? undefined, ...(icon ? { icon } : {}) });
         }}
       />
       <CategoryPicker

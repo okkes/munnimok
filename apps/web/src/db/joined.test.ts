@@ -6,7 +6,7 @@ import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
 import { DexieBackend } from './backend';
-import { visibleAccounts, visibleTransactions, writeTxTransform } from './joined';
+import { asSpaceAccount, visibleAccounts, visibleTransactions, writeTxTransform } from './joined';
 
 let counter = 0;
 let db: MunniDB;
@@ -155,7 +155,7 @@ describe('feature B join layer', () => {
 
   it('#133 removal: the VIEW derives every type at the join — stored values are never read', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
+    await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('transaction', SPACE, 'derive1', {
       accountId: 'chk', date: '2026-07-03', amountCents: -1200, currency: 'EUR',
       // the STORED type lies on purpose (sign-legal) — the view ignores it
@@ -166,10 +166,10 @@ describe('feature B join layer', () => {
 
     // a bare ◆ movement row derives its family, whatever was stored
     expect((await view())?.txType).toBe('saving');
-    // linking the DEFAULT pot keeps the family (the counterparty rule)
+    // a counter account makes the movement a transfer (the pot's own leg carries the saving)
     const tx = { id: 'derive1', spaceId: SPACE, feedSpaceId: undefined, txType: 'expense', needsReview: 0, amountCents: -1200 } as never;
-    await writeTxTransform(repo, tx, { linkedAccountId: 'defpot' });
-    expect((await view())?.txType).toBe('saving');
+    await writeTxTransform(repo, tx, { linkedAccountId: 'pot' });
+    expect((await view())?.txType).toBe('transfer');
     // an ordinary category signs; parts derive per part with the row sign
     await writeTxTransform(repo, tx, { linkedAccountId: null as never, catId: 'coffee' });
     expect((await view())?.txType).toBe('expense');
@@ -177,12 +177,12 @@ describe('feature B join layer', () => {
       splits: [
         { id: 'p1', catId: 'groceries', amountCents: 700 },
         { id: 'p2', catId: 'savingDeposit', amountCents: 500 },
-        // a DEFAULT-linked part wears the family, not transfer
-        { id: 'p3', catId: 'savingDeposit', amountCents: 0, linkedAccountId: 'defpot' },
+        // a linked part is a transfer, like a linked row
+        { id: 'p3', catId: 'savingDeposit', amountCents: 0, linkedAccountId: 'pot' },
       ],
     });
     const parts = (await view())?.splits ?? [];
-    expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving', 'saving']);
+    expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving', 'transfer']);
 
     // the adjustment marker outranks everything — flag and legacy alike
     await repo.upsert('transaction', SPACE, 'adj1', {
@@ -196,14 +196,14 @@ describe('feature B join layer', () => {
 
   it('#228: spread entries derive with the ROW\'s one counterparty; the row link speaks for the whole', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
+    await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     // the settled shape: a linked movement row whose spread holds the
     // real entry + the settled bookkeeping entry (reimbursed passes
     // through untouched — it is bookkeeping, not a story)
     await repo.upsert('transaction', SPACE, 'spread1', {
       accountId: 'chk', date: '2026-07-05', amountCents: -10_000, currency: 'EUR',
       merchant: 'Mixed', catId: 'savingDeposit', needsReview: 0,
-      linkedAccountId: 'defpot',
+      linkedAccountId: 'pot',
       cats: [
         { catId: 'savingDeposit', amountCents: 6_000 },
         { catId: 'reimbursed', amountCents: 4_000 },
@@ -221,11 +221,10 @@ describe('feature B join layer', () => {
     const store = new DexieBackend(db);
     const rows = await visibleTransactions(store, SPACE);
     const settled = rows.find((t) => t.id === 'spread1');
-    // the real entry derives with the row's link (the default pot keeps
-    // the saving story); the settled entry rides untouched
-    expect(settled?.cats?.map((c) => c.txType)).toEqual(['saving', undefined]);
+    // the real entry derives with the row's link; the settled entry rides untouched
+    expect(settled?.cats?.map((c) => c.txType)).toEqual(['transfer', undefined]);
     // the row's own link names the headline
-    expect(settled?.txType).toBe('saving');
+    expect(settled?.txType).toBe('transfer');
     const plain = rows.find((t) => t.id === 'spread2');
     expect(plain?.cats?.map((c) => c.txType)).toEqual(['expense', 'expense']);
     expect(plain?.txType).toBe('expense');
@@ -264,6 +263,19 @@ describe('feature B join layer', () => {
     // clearing the override falls back to the global name
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: null as never });
     expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
+  });
+
+  it('#545: one account looked up by id wears the name its space gave it — detail, review card, pickers', async () => {
+    await seedFeed();
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: 'PayPal' });
+    const store = new DexieBackend(db);
+    const raw = await store.get('account', 'acct1');
+    expect((await asSpaceAccount(store, SPACE, raw))?.name).toBe('PayPal');
+    // a space that does not attach it, and the space's own rows, keep their own name
+    expect((await asSpaceAccount(store, OTHER_SPACE, raw))?.name).toBe('Bank · 6789');
+    await repo.upsert('account', SPACE, 'own1', { name: 'Cash wallet', type: 'cash', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    expect((await asSpaceAccount(store, SPACE, await store.get('account', 'own1')))?.name).toBe('Cash wallet');
+    expect(await asSpaceAccount(store, SPACE, undefined)).toBeUndefined();
   });
 
   it('#152: a funding counterparty derives the funding family; nothing mints into the pot', async () => {

@@ -1,7 +1,6 @@
 import { txMetaId } from '@/domain/feedIds';
 import { accountStamp } from '@/domain/txType';
 import { deriveTxType } from '@/domain/txDerive';
-import { FAMILY_TX_TYPE } from '@/domain/defaultAccounts';
 import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
 import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxSplitCat, TxType, TxView } from './types';
@@ -74,22 +73,17 @@ interface SpaceAccountFacts {
   funding: Set<string>;
   /** #133 removal: what each account MEANS as a counterparty — feeds
    *  the per-row type derivation at the join */
-  counter: Map<string, { defaultFor?: TxType; funding: boolean }>;
+  counter: Map<string, { funding: boolean }>;
 }
 
 async function accountFacts(store: StorageBackend, spaceId: string, links: AccountLinkRow[]): Promise<SpaceAccountFacts> {
   const stamps = new Map<string, TxType>();
   const funding = new Set<string>();
-  const counter = new Map<string, { defaultFor?: TxType; funding: boolean }>();
+  const counter = new Map<string, { funding: boolean }>();
   const put = (account: AccountRow | undefined, type?: AccountType) => {
     if (account?.deleted !== 0) return;
     const effective = type ?? account.type;
-    // #221: the default's family in deriveTxType's vocabulary — the cash
-    // wallet speaks for the transfer family (its ATM half)
-    counter.set(account.id, {
-      defaultFor: account.defaultFor ? FAMILY_TX_TYPE[account.defaultFor] : undefined,
-      funding: effective === 'funding',
-    });
+    counter.set(account.id, { funding: effective === 'funding' });
     if (effective === 'funding') {
       funding.add(account.id);
       return;
@@ -117,7 +111,6 @@ function deriveViewTypes(row: JoinedRow, facts: SpaceAccountFacts): SpaceTx {
       linkedAccountId: linkedId,
       amountCents,
       stamp: facts.stamps.get(row.accountId),
-      counterDefaultFor: counterOf(linkedId)?.defaultFor,
       counterFunding: counterOf(linkedId)?.funding === true,
       multiPart,
       adjustment,
@@ -232,6 +225,18 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
     }
   }
   return out;
+}
+
+/** #545: one account as a space sees it — visibleAccounts' name and type
+ *  for an attached account; a row the space does not attach keeps its own */
+export async function asSpaceAccount(
+  store: StorageBackend,
+  spaceId: string,
+  account: AccountRow | undefined,
+): Promise<SpaceAccount | undefined> {
+  if (!account || account.spaceId === spaceId) return account;
+  const link = (await spaceAccountLinks(store, spaceId)).find((l) => l.accountId === account.id);
+  return link ? { ...account, name: link.displayName || account.name, type: linkEffectiveType(link, account), link } : account;
 }
 
 /** transformation fields a space may hold an opinion on */

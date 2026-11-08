@@ -61,6 +61,23 @@ describe('events math', () => {
     expect(eventTotals(txs, 'e2')).toEqual({ spentCents: 0, receivedCents: 0, netCents: 0 });
   });
 
+  it('#493 (user ss): a paid-back expense and the credit that paid it cost the event nothing — no Reimbursement line, nothing received', () => {
+    const txs = [
+      tx({ eventId: 'e1', catId: 'transport', amountCents: -976 }),
+      tx({ eventId: 'e1', catId: 'restaurants', amountCents: -670 }),
+      // the hotel, expected back in full and settled by the credit below
+      tx({ eventId: 'e1', catId: 'expenseReimburse', amountCents: -10_100, cats: [{ catId: 'reimbursed', amountCents: 10_100 }], reimbursements: [{ txId: 'cr', amountCents: 10_100 }] }),
+      tx({ id: 'cr', eventId: 'e1', catId: 'reimbursed', txType: 'income', amountCents: 10_100, cats: [{ catId: 'reimbursed', amountCents: 10_100 }] }),
+      // half of a taxi paid back: only the open half is the event's cost
+      tx({ eventId: 'e1', catId: 'transport', amountCents: -2000, cats: [{ catId: 'transport', amountCents: 1000 }, { catId: 'reimbursed', amountCents: 1000 }] }),
+    ];
+    expect(eventTotals(txs, 'e1')).toEqual({ spentCents: 2646, receivedCents: 0, netCents: 2646 });
+    expect(eventCategoryBreakdown(txs, 'e1', catalog)).toEqual([
+      { catId: 'transport', totalCents: 1976 },
+      { catId: 'food', totalCents: 670 },
+    ]);
+  });
+
   it('breaks down by main category and averages per day', () => {
     const txs = [
       tx({ eventId: 'e1', catId: 'restaurants', amountCents: -3000 }),

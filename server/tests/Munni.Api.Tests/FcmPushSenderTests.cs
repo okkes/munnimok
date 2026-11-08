@@ -104,6 +104,32 @@ public class FcmPushSenderTests
         Assert.DoesNotContain("\"notification\":", handler.LastSendBody);
     }
 
+    private static (string Title, string Body) Text(string payload, string lang = "en") =>
+        FcmTexts.Build(JsonDocument.Parse(payload).RootElement, lang)!.Value;
+
+    [Fact]
+    public void A_notification_about_one_space_is_titled_with_its_name()
+    {
+        // #551: the lock screen says which space the transactions landed in
+        Assert.Equal(("Household", "2 new transactions arrived"), Text("""{"type":"new-transactions","spaceId":"s1","spaceName":"Household","count":2}"""));
+        Assert.Equal("Trip", Text("""{"type":"test","spaceId":"s2","spaceName":"Trip"}""").Title);
+        // no readable name: the app's own
+        Assert.Equal("munni", Text("""{"type":"new-transactions","spaceId":"s1","spaceName":null,"count":1}""").Title);
+        // a social one names its space in the sentence instead
+        Assert.Equal(("munni", "Bob joined \"Household\""), Text("""{"type":"space-join","fromName":"Bob","spaceId":"s1","spaceName":"Household"}"""));
+    }
+
+    [Fact]
+    public void Membership_changes_reach_the_phone_with_their_own_text_in_every_language()
+    {
+        // these were data-only before — a closed iPhone showed nothing at all
+        Assert.Equal("You were removed from \"Huis\" by Alice", Text("""{"type":"member-removed","fromName":"Alice","spaceName":"Huis"}""").Body);
+        Assert.Equal("Je rol in \"Huis\" is nu lezer", Text("""{"type":"member-role","spaceName":"Huis","role":"reader"}""", "nl").Body);
+        Assert.Contains("okuyucu", Text("""{"type":"member-role","spaceName":"Ev","role":"reader"}""", "tr").Body);
+        // a role this build does not know passes through as it came
+        Assert.Equal("Your role in \"Huis\" is now wizard", Text("""{"type":"member-role","spaceName":"Huis","role":"wizard"}""").Body);
+    }
+
     [Fact]
     public async Task An_unregistered_token_reports_false_so_the_row_is_pruned()
     {

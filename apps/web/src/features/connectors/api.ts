@@ -6,6 +6,7 @@ import type {
   AgentView,
   BindingView,
   Catalogue,
+  ConnectionAccountLink,
   EnrollmentView,
   ErrorEnvelope,
   JobView,
@@ -92,6 +93,8 @@ export interface SyncBody {
   bundle: string;
   /** yyyy-mm-dd; absent = the party's full history window */
   since?: string;
+  /** yyyy-mm-dd: a pass over older history (#460), up to this day */
+  until?: string;
 }
 
 export type SyncAnswer = { accepted: false; outcome: SyncOutcome } | { accepted: true; job: JobView };
@@ -116,6 +119,11 @@ export const connectorApi = {
     const body = (await response.json().catch(() => null)) as Catalogue | null;
     if (!response.ok || !body) throw new ConnectorError(response.status, envelopeOf(response.status, body));
     return { catalogue: body, etag: response.headers.get('ETag') };
+  },
+
+  /** #524: which accounts each of the caller's connections reaches — per person, unlike an account row's last-fetcher stamp */
+  async accounts(): Promise<ConnectionAccountLink[]> {
+    return (await call<ConnectionAccountLink[]>('/accounts')).body;
   },
 
   async sessions(): Promise<BindingView[]> {
@@ -184,6 +192,21 @@ export const connectorApi = {
     };
   },
 
+  /**
+   * The live view pushed (#429): one response that carries every picture
+   * past `after` as it is taken (read by liveStream.ts). A refusal before
+   * the first byte throws the envelope, as the poll does.
+   */
+  async liveStream(provider: string, sessionId: string, challengeId: string, after: number, signal: AbortSignal): Promise<Response> {
+    const response = await apiFetch(
+      `${BASE}/${provider}/login/${sessionId}/challenges/${challengeId}/live/stream?after=${after}`,
+      { headers: { 'X-Device-Class': deviceClass(), Accept: 'text/event-stream' }, signal },
+      { expectStatuses: [503] },
+    );
+    if (!response.ok) throw new ConnectorError(response.status, envelopeOf(response.status, await response.json().catch(() => null)));
+    return response;
+  },
+
   async liveInput(provider: string, sessionId: string, challengeId: string, events: LiveInputEvent[]): Promise<void> {
     await call<unknown>(`/${provider}/login/${sessionId}/challenges/${challengeId}/live/input`, json({ events }));
   },
@@ -214,8 +237,8 @@ export const connectorApi = {
 
   /** ingests the job's page once it succeeded and walks on to the resources after it; `running` while the
    *  job has not finished — or when the next pass became a job of its own, and the view is then THAT job's */
-  async collect(provider: string, jobId: string, bundle: string, since?: string): Promise<{ running: boolean; job: JobView }> {
-    const { status, body: job } = await call<JobView>(`/${provider}/jobs/${jobId}/collect`, json({ bundle, since }));
+  async collect(provider: string, jobId: string, bundle: string, since?: string, until?: string): Promise<{ running: boolean; job: JobView }> {
+    const { status, body: job } = await call<JobView>(`/${provider}/jobs/${jobId}/collect`, json({ bundle, since, until }));
     return { running: status === 202, job };
   },
 

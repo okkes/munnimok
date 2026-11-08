@@ -85,10 +85,23 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     const { LogtoAppProvider } = await import('./logto');
     render(<LogtoAppProvider>{null}</LogtoAppProvider>);
     await waitFor(() => expect(isSessionExpired()).toBe(true));
-    await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith(`${window.location.origin}/auth-callback`));
+    await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback` }));
     expect(sessionStorage.getItem('munni_grant_reheal')).toBe('1');
     // an expired session short-circuits the bridge — no more IdP hammering
     expect(await getAccessToken()).toBeUndefined();
+  });
+
+  it('#559: the re-entry goes the way the person signs in — a Google account straight to Google', async () => {
+    localStorage.setItem('munni_last_account', JSON.stringify({ name: 'Okkes', at: 1, social: 'google' }));
+    mockError = invalidGrant();
+    const { LogtoAppProvider } = await import('./logto');
+    render(<LogtoAppProvider>{null}</LogtoAppProvider>);
+    await waitFor(() =>
+      expect(mockSignIn).toHaveBeenCalledWith({
+        redirectUri: `${window.location.origin}/auth-callback`,
+        directSignIn: { method: 'social', target: 'google' },
+      }),
+    );
   });
 
   it('a NEW invalid_grant in the same visit shows the banner instead of redirecting again', async () => {
@@ -133,7 +146,7 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
       expect(warn).toHaveBeenCalledTimes(1); // a breadcrumb, not an event
       expect(await getAccessToken()).toBeUndefined();
       expect(mockGetAccessToken).toHaveBeenCalledTimes(1);
-      await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith(`${window.location.origin}/auth-callback`));
+      await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback` }));
     });
 
     it('a transient failure is connectivity, not identity: no mark, but the next 15 s ask nobody — a later token clears the cooldown', async () => {

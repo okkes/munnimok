@@ -1,59 +1,30 @@
 ﻿import { useEffect, useState } from 'react';
-import { Link, Outlet, useRouterState } from '@tanstack/react-router';
+import { Outlet, useRouterState } from '@tanstack/react-router';
 import { DisplayMoneyProvider } from '@/features/currency/useDisplayMoney';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { DataProvider, useData } from './data';
 import { OfflineBanner } from './OfflineBanner';
 import { useSession } from './session';
 import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
 import { useConnectionKeepAlive } from '@/application/connections';
+import { useReviewSuggestionTriggers } from '@/application/reviewSuggestions';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
+import { osNotifyAllowed } from '@/application/spaceNotifications';
+import { NotificationSpaceSwitch } from './notificationSpace';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
-import { clearTxFilters } from '@/features/transactions/txFilters';
-import { clearOverviewPeriods } from '@/features/overview/periodMemory';
 import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
 import { wheelToHorizontal } from '@/lib/wheelScroll';
 import { SHEET_OWNS_KEYBOARD, Sheet } from '@/ui/Sheet';
 import { Button } from '@/ui/Button';
 import { useEvicted } from './evicted';
+import { UnsavedNotice } from './UnsavedNotice';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
-import { PlanAttention, usePlanDot } from '@/features/planning/PlanAttention';
-
-interface TabDef {
-  to: string;
-  labelKey: TranslationKey;
-  icon: string;
-  iconActive: string;
-  testId: string;
-  /** wears the planning dot (a subject in the red) */
-  dot?: boolean;
-}
-
-/** a tab icon, with the attention dot when the tab asks for one */
-function TabFace({ tab, active, size }: Readonly<{ tab: TabDef; active: boolean; size: number }>) {
-  const dot = usePlanDot((s) => s.dot);
-  return (
-    <span className="relative inline-flex">
-      <Icon name={active ? tab.iconActive : tab.icon} size={size} />
-      {tab.dot && dot && <span data-testid={`${tab.testId}-dot`} className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-negative" />}
-    </span>
-  );
-}
-
-const TABS: TabDef[] = [
-  { to: '/home', labelKey: 'tab.home', icon: 'home-variant-outline', iconActive: 'home-variant', testId: 'tab-home' },
-  { to: '/transactions', labelKey: 'tab.transactions', icon: 'format-list-bulleted', iconActive: 'format-list-bulleted', testId: 'tab-transactions' },
-  // #128: planning took the recurring slot (user ruling); the recurring manager lives behind Home and Settings
-  { to: '/planning', labelKey: 'tab.planning', icon: 'clipboard-text-outline', iconActive: 'clipboard-text', testId: 'tab-planning', dot: true },
-  // portfolio left the Home landing zone for its own tab (user ruling)
-  { to: '/portfolio', labelKey: 'tab.portfolio', icon: 'chart-timeline-variant', iconActive: 'chart-timeline-variant', testId: 'tab-portfolio' },
-  { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
-];
+import { PlanAttention } from '@/features/planning/PlanAttention';
+import { MobileTabBar, SideNav } from '@/features/navigation/NavBars';
 
 /** input types that summon NO on-screen keyboard — focusing a checkbox
  *  must not hide the tab bar (#162 fallout: the private toggle left the
@@ -211,6 +182,12 @@ function StoreKeepAlive() {
   return null;
 }
 
+/** headless (#565): the review's suggestions are prepared as rows land — every identity */
+function ReviewSuggestionsPrep() {
+  useReviewSuggestionTriggers();
+  return null;
+}
+
 /** headless: manually typed spending crosses a budget threshold while
  *  the app is open — same once-per-period markers as the worker path,
  *  so the two can never double-fire (budgets design P4) */
@@ -219,7 +196,8 @@ function BudgetAlerts() {
   const { lang } = useLang();
   useEffect(() => {
     void (async () => {
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      // #549: only where this space's notifications are on
+      if (!(await osNotifyAllowed(store, spaceId))) return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
       for (const alert of await collectBudgetAlerts(store, spaceId, lang)) {
@@ -292,7 +270,6 @@ function DemoBanner() {
 }
 
 export function AppLayout() {
-  const { t } = useLang();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // onboarding is a focused flow — no navigation chrome (user request)
   const hideNav = pathname.startsWith('/onboarding');
@@ -305,40 +282,15 @@ export function AppLayout() {
     // navigation sits beside the content instead of at the far left edge
     // with the screens floating somewhere to the right
     <div className="flex h-full flex-row justify-center bg-bg-2 text-ink">
-      <div className="flex h-full w-full flex-row bg-bg md:max-w-[1400px] md:border-x md:border-line">
+      {/* data-app-frame: #558 the tour's step card spans this frame, not the window */}
+      <div data-app-frame className="flex h-full w-full flex-row bg-bg md:max-w-[1400px] md:border-x md:border-line">
       {/* Desktop sidebar */}
       <nav className={`w-60 shrink-0 flex-col border-r border-line bg-bg-2 px-4 pt-6 pb-4 ${hideNav ? 'hidden' : 'hidden md:flex'}`}>
         <div className="flex items-center gap-2 px-2 pb-8">
           <Logo size={26} />
           <DemoBadge />
         </div>
-        <div className="flex flex-col gap-1">
-          {TABS.map((tab) => {
-            const active = pathname.startsWith(tab.to);
-            return (
-              <Link
-                key={tab.to}
-                to={tab.to}
-                data-testid={`side-${tab.testId}`}
-                onClick={() => {
-                  // #140: choosing another TAB resets the tx lens
-                  if (tab.to !== '/transactions') clearTxFilters();
-                  // #454 (user): and the overviews forget their period
-                  clearOverviewPeriods();
-                }}
-                // #271: hover tints in the accent language — bg-surface
-                // (white on light bg-2 / gray on dark) read as stale gray
-                // blocks whenever hover state lingered
-                className={`m-tap flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium ${
-                  active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-accent-soft/40'
-                }`}
-              >
-                <TabFace tab={tab} active={active} size={20} />
-                {t(tab.labelKey)}
-              </Link>
-            );
-          })}
-        </div>
+        <SideNav pathname={pathname} />
       </nav>
 
       {/* Content */}
@@ -357,45 +309,21 @@ export function AppLayout() {
             </HelpProvider>
             <DemoBanner />
             <OfflineBanner />
+            {/* #577: inside the provider — the bar is the active space's */}
+            <MobileTabBar pathname={pathname} hidden={hideNav || keyboardOpen} />
             <EvictedNotice />
+            <UnsavedNotice />
             <RecurringReminders />
             <StoreKeepAlive />
+            <ReviewSuggestionsPrep />
             <BudgetAlerts />
             <PlanAttention />
+            <NotificationSpaceSwitch />
             <EdgeSwipeBack />
             <MinaTutorial />
             </DisplayMoneyProvider>
           </DataProvider>
         </div>
-
-        {/* Mobile bottom tab bar */}
-        {/* clamp: Android 3-button navigation reports up to ~48px inset,
-            iOS home indicator 34px — honor them fully; the 56px ceiling
-            guards against Safari's minimized-toolbar env() inflation */}
-        <nav className={`shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden ${hideNav || keyboardOpen ? 'hidden' : 'flex'}`}>
-          {TABS.map((tab) => {
-            const active = pathname.startsWith(tab.to);
-            return (
-              <Link
-                key={tab.to}
-                to={tab.to}
-                data-testid={tab.testId}
-                onClick={() => {
-                  // #140: choosing another TAB resets the tx lens
-                  if (tab.to !== '/transactions') clearTxFilters();
-                  // #454 (user): and the overviews forget their period
-                  clearOverviewPeriods();
-                }}
-                className={`m-tap flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10px] font-medium ${
-                  active ? 'text-brand' : 'text-ink-4'
-                }`}
-              >
-                <TabFace tab={tab} active={active} size={23} />
-                {t(tab.labelKey)}
-              </Link>
-            );
-          })}
-        </nav>
       </main>
       </div>
     </div>

@@ -128,8 +128,9 @@ export function AgentsScreen({ call, busy, act }: Readonly<ScreenProps>) {
       <section className="card">
         <h2>Every agent</h2>
         <p className="hint">
-          The fleet (pooled), the people&apos;s own machines (byo) and the hosted private slots, with the logins each keeps. Revoking an agent
-          destroys the logins it keeps — its owner signs in again through a fresh one.
+          The fleet (pooled — munni&apos;s containers beside this environment&apos;s control plane), the people&apos;s own machines (byo),
+          the hosted private slots and your lab machines (enrolled below; they take the lab&apos;s runs), with the logins each keeps.
+          Revoking an agent destroys the logins it keeps — its owner signs in again through a fresh one.
         </p>
         <table data-testid="agents-table">
           <thead>
@@ -158,6 +159,7 @@ export function AgentsScreen({ call, busy, act }: Readonly<ScreenProps>) {
                   <td>
                     {a.class}
                     {a.hosted ? ' · hosted' : ''}
+                    {a.lab ? ' · your lab machine' : ''}
                   </td>
                   <td>
                     <span className={`chip ${health.chip}`} data-testid={`agent-health-${a.id}`}>

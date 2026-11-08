@@ -6,6 +6,7 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { MunniDB } from '@/db/schema';
 import { DEMO_SPACE_ID } from '@/db/seed';
+import { planId } from '@/domain/planning';
 import { HlcClock } from '@/sync/hlc';
 import { renderApp } from '@/test/harness';
 
@@ -14,6 +15,24 @@ const thisMonth = (day: number): string => {
   const now = new Date();
   const d = new Date(now.getFullYear(), now.getMonth(), Math.min(day, 28));
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** rows the lean demo lacks, written once the boot chain has settled (the db.close trap) */
+async function seedDemo(write: (repo: Repo) => Promise<void>) {
+  const first = renderApp('/planning');
+  await screen.findByTestId('screen-planning');
+  await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+  const db = new MunniDB('munni_demo');
+  await write(new Repo(new DexieBackend(db), new HlcClock('seed-plan'), { trackOutbox: false }));
+  db.close();
+  first.unmount();
+}
+
+/** the first day of the month `offset` months from this one */
+const monthStart = (offset: number): string => {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 };
 
 /** a recurring cost with a brand logo, paid this month — the lean demo has no recurring costs of its own */
@@ -172,13 +191,14 @@ describe('Planning (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Over by/));
     expect(screen.getByTestId('plan-toallocate').textContent).toBe(before);
 
-    // the Spent chip says what a tap does, hands the field its amount and lights up
-    fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-)/)[0]);
+    // its target is what it spent, so one chip says both (#519): it says what a tap does, hands the field its amount and lights up
+    fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/)[0]);
     await screen.findByTestId('plan-sheet');
     expect(screen.getByTestId('plan-fund-chips-hint').textContent).toMatch(/Tap an amount/);
-    expect(screen.getByTestId('plan-fund-chip-spent').getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(screen.getByTestId('plan-fund-chip-spent'));
-    expect(screen.getByTestId('plan-fund-chip-spent').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('plan-fund-chip-spent')).toBeNull();
+    expect(screen.getByTestId('plan-fund-chip-target').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByTestId('plan-fund-chip-target'));
+    expect(screen.getByTestId('plan-fund-chip-target').getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByTestId('plan-fund-save'));
     await waitFor(() => expect(screen.queryByTestId('plan-sheet')).toBeNull());
     // funded for what it spent: out of the red, and the head came down by that much
@@ -218,7 +238,7 @@ describe('Planning (demo identity)', () => {
     expect(screen.getByTestId('plan-pool-line').textContent).toBe(startedBefore);
   }, 30_000);
 
-  it('Start over removes every subject after a confirm: the money returns to the pool and the spending shows under Unplanned again', async () => {
+  it('Start over removes the plan after a confirm and the start screen comes back; starting again finds the money in the pool and the spending under Unplanned (#557)', async () => {
     await startEmptyPlan();
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/€[1-9]/));
     const before = screen.getByTestId('plan-toallocate').textContent;
@@ -239,11 +259,15 @@ describe('Planning (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('plan-menu-startOver'));
     await screen.findByTestId('plan-startover-confirm-body');
     fireEvent.click(screen.getByTestId('plan-startover-confirm-confirm'));
-    await screen.findByTestId('plan-segment-empty-expenses');
-    await waitFor(() => expect(screen.queryByText('Housing')).toBeNull());
-    // the spending answers to no subject again, and the head is back where the empty plan started
+    // the initial screen, not an empty plan (user 2026-10-23)
+    await screen.findByTestId('plan-start');
+    expect(screen.queryByTestId('plan-header')).toBeNull();
+    expect(screen.queryByText('Housing')).toBeNull();
+    // started again: the spending answers to no subject, and the head is back where the empty plan started
+    fireEvent.click(screen.getByTestId('plan-start-empty'));
     await screen.findByTestId(`plan-unplanned-${mainId}`);
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toBe(before));
+    expect(screen.getByTestId('plan-segment-empty-expenses')).toBeTruthy();
   }, 25_000);
 
   it('a subject in the red is covered from one with room; the tab wears the dot', async () => {
@@ -311,6 +335,146 @@ describe('Planning (demo identity)', () => {
     // the copied subject is funded a tick after its row lands
     await waitFor(() => expect(screen.getByTestId('plan-ahead-sheet-circle-count').textContent).toBe('1/3'), { timeout: 5000 });
   }, 25_000);
+
+  // the user's round of 2026-10-21/23: #494 #504 #517 #518 #532 #535 #557
+
+  it('“in the red” opens a review that walks the red subjects one by one — nothing moves until a source is picked; covered past its target the bar wears stripes (#557, #517)', async () => {
+    await startEmptyPlan();
+    fireEvent.click(screen.getByTestId('plan-segment-add-expenses'));
+    await screen.findByTestId('plan-editor');
+    fireEvent.change(screen.getByTestId('plan-editor-name'), { target: { value: 'Food' } });
+    fireEvent.click(screen.getByTestId('plan-editor-cat-consumption'));
+    fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: '1' } });
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Over by/));
+
+    fireEvent.click(await screen.findByTestId('plan-attention-review'));
+    await screen.findByTestId('plan-review');
+    expect(screen.getByTestId('plan-review-progress').textContent).toBe('1 of 1');
+    expect(screen.getByTestId('plan-review-why').textContent).toMatch(/more than it holds/);
+    expect(screen.getByTestId('plan-review-status').textContent).toMatch(/Over by/);
+    expect(screen.getByTestId('plan-review-from-pool').textContent).toMatch(/leaves €[1-9]/);
+    fireEvent.click(screen.getByTestId('plan-review-from-pool'));
+    await screen.findByTestId('plan-review-done');
+    expect(screen.getByTestId('plan-review-done').textContent).toMatch(/out of the red/);
+    fireEvent.click(screen.getByTestId('plan-review-close'));
+    await waitFor(() => expect(screen.queryByTestId('plan-attention')).toBeNull());
+    // funded for all it spent, far past its €0.01 target: green, with the orange stripes
+    expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/past target/);
+    expect(screen.getAllByTestId(/^plan-subject-bar-.*-stripes$/)).toHaveLength(1);
+  }, 30_000);
+
+  it('an unplanned main is funded for this period only: the row reads funded, the head comes down, and nothing joins the plan (#494)', async () => {
+    await startEmptyPlan();
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toMatch(/€[1-9]/));
+    const before = screen.getByTestId('plan-toallocate').textContent;
+    const row = (await screen.findAllByTestId(/^plan-unplanned-(?!sheet|plan|oneoff|logo)/))[0];
+    const mainId = row.getAttribute('data-testid')!.replace('plan-unplanned-', '');
+    fireEvent.click(row);
+    await screen.findByTestId('plan-oneoff');
+    expect(screen.getByTestId('plan-oneoff-hint').textContent).toMatch(/does not carry it over/);
+    fireEvent.click(screen.getByTestId('plan-oneoff-chip-spent'));
+    fireEvent.click(screen.getByTestId('plan-oneoff-save'));
+    await screen.findByTestId(`plan-unplanned-oneoff-${mainId}`);
+    expect(screen.getByTestId(`plan-unplanned-${mainId}`).textContent).toMatch(/Funded/);
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
+    expect(screen.getByTestId('plan-segment-empty-expenses')).toBeTruthy();
+  }, 20_000);
+
+  it('a segment folds into one line and opens again (#518)', async () => {
+    await startEmptyPlan();
+    await addHousingSubject('100');
+    fireEvent.click(screen.getByTestId('plan-segment-fold-expenses'));
+    expect(screen.getByTestId('plan-segment-fold-expenses').getAttribute('aria-expanded')).toBe('false');
+    await screen.findByTestId('plan-segment-summary-expenses');
+    // the list closes as the summary opens, then leaves
+    await waitFor(() => expect(screen.queryByText('Housing')).toBeNull());
+    fireEvent.click(screen.getByTestId('plan-segment-summary-expenses'));
+    await screen.findByText('Housing');
+    await waitFor(() => expect(screen.queryByTestId('plan-segment-summary-expenses')).toBeNull());
+  }, 20_000);
+
+  it('a new period carries the last plan over by itself instead of showing the start screen (#557)', async () => {
+    const previous = monthStart(-1);
+    await seedDemo(async (repo) => {
+      const last = planId(DEMO_SPACE_ID, 'actual', previous);
+      await repo.upsert('plan', DEMO_SPACE_ID, last, { kind: 'actual', periodStart: previous });
+      await repo.upsert('planSubject', DEMO_SPACE_ID, 'carry_housing', { planId: last, segment: 'expenses', order: 0, name: 'Housing', catIds: ['housing'], targetCents: 50_000, fundedCents: 50_000 });
+    });
+    renderApp('/planning');
+    await screen.findByTestId('plan-header');
+    expect(await screen.findByText('Housing')).toBeTruthy();
+    expect(screen.queryByTestId('plan-start')).toBeNull();
+    // carried unfunded: the new period gives it its money afresh
+    expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Needs/);
+  }, 20_000);
+
+  it('an event joins the plan from its own segment; its target spreads the estimate — or the person’s own total — over the periods until it starts (#504)', async () => {
+    await seedDemo(async (repo) => {
+      await repo.upsert('event', DEMO_SPACE_ID, 'evt_plan', { name: 'Ski trip', from: `${monthStart(2).slice(0, 8)}10`, budgetCents: 90_000 });
+      await repo.upsert('event', DEMO_SPACE_ID, 'evt_old', { name: 'Old party', from: '2020-01-01', to: '2020-01-02', budgetCents: 1_000 });
+    });
+    await startEmptyPlan();
+    fireEvent.click(screen.getByTestId('plan-segment-add-events'));
+    await screen.findByTestId('plan-add-source');
+    // the past is not offered; the trip ahead is
+    expect(screen.queryByTestId('plan-add-source-evt_old')).toBeNull();
+    fireEvent.click(screen.getByTestId('plan-add-source-evt_plan'));
+    fireEvent.click(screen.getByTestId('plan-add-source-save'));
+    await waitFor(() => expect(screen.getByTestId('plan-segment-events').textContent).toMatch(/Ski trip/));
+    // this period, the next and the trip's own: a third of €900
+    expect(screen.getByTestId('plan-segment-events').textContent).toMatch(/300\.00/);
+    fireEvent.click(screen.getByText('Ski trip'));
+    await screen.findByTestId('plan-event-total');
+    expect(screen.getByTestId('plan-event-total-note').textContent).toMatch(/estimate/);
+    fireEvent.change(screen.getByTestId('plan-event-total-input'), { target: { value: '1200' } });
+    fireEvent.click(screen.getByTestId('plan-event-total-save'));
+    await waitFor(() => expect(screen.getByTestId('plan-sheet').textContent).toMatch(/400\.00/));
+  }, 25_000);
+
+  it('a budget that counts a category blocks it in the expense editor, and leaves the plan from right there (#535)', async () => {
+    await seedDemo(async (repo) => {
+      await repo.upsert('budget', DEMO_SPACE_ID, 'bud_food', { name: 'Food', amountCents: 20_000, every: 'month', anchor: monthStart(0), catIds: ['consumption'], active: 1 });
+    });
+    await startEmptyPlan();
+    fireEvent.click(screen.getByTestId('plan-segment-add-budgets'));
+    fireEvent.click(await screen.findByTestId('plan-add-source-bud_food'));
+    fireEvent.click(screen.getByTestId('plan-add-source-save'));
+    await waitFor(() => expect(screen.getByTestId('plan-segment-budgets').textContent).toMatch(/Food/));
+
+    fireEvent.click(screen.getByTestId('plan-segment-add-expenses'));
+    await screen.findByTestId('plan-editor');
+    fireEvent.change(screen.getByTestId('plan-editor-name'), { target: { value: 'Consumption' } });
+    fireEvent.click(screen.getByTestId('plan-editor-cat-consumption'));
+    fireEvent.change(screen.getByTestId('plan-editor-target'), { target: { value: '100' } });
+    expect(screen.getByTestId('plan-editor-budget-consumption').textContent).toMatch(/Counted by the budget Food/);
+    // the save is blocked while the budget holds it
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    expect(screen.getAllByTestId('plan-editor-blocker').some((el) => /another subject/.test(el.textContent ?? ''))).toBe(true);
+    expect(screen.getByTestId('plan-editor')).toBeTruthy();
+    // freed in place: the budget leaves the plan and the subject saves
+    fireEvent.click(screen.getByTestId('plan-editor-remove-consumption'));
+    await waitFor(() => expect(screen.queryByTestId('plan-editor-budget-consumption')).toBeNull());
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-editor')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Consumption/));
+    expect(screen.getByTestId('plan-segment-empty-budgets')).toBeTruthy();
+  }, 30_000);
+
+  it('the money pool offers a credit card too (#532)', async () => {
+    await seedDemo(async (repo) => {
+      await repo.upsert('account', DEMO_SPACE_ID, 'card_plan', { name: 'Visa', type: 'credit', currency: 'EUR', balanceCents: -12_000, source: 'manual' });
+    });
+    await startEmptyPlan();
+    fireEvent.click(screen.getByTestId('plan-menu'));
+    fireEvent.click(await screen.findByTestId('plan-menu-pool'));
+    await screen.findByTestId('plan-pool');
+    expect(screen.getByTestId('plan-pool-card_plan').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('plan-pool-credit').textContent).toMatch(/credit card/);
+    fireEvent.click(screen.getByTestId('plan-pool-card_plan'));
+    expect(screen.getByTestId('plan-pool-card_plan').getAttribute('aria-pressed')).toBe('true');
+  }, 20_000);
 
   it('the home block and the settings door open the plan; the recurring manager keeps a way back', async () => {
     await startEmptyPlan();

@@ -4,6 +4,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useLoanStatuses } from '@/application/debts';
 import type { LoanStatus } from '@/application/debts';
 import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions, useTxTransform } from '@/application/transactions';
@@ -26,6 +28,7 @@ import { LoanMatchSheet, loanMatchCandidates } from './LoanMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
@@ -39,7 +42,7 @@ export const paymentLabelKey = (every?: RecurringEvery): (typeof PAYMENT_LABEL)[
 /** the loan's tile: its chosen logo, else the account type's icon */
 export function LoanTile({ account, size }: Readonly<{ account: AccountRow; size?: 36 | 48 }>) {
   if (account.logo) {
-    return <img src={account.logo} alt="" className="h-10 w-10 shrink-0 rounded-xl object-contain" style={size ? { width: size, height: size } : undefined} />;
+    return <Picture src={account.logo} className="h-10 w-10 shrink-0 rounded-xl object-contain" style={size ? { width: size, height: size } : undefined} />;
   }
   return <Tile icon={typeDef(account.type).icon} tone="negative" size={size} />;
 }
@@ -121,6 +124,7 @@ export function DebtsScreen() {
   const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
+  const canEdit = useCanEdit(); // #505
   // "+" mints a loan like any other account — the chooser opens on the
   // liability types only (v2: creating the account IS creating the debt)
   const [addOpen, setAddOpen] = useState(false);
@@ -173,11 +177,13 @@ export function DebtsScreen() {
   // beats an auto-opened sheet whose only content is "nothing found"
   const offerMatches = async (id: string) => {
     const account = await store.get('account', id);
-    if (account && loanMatchCandidates(account, historyTxs ?? [], spaceAccounts ?? []).length > 0) setMatchFor(id);
+    if (account && loanMatchCandidates(account, historyTxs ?? []).length > 0) setMatchFor(id);
   };
 
-  const { fmt } = useDisplayMoney();
+  const { fmt, fmtSensitive } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
+  // #530: what is owed — and a loan's size — hides with the sensitive figures; the payments stay
+  const owed = (cents: number) => fmtSensitive(cents, currency);
   const active = (statuses ?? []).filter((s) => s.account.archived !== 1);
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
   // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
@@ -206,7 +212,7 @@ export function DebtsScreen() {
       ? new Date(`${projection.endMonth}-01`).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' })
       : null;
     const subParts = [
-      account.originalCents ? t('budgets.of', { amount: money(account.originalCents) }) : null,
+      account.originalCents ? t('budgets.of', { amount: owed(account.originalCents) }) : null,
       account.paymentCents ? t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) }) : null,
       freeLabel ? t('debts.freeBy', { date: freeLabel }) : null,
     ].filter(Boolean);
@@ -223,7 +229,7 @@ export function DebtsScreen() {
             <span className="flex items-baseline justify-between gap-2">
               <span className="truncate text-[15px] font-semibold text-ink">{account.name}</span>
               <span className="m-num shrink-0 text-[14px] font-semibold text-ink" data-testid={`debt-remaining-${account.id}`}>
-                {money(remainingCents)}
+                {owed(remainingCents)}
               </span>
             </span>
             {subParts.length > 0 && <span className="block text-[11px] text-ink-4">{subParts.join(' · ')}</span>}
@@ -247,27 +253,30 @@ export function DebtsScreen() {
         trailing={
           <>
             <HelpButton tourId="debts" />
-            <IconButton
-              label={t('debts.new')}
-              testId="debts-add"
-              onClick={() => {
-                // a manual add starts clean — any tracked prefill is spent
-                setPrefill(null);
-                setChooserGen((g) => g + 1);
-                setAddOpen(true);
-              }}
-            >
-              <Icon name="plus" size={22} />
-            </IconButton>
+            {canEdit && (
+              <IconButton
+                label={t('debts.new')}
+                testId="debts-add"
+                onClick={() => {
+                  // a manual add starts clean — any tracked prefill is spent
+                  setPrefill(null);
+                  setChooserGen((g) => g + 1);
+                  setAddOpen(true);
+                }}
+              >
+                <Icon name="plus" size={22} />
+              </IconButton>
+            )}
           </>
         }
       />
       <div ref={(el) => attachScrollMemory(el, 'debts')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="debts" />
+        <ReadOnlyNote className="mb-3" testId="debts-readonly-note" />
         {/* #192 r2 (user): detected loans live HERE — track or dismiss
             without leaving the screen; tracking opens the loan chooser
             in place, prefilled with the pattern as the payment plan */}
-        {loanSuggestions.length > 0 && (
+        {canEdit && loanSuggestions.length > 0 && (
           <div className="mb-3 flex flex-col gap-2" data-testid="debts-suggestions">
             <div className="m-cap">{t('debts.detectedTitle')}</div>
             {loanSuggestions.map((s) => (
@@ -308,7 +317,9 @@ export function DebtsScreen() {
           <div className="grid grid-cols-2 gap-3 rounded-card border border-line bg-surface p-4" data-testid="debts-overview">
             <div>
               <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t('debts.totalOwed')}</div>
-              <div className="mt-0.5 font-mono text-[15px] font-semibold text-ink">{money(totalOwed)}</div>
+              <div className="mt-0.5 font-mono text-[15px] font-semibold text-ink" data-testid="debts-total-owed">
+                {owed(totalOwed)}
+              </div>
             </div>
             <div>
               <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t('debts.totalMonthly')}</div>

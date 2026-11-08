@@ -9,6 +9,7 @@ import { useLang } from '@/i18n';
 import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
@@ -56,9 +57,8 @@ function AccountChipFace({ account }: Readonly<{ account: SpaceAccount }>) {
   if (!logo) return icon;
   return (
     <>
-      <img
+      <Picture
         src={logo}
-        alt=""
         className="h-4 w-4 rounded object-contain"
         loading="lazy"
         onError={(e) => {
@@ -76,15 +76,13 @@ function AccountChips({
   list,
   value,
   onChange,
-  testId,
 }: Readonly<{
   list: SpaceAccount[];
   value: SheetFilters;
   onChange: (next: SheetFilters) => void;
-  testId?: string;
 }>) {
   return (
-    <div className="flex flex-wrap gap-2" data-testid={testId}>
+    <div className="flex flex-wrap gap-2">
       {list.map((a) => (
         <Chip
           key={a.id}
@@ -164,25 +162,15 @@ export function FilterSheet({
   const { t } = useLang();
   const cats = useCategories();
   const accounts = useSpaceAccounts();
-  // #320 (user): the space's default pots stand apart from the accounts
-  // people actually made — two labeled groups
-  const realAccounts = (accounts ?? []).filter((a) => !a.defaultFor);
-  const defaultAccounts = (accounts ?? []).filter((a) => !!a.defaultFor);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.filters')} size="tall">
       <div className="flex flex-col gap-3 pb-2">
-        {/* #320 r2 (user): "All accounts" over MORE accounts (the defaults)
-            below read odd — this caption is the filter's own key; the global
-            overview keeps its shared title */}
+        {/* #320 r2 (user): the filter's own caption — the global overview
+            keeps its shared title. #546: the default pots retired; the cash
+            wallet is an account like the others */}
         <div className="m-cap px-1">{t('tx.filterAccountsCap')}</div>
-        <AccountChips list={realAccounts} value={value} onChange={onChange} />
-        {defaultAccounts.length > 0 && (
-          <>
-            <div className="m-cap px-1">{t('tx.filterDefaultsCap')}</div>
-            <AccountChips list={defaultAccounts} value={value} onChange={onChange} testId="filter-defaults-group" />
-          </>
-        )}
+        <AccountChips list={accounts ?? []} value={value} onChange={onChange} />
 
         <div className="m-cap px-1">{t('screen.categories')}</div>
         <div className="flex flex-wrap gap-2">

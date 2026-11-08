@@ -20,6 +20,9 @@ export const usePwa = create<PwaState>((set) => ({
 
 export function initPwa(): void {
   initViewportHeightVar();
+  // #551: notification taps route on every surface — the shell's taps never
+  // did, this used to sit after the native return below
+  initNotificationNav();
   // the native shell bundles the web assets in the binary — a service
   // worker there is pointless and its "new version" toast is a lie
   // (the real update is a store update). Native updates are prompted by
@@ -30,14 +33,27 @@ export function initPwa(): void {
       usePwa.setState({ needRefresh: true, update: () => void updateSW(true) });
     },
   });
-  initNotificationNav();
 }
 
-// only routes a notification may ever target — a whitelist keeps the
-// worker message from steering the router anywhere else
-const NOTIFICATION_TARGETS = ['/transactions', '/friends', '/spaces'] as const;
+// only screens a notification may ever open — a whitelist keeps the
+// worker message (or a push payload) from steering the router anywhere else
+const NOTIFICATION_TARGETS =
+  /^\/(?:review|transactions|friends|spaces|planning|recurring|debts|insights|settings|budgets\/(?!new$)[A-Za-z0-9_-]+|spaces\/[A-Za-z0-9_-]+\/members)$/;
 /** id shapes riding worker messages are validated before the router sees them */
 const ID_SHAPE = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * A notification's url (`./#/planning?space=…`) → the in-app href it opens,
+ * or null off the whitelist. #551: the space rides along as `?space=` —
+ * from the message (the worker's warm path) or the url's own query (cold
+ * starts) — and the app switches there (app/notificationSpace.tsx).
+ */
+export function notificationHref(url: string, spaceId?: string): string | null {
+  const [path, query = ''] = (url.split('#')[1] ?? '').split('?');
+  if (!path || !NOTIFICATION_TARGETS.test(path)) return null;
+  const space = spaceId ?? new URLSearchParams(query).get('space') ?? undefined;
+  return space && ID_SHAPE.test(space) ? `${path}?space=${space}` : path;
+}
 
 /** window event re-broadcast when the worker receives a push while the
  *  app is open — screens with server-backed lists refresh on it */
@@ -56,27 +72,9 @@ export function handleWorkerMessage(data: unknown): void {
     return;
   }
   if (message?.type !== 'NAVIGATE' || typeof message.url !== 'string') return;
-  const path = message.url.split('#')[1]?.split('?')[0]; // './#/review?space=x' → '/review'
-  // #132: a new-transactions tap lands in the ANNOUNCED space's review —
-  // the space id rides the message (or the url query on cold starts)
-  if (path === '/review') {
-    const spaceId = message.spaceId ?? /[?&]space=([A-Za-z0-9_-]+)/.exec(message.url)?.[1];
-    void router.navigate({
-      to: '/review',
-      search: spaceId && ID_SHAPE.test(spaceId) ? { space: spaceId } : {},
-    });
-    return;
-  }
-  const target = NOTIFICATION_TARGETS.find((route) => route === path);
-  if (target) {
-    void router.navigate({ to: target });
-    return;
-  }
-  // budget alerts target their detail screen; the id shape is validated
-  const budget = /^\/budgets\/([A-Za-z0-9_-]+)$/.exec(path ?? '');
-  if (budget && budget[1] !== 'new') {
-    void router.navigate({ to: '/budgets/$budgetId', params: { budgetId: budget[1] } });
-  }
+  // #132/#551: the tap lands on the announced screen IN the announced space
+  const href = notificationHref(message.url, message.spaceId);
+  if (href) void router.navigate({ href });
 }
 
 function initNotificationNav(): void {

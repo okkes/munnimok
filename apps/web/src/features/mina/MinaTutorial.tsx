@@ -299,9 +299,9 @@ export function MinaTutorial() {
           weekStart: globalWeekStart(),
           historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
         });
-        // #221: defaults exist from birth, this exit space included
-        const { ensureSpaceDefaultAccounts } = await import('@/application/defaultAccounts');
-        await ensureSpaceDefaultAccounts(store, repo, id);
+        // #546: the cash wallet exists from birth, this exit space included
+        const { ensureCashWallet } = await import('@/application/defaultAccounts');
+        await ensureCashWallet(store, repo, id);
         await setActiveSpace(id);
       } else if (!spaces.some((s) => s.id === spaceId)) {
         await setActiveSpace(spaces[0].id);

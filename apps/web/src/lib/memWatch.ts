@@ -3,9 +3,10 @@
  * JS heap size (Chromium — Android WebView, desktop/mobile Chrome PWA),
  * sample it on a slow clock and report SUSTAINED growth to GlitchTip
  * once per session, with the samples attached so the leak is
- * diagnosable later. iOS WebKit exposes no heap API — its coverage is
- * the CI leak spec driving the same shared code in Chromium
- * (tests/specs/leak.gallery.spec.js).
+ * diagnosable later. iOS WebKit exposes no heap API — the code it runs
+ * is the same shared code the Chromium platforms run, so their reports
+ * cover it (the CI leak spec retired with the e2e re-evaluation,
+ * 2026-11-08: a deploy gate for happy flows only).
  *
  * The bar is deliberately high (near-monotonic rise, big absolute AND
  * relative growth over a full hour) so ordinary churn never pages.

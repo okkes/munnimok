@@ -1,10 +1,13 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
+using Munni.Api.Accounts;
 using Munni.Api.Connectors;
 using Munni.Api.Data;
+using Munni.Api.Sync;
 
 namespace Munni.Api.Tests.Connectors;
 
@@ -77,6 +80,53 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         // the session is active again, as after any finished sync
         var sessionId = accepted["sessionId"]!.GetValue<string>();
         Assert.Equal("active", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
+    }
+
+    /// <summary>
+    /// #508: a transactions pass that outran the window and was collected as
+    /// a job never settled the pending mirror - its page always carries an
+    /// ack cursor - so a reserved row the bank had since booked stayed beside
+    /// its booked twin. A complete pass collected as a job settles like any.
+    /// </summary>
+    [Fact]
+    public async Task A_transactions_pass_collected_as_a_job_settles_the_reserved_rows_the_bank_no_longer_reports()
+    {
+        const string sub = "walker-reserved";
+        using var client = factory.ClientFor(sub);
+        var (_, bundle) = await LoginAsync(client, "conn-walk-reserved");
+
+        using var sync = await client.PostAsJsonAsync($"/connectors/{MockBank}/sync", new { connectionId = "conn-walk-reserved", bundle });
+        var first = (await sync.Content.ReadFromJsonAsync<JsonObject>())!["jobId"]!.GetValue<string>();
+        await AwaitJobAsync(client, first, "succeeded");
+        using var collect = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{first}/collect", new { bundle });
+        var second = (await collect.Content.ReadFromJsonAsync<JsonObject>())!["jobId"]!.GetValue<string>();
+
+        // the accounts landed; a row an earlier pass mirrored as reserved, which this bank no longer reports
+        var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
+        var reference = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id && !a.AccountRef.StartsWith("CONN:")));
+        var reservedId = ImportIds.TransactionId(reference.AccountRef, "pending:WALK-1");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var feed = (await db.Spaces.FindAsync(reference.FeedSpaceId))!;
+            var fields = new Dictionary<string, JsonElement>
+            {
+                ["accountId"] = JsonSerializer.SerializeToElement(reference.AccountEntityId),
+                ["date"] = JsonSerializer.SerializeToElement("2026-10-06"),
+                ["amountCents"] = JsonSerializer.SerializeToElement(-1300),
+                ["pending"] = JsonSerializer.SerializeToElement(1),
+            };
+            await new SyncWriter(db).ApplyAsync(feed, null, [new SyncOpDto(Guid.NewGuid().ToString("N"), feed.Id, "transaction", reservedId, fields, ServerHlc.Now())]);
+            db.ConnectorPendingTxs.Add(new ConnectorPendingTx { AccountRefId = reference.Id, EntityId = reservedId });
+            await db.SaveChangesAsync();
+        }
+
+        await AwaitJobAsync(client, second, "succeeded");
+        using var last = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{second}/collect", new { bundle });
+        Assert.Equal(HttpStatusCode.OK, last.StatusCode);
+
+        Assert.True(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == reservedId).Deleted));
+        Assert.Equal(0, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.EntityId == reservedId)));
     }
 
     [Fact]

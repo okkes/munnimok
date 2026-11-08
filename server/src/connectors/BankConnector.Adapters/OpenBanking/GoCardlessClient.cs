@@ -29,7 +29,8 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
         [property: JsonPropertyName("id")] string Id,
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("transaction_total_days")] string? TransactionTotalDays,
-        [property: JsonPropertyName("logo")] string? Logo);
+        [property: JsonPropertyName("logo")] string? Logo,
+        [property: JsonPropertyName("max_access_valid_for_days")] string? MaxAccessValidForDays = null);
 
     public sealed record GcRequisitionCreated(
         [property: JsonPropertyName("id")] string Id,
@@ -101,12 +102,12 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
         GetAsync<GcInstitution>(http, $"institutions/{Uri.EscapeDataString(id)}/", "institution", ct);
 
     /// <summary>Best effort: a refused agreement must never block the consent — the default 90 days still work.</summary>
-    public async Task<string?> AgreementAsync(HttpClient http, string institutionId, int days, CancellationToken ct)
+    public async Task<string?> AgreementAsync(HttpClient http, string institutionId, int days, int accessDays, CancellationToken ct)
     {
         try
         {
             var created = await PostAsync<AgreementCreated>(http, "agreements/enduser/",
-                new { institution_id = institutionId, max_historical_days = days }, "agreement", ct).ConfigureAwait(false);
+                new { institution_id = institutionId, max_historical_days = days, access_valid_for_days = accessDays }, "agreement", ct).ConfigureAwait(false);
             return created.Id;
         }
         catch (ConnectorException)
@@ -140,10 +141,14 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
     public async Task<IReadOnlyList<GcBalance>> BalancesAsync(HttpClient http, string accountId, CancellationToken ct) =>
         (await GetAsync<BalancesEnvelope>(http, $"accounts/{Uri.EscapeDataString(accountId)}/balances/", "balances", ct).ConfigureAwait(false)).Balances;
 
+    /// <summary>The account's rows from <paramref name="from"/>; <c>date_to</c> only when the caller named an end (a backfill pass, #460).</summary>
     public async Task<(IReadOnlyList<GcTransaction> Booked, IReadOnlyList<GcTransaction> Pending, ProviderQuota? Quota)> TransactionsAsync(
-        HttpClient http, string accountId, DateOnly? from, CancellationToken ct)
+        HttpClient http, string accountId, DateOnly? from, DateOnly? to, CancellationToken ct)
     {
-        var query = from is null ? string.Empty : $"?date_from={from:yyyy-MM-dd}";
+        var window = new List<string>(2);
+        if (from is { } f) window.Add($"date_from={f:yyyy-MM-dd}");
+        if (to is { } t) window.Add($"date_to={t:yyyy-MM-dd}");
+        var query = window.Count == 0 ? string.Empty : "?" + string.Join('&', window);
         using var response = await SendAsync(http, HttpMethod.Get, $"accounts/{Uri.EscapeDataString(accountId)}/transactions/{query}", null, ct).ConfigureAwait(false);
         var quota = Quota(response.Headers);
         await EnsureAsync(response, "transactions", consentScoped: true, ct).ConfigureAwait(false);

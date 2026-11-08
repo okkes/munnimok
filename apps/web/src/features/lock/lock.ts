@@ -20,7 +20,7 @@ export interface LockConfig {
   enabled: boolean;
   /** WebAuthn credential id (base64url), when biometrics are set up */
   credentialId?: string;
-  /** which biometric path unlocks (native-benefits §1): 'native' = the
+  /** which biometric path unlocks: 'native' = the
    * OS prompt via the Capacitor plugin (nothing to store), 'webauthn' =
    * the platform passkey in credentialId; absent = PIN only */
   biometricKind?: BiometricKind;
@@ -83,7 +83,7 @@ const fromB64url = (value: string) =>
 
 export async function biometricAvailable(): Promise<boolean> {
   // native shell: WKWebView has no WebAuthn platform authenticator, so
-  // availability means the OS biometric prompt (native-benefits §1)
+  // availability means the OS biometric prompt
   if (isNativeApp()) return nativeBiometricAvailable();
   try {
     return (

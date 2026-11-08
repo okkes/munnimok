@@ -2,7 +2,7 @@ namespace Munni.Api.Connectors;
 
 /// <summary>
 /// The binding between a connector session and the munni user it was
-/// started for (docs/connector-integration-plan.md §5.3). Ids and state,
+/// started for (docs/connectors/relay.md, "What the relay guarantees"). Ids and state,
 /// never a bundle, never inputs, never data: it exists so the relay can
 /// answer "whose session is this" and so an operator's diagnosis can list
 /// a user's connections. One row per connection: a re-login of the same
@@ -51,6 +51,16 @@ public class ConnectorSession
 
     /// <summary>A party's <c>retry_after</c> on a rate-limited refusal (§15): the scheduler waits it out before the next attempt.</summary>
     public DateTimeOffset? ScheduleNotBefore { get; set; }
+
+    /// <summary>
+    /// The older history a scheduled pass left behind (#460): the next
+    /// backfill pass asks from <see cref="BackfillSince"/> (null: the party's
+    /// floor) up to this day. Null when nothing is left.
+    /// </summary>
+    public DateOnly? BackfillUntil { get; set; }
+
+    /// <summary>Where that backfill ends: the since of the pass that came back partial; null for the party's own floor.</summary>
+    public DateOnly? BackfillSince { get; set; }
 
     /// <summary>
     /// The failed job whose last picture waits on this person's answer

@@ -66,6 +66,24 @@ export function nextPeriod(periodType: SpacePeriodType, periodDay: number, now =
 
 export const inPeriod = (date: string, period: Period): boolean => date >= period.start && date <= period.end;
 
+/** a yyyy-mm-dd as a local date (a bare `new Date(iso)` is UTC midnight — the day before, west of Greenwich) */
+const localDay = (iso: string): Date => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+/**
+ * A period on a months axis (#511, user: "when the period starts on the
+ * 1st we show whole months, but … it's the 21st, so we should show Jul–Aug"):
+ * the month when the period is one calendar month, else the months it
+ * spans — "Jul–Aug".
+ */
+export function periodMonthsLabel(period: Period, locale: string): string {
+  const from = localDay(period.start).toLocaleDateString(locale, { month: 'short' });
+  const to = localDay(period.end).toLocaleDateString(locale, { month: 'short' });
+  return from === to ? from : `${from}–${to}`;
+}
+
 /**
  * Newest last: every period from the one holding `earliest` (a yyyy-mm-dd,
  * or null for "nothing on record") up to the current one — at least `min`

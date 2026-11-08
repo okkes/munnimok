@@ -43,18 +43,27 @@ public sealed record MockBankEntry
 }
 
 /// <summary>
-/// The mock fleet's data, generated once and identical forever.
+/// The mock fleet's data: a ledger that starts on a fixed day and runs
+/// through the day it is read on - in the adapters, their clock's today.
 ///
-/// Anchored to a fixed date rather than to "today" on purpose. A fixture
-/// whose transactions move with the clock produces a different
-/// <see cref="ContentHash"/> every day, which makes every idempotency
-/// assertion in the suite either flaky or vacuous - and idempotency is
-/// precisely what these fixtures exist to prove.
+/// The FIRST day is fixed on purpose. Every row is a pure function of its
+/// day and the rows before it, so a day's rows - ids, balances,
+/// <see cref="ContentHash"/> - never move as the ledger grows. A fixture
+/// whose transactions moved with the clock would produce a different hash
+/// every day, which makes every idempotency assertion in the suite either
+/// flaky or vacuous - and idempotency is precisely what these fixtures
+/// exist to prove. The LAST day follows the clock because a fixed one ran
+/// out: the ledger used to end on 2026-07-26, and once that day fell behind
+/// the history limit no window held a single row.
 /// </summary>
 public sealed class MockBankLedger
 {
-    /// <summary>The newest day in the fixture.</summary>
-    public static readonly DateOnly Anchor = new(2026, 7, 26);
+    /// <summary>
+    /// The oldest day in the fixture, fixed for good: moving it would move
+    /// every id and hash after it (and duplicate the rows a dev database
+    /// already holds). The day a ledger that ended on 2026-07-26 began.
+    /// </summary>
+    public static readonly DateOnly Start = new(2026, 1, 27);
 
     /// <summary>Six months: enough to span several statement periods and a quarterly interest posting.</summary>
     public const int HistoryDays = 180;
@@ -95,8 +104,6 @@ public sealed class MockBankLedger
         },
     ];
 
-    // Declared before the ledgers below: static field initialisers run in
-    // declaration order, and the generator reads this one.
     private static readonly string[] Merchants =
     [
         "JUMBO 1234 UTRECHT",
@@ -123,17 +130,21 @@ public sealed class MockBankLedger
         ];
     }
 
-    /// <summary>The fixture the honest providers serve. Its balance chain holds.</summary>
-    public static MockBankLedger Consistent { get; } = new(Generate());
+    /// <summary>
+    /// The fixture the honest providers serve, from <see cref="Start"/>
+    /// through <paramref name="lastDay"/>. Its balance chain holds.
+    /// </summary>
+    public static MockBankLedger Through(DateOnly lastDay) => new(Generate(lastDay));
 
     /// <summary>
-    /// The same fixture with one resulting balance nudged by five euros.
+    /// The same fixture with one resulting balance nudged by five euros,
+    /// near <paramref name="lastDay"/>.
     ///
     /// It exists so the balance-chain verifier can be proven to fire, and so
     /// the operator alert path has something realistic to fire on: a broken
     /// chain is what a real bank changing its export looks like from here.
     /// </summary>
-    public static MockBankLedger BrokenChain { get; } = new(Corrupt(Generate()));
+    public static MockBankLedger BrokenThrough(DateOnly lastDay) => new(Corrupt(Generate(lastDay)));
 
     public IReadOnlyList<MockBankAccount> Accounts { get; }
 
@@ -159,7 +170,7 @@ public sealed class MockBankLedger
                 MaskedNumber = definition.MaskedNumber,
                 Balance = BankRecords.BalanceOn(
                     new Money(last?.BalanceAfter ?? definition.OpeningBalance, definition.Currency),
-                    last?.BookedAt ?? Anchor.AddDays(-HistoryDays)),
+                    last?.BookedAt ?? Start),
             }));
         }
 
@@ -206,19 +217,20 @@ public sealed class MockBankLedger
     /// <summary>
     /// Deterministic by construction: every amount is a pure function of the
     /// day, and the running balance is accumulated forward, so the chain is
-    /// exact rather than approximately right.
+    /// exact rather than approximately right. Always from <see cref="Start"/>:
+    /// a later first day would restart the balances and the sequence the ids
+    /// carry, and every day's rows would move with it.
     /// </summary>
-    private static List<MockBankEntry> Generate()
+    private static List<MockBankEntry> Generate(DateOnly lastDay)
     {
         var entries = new List<MockBankEntry>(256);
-        var start = Anchor.AddDays(-HistoryDays);
 
         foreach (var account in Definitions)
         {
             var balance = account.OpeningBalance;
             var sequence = 0;
 
-            for (var day = start; day <= Anchor; day = day.AddDays(1))
+            for (var day = Start; day <= lastDay; day = day.AddDays(1))
             {
                 foreach (var (amount, description, counterparty, kind) in EventsFor(account, day, balance))
                 {

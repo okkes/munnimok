@@ -55,7 +55,7 @@ function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () 
     document.body,
   );
 }
-import { readLastAccount } from './lastAccount';
+import { continueOptions, readLastAccount } from './lastAccount';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 // re-encoded from the provided PNG (2.2MB) — the login screen is precached
@@ -96,6 +96,9 @@ function useInviteOnly(): boolean {
   return inviteOnly;
 }
 
+/** #559: the provider "Continue as" hands over to wears its mark — the next screen is theirs */
+const PROVIDER_ICONS: Partial<Record<string, string>> = { google: 'google', apple: 'apple' };
+
 /** real OIDC sign-in — only rendered when Logto is configured. Disabled
  *  without connectivity, with a line saying why (the silent dead button
  *  cost real head-scratching). */
@@ -106,15 +109,23 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const caUrl = localCaUrl();
   const inviteOnly = useInviteOnly();
   // the account step (user 2026-10-07): the name this device signed in with
-  // last — continue as them (Logto's silent session), or ask for another
+  // last — continue as them, or ask for another. #559: only where the way
+  // back in is known — Logto's live session answers at once, a signed-out
+  // one goes straight to their provider (or their username is filled in);
+  // without it the plain sign-in, never a name that ends on an empty form
   const last = readLastAccount();
+  const resume = continueOptions(last);
+  const continuing = resume ? last : null;
+  const providerIcon = continuing?.social ? PROVIDER_ICONS[continuing.social] : undefined;
   const start = (fresh: boolean) => {
     setFailed(null);
     // a rejected signIn used to vanish (iOS report 2026-09-08:
     // "nothing happens" — the in-webview OIDC discovery fetch died
     // on the not-yet-trusted family certificate). Name it on
     // screen AND report it — a native user has no devtools.
-    const started = fresh ? signIn({ redirectUri: callbackUri(), prompt: [Prompt.Login, Prompt.Consent] }) : signIn(callbackUri());
+    const started = fresh
+      ? signIn({ redirectUri: callbackUri(), prompt: [Prompt.Login, Prompt.Consent] })
+      : signIn({ redirectUri: callbackUri(), ...resume });
     started.catch((err: unknown) => {
       const e = err instanceof Error ? err : new Error(String(err));
       void import('@/lib/report')
@@ -126,9 +137,10 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   return (
     <>
       <Button variant="primary" data-testid="login-signin-btn" disabled={!onLine} onClick={() => start(false)}>
-        {last ? t('login.continueAs', { name: last.name }) : t('login.signIn')}
+        {providerIcon && <Icon name={providerIcon} size={17} />}
+        {continuing ? t('login.continueAs', { name: continuing.name }) : t('login.signIn')}
       </Button>
-      {last && (
+      {continuing && (
         <Button variant="outline" data-testid="login-another-account" disabled={!onLine} onClick={() => start(true)}>
           {t('login.anotherAccount')}
         </Button>

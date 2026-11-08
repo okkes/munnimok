@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, USER_TEST_SUB, renderAppAsUser } from '@/test/harness';
 import { MunniDB } from '@/db/schema';
 import { encodeHlc } from '@/sync/hlc';
+import { mirrorTxId } from '@/domain/feedIds';
 import { bornAtMs, txSeenBaseId, txSeenRowId, userStateSpaceId } from '@/domain/userState';
 
 const HOUR = 60 * 60 * 1000;
@@ -90,6 +91,37 @@ describe('useNewTransactions — the synced 24h clock (#148 r3)', () => {
       expect(row?.txId).toBe('fresh-tx');
       expect(row?.labeledAt).toBeGreaterThan(now - HOUR);
     }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#515: the counter leg munni mints for a loan payment or a savings move is no new transaction', async () => {
+    const now = Date.now();
+    const stateId = userStateSpaceId(USER_TEST_SUB);
+    const db = new MunniDB(USER_TEST_DB);
+    await db.txSeen.put({
+      id: txSeenBaseId('s-user'),
+      spaceId: stateId,
+      forSpaceId: 's-user',
+      labeledAt: now - 12 * HOUR,
+      baseline: 1,
+      deleted: 0,
+      fieldVersions: { labeledAt: hlc(now - 12 * HOUR) },
+    } as never);
+    await seedTx(db, 'repay-src', now - HOUR, 'Mw C Sahin');
+    await db.transactions.update('repay-src', { transferPeerId: mirrorTxId('repay-src') } as never);
+    // the minted leg on the loan: its id is the source's mirror, and it points back
+    await seedTx(db, mirrorTxId('repay-src'), now - HOUR, 'Mw C Sahin');
+    await db.transactions.update(mirrorTxId('repay-src'), { accountId: 'loan1', amountCents: 1000, transferPeerId: 'repay-src' } as never);
+
+    renderAppAsUser('/home', {
+      api: { 'GET /me': () => ({ userId: 'u-me', displayName: 'Me' }) },
+    });
+    const block = await screen.findByTestId('home-newtxs', {}, { timeout: 8000 });
+    expect(block.querySelector('[data-testid="tx-row-repay-src"]')).toBeTruthy();
+    expect(block.querySelector(`[data-testid="tx-row-${mirrorTxId('repay-src')}"]`)).toBeNull();
+    // the leg is never even labeled
+    await waitFor(async () => expect((await db.txSeen.get(txSeenRowId('s-user', 'repay-src')))?.txId).toBe('repay-src'), { timeout: 8000 });
+    expect(await db.txSeen.get(txSeenRowId('s-user', mirrorTxId('repay-src')))).toBeUndefined();
     db.close();
   }, 20_000);
 });

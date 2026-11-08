@@ -213,21 +213,50 @@ describe('the account step (user 2026-10-07)', () => {
     vi.stubGlobal('fetch', fetchSpy); // the sign-in button asks /health for the sign-up policy — never the real network here
   });
 
-  it('with a remembered name the button continues as them, and "another account" asks Logto for credentials again', async () => {
+  it('#559: a Google account continues straight to Google, and "another account" asks Logto for credentials again', async () => {
     const { rememberLastAccount, forgetLastAccount } = await import('./lastAccount');
-    rememberLastAccount('Okkes');
+    rememberLastAccount('Okkes', { social: 'google' });
     try {
       renderApp('/login', { signedIn: false });
       const continueAs = await screen.findByTestId('login-signin-btn');
       expect(continueAs.textContent).toContain('Continue as Okkes');
       fireEvent.click(continueAs);
       await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
-      expect(typeof mockSignIn.mock.calls[0][0]).toBe('string'); // the silent sign-in: the callback uri alone
+      // Logto's own session answers at once; a signed-out one hands over to Google instead of its empty page
+      expect(mockSignIn.mock.calls[0][0]).toMatchObject({ directSignIn: { method: 'social', target: 'google' } });
 
       fireEvent.click(screen.getByTestId('login-another-account'));
       await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(2));
-      const fresh = mockSignIn.mock.calls[1][0] as { prompt?: string[] };
+      const fresh = mockSignIn.mock.calls[1][0] as { prompt?: string[]; directSignIn?: unknown };
       expect(fresh.prompt).toEqual(['login', 'consent']);
+      expect(fresh.directSignIn).toBeUndefined();
+    } finally {
+      forgetLastAccount();
+    }
+  });
+
+  it('#559: a username account finds its username filled in', async () => {
+    const { rememberLastAccount, forgetLastAccount } = await import('./lastAccount');
+    rememberLastAccount('Okkes', { username: 'okkes' });
+    try {
+      renderApp('/login', { signedIn: false });
+      fireEvent.click(await screen.findByTestId('login-signin-btn'));
+      await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
+      expect(mockSignIn.mock.calls[0][0]).toMatchObject({ loginHint: 'okkes' });
+    } finally {
+      forgetLastAccount();
+    }
+  });
+
+  it('#559: a name without its way back in gets the plain sign-in — never a promise it cannot keep', async () => {
+    const { forgetLastAccount } = await import('./lastAccount');
+    // what builds before #559 remembered: the name alone
+    localStorage.setItem('munni_last_account', JSON.stringify({ name: 'Okkes', at: 1 }));
+    try {
+      renderApp('/login', { signedIn: false });
+      const button = await screen.findByTestId('login-signin-btn');
+      expect(button.textContent).not.toContain('Okkes');
+      expect(screen.queryByTestId('login-another-account')).toBeNull();
     } finally {
       forgetLastAccount();
     }

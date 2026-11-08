@@ -28,6 +28,7 @@ public sealed class MockBankScaAdapter : MockBankAdapter
         Id = ProviderId,
         Name = "Mock Bank (SCA)",
         Kind = ProviderKind.Bank,
+        Fixture = true,
         Country = "NL",
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserInteractive,

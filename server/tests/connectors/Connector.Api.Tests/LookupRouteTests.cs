@@ -127,4 +127,16 @@ public sealed class LookupRouteTests(ShopApiFactory factory) : IClassFixture<Sho
         using var none = await http.GetAsync($"/v1/admin/providers/{MockBankSimpleAdapter.ProviderId}/remote-consents");
         await ErrorEnvelope.AssertAsync(none, HttpStatusCode.BadRequest, "unsupported_resource");
     }
+
+    [Fact]
+    public async Task The_status_document_names_the_parties_that_keep_an_inventory()
+    {
+        using var http = factory.CreateAuthorizedClient();
+
+        using var status = await http.GetAsync("/v1/status");
+        var providers = (await status.JsonAsync()).GetProperty("providers").EnumerateArray().ToList();
+        Assert.True(providers.Single(p => p.Text("provider_id") == Provider).GetProperty("inventory").GetBoolean());
+        // asked of this one the inventory is a 400, so the status says nothing a console could offer
+        Assert.False(providers.Single(p => p.Text("provider_id") == MockBankSimpleAdapter.ProviderId).TryGetProperty("inventory", out _));
+    }
 }

@@ -43,11 +43,11 @@ public sealed class EnableBankingAdapterTests
         var path = req.Path;
         return path switch
         {
-            "/aspsps" => Stub.Json("""{"aspsps":[{"name":"ASN Bank","country":"NL","logo":"https://cdn.test/asn.png","transaction_total_days":90},{"name":"PayPal","country":"NL","logo":null,"transaction_total_days":30}]}"""),
+            "/aspsps" => Stub.Json("""{"aspsps":[{"name":"ASN Bank","country":"NL","logo":"https://cdn.test/asn.png","transaction_total_days":90,"maximum_consent_validity":15552000},{"name":"PayPal","country":"NL","logo":null,"transaction_total_days":30}]}"""),
             "/auth" => Stub.Json("""{"url":"https://eb.test/consent/xyz"}"""),
             "/sessions" => Stub.Json("""{"session_id":"ses1","accounts":[{"uid":"u1"},{"uid":null}]}"""),
             "/sessions/ses1" when req.Method == HttpMethod.Delete => Stub.Status(HttpStatusCode.OK),
-            "/accounts/u1/details" => Stub.Json("""{"account_id":{"iban":"NL02ASNB0000000002"},"name":"Betalen","currency":"EUR"}"""),
+            "/accounts/u1/details" => Stub.Json("""{"account_id":{"iban":"NL02ASNB0000000002"},"name":"Betalen","currency":"EUR","identification_hash":"hash-u1"}"""),
             "/accounts/u1/balances" => Stub.Json("""{"balances":[{"balance_amount":{"amount":"250.10","currency":"EUR"},"balance_type":"CLBD","reference_date":"2026-09-29"}]}"""),
             "/accounts/u1/transactions" when !req.Query.Contains("continuation_key", StringComparison.Ordinal) && req.Query.Contains("date_from", StringComparison.Ordinal) =>
                 Stub.Json("""
@@ -74,7 +74,7 @@ public sealed class EnableBankingAdapterTests
         ConsentId = "ses1",
         InstitutionId = "ASN Bank|NL",
         InstitutionName = "ASN Bank",
-        Accounts = [new ConsentAccount { Id = "u1", Iban = "NL02ASNB0000000002", Name = "Betalen", Currency = "EUR", Detailed = true }],
+        Accounts = [new ConsentAccount { Id = "u1", Iban = "NL02ASNB0000000002", Name = "Betalen", Currency = "EUR", Detailed = true, Identity = "hash-u1", IdentityRead = true }],
     }.ToMaterial();
 
     [Fact]
@@ -131,7 +131,9 @@ public sealed class EnableBankingAdapterTests
         Assert.Equal(ReturnUrl, auth.RootElement.GetProperty("redirect_url").GetString());
         Assert.Equal("personal", auth.RootElement.GetProperty("psu_type").GetString());
         Assert.StartsWith("ebr_", auth.RootElement.GetProperty("state").GetString());
-        Assert.Equal(Now.AddDays(90).ToString("o"), auth.RootElement.GetProperty("access").GetProperty("valid_until").GetString());
+        // the bank grants half a year (#491): the consent is asked for that long, and the session lives as long
+        Assert.Equal(Now.AddDays(180).ToString("o"), auth.RootElement.GetProperty("access").GetProperty("valid_until").GetString());
+        Assert.Equal(Now.AddDays(180), result.ExpiresAt);
 
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal("https://eb.test/consent/xyz", challenge.Url);
@@ -143,6 +145,7 @@ public sealed class EnableBankingAdapterTests
         Assert.Equal("ASN Bank", result.Account?.DisplayName);
         Assert.Equal("u1", Assert.Single(result.Reachable).ExternalId);   // a uid-less entry is not an account
         Assert.Contains("NL02ASNB0000000002", result.Material.Extra["accounts"]);
+        Assert.Contains("hash-u1", result.Material.Extra["accounts"]);
 
         var noCode = await Assert.ThrowsAsync<ConnectorException>(() => Adapter().LoginAsync(Login(Wire(), _ => $"{ReturnUrl}?state=x"), CancellationToken.None));
         Assert.Equal(ErrorCode.InvalidRequest, noCode.Code);   // the state names another consent
@@ -163,6 +166,7 @@ public sealed class EnableBankingAdapterTests
         var account = Assert.Single(accounts.Accounts);
         Assert.Equal(25_010, account.Balance?.Amount.Value);
         Assert.Equal(new DateTimeOffset(2026, 9, 29, 0, 0, 0, TimeSpan.Zero), account.Balance?.AsOf);
+        Assert.Equal("hash-u1", account.Identity);   // the same account in every later consent
         Assert.Equal(0, wire.Count("GET", "/accounts/u1/details"));   // the login already learned them
 
         var transactions = await adapter.FetchAsync(ctx, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 10) }, CancellationToken.None);
@@ -182,6 +186,38 @@ public sealed class EnableBankingAdapterTests
     }
 
     [Fact]
+    public async Task A_consent_read_before_identities_reads_its_details_once_more_and_keeps_what_it_learned()
+    {
+        var wire = Wire();
+        var before = new ConsentMaterial
+        {
+            ConsentId = "ses1",
+            InstitutionId = "PayPal|NL",
+            InstitutionName = "PayPal",
+            Accounts = [new ConsentAccount { Id = "u1", Name = "PayPal", Currency = "EUR", Detailed = true }],
+        }.ToMaterial();
+        using var ctx = new FakeJobContext(wire) { Material = before };
+
+        var fetched = await Adapter().FetchAsync(ctx, new ResourceRequest { ResourceId = "accounts" }, CancellationToken.None);
+
+        Assert.Equal(1, wire.Count("GET", "/accounts/u1/details"));
+        Assert.Equal("hash-u1", Assert.Single(fetched.Accounts).Identity);
+        // handed back, so the next fetch spends nothing on it
+        Assert.NotNull(fetched.RefreshedMaterial);
+        using var again = new FakeJobContext(wire) { Material = fetched.RefreshedMaterial };
+        await Adapter().FetchAsync(again, new ResourceRequest { ResourceId = "accounts" }, CancellationToken.None);
+        Assert.Equal(1, wire.Count("GET", "/accounts/u1/details"));
+    }
+
+    [Theory]
+    [InlineData(15_552_000L, 180)]   // the bank grants the PSD2 half year
+    [InlineData(31_536_000L, 180)]   // more than PSD2 allows is never asked
+    [InlineData(7_776_000L, 90)]     // a bank that grants less is asked for what it grants
+    [InlineData(null, 90)]           // the party does not say: the old 90 days
+    public void A_consent_is_asked_for_as_long_as_the_bank_grants_it(long? seconds, int days) =>
+        Assert.Equal(days, OpenBankingAdapter.ConsentDaysFor(new Institution("X|NL", "X", null, null, EnableBankingAdapter.ConsentDaysOf(seconds))));
+
+    [Fact]
     public async Task An_out_of_range_window_answered_empty_is_retried_on_the_bank_s_own_window()
     {
         var calls = 0;
@@ -197,6 +233,44 @@ public sealed class EnableBankingAdapterTests
         var result = await Adapter().FetchAsync(ctx, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 1) }, CancellationToken.None);
         Assert.Equal(2, calls);
         Assert.Equal("only", Assert.Single(result.Transactions).ExternalId);
+    }
+
+    /// <summary>
+    /// #460: a pass over older history names its end as date_to, and a walk the
+    /// page cap stopped while the bank still offered a page says it is not the
+    /// whole history - it used to read as everything.
+    /// </summary>
+    [Fact]
+    public async Task A_backfill_pass_names_its_end_and_a_walk_the_cap_stopped_is_partial()
+    {
+        var queries = new List<string>();
+        var wire = Wire(req =>
+        {
+            if (req.Path != "/accounts/u1/transactions") return null;
+            queries.Add(req.Query);
+            // a bank that always has one more page
+            return Stub.Json($$"""{"transactions":[{"entry_reference":"r{{queries.Count}}","transaction_amount":{"amount":"1.00","currency":"EUR"},"credit_debit_indicator":"CRDT","status":"BOOK","booking_date":"2026-08-{{10 + queries.Count:00}}"}],"continuation_key":"more"}""");
+        });
+        using var ctx = new FakeJobContext(wire) { Material = Consent() };
+        var request = new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 8, 1), Until = new DateOnly(2026, 9, 1) };
+
+        var result = await Adapter().FetchAsync(ctx, request, CancellationToken.None);
+
+        Assert.All(queries, q => Assert.Contains("date_to=2026-09-01", q, StringComparison.Ordinal));
+        Assert.False(result.Complete);
+        Assert.NotEmpty(result.Transactions);
+
+        // a regular pass names no end: today is the party's own
+        var regular = new List<string>();
+        var plain = Wire(req =>
+        {
+            if (req.Path == "/accounts/u1/transactions") regular.Add(req.Query);
+            return null;
+        });
+        using var ctx2 = new FakeJobContext(plain) { Material = Consent() };
+        var whole = await Adapter().FetchAsync(ctx2, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 10) }, CancellationToken.None);
+        Assert.DoesNotContain(regular, q => q.Contains("date_to", StringComparison.Ordinal));
+        Assert.True(whole.Complete);
     }
 
     [Fact]

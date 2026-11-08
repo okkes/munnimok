@@ -5,8 +5,10 @@ import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useGoalOps, useGoals } from '@/application/goals';
 import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
@@ -21,6 +23,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { IconPicker } from '@/ui/IconPicker';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
@@ -48,6 +51,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   const editing = initial !== 'new' && initial !== null ? initial : null;
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(GOAL_ICONS[0]);
+  const [iconQuery, setIconQuery] = useState('');
   const [picture, setPicture] = useState<string | null>(null);
   const [target, setTarget] = useState('');
   const [targetDate, setTargetDate] = useState('');
@@ -58,6 +62,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   useEffect(() => {
     setName(editing?.name ?? '');
     setIcon(editing?.icon ?? GOAL_ICONS[0]);
+    setIconQuery('');
     setPicture(editing?.picture ?? null);
     setTarget(editing?.targetCents ? (editing.targetCents / 100).toFixed(2) : '');
     setTargetDate(editing?.targetDate ?? '');
@@ -127,7 +132,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* optional cover, same mechanics as events (user request) */}
-        <ScrollRow tone="surface" testId="goalform-pictures">
+        <ScrollRow testId="goalform-pictures">
           <button
             data-testid="goalform-pic-none"
             onClick={() => setPicture(null)}
@@ -177,20 +182,8 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         )}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
-        <ScrollRow tone="surface">
-          {GOAL_ICONS.map((candidate) => (
-            <button
-              key={candidate}
-              data-testid={`goalform-icon-${candidate}`}
-              onClick={() => setIcon(candidate)}
-              className={`m-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-              }`}
-            >
-              <Icon name={candidate} size={19} />
-            </button>
-          ))}
-        </ScrollRow>
+        {/* #563 (user): the goal's suggestions lead, the whole icon font follows — to scroll or to search */}
+        <IconPicker value={icon} onChange={setIcon} featured={GOAL_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="goalform-icon" />
         <input
           data-testid="goalform-name"
           value={name}
@@ -332,7 +325,7 @@ function GoalPoolCard({
 }
 
 export function GoalsScreen() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const goals = useGoals();
@@ -340,9 +333,12 @@ export function GoalsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<GoalRow | 'new' | null>(null);
+  const canEdit = useCanEdit(); // #505
 
-  const { fmt } = useDisplayMoney();
+  const { fmt, fmtSensitive } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
+  // #530: the savings, what each goal holds and what is still to go hide with the sensitive figures; targets and paces stay
+  const balance = (cents: number) => fmtSensitive(cents, currency);
   const overview = goalOverview(goals ?? [], accounts ?? [], space);
   const negative = overview.unallocatedCents < 0;
   const today = localToday();
@@ -368,14 +364,17 @@ export function GoalsScreen() {
         trailing={
           <>
             <HelpButton tourId="goals" />
-            <IconButton label={t('goals.new')} testId="goals-add" onClick={() => setFormInitial('new')}>
-              <Icon name="plus" size={22} />
-            </IconButton>
+            {canEdit && (
+              <IconButton label={t('goals.new')} testId="goals-add" onClick={() => setFormInitial('new')}>
+                <Icon name="plus" size={22} />
+              </IconButton>
+            )}
           </>
         }
       />
       <div ref={(el) => attachScrollMemory(el, 'goals')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="goals" />
+        <ReadOnlyNote className="mb-2.5" testId="goals-readonly-note" />
         {/* the honesty header — negative unallocated is the rebalance signal.
             Held back until both sides loaded so it never flashes €0 savings. */}
         {goals && accounts && (
@@ -391,7 +390,7 @@ export function GoalsScreen() {
                 <div key={key} data-testid={`goals-overview-${key.slice('goals.'.length)}`}>
                   <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t(key)}</div>
                   <div className="mt-0.5 font-mono text-[15px] font-semibold" style={{ color }}>
-                    {money(cents)}
+                    {balance(cents)}
                   </div>
                 </div>
               ))}
@@ -399,12 +398,22 @@ export function GoalsScreen() {
             {negative && (
               <p className="mt-3 flex items-center gap-1.5 text-[12px] text-negative" data-testid="goals-negative-note">
                 <Icon name="alert-circle-outline" size={14} />
-                {t('goals.negativeNote', { amount: money(-overview.unallocatedCents) })}
+                {t('goals.negativeNote', { amount: balance(-overview.unallocatedCents) })}
+              </p>
+            )}
+            {/* #455: savings that shrank because a reached goal was bought — the way out is cashing it out */}
+            {negative && goals.some((g) => g.archived !== 1 && g.allocatedCents >= g.targetCents) && (
+              <p className="mt-1 text-[12px] leading-snug text-ink-3" data-testid="goals-cashout-hint">
+                {t('goals.negativeCashOutHint')}
               </p>
             )}
           </div>
         )}
-        {goals && accounts && <GoalPoolCard accounts={accounts} space={space} money={money} onToggle={(id) => void togglePoolAccount(id)} />}
+        {goals && accounts && (
+          <div inert={canEdit ? undefined : true}>
+            <GoalPoolCard accounts={accounts} space={space} money={balance} onToggle={(id) => void togglePoolAccount(id)} />
+          </div>
+        )}
 
         <div className="flex flex-col gap-2.5 pt-3">
           {(goals ?? []).map((goal) => {
@@ -413,9 +422,13 @@ export function GoalsScreen() {
             const pace = paceCentsPerPeriod(goal, space, today);
             const reached = goal.allocatedCents >= goal.targetCents;
             // #449 (user): what is still to add sits on the card itself, pace or no pace
-            const toGo = t('goals.toGo', { amount: money(goal.targetCents - goal.allocatedCents) });
+            const toGo = t('goals.toGo', { amount: balance(goal.targetCents - goal.allocatedCents) });
             let subtitle = toGo;
-            if (reached) subtitle = t('goals.reached');
+            if (goal.cashOut) {
+              // #455: a spent goal says when — it sits with the archived ones
+              const date = new Date(goal.cashOut.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
+              subtitle = t('goals.cashedOutOn', { date });
+            } else if (reached) subtitle = t('goals.reached');
             else if (pace !== null) subtitle = `${toGo} · ${t('goals.pace', { amount: money(pace), unit: t(periodUnitKey(space?.periodType)) })}`;
             return (
               <button
@@ -434,7 +447,7 @@ export function GoalsScreen() {
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-[15px] font-semibold text-ink">{goal.name}</span>
                       <span className="m-num shrink-0 text-[13px] font-semibold text-ink">
-                        {money(goal.allocatedCents)} / {money(goal.targetCents)}
+                        {balance(goal.allocatedCents)} / {money(goal.targetCents)}
                       </span>
                     </span>
                     <span className="block text-[11px] text-ink-4">{subtitle}</span>
