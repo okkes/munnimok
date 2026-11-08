@@ -71,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # build number = commit count
+          fetch-depth: 0 # the web build's Settings footer counts commits
 
       - uses: actions/setup-node@v7
         with:
@@ -196,18 +196,15 @@ jobs:
           echo "::warning title=iOS archive skipped::Apple issues the development profile automatic signing archives against only for a team with an ENABLED registered device — this team has ${{ steps.devices.outputs.disabled }} registered, none enabled. Once: developer.apple.com → Certificates, Identifiers & Profiles → Devices → enable a registered iPhone (or ＋ to register any iPhone you own: name + UDID, which iTunes or Finder shows behind the serial number). Every push after that builds; TestFlight itself needs no device."
           echo "iOS archive skipped: no enabled registered device on the Apple team (${{ steps.devices.outputs.disabled }} registered, all disabled) — enable one at developer.apple.com → Devices, the next push builds" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Compute build number (push = commit count, dev gets .1; dispatch = seconds since 2026)
+      # #497: one scheme for every build — a dispatched upload (seconds since 2026, ~22.5M) left every later push
+      # (commit count, ~1,800) below it, and TestFlight refuses a build number lower than the last one of a version
+      - name: Compute build number (seconds since 2026 for every build, dev gets .1)
         if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0'
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # redispatching the same commit must not reuse a build number (TestFlight refuses the duplicate)
-            CODE=$(( $(date +%s) - 1767225600 ))
-          else
-            CODE=$(git rev-list --count HEAD)
-            # the same sha on both branches (post-merge sync) would otherwise upload the same build number twice
-            [ "${{ github.ref_name }}" = "dev" ] && CODE="$CODE.1"
-          fi
+          CODE=$(( $(date +%s) - 1767225600 ))
+          # the same sha built on both branches in the same second must not share a build number
+          [ "${{ github.ref_name }}" = "dev" ] && CODE="$CODE.1"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 

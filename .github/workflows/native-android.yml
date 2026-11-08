@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # versionCode = commit count
+          fetch-depth: 0 # the web build's Settings footer counts commits
 
       - uses: actions/setup-node@v7
         with:
@@ -110,14 +110,13 @@ jobs:
           VITE_NATIVE_SCHEME: ${{ matrix.scheme }}
           VITE_CHANNEL: ${{ matrix.appChannel }}
 
-      - name: Compute version (push = commit count; dispatch = seconds since 2026, never a repeat)
+      # #497: ONE scheme for every build. The commit count (push) and the seconds since 2026 (dispatch) lived side
+      # by side; one dispatched upload (~22.5M) left every later push (~1,800) below it, and Play refuses a release
+      # that no installed user can upgrade to. Seconds since 2026 always grow and stay under Play's 2.1e9 cap until 2092.
+      - name: Compute version (seconds since 2026 for every build — always higher than the last upload)
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "code=$(( $(date +%s) - 1767225600 ))" >> "$GITHUB_OUTPUT"
-          else
-            echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
-          fi
+          echo "code=$(( $(date +%s) - 1767225600 ))" >> "$GITHUB_OUTPUT"
           NAME=$(node -p "require('./package.json').version")
           [ "${{ matrix.appChannel }}" = "production" ] || NAME="$NAME-${{ matrix.env }}"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
@@ -218,12 +217,13 @@ jobs:
           retention-days: 90
 
       # ---- Play internal track: the app record is the ONE manual step per package
-      # (Play only adds releases to existing apps) — a missing record is a warning,
-      # the signed .aab artifact is the deliverable until then
+      # (Play only adds releases to existing apps). A setup gap (no record, the
+      # service account not invited, the API off) is a warning and the signed .aab
+      # artifact is the deliverable until then; a refusal of the release itself
+      # fails the run (#497: a hidden versionCode refusal went unseen for weeks)
       - name: Publish to Play internal track
         id: play
         if: ${{ inputs.publish != 'skip' && steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' }}
-        continue-on-error: true
         run: node .github/scripts/play-publish.mjs
         env:
           PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -231,8 +231,3 @@ jobs:
           AAB_PATH: apps/native/android/app/build/outputs/bundle/appRelease/app-app-release.aab
           MAPPING_PATH: apps/native/android/app/build/outputs/mapping/appRelease/mapping.txt
           TRACK: internal
-
-      - name: Play upload verdict
-        if: ${{ steps.play.outcome == 'failure' }}
-        run: |
-          echo "::warning title=Play upload did not finish::Read the 'Publish to Play internal track' step above for the exact reason — no app record for ${{ matrix.androidPackage }} yet, service account not invited, its Cloud project's Play API disabled, or a concurrent edit. The signed .aab artifact on this run is the manual fallback; once the store accepts, every later build publishes itself."
