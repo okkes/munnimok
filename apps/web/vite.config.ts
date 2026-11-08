@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { assetFileName } from './src/lib/buildAssets';
 
 export default defineConfig(({ mode }) => {
   let buildNumber: number | string = 'dev';
@@ -107,6 +108,8 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsInlineLimit: 0,
+      // #552: module assets (pdf.js's worker) leave as .js — see lib/buildAssets
+      rolldownOptions: { output: { assetFileNames: assetFileName } },
     },
     define: {
       __BUILD_NUMBER__: JSON.stringify(buildNumber),
