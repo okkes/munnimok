@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getJson, reasonOf } from '../../app/api';
+import type { Call } from '../../app/api';
 import type { ScreenProps } from '../../app/LabApp';
 import { hrefOf, navigate, useRouteQuery } from '../../app/router';
 import { ago, when } from '../../lib/format';
-import type { FetchView, JobView, LabSessionRow, ParamSpec, ProviderEntry } from '../../types';
-import { cellText, columnsOf, fetchParams, paramsBody, TERMINAL } from './benchFacts';
+import type { FetchView, JobList, JobView, LabSessionRow, OperatorJob, ParamSpec, ProviderEntry, SessionView } from '../../types';
+import { cellText, columnsOf, fetchParams, paramsBody, SIGNING_IN, TERMINAL } from './benchFacts';
 import { sessionChip } from './BenchScreen';
+import { EXPLORE, RunCard } from './ConnectScreen';
 
 const JOB_POLL_MS = 2_000;
 
@@ -28,6 +30,8 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   const [canaryResource, setCanaryResource] = useState('');
   const [every, setEvery] = useState('60');
   const [record, setRecord] = useState(false);
+  // the sign-in itself while the session is still signing in — where a run left behind is picked up again (#576)
+  const [run, setRun] = useState<SessionView | null>(null);
 
   const load = useCallback(async () => {
     const list = await getJson<LabSessionRow[]>(call, '/lab/bench/sessions');
@@ -38,6 +42,29 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
   useEffect(() => {
     void load();
   }, [load]);
+
+  const signingIn = session !== null && session !== 'loading' && SIGNING_IN.has(session.state);
+  const provider = session !== null && session !== 'loading' ? session.provider : null;
+  useEffect(() => {
+    if (!signingIn || !provider) return undefined;
+    let alive = true;
+    void (async () => {
+      const view = await getJson<SessionView>(call, `/lab/bench/${encodeURIComponent(provider)}/login/${encodeURIComponent(id)}`);
+      if (alive && view && view !== 'unreachable') setRun(view);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [call, id, provider, signingIn]);
+
+  // the run settled under the operator's eyes: the session's own row says what it left (a bundle, a failure)
+  const onRun = useCallback(
+    (next: SessionView) => {
+      setRun(next);
+      if (TERMINAL.has(next.state)) void load();
+    },
+    [load],
+  );
 
   const resources = party?.resources ?? [];
   const spec = resources.find((r) => r.id === (resource || resources[0]?.id));
@@ -145,6 +172,13 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
 
   const setValue = (key: string, value: string | string[]) => setValues((v) => ({ ...v, [key]: value }));
   const columns = page ? columnsOf(page.records) : [];
+  const explore = session.provider === EXPLORE;
+  // an explore run (or any party without a resource) has nothing to fetch and nothing a canary could prove
+  const fetchable = !explore && (party === null || resources.length > 0);
+  let bundle = session.hasBundle ? 'kept by the relay' : 'none — sign in again';
+  if (signingIn) bundle = 'not yet — the sign-in is still running';
+  // the relay's row is the state it last read; the run read just now is the newer word
+  const shownState = signingIn && run ? run.state : session.state;
 
   return (
     <>
@@ -153,8 +187,8 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
       </p>
       <div className="head-row">
         <h1 data-testid="bench-session-title">{party?.name ?? session.provider}</h1>
-        <span className={`chip ${sessionChip(session.state)}`} data-testid="bench-session-state">
-          {session.state}
+        <span className={`chip ${sessionChip(shownState)}`} data-testid="bench-session-state">
+          {shownState}
         </span>
         <span className="sub mono">{session.sessionId}</span>
         <span className="spacer" />
@@ -163,17 +197,23 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
         </button>
       </div>
 
+      {run && <RunCard provider={session.provider} call={call} busy={busy} view={run} onView={onRun} sessionLink={false} />}
+
       <section className="card" data-testid="bench-session-facts">
         <div className="facts">
-          <Fact label="Party" value={<a href={hrefOf(`providers/${encodeURIComponent(session.provider)}`)}>{session.provider}</a>} />
+          <Fact label="Party" value={explore ? 'explore' : <a href={hrefOf(`providers/${encodeURIComponent(session.provider)}`)}>{session.provider}</a>} />
           <Fact label="Label" value={session.label ?? '—'} />
-          <Fact label="Bundle" value={session.hasBundle ? 'kept by the relay' : 'none — sign in again'} />
+          <Fact label="Bundle" value={bundle} />
           <Fact label="Runs on" value={session.preferAgent ?? 'no preference'} />
-          <Fact label="Signed in" value={when(session.createdAt)} />
+          <Fact label="Started" value={when(session.createdAt)} />
           <Fact label="Last used" value={session.lastError ? `${ago(session.lastUsedAt)} · ${session.lastError}` : ago(session.lastUsedAt)} />
         </div>
       </section>
 
+      {explore && <ExploreRecording call={call} sessionId={session.sessionId} settled={!signingIn} />}
+
+      {fetchable && (
+        <>
       <section className="card" data-testid="bench-fetch-card">
         <h2>Fetch</h2>
         <p className="hint">One round trip with the kept bundle, exactly as a sync would ask — the records come back here and nowhere else.</p>
@@ -274,7 +314,47 @@ export function SessionScreen({ id, call, busy, act }: Readonly<{ id: string } &
           </button>
         </div>
       </section>
+        </>
+      )}
     </>
+  );
+}
+
+/** an explore run's deliverable (#441 L3): its recording, found in the job history by the session */
+function ExploreRecording({ call, sessionId, settled }: Readonly<{ call: Call; sessionId: string; settled: boolean }>) {
+  const [job, setJob] = useState<OperatorJob | null | 'loading'>('loading');
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const list = await getJson<JobList>(call, `/lab/jobs?session=${encodeURIComponent(sessionId)}&limit=1`);
+      if (alive) setJob(list && list !== 'unreachable' ? (list.jobs[0] ?? null) : null);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [call, sessionId, settled]);
+
+  return (
+    <section className="card" data-testid="bench-explore-recording">
+      <div className="card-head">
+        <h2>The recording</h2>
+        {job !== 'loading' && job?.trace && (
+          <button className="btn" data-testid="bench-session-recording" onClick={() => navigate(`jobs/${encodeURIComponent(job.jobId)}/trace`)}>
+            open the recording
+          </button>
+        )}
+      </div>
+      <p className="hint">
+        An explore run fetches nothing: what it leaves is the recording of everything the browser did, with the secrets taken out.
+        {job !== 'loading' && job && !job.trace && (settled ? ' This run kept none.' : ' It is written when you press done, or when the window closes.')}
+        {job === null && ' The control plane lists no run for this session any more.'}
+      </p>
+      {job !== 'loading' && job && (
+        <a href={hrefOf(`jobs/${encodeURIComponent(job.jobId)}`)} data-testid="bench-session-job">
+          the run in the job history →
+        </a>
+      )}
+    </section>
   );
 }
 

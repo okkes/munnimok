@@ -3,6 +3,9 @@ import type { ParamSpec, ProviderEntry, ResourceSpec } from '../../types';
 /** the states a sign-in or a job ends in */
 export const TERMINAL = new Set(['active', 'failed', 'expired', 'blocked', 'disabled', 'succeeded']);
 
+/** a session whose sign-in is still under way — its run (an explore run's live view among it) is still there to pick up (#576) */
+export const SIGNING_IN = new Set(['queued', 'running', 'awaiting_input']);
+
 /** the manifest's sign-in fields, every step flattened with its step id */
 export function signInFields(p: ProviderEntry): { step: string; key: string; type: string; secret: boolean; required: boolean }[] {
   return (p.auth?.steps ?? []).flatMap((step) =>

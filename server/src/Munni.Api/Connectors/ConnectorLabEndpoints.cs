@@ -147,11 +147,27 @@ public static partial class ConnectorLabEndpoints
 
     private static string OperatorOf(HttpContext http) => http.User.FindFirst("sub")?.Value ?? "-";
 
-    private static async Task<IResult> Fleet(ConnectorClient client, CancellationToken ct)
+    /// <summary>
+    /// Every agent whoever owns it, each marked <c>lab</c> when it was enrolled
+    /// under the caller's lab subject: those take the lab's runs beside the
+    /// fleet, a person's own machine or a hosted slot never does (#576 — the
+    /// bench says where a run can go).
+    /// </summary>
+    private static async Task<IResult> Fleet(HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
-        var reply = await client.GetAsync("v1/admin/agents", new ConnectorCall(), ct);
+        var reply = await relay.Client.GetAsync("v1/admin/agents", new ConnectorCall(), ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
-        return Results.Json(ConnectorJson.ToCamel(reply.Object));
+        var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
+
+        var mine = await relay.Client.GetAsync("v1/agents", new ConnectorCall { Subject = relay.LabSubjectOf(http) }, ct);
+        var labIds = mine.IsSuccess && mine.Object["agents"] is JsonArray own
+            ? own.Select(a => a?["id"]?.GetValue<string>()).OfType<string>().ToHashSet(StringComparer.Ordinal)
+            : [];
+        foreach (var node in view["agents"] as JsonArray ?? [])
+        {
+            if (node is JsonObject row) row["lab"] = row["id"]?.GetValue<string>() is { } id && labIds.Contains(id);
+        }
+        return Results.Json(view);
     }
 
     private static async Task<IResult> RevokeAny(string agentId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)

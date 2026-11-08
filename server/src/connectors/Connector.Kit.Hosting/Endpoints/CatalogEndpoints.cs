@@ -128,7 +128,12 @@ internal static class CatalogEndpoints
                 Service = Descriptor(platform, registry),
                 Providers = [.. health.Values
                     .OrderBy(p => p.ProviderId, StringComparer.Ordinal)
-                    .Select(p => p with { Quota = quotas.Get(p.ProviderId) })],
+                    .Select(p => p with
+                    {
+                        Quota = quotas.Get(p.ProviderId),
+                        // asked of any other party the inventory is a 400 — the consoles offer it only where it exists (#561)
+                        Inventory = registry.TryGetAdapter(p.ProviderId, out var adapter) && adapter is IRemoteInventory,
+                    })],
                 Agents = new AgentPoolView
                 {
                     Total = agents.Count,

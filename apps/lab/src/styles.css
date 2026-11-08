@@ -88,6 +88,7 @@ a:hover { text-decoration: underline; }
 
 /* ── the shell ─────────────────────────────────────────────────────── */
 .shell { display: flex; min-height: 100vh; }
+/* #575: the sidebar holds still while the page scrolls, sign-out pinned to its foot (a stretched sidebar put it at the page's end) */
 .sidebar {
   width: 220px;
   flex: 0 0 220px;
@@ -97,6 +98,10 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: 24px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 .brand { font: 600 20px/1 Georgia, 'Times New Roman', serif; }
 .brand .dot { color: #6fae97; }
@@ -117,6 +122,14 @@ a:hover { text-decoration: underline; }
 .sidebar-foot .btn { background: rgb(255 255 255 / 12%); }
 .content { flex: 1; min-width: 0; padding: 28px 36px 48px; }
 .center { max-width: 420px; margin: 20vh auto 0; text-align: center; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+/* a narrow window: the sidebar becomes a bar over the page, as in the admin portal and the cockpit */
+@media (max-width: 768px) {
+  .shell { flex-direction: column; }
+  .sidebar { width: 100%; flex: 0 0 auto; height: auto; position: static; overflow: visible; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; }
+  .sidebar nav { flex-direction: row; flex-wrap: wrap; }
+  .sidebar-foot { margin: 0 0 0 auto; flex-direction: row; }
+  .content { padding: 18px 14px 48px; }
+}
 
 h1 { font: 600 24px/1.2 Georgia, 'Times New Roman', serif; margin: 0 0 16px; }
 h2 { font: 600 15px/1.3 system-ui, sans-serif; margin: 0 0 8px; }
@@ -145,6 +158,8 @@ h3 { font: 600 13px/1.3 system-ui, sans-serif; margin: 16px 0 6px; color: var(--
   padding: 18px 20px;
   margin-bottom: 18px;
   box-shadow: var(--shadow);
+  /* a wide table scrolls inside its card instead of pushing the page sideways */
+  overflow-x: auto;
 }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
@@ -185,6 +200,7 @@ tr.clickable:hover td { background: var(--accent-soft); }
 .fact { display: flex; flex-direction: column; gap: 2px; }
 .fact-label { color: var(--ink3); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; }
 .fact-value { font-size: 13px; }
+.facts .run-on-hint { grid-column: 1 / -1; margin: 0; }
 .mono { font-family: var(--mono); font-size: 12px; }
 pre.code {
   margin: 8px 0;

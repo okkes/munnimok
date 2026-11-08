@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST, entriesFor } from '../modules/secrets.mjs';
 import { ensureLocalSecrets, forgetWizardValues, loadLocalValues, loadWizardStore, machineValues, saveLocalValues, setWizardValues, stackValues, wizardValues } from '../modules/localstore.mjs';
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
-import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, loadEnv, loadPlatform, loadStack, nextSlot, parseStackName, platformEnvStacks, platformEnvs, removeEnv, saveAutonomy, saveEnv, savePlatform, sharedOf, stackName } from '../modules/stack.mjs';
+import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, loadEnv, loadPlatform, loadStack, nextSlot, parseStackName, platformEnvStacks, platformEnvs, removeEnv, saveAutonomy, saveEnv, savePlatform, sharedOf, stackName, stackServices } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, syncUserId, userKeysOf, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister, vaultSync } from '../modules/vault.mjs';
 import { zipEntry, zipNames } from '../modules/zip.mjs';
@@ -201,6 +201,35 @@ function platformsView() {
     domainStored: Boolean(wizardValues(p.platform).PLATFORM_DOMAIN),
     envs: platformEnvs(p.platform).map((e) => ({ ...e, stack: stackName(p.platform, e.env), environment: `${p.platform}-${e.env}`, branch: branchFor(p.branch, e.channel) })),
   }));
+}
+
+/* ── every service and endpoint of a platform in one overview (#560): the shared stack, then each environment by slot ── */
+export function platformServices(platform) {
+  const label = loadPlatform(platform).label;
+  try {
+    return withPlatformEnv(platform, () => {
+      const shared = loadStack(stackName(platform));
+      const view = (s) => ({ stack: s.stack, env: s.env, label: s.label, channel: s.channel, services: stackServices(s) });
+      return {
+        platform,
+        label,
+        domainMissing: false,
+        // the environment the cockpit signs in through
+        controlEnv: parseStackName(shared.controlApi)?.env ?? null,
+        shared: view(shared),
+        envs: platformEnvs(platform).map((e) => view(loadStack(stackName(platform, e.env)))),
+      };
+    });
+  } catch (e) {
+    // a nas platform's addresses hang off its domain — a secret the wizard holds once it is saved
+    if (/PLATFORM_DOMAIN/.test(e.message)) return { platform, label, domainMissing: true, controlEnv: null, shared: null, envs: [] };
+    throw e;
+  }
+}
+function servicesEndpoint(res, url) {
+  const platform = String(url.searchParams.get('platform') ?? '');
+  if (!listPlatforms().some((p) => p.platform === platform)) return json(res, 400, { error: 'unknown platform' });
+  return json(res, 200, platformServices(platform));
 }
 
 /* ── the helper's own code: a pull that moved this file leaves the running process on the old version ──
@@ -2124,6 +2153,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
   const url = (req) => new URL(req.url, 'http://localhost');
   const routes = {
     'GET /api/status': (req, res) => statusEndpoint(res, probeImpl),
+    'GET /api/services': (req, res) => servicesEndpoint(res, url(req)),
     // the page's one-click restart when the helper's code moved on disk; the new process serves the page with a fresh token
     'POST /api/helper/restart': (req, res) => { json(res, 200, { ok: true, restarting: Boolean(restartImpl) }); if (restartImpl) setTimeout(restartImpl, 200); },
     'GET /api/wizard/values': (req, res) => wizardValuesGet(res, url(req)),

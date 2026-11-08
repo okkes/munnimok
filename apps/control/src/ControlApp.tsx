@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ControlConfig } from './config';
+import { ConsentsScreen } from './ConsentsScreen';
 
 interface HealthInfo {
   build?: string;
@@ -14,6 +15,8 @@ interface ConnectorProvider {
   reasonKey?: string | null;
   acceptsWork: boolean;
   quota?: { limit?: number | null; remaining?: number | null; resetAt?: string | null; seenAt?: string | null } | null;
+  /** the party keeps an inventory at the operator's account (an aggregator's consents) — the only ones that answer for it (#561) */
+  inventory?: boolean;
 }
 interface ConnectorStatus {
   service: { kinds: string[]; version: string; manifestDigest: string };
@@ -24,21 +27,13 @@ interface ConnectorStatus {
 }
 /** null = not asked yet; 'absent' = the designated environment runs no connectors (404); 'unreachable' = its control plane did not answer */
 type ConnectorsView = ConnectorStatus | 'absent' | 'unreachable' | null;
-/** one consent on an aggregator's account as the party lists it (§15.6), attributed by the environment it was started from */
-interface RemoteConsent {
-  id: string;
-  status: string;
-  createdAt?: string | null;
-  institutionId?: string | null;
-  origin?: string | null;
-  accountCount: number;
-}
 
-type Screen = 'overview' | 'connectors';
+type Screen = 'overview' | 'connectors' | 'consents';
 
 const NAV: [Screen, string][] = [
   ['overview', 'Overview'],
   ['connectors', 'Connectors'],
+  ['consents', 'Bank consents'],
 ];
 
 /**
@@ -66,24 +61,7 @@ function forgetDevice(): void {
   }
 }
 
-/** grouping key for consents whose return carried no usable origin */
-const UNATTRIBUTED = 'unattributed';
-
-/** consents per return origin, named environments first, unattributed last */
-export function groupByOrigin(consents: RemoteConsent[]): [string, RemoteConsent[]][] {
-  const groups = new Map<string, RemoteConsent[]>();
-  for (const c of consents) {
-    const key = c.origin ?? UNATTRIBUTED;
-    const list = groups.get(key) ?? [];
-    if (list.length === 0) groups.set(key, list);
-    list.push(c);
-  }
-  return [...groups.entries()].sort(
-    ([a], [b]) => Number(a === UNATTRIBUTED) - Number(b === UNATTRIBUTED) || a.localeCompare(b),
-  );
-}
-
-const when = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
+const when =(iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
 
 /** the party's budget as one line: remaining of limit, when it resets — or nothing said yet */
 export function quotaLine(quota: ConnectorProvider['quota']): string {
@@ -109,9 +87,10 @@ interface ControlAppProps {
  * talks only to the /control/* surface of the designated environment's
  * API and is read-only across the board: the connector control plane's
  * parties with their budget, and — for an aggregator such as GoCardless,
- * whose one account serves every environment — the inventory of consents
- * attributed per environment (§15.6). Every write, the kill switch and a
- * consent's revocation included, stays in the environment's own admin portal.
+ * whose one account serves every environment — the consents on that
+ * account attributed per environment (§15.6, Bank consents). Every write,
+ * the kill switch and a consent's revocation included, stays in the
+ * environment's own lab and admin portal.
  */
 export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppProps>) {
   // survives the full page reload a Logto re-auth causes (else every token
@@ -120,8 +99,11 @@ export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppPro
     const saved = sessionStorage.getItem('munni_control_screen');
     return NAV.some(([id]) => id === saved) ? (saved as Screen) : 'overview';
   });
-  const openScreen = (next: Screen) => {
+  // the party a Connectors row opened the consents for
+  const [consentsFocus, setConsentsFocus] = useState<string | null>(null);
+  const openScreen = (next: Screen, focus: string | null = null) => {
     sessionStorage.setItem('munni_control_screen', next);
+    setConsentsFocus(focus);
     setScreen(next);
   };
   const [sub, setSub] = useState(() => localStorage.getItem('munni_control_sub') ?? '');
@@ -230,8 +212,13 @@ export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppPro
         )}
         {unreachable && <p className="denied">The control API did not answer — is the environment running (and this origin allowed)?</p>}
         {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
-        {!blocked && screen === 'overview' && <OverviewScreen status={connectors} health={health} />}
-        {!blocked && screen === 'connectors' && <ConnectorsScreen status={connectors} call={call} />}
+        {!blocked && screen === 'overview' && <OverviewScreen status={connectors} health={health} apiUrl={config.apiUrl} onOpen={openScreen} />}
+        {!blocked && screen === 'connectors' && <ConnectorsScreen status={connectors} onOpenConsents={(id) => openScreen('consents', id)} />}
+        {!blocked && screen === 'consents' && (isLive(connectors) ? (
+          <ConsentsScreen parties={connectors.providers.filter((p) => p.inventory).map((p) => p.providerId)} call={call} labUrl={config.labUrl} focus={consentsFocus} />
+        ) : (
+          <ConnectorsNote title="Bank consents" status={connectors} />
+        ))}
       </main>
     </div>
   );
@@ -246,13 +233,60 @@ function Tile({ label, value, warn = false }: Readonly<{ label: string; value: s
   );
 }
 
-/** the landing: the designated environment's parties at a glance, plus its health probe */
-function OverviewScreen({ status, health }: Readonly<{ status: ConnectorsView; health: HealthInfo | null }>) {
+const isLive = (status: ConnectorsView): status is ConnectorStatus => status !== null && status !== 'absent' && status !== 'unreachable';
+
+/** what a screen over the control plane says while there is no status to show */
+function ConnectorsNote({ title, status }: Readonly<{ title: string; status: ConnectorsView }>) {
+  const note = {
+    absent: 'The designated environment runs no connectors.',
+    unreachable: 'The designated environment’s control plane did not answer.',
+  };
+  return (
+    <>
+      <h1>{title}</h1>
+      <section className="card" data-testid="control-connectors-note">
+        <p className="hint">{status === null || isLive(status) ? 'loading…' : note[status]}</p>
+      </section>
+    </>
+  );
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** the landing: what this cockpit is for, the designated environment's parties at a glance, its health probe */
+function OverviewScreen({ status, health, apiUrl, onOpen }: Readonly<{ status: ConnectorsView; health: HealthInfo | null; apiUrl: string; onOpen: (screen: Screen) => void }>) {
   const caps = Object.entries(health?.capabilities ?? {}).filter(([, v]) => typeof v === 'boolean');
-  const live = status !== null && status !== 'absent' && status !== 'unreachable' ? status : null;
+  const live = isLive(status) ? status : null;
   return (
     <>
       <h1>Overview</h1>
+      <section className="card about" data-testid="control-about">
+        <h2>What this cockpit is</h2>
+        <p>
+          munni control is the operator&apos;s view across environments, on the platform&apos;s shared stack beside GlitchTip, the vault
+          and pgAdmin. It signs in through one designated environment (<span className="cell-sub">{hostOf(apiUrl)}</span>) and only reads:
+          that environment&apos;s connector platform — which parties take work, their budgets, the agents online, the jobs in flight — and
+          the consents on munni&apos;s own accounts at the open-banking aggregators, which every environment shares.
+        </p>
+        <p>
+          Everything that changes something happens per environment: its lab (the parties&apos; kill switch, the agents, revoking a
+          consent, the test bench) and its admin portal (users, invitations, the people&apos;s bank connections).
+        </p>
+        <div className="chips">
+          <button type="button" data-testid="control-about-connectors" onClick={() => onOpen('connectors')}>
+            Connectors — the parties and their budget
+          </button>
+          <button type="button" data-testid="control-about-consents" onClick={() => onOpen('consents')}>
+            Bank consents — every environment&apos;s, in one list
+          </button>
+        </div>
+      </section>
       <div className="tiles" data-testid="control-tiles">
         <Tile label="Parties accepting work" value={live ? `${live.providers.filter((p) => p.acceptsWork).length} / ${live.providers.length}` : '—'} />
         <Tile label="Agents online" value={live ? `${live.agents.online} / ${live.agents.total}` : '—'} warn={!!live && live.agents.online === 0 && live.agents.total > 0} />
@@ -284,42 +318,16 @@ function OverviewScreen({ status, health }: Readonly<{ status: ConnectorsView; h
 const STATE_CHIP: Record<string, string> = { healthy: 'ok-chip', degraded: 'warn-chip', paused: 'warn-chip', retired: 'danger-chip' };
 
 /** the designated environment's connector control plane, read-only: the
- * parties' states and budgets, the fleet's liveness, and an aggregator's
- * inventory of consents per environment. Pausing, resuming, revoking stay
- * in the environment's own admin portal, like every other write. */
-function ConnectorsScreen({ status, call }: Readonly<{ status: ConnectorsView; call: (path: string) => Promise<Response> }>) {
-  // null = closed; 'loading'; 'none' = the party keeps no inventory; else its consents
-  const [inventory, setInventory] = useState<{ id: string; consents: RemoteConsent[] | 'loading' | 'none' } | null>(null);
-
-  const openInventory = async (providerId: string) => {
-    setInventory({ id: providerId, consents: 'loading' });
-    const res = await call(`/control/connectors/providers/${encodeURIComponent(providerId)}/remote-consents`).catch(() => null);
-    if (!res?.ok) {
-      setInventory({ id: providerId, consents: 'none' });
-      return;
-    }
-    setInventory({ id: providerId, consents: ((await res.json()) as { consents: RemoteConsent[] }).consents });
-  };
-
-  if (status === null || status === 'absent' || status === 'unreachable') {
-    const note = {
-      absent: 'The designated environment runs no connectors.',
-      unreachable: 'The designated environment’s control plane did not answer.',
-    };
-    return (
-      <>
-        <h1>Connectors</h1>
-        <section className="card" data-testid="control-connectors-note">
-          <p className="hint">{status === null ? 'loading…' : note[status]}</p>
-        </section>
-      </>
-    );
-  }
+ * parties' states and budgets and the fleet's liveness; an aggregator's
+ * row opens its consents. Pausing, resuming, revoking stay in the
+ * environment's own lab, like every other write. */
+function ConnectorsScreen({ status, onOpenConsents }: Readonly<{ status: ConnectorsView; onOpenConsents: (providerId: string) => void }>) {
+  if (!isLive(status)) return <ConnectorsNote title="Connectors" status={status} />;
   return (
     <>
       <h1>Connectors</h1>
       <p className="muted">
-        The designated environment&apos;s control plane, read-only. Pause, resume, retire and revoke from that environment&apos;s own admin portal.
+        The designated environment&apos;s control plane, read-only. Pause, resume and retire a party from that environment&apos;s lab.
       </p>
       <div className="tiles" data-testid="control-connectors-tiles">
         <Tile label="Parties accepting work" value={`${status.providers.filter((p) => p.acceptsWork).length} / ${status.providers.length}`} />
@@ -356,9 +364,12 @@ function ConnectorsScreen({ status, call }: Readonly<{ status: ConnectorsView; c
                 </td>
                 <td>{p.reasonKey ?? '—'}</td>
                 <td className="cell-actions">
-                  <button data-testid={`control-inventory-${p.providerId}`} className="btn" onClick={() => void openInventory(p.providerId)}>
-                    inventory
-                  </button>
+                  {/* #561: only a party with an account of munni's at an aggregator keeps an inventory — any other answered 400 */}
+                  {p.inventory && (
+                    <button data-testid={`control-consents-${p.providerId}`} className="btn" onClick={() => onOpenConsents(p.providerId)}>
+                      consents
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -370,73 +381,6 @@ function ConnectorsScreen({ status, call }: Readonly<{ status: ConnectorsView; c
           </tbody>
         </table>
       </section>
-
-      {inventory && (
-        <section className="card" data-testid={`control-inventory-panel-${inventory.id}`}>
-          <div className="card-head">
-            <h2>Inventory · {inventory.id} — all environments</h2>
-            <button className="btn" data-testid="control-inventory-close" onClick={() => setInventory(null)}>
-              close
-            </button>
-          </div>
-          <p className="hint">
-            Every consent on the party&apos;s account, grouped by the environment it was started from (its return origin). Read-only — revoke
-            a leftover from an environment&apos;s own admin portal.
-          </p>
-          {inventory.consents === 'loading' && <p className="hint">loading…</p>}
-          {inventory.consents === 'none' && (
-            <p className="hint" data-testid="control-inventory-none">
-              This party keeps no inventory (or the control plane did not answer).
-            </p>
-          )}
-          {Array.isArray(inventory.consents) && <InventoryGroups consents={inventory.consents} />}
-        </section>
-      )}
-    </>
-  );
-}
-
-function InventoryGroups({ consents }: Readonly<{ consents: RemoteConsent[] }>) {
-  const groups = groupByOrigin(consents);
-  if (groups.length === 0) {
-    return (
-      <p className="hint" data-testid="control-inventory-empty">
-        No consents on the party&apos;s account yet.
-      </p>
-    );
-  }
-  return (
-    <>
-      {groups.map(([origin, rows]) => (
-        <section className="card" key={origin} data-testid={`control-group-${origin}`}>
-          <h3>
-            {origin} · {rows.length} consent{rows.length === 1 ? '' : 's'} · {rows.reduce((sum, c) => sum + c.accountCount, 0)} accounts
-          </h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Institution</th>
-                <th>Status</th>
-                <th>Accounts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <div className="cell-title">{c.institutionId ?? '—'}</div>
-                    <div className="cell-sub">
-                      {c.id.slice(0, 13)}… · {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '—'}
-                    </div>
-                  </td>
-                  <td>{c.status}</td>
-                  <td>{c.accountCount} acct</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ))}
     </>
   );
 }

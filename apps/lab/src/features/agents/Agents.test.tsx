@@ -40,6 +40,13 @@ describe('Agents', () => {
     await waitFor(() => expect(screen.queryByTestId('agent-agt_kitchen')).toBeNull());
   });
 
+  it('#576: a machine enrolled for the lab says so — it is the one that takes the lab’s runs', async () => {
+    scriptFetch({ ...HAPPY(), 'GET /lab/agents': () => ({ body: { agents: [AGENTS.agents[0], { ...AGENTS.agents[1], lab: true }] } }) });
+    renderLab('#/agents');
+    expect((await screen.findByTestId('agent-agt_kitchen')).textContent).toContain('your lab machine');
+    expect(screen.getByTestId('agent-agt_fleet1').textContent).not.toContain('your lab machine');
+  });
+
   it('private slots: approve binds, take back asks and wipes; the section hides when the relay has no such route', async () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
     const calls = scriptFetch({

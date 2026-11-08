@@ -169,6 +169,15 @@ their Settings.
 
 ## Day-2
 
+- **Quick access** (#560), at the top of the page and a chip in the stepper:
+  every service of the picked platform with its address and an Open link —
+  the shared stack (GlitchTip, the vault, the control cockpit, pgAdmin) and per
+  environment the app, the admin portal, the lab, the API with its health and
+  its docs (`/scalar`), the connector control plane, Logto and its console.
+  The helper derives the list from the stack config (`GET /api/services`,
+  `stackServices` in `modules/stack.mjs`), so a new host appears by itself; a
+  dot says whether it answers (this computer: the helper's probe; the NAS:
+  the outside-in probe). Filter shared/environments, or search.
 - Every push to dev builds `dev` images and deploys the `dev`-channel
   environments; every release (master) builds `latest` and deploys the
   `latest`-channel ones.

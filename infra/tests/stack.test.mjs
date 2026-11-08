@@ -11,9 +11,23 @@ const fx = scratchPlatforms();
 const {
   ENV_NAME_RE, PORT_SLOT, SHARED_PORTS, envPorts, stackName, parseStackName, lanHost, listPlatforms, loadPlatform, savePlatform,
   platformEnvs, loadEnv, nextSlot, saveEnv, removeEnv, listStacks, hostsFor, platformDomain, loadStack, sharedOf, platformEnvStacks,
-  loadAutonomy, saveAutonomy, AUTONOMY_DEFAULTS,
+  loadAutonomy, saveAutonomy, AUTONOMY_DEFAULTS, stackServices,
 } = await import('../modules/stack.mjs');
 test.after(() => fx.cleanup());
+
+test('services (#560): every host of a stack becomes a named service with the page to open; the api adds its docs; a host the names do not know keeps its key', () => {
+  const prod = loadStack('munni-nas-prod');
+  const services = stackServices(prod);
+  assert.deepEqual(services.map((s) => s.key), ['web', 'admin', 'api', 'apiDocs', 'lab', 'connector', 'logto', 'logtoAdmin'].filter((k) => k !== 'connector' || prod.urls.connector));
+  const byKey = Object.fromEntries(services.map((s) => [s.key, s]));
+  assert.equal(byKey.web.url, `https://munni-prod-nas.${DOMAIN}`);
+  assert.equal(byKey.api.url, `https://munni-prod-nas-api.${DOMAIN}/health`);
+  assert.equal(byKey.apiDocs.url, `https://munni-prod-nas-api.${DOMAIN}/scalar`);
+  assert.equal(byKey.logto.url, `https://munni-prod-nas-logto.${DOMAIN}/oidc/.well-known/openid-configuration`);
+  assert.equal(byKey.logtoAdmin.name, 'Logto console');
+  assert.deepEqual(stackServices(loadStack('munni-nas-shared')).map((s) => s.name), ['GlitchTip', 'Vault', 'Control cockpit', 'pgAdmin']);
+  assert.deepEqual(stackServices({ urls: { mailpit: 'http://localhost:8025' } }), [{ key: 'mailpit', name: 'mailpit', what: '', url: 'http://localhost:8025' }]);
+});
 
 test('listStacks: per platform the shared stack first, then its environments by slot', () => {
   assert.deepEqual(listStacks(), ['munni-lcl-shared', 'munni-lcl-prod', 'munni-lcl-dev', 'munni-nas-shared', 'munni-nas-prod', 'munni-nas-staging']);

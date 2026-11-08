@@ -110,6 +110,8 @@ export interface AgentView {
   profiles: ProfileView[];
   /** a hosted private slot (#420 A2): munni's own container for one person at a time */
   hosted?: boolean;
+  /** enrolled for the operator's own lab: it takes the lab's runs beside the fleet (#576) */
+  lab?: boolean;
   bound?: boolean;
   boundAt?: string | null;
   resetting?: boolean;

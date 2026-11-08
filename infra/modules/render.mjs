@@ -154,6 +154,7 @@ ${local ? `
       MUNNI_LOGTO_ENDPOINT: ${control?.urls.logto ?? ''}
       MUNNI_LOGTO_APP_ID: \${CONTROL_LOGTO_APP_ID}
       MUNNI_LOGTO_RESOURCE: ${control?.urls.api ?? ''}
+      MUNNI_LAB_URL: ${control?.urls.lab ?? ''}
     ports:
       - "${p.control}:80"
 
