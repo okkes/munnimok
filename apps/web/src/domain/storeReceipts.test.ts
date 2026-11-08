@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { bestMatch, candidateLadder, matchCandidates, parseReceiptText, setCatalogStorePatterns } from './storeReceipts';
+import { bestMatch, candidateLadder, expensesByCost, matchCandidates, parseReceiptText, setCatalogStorePatterns } from './storeReceipts';
 import type { MatchableReceipt } from './storeReceipts';
 import type { TxView } from '@/db/types';
 
@@ -35,6 +35,28 @@ describe('receipt ↔ transaction matching', () => {
     expect(ids).toContain('near-amount');
     expect(ids).not.toContain('wrong-amount');
     expect(ids).not.toContain('wrong-date');
+  });
+
+  it('the cost lookup hands a receipt exactly the payments the amount rule lets through', () => {
+    const txs = [
+      tx({ id: 'exact' }),
+      tx({ id: 'two-up', amountCents: -2352 }),
+      tx({ id: 'two-down', amountCents: -2348 }),
+      tx({ id: 'three-up', amountCents: -2353 }),
+      tx({ id: 'other-day', date: '2026-01-01' }), // the date rule is matchCandidates' to apply
+      tx({ id: 'income', amountCents: 2350, txType: 'income' }),
+      tx({ id: 'gone', deleted: 1 }),
+      tx({ id: 'moved', txType: 'transfer' }),
+    ];
+    const near = expensesByCost(txs);
+    expect(near(2350).map((t) => t.id).sort()).toEqual(['exact', 'other-day', 'two-down', 'two-up']);
+    // the same rows the full walk admits, for any total
+    for (const totalCents of [2347, 2350.5, 2355, 10]) {
+      const walked = txs.filter((t) => t.deleted === 0 && t.txType === 'expense' && Math.abs(-t.amountCents - totalCents) <= 2);
+      expect(near(totalCents).map((t) => t.id).sort(), String(totalCents)).toEqual(walked.map((t) => t.id).sort());
+    }
+    // and the winner is the one the walk finds
+    expect(bestMatch(receipt, near(receipt.totalCents), new Set())).toBe(bestMatch(receipt, txs, new Set()));
   });
 
   it('auto-attaches only an unambiguous winner', () => {

@@ -24,11 +24,13 @@ interface CapacitorGlobal {
     };
     /** the in-app browser (Capacitor Browser): closes on iOS, a no-op on Android */
     Browser?: {
+      open?: (options: { url: string }) => Promise<void>;
       close?: () => Promise<void>;
     };
     PushNotifications?: CapacitorPluginListener & {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
+      removeAllDeliveredNotifications?: () => Promise<void>;
     };
     StatusBar?: {
       setStyle?: (options: { style: 'LIGHT' | 'DARK' }) => Promise<void>;
@@ -231,11 +233,12 @@ export async function getNativeAppBuild(): Promise<number | null> {
  * Native camera capture: the webview's <input capture> path crashes on
  * iOS and offers gallery-only on Android (user report), so the shells
  * use the Camera plugin instead. 'CAMERA' opens the camera directly
- * (receipts); 'PROMPT' shows the OS Camera-or-Photos chooser (#166 —
- * the generic upload sites). Returns a File ready for the existing
- * attach pipeline, or null when cancelled/unavailable.
+ * (receipts); 'PHOTOS' the photo library (#496: a receipt picture already
+ * taken); 'PROMPT' shows the OS Camera-or-Photos chooser (#166 — the
+ * generic upload sites). Returns a File ready for the existing attach
+ * pipeline, or null when cancelled/unavailable.
  */
-export async function takeNativePhoto(source: 'CAMERA' | 'PROMPT' = 'CAMERA'): Promise<File | null> {
+export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' | 'PROMPT' = 'CAMERA'): Promise<File | null> {
   const camera = capacitor()?.Plugins?.Camera;
   if (!isNativeApp() || !camera?.getPhoto) return null;
   try {
@@ -349,6 +352,22 @@ export async function shareNativeFile(fileName: string, content: string): Promis
 }
 
 /**
+ * #506: a page outside the app — the shells show it in the in-app browser
+ * (a `_blank` window renders blank in the webview), the web in a new tab.
+ */
+export function openExternal(url: string): void {
+  const browser = capacitor()?.Plugins?.Browser;
+  if (isNativeApp() && browser?.open) {
+    void browser.open({ url }).catch(() => undefined);
+    return;
+  }
+  globalThis.open(url, '_blank', 'noopener');
+}
+
+/** #506: the web search a vague bank title gets looked up with */
+export const webSearchUrl = (query: string): string => `https://www.google.com/search?q=${encodeURIComponent(query.trim())}`;
+
+/**
  * Notification taps (§5): the shell's push plugin reports the tapped
  * notification; the payload rides FCM's data field as a JSON string.
  * The callback receives it parsed — pwa.ts routes it through the same
@@ -368,4 +387,12 @@ export function onNativePushTap(callback: (payload: unknown) => void): void {
       }
     },
   );
+}
+
+/** #580: takes munni's notifications off the phone's notification centre; false outside the shell (or an older one) */
+export async function clearNativeDeliveredNotifications(): Promise<boolean> {
+  const push = capacitor()?.Plugins?.PushNotifications;
+  if (!isNativeApp() || !push?.removeAllDeliveredNotifications) return false;
+  await push.removeAllDeliveredNotifications().catch(() => undefined);
+  return true;
 }

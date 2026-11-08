@@ -159,14 +159,28 @@ async function attachableRows(store: StorageBackend, spaceId: string, feedId: st
   return rows;
 }
 
-/** per global receipt, the transactions its link in the space is attached to (an attached link only) */
-async function attachedTxIds(store: StorageBackend, spaceId: string): Promise<Map<string, string[]>> {
+/** what the space's links say about its receipts: where each is attached, which transactions it was taken off or
+ *  turned down for (#496), and every transaction that holds a receipt at all — a photo's included */
+async function linkFacts(
+  store: StorageBackend,
+  spaceId: string,
+): Promise<{ attachedTo: Map<string, string[]>; rejectedFor: Map<string, string[]>; heldTxIds: Set<string> }> {
   const attachedTo = new Map<string, string[]>();
+  const rejectedFor = new Map<string, string[]>();
+  const heldTxIds = new Set<string>();
   for (const link of await store.bySpace('receiptLink', spaceId)) {
-    if (link.deleted === 0 && link.receiptId && link.txId) attachedTo.set(link.receiptId, linkedTxIds(link));
+    if (link.deleted !== 0) continue;
+    const held = linkedTxIds(link);
+    for (const txId of held) heldTxIds.add(txId);
+    if (!link.receiptId) continue;
+    if (held.length > 0) attachedTo.set(link.receiptId, held);
+    if (link.rejectedTxIds?.length) rejectedFor.set(link.receiptId, link.rejectedTxIds);
   }
-  return attachedTo;
+  return { attachedTo, rejectedFor, heldTxIds };
 }
+
+/** per global receipt, the transactions its link in the space is attached to (an attached link only) */
+const attachedTxIds = async (store: StorageBackend, spaceId: string): Promise<Map<string, string[]>> => (await linkFacts(store, spaceId)).attachedTo;
 
 /**
  * Owner view: global receipts of connections included in the active
@@ -192,6 +206,10 @@ export interface AttachableReceipts {
   rows: ReceiptRow[];
   /** the transactions each receipt is attached to in this space, by receipt id — absent = not attached */
   attachedTo: Map<string, string[]>;
+  /** #496: the transactions each receipt was taken off or turned down for — never suggested there again */
+  rejectedFor: Map<string, string[]>;
+  /** every transaction in the space that holds a receipt, a photo's included */
+  heldTxIds: Set<string>;
 }
 
 /**
@@ -205,12 +223,19 @@ export function useAttachableReceipts(): AttachableReceipts | undefined {
   return useQuery(
     store,
     async () => {
+      const facts = await linkFacts(store, spaceId);
       const feedId = myStoreFeedId();
-      if (!feedId) return { rows: [], attachedTo: new Map<string, string[]>() };
-      return { rows: await attachableRows(store, spaceId, feedId), attachedTo: await attachedTxIds(store, spaceId) };
+      return { rows: feedId ? await attachableRows(store, spaceId, feedId) : [], ...facts };
     },
     [spaceId],
   );
+}
+
+/** #565: the same inventory outside a screen — the review's suggestion pass reads it when rows land */
+export async function attachableReceiptsOf(store: StorageBackend, spaceId: string): Promise<AttachableReceipts> {
+  const facts = await linkFacts(store, spaceId);
+  const feedId = myStoreFeedId();
+  return { rows: feedId ? await attachableRows(store, spaceId, feedId) : [], ...facts };
 }
 
 /** every receipt the shops handed over, newest first — the hub's own list, no space in between */
@@ -266,19 +291,36 @@ async function receiptRanges(store: StorageBackend, ranges: Record<string, Fetch
   }
 }
 
-/** a bank's transactions through the accounts it handed over, credited to every connection of that party */
+/** where a fetched account's own range sits in the ranges map, beside the connections' */
+export const accountRangeKey = (accountId: string): string => `account:${accountId}`;
+
+/**
+ * A party's transactions by the account they sit on — a card then adds up
+ * the accounts its own connection fetches (#524: crediting every connection
+ * of the party with every account it fed put the ING and ASN history under
+ * the PayPal connection).
+ */
 async function bankRanges(store: StorageBackend, ranges: Record<string, FetchedRange>): Promise<void> {
-  const banks = (await store.allRows('storeConn')).filter((c) => c.deleted === 0 && c.kind === 'bank');
-  if (banks.length === 0) return;
-  const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector' && a.provider);
+  const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector');
   for (const feed of new Set(accounts.map((a) => a.spaceId))) {
-    const byAccount = new Map(accounts.filter((a) => a.spaceId === feed).map((a) => [a.id, a.provider]));
+    const ids = new Set(accounts.filter((a) => a.spaceId === feed).map((a) => a.id));
     for (const tx of await store.bySpace('transaction', feed)) {
-      const provider = tx.deleted === 0 ? byAccount.get(tx.accountId) : undefined;
-      if (!provider) continue;
-      for (const bank of banks.filter((b) => b.store === provider)) widen(ranges, bank.id, tx.date);
+      if (tx.deleted === 0 && ids.has(tx.accountId)) widen(ranges, accountRangeKey(tx.accountId), tx.date);
     }
   }
+}
+
+/** the range of several accounts together: a bank connection's, from the accounts it fetches */
+export function mergedRange(ranges: Readonly<Record<string, FetchedRange>> | undefined, accountIds: readonly string[]): FetchedRange | undefined {
+  let merged: FetchedRange | undefined;
+  for (const id of accountIds) {
+    const range = ranges?.[accountRangeKey(id)];
+    if (!range) continue;
+    merged = merged
+      ? { count: merged.count + range.count, from: range.from < merged.from ? range.from : merged.from, to: range.to > merged.to ? range.to : merged.to }
+      : { ...range };
+  }
+  return merged;
 }
 
 export function useFetchedRanges(): Record<string, FetchedRange> | undefined {
@@ -414,8 +456,9 @@ export function useConnectionOps(): ConnectionOps {
       if (!meta || !displayName.trim()) return;
       await repo.upsert('storeConn', meta.spaceId, connectionId, { displayName: displayName.trim() });
       // members render the snapshot on the link rows — keep them current
+      // (#505: the connection is the person's; a space they only read keeps its snapshot)
       for (const link of await allLinksOf(connectionId)) {
-        await repo.upsert('storeConnLink', link.spaceId, link.id, { displayName: displayName.trim() });
+        await repo.upkeep().upsert('storeConnLink', link.spaceId, link.id, { displayName: displayName.trim() });
       }
       void logActivity(storage, repo, spaceId, 'storeEdit', displayName.trim());
     },
@@ -424,7 +467,7 @@ export function useConnectionOps(): ConnectionOps {
       if (!meta) return;
       await repo.upsert('storeConn', meta.spaceId, connectionId, { icon: icon ?? (null as never) });
       for (const link of await allLinksOf(connectionId)) {
-        await repo.upsert('storeConnLink', link.spaceId, link.id, { icon: icon ?? (null as never) });
+        await repo.upkeep().upsert('storeConnLink', link.spaceId, link.id, { icon: icon ?? (null as never) });
       }
       void logActivity(storage, repo, spaceId, 'storeEdit', meta.displayName);
     },
@@ -457,7 +500,7 @@ export function useConnectionOps(): ConnectionOps {
         await repo.remove('storeConn', meta.spaceId, connectionId);
       }
       for (const link of await allLinksOf(connectionId)) {
-        await repo.remove('storeConnLink', link.spaceId, link.id);
+        await repo.upkeep().remove('storeConnLink', link.spaceId, link.id);
       }
       await forgetConnection(storage, connectionId);
       void removeConnectionCipher(storage, connectionId).catch(() => undefined);
@@ -494,6 +537,7 @@ export function useConnectionOps(): ConnectionOps {
         void logActivity(storage, repo, id, 'storeAttach', meta.displayName);
       }
       for (const link of current.filter((l) => !spaceIds.includes(l.spaceId))) {
+        if (!repo.canWrite(link.spaceId)) continue; // #505: a space they only read keeps its link
         await repo.remove('storeConnLink', link.spaceId, link.id);
         void logActivity(storage, repo, link.spaceId, 'storeDetach', meta.displayName);
       }

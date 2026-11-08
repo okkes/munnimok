@@ -355,6 +355,102 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('tx-detail-event-row').textContent).toContain('None'));
   }, 20_000);
 
+  it('#570 (user): an event without dates takes transactions from the whole list — looked at first, picked across searches', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Wedding gifts');
+    fireEvent.click(card);
+    await screen.findByTestId('eventdetail-hero');
+    // no dates: no date-range review, the Add door stands anyway
+    expect(screen.queryByTestId('eventdetail-suggest')).toBeNull();
+    fireEvent.click(screen.getByTestId('eventdetail-add'));
+    await screen.findByTestId('eventpick-list');
+    // nothing starts selected in the add list
+    expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
+
+    // a tap on a row looks at it; the peek picks it
+    fireEvent.change(screen.getByTestId('eventpick-search'), { target: { value: 'Netflix' } });
+    await waitFor(() => expect(screen.queryByTestId('eventpick-dm2')).toBeNull());
+    fireEvent.click(await screen.findByTestId('tx-row-dm5'));
+    expect((await screen.findByTestId('tx-peek')).textContent).toContain('13.99');
+    fireEvent.click(screen.getByTestId('eventpick-peek-toggle'));
+    await waitFor(() => expect(screen.getByTestId('eventpick-dm5').getAttribute('aria-pressed')).toBe('true'));
+
+    // another search: the first pick stays picked while it is out of sight
+    fireEvent.change(screen.getByTestId('eventpick-search'), { target: { value: 'Spotify' } });
+    fireEvent.click(await screen.findByTestId('eventpick-dm4'));
+    await waitFor(() => expect(screen.getByTestId('eventpick-attach').textContent).toContain('2'));
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
+    const txs = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
+    await waitFor(() => {
+      expect(txs.querySelector('[data-testid="tx-row-dm4"]')).toBeTruthy();
+      expect(txs.querySelector('[data-testid="tx-row-dm5"]')).toBeTruthy();
+    });
+  }, 30_000);
+
+  it('#537 (user): event pickers label archived events after the active ones and let one be peeked at first', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-537'), { trackOutbox: false });
+    await repo.upsert('event', DEMO_SPACE_ID, 'ev-live', { name: 'Madeira', from: '2026-05-01', to: '2026-05-08' });
+    await repo.upsert('event', DEMO_SPACE_ID, 'ev-old', { name: 'Hotel Les Sorbiers', note: 'Mini honeymoon part 2', archived: 1 });
+    db.close();
+    cleanup();
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-event-row'));
+    const list = await screen.findByTestId('tx-event-list');
+    // the archived one says so, and sits after the active one
+    await screen.findByTestId('tx-event-ev-old-archived');
+    expect(screen.queryByTestId('tx-event-ev-live-archived')).toBeNull();
+    const rows = [...list.querySelectorAll('[data-testid$="-row"]')].map((el) => el.getAttribute('data-testid'));
+    expect(rows.indexOf('tx-event-ev-live-row')).toBeLessThan(rows.indexOf('tx-event-ev-old-row'));
+    // a peek unfolds the event without choosing it
+    fireEvent.click(screen.getByTestId('tx-event-ev-old-peek'));
+    expect((await screen.findByTestId('tx-event-ev-old-preview')).textContent).toContain('Mini honeymoon part 2');
+    expect(screen.getByTestId('tx-detail-event-row').textContent).not.toContain('Les Sorbiers');
+    // choosing it files the transaction under it
+    fireEvent.click(screen.getByTestId('tx-event-ev-old'));
+    await waitFor(() => expect(screen.getByTestId('tx-detail-event-row').textContent).toContain('Les Sorbiers'));
+  }, 20_000);
+
+  it('#493 (user ss): a paid-back expense and the credit that paid it read as settled in the event', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-493'), { trackOutbox: false });
+    await repo.upsert('event', DEMO_SPACE_ID, 'ev493', { name: 'Hôtel Les Sorbiers' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'hotel493', {
+      accountId: 'demo_main', date: isoDaysAgo(20), amountCents: -10_100, currency: 'EUR', merchant: 'Les Sorbiers',
+      catId: 'expenseReimburse', needsReview: 0, eventId: 'ev493', reimbursements: [{ txId: 'back493', amountCents: 10_100 }],
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'back493', {
+      accountId: 'demo_main', date: isoDaysAgo(21), amountCents: 10_100, currency: 'EUR', merchant: 'O. Doker e/o E. Kaymazlar',
+      catId: 'reimburse', needsReview: 0, eventId: 'ev493',
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'fuel493', {
+      accountId: 'demo_main', date: isoDaysAgo(19), amountCents: -976, currency: 'EUR', merchant: 'Shell',
+      catId: 'transport', needsReview: 0, eventId: 'ev493',
+    });
+    db.close();
+    cleanup();
+    renderApp('/events/ev493');
+    const txs = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
+    // the credit nets out what it paid back — struck through like the expense it settled
+    const credit = await waitFor(() => {
+      const el = txs.querySelector('[data-testid="tx-row-back493"]');
+      expect(el?.querySelector('.line-through')?.textContent).toMatch(/101[.,]00/);
+      return el!;
+    }, { timeout: 8000 });
+    expect(credit.textContent).toMatch(/€0[.,]00/);
+    // the event cost only the fuel: no Reimbursement line, nothing received
+    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/9[.,]76/));
+    expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/101/);
+    expect(screen.queryByTestId('eventdetail-flows')).toBeNull();
+    // the settled expense no longer reads "expected"
+    expect(txs.querySelector('[data-testid="tx-row-hotel493"]')?.textContent).toContain('Reimbursed');
+  }, 20_000);
+
   it('settings row reaches events; archiving dims the card', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');

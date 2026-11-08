@@ -33,6 +33,11 @@ export interface MerchantStats {
   catId: string;
   /** money direction this stat was learned from (refunds ≠ purchases) */
   sign: 1 | -1;
+  /** #564: the ledger it was learned on — a savings, loan or brokerage
+   *  account's own rows (their stamp) read the movement from the pot's
+   *  side, so they never teach an ordinary account's rows; absent = an
+   *  ordinary account */
+  ledger?: string;
   count: number;
   /** recency-decayed vote mass (#161) — the winner has the most */
   weight: number;
@@ -58,6 +63,8 @@ export interface MemoryInput {
   /** the row's category spread — only complete pct partitions teach */
   cats?: TxSplitCat[];
   eventId?: string;
+  /** #564: the stamp of the account the row sits on (absent = ordinary) */
+  ledger?: string;
 }
 
 /** a spread teaches only when EVERY entry is percentage-based — absolute
@@ -96,9 +103,19 @@ export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string
     if (!key) continue;
     const sign: 1 | -1 = row.amountCents >= 0 ? 1 : -1;
     const stats = memory.get(key) ?? [];
-    let entry = stats.find((s) => s.catId === row.catId && s.sign === sign);
+    let entry = stats.find((s) => s.catId === row.catId && s.sign === sign && s.ledger === row.ledger);
     if (!entry) {
-      entry = { catId: row.catId, sign, count: 0, weight: 0, lastDate: row.date, amounts: [], spreadCount: 0, eventVotes: new Map() };
+      entry = {
+        catId: row.catId,
+        sign,
+        ...(row.ledger ? { ledger: row.ledger } : {}),
+        count: 0,
+        weight: 0,
+        lastDate: row.date,
+        amounts: [],
+        spreadCount: 0,
+        eventVotes: new Map(),
+      };
       stats.push(entry);
     }
     absorbRow(entry, row, decayedWeight(row.date, now));
@@ -140,11 +157,11 @@ function hitFrom(stat: MerchantStats, amountMatch: boolean): MemoryHit {
   return { catId: stat.catId, evidence: stat.count, amountMatch, cats, eventId };
 }
 
-export function predictFromMemory(memory: MerchantMemory, merchant: string, amountCents: number): MemoryHit | null {
+export function predictFromMemory(memory: MerchantMemory, merchant: string, amountCents: number, ledger?: string): MemoryHit | null {
   const stats = memory.get(merchantKey(merchant));
   if (!stats?.length) return null;
   const sign: 1 | -1 = amountCents >= 0 ? 1 : -1;
-  const sameSide = stats.filter((s) => s.sign === sign);
+  const sameSide = stats.filter((s) => s.sign === sign && s.ledger === ledger);
   if (sameSide.length === 0) return null;
 
   const abs = Math.abs(amountCents);

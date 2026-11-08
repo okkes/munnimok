@@ -93,7 +93,8 @@ describe('activity history', () => {
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-save'));
-    await waitFor(() => expect(screen.getByTestId('tx-list').textContent).toContain('Bakery'));
+    // #348: the save opens the new transaction's own page
+    await waitFor(() => expect(screen.getByTestId('screen-tx-detail').textContent).toContain('Bakery'));
 
     fireEvent.click(screen.getAllByTestId('tab-home')[0]);
     await screen.findByTestId('screen-home');

@@ -1,3 +1,6 @@
+import type { AttachableReceipts } from '@/application/connections';
+import type { ReceiptEntry } from '@/application/receiptLinks';
+import type { ReceiptOps } from '@/application/receipts';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 import { LOCALES } from '@/i18n';
@@ -23,6 +26,50 @@ export function rankForTx(tx: Pick<SpaceTx, 'date' | 'amountCents'>, receipts: r
     if (amountGap !== 0) return amountGap;
     return dayDiff(a.date, tx.date) - dayDiff(b.date, tx.date);
   });
+}
+
+/** how many receipts a picker suggests when nothing is attached (#542: "3 or something") */
+export const SUGGESTION_LIMIT = 3;
+
+/**
+ * The unmatched receipts that could prove this transaction, best first —
+ * never one attached anywhere in the space, the one a proposal already asks
+ * about (`excludeId`), nor one the person took off or turned down for this
+ * very transaction (#496).
+ */
+export function candidatesFor(
+  tx: Pick<SpaceTx, 'id' | 'date' | 'amountCents'>,
+  inventory: AttachableReceipts | undefined,
+  excludeId?: string,
+): ReceiptRow[] {
+  if (!inventory) return [];
+  const open = inventory.rows.filter(
+    (row) => !inventory.attachedTo.has(row.id) && row.id !== excludeId && !inventory.rejectedFor.get(row.id)?.includes(tx.id),
+  );
+  return rankForTx(tx, open);
+}
+
+/** the picker's suggestions: the attached receipt first and one more (#496), else the best three (#542) */
+export function suggestionsFor(attached: ReceiptRow | null | undefined, candidates: readonly ReceiptRow[]): ReceiptRow[] {
+  if (!attached) return candidates.slice(0, SUGGESTION_LIMIT);
+  return [attached, ...candidates.filter((row) => row.id !== attached.id).slice(0, 1)];
+}
+
+/** the attached receipt lets go of THIS transaction: a photo nobody else holds is gone for good, a store receipt
+ *  nobody else holds is unattached again (user 2026-10-08) and never offered to it again (#496) */
+export async function dropAttached(ops: ReceiptOps, attached: ReceiptEntry, txId: string): Promise<void> {
+  if (!attached.linkId) return;
+  if (attached.data.source === 'photo') await ops.remove(attached.linkId, txId);
+  else await ops.unlinkReceipt(attached.linkId, txId);
+}
+
+/** a pick for a transaction: a receipt attaches (in the attached one's place when there is one; one attached
+ *  elsewhere is attached here as well — user 2026-10-08), none lets the attached one go */
+export async function applyPick(ops: ReceiptOps, txId: string, attached: ReceiptEntry | null, row: ReceiptRow | null): Promise<void> {
+  if (row?.id === attached?.data.id) return; // the attached one again, or none with nothing attached
+  if (row && attached?.linkId) await ops.swapReceipt(attached.linkId, row, txId);
+  else if (row) await ops.linkReceipt(row, txId);
+  else if (attached) await dropAttached(ops, attached, txId);
 }
 
 /**
@@ -70,12 +117,15 @@ function receiptMatches(receipt: ReceiptRow, q: string, amountQ: string | null):
   return !!amountQ && String(Math.abs(receipt.totalCents)).includes(amountQ);
 }
 
-/** every receipt the sheet lists: narrowed by a party and by text, newest first */
-export function filterReceipts(rows: readonly ReceiptRow[], query: string, source: string | null): ReceiptRow[] {
+/** the sheet's narrowing as a test on one receipt: a party, and text over names, items and the amount's digits */
+export function receiptFilter(query: string, source: string | null): (row: ReceiptRow) => boolean {
   const q = query.trim().toLowerCase();
   const digits = q.replaceAll(/[\s.,€+-]/g, '');
   const amountQ = /^\d+$/.test(digits) && digits.length > 0 ? digits : null;
-  return rows
-    .filter((row) => (source === null || row.source === source) && (!q || receiptMatches(row, q, amountQ)))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  return (row) => (source === null || row.source === source) && (!q || receiptMatches(row, q, amountQ));
+}
+
+/** every receipt the sheet lists: narrowed by a party and by text, newest first */
+export function filterReceipts(rows: readonly ReceiptRow[], query: string, source: string | null): ReceiptRow[] {
+  return rows.filter(receiptFilter(query, source)).sort((a, b) => b.date.localeCompare(a.date));
 }

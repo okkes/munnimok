@@ -1,4 +1,4 @@
-import type { BudgetRow, SpacePeriodType, TxView, WeekStart } from '@/db/types';
+import type { BudgetRow, SpacePeriodType, TxSplit, TxView, WeekStart } from '@/db/types';
 import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
 import { nextPeriod } from './periods';
@@ -139,6 +139,36 @@ export function budgetSpentCents(
     }
   }
   return total;
+}
+
+/** one line of a budget's payments: the transaction, the split part the
+ *  money came from (a split's family parts are lines of their own), and
+ *  what it puts into the budget (positive = spent, a refund negative) */
+export interface BudgetPayment {
+  tx: TxView;
+  part?: TxSplit;
+  spentCents: number;
+}
+
+/** #579: the payments behind budgetSpentCents, newest first — the same
+ *  slices it counts, so a split whose part is in the budget is listed
+ *  even when the rest of the payment belongs elsewhere */
+export function budgetPayments(
+  txs: readonly TxView[],
+  family: ReadonlySet<string>,
+  period: Period,
+): BudgetPayment[] {
+  const out: BudgetPayment[] = [];
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || tx.date < period.start || tx.date > period.end) continue;
+    const counted = txSliceViews(tx).filter((view) => view.effType === 'expense' && family.has(view.catId ?? ''));
+    const byPart = new Map<TxSplit | undefined, number>();
+    for (const view of counted) {
+      byPart.set(view.part, (byPart.get(view.part) ?? 0) + (view.fromParts ? Math.abs(view.amountCents) : -view.amountCents));
+    }
+    for (const [part, spentCents] of byPart) out.push({ tx, ...(part ? { part } : {}), spentCents });
+  }
+  return out.sort((a, b) => b.tx.date.localeCompare(a.tx.date));
 }
 
 /**

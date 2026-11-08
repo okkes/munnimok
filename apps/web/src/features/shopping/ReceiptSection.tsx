@@ -1,45 +1,22 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
-import { useLgViewport } from '@/lib/viewport';
 import { useReceiptOps } from '@/application/receipts';
-import type { ReceiptOps } from '@/application/receipts';
 import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
-import type { ReceiptEntry } from '@/application/receiptLinks';
 import { useAttachableReceipts } from '@/application/connections';
 import { useSpaceTransactions } from '@/application/transactions';
 import { partyName } from '@/features/connectors/logos';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
-import { isNativeApp, takeNativePhoto } from '@/lib/platform';
-import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
-import { ReceiptPeekSheet } from './ReceiptPeekSheet';
+import { ReceiptCaptureRungs } from './ReceiptCapture';
 import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
-import { attachedElsewhere, describeTxFor, rankForTx } from './receiptPick';
+import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, dropAttached, suggestionsFor } from './receiptPick';
 
 // the ranking lives in receiptPick.ts (user 2026-10-07: the review's helpers
 // share it without importing this component); its old door stays open
-export { rankForTx };
-
-/** the attached receipt lets go of THIS transaction: a photo nobody else holds is gone for good, a store receipt
- *  nobody else holds is unmatched again — another transaction holding it keeps it (user 2026-10-08) */
-async function dropAttached(ops: ReceiptOps, attached: ReceiptEntry, txId: string): Promise<void> {
-  if (!attached.linkId) return;
-  if (attached.data.source === 'photo') await ops.remove(attached.linkId, txId);
-  else await ops.unlinkReceipt(attached.linkId, txId);
-}
-
-/** what a tap in the sheet does: a receipt attaches (in the attached one's place when there is one; one attached
- *  elsewhere is attached here as well — user 2026-10-08), None lets it go */
-async function applyPick(ops: ReceiptOps, txId: string, attached: ReceiptEntry | null, row: ReceiptRow | null): Promise<void> {
-  if (row?.id === attached?.data.id) return; // the attached one again, or None with nothing attached: nothing changes
-  if (row && attached?.linkId) await ops.swapReceipt(attached.linkId, row, txId);
-  else if (row) await ops.linkReceipt(row, txId);
-  else if (attached) await dropAttached(ops, attached, txId);
-}
+export { rankForTx } from './receiptPick';
 
 /** the attached receipt (user 2026-10-07: "see which one is attached and change it"):
  *  the card opens it, Change opens the picker with it marked */
@@ -75,40 +52,6 @@ function AttachedReceiptCard({
   );
 }
 
-/** the sheet's own rungs under the suggestions: capture or upload, the desktop webcam (#160), the stores door */
-function AttachRungs({
-  busy,
-  webcam,
-  onTakePhoto,
-  onWebcam,
-  onConnections,
-}: Readonly<{ busy: boolean; webcam: boolean; onTakePhoto: () => void; onWebcam: () => void; onConnections: () => void }>) {
-  const { t } = useLang();
-  const panes = useLgViewport();
-  return (
-    <>
-      <Button variant="outline" className="w-full" data-testid="receipt-take-photo" disabled={busy} onClick={onTakePhoto}>
-        <Icon name={panes ? 'upload-outline' : 'camera-outline'} size={16} />
-        {panes ? t('receipt.upload') : t('receipt.takePhoto')}
-      </Button>
-      {/* #160: desktop webcam snapshot — same attach path as a file */}
-      {webcam && (
-        <Button variant="outline" className="w-full" data-testid="receipt-webcam" disabled={busy} onClick={onWebcam}>
-          <Icon name="camera-outline" size={16} />
-          {t('webcam.use')}
-        </Button>
-      )}
-      <button
-        data-testid="receipt-connections"
-        onClick={onConnections}
-        className="m-tap border-none bg-transparent py-1 text-center text-[12px] font-medium text-accent-deep"
-      >
-        {t('conn.title')}
-      </button>
-    </>
-  );
-}
-
 /**
  * The transaction's line-item proof (receipts v3, R8 redesign): the
  * empty state opens ONE attach sheet — best-matching unlinked store
@@ -125,17 +68,8 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const txs = useSpaceTransactions();
   const proposals = useProposedMatches();
   const receiptOps = useReceiptOps();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [attachOpen, setAttachOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // user 2026-10-09: the eye peeks at a receipt in a sheet OVER the picker, so the search, the chips and the
-  // scroll position stay; the receipt outlives the close flag so the sheet never empties mid-slide
-  const [peeked, setPeeked] = useState<ReceiptRow | null>(null);
-  const [peekOpen, setPeekOpen] = useState(false);
-  // #160: desktop-only webcam rung under the upload button (hooks stay
-  // above the `entry === undefined` early return)
-  const webcamDoor = useWebcamDoor();
-  const [webcamOpen, setWebcamOpen] = useState(false);
 
   const receipt = entry?.data ?? null;
   // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
@@ -145,28 +79,14 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const others = useMemo(() => (attachable?.rows ?? []).filter((r) => r.id !== receipt?.id), [attachable, receipt?.id]);
   // the suggestions: the unmatched receipts that fit; the proposal's receipt asks on its own card, not among them
   // (the review's rule)
-  const candidates = useMemo(
-    () => rankForTx(tx, others.filter((r) => !attachable?.attachedTo.has(r.id) && r.id !== proposal?.receiptId)).slice(0, 6),
-    [tx, others, attachable, proposal?.receiptId],
-  );
+  const candidates = useMemo(() => candidatesFor(tx, attachable, proposal?.receiptId), [tx, attachable, proposal?.receiptId]);
   const elsewhere = useMemo(() => attachedElsewhere(attachable?.attachedTo, tx.id), [attachable, tx.id]);
   const describeTx = useMemo(() => describeTxFor(txs, lang, tx.currency), [txs, lang, tx.currency]);
 
   /** the receipt screen, back here on return — the card's own door */
   const openReceipt = (receiptId: string) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
-  const peek = (row: ReceiptRow) => {
-    setPeeked(row);
-    setPeekOpen(true);
-  };
-  /** "Attach this one" from the peek: both sheets close and the pick lands like a tap on the row */
-  const pickFromPeek = (row: ReceiptRow) => {
-    setPeekOpen(false);
-    setAttachOpen(false);
-    void applyPick(receiptOps, tx.id, entry ?? null, row);
-  };
 
-  const onFile = async (file: File | undefined) => {
-    if (!file) return;
+  const onFile = async (file: File) => {
     setBusy(true);
     try {
       await receiptOps.attachPhoto(tx, file);
@@ -178,15 +98,9 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
     }
   };
 
-  const takePhoto = () => {
-    // shells use the Camera plugin: the webview <input capture> path
-    // crashed on iOS and offered gallery-only on Android
-    if (isNativeApp()) void takeNativePhoto().then((file) => onFile(file ?? undefined));
-    else fileRef.current?.click();
-  };
-
   if (entry === undefined) return null;
-  const suggested = receipt ? [receipt, ...candidates] : candidates;
+  // #496: an attached receipt leads with one more beside it; nothing attached shows the best three (#542)
+  const suggested = suggestionsFor(receipt, candidates);
   const all = receipt ? [receipt, ...others] : others;
 
   return (
@@ -202,15 +116,6 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           onReject={(link) => void receiptOps.rejectMatch(link)}
         />
       )}
-      <input
-        ref={fileRef}
-        data-testid="receipt-file"
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={(e) => void onFile(e.target.files?.[0])}
-      />
       {receipt === null ? (
         <button
           data-testid="receipt-empty"
@@ -219,9 +124,9 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         >
           <Icon name="receipt-text-plus-outline" size={18} color="var(--m-accent-deep)" />
           <span className="min-w-0 flex-1 text-[13px] font-medium text-accent-deep">{t('receipt.attach')}</span>
-          {candidates.length > 0 && (
+          {suggested.length > 0 && (
             <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent-deep" data-testid="receipt-candidate-count">
-              {candidates.length}
+              {suggested.length}
             </span>
           )}
         </button>
@@ -243,6 +148,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         candidates={suggested}
         all={all}
         selectedId={receipt?.id ?? null}
+        attachedId={receipt?.id ?? null}
         showNone={receipt !== null}
         currency={tx.currency}
         attachedTo={elsewhere}
@@ -259,30 +165,9 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           setAttachOpen(false);
           void applyPick(receiptOps, tx.id, entry, row);
         }}
-        onView={openReceipt}
-        onPeek={peek}
-        peekedId={peekOpen ? (peeked?.id ?? null) : null}
       >
-        <AttachRungs
-          busy={busy}
-          webcam={webcamDoor}
-          onTakePhoto={takePhoto}
-          onWebcam={() => setWebcamOpen(true)}
-          onConnections={() => void navigate({ to: '/connections' })}
-        />
+        <ReceiptCaptureRungs testIdPrefix="receipt" busy={busy} onFile={(file) => void onFile(file)} onConnections={() => void navigate({ to: '/connections' })} />
       </ReceiptPickSheet>
-
-      {/* the peek over the picker (user 2026-10-09); the attached receipt itself offers no second attach */}
-      <ReceiptPeekSheet
-        open={peekOpen}
-        onOpenChange={setPeekOpen}
-        receipt={peeked}
-        currency={tx.currency}
-        onPick={peeked && peeked.id !== receipt?.id ? pickFromPeek : undefined}
-      />
-
-      {/* #160: snapshot rides the same attach pipeline as a picked file */}
-      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onFile(file)} />
     </>
   );
 }

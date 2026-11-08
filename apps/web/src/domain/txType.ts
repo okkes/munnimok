@@ -1,4 +1,4 @@
-import { autoSubFor, specialCatType } from './categories';
+import { autoSubFor, isMovementCat, specialCatType } from './categories';
 import type { AccountType, TxType } from '@/db/types';
 
 /**
@@ -100,6 +100,31 @@ export function allowedSpecialCats(sourceType: AccountType | undefined, directio
   }
 }
 
+const sameTypes = (a: readonly AccountType[] | undefined, b: readonly AccountType[] | undefined): boolean =>
+  (a ?? []).join() === (b ?? []).join();
+
+/**
+ * #564 (user): a SUGGESTED category obeys the matrix the picker shows —
+ * "Set aside" on money coming IN from savings is the family read from the
+ * wrong side, so it turns into its sibling on this side of the cell
+ * ("Withdraw"): same family, same movement-or-value kind, same counter
+ * kinds. Categories outside the matrix pass untouched; a special that has
+ * no single sibling here is no suggestion at all (null).
+ */
+export function fitToMatrix(catId: string, sourceType: AccountType | undefined, direction: 'debit' | 'credit'): string | null {
+  const family = specialCatType(catId);
+  if (!family) return catId;
+  const allowed = allowedSpecialCats(sourceType, direction);
+  if (allowed.has(catId)) return catId;
+  const siblings = [...allowed].filter(
+    (other) =>
+      specialCatType(other) === family &&
+      isMovementCat(other) === isMovementCat(catId) &&
+      sameTypes(counterTypesFor(other), counterTypesFor(catId)),
+  );
+  return siblings.length === 1 ? siblings[0] : null;
+}
+
 /**
  * The account types a movement FAMILY's counterparty ask may offer —
  * the same bijection read the other way ("Set aside" can only point at
@@ -120,7 +145,9 @@ export function counterTypesForFamily(family: TxType): readonly AccountType[] | 
     case 'funding':
       return ['funding'];
     case 'transfer':
-      return ['checking', 'cash', 'credit'];
+      // #574 (user): a cash counter is the ATM pair's alone — "Transfer
+      // out" to the wallet only repeated "Cash withdraw" (counterTypesFor)
+      return ['checking', 'credit'];
     default:
       return undefined;
   }
@@ -140,7 +167,7 @@ export const COUNTERABLE_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set([
 ]);
 
 /** the per-CATEGORY read of the same table — the ATM pair points at
- *  cash wallets specifically; undefined = no counterparty applies */
+ *  cash wallets, the only pair that does; undefined = no counterparty applies */
 export function counterTypesFor(catId: string): readonly AccountType[] | undefined {
   if (catId === 'cashWithdraw' || catId === 'cashDeposit') return ['cash'];
   const family = specialCatType(catId);

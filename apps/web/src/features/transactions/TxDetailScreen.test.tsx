@@ -3,13 +3,24 @@ import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
-import { DEMO_SPACE_ID } from '@/db/seed';
+import { DEMO_SPACE_ID, isoDaysAgo } from '@/db/seed';
 import { accountLinkId, mirrorTxId, partMirrorSourceId, txMetaId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { normalizeReimbursements } from '@/application/catalogMaintenance';
+
+/** #348: on the add screen the category comes first — Set aside, its pot
+ *  (the demo savings) named in the editor's ask */
+async function pickSetAsideOnForm() {
+  fireEvent.click(screen.getByTestId('txform-category'));
+  fireEvent.click(await screen.findByTestId('part-cat-0'));
+  fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+  fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+  fireEvent.click(await screen.findByTestId('part-cat-save'));
+  await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
+}
 
 describe('TxDetailScreen (demo identity)', () => {
   beforeEach(async () => {
@@ -62,12 +73,9 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '75,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Pot in' } });
-    // #133 D: the counterparty row is the transfer door now
-    fireEvent.click(screen.getByTestId('txform-counter'));
-    await screen.findByTestId('counter-accounts');
-    // no fork here (#237): the row does not exist yet, so there is
-    // nothing to point at — the form's pick still chooses directly
-    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    // #348: the category first — Set aside asks its pot on the spot (no
+    // fork, #237: the row does not exist yet, nothing to point at)
+    await pickSetAsideOnForm();
     // the mirror checkbox retired (typed-splits v2): the pot's leg is
     // always minted for a manual counter
     fireEvent.click(screen.getByTestId('txform-save'));
@@ -147,7 +155,7 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // #237: manual counters fork now — creating the leg is the explicit door
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -168,6 +176,36 @@ describe('TxDetailScreen (demo identity)', () => {
       expect((await db.transactions.get(mid))?.deleted).toBe(1); // the mint goes along
       expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase); // refunded
     }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#509: the loan\'s generated leg offers the count-in too — it counts its source in', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('legcount'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'loan509', {
+      name: 'Car loan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -500_000, balanceAsOf: '2026-06-01',
+    });
+    // a payment from before the loan's balance date: its leg moved nothing
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'pay509', {
+      accountId: 'demo_main', date: '2026-05-15', amountCents: -10_000, currency: 'EUR', merchant: 'Car loan', catId: 'loanRepayment', needsReview: 0,
+    });
+    const { writeTxTransform } = await import('@/db/joined');
+    await writeTxTransform(seedRepo, { id: 'pay509', spaceId: DEMO_SPACE_ID, feedSpaceId: undefined, needsReview: 0 }, { linkedAccountId: 'loan509' });
+    seed.close();
+    cleanup();
+    renderApp(`/transactions/${mirrorTxId('pay509')}`);
+    await screen.findByTestId('screen-tx-detail');
+    fireEvent.click(await screen.findByTestId('tx-detail-loan-count', {}, { timeout: 8000 }));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.accounts.get('loan509'))?.balanceCents).toBe(-490_000);
+      // the marker sits on the payment — its own row stops offering it too
+      expect((await db.transactions.get('pay509'))?.loanCounted).toBe(1);
+    }, { timeout: 8000 });
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-loan-count')).toBeNull());
     db.close();
   }, 20_000);
 
@@ -236,7 +274,7 @@ describe('TxDetailScreen (demo identity)', () => {
     expect(row.textContent).toContain('No counter account');
     fireEvent.click(row);
     // the ◆ part narrows the ask to ITS kinds — the family default leads
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     // #255 r3: the part's ask carries the fork now — Create is the mint
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -402,37 +440,6 @@ describe('TxDetailScreen (demo identity)', () => {
     await waitFor(() => expect(document.body.textContent).not.toBe(''));
   });
 
-  it('#221: a row on a DEFAULT account is read-only — no edit, no delete, no unpair; the peer door stays', async () => {
-    renderApp('/transactions/potleg1');
-    // the demo space is born with its default pot (eager mint); a minted
-    // leg on it is the subject — the shape the choke writes
-    const seed = new MunniDB('munni_demo');
-    await waitFor(async () => expect((await seed.accounts.get('defaultacct_saving_demo_space'))?.deleted).toBe(0), { timeout: 8000 });
-    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('ro-seed'), { trackOutbox: false });
-    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'potleg1', {
-      accountId: 'defaultacct_saving_demo_space', date: '2026-07-20', amountCents: 20000, currency: 'EUR',
-      merchant: 'Savings transfer', catId: 'savingDeposit', needsReview: 0,
-      linkedAccountId: 'demo_main', transferPeerId: 'dm12',
-    });
-    seed.close();
-    await screen.findByTestId('tx-detail-amount', {}, { timeout: 8000 });
-    // the account fact resolves a beat after the row — the lock label
-    // is the signal that the default-ledger gates are up
-    await waitFor(() => expect(screen.getByTestId('tx-detail-cats-locked').textContent).toContain('Managed by munni'), { timeout: 8000 });
-
-    // the ledger is munni's: no pencil, no rename, no delete, no
-    // category editor, no notes/receipts/reimburse blocks
-    expect(screen.queryByTestId('tx-detail-edit')).toBeNull();
-    expect(screen.queryByTestId('tx-detail-rename')).toBeNull();
-    expect(screen.queryByTestId('tx-detail-delete')).toBeNull();
-    expect(screen.queryByTestId('tx-detail-cats-edit')).toBeNull();
-    expect(screen.queryByTestId('tx-detail-customize')).toBeNull();
-
-    // the pair row still navigates to the ORIGIN — but never releases
-    await screen.findByTestId('tx-detail-peer');
-    expect(screen.queryByTestId('tx-detail-unpair')).toBeNull();
-  }, 15_000);
-
   it('an expense attaches to a recurring cost and detaches again', async () => {
     renderApp('/transactions/dm6'); // dm6 is a demo expense
     await screen.findByTestId('screen-tx-detail');
@@ -544,7 +551,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // #237: manual counters fork now — creating the leg is the explicit door
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -603,7 +610,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click((await within(editor).findAllByTestId('part-cat-remove-1')).at(-1)!);
     fireEvent.click(within(editor).getByTestId('part-cat-0'));
     fireEvent.click((await screen.findAllByTestId('catpicker-savingDeposit')).at(-1)!);
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // #237: manual counters fork now — creating the leg is the explicit door
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -634,10 +641,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
 
-    // #133 r4: the ◆ pick opens the counterparty ask ON THE PICK
-    // (Default pinned); walking away keeps the bare story — Done then
-    // lands the category with no account on the other side
-    await screen.findByTestId('counter-default');
+    // #133 r4: the ◆ pick opens the counterparty ask ON THE PICK; walking
+    // away keeps the bare story — Done then lands the category with no
+    // account on the other side (the review asks for it later)
+    await screen.findByTestId('counter-accounts');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
     // the property rows show the bare state
@@ -670,9 +677,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
 
     // #133 B/r4: the loan question IS the counterparty question, opened
-    // on the pick — Default pinned on top, the seeded loan a candidate
+    // on the pick — the seeded loan a candidate (#546: no default pot)
     const loanId = 'lp_loan';
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId(`counter-pick-${loanId}`));
     // #237: manual counters fork now — creating the leg is the explicit door
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -719,7 +726,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     // #133 r4: the ask opens on the pick itself
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-ms1'));
 
     // the fork: create the counterpart, or point at the existing row
@@ -781,7 +788,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-qs1'));
     await screen.findByTestId('counter-fork');
     fireEvent.click((await screen.findByTestId('counter-dup-qc1')).querySelector('button')!);
@@ -829,7 +836,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // generous waits: this file's writes + the boot chain contend under
     // full-suite load (the review-suite lesson). #133 r4: the ask opens
     // on the pick itself; Done lands the answered entry.
-    await screen.findByTestId('counter-default', {}, { timeout: 8000 });
+    await screen.findByTestId('counter-accounts', {}, { timeout: 8000 });
     fireEvent.click(await screen.findByTestId('counter-pick-ms2', {}, { timeout: 8000 }));
     await screen.findByTestId('counter-fork', {}, { timeout: 8000 });
     fireEvent.click(screen.getByTestId('counter-fork-create'));
@@ -870,7 +877,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default', {}, { timeout: 8000 });
+    await screen.findByTestId('counter-accounts', {}, { timeout: 8000 });
     fireEvent.click(await screen.findByTestId('counter-pick-ms9', {}, { timeout: 8000 }));
     await screen.findByTestId('counter-fork', {}, { timeout: 8000 });
 
@@ -889,26 +896,32 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('counter-fork-empty');
   }, 20_000);
 
-  it('#133 B/#221: the Default row links onto the space\'s own pot (eagerly minted at boot)', async () => {
+  it('#546: no default answers a debt pick any more — the ATM pick pins the space\'s cash wallet', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
+    // no loan exists — and no default pot answers for the person
+    await screen.findByTestId('counter-accounts');
+    expect(screen.queryByTestId('counter-default')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
 
-    // no loan exists — Default is the one-tap answer to the pick's ask
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-cashWithdraw'));
+    // the wallet leads the ATM pair's ask — one tap links it
     fireEvent.click(await screen.findByTestId('counter-default'));
-    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBeTruthy());
+    const wallet = `defaultacct_cash_${DEMO_SPACE_ID}`;
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe(wallet));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
-    const potId = `defaultacct_debtPayment_${DEMO_SPACE_ID}`;
     await waitFor(async () => {
-      const pot = await db.accounts.get(potId);
-      expect(pot?.defaultFor).toBe('debtPayment');
       const tx = await db.transactions.get('dm6');
-      expect(tx?.linkedAccountId).toBe(potId);
-      expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe(potId);
+      expect(tx?.catId).toBe('cashWithdraw');
+      expect(tx?.linkedAccountId).toBe(wallet);
+      expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe(wallet);
     }, { timeout: 8000 });
+    expect(await db.accounts.get(`defaultacct_debtPayment_${DEMO_SPACE_ID}`)).toBeUndefined();
     db.close();
   }, 20_000);
 
@@ -929,10 +942,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-fundingOut'));
 
     // the ask opens on the pick (#133 r4) and lists ONLY funding
-    // attachments — #221: the Default shared pot pins on top, none of
-    // the ordinary accounts join the list
+    // attachments — none of the ordinary accounts join the list, and no
+    // default pot pins on top (#546)
     await screen.findByTestId('counter-pick-fund1', {}, { timeout: 8000 });
-    expect(screen.getByTestId('counter-default').textContent).toContain('Default shared pot');
+    expect(screen.queryByTestId('counter-default')).toBeNull();
     expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull();
     fireEvent.click(screen.getByTestId('counter-pick-fund1'));
     await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('fund1'));
@@ -964,7 +977,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // #237: manual counters fork now — creating the leg is the explicit door
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
@@ -986,6 +999,39 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
   });
+
+  it('#502: the picker jumps to the day of the expense — past the first page — and marks the row it lands on', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('jump502'), { trackOutbox: false });
+    await seedRepo.batch(async () => {
+      // a page and more of newer credits stand between the list's top and the expense's day
+      for (let i = 0; i < 130; i += 1) {
+        await seedRepo.upsert('transaction', DEMO_SPACE_ID, `newer502-${i}`, {
+          accountId: 'demo_main', date: isoDaysAgo(1 + (i % 60)), amountCents: 1000 + i, currency: 'EUR',
+          merchant: `Refund ${i}`, catId: 'reimburse', needsReview: 0,
+        });
+      }
+      // the expense dm6 is 179 days old: this credit is one day off it
+      await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'near502', {
+        accountId: 'demo_main', date: isoDaysAgo(178), amountCents: 2500, currency: 'EUR',
+        merchant: 'Payback near the day', catId: 'reimburse', needsReview: 0,
+      });
+    });
+    seed.close();
+    cleanup();
+    // a page and more of rows through the coverage-instrumented picker: every step gets a real budget
+    const slow = { timeout: 20_000 };
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('reimb-add', {}, slow));
+    const picker = await screen.findByTestId('reimb-link-list', {}, slow);
+    await waitFor(() => expect(picker.querySelectorAll('[data-jump-id]')).toHaveLength(120), slow);
+    expect(picker.querySelector('[data-jump-id="near502"]')).toBeNull();
+    fireEvent.click(screen.getByTestId('reimb-link-jump'));
+    await waitFor(() => expect(picker.querySelector('[data-jump-id="near502"]')?.className).toContain('bg-accent-soft'), slow);
+  }, 90_000);
 
   it('links a credit with a clamped partial amount, then unlinks it', async () => {
     renderApp('/transactions/dm6');
@@ -1785,7 +1831,7 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('part-cat-save'));
     // #133 D: the ◆ pick opens the part's counterparty ask — walking
     // away keeps the bare story (Escape is sheet-owned now)
-    await screen.findByTestId('counter-default');
+    await screen.findByTestId('counter-accounts');
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('Set aside'));
 
@@ -2092,9 +2138,7 @@ describe('detail sections customize (user request)', () => {
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '61,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Pot removal' } });
-    fireEvent.click(screen.getByTestId('txform-counter'));
-    await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    await pickSetAsideOnForm();
     fireEvent.click(screen.getByTestId('txform-save'));
 
     let outId = '';
@@ -2125,17 +2169,17 @@ describe('detail sections customize (user request)', () => {
     db.close();
   }, 20_000);
 
-  it('#237: unlinking a DEFAULT counter asks, then resets the story and removes its leg', async () => {
+  it('#237: unlinking the cash wallet asks, then resets the story and removes its leg', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('deflink'), { trackOutbox: false });
-    // a bare movement row: the next boot's fold links the space default
-    // and mints its leg (#221) — exactly the state the user unlinks
+    // a bare ATM row: the next boot's fold links the space's wallet and
+    // mints its leg — exactly the state the user unlinks
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'r237d', {
       accountId: 'demo_main', date: '2026-07-20', amountCents: -4200, currency: 'EUR',
-      merchant: 'Default unlink', catId: 'savingDeposit', needsReview: 0,
+      merchant: 'Geldmaat', catId: 'cashWithdraw', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -2143,12 +2187,12 @@ describe('detail sections customize (user request)', () => {
     await screen.findByTestId('screen-tx-detail');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
-      expect((await db.transactions.get('r237d'))?.linkedAccountId).toBe('defaultacct_saving_demo_space');
+      expect((await db.transactions.get('r237d'))?.linkedAccountId).toBe('defaultacct_cash_demo_space');
     }, { timeout: 8000 });
     // the unpair gate reads the linked ACCOUNT row — wait for its face,
     // or the ask routes to the generated-leg question instead
     await waitFor(() =>
-      expect(screen.getByTestId('tx-detail-linked-account').textContent).toContain('Default savings'), { timeout: 8000 });
+      expect(screen.getByTestId('tx-detail-linked-account').textContent).toContain('Cash wallet'), { timeout: 8000 });
 
     fireEvent.click(await screen.findByTestId('tx-detail-unpair'));
     // #237 (user): "unlinking will reset the category and counterparty"
@@ -2270,6 +2314,42 @@ describe('detail sections customize (user request)', () => {
     await waitFor(() => expect(peerRow.textContent).toContain('PayPal top-up'));
     expect(peerRow.textContent).toContain('2026-07-14');
     db.close();
+  }, 25_000);
+
+  it('#545: the detail names an attached account — and the counterpart line its account — as the space renamed it', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('spacename'), { trackOutbox: false });
+    const FEED = 'feed_545';
+    // the global row carries the bank's own name; the space calls it PayPal
+    await seedRepo.upsert('account', FEED, 'pp545', {
+      name: 'Okkes Doker', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0,
+    });
+    await seedRepo.upsert('accountLink', DEMO_SPACE_ID, accountLinkId(DEMO_SPACE_ID, FEED), {
+      feedSpaceId: FEED, accountId: 'pp545', displayName: 'PayPal',
+    });
+    await seedRepo.upsert('transaction', FEED, 'g545', {
+      accountId: 'pp545', date: '2026-10-12', amountCents: -799, currency: 'EUR', merchant: 'Google Payment Ireland Limited',
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'b545', {
+      accountId: 'demo_main', date: '2026-10-14', amountCents: -799, currency: 'EUR',
+      merchant: 'PayPal Europe', catId: 'transferOut', needsReview: 0, linkedAccountId: 'pp545', transferPeerId: 'g545',
+    });
+    seed.close();
+    cleanup();
+    renderApp('/transactions/g545');
+    await screen.findByTestId('screen-tx-detail');
+    await waitFor(() => expect(screen.getByTestId('tx-detail-account-row').textContent).toContain('PayPal'));
+    expect(screen.getByTestId('tx-detail-account-row').textContent).not.toContain('Okkes Doker');
+    // the bank leg's counterpart line names the wallet the same way
+    cleanup();
+    renderApp('/transactions/b545');
+    await screen.findByTestId('screen-tx-detail');
+    const peerRow = await screen.findByTestId('tx-detail-peer');
+    await waitFor(() => expect(peerRow.textContent).toContain('PayPal'));
+    expect(peerRow.textContent).not.toContain('Okkes Doker');
   }, 25_000);
 
   it('#237 r2: re-picking on the SAME counter account still pairs (linkChanged=false path)', async () => {

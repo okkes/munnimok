@@ -3,6 +3,8 @@ import { ALL_KEYWORD_RULES } from './keyword-extras';
 import type { KeywordRule } from './keyword-categories';
 import { predictFromMemory } from './merchantMemory';
 import type { MerchantMemory } from './merchantMemory';
+import { accountStamp, fitToMatrix } from './txType';
+import type { AccountType } from '@/db/types';
 
 /**
  * Keyword-based category prediction for imported bank transactions, ported
@@ -83,6 +85,9 @@ export interface PredictInput {
   /** operator-published keyword rules (catalog document) — merged in
    *  front of the bundled set, so they win ties without erasing it */
   keywordRules?: readonly { catId: string; keywords: string[] }[];
+  /** #564: the type of the account the row sits on — the memory reads its
+   *  own ledger only, and a special category obeys the picker's matrix */
+  sourceAccountType?: AccountType;
 }
 
 /**
@@ -94,12 +99,15 @@ export interface PredictInput {
  */
 /** #161: the memory's answer, own space first (S3776: out of predictTx) */
 function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPrediction | null {
+  const ledger = accountStamp(input.sourceAccountType);
   const hit =
-    predictFromMemory(memory.own, input.merchant, input.amountCents) ??
-    predictFromMemory(memory.others, input.merchant, input.amountCents);
+    predictFromMemory(memory.own, input.merchant, input.amountCents, ledger) ??
+    predictFromMemory(memory.others, input.merchant, input.amountCents, ledger);
   if (!hit) return null;
+  const catId = fitToMatrix(hit.catId, input.sourceAccountType, input.amountCents >= 0 ? 'credit' : 'debit');
+  if (!catId) return null;
   return {
-    catId: hit.catId,
+    catId,
     source: hit.amountMatch ? 'history-amount' : 'history',
     evidence: hit.evidence,
     ...(hit.cats ? { cats: hit.cats } : {}),
@@ -120,11 +128,12 @@ function predictTxRaw(input: PredictInput): TxPrediction | null {
     if (remembered) return remembered;
   }
   const direction = input.amountCents >= 0 ? 'credit' : 'debit';
-  const catId = predictCategory(
+  const keyword = predictCategory(
     `${input.merchant} ${input.titleOverride ?? ''} ${input.description ?? ''}`,
     direction,
     input.keywordRules ? [...input.keywordRules, ...activeRules] : activeRules,
   );
+  const catId = keyword ? fitToMatrix(keyword, input.sourceAccountType, direction) : null;
   if (!catId) return null;
   return { catId, source: 'keyword' };
 }

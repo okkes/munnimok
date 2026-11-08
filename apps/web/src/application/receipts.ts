@@ -3,7 +3,7 @@ import { downscaleImage } from '@/lib/image';
 import { measure } from '@/lib/perf';
 import { receiptLinkId } from '@/domain/feedIds';
 import { logActivity } from './activity';
-import { acceptProposal, attachReceiptTo, detachReceiptFrom, rejectProposal } from './receiptLinks';
+import { acceptProposal, attachReceiptTo, detachReceiptFrom, linkedTxIds, rejectProposal, releaseLink } from './receiptLinks';
 import { myStoreFeedId } from './storeFeed';
 import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
@@ -43,11 +43,13 @@ export interface ReceiptOps {
 
 export function useReceiptOps(): ReceiptOps {
   const { store, repo, spaceId } = useData();
-  /** the link lets go of one transaction (the others keep it), or goes entirely when none is named */
+  /** the link lets go of one transaction (the others keep it), or of every one when none is named — a store
+   *  receipt remembers them (#496), a photo goes */
   const letGo = async (linkId: string, txId: string | undefined): Promise<ReceiptLinkRow | undefined> => {
     const row = await store.get('receiptLink', linkId);
-    if (txId !== undefined && row) await detachReceiptFrom(repo, spaceId, row, txId);
-    else await repo.remove('receiptLink', spaceId, linkId);
+    if (!row) await repo.remove('receiptLink', spaceId, linkId);
+    else if (txId !== undefined) await detachReceiptFrom(repo, spaceId, row, txId);
+    else await releaseLink(repo, spaceId, row, linkedTxIds(row));
     return row;
   };
   return {

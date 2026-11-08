@@ -1,7 +1,7 @@
 import { LOCALES, useLang } from '@/i18n';
 import { txTitle } from '@/lib/text';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
-import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
+import { REIMB_CAT_IDS, netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { REIMBURSED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -28,7 +28,19 @@ function txVisual(
   // ABOUT (user ss 2026-10-05): a dinner partly paid back wears the dinner's
   // face; an expected or received reimbursement entry still counts, so a
   // row that also carries one of those stays mixed
-  const slices = (tx.splits?.length ? tx.splits : (tx.cats ?? [])).filter((s) => s.amountCents !== 0 && s.catId !== REIMBURSED_ID);
+  const source = tx.splits?.length ? tx.splits : (tx.cats ?? []);
+  const slices = source.filter((s) => s.amountCents !== 0 && s.catId !== REIMBURSED_ID);
+  // #493: an expected (or received) reimbursement its links settled in full
+  // is not waiting any more — it reads Reimbursed, like the credit that paid it
+  if (
+    slices.length === 0 &&
+    REIMB_CAT_IDS.includes(tx.catId ?? '') &&
+    source.some((s) => s.catId === REIMBURSED_ID && s.amountCents > 0)
+  ) {
+    const settled = cats.byId(REIMBURSED_ID);
+    const settledParent = settled.parentId ? cats.byId(settled.parentId) : undefined;
+    return { icon: settled.icon, color: settled.color ?? settledParent?.color ?? 'var(--m-ink-3)', label: catName(settled, t) };
+  }
   const distinctCatIds = [...new Set(slices.map((s) => s.catId))];
   if (distinctCatIds.length > 1) {
     const parents = [...new Set(distinctCatIds.map((id) => cats.byId(id).parentId ?? id))];

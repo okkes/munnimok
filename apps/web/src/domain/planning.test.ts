@@ -105,17 +105,19 @@ describe('periods for planning', () => {
 });
 
 describe('the pool', () => {
-  it('is every checking and cash account unless the space picked a list; savings, pots and archived accounts stay out', () => {
+  it('is every checking and cash account unless the space picked a list; savings and archived accounts stay out', () => {
     const accounts = [
       account({ id: 'c', type: 'checking', balanceCents: 500_00 }),
       account({ id: 'cash', type: 'cash', balanceCents: 20_00 }),
+      // the space's cash wallet is the person's own cash (#348) — it counts like any cash account
+      account({ id: 'wallet', type: 'cash', defaultFor: 'cash', balanceCents: 5_00 }),
       account({ id: 'sav', type: 'savings', balanceCents: 1000_00 }),
-      account({ id: 'pot', type: 'checking', defaultFor: 'transfer', balanceCents: 5_00 }),
       account({ id: 'old', type: 'checking', archived: 1, balanceCents: 99_00 }),
     ];
-    expect(planPoolAccounts(accounts, null).map((a) => a.id)).toEqual(['c', 'cash']);
-    expect(poolCents(accounts, null)).toBe(520_00);
-    expect(poolCents(accounts, { planPoolAccountIds: ['sav', 'pot'] })).toBe(1005_00);
+    expect(planPoolAccounts(accounts, null).map((a) => a.id)).toEqual(['c', 'cash', 'wallet']);
+    expect(poolCents(accounts, null)).toBe(525_00);
+    // a picked list stands as picked — the wallet stays out of it unless ticked
+    expect(poolCents(accounts, { planPoolAccountIds: ['sav', 'c'] })).toBe(1500_00);
   });
 });
 

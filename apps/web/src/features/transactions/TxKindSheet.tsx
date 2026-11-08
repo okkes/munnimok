@@ -1,20 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { useRecurrings } from '@/application/recurring';
 import { useData } from '@/app/data';
+import { accountTail, counterPlanOf, planFits } from '@/domain/counterPlan';
+import { cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { TX_KINDS, kindOf } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
 import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
 import { counterDuplicates, counterOpenRows, counterSameSignCandidates } from '@/domain/counterMatch';
-import { FAMILY_ACCOUNT_TYPE, NAME_KEYS, defaultAccountId, ensureDefaultAccount } from '@/application/defaultAccounts';
+import { cashWalletId, ensureCashWallet } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import type { AccountType, TransactionRow, TxType } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { txTitle } from '@/lib/text';
 import { Icon } from '@/ui/Icon';
 import { InfoHint } from '@/ui/InfoHint';
+import { JumpToDateButton, useJumpToDate } from '@/ui/JumpToDate';
+import { MoreRows, PAGE_ROWS } from '@/ui/MoreRows';
 import { SearchField } from '@/ui/SearchField';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -92,8 +98,9 @@ export function TxKindSheet({
 
 /**
  * The counterparty question (#133 step B): the accounts munni tracks
- * plus the ONE creation door — and, on a ◆ family ask, the "Default —
- * no setup" row pinned on top (minted lazily on first accept). Bank-fed
+ * plus the ONE creation door — and, on the ATM pair's ask, the space's
+ * cash wallet pinned on top (#546: the one default left; a pick revives a
+ * deleted wallet). Bank-fed
  * accounts wear a badge: picking one means Transfer, the real arriving
  * row pairs with it. Picking a MANUAL account forks — quick-create the
  * counterpart (the mint), or point at the row that is already there
@@ -109,6 +116,7 @@ export function CounterpartySheet({
   counterTypes,
   anchor,
   onDetach,
+  amountCents,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -118,7 +126,8 @@ export function CounterpartySheet({
    *  the counter account: carry it in the SAME write (no mint), and the
    *  caller pairs the reciprocal via pairWithExistingRow */
   onChoose: (account: { id: string; type: AccountType }, peer?: { txId: string }) => void;
-  /** #133 B: a ◆ family ask pins the "Default — no setup" row on top */
+  /** #133 B: the asking category's family — the cash family pins the
+   *  space's wallet on top (#546: no other family has a default) */
   defaultFamily?: DefaultFamily;
   /** #133 r5: the account types this ask may offer — the asking
    *  category's side of the bijection ("Set aside" lists savings
@@ -133,11 +142,16 @@ export function CounterpartySheet({
    *  one is linked; the caller clears the link (and a transfer
    *  category resets, since an unlinked transfer is unrepresentable) */
   onDetach?: () => void;
+  /** #556: the money being linked, signed — an account whose payment it
+   *  is says so and leads the list */
+  amountCents?: number;
 }>) {
   const { t, lang } = useLang();
+  const { fmtSensitive } = useDisplayMoney();
   const { store, repo, spaceId } = useData();
   const allAccounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
+  const recurrings = useRecurrings();
   // the FULL creation flow (bank connect / statement import / manual),
   // one sheet deeper — search and quick-create retired (user redesign
   // 2026-08-01: the field confused, and Create covers the missing-
@@ -147,17 +161,28 @@ export function CounterpartySheet({
   // is already there, or explicitly create/await the counterpart
   const [forkFor, setForkFor] = useState<CounterForkTarget | null>(null);
 
+  const pinsWallet = defaultFamily === 'cash';
   const candidates = useMemo(
-    // the family defaults never list as ordinary rows — the pinned
-    // Default entry is their one face (approved design). #133 r5: an
-    // asking category narrows the list to ITS account types — the
-    // counterparty must make sense for the category (user rule).
+    // the cash wallet never lists as an ordinary row — the pinned entry
+    // is its one face (approved design). #133 r5: an asking category
+    // narrows the list to ITS account types — the counterparty must make
+    // sense for the category (user rule).
     () =>
       (allAccounts ?? []).filter(
         (a) => a.id !== excludeAccountId && !a.archived && !a.defaultFor && (!counterTypes || counterTypes.includes(a.type)),
       ),
     [allAccounts, excludeAccountId, counterTypes],
   );
+  // #556 (user ss): what each account is regularly paid tells look-alikes
+  // apart; the one whose payment THIS is leads the list
+  const rows = useMemo(() => {
+    const money = amountCents ?? anchor?.amountCents;
+    const withPlans = candidates.map((account) => {
+      const plan = counterPlanOf(account, recurrings ?? []);
+      return { account, plan, fits: !!plan && money !== undefined && planFits(plan, money) };
+    });
+    return [...withPlans.filter((r) => r.fits), ...withPlans.filter((r) => !r.fits)];
+  }, [candidates, recurrings, amountCents, anchor?.amountCents]);
 
   const choose = (account: { id: string; type: AccountType }, peer?: { txId: string }) => {
     onChoose(account, peer);
@@ -165,11 +190,10 @@ export function CounterpartySheet({
     onOpenChange(false);
   };
 
-  // Default — no setup: mint (idempotently) and pick in one tap
-  const pickDefault = async () => {
-    if (!defaultFamily) return;
-    const id = await ensureDefaultAccount(store, repo, spaceId, defaultFamily);
-    choose({ id, type: FAMILY_ACCOUNT_TYPE[defaultFamily] });
+  // the wallet: mint (idempotently) and pick in one tap
+  const pickWallet = async () => {
+    const id = await ensureCashWallet(store, repo, spaceId);
+    choose({ id, type: 'cash' });
   };
 
   // #237 (user): no more silent mints. A MANUAL counter always opens the
@@ -190,25 +214,25 @@ export function CounterpartySheet({
       <p className="pb-2 text-[12px] text-ink-3">
         {t(counterTypes?.length === 1 && counterTypes[0] === 'funding' ? 'tx.counterFundingHint' : 'tx.counterAccountHint')}
       </p>
-      {/* the ◆ family ask leads with Default (#133 ruling 1) */}
-      {defaultFamily && (
+      {/* the ATM pair's ask leads with the space's cash wallet (#546) */}
+      {pinsWallet && (
         <button
           data-testid="counter-default"
-          onClick={() => void pickDefault()}
+          onClick={() => void pickWallet()}
           className="m-tap mb-2 flex w-full items-center gap-3 rounded-card border border-accent/40 bg-accent-soft/20 px-4 py-3 text-left"
         >
-          <Icon name={typeDef(FAMILY_ACCOUNT_TYPE[defaultFamily]).icon} size={18} color="var(--m-accent-deep)" />
+          <Icon name={typeDef('cash').icon} size={18} color="var(--m-accent-deep)" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-medium text-ink">{t(NAME_KEYS[defaultFamily])}</span>
+            <span className="block truncate text-[14px] font-medium text-ink">
+              {allAccounts?.find((a) => a.id === cashWalletId(spaceId))?.name ?? t('acct.defaultCash')}
+            </span>
             <span className="block text-[11px] text-ink-4">{t('tx.counterDefaultSub')}</span>
           </span>
-          {currentLinkedId === defaultAccountId(spaceId, defaultFamily) && (
-            <Icon name="check" size={17} color="var(--m-accent-deep)" />
-          )}
+          {currentLinkedId === cashWalletId(spaceId) && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
         </button>
       )}
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="counter-accounts">
-          {candidates.map((account) => (
+          {rows.map(({ account, plan, fits }) => (
             <button
               key={account.id}
               data-testid={`counter-pick-${account.id}`}
@@ -222,12 +246,23 @@ export function CounterpartySheet({
                     #152: a funding pot records funding, not transfer) */}
                 <span className="block text-[11px] text-ink-4">
                   {t(`tx.type.${accountStamp(account.type) ?? typeForLinkedAccount(account.type)}`)}
+                  {accountTail(account) && <span data-testid={`counter-tail-${account.id}`}> · •••• {accountTail(account)}</span>}
                 </span>
+                {plan && (
+                  <span className="block truncate text-[11px] text-ink-3" data-testid={`counter-plan-${account.id}`}>
+                    {fmtCents(plan.cents, account.currency, lang)} · {cadenceLabel(plan, t)}
+                  </span>
+                )}
               </span>
+              {fits && (
+                <Pill tone="accent" testId={`counter-plan-fits-${account.id}`}>
+                  {t('tx.counterPlanFits')}
+                </Pill>
+              )}
               {/* C2: a bank-fed pick means Transfer — the real arriving
                   row on the other side pairs with it */}
               {account.source !== 'manual' && <Pill tone="info">{t('tx.counterBankBadge')}</Pill>}
-              <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+              <span className="m-num text-[12px] text-ink-3">{fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })}</span>
               {currentLinkedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>
           ))}
@@ -262,8 +297,8 @@ export function CounterpartySheet({
         <Icon name="plus-circle-outline" size={18} />
         {t('tx.counterFullSetup')}
       </button>
-      {/* R2: no bare exit anymore — the untracked stories live on the
-          marked special categories of standard rows */}
+      {/* #546/#555: a movement names a real account — an untracked one is
+          created above or attached to the space */}
       <p className="px-1 pt-2 text-[12px] leading-snug text-ink-4" data-testid="counter-special-hint">
         {t('tx.counterSpecialHint')}
       </p>
@@ -378,7 +413,9 @@ export function CounterMatchSheet({
   // 1–3 suggestions (user sizing) — everything else scrolls below
   const allSuggested = [...near, ...sameSign].slice(0, 3);
   const listed = new Set(allSuggested.map((row) => row.id));
-  const allRest = target ? counterOpenRows(rows, target.id, anchor, 50).filter((row) => !listed.has(row.id)) : [];
+  // every open row on the counter account, newest first, paged as it
+  // scrolls (#502: the old cap of 50 left an older day out of reach)
+  const allRest = target ? counterOpenRows(rows, target.id, anchor, Number.POSITIVE_INFINITY).filter((row) => !listed.has(row.id)) : [];
   const matches = (row: TransactionRow): boolean => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
@@ -393,6 +430,14 @@ export function CounterMatchSheet({
   };
   const suggested = allSuggested.filter(matches);
   const rest = allRest.filter(matches);
+  const [shownRows, setShownRows] = useState(PAGE_ROWS);
+  useEffect(() => {
+    setShownRows(PAGE_ROWS);
+  }, [open, query]);
+  const showMore = useCallback(() => setShownRows((n) => n + PAGE_ROWS), []);
+  // #502 (user): jump to the anchor's day, then scroll up or down from there
+  const { scrollerRef, jump, jumpedId } = useJumpToDate(rest, (index) => setShownRows((n) => Math.max(n, index + 40)));
+  const shownRest = rest.slice(0, shownRows);
   // #255 sized the sheet to its content; the user (ss 2026-10-07) wants the
   // browse view at full height with its list reaching the bottom, so the
   // short shape stays only for a sheet with nothing to browse
@@ -422,7 +467,12 @@ export function CounterMatchSheet({
       className={`divide-y divide-line-2 overflow-hidden rounded-card border bg-surface px-3 ${accent ? 'border-accent/40' : 'border-line'}`}
     >
       {items.map((row) => (
-        <div key={row.id} data-testid={`${prefix}-${row.id}`}>
+        <div
+          key={row.id}
+          data-testid={`${prefix}-${row.id}`}
+          data-jump-id={row.id}
+          className={`transition-colors ${jumpedId === row.id ? 'bg-accent-soft' : ''}`}
+        >
           {/* #255 r2: the search's hits light up like everywhere else */}
           <TxRow tx={row} showDate hideUnreviewed highlight={query} onClick={() => pick(row.id)} />
         </div>
@@ -486,10 +536,21 @@ export function CounterMatchSheet({
           )}
           {rest.length > 0 && (
             <>
-              <div className="m-cap mt-3 mb-1 px-1">{t('tx.counterAllRows')}</div>
+              <div className="m-cap mt-3 mb-1 flex items-center gap-2 px-1">
+                <span>{t('tx.counterAllRows')}</span>
+                <JumpToDateButton date={anchor.date} onJump={() => jump(anchor.date)} testId="counter-jump" />
+              </div>
               {/* the browse list fills what is left of the sheet and scrolls INSIDE it (sheet rules) */}
-              <div className="min-h-[200px] flex-1 overflow-y-auto overscroll-contain pb-2" data-testid="counter-all-list" data-sheet-no-drag>
-                {rowList(rest, 'counter-open')}
+              <div
+                ref={scrollerRef}
+                className="min-h-[200px] flex-1 overflow-y-auto overscroll-contain pb-2"
+                data-testid="counter-all-list"
+                data-sheet-no-drag
+              >
+                {rowList(shownRest, 'counter-open')}
+                {rest.length > shownRest.length && (
+                  <MoreRows rootRef={scrollerRef} remaining={rest.length - shownRest.length} onMore={showMore} testId="counter-open-more" />
+                )}
               </div>
             </>
           )}

@@ -4,6 +4,7 @@ import { readSessionIdentity } from '@/app/session';
 import { useQuery } from '@/db/useQuery';
 import type { SpaceTx } from '@/db/joined';
 import type { TxSeenRow } from '@/db/types';
+import { isMintedLeg } from '@/domain/feedIds';
 import { bornAtMs, txSeenBaseId, txSeenRowId, userStateSpaceId } from '@/domain/userState';
 
 const KEY_PREFIX = 'txNew_';
@@ -66,19 +67,23 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
     `newMarker:${spaceId}:${stateSpaceId ?? '-'}`, // #361: remount cache
   );
 
+  // #515 (user): the counter leg munni mints itself (a loan payment's, a
+  // savings move's) arrives with its source — never a new transaction
+  const arrivals = useMemo(() => txs?.filter((tx) => !isMintedLeg(tx)), [txs]);
+
   // label arrivals — one write per real change, whichever path owns it
   useEffect(() => {
-    if (!txs) return;
+    if (!arrivals) return;
     if (stateSpaceId) {
       if (seenRows === undefined) return;
-      void labelSynced(repo, stateSpaceId, spaceId, txs, spaceSeen, baseline).catch(() => undefined);
+      void labelSynced(repo, stateSpaceId, spaceId, arrivals, spaceSeen, baseline).catch(() => undefined);
       return;
     }
     if (marker === undefined) return;
-    void labelLocal(store, key, txs, marker).catch(() => undefined);
-  }, [txs, seenRows, spaceSeen, baseline, marker, store, repo, key, spaceId, stateSpaceId]);
+    void labelLocal(store, key, arrivals, marker).catch(() => undefined);
+  }, [arrivals, seenRows, spaceSeen, baseline, marker, store, repo, key, spaceId, stateSpaceId]);
 
-  const newIds = useMemo(() => {
+  const labeled = useMemo(() => {
     const now = Date.now();
     if (stateSpaceId) {
       return new Set(
@@ -95,10 +100,13 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
     );
   }, [stateSpaceId, spaceSeen, marker]);
 
-  const newTxs = useMemo(() => {
-    if (!txs) return [];
-    return txs.filter((tx) => tx.deleted === 0 && newIds.has(tx.id)).sort((a, b) => b.date.localeCompare(a.date));
-  }, [txs, newIds]);
+  // a leg labeled before #515 still wears its clock — the arrivals decide what lists
+  const { newTxs, newIds } = useMemo(() => {
+    const rows = (arrivals ?? [])
+      .filter((tx) => tx.deleted === 0 && labeled.has(tx.id))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return { newTxs: rows, newIds: new Set(rows.map((tx) => tx.id)) as ReadonlySet<string> };
+  }, [arrivals, labeled]);
 
   return { newTxs, newIds };
 }

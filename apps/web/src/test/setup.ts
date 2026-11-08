@@ -13,10 +13,15 @@ configure({ asyncUtilTimeout: 5000 });
 // (EventsScreen 'detail suggests', typed-splits v2). Drain the previous
 // boot's chain before every test body runs its own deleteDatabase.
 beforeEach(async () => {
-  const g = globalThis as { __munniBootChain?: Promise<unknown> };
+  const g = globalThis as { __munniBootChain?: Promise<unknown>; __munniSuggestPass?: Promise<unknown> };
   if (g.__munniBootChain) {
     await g.__munniBootChain.catch(() => undefined);
     g.__munniBootChain = undefined;
+  }
+  // #565: the review-suggestion pass writes fire-and-forget the same way
+  if (g.__munniSuggestPass) {
+    await g.__munniSuggestPass.catch(() => undefined);
+    g.__munniSuggestPass = undefined;
   }
 });
 

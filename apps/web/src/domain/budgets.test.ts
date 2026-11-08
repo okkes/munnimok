@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BudgetRow, TxView } from '@/db/types';
 import {
   budgetFamily,
+  budgetPayments,
   budgetPeriodAt,
   budgetSpentCents,
   budgetStatus,
@@ -108,6 +109,38 @@ describe('spent + family', () => {
       { start: '2026-06-01', end: '2026-06-07' },
     );
     expect(spent).toBe(3000); // 2500 + 1000 − 500, transport ignored
+  });
+
+  it('#579: the payments list is exactly the money the budget counts — a split part in the budget is a line of its own', () => {
+    const family = budgetFamily(['groceries'], catalog);
+    const period = { start: '2026-06-01', end: '2026-06-07' };
+    // a dinner split: €30 groceries (the budget's), €70 transport (the row's shadow category)
+    const split = {
+      ...tx('2026-06-05', -10_000, 'transport'),
+      id: 'split',
+      splits: [
+        { id: 'p1', catId: 'transport', amountCents: 7000 },
+        { id: 'p2', catId: 'groceries', amountCents: 3000 },
+      ],
+    } as TxView;
+    // a spread row: one transaction, €12 of it in the budget
+    const spread = {
+      ...tx('2026-06-03', -2000, 'transport'),
+      id: 'spread',
+      cats: [
+        { catId: 'transport', amountCents: 800 },
+        { catId: 'supermarket', amountCents: 1200 },
+      ],
+    } as TxView;
+    const txs = [tx('2026-06-02', -2500), split, spread, tx('2026-06-04', 500), tx('2026-06-04', -999, 'transport'), tx('2026-06-09', -100)];
+    const payments = budgetPayments(txs, family, period);
+    expect(payments.map((p) => [p.tx.id, p.part?.id, p.spentCents])).toEqual([
+      ['split', 'p2', 3000],
+      ['t2026-06-04-500', undefined, -500],
+      ['spread', undefined, 1200],
+      ['t2026-06-02--2500', undefined, 2500],
+    ]);
+    expect(payments.reduce((sum, p) => sum + p.spentCents, 0)).toBe(budgetSpentCents(txs, family, period));
   });
 });
 

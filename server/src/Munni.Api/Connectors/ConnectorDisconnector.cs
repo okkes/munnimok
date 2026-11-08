@@ -138,8 +138,9 @@ public sealed class ConnectorDisconnector(ConnectorRelay relay, ILogger<Connecto
     private async Task ForgetAsync(List<ConnectorAccountRef> refs, CancellationToken ct)
     {
         if (refs.Count == 0) return;
-        var ids = refs.Select(r => r.Id).ToList();
-        relay.Db.ConnectorPendingTxs.RemoveRange(await relay.Db.ConnectorPendingTxs.Where(p => ids.Contains(p.AccountRefId)).ToListAsync(ct));
+        // the reserved rows they tracked go to another live reference of the account, or are
+        // tombstoned: nothing would ever settle them once the bank books them (#508)
+        await PendingHandover.HandOverAsync(relay.Db, refs, ct);
         relay.Db.ConnectorAccountRefs.RemoveRange(refs);
         await relay.Db.SaveChangesAsync(ct);
     }

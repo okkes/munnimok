@@ -95,21 +95,50 @@ export async function attachReceiptTo(repo: Repo, spaceId: string, receipt: Rece
   return id;
 }
 
+const withRejected = (link: Pick<ReceiptLinkRow, 'rejectedTxIds'>, txIds: readonly string[]): string[] => [
+  ...new Set([...(link.rejectedTxIds ?? []), ...txIds]),
+];
+
+/**
+ * The link holds no transaction any more: a photo-born one IS the receipt
+ * and goes; a store receipt's stays in the space unattached and remembers
+ * the transactions it was taken off (#496: "even though I unlinked it, it's
+ * still linked" — the same receipt came straight back on the same card), so
+ * neither the matcher nor a picker's suggestions put it back there.
+ */
+export async function releaseLink(repo: Repo, spaceId: string, link: ReceiptLinkRow, txIds: readonly string[]): Promise<void> {
+  if (!link.receiptId) {
+    await repo.remove('receiptLink', spaceId, link.id);
+    return;
+  }
+  await repo.upsert('receiptLink', spaceId, link.id, {
+    txId: null as never,
+    alsoTxIds: null as never,
+    proposedTxId: null as never,
+    auto: 0,
+    rejectedTxIds: withRejected(link, txIds),
+  });
+}
+
 /**
  * The receipt lets go of ONE transaction (user 2026-10-08): the others keep
- * it — the first of them becomes `txId` when the primary leaves. The last
- * one leaving takes the link with it, the way an unlink or a photo's
- * delete always did (a store receipt is unmatched again, a photo is gone).
+ * it — the first of them becomes `txId` when the primary leaves; the last
+ * one leaving releases the link. Either way the transaction it left is
+ * remembered as not this receipt's (#496).
  */
 export async function detachReceiptFrom(repo: Repo, spaceId: string, link: ReceiptLinkRow, txId: string): Promise<void> {
   const linked = linkedTxIds(link);
   if (!linked.includes(txId)) return;
   const [first, ...rest] = linked.filter((other) => other !== txId);
   if (!first) {
-    await repo.remove('receiptLink', spaceId, link.id);
+    await releaseLink(repo, spaceId, link, [txId]);
     return;
   }
-  await repo.upsert('receiptLink', spaceId, link.id, { txId: first, alsoTxIds: rest.length > 0 ? rest : (null as never) });
+  await repo.upsert('receiptLink', spaceId, link.id, {
+    txId: first,
+    alsoTxIds: rest.length > 0 ? rest : (null as never),
+    ...(link.receiptId ? { rejectedTxIds: withRejected(link, [txId]) } : {}),
+  });
 }
 
 /**
@@ -119,14 +148,24 @@ export async function detachReceiptFrom(repo: Repo, spaceId: string, link: Recei
  */
 export async function writeProposedLink(repo: Repo, spaceId: string, receipt: ReceiptRow, proposedTxId: string): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
-  await repo.upsert('receiptLink', spaceId, id, {
-    ...receiptSnapshot(receipt),
-    txId: null as never,
-    alsoTxIds: null as never, // a proposal proves nothing yet
-    auto: 0,
-    proposedTxId,
-  });
+  await repo.upsert('receiptLink', spaceId, id, proposalFields(receipt, proposedTxId));
   return id;
+}
+
+const proposalFields = (receipt: ReceiptRow, proposedTxId: string) => ({
+  ...receiptSnapshot(receipt),
+  txId: null as never,
+  alsoTxIds: null as never, // a proposal proves nothing yet
+  auto: 0 as const,
+  proposedTxId,
+});
+
+/** a pass's proposals, committed together (#554) */
+export async function writeProposedLinks(repo: Repo, spaceId: string, proposals: readonly { receipt: ReceiptRow; txId: string }[]): Promise<void> {
+  await repo.upsertMany(
+    'receiptLink',
+    proposals.map(({ receipt, txId }) => ({ spaceId, entityId: receiptLinkId(spaceId, receipt.id), fields: proposalFields(receipt, txId) })),
+  );
 }
 
 /** the human agrees: the proposal becomes the attachment */
@@ -138,8 +177,7 @@ export async function acceptProposal(repo: Repo, spaceId: string, link: ReceiptL
 /** the human disagrees: that transaction is never proposed for this receipt again */
 export async function rejectProposal(repo: Repo, spaceId: string, link: ReceiptLinkRow): Promise<void> {
   if (!link.proposedTxId) return;
-  const rejectedTxIds = [...new Set([...(link.rejectedTxIds ?? []), link.proposedTxId])];
-  await repo.upsert('receiptLink', spaceId, link.id, { proposedTxId: null as never, rejectedTxIds });
+  await repo.upsert('receiptLink', spaceId, link.id, { proposedTxId: null as never, rejectedTxIds: withRejected(link, [link.proposedTxId]) });
 }
 
 /** the space's open proposals, newest receipt first */

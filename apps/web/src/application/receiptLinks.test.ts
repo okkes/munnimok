@@ -7,7 +7,7 @@ import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { receiptLinkId } from '@/domain/feedIds';
 import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
-import { attachReceiptTo, detachReceiptFrom, isLinkedTo, linkAsEntry, linkedTxIds, writeProposedLink } from './receiptLinks';
+import { attachReceiptTo, detachReceiptFrom, isLinkedTo, linkAsEntry, linkedTxIds, rejectProposal, releaseLink, writeProposedLink } from './receiptLinks';
 
 const FEED = 'feed-stores';
 const SPACE = 's1';
@@ -63,7 +63,7 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     expect(linkedTxIds(row)).toEqual(['pay-2']);
   });
 
-  it('detaching: the first leaving promotes the next, the last leaving removes the link (the store receipt is unmatched again), a stranger changes nothing', async () => {
+  it('detaching: the first leaving promotes the next; the last leaving leaves the receipt unattached, remembering every transaction it was taken off (#496); a stranger changes nothing', async () => {
     const receipt = await seedReceipt();
     await attachReceiptTo(repo, SPACE, receipt, 'pay-1');
     await attachReceiptTo(repo, SPACE, receipt, 'pay-2');
@@ -74,14 +74,34 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     expect(await link()).toEqual(untouched);
 
     await detachReceiptFrom(repo, SPACE, await link(), 'pay-1');
-    expect(await link()).toMatchObject({ txId: 'pay-2', alsoTxIds: ['pay-3'], deleted: 0 });
+    expect(await link()).toMatchObject({ txId: 'pay-2', alsoTxIds: ['pay-3'], rejectedTxIds: ['pay-1'], deleted: 0 });
 
     await detachReceiptFrom(repo, SPACE, await link(), 'pay-3');
     expect((await link()).txId).toBe('pay-2');
     expect((await link()).alsoTxIds).toBeFalsy();
 
     await detachReceiptFrom(repo, SPACE, await link(), 'pay-2');
-    expect((await link()).deleted).toBe(1);
+    const left = await link();
+    expect(left.deleted).toBe(0);
+    expect(linkedTxIds(left)).toEqual([]);
+    expect(left.rejectedTxIds).toEqual(['pay-1', 'pay-3', 'pay-2']);
+  });
+
+  it('releasing a whole link (#496): a store receipt stays unattached and turned down for each of its transactions; a photo is gone', async () => {
+    const receipt = await seedReceipt();
+    await writeProposedLink(repo, SPACE, receipt, 'pay-0');
+    await rejectProposal(repo, SPACE, await link());
+    await attachReceiptTo(repo, SPACE, receipt, 'pay-1');
+    await attachReceiptTo(repo, SPACE, receipt, 'pay-2');
+    await releaseLink(repo, SPACE, await link(), ['pay-1', 'pay-2']);
+    expect(await link()).toMatchObject({ deleted: 0, rejectedTxIds: ['pay-0', 'pay-1', 'pay-2'] });
+    expect((await link()).txId).toBeFalsy();
+    expect((await link()).proposedTxId).toBeFalsy();
+
+    const photo = repo.newId();
+    await repo.upsert('receiptLink', SPACE, photo, { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, image: 'data:image/jpeg;base64,ZmFrZQ==' });
+    await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo))!, ['pay-1']);
+    expect((await backend.get('receiptLink', photo))?.deleted).toBe(1);
   });
 
   it('a photo-born link (the photo IS the link) goes with its last transaction', async () => {

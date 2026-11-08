@@ -125,16 +125,19 @@ export function aheadSuggested(periodType: SpacePeriodType): number {
 /** the account types whose balances are money to give a job — savings belong to the goals */
 export const POOL_TYPES: ReadonlySet<AccountRow['type']> = new Set(['checking', 'cash']);
 
-type PoolAccount = Pick<AccountRow, 'id' | 'type' | 'deleted' | 'archived' | 'defaultFor' | 'balanceCents'>;
+type PoolAccount = Pick<AccountRow, 'id' | 'type' | 'deleted' | 'archived' | 'balanceCents'>;
 type PoolSpace = Pick<SpaceRow, 'planPoolAccountIds'> | null | undefined;
 
-/** the accounts that make the planning pool: the picked list, or every checking and cash account */
+/** the accounts that make the planning pool: the picked list, or every
+ *  checking and cash account — the space's cash wallet included: it is the
+ *  person's own cash (#348), and the default pots it used to sit out with
+ *  retired (#546) */
 export function planPoolAccounts<A extends PoolAccount>(accounts: readonly A[], space: PoolSpace): A[] {
   const picked = space?.planPoolAccountIds;
   return accounts.filter((a) => {
     if (a.deleted !== 0 || a.archived === 1) return false;
     if (picked) return picked.includes(a.id);
-    return POOL_TYPES.has(a.type) && !a.defaultFor;
+    return POOL_TYPES.has(a.type);
   });
 }
 
@@ -1075,9 +1078,9 @@ export interface RecommendInput {
   period: Period;
 }
 
-/** a debt worth planning: tracked, live, not a default pot, not in the pool */
+/** a debt worth planning: tracked, live, not in the pool */
 const plannableLoan = (a: AccountRow, poolIds: ReadonlySet<string> | undefined): boolean =>
-  a.deleted === 0 && a.archived !== 1 && !a.defaultFor && isDebtTracked(a) && !poolIds?.has(a.id);
+  a.deleted === 0 && a.archived !== 1 && isDebtTracked(a) && !poolIds?.has(a.id);
 
 /**
  * A plan munni would propose: an expense subject per main category the

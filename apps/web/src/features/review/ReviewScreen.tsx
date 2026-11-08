@@ -1,33 +1,34 @@
 import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from '@/db/useQuery';
-import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceAccount, useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
-import { buildSpaceMerchantMemory } from '@/application/prediction';
-import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
+import { requestReviewSuggestions, suggestionFor, useReviewSuggestions } from '@/application/reviewSuggestions';
+import type { ReviewSuggestion, ReviewSuggestions } from '@/application/reviewSuggestions';
+import { fileRememberedCounter, storyBasis } from '@/domain/reviewSuggest';
+import { linkAsEntry, useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
 import { useAttachableReceipts } from '@/application/connections';
 import { useReceiptOps } from '@/application/receipts';
-import { attachedElsewhere, describeTxFor, rankForTx } from '@/features/shopping/receiptPick';
+import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, dropAttached, suggestionsFor } from '@/features/shopping/receiptPick';
 import { ReceiptPickSheet } from '@/features/shopping/ReceiptPickSheet';
+import { ReceiptPeekSheet } from '@/features/shopping/ReceiptPeekSheet';
+import { ReceiptCaptureRungs } from '@/features/shopping/ReceiptCapture';
+import { BulkReceiptQueue } from '@/features/shopping/BulkReceiptQueue';
+import { receiptsToVerify } from '@/features/shopping/receiptWalk';
 import { partyName } from '@/features/connectors/logos';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
+import { EventPickList } from '@/features/events/EventPickList';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import type { FormState as RecurringFormState } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
-import { standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, isMovementCat, specialCatType } from '@/domain/categories';
 import { COUNTERABLE_ACCOUNT_TYPES, accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
 import { partNetCents } from '@/domain/reimbursement';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
-import { normalizeIban } from '@/domain/feedIds';
-import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
-import { matchCounterAccount } from '@/domain/counterClue';
-import type { ClueAccount, ClueTx } from '@/domain/counterClue';
 import { hapticNotify } from '@/lib/platform';
 import { measure } from '@/lib/perf';
 import { TxRow } from '@/ui/TxRow';
@@ -35,12 +36,10 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, EventRow, ReceiptLinkRow, ReceiptRow, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
-import { predictTx } from '@/domain/predictCategory';
-import type { TxPrediction } from '@/domain/predictCategory';
-import { recurringAmountMatches } from '@/domain/recurring';
+import { cardRowGates } from './cardRows';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -58,12 +57,15 @@ import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
+import { TitleSearchButton } from '@/features/transactions/TitleSearch';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
+import { useCanEdit } from '@/app/useCanEdit';
 import type { CatsApplyEntry } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
 import { BulkCounterQueue, CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
 import { setReviewReturn, takeReviewReturn } from './reviewReturn';
-import { AUTO_STAGE, autoReceiptFor } from './reviewReceipt';
+import { AUTO_STAGE, markedReceiptId, receiptSettlement } from './reviewReceipt';
 import type { ReceiptStage } from './reviewReceipt';
 
 /** one grouped-context row inside the category editor (counterparty,
@@ -112,6 +114,28 @@ function useFreshCardReset(txId: string | undefined, reset: () => void) {
     lastTxId.current = txId;
     reset();
   }
+}
+
+/** #565: the card's prepared suggestion, held while the card is up — a pass
+ *  finishing meanwhile never reshuffles the card under the person; a row
+ *  that changed underneath (another device) is no longer what it spoke for */
+function useCardSuggestion(tx: SpaceTx | undefined, map: ReviewSuggestions | undefined): ReviewSuggestion | undefined {
+  const held = useRef<{ txId?: string; value?: ReviewSuggestion }>({});
+  const current = held.current;
+  const stillHolds = current.txId === tx?.id && !!current.value && !!tx && current.value.basis === storyBasis(tx);
+  if (!stillHolds) held.current = { txId: tx?.id, value: suggestionFor(map, tx) };
+  return held.current.value;
+}
+
+/** the queued rows no prepared suggestion speaks for, each with the state it stands in */
+const unpreparedStates = (queue: readonly SpaceTx[] | undefined, map: ReviewSuggestions | undefined): string[] =>
+  (queue ?? []).filter((item) => !suggestionFor(map, item)).map((item) => `${item.id}:${storyBasis(item)}`);
+
+/** true when one of the states was never asked about — and remembers them all */
+function askOnce(asked: Set<string>, states: readonly string[]): boolean {
+  const fresh = states.some((state) => !asked.has(state));
+  for (const state of states) asked.add(state);
+  return fresh;
 }
 
 /** progress bar + "n / total" sub line — skips count as handled too */
@@ -235,6 +259,18 @@ function stagedNoteFor(noteDraft: string | null, container: boolean, current: st
   return staged === (current ?? '') ? undefined : staged;
 }
 
+/** #565 (user): a row the filing cannot use stays on the card, dimmed and inert */
+const rowOff = (enabled: boolean): string => (enabled ? '' : ' opacity-50');
+
+/** a part's rows by the card's rules; a stamped account's parts name no counterparty (R1) */
+function partRowGates(part: TxSplit, rowType: TxType, counter: { type: AccountType } | undefined, lockedKind: boolean) {
+  const gates = cardRowGates(
+    { catId: part.catId, txType: part.txType ?? rowType },
+    { recurringOwnsCategory: false, loanCounter: counter?.type === 'loan' || counter?.type === 'mortgage' },
+  );
+  return { ...gates, counter: gates.counter && !lockedKind };
+}
+
 /** #309: the refused row's red ring — flat helpers keep the JSX free of
  *  nested templates/ternaries (S4624/S3358). #316 (user): the ring draws
  *  INSET — the row spans the card's full inner width and the card's
@@ -347,29 +383,6 @@ function counterTxDescriptor(
   return { face, onEdit };
 }
 
-/** #161: the remembered pct SPREAD applied onto an untouched draft —
- *  a resolved transfer, an own-counter default or the row's own
- *  partition must never be fragmented by it (S3776: out of the
- *  component) */
-function applyPredictedSpread(
-  resolvedDraft: ReviewDraft | null,
-  prediction: TxPrediction | null,
-  tx: SpaceTx | undefined,
-): ReviewDraft | null {
-  if (!tx || !resolvedDraft || !prediction?.cats) return resolvedDraft;
-  if (
-    resolvedDraft.catId !== prediction.catId ||
-    resolvedDraft.linkedAccountId ||
-    resolvedDraft.cats?.length ||
-    resolvedDraft.splits?.length
-  )
-    return resolvedDraft;
-  const resolved = resolveSplitsFor(tx.amountCents, prediction.cats.map((e) => ({ catId: e.catId, amountCents: 0, pct: e.pct })));
-  const entries = resolved.map((s) => ({ catId: s.catId, amountCents: Math.abs(s.amountCents), ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
-  const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
-  return { ...withCats(resolvedDraft, entries), catId: primary.catId };
-}
-
 /** one confirm: the whole DRAFT lands in one write (+ the bulk selection) */
 async function writeConfirmation(args: {
   tx: SpaceTx;
@@ -406,8 +419,9 @@ async function writeConfirmation(args: {
     // #237 r2: a pick-existing peer rides the SAME write — the choke
     // sees the incoming peer and mints nothing
     ...peerWriteFor(args.pairPeerId, args.releasePeer),
-    ...(args.recurringId ? { recurringId: args.recurringId } : {}),
-    ...(args.eventId ? { eventId: args.eventId } : {}),
+    // #525/#565: a link the person removed (or the filing no longer takes) clears on the row
+    ...replacing('recurringId', args.recurringId, !!args.tx.recurringId),
+    ...replacing('eventId', args.eventId, !!args.tx.eventId),
     // #324 (user): the staged note lands with the same write ('' clears)
     ...(args.note !== undefined ? { notes: args.note } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
@@ -441,53 +455,62 @@ function pairReleasePlan(
   return { releasePeer, pairNew };
 }
 
-/** user ss 2026-10-05: the card's Receipt row — an attached receipt opens, a proposal or the suggestions open the sheet */
-function ReviewReceiptRow({ row, onOpen, onAsk }: Readonly<{ row: ReturnType<typeof receiptRowFor>; onOpen: (receiptId: string) => void; onAsk: () => void }>) {
+/** user ss 2026-10-05: the card's Receipt row. #496 (user): the row opens the receipts sheet; the eye looks at the
+ *  receipt it names in a sheet straight away — never the full screen any more */
+function ReviewReceiptRow({ row, onLook, onAsk }: Readonly<{ row: ReturnType<typeof receiptRowFor>; onLook: (receipt: ReceiptRow) => void; onAsk: () => void }>) {
   const { t } = useLang();
-  if (!row) return null;
-  const attachedId = row.attachedId;
+  const { receipt } = row;
   return (
-    <button
-      data-testid="review-receipt-row"
-      onClick={attachedId ? () => onOpen(attachedId) : onAsk}
-      className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-    >
-      <Icon name="receipt-text-outline" size={18} color={row.asks ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
-      <span className={`min-w-0 flex-1 truncate ${attachedId || row.asks ? '' : 'text-ink-4'}`}>{row.face}</span>
-      <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
-      <Icon name={attachedId ? 'chevron-right' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
-    </button>
+    <div className="flex items-center">
+      <button
+        data-testid="review-receipt-row"
+        onClick={onAsk}
+        className={`m-tap flex min-w-0 flex-1 items-center gap-2.5 border-none bg-transparent py-2.5 pl-4 text-left text-[14px] text-ink ${receipt ? 'pr-1' : 'pr-4'}`}
+      >
+        <Icon name="receipt-text-outline" size={18} color={row.asks ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+        <span className={`min-w-0 flex-1 truncate ${receipt || row.asks ? '' : 'text-ink-4'}`}>{row.face}</span>
+        <span className="text-[11px] text-ink-4">{t('receipt.title')}</span>
+        {!receipt && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
+      </button>
+      {receipt && (
+        <button
+          data-testid="review-receipt-look"
+          aria-label={t('review.receiptView')}
+          onClick={() => onLook(receipt)}
+          className="m-tap mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-none bg-transparent"
+        >
+          <Icon name="eye-outline" size={16} color="var(--m-ink-3)" />
+        </button>
+      )}
+    </div>
   );
 }
 
-/** the receipt the sheet marks: the person's pick, else the best match while the card still holds it */
-const stagedReceiptId = (stage: ReceiptStage, autoId: string | null): string | null => {
-  if (stage.kind === 'picked') return stage.receipt.id;
-  return stage.kind === 'auto' ? autoId : null;
-};
-
-/** the card's Receipt row: the attached receipt (a door to it), the person's pick, the proposal (a question), the best match (suggested), or None — null hides the row */
+/** the card's Receipt row: what the confirm leaves on the transaction — the person's pick, None, the attached
+ *  receipt, the proposal (a question) or the best match (suggested). #542: the row stands on every card, so a photo
+ *  can always be added; `receipt` is what the eye looks at (#496) */
 function receiptRowFor(
   state: {
-    attached: { id: string; merchant?: string; source: string; totalCents: number } | null | undefined;
-    proposal: { merchant?: string; source: string; totalCents: number } | undefined;
+    attached: ReceiptRow | null | undefined;
+    proposal: ReceiptLinkRow | undefined;
     stage: ReceiptStage;
-    auto: { merchant?: string; source: string; totalCents: number } | null;
-    candidates: number;
+    auto: ReceiptRow | null;
   },
   currency: string,
   lang: ReturnType<typeof useLang>['lang'],
   t: ReturnType<typeof useLang>['t'],
-): { face: string; attachedId?: string; asks: boolean } | null {
-  const { attached, proposal, stage, auto, candidates } = state;
-  const name = (r: { merchant?: string; source: string; totalCents: number }) => `${r.merchant ?? partyName(r.source)} · ${fmtCents(r.totalCents, currency, lang)}`;
-  if (attached) return { face: name(attached), attachedId: attached.id, asks: false };
-  if (stage.kind === 'picked') return { face: name(stage.receipt), asks: true };
-  if (stage.kind === 'auto') {
-    if (proposal) return { face: `${name(proposal)} · ${t('receipts.proposedBadge')}`, asks: true };
-    if (auto) return { face: `${name(auto)} · ${t('review.receiptAuto')}`, asks: true };
+): { face: string; receipt?: ReceiptRow; asks: boolean } {
+  const { attached, proposal, stage, auto } = state;
+  const name = (r: ReceiptRow) => `${r.merchant ?? partyName(r.source)} · ${fmtCents(r.totalCents, currency, lang)}`;
+  const none = { face: t('review.receiptNone'), asks: false };
+  if (stage.kind === 'picked') return { face: name(stage.receipt), receipt: stage.receipt, asks: true };
+  if (stage.kind === 'none') return none;
+  if (attached) return { face: name(attached), receipt: attached, asks: false };
+  if (proposal) {
+    const asked = linkAsEntry(proposal).data;
+    return { face: `${name(asked)} · ${t('receipts.proposedBadge')}`, receipt: asked, asks: true };
   }
-  return candidates > 0 || proposal ? { face: t('review.receiptNone'), asks: false } : null;
+  return auto ? { face: `${name(auto)} · ${t('review.receiptAuto')}`, receipt: auto, asks: true } : none;
 }
 
 /** #211: the sibling's copy of a category spread — % entries rescale to
@@ -549,6 +572,29 @@ function stageAsSettlement(draft: ReviewDraft, cats: ReturnType<typeof useCatego
 /** the part a numbered picker/sheet is aimed at (S3776: out of the deck) */
 const partAt = (parts: readonly TxSplit[], index: number | null): TxSplit | undefined =>
   index === null ? undefined : parts[index];
+
+/** #237 r3: the part's Counter-transaction face — none while no
+ *  counterparty stands, or a funding pot holds it (S3776/S3358: out of
+ *  the deck) */
+function partCounterTxFaceOf(
+  part: TxSplit,
+  counterAcct: { type: AccountType; source?: string } | undefined,
+  allTxs: readonly SpaceTx[] | undefined,
+  currency: string,
+  lang: ReturnType<typeof useLang>['lang'],
+  t: ReturnType<typeof useLang>['t'],
+): string | undefined {
+  if (!counterAcct || counterAcct.type === 'funding') return undefined;
+  const peer = part.transferPeerId ? allTxs?.find((r) => r.id === part.transferPeerId) : undefined;
+  return counterTxFaceFor(peer, (counterAcct.source ?? 'manual') !== 'manual', currency, lang, t);
+}
+
+/** #228: a part's counter door pins a default and narrows the account
+ *  types only under a special category (S3776: out of the deck) */
+function partCounterAsk(part: TxSplit | undefined): { defaultFamily?: DefaultFamily; counterTypes?: readonly AccountType[] } {
+  if (!part || !specialCatType(part.catId)) return {};
+  return { defaultFamily: defaultFamilyFor(part.catId) ?? undefined, counterTypes: counterTypesFor(part.catId) };
+}
 
 /** r8: the tapped card GROWS out of its slot to the front while the old
  *  active SHRINKS back into its own slot — FLIP on the real elements,
@@ -631,13 +677,13 @@ function CardCategoryRows({
   /** the classic per-slice category editor (the chip's door) */
   onOpenCategories: () => void;
   /** #228 feedback: the card's own Counterparty row — counter-first
-   *  stages the special category; absent = the row hides */
+   *  stages the special category; absent = the row stands disabled (#565) */
   onEditCounter?: () => void;
   /** #309 (user): a refused bare-movement Confirm paints this row red */
   counterRequired?: boolean;
-  /** #237 r3 (user): the card's own Counter-transaction row — appears
-   *  once a counterparty stands; face = the picked row or the default
-   *  (create / await the feed). No onEdit = read-only (a stored pair). */
+  /** #237 r3 (user): the card's own Counter-transaction row — live once
+   *  a counterparty stands; face = the picked row or the default (create /
+   *  await the feed). Absent = disabled until a counterparty stands. */
   counterTx?: { face: string; onEdit?: () => void };
 }>) {
   const { t, lang } = useLang();
@@ -708,20 +754,24 @@ function CardCategoryRows({
       )}
       {/* #228 feedback (user ss): the counterparty is the card's own
           row — counter-first picks the special category automatically,
-          removal resets the category (same doors as the detail screen) */}
-      {!multi && onEditCounter && (
+          removal resets the category (same doors as the detail screen).
+          #565 (user): it stands on every card; an ordinary filing has no
+          counterparty, so there it is disabled */}
+      {!multi && (
         <>
           <button
             data-testid="review-counter-row"
             onClick={onEditCounter}
-            className={'m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink' + counterRowRing(counterRequired)}
+            disabled={!onEditCounter}
+            aria-disabled={!onEditCounter}
+            className={'m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink' + counterRowRing(counterRequired) + rowOff(!!onEditCounter)}
           >
             <Icon name="bank-transfer" size={18} color={counterRequired ? 'var(--m-negative)' : 'var(--m-ink-3)'} />
             <span className={`min-w-0 flex-1 truncate ${counterValueTone(counterRequired, draft?.linkedAccountId)}`}>
               {(accounts ?? []).find((a) => a.id === draft?.linkedAccountId)?.name ?? t('tx.counterNone')}
             </span>
             <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
-            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            {onEditCounter && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
           {/* #309: the honest reason the Confirm refused, under the field */}
           <FormBlockerNote show={!!counterRequired} text={t('review.counterRequired')} testId="review-counter-required" className="px-4 pb-2" />
@@ -730,18 +780,20 @@ function CardCategoryRows({
       {/* #237 r3 (user): the counter TRANSACTION is the card's own row —
           the fork sheet after the counterparty pick is gone; this row
           opens the match sheet (pick an existing leg, or reset to the
-          create/await default) */}
-      {!multi && counterTx && (
+          create/await default). #565: without a counterparty it stands
+          disabled */}
+      {!multi && (
         <button
           data-testid="review-countertx-row"
-          onClick={counterTx.onEdit}
-          disabled={!counterTx.onEdit}
-          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+          onClick={counterTx?.onEdit}
+          disabled={!counterTx?.onEdit}
+          aria-disabled={!counterTx?.onEdit}
+          className={`m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink${rowOff(!!counterTx)}`}
         >
           <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1 truncate">{counterTx.face}</span>
+          <span className={`min-w-0 flex-1 truncate ${counterTx ? '' : 'text-ink-4'}`}>{counterTx?.face ?? t('review.counterTxNone')}</span>
           <span className="text-[11px] text-ink-4">{t('tx.counterTxRow')}</span>
-          {counterTx.onEdit && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
+          {counterTx?.onEdit && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
         </button>
       )}
       {settled.map((slice) => catRow(slice.catId, slice.amountCents, `settled-${slice.catId}`))}
@@ -773,7 +825,7 @@ export function ReviewPartDeck({
   /** the container's type: what untyped parts inherit */
   rowType: TxType;
   tx: SpaceTx;
-  activeEvents: readonly { id: string; name: string; icon?: string }[];
+  activeEvents: readonly EventRow[];
   allowedCatIds?: readonly string[];
   /** R1: a stamped account types every row — parts included */
   lockedKind?: boolean;
@@ -831,6 +883,7 @@ export function ReviewPartDeck({
     onSplits(slices.map((s) => (s === target ? { ...s, ...patch } : s)));
   };
   const counterPart = counterForIdx === null ? undefined : parts[counterForIdx];
+  const counterAsk = partCounterAsk(counterPart);
   const partLabel = (slice: TxSplit, i: number) =>
     orDefaultLabel(slice.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`);
   const swapTo = (i: number) => {
@@ -851,6 +904,10 @@ export function ReviewPartDeck({
   const activeRealCats = (active.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
   const activeEventFace = activeEvents.find((event) => event.id === active.eventId)?.name ?? t('events.linkNone');
   const activeRecFace = recurrings.find((rec) => rec.id === active.recurringId)?.name ?? t('recurring.linkNone');
+  // #565: the part's rows follow the card's rules — a stamped account owns its parts' story
+  const partCounterAcct = accounts?.find((a) => a.id === active.linkedAccountId);
+  const partGates = partRowGates(active, rowType, partCounterAcct, lockedKind);
+  const partCounterTxFace = partCounterTxFaceOf(active, partCounterAcct, allTxs, tx.currency, lang, t);
   const peeking = parts.map((slice, i) => ({ slice, i })).filter(({ i }) => i !== openIdx);
   const deckDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
   const needsAttention = (slice: TxSplit) => attention && slice.catId === UNCATEGORIZED_ID;
@@ -978,68 +1035,63 @@ export function ReviewPartDeck({
             );
           })}
           {/* #228 feedback: the part's own Counterparty row — the same
-              counter-first door the card and the detail screen carry */}
-          {!lockedKind && (
-            <button
-              data-testid={`deck-counter-${openIdx}`}
-              onClick={() => setCounterForIdx(openIdx)}
-              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
-            >
-              <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-              <span className={`min-w-0 flex-1 truncate ${active.linkedAccountId ? '' : 'text-ink-4'}`}>
-                {accounts?.find((a) => a.id === active.linkedAccountId)?.name ?? t('tx.counterNone')}
-              </span>
-              <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
-              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-            </button>
-          )}
+              counter-first door the card and the detail screen carry.
+              #565 (user): every row stands on the part as on the card,
+              disabled where the part's filing cannot use it */}
+          <button
+            data-testid={`deck-counter-${openIdx}`}
+            onClick={() => setCounterForIdx(openIdx)}
+            disabled={!partGates.counter}
+            aria-disabled={!partGates.counter}
+            className={`m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink${rowOff(partGates.counter)}`}
+          >
+            <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+            <span className={`min-w-0 flex-1 truncate ${active.linkedAccountId ? '' : 'text-ink-4'}`}>
+              {partCounterAcct?.name ?? t('tx.counterNone')}
+            </span>
+            <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
+            {partGates.counter && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
+          </button>
           {/* #237 r3: the part's Counter-transaction row — same story as
               the card's (pick the existing leg, or the create/await
               default), sized to the PART's money */}
-          {(() => {
-            const partCounterAcct = accounts?.find((a) => a.id === active.linkedAccountId);
-            if (!partCounterAcct || partCounterAcct.type === 'funding') return null;
-            const peerRow = active.transferPeerId ? allTxs?.find((r) => r.id === active.transferPeerId) : undefined;
-            const face = counterTxFaceFor(peerRow, (partCounterAcct.source ?? 'manual') !== 'manual', tx.currency, lang, t);
-            return (
-              <button
-                data-testid={`deck-countertx-${openIdx}`}
-                onClick={() => setCounterTxForIdx(openIdx)}
-                className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
-              >
-                <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
-                <span className="min-w-0 flex-1 truncate">{face}</span>
-                <span className="text-[11px] text-ink-4">{t('tx.counterTxRow')}</span>
-                <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-              </button>
-            );
-          })()}
-          {/* r7: parts link recurring costs, exactly like the card does —
-              #339 (user): only once the part has a real category, like the card's rows */}
-          {!!active.catId && active.catId !== UNCATEGORIZED_ID && (
-          <>
+          <button
+            data-testid={`deck-countertx-${openIdx}`}
+            onClick={() => setCounterTxForIdx(openIdx)}
+            disabled={!partCounterTxFace}
+            aria-disabled={!partCounterTxFace}
+            className={`m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink${rowOff(!!partCounterTxFace)}`}
+          >
+            <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
+            <span className={`min-w-0 flex-1 truncate ${partCounterTxFace ? '' : 'text-ink-4'}`}>{partCounterTxFace ?? t('review.counterTxNone')}</span>
+            <span className="text-[11px] text-ink-4">{t('tx.counterTxRow')}</span>
+            {partCounterTxFace && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
+          </button>
+          {/* r7: parts link recurring costs, exactly like the card does */}
           <button
             data-testid={`deck-rec-${openIdx}`}
             onClick={() => setRecFor(openIdx)}
-            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+            disabled={!partGates.recurring}
+            aria-disabled={!partGates.recurring}
+            className={`m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink${rowOff(partGates.recurring)}`}
           >
             <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{activeRecFace}</span>
+            <span className="min-w-0 flex-1 truncate">{partGates.recurring ? activeRecFace : t('recurring.linkNone')}</span>
             <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
-            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            {partGates.recurring && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
           <button
             data-testid={`deck-event-${openIdx}`}
             onClick={() => setEventFor(openIdx)}
-            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+            disabled={!partGates.event}
+            aria-disabled={!partGates.event}
+            className={`m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink${rowOff(partGates.event)}`}
           >
             <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{activeEventFace}</span>
+            <span className="min-w-0 flex-1 truncate">{partGates.event ? activeEventFace : t('events.linkNone')}</span>
             <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
-            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            {partGates.event && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
           </button>
-          </>
-          )}
         </div>
       </div>
 
@@ -1060,10 +1112,9 @@ export function ReviewPartDeck({
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={counterPart?.linkedAccountId}
-        defaultFamily={
-          counterPart && specialCatType(counterPart.catId) ? (defaultFamilyFor(counterPart.catId) ?? undefined) : undefined
-        }
-        counterTypes={counterPart && specialCatType(counterPart.catId) ? counterTypesFor(counterPart.catId) : undefined}
+        amountCents={counterPart ? partSignedCents(tx.amountCents, Math.abs(counterPart.amountCents)) : undefined}
+        defaultFamily={counterAsk.defaultFamily}
+        counterTypes={counterAsk.counterTypes}
         // #237 r3 (user): no fork after the counterparty pick — the
         // part's Counter-transaction row below owns the leg question
         onChoose={(account) => {
@@ -1153,23 +1204,16 @@ export function ReviewPartDeck({
             <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
             <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
           </button>
-          {activeEvents.map((event) => (
-            <button
-              key={event.id}
-              data-testid={`deck-event-${event.id}`}
-              onClick={() => {
-                if (eventFor !== null) patchPart(eventFor, { eventId: event.id });
-                setEventFor(null);
-              }}
-              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
-            >
-              <Icon name={event.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
-              <span className="min-w-0 flex-1 truncate">{event.name}</span>
-              {eventFor !== null && parts[eventFor]?.eventId === event.id && (
-                <Icon name="check" size={17} color="var(--m-accent-deep)" />
-              )}
-            </button>
-          ))}
+          {/* #537: the shared picker rows — archived labelled, each one peekable */}
+          <EventPickList
+            events={activeEvents}
+            selectedId={eventFor === null ? null : parts[eventFor]?.eventId}
+            testIdPrefix="deck-event-"
+            onPick={(id) => {
+              if (eventFor !== null) patchPart(eventFor, { eventId: id });
+              setEventFor(null);
+            }}
+          />
           {/* #251: the quick-create door the whole-card picker has */}
           <button
             data-testid="deck-event-create"
@@ -1280,59 +1324,9 @@ export function ReviewPartDeck({
   );
 }
 
-/** 2026-10-05 (user ss): a row that REMEMBERS its counterparty (the
- * memory, an earlier device, a repaired overlay) but wears no category
- * files the movement its counter's kind means — the bijection the pick
- * itself applies — instead of sitting on "Pick a category" next to a
- * labelled counter transaction. A deliberate category is never touched. */
-function fileRememberedCounter(
-  draft: ReviewDraft | null,
-  accounts: readonly { id: string; type: AccountType }[] | undefined,
-  cats: ReturnType<typeof useCategories>,
-  amountCents: number,
-  ownStamp?: TxType,
-): ReviewDraft | null {
-  if (!draft?.linkedAccountId || draft.splits?.length || draft.cats?.length) return draft;
-  if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
-  const account = accounts?.find((a) => a.id === draft.linkedAccountId);
-  if (!account) return draft;
-  return withLinkedAccount(draft, { id: account.id, type: account.type }, cats, amountCents, ownStamp);
-}
-
-/** own-account counterparty pre-applies the link + suggested type; the
- * hidden 'uncategorized' builtin keeps the confirm armed for transfers */
-function applyOwnCounterDefault(
-  baseDraft: ReviewDraft | null,
-  ownCounter: { id: string; type: AccountType } | undefined,
-  cats: ReturnType<typeof useCategories>,
-  amountCents: number,
-  ownStamp?: TxType,
-): ReviewDraft | null {
-  if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
-  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats, amountCents, ownStamp);
-  return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
-}
-
-/** #228 r3 (user rule): an AUTOMATIC transfer prediction must name a
- * real counterparty or stand down. The bank text names one of the
- * space's tracked accounts → pre-link it (the bijection files the
- * category from the account's kind); no clue → the card opens
- * Uncategorized and review asks the human. Only the untouched baseline
- * passes through here — a user-staged draft is never rewritten. */
-export function resolveTransferPrediction(
-  draft: ReviewDraft | null,
-  tx: (ClueTx & { accountId: string; amountCents: number }) | undefined,
-  accounts: readonly ClueAccount[] | undefined,
-  cats: DraftCatalog,
-  ownStamp?: TxType,
-): ReviewDraft | null {
-  if (!draft || !tx || ownStamp) return draft;
-  if (draft.linkedAccountId || draft.splits?.length || draft.cats?.length) return draft;
-  if (defaultFamilyFor(draft.catId) !== 'transfer') return draft;
-  const match = matchCounterAccount(tx, accounts ?? [], tx.accountId);
-  if (match) return withLinkedAccount(draft, { id: match.id, type: match.type }, cats, tx.amountCents, ownStamp);
-  return { ...withType({ ...draft, linkedAccountId: undefined }, standardTypeFor(tx.amountCents), cats), catId: UNCATEGORIZED_ID };
-}
+// the prediction chain (own-account counter, named transfer, remembered
+// counter, the loan, the spread) lives in domain/reviewSuggest.ts — #565
+// prepares it when the row lands, the card only reads it
 
 /** the bulk sheet's read-only transaction peek: (almost) the detail
  * screen's facts — amount, date, category, type, account, counterparty,
@@ -1340,8 +1334,8 @@ export function resolveTransferPrediction(
 function BulkTxPeek({ tx }: Readonly<{ tx: SpaceTx }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
-  const { store } = useData();
-  const account = useQuery(store, async () => store.get('account', tx.accountId), [tx.accountId]);
+  // #545: the name this space gave the account
+  const account = useSpaceAccount(tx.accountId);
   const cat = cats.byId(tx.catId);
   const catColor = cat.color ?? cats.byId(cat.parentId ?? '').color;
   const factRow = (label: string, value: string, icon: string, color?: string) => (
@@ -1483,14 +1477,13 @@ function BulkConfirmSection({
 }
 
 /**
- * The card's link row below categories: the editable recurring link with
- * its price-delta warning. A loan/mortgage counterparty renders NOTHING —
- * the Counterparty row already names the debt (1:1 with its account),
- * and a second "Debt" line right under it was pure repetition (#236);
- * a payoff transfer is not a recurring cost either (user 2026-07-29).
+ * The card's recurring row with its price-delta warning. #565 (user): it
+ * stands on every card — disabled where the filing takes no recurring
+ * cost: a debt payment (the Counterparty row names the loan — #236; a
+ * payoff is not a recurring cost, user 2026-07-29) or an adjustment.
  */
 function DebtOrRecurringRow({
-  isLoanCounter,
+  enabled,
   recMatch,
   linkRecurring,
   manualRec,
@@ -1498,7 +1491,7 @@ function DebtOrRecurringRow({
   currency,
   onEdit,
 }: Readonly<{
-  isLoanCounter: boolean;
+  enabled: boolean;
   recMatch: RecurringRow | undefined;
   linkRecurring: boolean;
   manualRec: RecurringRow | undefined;
@@ -1507,19 +1500,20 @@ function DebtOrRecurringRow({
   onEdit: () => void;
 }>) {
   const { t, lang } = useLang();
-  if (isLoanCounter) return null;
   const delta = recMatch ? Math.abs(Math.abs(amountCents) - recMatch.amountCents) : 0;
   // #333 (user): once a recurring is picked, the row leads with ITS OWN
   // face (logo or kind icon) — the generic circle-arrow only means
   // "nothing linked yet". Mirrors the label's chosen-rec derivation.
   const linked = recMatch && linkRecurring ? recMatch : manualRec;
-  const chosen = chosenRecurringId(recMatch, linkRecurring, manualRec?.id ?? null) ? linked : undefined;
+  const chosen = enabled && chosenRecurringId(recMatch, linkRecurring, manualRec?.id ?? null) ? linked : undefined;
   return (
     <>
       <button
         data-testid="review-recurring-row"
         onClick={onEdit}
-        className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        disabled={!enabled}
+        aria-disabled={!enabled}
+        className={`m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink${rowOff(enabled)}`}
       >
         {chosen ? (
           <span data-testid="review-recurring-visual" className="flex shrink-0 items-center justify-center">
@@ -1528,11 +1522,11 @@ function DebtOrRecurringRow({
         ) : (
           <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
         )}
-        <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
+        <span className="min-w-0 flex-1 truncate">{enabled ? recurringRowLabel(recMatch, linkRecurring, manualRec, t) : t('recurring.linkNone')}</span>
         <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        {enabled && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
       </button>
-      {recMatch && linkRecurring && delta >= 50 && (
+      {enabled && recMatch && linkRecurring && delta >= 50 && (
         <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
           <Icon name={Math.abs(amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
           {t(Math.abs(amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
@@ -1671,6 +1665,9 @@ export function ReviewScreen() {
   const transform = useTxTransform();
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
+  // #505 (user): a space this identity only reads shows its cards, never confirms them
+  const canEdit = useCanEdit();
+  const readOnlyRegion = canEdit ? undefined : true;
 
   const [splitOpen, setSplitOpen] = useState(false);
   // #211: two different features, two different sheets — the category
@@ -1738,6 +1735,11 @@ export function ReviewScreen() {
     note?: string;
     target: { id: string; name: string };
   } | null>(null);
+  // #495 (user): the bulk siblings' receipts walk in turn too — after the
+  // counter queue when both run (only the siblings it settled), else at once
+  const [receiptBulk, setReceiptBulk] = useState<SpaceTx[] | null>(null);
+  const pendingReceiptBulk = useRef<SpaceTx[] | null>(null);
+  const counterSettled = useRef(new Set<string>());
   // #268 r2 (user): while that queue walks the siblings, the deck must
   // not advance behind it — the just-confirmed card stays frozen (a
   // stale snapshot, edits closed) until the queue is done
@@ -1760,10 +1762,6 @@ export function ReviewScreen() {
   // shows the row's own note); written with the confirm, bulk included
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
-  // #339: true once the USER filed a plain (non-special) category on
-  // this card — the counterparty row retires then (a prediction alone
-  // keeps the #228 counter-first door open)
-  const [pickedPlainCat, setPickedPlainCat] = useState(false);
   // deck animation (user request): keep the outgoing card's markup as a
   // ghost that flies out left while the next card slides in from the right.
   // 2026-10-06 (user ss, phone): the ghost used to fly the moment Confirm
@@ -1796,16 +1794,23 @@ export function ReviewScreen() {
   const [eventCreating, setEventCreating] = useState(false);
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
-  // teaching data: what this space (or the user's personal spaces) confirmed before.
-  // 2026-10-09 (user: Confirm stalled): keyed, so the rebuild is one shared
-  // live query (and a remount shows the last memory at once)
-  const memory = useQuery(store, async () => buildSpaceMerchantMemory(store, spaceId), [spaceId], undefined, `merchantMemory:${spaceId}`);
+  // #565 (user): what munni worked out about each row was prepared the
+  // moment it landed (application/reviewSuggestions) — the card only reads
+  // it, and the deck waits for the map so nothing pops in afterwards
+  const suggestions = useReviewSuggestions();
+  const suggestionsReady = suggestions !== undefined;
 
   const queue = useMemo(
     // oldest first (user request): work through the backlog chronologically
-    () => allTxs?.filter((item) => item.needsReview === 1).sort((a, b) => a.date.localeCompare(b.date)),
-    [allTxs],
+    () => (suggestionsReady ? allTxs?.filter((item) => item.needsReview === 1).sort((a, b) => a.date.localeCompare(b.date)) : undefined),
+    [allTxs, suggestionsReady],
   );
+  // a row nobody prepared yet, or one that changed since (sent back to the
+  // review by a heal, say), asks the pass — never the card; once per state
+  const askedFor = useRef(new Set<string>());
+  useEffect(() => {
+    if (askOnce(askedFor.current, unpreparedStates(queue, suggestions))) requestReviewSuggestions(spaceId);
+  }, [queue, suggestions, spaceId]);
   useEffect(() => {
     if (queue && initialCount === null) setInitialCount(queue.length || 1);
   }, [queue, initialCount]);
@@ -1814,7 +1819,7 @@ export function ReviewScreen() {
   // #268 r2 (user): the deck keeps showing the confirmed card (the held
   // snapshot) while the counter queue runs
   const tx = shownCard(heldTx, remaining);
-  const heldDeck = heldDeckProps(!!counterBulk);
+  const heldDeck = heldDeckProps(!!counterBulk || !!receiptBulk);
   // the armed ghost takes off the moment another card is up - the same
   // render that slides the new card in - and never before
   const shownId = tx?.id;
@@ -1840,67 +1845,26 @@ export function ReviewScreen() {
     if (!back || tx?.id !== back.txId) return;
     returnState.current = null;
     if (back.reopenCats) setCatsOpen(true);
-    // 2026-10-06 (user): back from the receipt screen — the card's staged picks come back too
-    if (back.draft !== undefined) setStagedDraft(back.draft);
-    if (back.note !== undefined) setNoteDraft(back.note);
-    if (back.receipt) setReceiptStage(back.receipt);
-    if (back.bulk) setBulkSelected(new Set(back.bulk));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tx?.id]);
 
-  const prediction = useMemo(
-    () => (tx && memory ? predictTx({ memory, merchant: tx.merchant, titleOverride: tx.titleOverride, description: tx.description, amountCents: tx.amountCents }) : null),
-    [tx, memory],
-  );
+  // the card's prepared suggestion — the prediction with its reason, the own-
+  // account or named counterparty, the loan, the spread, the event and the
+  // recurring cost — held while the card is up
+  const suggestion = useCardSuggestion(tx, suggestions);
 
-  // counterparty IBAN belonging to one of MY OWN accounts = money moving
-  // between my accounts — a transfer by definition, pre-applied (user
-  // report: credit-card top-ups showed up as expense + income pairs)
   // the funding account, named on the card (user request)
-  const cardAccount = useQuery(store, async () => (tx ? store.get('account', tx.accountId) : undefined), [tx?.accountId]);
+  // #545: as this space names (and types) it
+  const cardAccount = useSpaceAccount(tx?.accountId);
   // R1: the row's own account stamps its type — the kind row locks and
   // a counterparty pick keeps the stamp with the forced movement sub
   const ownStamp = accountStamp(cardAccount?.type);
-  const ownCounter = useQuery(
-    store,
-    async () => {
-      const accounts = await store.allRows('account');
-      const iban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
-      const byIban = iban
-        ? accounts.find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban)
-        : undefined;
-      if (byIban) return byIban;
-      // PP1 rung 3: a PayPal-funding debit defaults to the PayPal account
-      // (shared collection IBAN never matches — the name pattern does)
-      if (tx && tx.amountCents < 0 && isPaypalFunding(tx)) {
-        return accounts.find((a) => a.deleted === 0 && isPaypalAccount(a));
-      }
-      return undefined;
-    },
-    [tx?.counterIban, tx?.id],
-  );
-
-  // untouched cards follow the tx + the (async) prediction live
-  const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;
-  const ownTransferDraft = useMemo(
-    () => applyOwnCounterDefault(baseDraft, ownCounter, cats, tx?.amountCents ?? 0, ownStamp),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tx?.id, ownCounter, prediction?.catId, cats, ownStamp],
-  );
-  // #228 r3: a predicted transfer resolves against the space's accounts
-  // — clue-matched counterparty, or Uncategorized when nothing matches
   const spaceAccounts = useSpaceAccounts();
-  const resolvedDraft = useMemo(
-    () => fileRememberedCounter(resolveTransferPrediction(ownTransferDraft, tx, spaceAccounts, cats, ownStamp), spaceAccounts, cats, tx?.amountCents ?? 0, ownStamp),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ownTransferDraft, tx?.id, spaceAccounts, cats, ownStamp],
-  );
-  // #161: the remembered pct SPREAD rides in when the memory's category
-  // stood (the guard rules live in applyPredictedSpread)
+  // untouched cards show the suggestion; a row nobody prepared shows its own
+  // facts (a remembered counterparty still files the category its kind means)
   const spreadDraft = useMemo(
-    () => applyPredictedSpread(resolvedDraft, prediction, tx),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resolvedDraft, prediction, tx?.id],
+    () => (tx ? (suggestion?.draft ?? fileRememberedCounter(initDraft(tx, undefined, cats), spaceAccounts, cats, tx.amountCents, ownStamp)) : null),
+    [tx, suggestion, cats, spaceAccounts, ownStamp],
   );
   const draft = stagedDraft ?? spreadDraft;
   // user ss 2026-10-05: the receipt is part of the review — a fetched
@@ -1909,39 +1873,58 @@ export function ReviewScreen() {
   const receiptEntry = useTxReceiptEntry(tx?.id);
   const receiptProposals = useProposedMatches();
   const attachableReceipts = useAttachableReceipts();
-  // the suggestions come from the unmatched receipts; the search reaches every receipt, and one attached elsewhere
-  // says so under its row and stays pickable (user 2026-10-08: several payments, one receipt)
-  const unmatchedReceipts = useMemo(
-    () => (attachableReceipts?.rows ?? []).filter((r) => !attachableReceipts?.attachedTo.has(r.id)),
-    [attachableReceipts],
-  );
+  // one attached elsewhere says so under its row and stays pickable (user 2026-10-08: several payments, one receipt)
   const receiptElsewhere = useMemo(() => attachedElsewhere(attachableReceipts?.attachedTo, tx?.id ?? ''), [attachableReceipts, tx?.id]);
   const describeReceiptTx = useMemo(() => describeTxFor(allTxs, lang, tx?.currency ?? 'EUR'), [allTxs, lang, tx?.currency]);
   const receiptOps = useReceiptOps();
   const [receiptPickOpen, setReceiptPickOpen] = useState(false);
+  // #496: the row's eye looks at the receipt it names in a sheet over the card (the receipt outlives the close flag)
+  const [receiptLook, setReceiptLook] = useState<ReceiptRow | null>(null);
+  const [receiptLookOpen, setReceiptLookOpen] = useState(false);
+  const [receiptBusy, setReceiptBusy] = useState(false);
   // user 2026-10-06: the receipt the card attaches on confirm — the best
   // match by itself (like the predicted category), one the person picked, or none
   const [receiptStage, setReceiptStage] = useState<ReceiptStage>(AUTO_STAGE);
-  const receiptProposal = useMemo(() => (receiptProposals ?? []).find((l) => l.proposedTxId === tx?.id), [receiptProposals, tx?.id]);
+  const attachedReceipt = receiptEntry?.data ?? null;
+  const receiptProposal = useMemo(
+    () => (attachedReceipt ? undefined : (receiptProposals ?? []).find((l) => l.proposedTxId === tx?.id)),
+    [attachedReceipt, receiptProposals, tx?.id],
+  );
+  // the suggestions come from the unmatched receipts, never one taken off this transaction (#496)
   const receiptCandidates = useMemo(
-    () => (tx ? rankForTx(tx, unmatchedReceipts.filter((r) => r.id !== receiptProposal?.receiptId)).slice(0, 6) : []),
-    [tx, unmatchedReceipts, receiptProposal?.receiptId],
+    () => (tx ? candidatesFor(tx, attachableReceipts, receiptProposal?.receiptId) : []),
+    [tx, attachableReceipts, receiptProposal?.receiptId],
   );
-  const autoReceipt = useMemo(() => (tx && !receiptProposal ? autoReceiptFor(tx, receiptCandidates) : null), [tx, receiptProposal, receiptCandidates]);
-  const receiptRow = tx
-    ? receiptRowFor({ attached: receiptEntry?.data, proposal: receiptProposal, stage: receiptStage, auto: autoReceipt, candidates: receiptCandidates.length }, tx.currency, lang, t)
-    : null;
-  /** the receipt screen is a detour (user 2026-10-06): the deck's place and the card's staged picks come back with the person */
-  const openReceipt = (receiptId: string) => {
-    if (!tx) return;
-    setReviewReturn({ skippedIds: [...skipped], txId: tx.id, reopenCats: false, draft: stagedDraft, note: noteDraft, receipt: receiptStage, bulk: [...bulkSelected] });
-    void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
+  // #565: the best fit was prepared with the row — the card only checks it is
+  // still free (a receipt that lands while the card is up joins it: the live map)
+  const preparedReceiptId = suggestionFor(suggestions, tx)?.receiptId ?? suggestion?.receiptId;
+  const autoReceipt = useMemo(
+    () =>
+      tx && !receiptProposal && !attachedReceipt && preparedReceiptId
+        ? (receiptCandidates.find((r) => r.id === preparedReceiptId) ?? null)
+        : null,
+    [tx, receiptProposal, attachedReceipt, receiptCandidates, preparedReceiptId],
+  );
+  const receiptRow = tx ? receiptRowFor({ attached: attachedReceipt, proposal: receiptProposal, stage: receiptStage, auto: autoReceipt }, tx.currency, lang, t) : null;
+  const lookAtReceipt = (receipt: ReceiptRow) => {
+    setReceiptLook(receipt);
+    setReceiptLookOpen(true);
   };
-  const draftCounter = useQuery(
-    store,
-    async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
-    [draft?.linkedAccountId],
-  );
+  /** #542: a photo taken or uploaded on the card attaches at once (Skip must not throw away what the person
+   *  captured), in the attached receipt's place — the staged pick has nothing left to say */
+  const attachReceiptPhoto = async (file: File) => {
+    if (!tx) return;
+    setReceiptBusy(true);
+    try {
+      await receiptOps.attachPhoto(tx, file);
+      if (receiptEntry) await dropAttached(receiptOps, receiptEntry, tx.id);
+      setReceiptStage(AUTO_STAGE);
+      setReceiptPickOpen(false);
+    } finally {
+      setReceiptBusy(false);
+    }
+  };
+  const draftCounter = useSpaceAccount(draft?.linkedAccountId);
   // a loan/mortgage counterparty makes this a DEBT payment: the account
   // IS the loan (v2), so the card names the counterparty itself and
   // retires the recurring row — a payoff transfer is not a recurring
@@ -1963,16 +1946,18 @@ export function ReviewScreen() {
   const counterTxRow = counterTxDescriptor(tx, counterAcct, peerFaceRow, counterBankFed, lang, t, () => setCounterTxOpen(true));
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
-  const pickedEvent = activeEvents.find((e) => e.id === eventPick);
+  const pickedEvent = (events ?? []).find((e) => e.id === eventPick);
   // #161: the memory's event offer — only an ACTIVE event of THIS space
   // qualifies, and only until the user touches the event row themselves
-  const predictedEventId = useMemo(
-    () => (prediction?.eventId && activeEvents.some((e) => e.id === prediction.eventId) ? prediction.eventId : null),
-    [prediction, activeEvents],
-  );
+  // the row's own event stands (archived or not); else the memory's offer —
+  // an ACTIVE event of this space only
+  const predictedEventId = useMemo(() => {
+    if (tx?.eventId) return tx.eventId;
+    const offered = suggestion?.eventId;
+    return offered && activeEvents.some((e) => e.id === offered) ? offered : null;
+  }, [tx?.eventId, suggestion?.eventId, activeEvents]);
   useEffect(() => {
     if (!eventTouched.current) setEventPick(predictedEventId);
-    // per-card offer: the prediction lands whenever it resolves
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [predictedEventId, tx?.id]);
   const cat = cats.byId(draft?.catId);
@@ -1981,19 +1966,13 @@ export function ReviewScreen() {
   // card drops its kind/recurring/event rows and shows just the money
   const multiPart = (draft?.splits?.filter((s) => s.catId !== REIMBURSED_ID).length ?? 0) > 1;
 
-  const recMatch = useMemo(
-    () =>
-      tx
-        ? recurrings?.find(
-            (r) =>
-              r.active === 1 &&
-              !!r.merchantKey &&
-              r.merchantKey === merchantKey(tx.merchant) &&
-              recurringAmountMatches(r, tx.amountCents),
-          )
-        : undefined,
-    [tx, recurrings],
-  );
+  // the recurring the row is linked to already (the auto-linker's, kept even
+  // while paused), else the one prepared for it (#565: merchant + amount)
+  const recMatch = useMemo(() => {
+    const stored = tx?.recurringId || undefined;
+    const id = stored ?? suggestion?.recurringId;
+    return id ? recurrings?.find((r) => r.id === id && (r.id === stored || r.active === 1)) : undefined;
+  }, [tx?.recurringId, suggestion?.recurringId, recurrings]);
   const activeRecs = useMemo(() => (recurrings ?? []).filter((r) => r.active === 1), [recurrings]);
   const manualRec = activeRecs.find((r) => r.id === manualRecId);
 
@@ -2050,6 +2029,7 @@ export function ReviewScreen() {
     setStagedDraft(null);
     setReceiptStage(AUTO_STAGE);
     setReceiptPickOpen(false);
+    setReceiptLookOpen(false);
     setLinkRecurring(true);
     setManualRecId(null);
     setEventPick(null);
@@ -2065,7 +2045,6 @@ export function ReviewScreen() {
     setPickWarn(null);
     setCounterTxOpen(false);
     eventTouched.current = false;
-    setPickedPlainCat(false);
   });
   // the pick is bound to ITS counter account — re-picking or detaching
   // the counterparty (or the editor clearing the link) drops it
@@ -2117,11 +2096,12 @@ export function ReviewScreen() {
   // the recurring OWNS the category (user rule 2026-07-28): linking one
   // stages its category once, and the editor then only offers that
   // category or expected reimbursement (the one allowed override)
+  const debtFiled = isLoanCounter || specialCatType(draft?.catId) === 'debtPayment';
   const chosenRec = useMemo(() => {
-    if (isLoanCounter) return undefined; // debt payments never carry a recurring link
+    if (debtFiled) return undefined; // debt payments never carry a recurring link
     const id = chosenRecurringId(recMatch, linkRecurring, manualRecId);
     return id ? (recurrings ?? []).find((r) => r.id === id) : undefined;
-  }, [recMatch, linkRecurring, manualRecId, recurrings, isLoanCounter]);
+  }, [recMatch, linkRecurring, manualRecId, recurrings, debtFiled]);
   useEffect(() => {
     if (!chosenRec?.catId || !draft) return;
     // r7: a split container never takes the recurring's category — the
@@ -2135,19 +2115,12 @@ export function ReviewScreen() {
   }, [chosenRec?.id, chosenRec?.catId]);
   const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 
-  // #339 (user): recurring/event rows only mean something once a real
-  // category stands — like the loan row's counter-type gate
   const catChosen = !!draft?.catId && draft.catId !== UNCATEGORIZED_ID;
+  // #565 (user): the rows stand on every card; what the filing cannot use is disabled
+  const gates = cardRowGates(draft, { recurringOwnsCategory: !!recurringAllowedCats, loanCounter: isLoanCounter });
   const counterRowDoors = buildCounterRowDoors({
     draft,
-    // #339 (user): a category the user EXPLICITLY filed as plain (gift,
-    // groceries…) has no counter account — the row hides. A mere
-    // prediction keeps the counter-first door open (#228), and special
-    // filings (investment/saving/debt/funding) keep the row anyway.
-    locked:
-      draft?.txType === 'adjustment' ||
-      !!recurringAllowedCats ||
-      (pickedPlainCat && catChosen && !specialCatType(draft.catId)),
+    locked: !gates.counter,
     amountCents: tx?.amountCents,
     cats,
     setCounterAskCat,
@@ -2157,9 +2130,9 @@ export function ReviewScreen() {
     setStagedDraft,
   });
 
-  const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
+  const showReason = !!tx && !stagedDraft && !!suggestion?.source && suggestion.predictedCatId === draft?.catId;
   const reasonLine =
-    showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
+    showReason && suggestion?.source ? t(REASON_KEYS[suggestion.source], { n: suggestion.evidence ?? 1 }) : null;
 
   // #211: the cats editor spreads the NET money — a settled `reimbursed`
   // entry is bookkeeping, held aside and re-attached on stage
@@ -2231,9 +2204,6 @@ export function ReviewScreen() {
    *  entry CLEARS the row link too — the editor owns the whole story. */
   const stageSingleEntry = (entry: CatsApplyEntry) => {
     if (!draft) return;
-    // #339: an EXPLICIT plain filing retires the counterparty row —
-    // predictions and other stagings leave the counter-first door open
-    setPickedPlainCat(entry.catId !== UNCATEGORIZED_ID && !specialCatType(entry.catId));
     const next = { ...withCategory(withSplits(draft, undefined), entry.catId, cats), cats: settledCatsFor(entry.catId) };
     setStagedDraft({ ...next, linkedAccountId: entry.linkedAccountId });
   };
@@ -2248,45 +2218,43 @@ export function ReviewScreen() {
     else setCounterRequired(true);
   };
 
-  // user 2026-10-06: the receipt the card showed is attached with the
-  // confirm — a proposal accepted, the best match linked, the person's own
-  // pick honoured (a proposal they passed over is turned down), none left alone
+  // user 2026-10-06: the receipt the card showed is settled with the
+  // confirm (the rules: receiptSettlement — #496 an attached one changes too)
   const settleReceipt = async () => {
-    if (!tx || receiptEntry?.data || multiPart) return;
-    if (receiptStage.kind === 'picked') {
-      if (receiptProposal) await receiptOps.rejectMatch(receiptProposal);
-      await receiptOps.linkReceipt(receiptStage.receipt, tx.id);
-      return;
+    if (!tx || multiPart) return;
+    const plan = receiptSettlement(receiptStage, attachedReceipt, receiptProposal, autoReceipt);
+    if (plan.kind === 'accept') await receiptOps.acceptMatch(plan.proposal);
+    else if (plan.kind === 'reject') await receiptOps.rejectMatch(plan.proposal);
+    else if (plan.kind === 'pick') {
+      if (plan.reject) await receiptOps.rejectMatch(plan.reject);
+      await applyPick(receiptOps, tx.id, receiptEntry ?? null, plan.receipt);
     }
-    if (receiptStage.kind === 'none') {
-      if (receiptProposal) await receiptOps.rejectMatch(receiptProposal);
-      return;
-    }
-    if (receiptProposal) await receiptOps.acceptMatch(receiptProposal);
-    else if (autoReceipt) await receiptOps.linkReceipt(autoReceipt, tx.id);
+  };
+
+  /** what a bulk confirm leaves to walk (#268, #495): the counter queue first — the receipt walk then takes the
+   *  siblings it settled — else the receipt walk at once */
+  const startBulkWalks = (queued: ReturnType<typeof queuedCounterBulk>, receiptWalk: SpaceTx[]) => {
+    if (queued) {
+      counterSettled.current = new Set();
+      pendingReceiptBulk.current = receiptWalk.length > 0 ? receiptWalk : null;
+      setCounterBulk(queued);
+    } else if (receiptWalk.length > 0) setReceiptBulk(receiptWalk);
   };
 
   // the tap the user feels (2026-10-09): one 'review.confirm' span carries every write below, so a slow
   // Confirm shows up in GlitchTip's Performance view with its waterfall instead of being guessed at
-  const confirm = () => measure('review.confirm', async () => {
-    // #268 r2 (user): a held deck accepts no further confirms
-    if (!tx || !draft || counterBulk || confirming.current) return;
+  const runConfirm = async () => {
+    // #268 r2 (user): a held deck accepts no further confirms; #505: nor a space read-only to this identity
+    if (!tx || !draft || counterBulk || receiptBulk || confirming.current || !canEdit) return;
     if (!draftReady(draft)) {
       pointAtBlocker(draft);
       return;
     }
     // #309 (user): a movement category REQUIRES its counterparty — no
-    // more silently settling onto the family default at Confirm. The
-    // refused click marks the field red; the ask's pinned Default row
-    // stays the one-tap answer for those who mean it. The DEBT family
-    // keeps its designed bare story (unassigned payments await a loan).
-    if (
-      isMovementCat(draft.catId) &&
-      specialCatType(draft.catId) !== 'debtPayment' &&
-      !draft.linkedAccountId &&
-      !draft.cats?.length &&
-      !draft.splits?.length
-    ) {
+    // more silently settling onto a default at Confirm; the refused click
+    // marks the field red. #555 (user): a debt payment too — it names its
+    // loan, never a default loan in the background.
+    if (isMovementCat(draft.catId) && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length) {
       setCounterRequired(true);
       return;
     }
@@ -2298,15 +2266,18 @@ export function ReviewScreen() {
     // alive instead — the siblings walk a per-transaction match queue.
     const partPeers = (draft.splits ?? []).filter((s) => s.transferPeerId && s.catId !== REIMBURSED_ID);
     const bulk = partPeers.length > 0 ? [] : similar.filter((s) => bulkSelected.has(s.id));
-    const recurringId = container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
-    const eventId = container ? (eventPick ?? undefined) : undefined;
+    // #565: a disabled row writes nothing — what the filing cannot use never lands
+    const recurringId = container && gates.recurring ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
+    const eventId = container && gates.event ? (eventPick ?? undefined) : undefined;
     // #324 (user): untouched or unchanged notes write nothing
     const note = stagedNoteFor(noteDraft, container, tx.notes);
     const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId, note);
+    // #495 (user): the siblings whose receipt wants a look — read now, while their review flag still stands
+    const receiptWalk = container ? receiptsToVerify(bulk, attachableReceipts, receiptProposals) : [];
     // #268 r2 (user): "wait with animating until we are done with the
     // bulk update" — a coming queue freezes the deck on this card; the
     // exit flight plays when the queue finishes instead of now
-    if (queued) setHeldTx(tx);
+    if (queued || receiptWalk.length > 0) setHeldTx(tx);
     else captureLeaving();
     confirming.current = true;
     try {
@@ -2336,16 +2307,18 @@ export function ReviewScreen() {
         await pairReviewPicks({ store, repo, spaceId }, tx, pairNew, partPeers);
         await settleReceipt();
       });
-      if (queued) setCounterBulk(queued);
+      startBulkWalks(queued, receiptWalk);
       // other billing cycles of a linked recurring pick up their link here —
-      // in an idle moment, off the tap's path (2026-10-09)
-      runWhenIdle(() => void recurringOps.reconcile().catch(() => undefined));
+      // in an idle moment, off the tap's path (2026-10-09); a confirm that
+      // linked none leaves nothing to adopt (#554: it re-read the space after every card)
+      if (recurringId || draft.splits?.some((s) => !!s.recurringId)) runWhenIdle(() => void recurringOps.reconcile().catch(() => undefined));
       logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
       hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
     } finally {
       confirming.current = false;
     }
-  });
+  };
+  const confirm = () => measure('review.confirm', runConfirm);
 
   // #268: one queue step — the sibling gets the whole decision through
   // the same sibling-field mapper bulk uses, plus its OWN peer on a pick
@@ -2360,6 +2333,7 @@ export function ReviewScreen() {
       null,
     );
     if (peerId) await pairWithExistingRow(store, repo, spaceId, item, peerId, allTxs);
+    counterSettled.current.add(item.id);
   };
 
   const { progress, sub } = progressState(initialCount, queue?.length, skipped.size);
@@ -2372,7 +2346,7 @@ export function ReviewScreen() {
     if (!tx) return;
     const onKey = (e: KeyboardEvent) => {
       // #268 r2 (user): the held deck ignores the keyboard too
-      if (counterBulk) return;
+      if (counterBulk || receiptBulk) return;
       if (document.querySelector('dialog[open], [role="dialog"]')) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
@@ -2411,6 +2385,7 @@ export function ReviewScreen() {
             not after it (user bug report) — it's one dismissible line and
             never returns once seen */}
         <IntroCard tourId="review" />
+        <ReadOnlyNote className="mt-3" testId="review-readonly-note" />
         {!tx && queue && !emptyBecauseSkipped && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center" data-testid="review-empty">
             <Icon name="check-circle-outline" size={48} color="var(--m-accent)" />
@@ -2467,7 +2442,11 @@ export function ReviewScreen() {
                 {/* #339 (user): the title WRAPS instead of truncating —
                     the amount stays aligned to the first line */}
                 <div className="mt-0.5 flex items-start justify-between gap-3">
-                  <span className="min-w-0 flex-1 text-[16px] leading-snug font-semibold break-words text-ink">{txTitle(tx)}</span>
+                  <span className="min-w-0 flex-1 text-[16px] leading-snug font-semibold break-words text-ink">
+                    {txTitle(tx)}
+                    {/* #506 (user): a vague title is one tap from a web search */}
+                    <TitleSearchButton query={txTitle(tx)} testId="review-search-web" />
+                  </span>
                   <span className="m-num shrink-0 text-[18px] leading-snug text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
                 </div>
                 {tx.description && (
@@ -2493,8 +2472,9 @@ export function ReviewScreen() {
                   recurring-owned card keeps its category, so no counter
                   door there; adjustments carry no counterparty at all.
                   Multi-part (#126 r3): these rows vanish — each PART
-                  carries its own story on the deck. */}
-              <div data-testid="review-cats">
+                  carries its own story on the deck. #505: inert where the
+                  space is read-only to this identity */}
+              <div data-testid="review-cats" inert={readOnlyRegion}>
                 {/* #339 (user re-ruling over #249): the split door leads
                     now — first question: one story or several? */}
                 {!multiPart && (
@@ -2522,12 +2502,13 @@ export function ReviewScreen() {
                 {/* #410: the honest reason the Confirm refused, under the category row */}
                 <FormBlockerNote show={catRequired && !catChosen} text={t('review.catRequired')} testId="review-cat-required" className="px-4 pb-2" />
 
-                {/* #339 (user): recurring + event rows appear once a
-                    category is chosen — like the loan row, they only
-                    mean something under an applicable filing */}
-                {!multiPart && catChosen && (
+                {/* #565 (user): the recurring and event rows stand on every
+                    card — disabled where the filing cannot use them. #525:
+                    before any category the recurring row is open, and
+                    linking one files its category at once */}
+                {!multiPart && (
                   <DebtOrRecurringRow
-                    isLoanCounter={isLoanCounter}
+                    enabled={gates.recurring}
                     recMatch={recMatch}
                     linkRecurring={linkRecurring}
                     manualRec={manualRec}
@@ -2537,25 +2518,27 @@ export function ReviewScreen() {
                   />
                 )}
 
-                {!multiPart && catChosen && (
+                {!multiPart && (
                   <button
                     data-testid="review-event-row"
                     onClick={() => setEventPickOpen(true)}
-                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                    disabled={!gates.event}
+                    aria-disabled={!gates.event}
+                    className={`m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink${rowOff(gates.event)}`}
                   >
                     <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
-                    <span className="min-w-0 flex-1 truncate">{pickedEvent?.name ?? t('events.linkNone')}</span>
+                    <span className="min-w-0 flex-1 truncate">{(gates.event ? pickedEvent?.name : undefined) ?? t('events.linkNone')}</span>
                     <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
-                    <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                    {gates.event && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
                   </button>
                 )}
 
-                {/* user ss 2026-10-05: the receipt row — a proposal asks here,
-                    an attached receipt opens, candidates offer a pick */}
-                {!multiPart && (
+                {/* user ss 2026-10-05: the receipt row — #496: the row opens
+                    the receipts sheet, its eye the receipt it names */}
+                {!multiPart && receiptRow && (
                   <ReviewReceiptRow
                     row={receiptRow}
-                    onOpen={openReceipt}
+                    onLook={lookAtReceipt}
                     onAsk={() => setReceiptPickOpen(true)}
                   />
                 )}
@@ -2591,7 +2574,7 @@ export function ReviewScreen() {
                   — the category row already names the link, and detaching
                   lives in the category editor's ask (#218) */}
               {settleMatch && draft && (
-                <div className="px-4 pb-3">
+                <div className="px-4 pb-3" inert={readOnlyRegion}>
                   <Chip
                     testId="review-settle-match"
                     selected={draft.txType === 'transfer'}
@@ -2607,6 +2590,7 @@ export function ReviewScreen() {
               )}
             </div>
 
+            <div inert={readOnlyRegion}>
             {/* #126: the split stands as stacked cards under the main one */}
             {draft && (
               <ReviewPartDeck
@@ -2634,6 +2618,7 @@ export function ReviewScreen() {
               <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
             )}
             </div>
+            </div>
 
             {/* mobile: pinned to the thumb at the bottom; md+: attached to the card */}
             <div className="mt-auto flex gap-3 pt-4 md:mt-0">
@@ -2654,8 +2639,9 @@ export function ReviewScreen() {
                 data-testid="review-confirm-btn"
                 // r7 + #410 (user): the button stays TAPPABLE — the tap
                 // marks the parts needing attention, or names the missing
-                // category / counterparty under its row
-                disabled={!draft}
+                // category / counterparty under its row. #505: never where
+                // the space is read-only to this identity (the note above says why)
+                disabled={!draft || !canEdit}
                 onClick={() => void confirm()}
               >
                 <span className="truncate">
@@ -2740,7 +2726,6 @@ export function ReviewScreen() {
             }
             const full = settledCatEntry ? [...entries, settledCatEntry] : entries;
             const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
-            setPickedPlainCat(!specialCatType(primary.catId)); // #339: a spread is a plain filing
             setStagedDraft({ ...withCats(draft, full), catId: primary.catId, linkedAccountId: undefined });
           }}
         />
@@ -2804,6 +2789,7 @@ export function ReviewScreen() {
           }}
           excludeAccountId={tx.accountId}
           currentLinkedId={draft.linkedAccountId}
+          amountCents={tx.amountCents}
           defaultFamily={askDefaultFamily(counterAskCat)}
           counterTypes={askCounterTypes(counterAskCat)}
           // #237 r3 (user): ONE tap — no fork sheet after the pick; the
@@ -2818,7 +2804,8 @@ export function ReviewScreen() {
         />
       )}
       {/* user ss 2026-10-05: the receipt sheet — the proposal's yes / no, then the other receipts that could be this one
-          (user 2026-10-07: the picker is shared with the transaction detail; a tap here stages the pick for the confirm) */}
+          (user 2026-10-07: the picker is shared with the transaction detail; a pick here stages it for the confirm;
+          #542: the capture rungs too — a photo attaches at once) */}
       {tx && (
         <ReceiptPickSheet
           open={receiptPickOpen}
@@ -2826,9 +2813,10 @@ export function ReviewScreen() {
           title={t('receipt.title')}
           testIdPrefix="review-receipt"
           proposal={receiptProposal}
-          candidates={receiptCandidates}
+          candidates={suggestionsFor(attachedReceipt, receiptCandidates)}
           all={attachableReceipts?.rows ?? []}
-          selectedId={stagedReceiptId(receiptStage, autoReceipt?.id ?? null)}
+          selectedId={markedReceiptId(receiptStage, attachedReceipt?.id, autoReceipt?.id)}
+          attachedId={attachedReceipt?.id ?? null}
           noneSelected={receiptStage.kind === 'none'}
           currency={tx.currency}
           attachedTo={receiptElsewhere}
@@ -2836,9 +2824,18 @@ export function ReviewScreen() {
           onAccept={(link) => { void receiptOps.acceptMatch(link); setReceiptPickOpen(false); }}
           onReject={(link) => { void receiptOps.rejectMatch(link); setReceiptPickOpen(false); }}
           onPick={(row) => { setReceiptStage(row ? { kind: 'picked', receipt: row } : { kind: 'none' }); setReceiptPickOpen(false); }}
-          onView={openReceipt}
-        />
+        >
+          <ReceiptCaptureRungs testIdPrefix="review-receipt" busy={receiptBusy} onFile={(file) => void attachReceiptPhoto(file)} />
+        </ReceiptPickSheet>
       )}
+      {/* #496: the row's eye — the receipt it names, straight away, read-only */}
+      <ReceiptPeekSheet
+        open={receiptLookOpen}
+        onOpenChange={setReceiptLookOpen}
+        receipt={receiptLook}
+        currency={tx?.currency ?? 'EUR'}
+        testIdPrefix="review-receipt-look"
+      />
       {/* #237 r3: the card row's counter-transaction match sheet —
           suggestions first, the rest scrollable; create/await resets
           the pick; a pick with a standing bulk offer warns first.
@@ -2873,10 +2870,28 @@ export function ReviewScreen() {
           onResolve={(item, peerId) => void resolveCounterBulk(item as SpaceTx, peerId)}
           onDone={(resolved) => {
             if (resolved > 0) void logActivity(store, repo, spaceId, 'review', `+${resolved}`);
+            setCounterBulk(null);
+            // #495: the receipt walk follows, over the siblings the queue settled — the hold stays
+            const walk = (pendingReceiptBulk.current ?? []).filter((item) => counterSettled.current.has(item.id));
+            pendingReceiptBulk.current = null;
+            if (walk.length > 0) {
+              setReceiptBulk(walk);
+              return;
+            }
             // #268 r2 (user): release the hold — the deferred exit
             // flight plays now and the deck advances to the next card
             captureLeaving();
-            setCounterBulk(null);
+            setHeldTx(null);
+          }}
+        />
+      )}
+      {/* #495 (user): the per-sibling receipt walk a bulk confirm leaves behind */}
+      {receiptBulk && (
+        <BulkReceiptQueue
+          queue={receiptBulk}
+          onDone={() => {
+            captureLeaving();
+            setReceiptBulk(null);
             setHeldTx(null);
           }}
         />
@@ -2937,22 +2952,17 @@ export function ReviewScreen() {
               <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
               {!eventPick && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>
-            {activeEvents.map((event) => (
-              <button
-                key={event.id}
-                data-testid={`review-event-${event.id}`}
-                onClick={() => {
-                  eventTouched.current = true;
-                  setEventPick(event.id);
-                  setEventPickOpen(false);
-                }}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
-              >
-                <Icon name={event.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
-                <span className="min-w-0 flex-1 truncate">{event.name}</span>
-                {eventPick === event.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
-              </button>
-            ))}
+            {/* #537: every event, archived ones labelled after the active, each one peekable */}
+            <EventPickList
+              events={events ?? []}
+              selectedId={eventPick}
+              testIdPrefix="review-event-"
+              onPick={(id) => {
+                eventTouched.current = true;
+                setEventPick(id);
+                setEventPickOpen(false);
+              }}
+            />
             <button
               data-testid="review-event-create"
               onClick={() => {
