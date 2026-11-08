@@ -59,8 +59,13 @@ interface CategoryPickerProps {
    *  narrowing; for "I know where the money went, not what to call it") */
   counterAccounts?: readonly { id: string; name: string; type: AccountType }[];
   /** with a chip active, the pick reports the account too — the host
-   *  preselects it in the counterparty ask (all mint semantics intact) */
+   *  links it right away (all mint semantics intact) */
   onPickWithCounter?: (catId: string, accountId: string) => void;
+  /** #339 r3 (user): a counterparty already stands — the choice is one of
+   *  the predefined categories that account can mean, so the ◆ lens, the
+   *  pick-by-counter chips and the create door step aside until it is
+   *  removed (onClearCounter brings them back) */
+  counterLinked?: boolean;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
@@ -75,7 +80,7 @@ function rewindScroller(el: HTMLElement | null): void {
   }
 }
 
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter, counterAccounts, onPickWithCounter }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter, counterAccounts, onPickWithCounter, counterLinked }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
@@ -173,7 +178,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
       <div className="sticky top-0 z-10 -mx-5 bg-bg px-5 pb-2" data-testid="catpicker-search-wrap">
         <SearchField testId="catpicker-search" value={query} onChange={setQuery} placeholder={t('cats.searchPlaceholder')} />
         {/* #246: the ◆ lens — hidden where specials are off the table */}
-        {!noSpecials && (
+        {!noSpecials && !counterLinked && (
           <div className="mt-2 flex gap-2">
             <Chip testId="catpicker-special-filter" selected={specialOnly} onClick={() => setSpecialOnly((v) => !v)}>
               <span aria-hidden className="inline-block h-[7px] w-[7px] rotate-45 rounded-[1.5px] bg-current" />
@@ -183,8 +188,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         )}
         {/* #339 (user): pick-by-counter — "I know WHERE the money went,
             not what to call it": a chip narrows to categories that can
-            point at that account, and the later pick suggests it */}
-        {counterAccounts && counterAccounts.length > 0 && (
+            point at that account, and the later pick links it */}
+        {!counterLinked && counterAccounts && counterAccounts.length > 0 && (
           <div className="mt-2" data-testid="catpicker-counter-filter">
             <div className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-ink-4">
               {t('cats.counterFilter')}
@@ -192,7 +197,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
                 <Icon name="information-outline" size={13} color="var(--m-ink-4)" />
               </span>
             </div>
-            <ScrollRow className="mt-1" tone="surface">
+            <ScrollRow className="mt-1">
               {counterAccounts.map((a) => (
                 <Chip
                   key={a.id}
@@ -269,27 +274,32 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
       ))}
       {/* end of the list (or an empty search): the flow must not dead-end —
           a door to creating a custom category keeps the user moving (user
-          request) */}
-      <div className="mt-3 mb-2 flex flex-col items-center gap-1 rounded-card border border-dashed border-line px-4 py-3 text-center">
-        {groups.length === 0 && (
-          <p className="text-[13px] text-ink-3" data-testid="catpicker-empty">
-            {t('cats.noneFound')}
-          </p>
-        )}
-        <button
-          data-testid="catpicker-create-custom"
-          onClick={() => {
-            onCreateCustomNav?.(); // #275: hosts stash their way back
-            onOpenChange(false);
-            setQuery('');
-            void navigate({ to: '/categories' });
-          }}
-          className="m-tap flex items-center gap-1.5 border-none bg-transparent text-[13px] font-semibold text-accent-deep"
-        >
-          <Icon name="plus" size={15} />
-          {t('cats.createCustom')}
-        </button>
-      </div>
+          request); #339 r3: with a counterparty standing, the way out is
+          removing it, never a category of one's own */}
+      {(!counterLinked || groups.length === 0) && (
+        <div className="mt-3 mb-2 flex flex-col items-center gap-1 rounded-card border border-dashed border-line px-4 py-3 text-center">
+          {groups.length === 0 && (
+            <p className="text-[13px] text-ink-3" data-testid="catpicker-empty">
+              {t('cats.noneFound')}
+            </p>
+          )}
+          {!counterLinked && (
+            <button
+              data-testid="catpicker-create-custom"
+              onClick={() => {
+                onCreateCustomNav?.(); // #275: hosts stash their way back
+                onOpenChange(false);
+                setQuery('');
+                void navigate({ to: '/categories' });
+              }}
+              className="m-tap flex items-center gap-1.5 border-none bg-transparent text-[13px] font-semibold text-accent-deep"
+            >
+              <Icon name="plus" size={15} />
+              {t('cats.createCustom')}
+            </button>
+          )}
+        </div>
+      )}
       </div>
     </Sheet>
   );

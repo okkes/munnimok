@@ -19,6 +19,7 @@ import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 
 /**
  * #334 (user): the home "Coming up" block mixes recurring costs and loan
@@ -33,7 +34,7 @@ import { Icon } from '@/ui/Icon';
  *  the old hardcoded card icon ignored the editor entirely. Shared by
  *  the home block and this landing so the two can never drift. */
 export function LoanFace({ loan }: Readonly<{ loan: AccountRow }>) {
-  if (loan.logo) return <img src={loan.logo} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />;
+  if (loan.logo) return <Picture src={loan.logo} className="h-8 w-8 shrink-0 rounded-lg object-contain" />;
   return (
     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft/60">
       <Icon name={typeDef(loan.type).icon} size={16} color={loan.color ?? 'var(--m-accent-deep)'} />

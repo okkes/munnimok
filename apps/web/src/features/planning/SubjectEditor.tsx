@@ -6,13 +6,12 @@ import { reservationConflicts, subjectFamily } from '@/domain/planning';
 import type { Reservation } from '@/domain/planning';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { Cat } from '@/features/categories/useCategories';
-import { MDI_NAMES } from '@/generated/mdiNames';
 import { parseCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
-import { SearchField } from '@/ui/SearchField';
+import { IconPicker } from '@/ui/IconPicker';
 import { Sheet } from '@/ui/Sheet';
 import { SUBJECT_COLORS, SUBJECT_ICONS } from './planningUi';
 import type { MoneyFmt } from './SegmentSection';
@@ -57,33 +56,6 @@ const draftOf = (subject: PlanSubjectRow | null, preset: EditorPreset | null): D
   };
 };
 
-/** the icon grid: a first pick, or the whole font by search */
-function IconGrid({ icon, query, onQuery, onPick }: Readonly<{ icon: string; query: string; onQuery: (q: string) => void; onPick: (name: string) => void }>) {
-  const { t } = useLang();
-  const needle = query.trim().toLowerCase();
-  const candidates = needle ? MDI_NAMES.filter((n) => n.includes(needle)).slice(0, 48) : [...SUBJECT_ICONS];
-  return (
-    <>
-      <SearchField testId="plan-editor-icon-search" value={query} onChange={onQuery} placeholder={t('cats.iconSearch')} height="h-10" textSize="text-[13px]" />
-      <div className="grid max-h-40 grid-cols-6 gap-2 overflow-y-auto">
-        {candidates.map((candidate) => (
-          <button
-            key={candidate}
-            data-testid={`plan-editor-icon-${candidate}`}
-            title={candidate}
-            onClick={() => onPick(candidate)}
-            className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
-              icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-            }`}
-          >
-            <Icon name={candidate} size={19} />
-          </button>
-        ))}
-        {needle && candidates.length === 0 && <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>}
-      </div>
-    </>
-  );
-}
 
 /** a main's tick: chosen itself, half when only some of its subs are, off otherwise */
 const mainTick = (draft: Draft, main: Cat, subs: readonly Cat[]): TickState => {
@@ -334,7 +306,8 @@ export function SubjectEditor({
       }
     >
       <div className="flex flex-col gap-3" data-testid="plan-editor">
-        <IconGrid icon={draft.icon} query={iconQuery} onQuery={setIconQuery} onPick={(icon) => patch({ icon })} />
+        {/* #563: the subject suggestions lead, the whole icon font follows — to scroll or to search */}
+        <IconPicker value={draft.icon} onChange={(icon) => patch({ icon })} featured={SUBJECT_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="plan-editor-icon" />
         <ColorPicker colors={SUBJECT_COLORS} value={draft.color} onChange={(color) => patch({ color })} testIdPrefix="plan-editor-color" customLabel={t('plan.subject.customColor')} />
         <input
           data-testid="plan-editor-name"

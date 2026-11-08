@@ -122,19 +122,36 @@ export function SpaceSwitcher() {
               {space.id === spaceId && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>
           ))}
-          <button
-            data-testid="space-pick-manage"
-            onClick={() => {
-              setOpen(false);
-              void navigate({ to: '/spaces' });
-            }}
-            className="m-tap mt-1 flex items-center gap-3 border-t border-line-2 bg-transparent px-1 pt-3 pb-1 text-left text-[14px] text-ink-2"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Icon name="cog-outline" size={18} color="var(--m-ink-3)" />
-            </span>
-            {t('space.manage')}
-          </button>
+          <div className="mt-1 flex flex-col border-t border-line-2 pt-2">
+            {/* #577: always here, so the bar may drop its Settings tab (not a
+                space-pick-* id: the tutorial reads those as space rows) */}
+            <button
+              data-testid="space-switcher-settings"
+              onClick={() => {
+                setOpen(false);
+                void navigate({ to: '/settings' });
+              }}
+              className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-1.5 text-left text-[14px] text-ink-2"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+                <Icon name="cog-outline" size={18} color="var(--m-ink-3)" />
+              </span>
+              {t('tab.settings')}
+            </button>
+            <button
+              data-testid="space-pick-manage"
+              onClick={() => {
+                setOpen(false);
+                void navigate({ to: '/spaces' });
+              }}
+              className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-1.5 text-left text-[14px] text-ink-2"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+                <Icon name="account-group-outline" size={18} color="var(--m-ink-3)" />
+              </span>
+              {t('space.manage')}
+            </button>
+          </div>
         </div>
       </Sheet>
     </>

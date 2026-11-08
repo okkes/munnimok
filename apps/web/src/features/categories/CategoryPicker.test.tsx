@@ -222,10 +222,10 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
-    // a ◆ family pick asks its counterparty; the pinned Default answers
+    // a ◆ family pick asks its counterparty; the savings pot answers
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('counter-default'));
-    await waitFor(() => expect(screen.getByTestId('part-cats-editor').getAttribute('data-counter')).not.toBe(''));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cats-editor').getAttribute('data-counter')).toBe('demo_save'));
 
     // the standing counter narrows the reopened picker to what it can
     // mean — and the door says why, right where the narrowing bites

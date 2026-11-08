@@ -13,6 +13,22 @@ interface Rect {
 
 const FIND_TRIES = 12; // ~1.5s for screen transitions to land the anchor
 const PAD = 6;
+/** the card's distance from the frame's edges (the inset-x-4 it falls back to) */
+const CARD_GUTTER = 16;
+
+/** #558: the card spans the app's frame (side panel + content), not the
+ *  whole window — on a phone the frame IS the window; no frame, no change */
+function placeCardInFrame(card: HTMLElement): void {
+  const frame = document.querySelector('[data-app-frame]')?.getBoundingClientRect();
+  if (!frame || frame.width === 0) {
+    card.style.left = '';
+    card.style.right = '';
+    return;
+  }
+  const viewportWidth = globalThis.innerWidth || frame.right;
+  card.style.left = `${Math.round(frame.left + CARD_GUTTER)}px`;
+  card.style.right = `${Math.round(Math.max(0, viewportWidth - frame.right) + CARD_GUTTER)}px`;
+}
 
 /**
  * Layer 3: the "try it yourself" walkthrough — dims the screen, cuts a
@@ -87,14 +103,21 @@ export function SpotlightOverlay({
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return;
-    const vh = globalThis.innerHeight || 800;
-    const h = el.offsetHeight;
-    let top: number;
-    if (!rect) top = vh * 0.3;
-    else if (rect.top + rect.height < vh / 2) top = rect.top + rect.height + 12;
-    else top = rect.top - 12 - h;
-    top = Math.min(top, vh - h - 12);
-    el.style.top = `max(calc(env(safe-area-inset-top, 0px) + 8px), ${Math.round(top)}px)`;
+    const place = () => {
+      // width first: it decides how the text wraps, so the height below
+      placeCardInFrame(el);
+      const vh = globalThis.innerHeight || 800;
+      const h = el.offsetHeight;
+      let top: number;
+      if (!rect) top = vh * 0.3;
+      else if (rect.top + rect.height < vh / 2) top = rect.top + rect.height + 12;
+      else top = rect.top - 12 - h;
+      top = Math.min(top, vh - h - 12);
+      el.style.top = `max(calc(env(safe-area-inset-top, 0px) + 8px), ${Math.round(top)}px)`;
+    };
+    place();
+    globalThis.addEventListener('resize', place);
+    return () => globalThis.removeEventListener('resize', place);
   }, [rect, phase, step]);
 
   return createPortal(

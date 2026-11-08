@@ -1,5 +1,6 @@
 import type { SpaceRow } from '@/db/types';
 import { focusStyle } from '@/lib/imageFocus';
+import { Picture } from '@/ui/Picture';
 
 /**
  * The space's own picture as the circle every list draws it in — at its
@@ -9,7 +10,7 @@ import { focusStyle } from '@/lib/imageFocus';
 export function SpacePicture({ space, className }: Readonly<{ space: Pick<SpaceRow, 'picture' | 'pictureFocus'>; className: string }>) {
   return (
     <span className={`inline-block shrink-0 overflow-hidden rounded-full ${className}`} data-testid="space-picture">
-      <img src={space.picture} alt="" className="h-full w-full object-cover" style={focusStyle(space.pictureFocus)} />
+      <Picture src={space.picture ?? ''} className="h-full w-full object-cover" style={focusStyle(space.pictureFocus)} />
     </span>
   );
 }

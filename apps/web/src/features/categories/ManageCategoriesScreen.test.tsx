@@ -3,6 +3,8 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
+import { MDI_NAMES } from '@/generated/mdiNames';
+import { DEMO_SPACE_ID } from '@/db/seed';
 
 const openScreen = async () => {
   renderApp('/categories');
@@ -117,13 +119,13 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     fireEvent.change(screen.getByTestId('catform-name'), { target: { value: 'Padel' } });
     // #244: the direction question is gone from the form
     expect(screen.queryByTestId('catform-direction-debit')).toBeNull();
-    // #389: "gym" already wears the dumbbell under sport — the grid says so, and saving with it is refused
-    expect(screen.getByTestId('catform-icon-dumbbell').dataset.worn).toBe('1');
-    fireEvent.click(screen.getByTestId('catform-icon-dumbbell'));
-    fireEvent.click(screen.getByTestId('catform-save'));
-    await screen.findByTestId('catform-icon-error');
+    // #389: "gym" already wears the dumbbell under sport — the grid shows it asleep and refuses the tap
+    const dumbbell = screen.getByTestId('catform-icon-dumbbell') as HTMLButtonElement;
+    expect(dumbbell.dataset.taken).toBe('1');
+    expect(dumbbell.disabled).toBe(true);
     fireEvent.click(screen.getByTestId('catform-icon-tent'));
-    expect(screen.queryByTestId('catform-icon-error')).toBeNull();
+    expect(screen.getByTestId('catform-icon-tent').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('catform-icon-taken')).toBeNull();
     fireEvent.click(screen.getByTestId('catform-save'));
 
     // live query re-render after the write can lag under coverage load
@@ -183,6 +185,8 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    // a face of its own (#389: entertainment's Padel took the first free icon — the same one would refuse the drop)
+    fireEvent.click(screen.getByTestId('catform-icon-tent'));
     fireEvent.click(screen.getByTestId('catform-save'));
     // the SPORT copy is the one being dragged — wait for it inside its group
     const findSportRow = () =>
@@ -213,6 +217,144 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await screen.findByTestId('cats-drag-error');
     expect(screen.queryByTestId('cats-move-confirm')).toBeNull();
   });
+
+  it('#572: lifting a sub folds the groups into drop rows over a transition, and the drop unfolds them again', async () => {
+    await openScreen();
+    expandGroup('sport');
+    fireEvent.click(screen.getByTestId('cats-addsub-sport'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByText('Padel', {}, { timeout: 5000 });
+    const subId = screen.getByText('Padel').closest('[data-testid^="cats-subrow-"]')!.getAttribute('data-testid')!.replace('cats-subrow-', '');
+
+    fireEvent.pointerDown(screen.getByTestId(`cats-drag-${subId}`), { pointerId: 1, clientY: 120 });
+    // both views share the moment: the drop rows unfold while the groups are still folding away
+    await screen.findByTestId('cats-drop-entertainment');
+    expect(screen.getByTestId('cats-group-entertainment')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByTestId('cats-group-entertainment')).toBeNull());
+
+    fireEvent.pointerCancel(window, { pointerId: 1 });
+    await screen.findByTestId('cats-group-entertainment');
+    expect(screen.getByTestId('cats-drop-entertainment')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByTestId('cats-drop-entertainment')).toBeNull());
+  });
+
+  it('#389: a lifted sub cannot land where a sub already wears its icon; the row says why', async () => {
+    await openScreen();
+    expandGroup('sport');
+    fireEvent.click(screen.getByTestId('cats-addsub-sport'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-icon-tent'));
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByText('Padel', {}, { timeout: 5000 });
+    expandGroup('entertainment');
+    fireEvent.click(screen.getByTestId('cats-addsub-entertainment'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Camping' } });
+    fireEvent.click(screen.getByTestId('catform-icon-tent'));
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByText('Camping', {}, { timeout: 5000 });
+
+    const subId = screen.getByText('Padel').closest('[data-testid^="cats-subrow-"]')!.getAttribute('data-testid')!.replace('cats-subrow-', '');
+    fireEvent.pointerDown(screen.getByTestId(`cats-drag-${subId}`), { pointerId: 1, clientY: 120 });
+    const refused = await screen.findByTestId('cats-nodrop-entertainment');
+    expect(refused.dataset.reason).toBe('icon');
+    expect(refused.closest('[data-cat-group]')).toBeNull();
+    expect(screen.getByTestId('cats-drop-housing').closest('[data-cat-group]')?.getAttribute('data-cat-group')).toBe('housing');
+    fireEvent.pointerCancel(window, { pointerId: 1 });
+  });
+
+  it('#389: a move that lands the icon on a sibling says so at once, and Save waits for a free one', async () => {
+    await openScreen();
+    expandGroup('entertainment');
+    fireEvent.click(screen.getByTestId('cats-addsub-entertainment'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Camping' } });
+    fireEvent.click(screen.getByTestId('catform-icon-tent'));
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByText('Camping', {}, { timeout: 5000 });
+    expandGroup('sport');
+    fireEvent.click(screen.getByTestId('cats-addsub-sport'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-icon-tent'));
+    fireEvent.click(screen.getByTestId('catform-save'));
+    fireEvent.click((await screen.findByText('Padel', {}, { timeout: 5000 })).closest('button')!);
+
+    expect((await screen.findByTestId('catform-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(await screen.findByTestId('catform-move-open'));
+    fireEvent.click(await screen.findByTestId('catform-move-entertainment'));
+    await screen.findByTestId('catform-icon-taken');
+    expect((screen.getByTestId('catform-save') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('catform-icon-tent') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('catform-icon-bike'));
+    expect(screen.queryByTestId('catform-icon-taken')).toBeNull();
+    expect((screen.getByTestId('catform-save') as HTMLButtonElement).disabled).toBe(false);
+  }, 15_000);
+
+  it('#563: the icon grid holds the whole font — the suggestions lead, every other glyph follows on scroll', async () => {
+    await openScreen();
+    fireEvent.click(screen.getByTestId('cats-add'));
+    await screen.findByTestId('catform-name');
+    expect(screen.getByTestId('catform-icon-laptop')).toBeTruthy();
+    expect(screen.getByTestId('catform-icon-all').textContent).toBe('All icons');
+    expect(screen.getByTestId(`catform-icon-${MDI_NAMES[0]}`)).toBeTruthy();
+    // only the rows in view are drawn: the font's last glyph appears once the grid is scrolled to its end
+    const lastGlyph = MDI_NAMES.at(-1)!;
+    expect(screen.queryByTestId(`catform-icon-${lastGlyph}`)).toBeNull();
+    const grid = screen.getByTestId('catform-icons');
+    Object.defineProperty(grid, 'scrollTop', { value: 10_000_000, configurable: true, writable: true });
+    fireEvent.scroll(grid);
+    expect(await screen.findByTestId(`catform-icon-${lastGlyph}`)).toBeTruthy();
+    fireEvent.click(screen.getByTestId(`catform-icon-${lastGlyph}`));
+    expect(screen.getByTestId(`catform-icon-${lastGlyph}`).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('#390: copying from another space shows every sub to pick — the main reads half while some stay behind', async () => {
+    await openScreen();
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('space', 's-family', 's-family', { name: 'Family', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    const custom = { color: '', txType: 'expense', direction: 'debit', sortOrder: 999, builtin: 0 } as const;
+    await repo.upsert('category', 's-family', 'fam-groceries', { ...custom, name: 'Groceries', icon: 'cart', color: '#E91E63', isParent: 1 });
+    await repo.upsert('category', 's-family', 'fam-other', { ...custom, parentId: 'fam-groceries', name: 'Other', icon: 'cart', isOther: 1, sortOrder: 9999 });
+    await repo.upsert('category', 's-family', 'fam-spices', { ...custom, parentId: 'fam-groceries', name: 'Spices', icon: 'shaker-outline' });
+    await repo.upsert('category', 's-family', 'fam-bread', { ...custom, parentId: 'fam-groceries', name: 'Bread', icon: 'baguette' });
+    await repo.upsert('category', 's-family', 'fam-padel', { ...custom, parentId: 'sport', name: 'Padel', icon: 'tennis-ball' });
+    db.close();
+
+    // the banner counts the new main once and the sub that joins Sport here (the live query may land the writes one by one)
+    await waitFor(() => expect(screen.getByTestId('cats-copy-open').textContent).toContain('2 custom categories'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('cats-copy-open'));
+    const main = (await screen.findByTestId('cats-copy-unit-fam-groceries')) as HTMLInputElement;
+    expect(screen.getByTestId('cats-copy-sub-fam-bread')).toBeTruthy();
+    expect(screen.queryByTestId('cats-copy-sub-fam-other')).toBeNull();
+    expect(screen.getByTestId('cats-copy-into-s-family-sport')).toBeTruthy();
+    // a sub brings its main along; with Bread left behind the main is only partly coming
+    fireEvent.click(screen.getByTestId('cats-copy-sub-fam-spices'));
+    expect([main.checked, main.indeterminate]).toEqual([false, true]);
+    fireEvent.click(main);
+    expect([main.checked, main.indeterminate]).toEqual([true, false]);
+    // Enter ticks a row too, as it did while the row was a button
+    fireEvent.keyDown(screen.getByTestId('cats-copy-sub-fam-bread'), { key: 'Enter' });
+    expect(screen.getByTestId('cats-copy-commit').textContent).toContain('2');
+    fireEvent.click(screen.getByTestId('cats-copy-commit'));
+
+    await waitFor(
+      async () => {
+        const check = new MunniDB('munni_demo');
+        const here = (await check.categories.toArray()).filter((r) => r.spaceId === DEMO_SPACE_ID && r.deleted === 0);
+        check.close();
+        const copied = here.find((r) => r.name === 'Groceries' && r.isParent === 1);
+        expect(copied).toBeTruthy();
+        expect(here.filter((r) => r.parentId === copied!.id).map((r) => r.name).sort()).toEqual(['Other', 'Spices']);
+        expect(here.some((r) => r.name === 'Padel')).toBe(false);
+      },
+      { timeout: 5000 },
+    );
+  }, 15_000);
 
   it('renames and deletes an unused custom sub without a warning', async () => {
     await openScreen();

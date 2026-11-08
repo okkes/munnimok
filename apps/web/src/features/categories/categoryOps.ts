@@ -1,4 +1,4 @@
-import { CATEGORY_BY_ID } from '@/domain/categories';
+import { CATEGORY_BY_ID, LOCKED_MAIN_IDS } from '@/domain/categories';
 import {
   affectedByDelete,
   affectedByDirectionChange,
@@ -10,6 +10,7 @@ import type { SpaceTx } from '@/db/joined';
 import type { CategoryRow, CatDirection, SpaceRow, TxType } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
+import { firstFreeIcon } from './categoryIcons';
 
 /**
  * Category edit/delete with impact analysis. Edits that break existing
@@ -46,43 +47,112 @@ export const iconConflict = (
 ): boolean =>
   !!candidate.parentId && rows.some((r) => r.parentId === candidate.parentId && r.id !== candidate.selfId && r.icon === candidate.icon);
 
-/** one thing the copy sheet offers: a custom main with its subs, or a lone sub under a catalog main */
-export interface CopyUnit {
-  row: CategoryRow;
-  subs: CategoryRow[];
+/** what the copy sheet offers under one main of one other space */
+export interface CopyGroup {
   space: SpaceRow;
+  /** the other space's custom main this space lacks — it comes along (with its Other) when ticked */
+  main?: CategoryRow;
+  /** or: the main the subs join here — a catalog main, or this space's own main of the same name */
+  intoId?: string;
+  /** the custom subs this space lacks under that main — each one a pick of its own (#390 r2) */
+  subs: CategoryRow[];
+}
+
+const normName = (name?: string) => (name ?? '').trim().toLowerCase();
+const isCatalogMain = (id: string) => !!CATEGORY_BY_ID.get(id)?.isParent;
+
+/** what decides a row of another space: what the active space has already (by name), every custom main, the groups so far */
+interface CopyScan {
+  /** the active space's mains: name → id */
+  hereMains: ReadonlyMap<string, string>;
+  /** the active space's subs, as `parentId|name` */
+  hereSubs: ReadonlySet<string>;
+  /** every live custom main, by id */
+  mains: ReadonlyMap<string, CategoryRow>;
+  /** per space and source main */
+  groups: Map<string, CopyGroup>;
+}
+
+/** the group of one main of one space, opened on first use */
+function groupOf(scan: CopyScan, space: SpaceRow, sourceMainId: string): CopyGroup {
+  const key = `${space.id}|${sourceMainId}`;
+  let group = scan.groups.get(key);
+  if (!group) {
+    group = { space, subs: [] };
+    scan.groups.set(key, group);
+  }
+  return group;
+}
+
+/** a custom main heads its own group — unless a main of the same name is here: that one takes its subs instead (addSub) */
+function addMain(scan: CopyScan, space: SpaceRow, row: CategoryRow): void {
+  if (!scan.hereMains.has(normName(row.name))) groupOf(scan, space, row.id).main = row;
+}
+
+/** a sub joins the group of its main, noting the main it joins here (a catalog main, or this space's main of that name); an orphan, a locked special or a name already under that main stays out */
+function addSub(scan: CopyScan, space: SpaceRow, row: CategoryRow): void {
+  if (!row.parentId) return;
+  const sourceMain = scan.mains.get(row.parentId);
+  const joins = sourceMain ? scan.hereMains.get(normName(sourceMain.name)) : row.parentId;
+  if (!sourceMain && !isCatalogMain(row.parentId)) return; // an orphan
+  if (joins && (LOCKED_MAIN_IDS.has(joins) || scan.hereSubs.has(`${joins}|${normName(row.name)}`))) return;
+  const group = groupOf(scan, space, row.parentId);
+  if (joins) group.intoId = joins;
+  group.subs.push(row);
 }
 
 /**
  * #390: the custom categories of the user's OTHER spaces that this space
- * does not have yet — grouped as copy units (a custom main comes with every
- * sub of its own; a sub under a catalog main comes alone). "Has already" is
- * decided by name: a main of the same name, or a sub of the same name under
- * the same catalog main. Rows of the active space never appear.
+ * does not have yet, grouped per space and main. A custom main this space
+ * lacks comes with its subs to pick from; subs under a main this space has
+ * already — a catalog main, or its own custom main of the same name — join
+ * that main. "Has already" is decided by name; locked specials take no
+ * subs (#385); rows of the active space never appear.
  */
-export function copyableUnits(spaceId: string, spaces: readonly SpaceRow[], rows: readonly CategoryRow[]): CopyUnit[] {
+export function copyGroups(spaceId: string, spaces: readonly SpaceRow[], rows: readonly CategoryRow[]): CopyGroup[] {
   const live = rows.filter((r) => r.deleted === 0);
   const here = live.filter((r) => r.spaceId === spaceId);
-  const norm = (name?: string) => (name ?? '').trim().toLowerCase();
-  const hereMains = new Set(here.filter((r) => r.isParent === 1).map((r) => norm(r.name)));
-  const hereSubs = new Set(here.filter((r) => r.isParent !== 1).map((r) => `${r.parentId}|${norm(r.name)}`));
-  const units: CopyUnit[] = [];
+  const hereMains = new Map(here.filter((r) => r.isParent === 1).map((r) => [normName(r.name), r.id]));
+  const hereSubs = new Set(here.filter((r) => r.isParent !== 1).map((r) => `${r.parentId}|${normName(r.name)}`));
   const spaceById = new Map(spaces.filter((sp) => sp.deleted === 0).map((sp) => [sp.id, sp]));
-  const custom = new Set(live.filter((r) => r.isParent === 1).map((r) => r.id));
+  const mains = new Map(live.filter((r) => r.isParent === 1).map((r) => [r.id, r]));
+  const scan: CopyScan = { hereMains, hereSubs, mains, groups: new Map() };
   for (const row of live) {
     if (row.spaceId === spaceId || row.isOther === 1) continue;
     const space = spaceById.get(row.spaceId);
     if (!space) continue;
-    if (row.isParent === 1) {
-      if (hereMains.has(norm(row.name))) continue;
-      units.push({ row, subs: live.filter((r) => r.parentId === row.id && r.isOther !== 1), space });
-    } else if (row.parentId && !custom.has(row.parentId)) {
-      // a sub under a catalog main (a sub of a custom main travels with its main)
-      if (hereSubs.has(`${row.parentId}|${norm(row.name)}`)) continue;
-      units.push({ row, subs: [], space });
-    }
+    if (row.isParent === 1) addMain(scan, space, row);
+    else addSub(scan, space, row);
   }
-  return units.sort((a, b) => a.space.name.localeCompare(b.space.name) || (a.row.name ?? '').localeCompare(b.row.name ?? ''));
+  const byName = (a: CategoryRow, b: CategoryRow) => (a.name ?? '').localeCompare(b.name ?? '');
+  return [...scan.groups.values()]
+    .filter((g) => g.main || (g.intoId && g.subs.length > 0))
+    .map((g) => ({ ...g, subs: [...g.subs].sort(byName) }))
+    .sort(
+      (a, b) =>
+        a.space.name.localeCompare(b.space.name) ||
+        Number(!a.main) - Number(!b.main) ||
+        (a.main?.name ?? a.intoId ?? '').localeCompare(b.main?.name ?? b.intoId ?? ''),
+    );
+}
+
+/** how much the banner announces: a main counts once with its subs, a sub joining a main here counts on its own */
+export const copyCount = (groups: readonly CopyGroup[]): number => groups.reduce((n, g) => n + (g.main ? 1 : g.subs.length), 0);
+
+/**
+ * #389: the face each sub of a group lands with — its own, unless a sibling
+ * there wears it already (then the first free one). Decided for the whole
+ * group in its order, so the sheet previews exactly what a copy writes.
+ */
+export function copyFaces(group: CopyGroup, wornThere: ReadonlySet<string>): Map<string, string> {
+  const worn = new Set(wornThere);
+  const faces = new Map<string, string>();
+  for (const sub of group.subs) {
+    const face = worn.has(sub.icon) ? firstFreeIcon(worn) : sub.icon;
+    worn.add(face);
+    faces.set(sub.id, face);
+  }
+  return faces;
 }
 
 /** every transaction those spaces SEE — own rows and attached feeds,
@@ -284,23 +354,30 @@ const categoryCopyFields = (r: CategoryRow, overrides: Partial<CategoryRow>): Re
 });
 
 /**
- * Copy a personal (user-scoped) category into a shared space. Parents
- * are copied with their whole subtree; a sub under a builtin parent is
- * copied alone. Transactions are not touched.
+ * #390: copy one group's picks into this space — a main this space lacks
+ * (when picked) with its locked Other and the picked subs, or the picked
+ * subs into the main they join here. Each sub lands with the face
+ * `copyFaces` decided. Transactions are not touched.
  */
-export async function copyCategoryToSpace(
+export async function copyGroupToSpace(
   store: StorageBackend,
   repo: Repo,
   targetSpaceId: string,
-  row: CategoryRow,
+  group: CopyGroup,
+  picked: ReadonlySet<string>,
+  faces: ReadonlyMap<string, string>,
 ): Promise<void> {
-  if (row.isParent === 1) {
-    const newParentId = repo.newId();
-    await repo.upsert('category', targetSpaceId, newParentId, categoryCopyFields(row, { parentId: undefined }));
-    for (const sub of await subsOf(store, row)) {
-      await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(sub, { parentId: newParentId }));
-    }
-  } else {
-    await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(row, {}));
+  let parentId = group.intoId;
+  if (group.main) {
+    if (!picked.has(group.main.id)) return;
+    parentId = repo.newId();
+    await repo.upsert('category', targetSpaceId, parentId, categoryCopyFields(group.main, { parentId: undefined }));
+    const other = (await subsOf(store, group.main)).find((sub) => sub.isOther === 1);
+    if (other) await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(other, { parentId }));
+  }
+  if (!parentId) return;
+  for (const sub of group.subs) {
+    if (!picked.has(sub.id)) continue;
+    await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(sub, { parentId, icon: faces.get(sub.id) ?? sub.icon }));
   }
 }
