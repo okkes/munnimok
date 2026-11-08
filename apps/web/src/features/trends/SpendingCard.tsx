@@ -8,6 +8,7 @@ import type { Period } from '@/domain/periods';
 import { netAmountCents } from '@/domain/reimbursement';
 import { expenseSeries, finishedAverage, localDate, scopeIds, scopedContribution } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { AutoHeight } from '@/ui/AutoHeight';
 import { Bars } from '@/ui/charts/Bars';
 import { Icon } from '@/ui/Icon';
 import { BreakdownView } from './BreakdownView';
@@ -23,6 +24,8 @@ export interface GraphDef {
   name: string;
   /** null = every expense */
   catIds: string[] | null;
+  /** #531: the financial accounts it reads; null = every account */
+  accountIds: string[] | null;
   icon: string;
   color: string;
 }
@@ -77,7 +80,7 @@ export function SpendingCard({
   header,
   periods,
   labels,
-  txs,
+  txs: allTxs,
   today,
   currency,
   spaceId,
@@ -107,6 +110,12 @@ export function SpendingCard({
   const [selected, setSelected] = useState(periods.length - 1);
   const [sheet, setSheet] = useState<{ open: boolean; subId: string | null }>({ open: false, subId: null });
 
+  // #531: a graph narrowed to some accounts reads only their rows — every view and the door alike
+  const txs = useMemo(() => {
+    if (!graph.accountIds) return allTxs;
+    const picked = new Set(graph.accountIds);
+    return allTxs.filter((tx) => picked.has(tx.accountId));
+  }, [allTxs, graph.accountIds]);
   const ids = useMemo(() => scopeIds(cats, graph.catIds), [cats, graph.catIds]);
   const values = useMemo(() => expenseSeries(txs, periods, ids), [txs, periods, ids]);
   const average = useMemo(() => finishedAverage(values), [values]);
@@ -154,7 +163,8 @@ export function SpendingCard({
           </button>
         ))}
       </div>
-      <div className="mt-3">
+      {/* #540: switching views grows or shrinks the card smoothly — the next card never jumps */}
+      <AutoHeight className="mt-3">
         {view === 'periods' && (
           <>
             <Bars
@@ -193,7 +203,7 @@ export function SpendingCard({
             onStep={(delta) => setSelected(Math.min(periods.length - 1, Math.max(0, index + delta)))}
           />
         )}
-      </div>
+      </AutoHeight>
       <button
         data-testid={`trends-graph-txs-${graph.id}`}
         onClick={() => setSheet({ open: true, subId: null })}

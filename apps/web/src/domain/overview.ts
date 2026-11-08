@@ -101,10 +101,19 @@ export function contributionCents(kind: OverviewKind, tx: TxView, accountsById?:
     .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
 }
 
-/** the rows of a period with a part in this bucket, both legs of a linked pair included */
-function rowsForKind(kind: OverviewKind, txs: TxView[], period: Period): TxView[] {
+/**
+ * The rows of a period with a part in this bucket, both legs of a linked
+ * pair included. #455: what a goal cashed out (`cashedOut`, both legs)
+ * leaves the saving bucket — spending saved money on its goal is no
+ * setback; the screens name it separately.
+ */
+function rowsForKind(kind: OverviewKind, txs: TxView[], period: Period, cashedOut?: ReadonlySet<string>): TxView[] {
   return txs.filter(
-    (tx) => tx.deleted === 0 && inPeriod(tx.date, period) && countableViews(tx).some((view) => viewInKind(kind, view)),
+    (tx) =>
+      tx.deleted === 0 &&
+      inPeriod(tx.date, period) &&
+      !(kind === 'saving' && cashedOut?.has(tx.id)) &&
+      countableViews(tx).some((view) => viewInKind(kind, view)),
   );
 }
 
@@ -113,8 +122,9 @@ export function txsForKind(
   txs: TxView[],
   accountsById: Map<string, AccountRow>,
   period: Period,
+  cashedOut?: ReadonlySet<string>,
 ): TxView[] {
-  return collapsePairedLegs(kind, rowsForKind(kind, txs, period), accountsById).kept;
+  return collapsePairedLegs(kind, rowsForKind(kind, txs, period, cashedOut), accountsById).kept;
 }
 
 /** the ledger a family's rows are stamped by: the leg that carries the meaning when a linked pair lands in the bucket twice */
@@ -182,17 +192,23 @@ export interface OverviewSummary {
 }
 
 /** the six amounts for every period given, in the order given (the Periods screen's history) */
-export function overviewSummarySeries(txs: TxView[], accountsById: Map<string, AccountRow>, periods: readonly Period[]): OverviewSummary[] {
-  return periods.map((period) => overviewSummary(txs, accountsById, period));
+export function overviewSummarySeries(
+  txs: TxView[],
+  accountsById: Map<string, AccountRow>,
+  periods: readonly Period[],
+  cashedOut?: ReadonlySet<string>,
+): OverviewSummary[] {
+  return periods.map((period) => overviewSummary(txs, accountsById, period, cashedOut));
 }
 
 export function overviewSummary(
   txs: TxView[],
   accountsById: Map<string, AccountRow>,
   period: Period,
+  cashedOut?: ReadonlySet<string>,
 ): OverviewSummary {
   const total = (kind: OverviewKind) =>
-    txsForKind(kind, txs, accountsById, period).reduce((sum, tx) => sum + contributionCents(kind, tx, accountsById), 0);
+    txsForKind(kind, txs, accountsById, period, cashedOut).reduce((sum, tx) => sum + contributionCents(kind, tx, accountsById), 0);
   return {
     incomeCents: total('income'),
     expenseCents: total('expense'),
@@ -259,8 +275,9 @@ export function txsForCategory(
   period: Period,
   catId: string,
   catalog: CatalogLookup,
+  cashedOut?: ReadonlySet<string>,
 ): { txs: TxView[]; totalCents: number; counterparts: Map<string, TxView> } {
-  const { kept, counterparts } = collapsePairedLegs(kind, rowsForKind(kind, txs, period), accountsById);
+  const { kept, counterparts } = collapsePairedLegs(kind, rowsForKind(kind, txs, period, cashedOut), accountsById);
   // split transactions belong to every category their slices touch
   const matches = kept.filter((tx) => categoryContributionCents(kind, tx, catId, catalog, accountsById) !== 0);
   matches.sort((a, b) => b.date.localeCompare(a.date));
@@ -285,6 +302,7 @@ export function categoryBreakdown(
   accountsById: Map<string, AccountRow>,
   period: Period,
   catalog: CatalogLookup,
+  cashedOut?: ReadonlySet<string>,
 ): CatBreakdownGroup[] {
   const groups = new Map<string, CatBreakdownGroup & { subMap: Map<string, CatBreakdownSub> }>();
   const add = (catId: string | undefined, cents: number) => {
@@ -304,7 +322,7 @@ export function categoryBreakdown(
     sub.totalCents += cents;
     sub.count += 1;
   };
-  for (const tx of txsForKind(kind, txs, accountsById, period)) {
+  for (const tx of txsForKind(kind, txs, accountsById, period, cashedOut)) {
     for (const view of countableViews(tx)) {
       if (view.fromParts && !viewInKind(kind, view)) continue; // parts answer per kind (v2)
       add(view.catId, view.fromParts ? Math.abs(view.amountCents) : viewContribution(kind, view, tx, accountsById));

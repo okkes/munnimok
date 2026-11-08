@@ -13,6 +13,8 @@ export type SpaceKind = 'personal' | 'shared';
 export type SpacePeriodType = 'month' | 'week' | 'biweekly' | 'custom';
 /** #370: the calendar's first weekday — a device preference every new space copies, each space may override */
 export type WeekStart = 'monday' | 'sunday';
+/** #541: the planner's money safe to spend may keep untouched besides the hard facts — four segments and the periods funded ahead */
+export type SpendSetAside = 'goals' | 'events' | 'expenses' | 'budgets' | 'ahead';
 
 export interface SpaceRow extends SyncEnvelope {
   id: string;
@@ -44,6 +46,10 @@ export interface SpaceRow extends SyncEnvelope {
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
   /** tx-detail layout: section order + visibility under the fixed details block */
   txDetailBlocks?: { id: string; hidden?: 0 | 1 }[];
+  /** #577: the phone bar's features after Home, in order (ids of
+   *  features/navigation/navFeatures; one a build does not know is skipped);
+   *  absent or null = the default bar */
+  navTabs?: string[] | null;
   /** main categories switched off for this space (picker filtering only — data never blocks) */
   hiddenMains?: string[];
   /** Home balance band (user design 2026-08-01): what the big number IS.
@@ -55,11 +61,22 @@ export interface SpaceRow extends SyncEnvelope {
   goalPoolAccountIds?: string[];
   /** #128: the accounts whose balances make the planning pool; absent = every checking and cash account */
   planPoolAccountIds?: string[];
+  /** #541: the accounts safe to spend sums; absent or null = every checking
+   *  and cash account (null, not undefined, clears it — JSON drops an
+   *  undefined field on the way to the server) */
+  spendAccountIds?: string[] | null;
+  /** #541: the plan's set-asides safe to spend takes off as well; absent = none */
+  spendSetAsides?: SpendSetAside[];
   /** user 2026-10-08: the space's custom trend graphs — a name and the
    *  (sub)categories each one charts (a main id covers its subs). One
    *  field under LWW on the space row like homeBlocks: small, rarely
-   *  edited, the whole list travels with every write. */
-  trendGraphs?: { id: string; name: string; catIds: string[] }[];
+   *  edited, the whole list travels with every write. #531: `accountIds`
+   *  narrows a graph to those financial accounts; absent = every account
+   *  (the ones added later too) — every graph from before reads so. */
+  trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[] }[];
+  /** #531: the Cash flow tab's own graphs — a balance line over the
+   *  accounts each one names; the same LWW list as trendGraphs */
+  cashflowGraphs?: { id: string; name: string; accountIds: string[] }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
@@ -412,10 +429,9 @@ export interface BudgetRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   name: string;
-  /** MDI icon */
+  /** MDI icon — #534: a budget wears an icon only; the own pictures of
+   *  #373 are no longer read or written (rows that carry one keep it) */
   icon?: string;
-  /** #373: own image (small data URL, client-downscaled) — wins over `icon` in lists */
-  picture?: string;
   /** the limit per period, positive minor units */
   amountCents: number;
   every: BudgetEvery;
@@ -480,6 +496,21 @@ export interface GoalRow extends SyncEnvelope {
   /** running total, maintained by contributions */
   allocatedCents: number;
   archived?: 0 | 1;
+  /** #455: the goal was spent — set together with archived = 1, null again
+   *  on an undo; absent (every goal from before) = never cashed out */
+  cashOut?: GoalCashOut | null;
+}
+
+/**
+ * #455: what spent a goal. The transactions stay ordinary rows; the
+ * overview keeps them (and the other leg of their pair) out of their
+ * period's saving and shows them as cashed out instead.
+ */
+export interface GoalCashOut {
+  /** yyyy-mm-dd the person cashed out */
+  date: string;
+  /** the rows that took the goal's money out of savings */
+  txIds: string[];
 }
 
 /** audit trail of goal funding — separate rows converge without LWW fights */
@@ -591,7 +622,15 @@ export interface ConnectorPendingJob {
   jobId: string;
   /** the window the job was asked for; the collect repeats it */
   since?: string;
+  /** #460: set when the job is a pass over older history */
+  until?: string;
   startedAt: string;
+}
+
+/** #460: older history a partial pass left behind — the next pass asks from `since` (absent: the party's own floor) up to `until` */
+export interface ConnectorBackfill {
+  since?: string;
+  until: string;
 }
 
 /**
@@ -620,6 +659,8 @@ export interface ConnectorConnRow {
   lastSyncAt?: string;
   lastError?: ConnectorLastError;
   pendingJob?: ConnectorPendingJob;
+  /** #460: older history still to fetch; absent when there is none (every row from before) */
+  backfill?: ConnectorBackfill;
   /** #441 L1: always report this connection's failures to the people who run munni, without asking */
   reportFailures?: boolean;
 }

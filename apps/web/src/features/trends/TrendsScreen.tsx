@@ -50,8 +50,10 @@ export function TrendsScreen() {
     return netWorthSeries(accounts ?? [], txs ?? [], dates);
   }, [view, accounts, txs, periods, today]);
 
-  const { fmt: fmtLens } = useDisplayMoney();
+  const { fmt: fmtLens, fmtSensitive } = useDisplayMoney();
   const fmt = (cents: number, opts?: { sign?: boolean }) => fmtLens(cents, currency, opts);
+  // #530: cash flow and net worth are balances day by day — every figure they print hides with the sensitive ones
+  const fmtBalance = (cents: number, opts?: { sign?: boolean }) => fmtSensitive(cents, currency, opts);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-trends">
@@ -86,6 +88,8 @@ export function TrendsScreen() {
           ))}
         </div>
 
+        {/* #540: a tab's cards ease in rather than snap */}
+        <div key={view} className="m-fade">
         {view === 'categories' && (
           <SpendingTab
             space={space}
@@ -102,6 +106,7 @@ export function TrendsScreen() {
 
         {view === 'cashflow' && (
           <CashflowTab
+            space={space}
             periods={periods}
             periodType={periodType}
             periodDay={periodDay}
@@ -109,7 +114,7 @@ export function TrendsScreen() {
             accounts={accounts ?? NONE}
             recurrings={recurrings ?? NONE}
             today={today}
-            fmt={fmt}
+            fmt={fmtBalance}
           />
         )}
 
@@ -124,11 +129,12 @@ export function TrendsScreen() {
             <div className="mt-2 flex items-baseline justify-between text-[11px] text-ink-4">
               <span>{t('trends.worthNote')}</span>
               <span className="m-num text-[13px] font-semibold text-ink" data-testid="trends-worth-now">
-                {fmt(worth.at(-1)?.cents ?? 0)}
+                {fmtBalance(worth.at(-1)?.cents ?? 0)}
               </span>
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

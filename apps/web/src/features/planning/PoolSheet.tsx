@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import { POOL_TYPES } from '@/domain/planning';
 import { Button } from '@/ui/Button';
@@ -26,8 +27,10 @@ export function PoolSheet({
   currency,
 }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; model: PlanningModel; ops: PlanningOps; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
+  // #530: the accounts' balances and their sum hide with the sensitive figures
+  const balance = useDisplayMoney().sensitive(fmt);
   const candidates = model.data.accounts.filter((a) => a.deleted === 0 && a.archived !== 1 && POOL_CANDIDATE_TYPES.has(a.type));
-  const defaults = new Set(candidates.filter((a) => POOL_TYPES.has(a.type) && !a.defaultFor).map((a) => a.id));
+  const defaults = new Set(candidates.filter((a) => POOL_TYPES.has(a.type)).map((a) => a.id));
   const picked = new Set(model.poolAccounts.map((a) => a.id));
   const [ticks, setTicks] = useState<ReadonlySet<string>>(picked);
   const pickedKey = [...picked].sort((a, b) => a.localeCompare(b)).join(',');
@@ -85,7 +88,7 @@ export function PoolSheet({
                   {on && <Icon name="check" size={14} color="white" />}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{account.name}</span>
-                <span className="m-num text-[13px] text-ink-2">{fmt(account.balanceCents, account.currency ?? currency)}</span>
+                <span className="m-num text-[13px] text-ink-2">{balance(account.balanceCents, account.currency ?? currency)}</span>
               </button>
             );
           })}
@@ -93,7 +96,7 @@ export function PoolSheet({
         <div className="flex items-baseline justify-between px-1 text-[13px]">
           <span className="text-ink-3">{sameAsDefault ? t('plan.poolAll') : t('plan.poolPicked', { n: ticks.size })}</span>
           <span className="m-num font-semibold text-ink" data-testid="plan-pool-total">
-            {fmt(total, currency)}
+            {balance(total, currency)}
           </span>
         </div>
       </div>

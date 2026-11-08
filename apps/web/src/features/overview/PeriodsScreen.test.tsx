@@ -75,5 +75,13 @@ describe('Periods (demo identity)', () => {
     expect(labels[9]).toBe('Oct');
     expect(labels.filter(Boolean)).toHaveLength(6);
     expect(periodLabels(monthly.slice(0, 3), 'week', 'en')).toEqual(['1 Jan', '1 Feb', '1 Mar']);
+    // #511: a period from the 21st spans two months and says so
+    const fromThe21st = [
+      { start: '2026-07-21', end: '2026-08-20' },
+      { start: '2026-08-21', end: '2026-09-20' },
+      { start: '2026-12-21', end: '2027-01-20' },
+    ];
+    expect(periodLabels(fromThe21st, 'month', 'en')).toEqual(['Jul–Aug', 'Aug–Sept', 'Dec–Jan']);
+    expect(periodLabels(fromThe21st.slice(0, 1), 'month', 'nl')).toEqual(['jul–aug']);
   });
 });

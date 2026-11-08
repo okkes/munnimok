@@ -178,6 +178,26 @@ describe('overviewSummary', () => {
     expect(summary.savingCents).toBe(22); // +52 interest − 30 fees
     expect(summary.investmentCents).toBe(700); // dividends only
   });
+
+  it('#455: what a reached goal cashed out leaves the saving — the rest of the period and the other buckets stay as they are', () => {
+    const txs = [
+      tx({ id: 'dep', txType: 'saving', catId: 'savingDeposit', amountCents: -40_000 }),
+      // the car: the savings leg filed Withdraw, the checking leg a transfer
+      tx({ id: 'car-out', txType: 'saving', catId: 'savingWithdraw', amountCents: -1_800_000, accountId: 'savings', transferPeerId: 'car-in' }),
+      tx({ id: 'car-in', txType: 'transfer', catId: 'transferIn', amountCents: 1_800_000, accountId: 'checking', transferPeerId: 'car-out' }),
+      tx({ id: 'buy', catId: 'transportCar', amountCents: -1_800_000 }),
+    ];
+    expect(overviewSummary(txs, accounts, PERIOD).savingCents).toBe(40_000 - 1_800_000);
+    const cashedOut = new Set(['car-out', 'car-in']);
+    const summary = overviewSummary(txs, accounts, PERIOD, cashedOut);
+    expect(summary.savingCents).toBe(40_000);
+    // buying the car is still spending
+    expect(summary.expenseCents).toBe(1_800_000);
+    expect(overviewSummarySeries(txs, accounts, [PERIOD], cashedOut)[0].savingCents).toBe(40_000);
+    const catalog = { byId: (id: string | undefined) => ({ id: id ?? 'uncategorized', parentId: id?.startsWith('saving') ? 'saving' : undefined }) };
+    expect(categoryBreakdown('saving', txs, accounts, PERIOD, catalog, cashedOut).map((g) => g.totalCents)).toEqual([40_000]);
+    expect(txsForCategory('saving', txs, accounts, PERIOD, 'savingWithdraw', catalog, cashedOut).txs).toEqual([]);
+  });
 });
 
 describe('categoryBreakdown', () => {

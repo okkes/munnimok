@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
+import { cashOutSet } from '@/domain/goals';
 import { localToday } from './recurring';
 import { logRowActivity } from './activity';
-import type { GoalRow } from '@/db/types';
+import type { GoalRow, TxView } from '@/db/types';
 
 /**
  * Goals with their allocation DERIVED from the contribution rows —
@@ -35,11 +37,25 @@ export function useGoals(): GoalRow[] | undefined {
   );
 }
 
+/** #455: the rows goals cashed out, both legs of a pair — the overview keeps them out of the saving */
+export function useCashOutSet(txs: readonly TxView[] | undefined): ReadonlySet<string> {
+  const goals = useGoals();
+  return useMemo(() => cashOutSet(goals ?? [], txs ?? []), [goals, txs]);
+}
+
 export interface GoalOps {
   save: (id: string | null, fields: Partial<GoalRow>) => Promise<string>;
   remove: (id: string) => Promise<void>;
   /** + funds, − withdraws back to unallocated */
   contribute: (goalId: string, amountCents: number, note?: string) => Promise<void>;
+  /**
+   * #455: the goal was spent — the rows that paid for it leave the
+   * saving of their period and the goal is archived; archived goals hold
+   * no allocation, so whatever it held beyond them is back in the pool
+   */
+  cashOut: (goal: GoalRow, txIds: readonly string[]) => Promise<void>;
+  /** the goal comes back as it was; its rows count as saving again */
+  undoCashOut: (goal: GoalRow) => Promise<void>;
 }
 
 export function useGoalOps(): GoalOps {
@@ -69,6 +85,14 @@ export function useGoalOps(): GoalOps {
       const total = contributions.reduce((sum, c) => sum + c.amountCents, 0);
       await repo.upsert('goal', spaceId, goalId, { allocatedCents: total });
       void logRowActivity(store, repo, spaceId, 'goal', goalId, 'goalEdit');
+    },
+    cashOut: async (goal, txIds) => {
+      await repo.upsert('goal', spaceId, goal.id, { archived: 1, cashOut: { date: localToday(), txIds: [...txIds] } });
+      void logRowActivity(store, repo, spaceId, 'goal', goal.id, 'goalCashOut', goal.name);
+    },
+    undoCashOut: async (goal) => {
+      await repo.upsert('goal', spaceId, goal.id, { archived: 0, cashOut: null });
+      void logRowActivity(store, repo, spaceId, 'goal', goal.id, 'goalCashOutUndo', goal.name);
     },
   };
 }

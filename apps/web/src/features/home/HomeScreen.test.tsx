@@ -93,6 +93,23 @@ describe('Home balance band (demo identity)', () => {
   }, 15_000);
 });
 
+describe('a saved Home layout (#512)', () => {
+  it('a layout saved while the net-worth block existed keeps its order, loses that block, and gains the blocks it never listed', async () => {
+    const { HOME_BLOCK_IDS, resolveHomeBlocks } = await import('./HomeCustomizeScreen');
+    const layout = resolveHomeBlocks({
+      homeBlocks: [
+        { id: 'trends', hidden: 0 },
+        { id: 'networth', hidden: 0 },
+        { id: 'review', hidden: 1 },
+      ],
+    } as Parameters<typeof resolveHomeBlocks>[0]);
+    expect(layout.map((entry) => entry.id).slice(0, 2)).toEqual(['trends', 'review']);
+    expect(layout.find((entry) => entry.id === 'review')?.hidden).toBe(true);
+    expect(layout.map((entry) => entry.id)).not.toContain('networth');
+    expect([...layout.map((entry) => entry.id)].sort()).toEqual([...HOME_BLOCK_IDS].sort());
+  });
+});
+
 /**
  * #313 (user ss): the desktop split used to count CONFIGURED blocks, so a
  * nearly empty home (most features unused → their blocks render null and

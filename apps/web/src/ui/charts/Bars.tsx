@@ -40,6 +40,26 @@ function ValueLabel({ x, y, text, selected }: Readonly<{ x: number; y: number; t
   );
 }
 
+/** #375 (user: "the gray dotted line … is that the average?"): the reference line names itself at its right end, haloed so a bar under it never swallows the words */
+function LineLabel({ x, y, text, testId }: Readonly<{ x: number; y: number; text: string; testId?: string }>) {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="end"
+      fontSize={8.5}
+      fill="var(--m-ink-3)"
+      stroke="var(--m-surface)"
+      strokeWidth={3}
+      paintOrder="stroke"
+      className="m-num"
+      data-testid={testId}
+    >
+      {text}
+    </text>
+  );
+}
+
 interface BarProps {
   x: number;
   barW: number;
@@ -95,6 +115,7 @@ export function Bars({
   hollowLast = false,
   height = 140,
   average,
+  averageLabel,
   negativeValues,
   negativeColor = 'var(--m-negative)',
   testId,
@@ -114,6 +135,8 @@ export function Bars({
   height?: number;
   /** dashed reference line */
   average?: number;
+  /** what the reference line is, written on it (testid `<testId>-average-label`) */
+  averageLabel?: string;
   /** paired series drawn downward (cash-flow view) */
   negativeValues?: number[];
   negativeColor?: string;
@@ -187,6 +210,16 @@ export function Bars({
           stroke="var(--m-ink-4)"
           strokeWidth={1}
           strokeDasharray="4 3"
+          data-testid={suffixed(testId, 'average')}
+        />
+      )}
+      {average !== undefined && average > 0 && averageLabel && (
+        // above the line, or under it when the line runs along the top
+        <LineLabel
+          x={width - 2}
+          y={zeroY - average * upScale > 12 ? zeroY - average * upScale - 3 : zeroY - average * upScale + 10}
+          text={averageLabel}
+          testId={suffixed(testId, 'average-label')}
         />
       )}
     </svg>

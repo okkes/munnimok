@@ -4,6 +4,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
+import { cashWalletId } from '@/domain/defaultAccounts';
 import { MunniDB } from '@/db/schema';
 import { compactMoney, recallGraphView, rememberGraphView, truncateLabel } from './format';
 
@@ -141,6 +142,81 @@ describe('TrendsScreen (demo identity)', () => {
     await waitFor(async () => expect((await readSpace())?.trendGraphs).toEqual([]));
   }, 20_000);
 
+  it('#531: a graph reads only the accounts ticked for it — the card names them, the door counts their rows, the space row keeps the list', async () => {
+    renderApp('/trends');
+    await screen.findByTestId('trends-cat-chart');
+    fireEvent.click(screen.getByTestId('trends-graph-new'));
+    await screen.findByTestId('trends-graph-save');
+    fireEvent.change(screen.getByTestId('trends-graph-name'), { target: { value: 'Savings spend' } });
+    fireEvent.click(screen.getByTestId('trends-graph-cat-consumption'));
+    // every account to start with — the ones added later too
+    expect(screen.getByTestId('trends-graph-accounts-all').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('trends-graph-accounts-demo_main').getAttribute('aria-pressed')).toBe('true');
+    // none ticked is no graph; the savings account alone is
+    fireEvent.click(screen.getByTestId('trends-graph-accounts-all'));
+    expect(screen.getByTestId('trends-graph-save').hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByTestId('trends-graph-accounts-demo_save'));
+    fireEvent.click(screen.getByTestId('trends-graph-save'));
+    const title = await screen.findByText('Savings spend', {}, { timeout: 5000 });
+    const card = title.closest('section')!;
+    const id = card.dataset.testid!.replace('trends-graph-', '');
+    expect(within(card).getByTestId(`trends-graph-accounts-${id}`).textContent).toBe('Demo Savings · ING');
+    // the demo's groceries are paid from checking: nothing on savings
+    await waitFor(() => expect(within(card).getByTestId(`trends-graph-txs-${id}`).textContent).toMatch(/Transactions · 0/));
+    await waitFor(async () => expect((await readSpace())?.trendGraphs).toEqual([{ id, name: 'Savings spend', catIds: ['consumption'], accountIds: ['demo_save'] }]));
+  }, 20_000);
+
+  it('#531: the Cash flow tab composes its own balance lines — the money in hand ticked to start with, any accounts picked — edited and deleted on the space row', async () => {
+    renderApp('/trends');
+    await screen.findByTestId('trends-cat-chart');
+    fireEvent.click(screen.getByTestId('trends-view-cashflow'));
+    await screen.findByTestId('trends-flow-chart');
+    fireEvent.click(screen.getByTestId('trends-flow-new'));
+    await screen.findByTestId('trends-graph-save');
+    // a balance line starts from the money in hand — checking, savings and the cash wallet — and has no "every account" choice
+    expect(screen.queryByTestId('trends-graph-accounts-all')).toBeNull();
+    const wallet = `trends-graph-accounts-${cashWalletId(DEMO_SPACE_ID)}`;
+    expect(screen.getByTestId('trends-graph-accounts-demo_main').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('trends-graph-accounts-demo_save').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId(wallet).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('trends-graph-cats')).toBeNull();
+    fireEvent.change(screen.getByTestId('trends-graph-name'), { target: { value: 'Rainy day' } });
+    fireEvent.click(screen.getByTestId('trends-graph-accounts-demo_main'));
+    fireEvent.click(screen.getByTestId(wallet));
+    fireEvent.click(screen.getByTestId('trends-graph-save'));
+    const title = await screen.findByText('Rainy day', {}, { timeout: 5000 });
+    const card = title.closest('section')!;
+    const id = card.dataset.testid!.replace('trends-flow-graph-', '');
+    // the line ends at the savings balance alone
+    await waitFor(() => expect(within(card).getByTestId(`trends-flow-scrub-${id}`).textContent).toMatch(/Now €8,150\.00/));
+    expect(within(card).getByTestId(`trends-flow-accounts-${id}`).textContent).toBe('Demo Savings · ING');
+    await waitFor(async () => expect((await readSpace())?.cashflowGraphs).toEqual([{ id, name: 'Rainy day', accountIds: ['demo_save'] }]));
+    // the built-in card stays the money in hand
+    expect(screen.getByTestId('trends-flow-card').textContent).toContain('Money in hand');
+
+    fireEvent.click(screen.getByTestId(`trends-flow-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('trends-graph-delete'));
+    fireEvent.click(await screen.findByTestId('trends-graph-delete-confirm'));
+    await waitFor(() => expect(screen.queryByTestId(`trends-flow-graph-${id}`)).toBeNull(), { timeout: 5000 });
+    await waitFor(async () => expect((await readSpace())?.cashflowGraphs).toEqual([]));
+  }, 20_000);
+
+  it('#510: vs last period reads any day — the tip names both periods, the callout and the list follow, Escape goes back to today', async () => {
+    renderApp('/trends');
+    await screen.findByTestId('trends-cat-chart');
+    fireEvent.click(screen.getByTestId('trends-graph-view-compare-all'));
+    const chart = await screen.findByTestId('trends-compare-chart-all');
+    // the demo's rows first: today's callout carries an amount
+    await waitFor(() => expect(screen.getByTestId('trends-compare-callout-all').textContent).toMatch(/€[1-9]/));
+    const today = screen.getByTestId('trends-compare-callout-all').textContent;
+    fireEvent.keyDown(chart, { key: 'Home' });
+    expect(screen.getByTestId('trends-compare-chart-all-tip').textContent).toMatch(/^Day 1/);
+    expect(screen.getByTestId('trends-compare-callout-all').textContent).toMatch(/day 1$/);
+    fireEvent.keyDown(chart, { key: 'Escape' });
+    expect(screen.queryByTestId('trends-compare-chart-all-tip')).toBeNull();
+    expect(screen.getByTestId('trends-compare-callout-all').textContent).toBe(today);
+  }, 15_000);
+
   it('cash flow: the balance line scrubs into the footer; Range draws the band with the typical peak and low', async () => {
     renderApp('/trends');
     await screen.findByTestId('trends-cat-chart');
@@ -164,20 +240,6 @@ describe('TrendsScreen (demo identity)', () => {
     expect(screen.getByTestId('trends-flow-range-sel').textContent).toMatch(/Low €.* on .* · High €.* on /);
   }, 15_000);
 
-  it('the opt-in net-worth home block appears via Customize Home', async () => {
-    renderApp('/home');
-    await screen.findByTestId('screen-home');
-    expect(screen.queryByTestId('home-networth')).toBeNull(); // hidden by default
-
-    // customize lives on its own screen now (user request) — toggle
-    // there, then back to Home for the payoff
-    fireEvent.click(screen.getByTestId('home-customize'));
-    await screen.findByTestId('home-customize-list');
-    fireEvent.click(screen.getByTestId('home-block-toggle-networth'));
-    fireEvent.click(screen.getByTestId('tab-home'));
-    const block = await screen.findByTestId('home-networth', {}, { timeout: 5000 });
-    expect(block.textContent).toContain('11,570.55');
-  }, 15_000);
 });
 
 describe('trends format helpers', () => {

@@ -4,14 +4,18 @@ import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { useCashOutSet, useGoals } from '@/application/goals';
 import type { SpacePeriodType } from '@/db/types';
 import { useQuery } from '@/db/useQuery';
+import { goalCashOutsIn } from '@/domain/goals';
 import { OVERVIEW_KINDS, overviewSummarySeries } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
-import { periodHistoryCovering } from '@/domain/periods';
+import { periodHistoryCovering, periodMonthsLabel } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
+import { localDate } from '@/domain/trends';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
+import { SENSITIVE_KINDS } from '@/features/privacy/sensitive';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { MultiLine } from '@/ui/charts/MultiLine';
@@ -42,8 +46,9 @@ export function periodDelta(values: readonly number[], index: number): PeriodDel
 /**
  * Sparse x labels: the newest period is always labelled and every k-th one
  * before it, so twelve periods read Jan · Mar · May … the way the recurring
- * chart does. Monthly periods are named by the month they END in (21 Sep –
- * 20 Oct is "Oct"); weekly ones by the day they start.
+ * chart does. Monthly periods are named by their months (#511: 21 Jul –
+ * 20 Aug is "Jul–Aug", a period from the 1st just "Jul"); weekly ones by
+ * the day they start.
  */
 export function periodLabels(periods: readonly Period[], periodType: SpacePeriodType, lang: Lang): string[] {
   const n = periods.length;
@@ -51,10 +56,8 @@ export function periodLabels(periods: readonly Period[], periodType: SpacePeriod
   const weekly = periodType === 'week' || periodType === 'biweekly';
   return periods.map((p, i) => {
     if ((n - 1 - i) % every !== 0) return '';
-    const date = new Date(weekly ? p.start : p.end);
-    return weekly
-      ? date.toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })
-      : date.toLocaleDateString(LOCALES[lang], { month: 'short' });
+    if (!weekly) return periodMonthsLabel(p, LOCALES[lang]);
+    return localDate(p.start).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
   });
 }
 
@@ -83,7 +86,7 @@ export function PeriodsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
-  const { fmt } = useDisplayMoney();
+  const { fmt, fmtSensitive } = useDisplayMoney();
   const currency = space?.currency ?? 'EUR';
   const periodType = space?.periodType ?? 'month';
   const periodDay = space?.periodDay ?? 1;
@@ -99,10 +102,13 @@ export function PeriodsScreen() {
     () => periodHistoryCovering(periodType, periodDay, earliest, { cap: MAX_PERIODS }),
     [periodType, periodDay, earliest],
   );
+  // #455: what a reached goal cashed out is no setback in the saving — the card names it instead
+  const goals = useGoals();
+  const cashedOut = useCashOutSet(allTxs);
   const series = useMemo(() => {
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
-    return overviewSummarySeries(allTxs ?? [], accountsById, periods);
-  }, [allTxs, accounts, periods]);
+    return overviewSummarySeries(allTxs ?? [], accountsById, periods, cashedOut);
+  }, [allTxs, accounts, periods, cashedOut]);
 
   // the selection is the period's START, never an index: the history grows
   // once the rows arrive, and null keeps pointing at the newest period
@@ -115,6 +121,8 @@ export function PeriodsScreen() {
 
   const fmtShort = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
   const money = (cents: number) => fmt(cents, currency);
+  // #530: what comes in and what is put aside stay hidden here too, the deltas included
+  const privateMoney = (cents: number) => fmtSensitive(cents, currency);
   const labels = useMemo(() => periodLabels(periods, periodType, lang), [periods, periodType, lang]);
   const captionFor = (i: number): string => {
     if (i === last) return t('periods.thisPeriod');
@@ -193,9 +201,10 @@ export function PeriodsScreen() {
               values={series.map((s) => s[TILE_META[kind].field])}
               index={index}
               labels={labels}
-              money={money}
+              money={SENSITIVE_KINDS.has(kind) ? privateMoney : money}
               onSelect={select}
               onOpen={() => open(kind)}
+              cashedOutCents={kind === 'saving' ? goalCashOutsIn(goals ?? [], allTxs ?? [], selected).reduce((sum, c) => sum + c.cents, 0) : 0}
             />
           ))}
         </div>
@@ -212,6 +221,7 @@ function MetricCard({
   money,
   onSelect,
   onOpen,
+  cashedOutCents,
 }: Readonly<{
   kind: OverviewKind;
   /** one amount per period, newest last */
@@ -221,6 +231,8 @@ function MetricCard({
   money: (cents: number) => string;
   onSelect: (index: number) => void;
   onOpen: () => void;
+  /** #455: what reached goals took out of savings in the selected period — named, not counted */
+  cashedOutCents: number;
 }>) {
   const { t } = useLang();
   const last = values.length - 1;
@@ -264,6 +276,12 @@ function MetricCard({
       <div className={`mt-1 text-[11px] ${TONE_CLASS[tone]}`} data-testid={`periods-delta-${kind}`}>
         {deltaText(delta, money, t)}
       </div>
+      {cashedOutCents > 0 && (
+        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-accent-deep" data-testid={`periods-cashout-${kind}`}>
+          <Icon name="flag-checkered" size={13} />
+          {t('periods.cashOuts', { amount: money(cashedOutCents) })}
+        </div>
+      )}
       <div className="mt-2">
         <MultiLine
           series={series}

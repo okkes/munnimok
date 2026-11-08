@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
+import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { TILE_META, tileValueClass } from '@/features/overview/tileMeta';
 import { addDays, nextDueDate } from '@/domain/recurring';
@@ -23,33 +24,41 @@ import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
 import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { SyncIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { InstallHint } from '@/features/help/InstallHint';
 import { UpdateCard } from './UpdateCard';
 import { NotificationsBell } from './NotificationsBell';
+import { QuickSyncButton } from '@/features/connectors/QuickSyncSheet';
 import { eventPicture, eventPictureStyle } from '@/features/events/EventsScreen';
 import { clearOverviewPeriods } from '@/features/overview/periodMemory';
 import { resolveHomeBlocks } from './HomeCustomizeScreen';
 import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
-import { safeToSpend } from '@/domain/cashflow';
+import { NavShortcutsBlock, useHomeShortcuts } from '@/features/navigation/NavShortcuts';
+import { safeToSpend } from '@/domain/safeToSpend';
+import type { SafeToSpend } from '@/domain/safeToSpend';
+import { planHeld } from '@/application/safeToSpend';
+import { parseLocalDate } from '@/application/planningModel';
+import { SafeToSpendSheet } from './SafeToSpendSheet';
+import { HiddenFiguresSheet } from '@/features/privacy/HiddenFiguresSheet';
+import { MASK, SENSITIVE_KINDS } from '@/features/privacy/sensitive';
 import { BAND_MODES, bandEditable, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
-import { expenseSeries, finishedAverage, minIso, netWorthSeries } from '@/domain/trends';
+import { expenseSeries, finishedAverage } from '@/domain/trends';
 import { Bars } from '@/ui/charts/Bars';
-import { Line } from '@/ui/charts/Line';
-import { cleanBankText } from '@/lib/text';
 import { Sheet } from '@/ui/Sheet';
 import { useBudgetStatuses, useBudgets } from '@/application/budgets';
 import { useEvents } from '@/application/events';
-import { useGoals } from '@/application/goals';
+import { useCashOutSet, useGoals } from '@/application/goals';
 import { useLoanStatuses } from '@/application/debts';
 import { usePlanning } from '@/application/planning';
 import { useInsights } from '@/application/insights';
+import { useInsightText } from '@/features/insights/insightText';
 import { useProposedMatches } from '@/application/receiptLinks';
 import { useNewTransactions } from '@/application/newTxs';
 import { eventNetText, eventTotals } from '@/domain/events';
-import { goalProgress } from '@/domain/goals';
+import { goalCashOutsIn, goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
 import { AheadCircle } from '@/features/planning/AheadCircle';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
@@ -64,7 +73,6 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { presetTxFilters } from '@/features/transactions/txFilters';
-import { TxFormSheet } from '@/features/transactions/TxFormSheet';
 import { StatementImportFlow } from '@/features/accounts/StatementImportFlow';
 import { setCategoriesCreateIntent } from '@/features/categories/categoriesHandoff';
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
@@ -186,6 +194,26 @@ function renderExploreList(
   );
 }
 
+/** the balance band's figure: Safe to spend through the display lens, a
+ *  dash while no account is spent from; the other modes in the band
+ *  currency, ≈ when converted; stars while figures hide (#530). Out of
+ *  the component for S3776. */
+function bandLabelOf(band: {
+  spendable: boolean;
+  forecast: SafeToSpend | null;
+  total: { cents: number; approximate: boolean };
+  hidden: boolean;
+  lens: (cents: number) => string;
+  plain: (cents: number) => string;
+}): string {
+  const spendableCents = band.forecast && band.forecast.accounts.length > 0 ? band.forecast.cents : null;
+  const cents = band.spendable ? spendableCents : band.total.cents;
+  if (cents === null) return '—';
+  if (band.hidden) return MASK;
+  if (band.spendable) return band.lens(cents);
+  return `${band.total.approximate ? '≈ ' : ''}${band.plain(cents)}`;
+}
+
 /** #361: the entrance fade plays ONCE per session — replaying it on
  *  every tab return read as the whole screen reloading */
 let homeFadedOnce = false;
@@ -209,7 +237,6 @@ export function HomeScreen() {
   const [accountsOpen, setAccountsOpen] = useState(false);
   // #180: the quick-add speed dial + its two in-place hosts
   const [quickOpen, setQuickOpen] = useState(false);
-  const [quickTxOpen, setQuickTxOpen] = useState(false);
   const [quickImportOpen, setQuickImportOpen] = useState(false);
 
   const accounts = useSpaceAccounts();
@@ -220,11 +247,13 @@ export function HomeScreen() {
   // has no review card to ask on — Home points at it; one that fits a
   // transaction still to review asks on that card
   const receiptProposals = useProposedMatches();
+  // #505: a space this identity only reads — its settings, layout and questions are its members' to change
+  const canEdit = useCanEdit();
   const receiptsToCheck = useMemo(() => {
-    if (!receiptProposals || !allTxs) return 0;
+    if (!canEdit || !receiptProposals || !allTxs) return 0;
     const reviewed = new Set(allTxs.filter((tx) => tx.needsReview === 0).map((tx) => tx.id));
     return receiptProposals.filter((l) => l.proposedTxId && reviewed.has(l.proposedTxId)).length;
-  }, [receiptProposals, allTxs]);
+  }, [canEdit, receiptProposals, allTxs]);
 
   // no remount cache here (#361): a stale "true" would bounce a returning
   // Home straight back to onboarding before the fresh flag arrives
@@ -234,11 +263,13 @@ export function HomeScreen() {
   }, [needsOnboarding, navigate]);
 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
+  // #577: doors to what the space took out of its phone bar
+  const shortcuts = useHomeShortcuts(space);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
   // the band total is convert-then-sum (currency plan): into the display
   // currency when set, else the ledger currency — no more silent numeric
   // mixing of differing account currencies; conversions say ≈
-  const { display, fmt, displayCurrency } = useDisplayMoney();
+  const { display, fmt, displayCurrency, fmtSensitive, hideSensitive } = useDisplayMoney();
   const [lensOpen, setLensOpen] = useState(false);
   const bandCurrency = display?.currency ?? currency;
   // the band's MEANING is a per-space choice now (user design
@@ -262,10 +293,12 @@ export function HomeScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0],
     [space?.periodType, space?.periodDay],
   );
+  // #455: what a reached goal cashed out leaves the period's saving — the tile marks it instead
+  const cashedOut = useCashOutSet(allTxs);
   const summary = useMemo(() => {
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
-    return overviewSummary(allTxs ?? [], accountsById, period);
-  }, [allTxs, accounts, period]);
+    return overviewSummary(allTxs ?? [], accountsById, period, cashedOut);
+  }, [allTxs, accounts, period, cashedOut]);
   const fmtShort = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
@@ -326,20 +359,26 @@ export function HomeScreen() {
         .slice(0, 2),
     [goals],
   );
+  const cashedOutCents = useMemo(
+    () => goalCashOutsIn(goals ?? [], allTxs ?? [], period).reduce((sum, c) => sum + c.cents, 0),
+    [goals, allTxs, period],
+  );
   const debtStatuses = useLoanStatuses();
   const activeDebts = useMemo(() => (debtStatuses ?? []).filter((s) => s.account.archived !== 1), [debtStatuses]);
   const debtTotals = useMemo(() => debtsOverview(activeDebts.map((s) => s.account)), [activeDebts]);
-  // insights block: the top undismissed finding
+  // insights block: the top undismissed card
   const insights = useInsights();
+  const insightText = useInsightText(currency);
   // planning block (#128): only once the period has a plan
   const planning = usePlanning();
 
-  // cash-flow forecast (F1): shows nothing rather than a wrong number.
-  // #349: mixed-currency accounts summed RAW made the liquid base lie —
-  // convert each balance into the ledger currency first (a missing rate
-  // keeps the raw figure; still better than dropping the account)
+  // #541: safe to spend over the space's own period — the picked accounts,
+  // minus the dues still open, minus the plan's set-asides the space picked.
+  // #349: mixed-currency accounts summed RAW made the base lie — convert
+  // each balance into the ledger currency first (a missing rate keeps the
+  // raw figure; still better than dropping the account)
   const forecast = useMemo(() => {
-    if (!accounts || !allTxs || !recurrings) return null;
+    if (!accounts || !allTxs || !allRecurrings || !space) return null;
     const day = display?.cache.days.latest;
     const converted = accounts.map((a) =>
       a.currency && a.currency !== currency
@@ -348,17 +387,20 @@ export function HomeScreen() {
     );
     return safeToSpend({
       accounts: converted,
+      space,
+      recurrings: allRecurrings,
       txs: allTxs,
-      recurrings,
-      plannedCents: planning?.reservedCents ?? 0,
+      held: planHeld(planning),
       today: localToday(),
     });
-  }, [accounts, allTxs, recurrings, planning?.reservedCents, currency, display]);
+  }, [accounts, allTxs, allRecurrings, space, planning, currency, display]);
   const [forecastOpen, setForecastOpen] = useState(false);
+  // #530: why the balance reads as stars
+  const [hiddenInfoOpen, setHiddenInfoOpen] = useState(false);
 
   // #142 (user): only "Picked accounts" takes toggles — its include list
   const toggleBandAccount = async (accountId: string) => {
-    if (!bandEditable(bandMode)) return;
+    if (!canEdit || !bandEditable(bandMode)) return;
     // read the row FRESH: two quick toggles from the render-stale space
     // object dropped the first write (review finding)
     const live = await store.get('space', spaceId);
@@ -369,16 +411,17 @@ export function HomeScreen() {
   };
 
   // spendable rides the forecast (summed in the LEDGER currency above);
-  // no payday/liquid yet → an honest dash beats a wrong number.
+  // no account to spend from yet → an honest dash beats a wrong number.
   // #349: it renders through the same display lens as every other money
   // on this card — the raw fmtCents pinned it to the ledger currency
-  const spendableBand = bandMode === 'spendable';
-  const bandCents = spendableBand ? (forecast?.cents ?? null) : bandTotal.cents;
-  const bandApprox = !spendableBand && bandTotal.approximate ? '≈ ' : '';
-  let bandLabel = '—';
-  if (bandCents !== null) {
-    bandLabel = spendableBand ? fmt(bandCents, currency) : `${bandApprox}${fmtCents(bandCents, bandCurrency, lang)}`;
-  }
+  const bandLabel = bandLabelOf({
+    spendable: bandMode === 'spendable',
+    forecast,
+    total: bandTotal,
+    hidden: hideSensitive,
+    lens: (cents) => fmt(cents, currency),
+    plain: (cents) => fmtCents(cents, bandCurrency, lang),
+  });
 
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
@@ -386,8 +429,8 @@ export function HomeScreen() {
     review: renderReviewBlock,
     receipts: renderReceiptsBlock,
     cashflow: renderCashflowBlock,
-    networth: renderNetworthBlock,
     overview: renderOverviewBlock,
+    shortcuts: renderShortcutsBlock,
     transactions: renderTransactionsBlock,
     explore: () => renderExploreList(teaserOf, (to) => void navigate({ to }), t),
     budgets: renderBudgetsBlock,
@@ -431,6 +474,8 @@ export function HomeScreen() {
         trailing={
           <>
             <SyncIndicator />
+            {/* #548: the connections to sync by hand, one tap away */}
+            <QuickSyncButton />
             <NotificationsBell />
             <HelpButton tourId="home" />
             <SpaceSwitcher />
@@ -451,7 +496,8 @@ export function HomeScreen() {
         <div className="flex flex-col pt-1" data-testid="home-quick-sheet">
           {(
             [
-              ['tx', 'receipt-text-plus-outline', () => setQuickTxOpen(true)],
+              // #348: adding a transaction is a screen of its own
+              ['tx', 'receipt-text-plus-outline', () => void navigate({ to: '/transactions/new' })],
               ['import', 'file-upload-outline', () => setQuickImportOpen(true)],
               ['category', 'shape-plus-outline', () => {
                 setCategoriesCreateIntent();
@@ -486,8 +532,7 @@ export function HomeScreen() {
           ))}
         </div>
       </Sheet>
-      {/* the FAB's in-place hosts — sheets are siblings (#241 rule) */}
-      <TxFormSheet open={quickTxOpen} onOpenChange={setQuickTxOpen} />
+      {/* the FAB's in-place host — sheets are siblings (#241 rule) */}
       <StatementImportFlow open={quickImportOpen} onOpenChange={setQuickImportOpen} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* desktop ruling (§4.4) + D4: strict two-column split — the
@@ -507,26 +552,40 @@ export function HomeScreen() {
               invalid HTML — the quick lens toggle needs its own) */}
           <div className="min-w-0 lg:col-start-1 lg:row-start-1">
             <div className="w-full rounded-card bg-brand px-5 py-4 text-on-brand">
-              <button
-                data-testid="home-balance-band"
-                onClick={() => setAccountsOpen((v) => !v)}
-                className="m-tap w-full border-none bg-transparent p-0 text-left text-on-brand"
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  {/* the heading names what the number IS (mode-aware) */}
-                  <span className="text-xs font-medium tracking-wider uppercase opacity-70" data-testid="band-mode-label">
-                    {t(`home.band.${bandMode}`)}
-                  </span>
-                  <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
-                </div>
-                <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
-                  {accounts ? bandLabel : '—'}
-                </div>
-              </button>
+              <div className="relative">
+                <button
+                  data-testid="home-balance-band"
+                  onClick={() => setAccountsOpen((v) => !v)}
+                  className="m-tap w-full border-none bg-transparent p-0 text-left text-on-brand"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    {/* the heading names what the number IS (mode-aware) */}
+                    <span className="text-xs font-medium tracking-wider uppercase opacity-70" data-testid="band-mode-label">
+                      {t(`home.band.${bandMode}`)}
+                    </span>
+                    <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
+                  </div>
+                  <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
+                    {accounts ? bandLabel : '—'}
+                  </div>
+                </button>
+                {/* #530: the stars explain themselves — beside the band's button, never inside it */}
+                {hideSensitive && (
+                  <button
+                    type="button"
+                    data-testid="home-band-hidden-info"
+                    aria-label={t('privacy.infoTitle')}
+                    onClick={() => setHiddenInfoOpen(true)}
+                    className="m-tap absolute right-0 bottom-1 flex h-8 w-8 items-center justify-center rounded-full border-none bg-transparent p-0 text-on-brand opacity-80"
+                  >
+                    <Icon name="information-outline" size={18} color="currentColor" />
+                  </button>
+                )}
+              </div>
               {accountsOpen && (
                 <>
                   {/* what the number means — switching persists per space */}
-                  <div className="mt-2.5 flex flex-wrap gap-1.5" data-testid="band-mode-row">
+                  <div className="mt-2.5 flex flex-wrap gap-1.5" data-testid="band-mode-row" inert={canEdit ? undefined : true}>
                     {BAND_MODES.map((m) => (
                       <button
                         key={m}
@@ -542,12 +601,18 @@ export function HomeScreen() {
                   </div>
                   <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
                     {(accounts ?? []).map((a) => {
+                      // #541: under Safe to spend the accounts it sums read bright, the rest dimmed
                       const included = bandIncludes(bandMode, a, space);
                       return (
-                        <div key={a.id} className={`flex items-center gap-2 text-[13px] ${included ? 'opacity-90' : 'opacity-45'}`}>
+                        <div
+                          key={a.id}
+                          data-testid={`band-row-${a.id}`}
+                          data-included={included ? '1' : '0'}
+                          className={`flex items-center gap-2 text-[13px] ${included ? 'opacity-90' : 'opacity-45'}`}
+                        >
                           {/* #142 (user): the premade modes are read-only —
                               only Picked accounts offers the checkboxes */}
-                          {bandEditable(bandMode) && bandEligible(bandMode, a) && (
+                          {canEdit && bandEditable(bandMode) && bandEligible(bandMode, a) && (
                             <input
                               data-testid={`band-acct-${a.id}`}
                               type="checkbox"
@@ -557,7 +622,7 @@ export function HomeScreen() {
                             />
                           )}
                           <span className="min-w-0 flex-1 truncate">{a.name}</span>
-                          <span className="m-num">{fmt(a.balanceCents, a.currency)}</span>
+                          <span className="m-num">{fmtSensitive(a.balanceCents, a.currency)}</span>
                         </div>
                       );
                     })}
@@ -605,14 +670,17 @@ export function HomeScreen() {
 
         {/* #313: the door joins the centered column on sparse desktops —
             a full-width stray made the rest read off-center */}
-        <button
-          data-testid="home-customize"
-          onClick={() => void navigate({ to: '/home/customize' })}
-          className={'m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3' + (twoColumns ? '' : ' ' + SINGLE_COLUMN_LG)}
-        >
-          <Icon name="tune-variant" size={16} />
-          {t('home.customize')}
-        </button>
+        {/* #505: Home's blocks are the space's layout — a reader keeps the one its members chose */}
+        {canEdit && (
+          <button
+            data-testid="home-customize"
+            onClick={() => void navigate({ to: '/home/customize' })}
+            className={'m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3' + (twoColumns ? '' : ' ' + SINGLE_COLUMN_LG)}
+          >
+            <Icon name="tune-variant" size={16} />
+            {t('home.customize')}
+          </button>
+        )}
       </div>
 
       {/* quick display-currency picker (band fold-out shortcut) — the
@@ -650,91 +718,25 @@ export function HomeScreen() {
         </div>
       </Sheet>
 
-      {/* the number must never feel like magic: every part is on the table —
-          the bar shows how the balance divides into bills, promises and
-          what is actually free until payday */}
-      <Sheet open={forecastOpen} onOpenChange={setForecastOpen} title={t('cashflow.title')} size="tall">
-        {forecast && (
-          <div className="flex flex-col gap-1 pt-1" data-testid="cashflow-breakdown">
-            <div className="pb-2 text-center">
-              <div className="m-num text-[30px] font-semibold text-ink" data-testid="cashflow-headline">
-                {fmt(forecast.cents, currency)}
-              </div>
-              <div className="text-[12px] text-ink-3">
-                {t('cashflow.untilPayday', {
-                  date: new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
-                  perDay: fmt(forecast.perDayCents, currency),
-                })}
-              </div>
-            </div>
-
-            {(() => {
-              const safe = Math.max(0, forecast.cents);
-              const total = Math.max(1, forecast.upcomingCents + forecast.plannedCents + safe);
-              const pct = (part: number) => `${(Math.max(0, part) / total) * 100}%`;
-              return (
-                <div className="flex h-3 w-full gap-px overflow-hidden rounded-full bg-bg-2" data-testid="cashflow-bar" aria-hidden="true">
-                  {forecast.upcomingCents > 0 && <span style={{ width: pct(forecast.upcomingCents), background: 'var(--m-warning)' }} />}
-                  {forecast.plannedCents > 0 && <span style={{ width: pct(forecast.plannedCents), background: 'var(--m-info)' }} />}
-                  {safe > 0 && <span style={{ width: pct(safe), background: 'var(--m-accent)' }} />}
-                </div>
-              );
-            })()}
-
-            <div className="mt-2 flex items-baseline justify-between py-1.5 text-[14px]">
-              <span className="text-ink-2">{t('cashflow.liquid')}</span>
-              <span className="m-num font-semibold text-ink">{fmt(forecast.liquidCents, currency)}</span>
-            </div>
-            {forecast.upcoming.length > 0 && (
-              <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-bills">
-                <span className="flex items-center gap-2 text-ink-2">
-                  <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-warning)' }} />
-                  {t('cashflow.bills')}
-                </span>
-                <span className="m-num text-ink-2">{fmt(-forecast.upcomingCents, currency, { sign: true })}</span>
-              </div>
-            )}
-            {forecast.upcoming.map(({ rec, due }) => (
-              <button
-                key={rec.id}
-                data-testid={`cashflow-upcoming-${rec.id}`}
-                onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
-                className="m-tap flex w-full items-baseline justify-between border-none bg-transparent py-1 pl-4 text-left text-[13px]"
-              >
-                <span className="min-w-0 flex-1 truncate text-ink-3">
-                  {rec.name} · {new Date(due).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
-                </span>
-                <span className="m-num text-ink-3">{fmt(-rec.amountCents, currency, { sign: true })}</span>
-              </button>
-            ))}
-            {forecast.plannedCents > 0 && (
-              <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-planned">
-                <span className="flex items-center gap-2 text-ink-2">
-                  <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-info)' }} />
-                  {t('cashflow.planned')}
-                </span>
-                <span className="m-num text-ink-2">{fmt(-forecast.plannedCents, currency, { sign: true })}</span>
-              </div>
-            )}
-            <div className="mt-1 flex items-baseline justify-between border-t border-line pt-3 text-[15px]">
-              <span className="flex items-center gap-2 font-medium text-ink">
-                <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-accent)' }} />
-                {t('cashflow.safeUntil', {
-                  date: new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
-                })}
-              </span>
-              <span className="m-num font-semibold text-ink" data-testid="cashflow-total">
-                {fmt(forecast.cents, currency)}
-              </span>
-            </div>
-            <p className="pt-1 text-[11px] text-ink-4">{t('cashflow.paydaySource', { merchant: cleanBankText(forecast.payday.merchant) })}</p>
-          </div>
-        )}
-      </Sheet>
+      {/* the number must never feel like magic (#541): the accounts, every
+          due with its date, the plan's set-asides as switches */}
+      {forecast && (
+        <SafeToSpendSheet
+          open={forecastOpen}
+          onOpenChange={setForecastOpen}
+          forecast={forecast}
+          accounts={accounts ?? []}
+          space={space}
+          currency={currency}
+        />
+      )}
+      <HiddenFiguresSheet open={hiddenInfoOpen} onOpenChange={setHiddenInfoOpen} />
     </div>
   );
 
   function renderOverviewBlock() {
+    // #530: what comes in and what is put aside are private figures
+    const tileMoney = (kind: OverviewKind, cents: number) => (SENSITIVE_KINDS.has(kind) ? fmtSensitive : fmt)(cents, currency);
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
@@ -771,8 +773,19 @@ export function HomeScreen() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[10px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
-                <span className={`m-num block truncate text-[13px] font-semibold ${tileValueClass(kind, summary[TILE_META[kind].field])}`}>
-                  {fmt(summary[TILE_META[kind].field], currency)}
+                <span className={`m-num flex items-center gap-1 text-[13px] font-semibold ${tileValueClass(kind, summary[TILE_META[kind].field])}`}>
+                  <span className="min-w-0 truncate">{tileMoney(kind, summary[TILE_META[kind].field])}</span>
+                  {/* #455: a reached goal was spent this period — marked, never counted against the saving */}
+                  {kind === 'saving' && cashedOutCents > 0 && (
+                    <span
+                      className="inline-flex shrink-0"
+                      data-testid="home-overview-cashout"
+                      title={t('overview.cashOutsTile', { amount: tileMoney(kind, cashedOutCents) })}
+                      aria-label={t('overview.cashOutsTile', { amount: tileMoney(kind, cashedOutCents) })}
+                    >
+                      <Icon name="flag-checkered" size={13} color="var(--m-accent-deep)" />
+                    </span>
+                  )}
                 </span>
               </span>
             </button>
@@ -782,51 +795,17 @@ export function HomeScreen() {
     );
   }
 
-  function renderNetworthBlock() {
-    // sparkline over the last 6 period ends; opt-in via Customize Home
-    const periods6 = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 6);
-    const today = localToday();
-    const series = netWorthSeries(accounts ?? [], allTxs ?? [], periods6.map((p) => minIso(p.end, today)));
-    const nowCents = series.at(-1)?.cents ?? 0;
-    const prevCents = series.at(-2)?.cents ?? nowCents;
-    const delta = nowCents - prevCents;
-    return (
-      <>
-        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
-          <span>{t('trends.viewNetworth')}</span>
-          <button
-            data-testid="home-seeall-networth"
-            onClick={() => void navigate({ to: '/trends' })}
-            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
-          >
-            {t('action.seeAll')}
-          </button>
-        </div>
-        <button
-          data-testid="home-networth"
-          onClick={() => void navigate({ to: '/trends' })}
-          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
-        >
-          <span className="w-24 shrink-0">
-            <Line values={series.map((point) => point.cents)} height={36} color="var(--m-accent-deep)" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold text-ink">{fmt(nowCents, currency)}</span>
-            <span className={`block text-[11px] ${delta >= 0 ? 'text-accent-deep' : 'text-negative'}`}>
-              {fmt(delta, currency, { sign: true })}
-            </span>
-          </span>
-          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-        </button>
-      </>
-    );
+  function renderShortcutsBlock() {
+    return shortcuts.length > 0 ? <NavShortcutsBlock ids={shortcuts} /> : null;
   }
 
   function renderCashflowBlock() {
-    if (!forecast) return null; // no salary pattern / no liquid accounts — never guess
-    const fmtPayday = new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+    if (!forecast) return null; // no account money is spent from — never guess
+    const empty = forecast.accounts.length === 0;
+    // the colour would tell what the stars hide (#530)
     let color = 'var(--m-accent-deep)';
-    if (forecast.cents < 0) color = 'var(--m-negative)';
+    if (empty || hideSensitive) color = 'var(--m-ink-3)';
+    else if (forecast.cents < 0) color = 'var(--m-negative)';
     else if (forecast.perDayCents < 1000) color = 'var(--m-warning)'; // under €10/day gets attention
     return (
       <>
@@ -837,14 +816,23 @@ export function HomeScreen() {
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
           <Tile icon="calendar-arrow-right" bg={`color-mix(in srgb, ${color} 14%, transparent)`} color={color} />
-          <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold" style={{ color }} data-testid="home-cashflow-amount">
-              {fmt(forecast.cents, currency)}
+          {empty ? (
+            <span className="min-w-0 flex-1 text-[13px] font-medium text-ink" data-testid="home-cashflow-pick">
+              {t('cashflow.accountsPick')}
             </span>
-            <span className="block text-[11px] text-ink-4">
-              {t('cashflow.untilPayday', { date: fmtPayday, perDay: fmt(forecast.perDayCents, currency) })}
+          ) : (
+            <span className="min-w-0 flex-1">
+              <span className="m-num block text-[15px] font-semibold" style={{ color }} data-testid="home-cashflow-amount">
+                {fmtSensitive(forecast.cents, currency)}
+              </span>
+              <span className="block text-[11px] text-ink-4">
+                {t('cashflow.untilEnd', {
+                  date: parseLocalDate(forecast.period.end).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
+                  perDay: fmtSensitive(forecast.perDayCents, currency),
+                })}
+              </span>
             </span>
-          </span>
+          )}
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
       </>
@@ -922,11 +910,7 @@ export function HomeScreen() {
                 onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
                 className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
               >
-                {status.budget.picture ? (
-                  <img src={status.budget.picture} alt="" className="h-5 w-5 shrink-0 rounded-md object-cover" />
-                ) : (
-                  <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
-                )}
+                <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
@@ -1105,7 +1089,8 @@ export function HomeScreen() {
           <AheadCircle count={planning.aheadCount} suggested={planning.aheadSuggested} size={44} testId="home-planning-ahead" />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold" style={{ color }} data-testid="home-planning-left">
-              {fmt(left, currency)}
+              {/* #530: what is left to give is the balance seen through the plan */}
+              {fmtSensitive(left, currency)}
             </span>
             <span className="block text-[11px] text-ink-4">{line}</span>
           </span>
@@ -1257,7 +1242,9 @@ export function HomeScreen() {
         >
           <Tile icon="hand-coin-outline" tone="negative" />
           <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold text-ink">{fmt(debtTotals.totalOwedCents, currency)}</span>
+            <span className="m-num block text-[15px] font-semibold text-ink" data-testid="home-debts-owed">
+              {fmtSensitive(debtTotals.totalOwedCents, currency)}
+            </span>
             <span className="block text-[11px] text-ink-4">
               {debtTotals.totalMonthlyCents > 0
                 ? t('debts.perMonth', { amount: fmt(debtTotals.totalMonthlyCents, currency) })
@@ -1321,11 +1308,9 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/insights' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <Tile icon={top.icon} tone="warning" />
+          <Tile icon={top.members[0].icon} tone="warning" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-medium text-ink">
-              {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmt(v, currency) : v])))}
-            </span>
+            <span className="block truncate text-[13px] font-medium text-ink">{insightText.title(top)}</span>
             <span className="block text-[11px] text-ink-4">{t('ins.homeSub', { n: insights.length })}</span>
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />

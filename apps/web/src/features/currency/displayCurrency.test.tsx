@@ -85,8 +85,8 @@ describe('display currency lens (demo identity, manual rates)', () => {
     renderApp('/home');
     fireEvent.click(await screen.findByTestId('home-balance-band'));
     fireEvent.click(screen.getByTestId('band-mode-spendable'));
-    // demo data carries a salary pattern, so the forecast renders a
-    // number — converted and marked, not pinned to the ledger euro
+    // the demo's checking account makes the number (#541) — converted
+    // and marked, not pinned to the ledger euro
     const band = await screen.findByTestId('home-total-balance');
     await waitFor(
       () => {

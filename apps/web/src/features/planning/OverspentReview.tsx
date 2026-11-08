@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import type { PlanRow } from '@/db/types';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import { coverCandidates, slackCents } from '@/domain/planning';
@@ -66,6 +67,8 @@ export function OverspentReview({
   currency,
 }: Readonly<{ onClose: () => void; model: PlanningModel; plan: PlanRow; ops: PlanningOps; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
+  // #530: what is left to give — and the most it can hand over — hides with the sensitive figures
+  const balance = useDisplayMoney().sensitive(fmt);
   const views = model.viewsOf(plan);
   // the walk is the red list as it stood when the review opened — fixing one never reshuffles the rest
   const [queue] = useState<string[]>(() => views.filter((v) => v.status === 'overspent').map((v) => v.subject.id));
@@ -146,8 +149,8 @@ export function OverspentReview({
                   testId="plan-review-from-pool"
                   icon="bank-outline"
                   title={t('plan.review.fromPool')}
-                  sub={t('plan.review.poolLeaves', { left: fmt(left - fromPool, currency) })}
-                  trailing={<span className="m-num text-[13px] font-semibold text-ink">{fmt(fromPool, currency)}</span>}
+                  sub={t('plan.review.poolLeaves', { left: balance(left - fromPool, currency) })}
+                  trailing={<span className="m-num text-[13px] font-semibold text-ink">{balance(fromPool, currency)}</span>}
                   chevron={false}
                   onClick={() => void ops.fund(current.subject.id, current.fundedCents + fromPool)}
                 />

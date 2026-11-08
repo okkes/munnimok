@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { bandEditable, bandEligible, bandIncludes, bandModeOf } from './balanceBand';
 import type { AccountRow } from '@/db/types';
 
-const acct = (id: string, type: AccountRow['type']) => ({ id, type });
+const acct = (id: string, type: AccountRow['type']) => ({ id, type, deleted: 0 as const });
 
 describe('balance band modes', () => {
   it('defaults to net worth (the pre-config behavior)', () => {
@@ -15,7 +15,14 @@ describe('balance band modes', () => {
     expect(bandIncludes('cash', acct('a', 'checking'), {})).toBe(true);
     expect(bandIncludes('cash', acct('a', 'loan'), {})).toBe(false);
     expect(bandIncludes('networth', acct('l', 'loan'), {})).toBe(true);
-    expect(bandEligible('spendable', acct('a', 'checking'))).toBe(false);
+  });
+
+  it('#541: safe to spend highlights the accounts it sums — checking and cash, or the space’s own pick', () => {
+    expect(bandIncludes('spendable', acct('a', 'checking'), {})).toBe(true);
+    expect(bandIncludes('spendable', acct('s', 'savings'), {})).toBe(false);
+    expect(bandIncludes('spendable', acct('s', 'savings'), { spendAccountIds: ['s'] })).toBe(true);
+    expect(bandIncludes('spendable', acct('a', 'checking'), { spendAccountIds: ['s'] })).toBe(false);
+    expect(bandEligible('spendable', acct('l', 'loan'))).toBe(false);
   });
 
   it('#142: only Picked accounts is editable, and it reads its explicit include list', () => {

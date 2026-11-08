@@ -175,6 +175,8 @@ describe('Payoff planner (#413)', () => {
     expect(numbers).toMatch(/Interest to pay€[1-9]/);
     expect(numbers).toMatch(/Paid off.+[0-9]{4}[0-9]+ months/);
     expect(numbers).toMatch(/no extra yet/);
+    // #539: no extra yet, and still every fact has its sub line's room
+    for (const fact of screen.getByTestId('debtplan-debt-numbers-loan-card').children) expect(fact.children).toHaveLength(3);
     expect(screen.getByTestId('debtplan-debt-alone-loan-card').textContent).toMatch(/This loan on its own/);
     expect((screen.getByTestId('debtplan-debt-apply-loan-card') as HTMLButtonElement).disabled).toBe(true);
     // drag the card's slider to €200 extra
@@ -183,7 +185,9 @@ describe('Payoff planner (#413)', () => {
     expect(screen.getByTestId('debtplan-debt-chart-plan-loan-card').getAttribute('d')).not.toBe(cardPath);
     const moved = screen.getByTestId('debtplan-debt-numbers-loan-card').textContent ?? '';
     expect(moved).toMatch(/Per month€350\.00€150\.00 \+ €200\.00/);
-    expect(moved).toMatch(/months earlier · €[1-9].* less interest/);
+    expect(moved).toMatch(/[0-9]+ months earlier€[1-9].* less interest/);
+    // #539: the card kept its shape — every fact still one value line and one sub line
+    for (const fact of screen.getByTestId('debtplan-debt-numbers-loan-card').children) expect(fact.children).toHaveLength(3);
     expect((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value).toBe('200');
     expect((screen.getByTestId('debtplan-debt-apply-loan-card') as HTMLButtonElement).disabled).toBe(false);
     // the car's card did not move: nothing of the card's extra reaches it
@@ -272,6 +276,60 @@ describe('Payoff planner (#413)', () => {
     renderApp('/debts/plan');
     await screen.findByTestId('debtplan-hero');
     expect(screen.getByTestId('debtplan-rollover').getAttribute('aria-checked')).toBe('false');
+  }, 20_000);
+
+  it('an end month instead of an amount (#514): a debt’s card works out its extra, the plan its debt-free extra; dragging by hand takes over again', async () => {
+    renderApp('/debts/plan');
+    await screen.findByTestId('screen-debtplan');
+    await seedLoans();
+    await screen.findByTestId('debtplan-hero');
+    await screen.findByTestId('debtplan-order-loan-card');
+    expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/Pick a month/);
+    // the card (€6,000 at 12%, €150 a month) paid off in about two years
+    const now = new Date();
+    const inMonths = (n: number) => {
+      const d = new Date(now.getFullYear(), now.getMonth() + n, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+    fireEvent.change(screen.getByTestId('debtplan-debt-by-loan-card'), { target: { value: inMonths(24) } });
+    await waitFor(() => expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/€[1-9][0-9.,]* extra a month gets it done by/));
+    const extra = Number((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value);
+    expect(extra).toBeGreaterThan(0);
+    expect(screen.getByTestId('debtplan-debt-numbers-loan-card').textContent).toMatch(/Paid off.+24 months|Paid off.+2[0-3] months/);
+    // a month far beyond its own end needs nothing extra
+    fireEvent.change(screen.getByTestId('debtplan-debt-by-loan-card'), { target: { value: inMonths(240) } });
+    await waitFor(() => expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/No extra needed/));
+    expect((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value).toBe('');
+    // a chip by hand: the note is the hint again
+    fireEvent.click(screen.getByTestId('debtplan-debt-extra-chip-loan-card-5000'));
+    await waitFor(() => expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/Pick a month/));
+
+    // the whole plan: debt-free in a year sets the extra per month
+    fireEvent.change(screen.getByTestId('debtplan-free-by'), { target: { value: inMonths(12) } });
+    await waitFor(() => expect(screen.getByTestId('debtplan-free-by-note').textContent).toMatch(/extra a month gets it done by/));
+    expect(Number((screen.getByTestId('debtplan-extra') as HTMLInputElement).value)).toBeGreaterThan(0);
+    expect(screen.getByTestId('debtplan-overall-numbers').textContent).toMatch(/Debt-free/);
+    fireEvent.click(screen.getByTestId('debtplan-extra-chip-2500'));
+    await waitFor(() => expect(screen.getByTestId('debtplan-free-by-note').textContent).toMatch(/Pick a month/));
+  }, 20_000);
+
+  it('the charts end where the walks end (#513): the plan stops at its landing and the minimums line always shows its end', async () => {
+    renderApp('/debts/plan');
+    await screen.findByTestId('screen-debtplan');
+    await seedLoans();
+    await screen.findByTestId('debtplan-hero');
+    await screen.findByTestId('debtplan-order-loan-car');
+    // the minimums line's end point is drawn on the overall chart and on every card
+    expect(screen.getByTestId('debtplan-chart-baseline-end')).toBeTruthy();
+    expect(screen.getByTestId('debtplan-debt-chart-min-loan-car-end')).toBeTruthy();
+    // a big extra on the card (its minimum runs over four years): the plan lands within months — its line ends at its
+    // dot, and the axis breaks to run on, compressed, to the minimum's end
+    fireEvent.change(screen.getByTestId('debtplan-debt-extra-loan-card'), { target: { value: '2000' } });
+    await waitFor(() => expect(screen.getByTestId('debtplan-debt-chart-loan-card-break')).toBeTruthy());
+    const planEnd = Number(screen.getByTestId('debtplan-debt-chart-plan-loan-card').getAttribute('d')!.split(' ').at(-1)!.split(',')[0]);
+    const minEnd = Number(screen.getByTestId('debtplan-debt-chart-min-loan-card-end').getAttribute('cx'));
+    expect(planEnd).toBeLessThan(160);
+    expect(minEnd).toBe(315);
   }, 20_000);
 
   it('no active debts: the empty state points back to Debts', async () => {

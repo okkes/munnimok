@@ -1,73 +1,34 @@
-import type { AccountRow, BudgetRow, RecurringRow, SpacePeriodType, TxView, WeekStart } from '@/db/types';
-import type { TranslationKey } from '@/i18n';
+import type { AccountRow, BudgetRow, RecurringRow } from '@/db/types';
 import { budgetFamily, budgetOptsFor, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
-import { mainCatOf } from './categories';
-import { projectPayoff } from './debts';
+import { simulateDebtAlone, toPlanDebts } from './debtPlan';
+import { loanRemainingCents, monthlyPaymentCents } from './debts';
+import { billChanged, duplicateCharge, isFundingRec, missedCharge, salaryLate } from './insightCharges';
+import type { Insight, InsightInputs, InsightKind, InsightSeverity } from './insightModel';
+import { PERIODS_PER_YEAR, inCurrency, mainOf, spentCents } from './insightModel';
+import { categoryDrift, expensiveWeekday, noSpendDays, spendingPace } from './insightSpending';
 import { cycleMonths } from './recurring';
 import { detectPriceChange } from './recurringPrice';
 import { merchantKey } from './merchantKey';
-import type { Period } from './periods';
+import { txTitle } from '@/lib/text';
+
+export type { Insight, InsightInputs, InsightKind, InsightParam, InsightSeverity, InsightTopic } from './insightModel';
 
 /**
- * Insights engine (approved insights design N1) — pure detectors over
- * local data. Quality bar: computable from what we have, a concrete
- * euro number, one obvious action. A detector below its threshold
- * stays silent; ids encode the subject so a dismissed insight only
- * resurfaces when the situation actually changes.
+ * Insights engine (approved insights design N1, #516) — pure detectors
+ * over local data. Quality bar: computable from what we have, a concrete
+ * number, one obvious action. A detector below its threshold stays
+ * silent; ids encode the subject so a dismissed insight only resurfaces
+ * when the situation actually changes. Findings of one kind give the same
+ * advice, so they share one card (groupInsights).
  */
-
-export type InsightSeverity = 'leak' | 'pattern' | 'win';
-
-export interface Insight {
-  id: string;
-  severity: InsightSeverity;
-  /** yearly € impact — the ranking key */
-  impactCents: number;
-  icon: string;
-  titleKey: TranslationKey;
-  detailKey: TranslationKey;
-  params: Record<string, string | number>;
-  /** small history the card can chart */
-  chart?: number[];
-  /** where the fix lives */
-  actionTo?: string;
-}
-
-interface CatalogLookup {
-  byId: (id: string | undefined) => { id: string; parentId?: string };
-  childrenOf: (id: string) => { id: string }[];
-}
-
-export interface InsightInputs {
-  txs: readonly TxView[];
-  recurrings: readonly RecurringRow[];
-  budgets: readonly BudgetRow[];
-  /** loans v2: the tracked liability accounts (the account IS the debt) */
-  loans: readonly AccountRow[];
-  accountsById: ReadonlyMap<string, AccountRow>;
-  catalog: CatalogLookup;
-  /** oldest → current, e.g. the last 6 space periods */
-  periods: readonly Period[];
-  today: string;
-  /** the space's first weekday + period shape — budget cycles depend on them (#369, #370) */
-  space?: { weekStart?: WeekStart; periodType: SpacePeriodType; periodDay: number } | null;
-}
 
 // ── leaks ───────────────────────────────────────────────────────────────
 
-/** #356: funding-filed recurrings are money MOVED (shared pots, family
- * accounts), not money spent — no leak/overlap advice about them */
-const isFundingRec = (rec: Pick<RecurringRow, 'catId'>, catalog: InsightInputs['catalog']): boolean => {
-  if (!rec.catId) return false;
-  const cat = catalog.byId(rec.catId);
-  return mainCatOf(rec.catId) === 'funding' || (cat.parentId ?? cat.id) === 'funding';
-};
-
-/** a recurring cost that SUSTAINABLY charges more than it used to (min €0.50/mo) */
+/** a subscription that SUSTAINABLY charges more than it used to (min €0.50/mo); fixed costs answer to billChanged */
 export function priceCreep(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const rec of inputs.recurrings) {
-    if (rec.deleted !== 0 || rec.active !== 1 || isFundingRec(rec, inputs.catalog)) continue;
+    if (rec.deleted !== 0 || rec.active !== 1 || rec.kind !== 'subscription' || isFundingRec(rec, inputs.catalog)) continue;
     const charges = inputs.txs
       .filter((tx) => tx.deleted === 0 && tx.recurringId === rec.id && tx.amountCents < 0)
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -76,14 +37,20 @@ export function priceCreep(inputs: InsightInputs): Insight[] {
     if (!change || change.toCents <= change.fromCents) continue;
     const deltaMonthly = Math.round((change.toCents - change.fromCents) / cycleMonths(rec));
     if (deltaMonthly < 50) continue;
+    const currency = charges.at(-1)?.currency;
+    const money = (cents: number) => ({ money: cents, ...(currency ? { currency } : {}) });
     out.push({
       id: `creep:${rec.id}:${change.toCents}`,
+      kind: 'creep',
+      topic: 'subscriptions',
       severity: 'leak',
       impactCents: deltaMonthly * 12,
       icon: 'trending-up',
       titleKey: 'ins.creep.title',
       detailKey: 'ins.creep.detail',
-      params: { name: rec.name, from: change.fromCents, to: change.toCents, year: deltaMonthly * 12 },
+      lineKey: 'ins.creep.line',
+      params: { name: rec.name, from: money(change.fromCents), to: money(change.toCents), year: money(deltaMonthly * 12) },
+      about: rec.name,
       chart: charges.slice(-8).map((tx) => -tx.amountCents),
       actionTo: `/recurring/${rec.id}`,
     });
@@ -91,16 +58,16 @@ export function priceCreep(inputs: InsightInputs): Insight[] {
   return out;
 }
 
-/** two or more active subscriptions inside the same category */
+/** two or more active subscriptions filed under the same category (two streaming services, two gyms) */
 export function subscriptionOverlap(inputs: InsightInputs): Insight[] {
   const groups = new Map<string, RecurringRow[]>();
   for (const rec of inputs.recurrings) {
     if (rec.deleted !== 0 || rec.active !== 1 || rec.kind !== 'subscription' || isFundingRec(rec, inputs.catalog)) continue;
-    const cat = inputs.catalog.byId(rec.catId);
-    const mainId = cat.parentId ?? cat.id;
-    const list = groups.get(mainId) ?? [];
+    // the category as filed: a main holds services that do different jobs (internet and energy are both Housing)
+    if (!rec.catId || mainOf(rec.catId, inputs.catalog) === 'general') continue;
+    const list = groups.get(rec.catId) ?? [];
     list.push(rec);
-    groups.set(mainId, list);
+    groups.set(rec.catId, list);
   }
   const out: Insight[] = [];
   for (const [catId, group] of groups) {
@@ -108,12 +75,16 @@ export function subscriptionOverlap(inputs: InsightInputs): Insight[] {
     const monthly = group.reduce((sum, rec) => sum + Math.round(rec.amountCents / cycleMonths(rec)), 0);
     out.push({
       id: `overlap:${catId}:${group.length}`,
+      kind: 'overlap',
+      topic: 'subscriptions',
       severity: 'leak',
       impactCents: monthly * 12,
       icon: 'content-copy',
       titleKey: 'ins.overlap.title',
       detailKey: 'ins.overlap.detail',
-      params: { n: group.length, names: group.map((r) => r.name).join(' + '), month: monthly, year: monthly * 12 },
+      lineKey: 'ins.overlap.line',
+      params: { n: group.length, cat: { cat: catId }, names: group.map((r) => r.name).join(' + '), month: { money: monthly }, year: { money: monthly * 12 } },
+      about: { cat: catId },
       actionTo: '/recurring',
     });
   }
@@ -126,28 +97,33 @@ export function smallHabit(inputs: InsightInputs): Insight[] {
   if (!period) return [];
   const groups = new Map<string, { name: string; count: number; totalCents: number }>();
   for (const tx of inputs.txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense' || mainCatOf(tx.catId) === 'funding') continue;
+    if (tx.deleted !== 0 || !inCurrency(tx, inputs.currency)) continue;
     if (tx.date < period.start || tx.date > period.end) continue;
-    const spent = -tx.amountCents;
+    const spent = spentCents(tx, inputs.catalog, { skipRecurring: true });
     if (spent <= 0 || spent > 1000) continue;
     const key = merchantKey(tx.merchant);
     if (!key) continue;
-    const group = groups.get(key) ?? { name: tx.merchant ?? key, count: 0, totalCents: 0 };
+    const group = groups.get(key) ?? { name: txTitle(tx), count: 0, totalCents: 0 };
     group.count += 1;
     group.totalCents += spent;
     groups.set(key, group);
   }
+  const perYear = PERIODS_PER_YEAR[inputs.space?.periodType ?? 'month'];
   const out: Insight[] = [];
   for (const [key, group] of groups) {
     if (group.count < 8 || group.totalCents < 2000) continue;
     out.push({
       id: `habit:${key}:${period.start}`,
+      kind: 'habit',
+      topic: 'behaviour',
       severity: 'pattern',
-      impactCents: group.totalCents * 12,
+      impactCents: group.totalCents * perYear,
       icon: 'coffee-outline',
       titleKey: 'ins.habit.title',
       detailKey: 'ins.habit.detail',
-      params: { name: group.name, n: group.count, period: group.totalCents, year: group.totalCents * 12 },
+      lineKey: 'ins.habit.line',
+      params: { name: group.name, n: group.count, period: { money: group.totalCents }, year: { money: group.totalCents * perYear } },
+      about: group.name,
       actionTo: '/transactions',
     });
   }
@@ -156,41 +132,12 @@ export function smallHabit(inputs: InsightInputs): Insight[] {
 
 // ── patterns ────────────────────────────────────────────────────────────
 
-/** Fri–Sun daily spend vs Mon–Thu, over the recent periods */
-export function weekendMultiplier(inputs: InsightInputs): Insight[] {
-  const window = inputs.periods.slice(-2);
-  if (window.length === 0) return [];
-  const start = window[0].start;
-  const end = window.at(-1)!.end;
-  let weekend = 0;
-  let weekday = 0;
-  for (const tx of inputs.txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense' || mainCatOf(tx.catId) === 'funding') continue;
-    if (tx.date < start || tx.date > end) continue;
-    const day = new Date(tx.date).getDay();
-    if (day === 5 || day === 6 || day === 0) weekend += -tx.amountCents;
-    else weekday += -tx.amountCents;
-  }
-  const days = Math.max(1, Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1);
-  const weekendDays = Math.max(1, Math.round((days / 7) * 3));
-  const weekdayDays = Math.max(1, days - weekendDays);
-  const weekendAvg = weekend / weekendDays;
-  const weekdayAvg = weekday / weekdayDays;
-  if (weekdayAvg <= 0 || weekendAvg / weekdayAvg < 1.8 || weekend < 20_000) return [];
-  const multiplier = Math.round((weekendAvg / weekdayAvg) * 10) / 10;
-  return [
-    {
-      id: `weekend:${multiplier}`,
-      severity: 'pattern',
-      impactCents: Math.round((weekendAvg - weekdayAvg) * weekendDays * (365 / days)),
-      icon: 'party-popper',
-      titleKey: 'ins.weekend.title',
-      detailKey: 'ins.weekend.detail',
-      params: { x: multiplier, weekend: Math.round(weekendAvg), weekday: Math.round(weekdayAvg) },
-      actionTo: '/overview/expense',
-    },
-  ];
-}
+/** a budget's cycles in a year — a weekly budget overshoots 52 times */
+const budgetCyclesPerYear = (budget: BudgetRow, inputs: InsightInputs): number => {
+  if (budget.every === 'week') return 52;
+  if (budget.every === '2weeks') return 26;
+  return budget.every === 'period' ? PERIODS_PER_YEAR[inputs.space?.periodType ?? 'month'] : 12;
+};
 
 /** a budget that overshot three periods in a row wants a realistic limit */
 export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
@@ -206,12 +153,16 @@ export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
     const suggested = Math.round(spends.reduce((sum, s) => sum + s, 0) / spends.length / 100) * 100;
     out.push({
       id: `budget:${budget.id}:${suggested}`,
+      kind: 'budget',
+      topic: 'budgets',
       severity: 'pattern',
-      impactCents: (suggested - budget.amountCents) * 12,
+      impactCents: (suggested - budget.amountCents) * budgetCyclesPerYear(budget, inputs),
       icon: 'wallet-outline',
       titleKey: 'ins.budget.title',
       detailKey: 'ins.budget.detail',
-      params: { name: budget.name, limit: budget.amountCents, suggested },
+      lineKey: 'ins.budget.line',
+      params: { name: budget.name, limit: { money: budget.amountCents }, suggested: { money: suggested } },
+      about: budget.name,
       chart: spends.slice().reverse(),
       actionTo: `/budgets/${budget.id}/edit`,
     });
@@ -219,50 +170,161 @@ export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
   return out;
 }
 
-// ── wins ────────────────────────────────────────────────────────────────
+// ── debts ───────────────────────────────────────────────────────────────
 
-/** €25/month extra on the biggest debt: months and interest saved.
- *  Monthly payers only — the claim is per MONTH, and a weekly or yearly
- *  cadence (arc 3) would make that copy lie. */
+/** the tracked debts that still owe, as the payoff planner reads them */
+const owingDebts = (inputs: InsightInputs) =>
+  inputs.loans
+    .filter((a) => a.deleted === 0 && a.archived !== 1)
+    .map((account) => ({ account, remainingCents: loanRemainingCents(account) }))
+    .filter((d) => d.remainingCents > 0);
+
+const EXTRA_STEPS = [2_500, 5_000, 10_000, 25_000, 50_000];
+
+/** a round extra in proportion to the debt's own monthly payment: about a fifth of it, never under €25 */
+export const extraFor = (minMonthlyCents: number): number => Math.max(EXTRA_STEPS[0], ...EXTRA_STEPS.filter((step) => step <= minMonthlyCents / 5));
+
+const moneyOf = (cents: number, account: AccountRow) => ({ money: cents, ...(account.currency ? { currency: account.currency } : {}) });
+
+/**
+ * What a round extra per month buys (user: "€50 extra could save €2,581 —
+ * your DUO debt would be repaid ~14 months earlier"): each debt with a
+ * known rate walked alone by the payoff planner's engine, with and without
+ * the extra; the debt where it saves the most interest speaks. Any cadence
+ * — the planner counts the payment per month.
+ */
 export function debtAcceleration(inputs: InsightInputs): Insight[] {
-  const EXTRA = 2_500;
-  const monthlyCadence = (a: AccountRow) => !a.paymentEvery || (a.paymentEvery === 'month' && (a.paymentEveryN ?? 1) === 1);
-  const candidates = inputs.loans
-    .filter((a) => a.deleted === 0 && a.archived !== 1 && a.paymentCents && a.interestPctYear && monthlyCadence(a))
-    .map((loan) => ({ loan, remaining: Math.max(0, -loan.balanceCents) }))
-    .filter((c) => c.remaining > 0)
-    .sort((a, b) => b.remaining - a.remaining);
-  const top = candidates[0];
-  if (!top) return [];
-  const base = projectPayoff(top.remaining, top.loan.paymentCents, top.loan.interestPctYear, inputs.today);
-  const boosted = projectPayoff(top.remaining, top.loan.paymentCents! + EXTRA, top.loan.interestPctYear, inputs.today);
-  if (!base || !boosted) return [];
-  const monthsSaved = base.months - boosted.months;
-  const interestSaved = base.totalInterestCents - boosted.totalInterestCents;
-  if (monthsSaved < 2 || interestSaved < 2_000) return [];
-  return [
-    {
-      id: `debtacc:${top.loan.id}:${top.remaining}`,
+  let best: Insight | null = null;
+  for (const entry of owingDebts(inputs)) {
+    const [debt] = toPlanDebts([entry]);
+    if (!debt?.aprKnown || debt.aprPct <= 0 || debt.minMonthlyCents <= 0) continue;
+    const extra = extraFor(debt.minMonthlyCents);
+    const base = simulateDebtAlone(debt, 0);
+    const boosted = simulateDebtAlone(debt, extra);
+    if (base.months === null || boosted.months === null) continue;
+    const months = base.months - boosted.months;
+    const interest = base.interestCents - boosted.interestCents;
+    if (months < 2 || interest < 2_000) continue;
+    if (best && (interest < best.impactCents || (interest === best.impactCents && best.id < `debtacc:${entry.account.id}`))) continue;
+    best = {
+      id: `debtacc:${entry.account.id}:${entry.remainingCents}`,
+      kind: 'debtacc',
+      topic: 'debt',
       severity: 'win',
-      impactCents: interestSaved,
+      impactCents: interest,
       icon: 'rocket-launch-outline',
       titleKey: 'ins.debtacc.title',
+      subKey: 'ins.debtacc.sub',
       detailKey: 'ins.debtacc.detail',
-      params: { name: top.loan.name, extra: EXTRA, months: monthsSaved, interest: interestSaved },
-      actionTo: `/debts/${top.loan.id}`,
+      params: { name: entry.account.name, extra: moneyOf(extra, entry.account), months, interest: moneyOf(interest, entry.account) },
+      about: entry.account.name,
+      actionTo: '/debts/plan',
+    };
+  }
+  return best ? [best] : [];
+}
+
+/**
+ * The quick win (user: "one of your smaller debts could disappear quickly —
+ * €340 would fully clear X"): among two debts or more, the smallest when it
+ * is small — €500 or three of its own payments — and a minor part of the
+ * whole; one that its next payment ends anyway needs no nudge.
+ */
+export function debtClear(inputs: InsightInputs): Insight[] {
+  const debts = owingDebts(inputs);
+  if (debts.length < 2) return [];
+  const total = debts.reduce((sum, d) => sum + d.remainingCents, 0);
+  const small = [...debts].sort((a, b) => a.remainingCents - b.remainingCents || a.account.name.localeCompare(b.account.name))[0];
+  const monthly = monthlyPaymentCents(small.account);
+  if (small.remainingCents > Math.max(50_000, 3 * monthly) || small.remainingCents > total * 0.25) return [];
+  const [debt] = toPlanDebts([small]);
+  const months = debt && monthly > 0 ? simulateDebtAlone(debt, 0).months : null;
+  if (months !== null && months < 2) return [];
+  const withPlan = months !== null;
+  return [
+    {
+      id: `debtclear:${small.account.id}`,
+      kind: 'debtclear',
+      topic: 'debt',
+      severity: 'win',
+      impactCents: monthly > 0 ? monthly * 12 : small.remainingCents,
+      icon: 'flag-checkered',
+      titleKey: 'ins.debtclear.title',
+      subKey: 'ins.debtclear.sub',
+      detailKey: withPlan ? 'ins.debtclear.detail' : 'ins.debtclear.detailPlain',
+      params: {
+        name: small.account.name,
+        amount: moneyOf(small.remainingCents, small.account),
+        ...(withPlan ? { months, freed: moneyOf(monthly, small.account) } : {}),
+      },
+      about: small.account.name,
+      actionTo: `/debts/${small.account.id}`,
     },
   ];
 }
 
 // ── the engine ──────────────────────────────────────────────────────────
 
-const DETECTORS = [priceCreep, subscriptionOverlap, smallHabit, weekendMultiplier, budgetRealityCheck, debtAcceleration];
-const MAX_WINS = 2;
+const DETECTORS = [
+  missedCharge,
+  salaryLate,
+  duplicateCharge,
+  priceCreep,
+  billChanged,
+  subscriptionOverlap,
+  smallHabit,
+  categoryDrift,
+  spendingPace,
+  expensiveWeekday,
+  budgetRealityCheck,
+  noSpendDays,
+  debtAcceleration,
+  debtClear,
+];
 
-/** every detector, ranked by yearly impact; wins capped so praise never buries a leak */
+/** praise is welcome, three cards of it at most — never above a leak */
+const MAX_WINS = 3;
+
+/** alerts first (they are about now), then what drains, how you spend, what a change wins */
+const TIER: Record<InsightSeverity, number> = { alert: 0, leak: 1, pattern: 2, win: 3 };
+
+const byRank = (a: Pick<Insight, 'severity' | 'impactCents' | 'id'>, b: Pick<Insight, 'severity' | 'impactCents' | 'id'>): number =>
+  TIER[a.severity] - TIER[b.severity] || b.impactCents - a.impactCents || a.id.localeCompare(b.id);
+
+/** every detector's findings, ranked: tier, then the money at stake */
 export function collectInsights(inputs: InsightInputs): Insight[] {
-  const all = DETECTORS.flatMap((detect) => detect(inputs));
-  const work = all.filter((i) => i.severity !== 'win').sort((a, b) => b.impactCents - a.impactCents);
-  const wins = all.filter((i) => i.severity === 'win').sort((a, b) => b.impactCents - a.impactCents).slice(0, MAX_WINS);
-  return [...work, ...wins];
+  return DETECTORS.flatMap((detect) => detect(inputs)).sort(byRank);
+}
+
+/** one card: a finding alone, or every finding that gives the same advice */
+export interface InsightGroup {
+  /** the finding's own id when alone; `group:<kind>` for several */
+  id: string;
+  kind: InsightKind;
+  severity: InsightSeverity;
+  /** the members' summed impact — a card's rank */
+  impactCents: number;
+  /** ranked, the strongest first */
+  members: Insight[];
+}
+
+/**
+ * #516 (user: "three different advices that give the same advice — group
+ * them as one"): findings of one kind share a card, ranked by the card's
+ * summed impact; the wins are capped. Dismissal stays per finding, so a
+ * new member joins the card while the dismissed ones stay away.
+ */
+export function groupInsights(findings: readonly Insight[], maxWins = MAX_WINS): InsightGroup[] {
+  const byKind = new Map<InsightKind, Insight[]>();
+  for (const finding of [...findings].sort(byRank)) byKind.set(finding.kind, [...(byKind.get(finding.kind) ?? []), finding]);
+  const groups = [...byKind.entries()].map(([kind, members]): InsightGroup => ({
+    id: members.length === 1 ? members[0].id : `group:${kind}`,
+    kind,
+    severity: members[0].severity,
+    impactCents: members.reduce((sum, m) => sum + m.impactCents, 0),
+    members,
+  }));
+  groups.sort(byRank);
+  let wins = 0;
+  return groups.filter((group) => group.severity !== 'win' || ++wins <= maxWins);
 }

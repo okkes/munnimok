@@ -16,7 +16,8 @@ import {
   periodBalanceRange,
   periodDays,
   periodLabel,
-  sameDayComparison,
+  reachedBy,
+  recurringsOnAccounts,
   scopeIds,
   scopedBreakdown,
   scopedContribution,
@@ -157,7 +158,7 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
   });
 });
 
-describe('cumulativeByDay + sameDayComparison (user 2026-10-08)', () => {
+describe('cumulativeByDay + reachedBy (user 2026-10-08)', () => {
   const june = periods[1];
   const txs = [
     tx({ date: '2026-06-01', amountCents: -1000 }),
@@ -183,11 +184,13 @@ describe('cumulativeByDay + sameDayComparison (user 2026-10-08)', () => {
     expect(dayIndexOf('2026-06-30', june)).toBe(29);
   });
 
-  it('compares every period at the same day-of-period, clamped to a shorter period', () => {
-    const points = sameDayComparison(txs, periods, 2, null, catalog);
-    expect(points.map((p) => p.cents)).toEqual([2000, 1750]);
-    // a day index past a period's end reads its last day
-    expect(sameDayComparison(txs, [june], 99, null, catalog)[0].cents).toBe(1850);
+  it('reads every period at the same day-of-period, clamped to a shorter period', () => {
+    const cumulatives = periods.map((period) => cumulativeByDay(txs, period, null, catalog));
+    expect(cumulatives.map((cumulative) => reachedBy(cumulative, 2))).toEqual([2000, 1750]);
+    // a day index past a period's end reads its last day; one before the first reads zero
+    expect(reachedBy(cumulatives[1], 99)).toBe(1850);
+    expect(reachedBy(cumulatives[1], -1)).toBe(0);
+    expect(reachedBy([], 3)).toBe(0);
   });
 });
 
@@ -249,6 +252,33 @@ describe('dailyBalanceSeries (the balance line, user 2026-10-08)', () => {
 
   it('an empty window yields nothing', () => {
     expect(dailyBalanceSeries(accounts, [], '2026-06-05', '2026-06-01')).toEqual([]);
+  });
+
+  it('a custom graph sums the accounts it names, whatever their type (#531)', () => {
+    const txs = [
+      tx({ date: '2026-06-03', amountCents: -20_000 }), // a1: not picked
+      tx({ date: '2026-06-03', amountCents: -5_000, accountId: 'loan' }),
+      tx({ date: '2026-06-04', amountCents: 10_000, accountId: 'sav' }),
+    ];
+    const daily = dailyBalanceSeries(accounts, txs, '2026-06-02', '2026-06-04', ['sav', 'loan', 'old']);
+    // sav + loan today: −850000; the archived one never counts
+    expect(daily.map((p) => p.cents)).toEqual([-855_000, -860_000, -850_000]);
+  });
+});
+
+describe('recurringsOnAccounts (#531)', () => {
+  it('a recurring counts on the account its latest payment landed on; one never paid belongs nowhere', () => {
+    const gym = rec({ id: 'gym' });
+    const rent = rec({ id: 'rent' });
+    const fresh = rec({ id: 'fresh' });
+    const txs = [
+      tx({ date: '2026-05-01', accountId: 'old-bank', recurringId: 'gym' }),
+      tx({ date: '2026-06-01', accountId: 'a1', recurringId: 'gym' }),
+      tx({ date: '2026-06-01', accountId: 'sav', recurringId: 'rent' }),
+      tx({ date: '2026-06-05', accountId: 'a1', recurringId: 'rent', deleted: 1 }),
+    ];
+    expect(recurringsOnAccounts([gym, rent, fresh], txs, ['a1']).map((r) => r.id)).toEqual(['gym']);
+    expect(recurringsOnAccounts([gym, rent, fresh], txs, ['sav', 'old-bank']).map((r) => r.id)).toEqual(['rent']);
   });
 });
 

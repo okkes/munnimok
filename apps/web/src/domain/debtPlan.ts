@@ -323,81 +323,123 @@ export function monthAfter(today: string, n: number): string {
   return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/* ── the chart's grid ──────────────────────────────────────────────── */
+/* ── the chart's axis ──────────────────────────────────────────────── */
 
 /** at most this many points per line: the chart stays light, the paths short */
 const CHART_POINTS = 120;
 /** the months past the plan's end, so the landing reads as a landing and not a wall */
 const HORIZON_ROOM = 6;
+/** a minimums line ending within this many plan horizons shares the plan's even scale */
+const EVEN_REACH = 3;
+/** the share of the width the plan's even scale keeps when a compressed tail follows */
+export const FOCUS_SHARE = 0.72;
 /** the year strides a chart may label by — the smallest that keeps the labels apart wins */
 const YEAR_STRIDES: readonly number[] = [1, 2, 5, 10, 20, 50];
 /** the month strides for a horizon too short for years */
 const MONTH_STRIDES: readonly number[] = [1, 2, 3, 6];
 /** under this many months a chart labels months, not years */
 export const MONTH_TICKS_BELOW = 24;
+/** a tail of at least this many months gets a year mark in its middle as well */
+const TAIL_MID_FROM = 120;
 
 /**
- * the months a payoff chart spans (user 2026-10-08: "if I drag to the
- * max" the plan was a cliff at the left edge, because the x-axis still
- * spanned the thirty-year minimums-only walk): the plan's own length
- * with room — six months past its end at least, up to three times its
- * length when the minimums run that long — never past the longer walk
+ * A payoff chart's time axis (#513, user: "always show the end point of
+ * the minimum line … represent the years a bit better"). The plan keeps
+ * an even scale with room past its end (2026-10-08: a short plan against
+ * a thirty-year minimums line was a cliff at the left edge); the axis then
+ * always runs on to where the minimums line ends. When that end lies
+ * within three plan horizons the whole axis stays even; further out, the
+ * plan's months take most of the width and the remaining years follow on
+ * a compressed tail — broken on the axis, its own year marks under it.
  */
-export function chartHorizon(planMonths: number, baselineMonths: number): number {
-  const plan = Math.max(0, planMonths);
-  const base = Math.max(0, baselineMonths);
-  const wanted = Math.max(plan + HORIZON_ROOM, Math.min(base, plan * 3));
-  return Math.max(1, Math.min(wanted, Math.max(base, plan)));
+export interface ChartAxis {
+  /** the months on the even scale, from today */
+  focusMonths: number;
+  /** where the axis ends; past focusMonths the tail is compressed */
+  totalMonths: number;
 }
 
-/** the months between two chart samples, so a horizon fits the point budget */
-export const sampleStep = (horizonMonths: number): number => Math.max(1, Math.ceil(horizonMonths / CHART_POINTS));
+export function chartAxis(planMonths: number, baselineMonths: number): ChartAxis {
+  const plan = Math.max(0, planMonths);
+  const base = Math.max(0, baselineMonths);
+  const focus = Math.max(1, plan + HORIZON_ROOM);
+  const total = Math.max(focus, base);
+  return total <= focus * EVEN_REACH ? { focusMonths: total, totalMonths: total } : { focusMonths: focus, totalMonths: total };
+}
+
+/** the axis carries a compressed tail */
+export const hasTail = (axis: ChartAxis): boolean => axis.totalMonths > axis.focusMonths;
+
+/** where a month sits across the axis, 0 … 1 */
+export function axisFraction(axis: ChartAxis, month: number): number {
+  const m = Math.min(Math.max(0, month), axis.totalMonths);
+  if (!hasTail(axis)) return axis.totalMonths > 0 ? m / axis.totalMonths : 0;
+  if (m <= axis.focusMonths) return (m / axis.focusMonths) * FOCUS_SHARE;
+  return FOCUS_SHARE + ((m - axis.focusMonths) / (axis.totalMonths - axis.focusMonths)) * (1 - FOCUS_SHARE);
+}
+
+/** one sample of a walk on the axis */
+export interface WalkPoint {
+  month: number;
+  value: number;
+}
 
 /**
- * a walk on the chart's grid: one value every `step` months from today up
- * to the horizon; past the walk's end its last value holds — a paid-off
- * debt stays at zero, a stalled one where it stalled
+ * A walk sampled onto the axis — finer on the even scale than on the tail,
+ * within the point budget. A walk that pays off ends where it lands (#513,
+ * user: "the green line should stop after … it's done paying"); one that
+ * never does holds its last value to the axis end.
  */
-export function sampleMonths(values: readonly number[], step: number, horizonMonths: number): number[] {
+export function sampleWalk(values: readonly number[], landed: boolean, axis: ChartAxis): WalkPoint[] {
   if (values.length === 0) return [];
-  const grid = Math.max(1, step);
+  const end = landed ? Math.min(values.length - 1, axis.totalMonths) : axis.totalMonths;
+  const tail = hasTail(axis);
+  const focusStep = Math.max(1, Math.ceil(axis.focusMonths / (CHART_POINTS * (tail ? FOCUS_SHARE : 1))));
+  const tailStep = Math.max(1, Math.ceil((axis.totalMonths - axis.focusMonths) / (CHART_POINTS * (1 - FOCUS_SHARE))));
+  const months: number[] = [];
+  for (let month = 0; month < Math.min(end, axis.focusMonths); month += focusStep) months.push(month);
+  for (let month = axis.focusMonths; month < end; month += tailStep) months.push(month);
+  months.push(end);
   const last = values.at(-1) ?? 0;
-  const out: number[] = [];
-  for (let month = 0; month <= horizonMonths; month += grid) out.push(month < values.length ? values[month] : last);
-  return out;
+  return months.map((month) => ({ month, value: month < values.length ? values[month] : last }));
 }
 
 export interface ChartTick {
-  /** the grid index (the sample) the label sits under */
-  index: number;
+  /** the month from today the label sits under */
+  month: number;
   label: string;
 }
 
-/** the marks every `stride` months from the start, each at its nearest sample; never two within an eighth of the width of each other */
-function marksEvery(totalMonths: number, step: number, stride: number, maxTicks: number, label: (month: number) => string): ChartTick[] {
-  const grid = Math.max(1, step);
-  const minGap = Math.max(1, Math.ceil(Math.floor(totalMonths / grid) / 8));
+/** the marks every `stride` months from the start; never two within an eighth of the span of each other */
+function marksEvery(totalMonths: number, stride: number, maxTicks: number, label: (month: number) => string): ChartTick[] {
+  const minGap = Math.max(1, Math.ceil(totalMonths / 8));
   const ticks: ChartTick[] = [];
   for (let month = 0; month <= totalMonths && ticks.length < maxTicks; month += stride) {
-    const index = Math.round(month / grid);
     const prev = ticks.at(-1);
-    if (prev && index - prev.index < minGap) continue;
-    ticks.push({ index, label: label(month) });
+    if (prev && month - prev.month < minGap) continue;
+    ticks.push({ month, label: label(month) });
   }
   return ticks;
 }
 
 /**
- * year marks on the sampled grid (user 2026-10-08: every sampled year got
- * a label and they overlapped): the start, then every 1, 2, 5 or 10 years
- * from it — the smallest stride that keeps at most `maxTicks` labels; the
- * label is the year of that mark
+ * year marks (user 2026-10-08: every sampled year got a label and they
+ * overlapped): each mark stands where its year BEGINS (#513: a mark at
+ * today's month each year put a June payoff left of its own year's
+ * label), on round years — every year, every second, fifth or tenth, the
+ * smallest stride that keeps at most `maxTicks` of them — and the start
+ * names this year when it stands clear of the first mark
  */
-export function yearTicks(totalMonths: number, step: number, today: string, maxTicks = 6): ChartTick[] {
+export function yearTicks(totalMonths: number, today: string, maxTicks = 6): ChartTick[] {
   const months = Math.max(0, totalMonths);
-  const stride = YEAR_STRIDES.find((years) => Math.floor(months / (12 * years)) + 1 <= maxTicks) ?? YEAR_STRIDES.at(-1) ?? 1;
-  const year = Number(today.slice(0, 4));
-  return marksEvery(months, step, 12 * stride, maxTicks, (month) => String(year + month / 12));
+  const [year, month] = today.split('-').map(Number);
+  const januaries: { month: number; year: number }[] = [];
+  for (let at = (13 - month) % 12; at <= months; at += 12) januaries.push({ month: at, year: year + (at + month - 1) / 12 });
+  const stride = YEAR_STRIDES.find((years) => januaries.filter((jan) => jan.year % years === 0).length <= maxTicks) ?? YEAR_STRIDES.at(-1) ?? 1;
+  const marks = januaries.filter((jan) => jan.year % stride === 0).map((jan) => ({ month: jan.month, label: String(jan.year) }));
+  const minGap = Math.max(1, Math.ceil(months / 8));
+  const start = marks.length === 0 || marks[0].month >= minGap ? [{ month: 0, label: String(year) }] : [];
+  return [...start, ...marks].filter((tick, i, all) => i === 0 || tick.month - all[i - 1].month >= minGap);
 }
 
 /**
@@ -405,11 +447,74 @@ export function yearTicks(totalMonths: number, step: number, today: string, maxT
  * a nine-month plan): every 1, 2, 3 or 6 months from the start; the label
  * is that month as yyyy-mm, for the screen to word in the person's language
  */
-export function monthTicks(totalMonths: number, step: number, today: string, maxTicks = 6): ChartTick[] {
+export function monthTicks(totalMonths: number, today: string, maxTicks = 6): ChartTick[] {
   const months = Math.max(0, totalMonths);
   const stride = MONTH_STRIDES.find((n) => Math.floor(months / n) + 1 <= maxTicks) ?? MONTH_STRIDES.at(-1) ?? 1;
-  return marksEvery(months, step, stride, maxTicks, (month) => monthAfter(today, month));
+  return marksEvery(months, stride, maxTicks, (month) => monthAfter(today, month));
 }
+
+/**
+ * The axis's labels: months or years over the even scale (fewer when a
+ * tail shares the width), and on a tail the year it ends in — with a year
+ * near its middle too (where that year begins) when it spans ten years or
+ * more. Month labels come as yyyy-mm, years as yyyy.
+ */
+export function axisTicks(axis: ChartAxis, today: string): ChartTick[] {
+  const room = hasTail(axis) ? 4 : 6;
+  const even = axis.focusMonths < MONTH_TICKS_BELOW ? monthTicks(axis.focusMonths, today, room) : yearTicks(axis.focusMonths, today, room);
+  if (!hasTail(axis)) return even;
+  const span = axis.totalMonths - axis.focusMonths;
+  const yearAt = (month: number): ChartTick => ({ month, label: monthAfter(today, month).slice(0, 4) });
+  const firstJanuary = (13 - Number(today.slice(5, 7))) % 12;
+  const middleJanuary = firstJanuary + 12 * Math.round((axis.focusMonths + span / 2 - firstJanuary) / 12);
+  const middle = span >= TAIL_MID_FROM ? [yearAt(middleJanuary)] : [];
+  return [...even, ...middle, yearAt(axis.totalMonths)];
+}
+
+/* ── an end date instead of an amount (#514) ──────────────────────── */
+
+/** the whole months from today's month to a yyyy-mm (0 = this month) */
+export function monthsUntil(today: string, yyyymm: string): number {
+  const [y, m] = today.split('-').map(Number);
+  const [ty, tm] = yyyymm.split('-').map(Number);
+  return (ty - y) * 12 + (tm - m);
+}
+
+/**
+ * the smallest extra per month, in whole euros, that ends a walk within
+ * `targetMonths` — 0 when it already does; null when no amount can (a
+ * month already here). More extra never ends later, so a halving search
+ * over [0, ceiling] finds it in a handful of walks.
+ */
+function smallestExtra(endsBy: (extraCents: number) => number | null, targetMonths: number, ceilingCents: number): number | null {
+  if (targetMonths < 1) return null;
+  const done = (extraCents: number) => {
+    const months = endsBy(extraCents);
+    return months !== null && months <= targetMonths;
+  };
+  if (done(0)) return 0;
+  let high = Math.max(1, Math.ceil(ceilingCents / 100));
+  if (!done(high * 100)) return null;
+  let low = 0;
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (done(mid * 100)) high = mid;
+    else low = mid;
+  }
+  return high * 100;
+}
+
+/** everything owed plus a month of interest: paid as one extra, any walk ends in its first month */
+const ceilingOf = (debts: readonly PlanDebt[]): number =>
+  debts.reduce((sum, d) => sum + Math.max(0, d.balanceCents) + monthlyInterest(Math.max(0, d.balanceCents), d.aprPct), 0);
+
+/** #514 (user: "provide an end date and get the calculation"): the extra one debt needs, walked alone, to be paid off by then */
+export const extraForDebtBy = (debt: PlanDebt, targetMonths: number): number | null =>
+  smallestExtra((extra) => simulateDebtAlone(debt, extra).months, targetMonths, ceilingOf([debt]));
+
+/** the extra per month the combined plan needs, its other settings kept, to be debt-free by then */
+export const extraForPlanBy = (debts: readonly PlanDebt[], options: PlanOptions, targetMonths: number): number | null =>
+  smallestExtra((extra) => simulatePlan(debts, { ...options, extraMonthlyCents: extra }).months, targetMonths, ceilingOf(debts));
 
 /** the debts the planner works with: the active tracked loans, as the engine sees them */
 export function toPlanDebts(loans: readonly { account: AccountRow; remainingCents: number }[]): PlanDebt[] {

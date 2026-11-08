@@ -1,11 +1,9 @@
-import type { AccountRow, RecurringRow, TxView } from '@/db/types';
+import type { TxView } from '@/db/types';
 import { merchantKey } from './merchantKey';
-import { nextDueDate } from './recurring';
 
 /**
- * Cash-flow forecast (design F1/F2): "how much can I spend before
- * payday". Pure functions; honesty rules — the block shows NOTHING
- * rather than a wrong number (no detected salary, no liquid accounts).
+ * The payday the cash-flow projection (Trends) draws towards. Safe to
+ * spend moved to the space's own period (#541, domain/safeToSpend).
  */
 
 export interface PaydayInfo {
@@ -49,56 +47,4 @@ export function nextPayday(txs: readonly TxView[], today: string): PaydayInfo | 
   let next = `${y}-${String(m).padStart(2, '0')}-${String(clamp(y, m)).padStart(2, '0')}`;
   if (next <= today) next = isoAddMonths(next, 1);
   return { date: next, merchant: salary.merchant, amountCents: salary.latest.amountCents };
-}
-
-export interface SafeToSpend {
-  cents: number;
-  perDayCents: number;
-  days: number;
-  payday: PaydayInfo;
-  liquidCents: number;
-  /** recurring costs falling due before the money arrives */
-  upcoming: { rec: RecurringRow; due: string }[];
-  upcomingCents: number;
-  /** money the plan holds for later (#128): funded and not yet spent, plus everything funded ahead (0 for spaces without a plan) */
-  plannedCents: number;
-}
-
-export function safeToSpend(input: {
-  accounts: readonly Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived' | 'deleted'>[];
-  txs: readonly TxView[];
-  recurrings: readonly RecurringRow[];
-  plannedCents?: number;
-  today: string;
-}): SafeToSpend | null {
-  const payday = nextPayday(input.txs, input.today);
-  if (!payday) return null;
-  const liquid = input.accounts.filter(
-    (account) => account.deleted === 0 && account.archived !== 1 && (account.type === 'checking' || account.type === 'cash'),
-  );
-  if (liquid.length === 0) return null;
-  const liquidCents = liquid.reduce((sum, account) => sum + account.balanceCents, 0);
-
-  const upcoming = input.recurrings
-    .filter((rec) => rec.deleted === 0 && rec.active === 1)
-    .map((rec) => ({ rec, due: nextDueDate(rec, input.today) }))
-    .filter((entry): entry is { rec: RecurringRow; due: string } => entry.due !== null && entry.due <= payday.date)
-    .sort((a, b) => a.due.localeCompare(b.due));
-  const upcomingCents = upcoming.reduce((sum, entry) => sum + entry.rec.amountCents, 0);
-
-  // F2: money that already has a job is not safe to spend
-  const plannedCents = Math.max(0, input.plannedCents ?? 0);
-
-  const cents = liquidCents - upcomingCents - plannedCents;
-  const days = Math.max(1, Math.round((Date.parse(payday.date) - Date.parse(input.today)) / 86_400_000));
-  return {
-    cents,
-    perDayCents: Math.floor(cents / days),
-    days,
-    payday,
-    liquidCents,
-    upcoming,
-    upcomingCents,
-    plannedCents,
-  };
 }

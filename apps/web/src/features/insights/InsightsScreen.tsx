@@ -3,32 +3,35 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useInsightDigest, useInsightOps, useInsights } from '@/application/insights';
-import type { Insight, InsightSeverity } from '@/domain/insights';
-import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import type { Insight, InsightGroup, InsightSeverity } from '@/domain/insights';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Tile } from '@/ui/primitives';
+import { useInsightText } from './insightText';
 
 const SEVERITY_COLOR: Record<InsightSeverity, string> = {
+  alert: 'var(--m-info)',
   leak: 'var(--m-negative)',
   pattern: 'var(--m-warning)',
   win: 'var(--m-accent-deep)',
 };
 
-/** tiny inline bar chart — the legacy card's sparkline, CSS only */
-function MiniBars({ data, color }: Readonly<{ data: number[]; color: string }>) {
+/** tiny inline bar chart — the legacy card's sparkline, CSS only; `focus` is the bar it stresses (the last by default) */
+function MiniBars({ data, color, focus }: Readonly<{ data: number[]; color: string; focus?: number }>) {
   const max = Math.max(...data, 1);
+  const stressed = focus ?? data.length - 1;
   return (
     <div className="flex h-14 items-end gap-1" data-testid="insight-chart">
       {data.map((value, i) => (
         <span
           key={`${i}-${value}`}
           className="min-w-2 flex-1 rounded-t"
-          style={{ height: `${Math.max(6, (value / max) * 100)}%`, background: color, opacity: i === data.length - 1 ? 1 : 0.45 }}
+          style={{ height: `${Math.max(6, (value / max) * 100)}%`, background: color, opacity: i === stressed ? 1 : 0.45 }}
         />
       ))}
     </div>
@@ -36,9 +39,11 @@ function MiniBars({ data, color }: Readonly<{ data: number[]; color: string }>) 
 }
 
 /**
- * Insights (approved design N1): ranked detector findings — what leaks,
- * what patterns cost, what one change would win — with the evidence and
- * a door to the fix. All local math; dismissals sync per space.
+ * Insights (approved design N1, #516): ranked detector findings — what
+ * needs a look now, what leaks, how you spend, what one change would win —
+ * with the evidence and a door to the fix. Findings that give the same
+ * advice share one card that lists them. All local math; dismissals sync
+ * per space.
  */
 export function InsightsScreen() {
   const { t } = useLang();
@@ -46,58 +51,95 @@ export function InsightsScreen() {
   const { store, spaceId } = useData();
   const insights = useInsights();
   const ops = useInsightOps();
+  const canEdit = useCanEdit(); // #505: a dismissal hides the card for every member
   useInsightDigest(insights);
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
+  const text = useInsightText(currency);
   const [open, setOpen] = useState<string | null>(null);
 
-  const { fmt } = useDisplayMoney();
-  const money = (cents: number) => fmt(cents, currency);
-  const withMoney = (params: Record<string, string | number>) =>
-    Object.fromEntries(
-      Object.entries(params).map(([key, value]) => [
-        key,
-        typeof value === 'number' && !['n', 'x', 'months'].includes(key) ? money(value) : value,
-      ]),
-    );
+  const go = (insight: Insight) => {
+    if (insight.actionTo) void navigate({ to: insight.actionTo });
+  };
 
-  const renderCard = (insight: Insight) => {
-    const expanded = open === insight.id;
-    const color = SEVERITY_COLOR[insight.severity];
-    const chart = insight.chart ?? [];
+  /** one finding of a card that holds several: its line, a door when it has one */
+  const renderLine = (insight: Insight) => {
+    const body = <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink">{text.line(insight)}</span>;
+    if (!insight.actionTo) {
+      return (
+        <div key={insight.id} className="flex items-center gap-2 py-2.5" data-testid={`insight-line-${insight.id}`}>
+          {body}
+        </div>
+      );
+    }
     return (
-      <div key={insight.id} className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`insight-${insight.id}`}>
+      <button
+        key={insight.id}
+        data-testid={`insight-line-${insight.id}`}
+        onClick={() => go(insight)}
+        className="m-tap flex w-full items-center gap-2 border-none bg-transparent py-2.5 text-left"
+      >
+        {body}
+        <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+      </button>
+    );
+  };
+
+  const renderCard = (group: InsightGroup) => {
+    const lead = group.members[0];
+    const single = group.members.length === 1;
+    const expanded = open === group.id;
+    const color = SEVERITY_COLOR[group.severity];
+    const chart = single ? (lead.chart ?? []) : [];
+    return (
+      <div key={group.id} className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`insight-${group.id}`}>
         <button
-          data-testid={`insight-head-${insight.id}`}
-          onClick={() => setOpen(expanded ? null : insight.id)}
+          data-testid={`insight-head-${group.id}`}
+          onClick={() => setOpen(expanded ? null : group.id)}
           className="m-tap flex w-full items-start gap-3 border-none bg-transparent px-4 py-3.5 text-left"
         >
-          <Tile icon={insight.icon} bg={`color-mix(in srgb, ${color} 13%, transparent)`} color={color} />
+          <Tile icon={lead.icon} bg={`color-mix(in srgb, ${color} 13%, transparent)`} color={color} />
           <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-semibold text-ink">{t(insight.titleKey, withMoney(insight.params))}</span>
-            <span className="m-num block text-[12px]" style={{ color }}>
-              {t(insight.severity === 'win' ? 'ins.impactWin' : 'ins.impactYear', { amount: money(insight.impactCents) })}
+            <span className="block text-[14px] font-semibold text-ink">{text.title(group)}</span>
+            <span className="block text-[12px]">
+              <span className="text-ink-4">{text.topic(group)} · </span>
+              <span className="m-num" style={{ color }} data-testid={`insight-sub-${group.id}`}>
+                {text.sub(group)}
+              </span>
             </span>
           </span>
           <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="var(--m-ink-4)" />
         </button>
         <Collapse open={expanded}>
-          <div className="border-t border-line-2 bg-bg-2/50 px-4 py-3" data-testid={`insight-body-${insight.id}`}>
-            {chart.length > 1 && <MiniBars data={chart} color={color} />}
-            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">{t(insight.detailKey, withMoney(insight.params))}</p>
+          <div className="border-t border-line-2 bg-bg-2/50 px-4 py-3" data-testid={`insight-body-${group.id}`}>
+            {single ? (
+              <>
+                {chart.length > 1 && <MiniBars data={chart} color={color} focus={lead.chartFocus} />}
+                <p className="mt-2 text-[13px] leading-relaxed text-ink-2">{text.detail(lead)}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[13px] leading-relaxed text-ink-2">{text.hint(group)}</p>
+                <div className="mt-1 divide-y divide-line-2" data-testid={`insight-lines-${group.id}`}>
+                  {group.members.map(renderLine)}
+                </div>
+              </>
+            )}
             <div className="mt-3 flex items-center gap-2">
-              {insight.actionTo && (
-                <Button size="sm" data-testid="insight-action" onClick={() => void navigate({ to: insight.actionTo! })}>
+              {single && lead.actionTo && (
+                <Button size="sm" data-testid="insight-action" onClick={() => go(lead)}>
                   {t('ins.action')}
                 </Button>
               )}
-              <button
-                data-testid="insight-dismiss"
-                onClick={() => void ops.dismiss(insight.id)}
-                className="m-tap border-none bg-transparent text-[12px] text-ink-4"
-              >
-                {t('action.dismiss')}
-              </button>
+              {canEdit && (
+                <button
+                  data-testid="insight-dismiss"
+                  onClick={() => void ops.dismiss(group.members.map((m) => m.id))}
+                  className="m-tap border-none bg-transparent text-[12px] text-ink-4"
+                >
+                  {t(single ? 'action.dismiss' : 'ins.dismissAll')}
+                </button>
+              )}
             </div>
           </div>
         </Collapse>

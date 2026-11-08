@@ -1,5 +1,10 @@
-import type { AccountRow, GoalRow, SpacePeriodType, SpaceRow } from '@/db/types';
-import { nextPeriod, periodHistory } from './periods';
+import type { AccountRow, GoalRow, SpacePeriodType, SpaceRow, TxView } from '@/db/types';
+import { mainCatOf } from './categories';
+import { contributionCents } from './overview';
+import { inPeriod, nextPeriod, periodHistory } from './periods';
+import type { Period } from './periods';
+import { addDays } from './recurring';
+import { txSliceViews } from './txSlices';
 
 /**
  * Goal math (approved goals design) — the savings BALANCE is the only
@@ -97,3 +102,84 @@ export function periodUnitKey(
 
 export const goalProgress = (goal: GoalRow): number =>
   goal.targetCents > 0 ? Math.min(1, goal.allocatedCents / goal.targetCents) : 0;
+
+// ── #455: cash out ──────────────────────────────────────────────────────
+
+type CashOutGoal = Pick<GoalRow, 'id' | 'deleted' | 'cashOut'>;
+
+/**
+ * Every row a goal cashed out, with the other leg of its pair: the
+ * overview keeps them out of their period's saving — spending saved money
+ * on what it was saved for is no setback.
+ */
+export function cashOutSet(goals: readonly CashOutGoal[], txs: readonly Pick<TxView, 'id' | 'transferPeerId'>[]): Set<string> {
+  const marked = new Set(goals.filter((g) => g.deleted === 0).flatMap((g) => g.cashOut?.txIds ?? []));
+  const out = new Set(marked);
+  for (const tx of txs) {
+    if (marked.has(tx.id) && tx.transferPeerId) out.add(tx.transferPeerId);
+    if (tx.transferPeerId && marked.has(tx.transferPeerId)) out.add(tx.id);
+  }
+  return out;
+}
+
+/** the money that left savings in the rows a goal cashed out */
+export function cashOutCents(goal: CashOutGoal, txs: readonly Pick<TxView, 'id' | 'amountCents' | 'deleted'>[]): number {
+  const ids = new Set(goal.cashOut?.txIds ?? []);
+  return txs.filter((tx) => tx.deleted === 0 && ids.has(tx.id)).reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
+}
+
+/** the goals cashed out inside a period, with what each took out of savings there — the overview names them instead of counting them */
+export function goalCashOutsIn<G extends CashOutGoal>(
+  goals: readonly G[],
+  txs: readonly Pick<TxView, 'id' | 'amountCents' | 'deleted' | 'date'>[],
+  period: Period,
+): { goal: G; cents: number }[] {
+  const out: { goal: G; cents: number }[] = [];
+  for (const goal of goals) {
+    if (goal.deleted !== 0 || !goal.cashOut) continue;
+    const cents = cashOutCents(goal, txs.filter((tx) => inPeriod(tx.date, period)));
+    if (cents > 0) out.push({ goal, cents });
+  }
+  return out.sort((a, b) => b.cents - a.cents);
+}
+
+/** how far back the picker looks for the money that paid for a goal */
+const CASH_OUT_DAYS = 400;
+
+/**
+ * The money that left the savings pool and paid for no goal yet — what
+ * the cash-out picker offers, newest first: a pool account's outgoing
+ * rows (fees aside), and a withdrawal filed on another account whose
+ * savings leg is not in the pool's own list. One leg per pair; reserved
+ * rows wait for their booked twin.
+ */
+export function cashOutCandidates<T extends TxView>(
+  txs: readonly T[],
+  accounts: readonly AccountRow[],
+  space: PoolSpace,
+  goals: readonly CashOutGoal[],
+  today: string,
+): T[] {
+  const pool = new Set(poolAccounts(accounts, space).map((a) => a.id));
+  const taken = cashOutSet(goals, txs);
+  const since = addDays(today, -CASH_OUT_DAYS);
+  const accountsById = new Map(accounts.map((a) => [a.id, a]));
+  // a fee is the bank's, never a purchase
+  const isFee = (tx: T) => txSliceViews(tx).some((v) => v.catId === 'savingFees');
+  const live = txs.filter(
+    (tx) => tx.deleted === 0 && tx.pending !== 1 && tx.date >= since && tx.date <= today && !taken.has(tx.id) && !isFee(tx),
+  );
+  const fromPool = live.filter((tx) => pool.has(tx.accountId) && tx.amountCents < 0);
+  const poolIds = new Set(fromPool.map((tx) => tx.id));
+  const pairedWithPool = (tx: T) =>
+    (!!tx.transferPeerId && poolIds.has(tx.transferPeerId)) || fromPool.some((p) => p.transferPeerId === tx.id);
+  // the other side of a withdrawal: never a savings account's own row (an unticked one is not the goals' money)
+  const withdrawals = live.filter(
+    (tx) =>
+      accountsById.get(tx.accountId)?.type !== 'savings' &&
+      txSliceViews(tx).some((v) => mainCatOf(v.catId) === 'saving') &&
+      contributionCents('saving', tx, accountsById) < 0 &&
+      !pairedWithPool(tx),
+  );
+  return [...fromPool, ...withdrawals].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+}

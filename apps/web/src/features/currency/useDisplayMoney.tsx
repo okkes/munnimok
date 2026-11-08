@@ -7,12 +7,25 @@ import { useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { ensureRates, fmtDisplay, readManualRates, readRatesCache } from '@/lib/rates';
 import type { DisplayContext } from '@/lib/rates';
+import { MASK, useHideSensitive } from '@/features/privacy/sensitive';
 
 export interface DisplayMoney {
   displayCurrency: string | null;
   display: DisplayContext | null;
   fmt: (cents: number, currency: string, opts?: { sign?: boolean; date?: string }) => string;
   ensureDates: (dates: readonly string[]) => void;
+  /** #530: the device hides the sensitive figures */
+  hideSensitive: boolean;
+  /**
+   * `fmt` for a sensitive figure — every account balance and every total
+   * built from balances (the pools, net worth, safe to spend, a debt's
+   * remaining, a portfolio's value), what comes in and what is put aside —
+   * stars while the device hides them. `asRecorded` keeps the figure in its
+   * own currency for the screens that never take the display lens.
+   */
+  fmtSensitive: (cents: number, currency: string, opts?: { sign?: boolean; date?: string; asRecorded?: boolean }) => string;
+  /** the same rule for a formatter a screen already holds (a chart's scale, a currency-bound `money`) */
+  sensitive: <A extends unknown[]>(format: (...args: A) => string) => (...args: A) => string;
 }
 
 /**
@@ -58,6 +71,19 @@ function useDisplayMoneyStandalone(): DisplayMoney {
       fmtDisplay(cents, currency, lang, display, opts),
     [display, lang],
   );
+  const hideSensitive = useHideSensitive((s) => s.on);
+  const fmtSensitive = useCallback<DisplayMoney['fmtSensitive']>(
+    (cents, currency, opts) => {
+      if (hideSensitive) return MASK;
+      return opts?.asRecorded ? fmtCents(cents, currency, lang, opts) : fmt(cents, currency, opts);
+    },
+    [hideSensitive, fmt, lang],
+  );
+  const sensitive = useCallback(
+    <A extends unknown[]>(format: (...args: A) => string) =>
+      (...args: A): string => (hideSensitive ? MASK : format(...args)),
+    [hideSensitive],
+  );
 
   /** transaction lists call this with their visible dates so rows can
    *  convert at their OWN day's fixing (historically honest lists) */
@@ -69,7 +95,10 @@ function useDisplayMoneyStandalone(): DisplayMoney {
     [displayCurrency, online, store],
   );
 
-  return { displayCurrency, display, fmt, ensureDates };
+  return useMemo(
+    () => ({ displayCurrency, display, fmt, ensureDates, hideSensitive, fmtSensitive, sensitive }),
+    [displayCurrency, display, fmt, ensureDates, hideSensitive, fmtSensitive, sensitive],
+  );
 }
 
 const DisplayMoneyContext = createContext<DisplayMoney | null>(null);
@@ -85,14 +114,17 @@ export function useDisplayMoney(): DisplayMoney {
   const { lang } = useLang();
   // outside the provider (odd mounts, isolated tests): plain fmtCents,
   // zero store subscriptions — never silently recreate the heavy path
-  const fallback = useMemo<DisplayMoney>(
-    () => ({
+  const fallback = useMemo<DisplayMoney>(() => {
+    const fmt: DisplayMoney['fmt'] = (cents, currency, opts) => fmtCents(cents, currency, lang, opts);
+    return {
       displayCurrency: null,
       display: null,
-      fmt: (cents, currency, opts) => fmtCents(cents, currency, lang, opts),
+      fmt,
       ensureDates: () => undefined,
-    }),
-    [lang],
-  );
+      hideSensitive: false,
+      fmtSensitive: fmt,
+      sensitive: (format) => format,
+    };
+  }, [lang]);
   return ctx ?? fallback;
 }

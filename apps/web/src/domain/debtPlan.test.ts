@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow } from '@/db/types';
 import {
+  FOCUS_SHARE,
   STRATEGIES,
-  chartHorizon,
+  axisFraction,
+  axisTicks,
+  chartAxis,
   compareStrategies,
+  extraForDebtBy,
+  extraForPlanBy,
   extraLadder,
+  hasTail,
   monthAfter,
   monthTicks,
+  monthsUntil,
   orderDebts,
   raisedPayment,
-  sampleMonths,
-  sampleStep,
+  sampleWalk,
   simulateBaseline,
   simulateDebtAlone,
   simulatePlan,
@@ -264,60 +270,133 @@ describe('applying an extra to the loan (user 2026-10-09)', () => {
   });
 });
 
-describe('the chart grid (user 2026-10-08)', () => {
-  it('the horizon follows the plan with room, never the whole minimums-only walk', () => {
-    // a three-month plan against thirty years: nine months, not a cliff at the left edge
-    expect(chartHorizon(3, 360)).toBe(9);
-    expect(chartHorizon(24, 360)).toBe(72);
-    expect(chartHorizon(200, 360)).toBe(360);
-    // room past the end, but never past the baseline
-    expect(chartHorizon(24, 26)).toBe(26);
-    // a plan longer than the baseline keeps its own length
-    expect(chartHorizon(30, 20)).toBe(30);
-    expect(chartHorizon(0, 0)).toBe(1);
+describe('the chart axis (#513)', () => {
+  it('the minimums line always ends on the chart: close ends share the plan’s even scale, far ones follow on a compressed tail', () => {
+    // a 20-month plan against a 65-month minimum: one even scale to the minimum's end
+    expect(chartAxis(20, 65)).toEqual({ focusMonths: 65, totalMonths: 65 });
+    // an 11-month plan against thirty years: the plan's 17 months, then the tail to the end
+    expect(chartAxis(11, 366)).toEqual({ focusMonths: 17, totalMonths: 366 });
+    expect(hasTail(chartAxis(11, 366))).toBe(true);
+    // the plan IS the minimums: six months of room past the shared end
+    expect(chartAxis(40, 40)).toEqual({ focusMonths: 46, totalMonths: 46 });
+    expect(chartAxis(0, 0)).toEqual({ focusMonths: 6, totalMonths: 6 });
   });
 
-  it('sampling: one value per step up to the horizon, the last value holding past the walk', () => {
-    expect(sampleStep(9)).toBe(1);
-    expect(sampleStep(360)).toBe(3);
-    expect(sampleStep(600)).toBe(5);
-    expect(sampleMonths([100, 50, 0], 1, 5)).toEqual([100, 50, 0, 0, 0, 0]);
-    expect(sampleMonths([100, 80, 60, 40, 20, 0], 2, 9)).toEqual([100, 60, 20, 0, 0]);
-    expect(sampleMonths([], 1, 5)).toEqual([]);
+  it('a month’s place across the axis: even up to the focus, the tail sharing what is left', () => {
+    const even = chartAxis(20, 65);
+    expect(axisFraction(even, 0)).toBe(0);
+    expect(axisFraction(even, 32.5)).toBe(0.5);
+    expect(axisFraction(even, 99)).toBe(1);
+    const tailed = chartAxis(11, 366);
+    expect(axisFraction(tailed, 17)).toBeCloseTo(FOCUS_SHARE, 10);
+    expect(axisFraction(tailed, 8.5)).toBeCloseTo(FOCUS_SHARE / 2, 10);
+    expect(axisFraction(tailed, 366)).toBe(1);
+    expect(axisFraction(tailed, 17 + (366 - 17) / 2)).toBeCloseTo(FOCUS_SHARE + (1 - FOCUS_SHARE) / 2, 10);
   });
 
-  it('year ticks: the start, then every 1, 2, 5 or 10 years — at most six, evenly spaced, never neighbours', () => {
-    const thirty = yearTicks(360, 3, '2026-10-08');
-    expect(thirty[0]).toEqual({ index: 0, label: '2026' });
-    expect(thirty.map((t) => t.label)).toEqual(['2026', '2036', '2046', '2056']);
-    expect(thirty.map((t) => t.index)).toEqual([0, 40, 80, 120]);
-    expect(yearTicks(24, 1, '2026-10-08')).toEqual([
-      { index: 0, label: '2026' },
-      { index: 12, label: '2027' },
-      { index: 24, label: '2028' },
+  it('a walk that pays off stops where it lands; one that never does holds to the axis end; the tail samples coarser', () => {
+    const axis = chartAxis(3, 3);
+    expect(sampleWalk([100, 50, 20, 0], true, axis)).toEqual([
+      { month: 0, value: 100 },
+      { month: 1, value: 50 },
+      { month: 2, value: 20 },
+      { month: 3, value: 0 },
     ]);
-    // seven years at one per year would be seven labels: every other year then
-    expect(yearTicks(72, 1, '2026-10-08').map((t) => t.label)).toEqual(['2026', '2028', '2030', '2032']);
-    expect(yearTicks(120, 1, '2026-10-08').map((t) => t.label)).toEqual(['2026', '2028', '2030', '2032', '2034', '2036']);
-    // a bigger budget takes the finer stride
-    expect(yearTicks(360, 3, '2026-10-08', 8).map((t) => t.label)).toEqual(['2026', '2031', '2036', '2041', '2046', '2051', '2056']);
+    const stuck = sampleWalk([100, 100, 100], false, axis);
+    expect(stuck.at(-1)).toEqual({ month: axis.totalMonths, value: 100 });
+    expect(sampleWalk([], true, axis)).toEqual([]);
+    const long = Array.from({ length: 367 }, (_, i) => 366 - i);
+    const tailed = chartAxis(11, 366);
+    const points = sampleWalk(long, true, tailed);
+    expect(points.at(-1)).toEqual({ month: 366, value: 0 });
+    expect(points.length).toBeLessThanOrEqual(125);
+    // every month on the even scale, then wider steps — the break point itself sampled
+    expect(points.slice(0, 18).map((p) => p.month)).toEqual(Array.from({ length: 18 }, (_, i) => i));
+    expect(points[18].month - points[17].month).toBeGreaterThan(1);
+  });
+
+  it('year ticks stand where their year begins (#513), on round years — every 1, 2, 5 or 10 — and the start names this year when it stands clear', () => {
+    // from October 2026, January 2027 is three months out
+    expect(yearTicks(24, '2026-10-08')).toEqual([
+      { month: 0, label: '2026' },
+      { month: 3, label: '2027' },
+      { month: 15, label: '2028' },
+    ]);
+    // a June payoff (month 20) sits right of its own year's mark, never left of it
+    const ticks = yearTicks(24, '2026-10-08');
+    expect(ticks.filter((t) => t.month <= 20).at(-1)?.label).toBe('2028');
+    // thirty years: every fifth year, the start too close to 2030 to be named
+    const thirty = yearTicks(360, '2026-10-08');
+    expect(thirty.map((t) => t.label)).toEqual(['2030', '2035', '2040', '2045', '2050', '2055']);
+    expect(thirty.map((t) => t.month)).toEqual([39, 99, 159, 219, 279, 339]);
+    // six Januaries fit at one per year; ten years take the even ones
+    expect(yearTicks(72, '2026-10-08').map((t) => t.label)).toEqual(['2027', '2028', '2029', '2030', '2031', '2032']);
+    expect(yearTicks(120, '2026-10-08').map((t) => t.label)).toEqual(['2026', '2028', '2030', '2032', '2034', '2036']);
+    // January itself is a year's own start
+    expect(yearTicks(30, '2027-01-15').map((t) => t.label)).toEqual(['2027', '2028', '2029']);
     for (const months of [5, 13, 50, 99, 250, 600]) {
-      const ticks = yearTicks(months, sampleStep(months), '2026-10-08');
-      expect(ticks.length).toBeLessThanOrEqual(6);
-      for (let i = 1; i < ticks.length; i++) expect(ticks[i].index - ticks[i - 1].index).toBeGreaterThanOrEqual(2);
+      const marks = yearTicks(months, '2026-10-08');
+      expect(marks.length).toBeLessThanOrEqual(7);
+      for (let i = 1; i < marks.length; i++) expect(marks[i].month - marks[i - 1].month).toBeGreaterThanOrEqual(Math.ceil(months / 8));
     }
   });
 
   it('month ticks for a short horizon: every 1, 2, 3 or 6 months from the start, as yyyy-mm', () => {
-    expect(monthTicks(5, 1, '2026-10-08').map((t) => t.label)).toEqual(['2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03']);
-    expect(monthTicks(9, 1, '2026-10-08')).toEqual([
-      { index: 0, label: '2026-10' },
-      { index: 2, label: '2026-12' },
-      { index: 4, label: '2027-02' },
-      { index: 6, label: '2027-04' },
-      { index: 8, label: '2027-06' },
+    expect(monthTicks(5, '2026-10-08').map((t) => t.label)).toEqual(['2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03']);
+    expect(monthTicks(9, '2026-10-08')).toEqual([
+      { month: 0, label: '2026-10' },
+      { month: 2, label: '2026-12' },
+      { month: 4, label: '2027-02' },
+      { month: 6, label: '2027-04' },
+      { month: 8, label: '2027-06' },
     ]);
-    expect(monthTicks(23, 1, '2026-10-08').map((t) => t.index)).toEqual([0, 6, 12, 18]);
+    expect(monthTicks(23, '2026-10-08').map((t) => t.month)).toEqual([0, 6, 12, 18]);
+  });
+
+  it('axis ticks: the even scale’s marks, then the tail’s middle year (a long tail) and its end year', () => {
+    expect(axisTicks(chartAxis(20, 65), '2026-10-08').map((t) => t.label)).toEqual(['2027', '2028', '2029', '2030', '2031', '2032']);
+    const tailed = axisTicks(chartAxis(11, 366), '2026-10-08');
+    // four month marks at most on the even 72%, then the January nearest the tail's middle, and its end, 2057
+    expect(tailed.map((t) => t.label)).toEqual(['2026-10', '2027-04', '2027-10', '2043', '2057']);
+    expect(tailed[3].month % 12).toBe(3);
+    expect(tailed.at(-1)?.month).toBe(366);
+    // a short tail names its end only
+    expect(axisTicks(chartAxis(11, 60), '2026-10-08').map((t) => t.label).at(-1)).toBe('2031');
+    expect(axisTicks(chartAxis(11, 60), '2026-10-08').filter((t) => t.label.length === 4)).toHaveLength(1);
+  });
+});
+
+describe('an end date instead of an amount (#514)', () => {
+  it('months until a picked month, from this one', () => {
+    expect(monthsUntil('2026-10-08', '2026-10')).toBe(0);
+    expect(monthsUntil('2026-10-08', '2027-06')).toBe(8);
+    expect(monthsUntil('2026-10-08', '2025-12')).toBe(-10);
+  });
+
+  it('one debt: the smallest whole-euro extra that pays it off by then — none when its own payment already does, null for a month already here', () => {
+    const minimum = simulateDebtAlone(car).months!;
+    expect(extraForDebtBy(car, minimum)).toBe(0);
+    expect(extraForDebtBy(car, minimum + 12)).toBe(0);
+    expect(extraForDebtBy(car, 0)).toBeNull();
+    const extra = extraForDebtBy(car, 24)!;
+    expect(extra % 100).toBe(0);
+    expect(simulateDebtAlone(car, extra).months!).toBeLessThanOrEqual(24);
+    // a euro less misses the month
+    expect(simulateDebtAlone(car, extra - 100).months!).toBeGreaterThan(24);
+    // next month: everything at once (and a month's interest)
+    expect(simulateDebtAlone(car, extraForDebtBy(car, 1)!).months).toBe(1);
+    // a payment under its interest still gets there with enough extra
+    const trap = debt({ id: 'trap', balanceCents: 1_000_000, aprPct: 24, minMonthlyCents: 10_000 });
+    expect(simulateDebtAlone(trap, extraForDebtBy(trap, 36)!).months!).toBeLessThanOrEqual(36);
+  });
+
+  it('the whole plan: the extra per month on top of its order, its per-debt extras and its one-off', () => {
+    const options = { strategy: 'snowball' as const, lumpSumCents: 50_000, extraByDebtCents: { car: 5_000 } };
+    const extra = extraForPlanBy(three, options, 30)!;
+    expect(simulatePlan(three, { ...options, extraMonthlyCents: extra }).months!).toBeLessThanOrEqual(30);
+    expect(simulatePlan(three, { ...options, extraMonthlyCents: extra - 100 }).months!).toBeGreaterThan(30);
+    expect(extraForPlanBy(three, options, 600)).toBe(0);
+    expect(extraForPlanBy(three, options, -1)).toBeNull();
   });
 });
 

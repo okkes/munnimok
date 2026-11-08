@@ -52,6 +52,29 @@ export function monotoneTangents(pts: readonly ChartPt[]): number[] {
   return m;
 }
 
+/**
+ * The curve's point at a fractional index `t` (0 … n−1): the same Hermite
+ * segment monotonePath draws there, so a marker moved along `t` rides on
+ * the stroke (#500) instead of cutting across it.
+ */
+export function monotonePointAt(pts: readonly ChartPt[], t: number): ChartPt {
+  if (pts.length < 2) return pts[0] ?? { x: 0, y: 0 };
+  const at = Math.min(pts.length - 1, Math.max(0, t));
+  const i = Math.min(pts.length - 2, Math.floor(at));
+  const u = at - i;
+  const p1 = pts[i];
+  const p2 = pts[i + 1];
+  // on a data point exactly: no float drift between the marker and the dot it covers
+  if (u === 0) return p1;
+  if (u === 1) return p2;
+  const m = monotoneTangents(pts);
+  const dx = p2.x - p1.x;
+  const u2 = u * u;
+  const u3 = u2 * u;
+  const y = (2 * u3 - 3 * u2 + 1) * p1.y + (u3 - 2 * u2 + u) * dx * m[i] + (3 * u2 - 2 * u3) * p2.y + (u3 - u2) * dx * m[i + 1];
+  return { x: p1.x + u * dx, y };
+}
+
 /** SVG path — the Hermite segments emitted as cubic beziers */
 export function monotonePath(pts: readonly ChartPt[]): string {
   if (pts.length < 2) return '';

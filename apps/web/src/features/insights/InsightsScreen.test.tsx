@@ -72,6 +72,68 @@ describe('Insights (demo identity)', () => {
     expect(document.querySelector('[data-testid^="insight-head-debtacc"]')).toBeNull();
   }, 20_000);
 
+  it('#516: findings that give the same advice share one card — it lists each, a line opens its fix, Dismiss all clears it for good', async () => {
+    renderApp('/insights');
+    await screen.findByTestId('screen-insights');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    const sub = (id: string, name: string, catId: string, amountCents: number) =>
+      repo.upsert('recurring', 'demo_space', id, { name, kind: 'subscription', catId, amountCents, every: 'month', dueDay: 3, active: 1 });
+    await sub('ov1', 'Netflix', 'subs', 1_399);
+    await sub('ov2', 'Disney+', 'subs', 999);
+    await sub('ov3', 'Basic-Fit', 'gym', 2_999);
+    await sub('ov4', 'SportCity', 'gym', 3_499);
+    db.close();
+
+    cleanup();
+    renderApp('/insights');
+    const head = await screen.findByTestId('insight-head-group:overlap', {}, { timeout: 5000 });
+    expect(head.textContent).toMatch(/Overlapping subscriptions in 2 categories/);
+    // the card sums what the two pairs cost a year: (13.99 + 9.99 + 29.99 + 34.99) × 12
+    expect(screen.getByTestId('insight-sub-group:overlap').textContent).toMatch(/€1,067[.,]52 per year/);
+    fireEvent.click(head);
+    const lines = await screen.findByTestId('insight-lines-group:overlap');
+    // each line names its category and the subscriptions in it
+    expect(lines.textContent).toMatch(/Streaming: Disney\+ \+ Netflix · €23[.,]98 per month/);
+    expect(lines.textContent).toContain('Basic-Fit + SportCity');
+
+    fireEvent.click(screen.getByTestId('insight-dismiss'));
+    await waitFor(() => expect(screen.queryByTestId('insight-head-group:overlap')).toBeNull());
+    cleanup();
+    renderApp('/insights');
+    await screen.findByTestId('screen-insights');
+    await waitFor(() => {
+      const settled = screen.queryByTestId('insights-empty') ?? document.querySelector('[data-testid^="insight-head-"]');
+      expect(settled).toBeTruthy();
+    }, { timeout: 5000 });
+    expect(document.querySelector('[data-testid*="overlap"]')).toBeNull();
+  }, 20_000);
+
+  it('a line of a shared card opens where its fix lives', async () => {
+    renderApp('/insights');
+    await screen.findByTestId('screen-insights');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    for (const [id, catId] of [['a1', 'subs'], ['a2', 'subs'], ['b1', 'gym'], ['b2', 'gym']]) {
+      await repo.upsert('recurring', 'demo_space', id, { name: id, kind: 'subscription', catId, amountCents: 1_000, every: 'month', dueDay: 3, active: 1 });
+    }
+    db.close();
+
+    cleanup();
+    renderApp('/insights');
+    fireEvent.click(await screen.findByTestId('insight-head-group:overlap', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('insight-line-overlap:gym:2'));
+    expect(await screen.findByTestId('screen-recurring')).toBeTruthy();
+  }, 20_000);
+
   it('the weekly digest notifies once and the marker holds it back after', async () => {
     const shown: string[] = [];
     vi.stubGlobal('Notification', { permission: 'granted' } as unknown as typeof Notification);

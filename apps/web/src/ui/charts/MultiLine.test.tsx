@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { MultiLine } from './MultiLine';
-import { monotonePath, monotoneTangents } from './monotone';
+import { monotonePath, monotonePointAt, monotoneTangents } from './monotone';
 import type { ChartPt } from './monotone';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
@@ -60,6 +60,25 @@ describe('monotone interpolation (#168 r3)', () => {
       expect(seg.c2.y).toBeGreaterThanOrEqual(lo);
       expect(seg.c2.y).toBeLessThanOrEqual(hi);
     }
+  });
+
+  it('#500: a point at a fractional index lies on the drawn curve — the data points themselves, and the bezier between them', () => {
+    const pts = [
+      { x: 0, y: 100 },
+      { x: 10, y: 20 },
+      { x: 20, y: 60 },
+    ];
+    expect(monotonePointAt(pts, 0)).toEqual(pts[0]);
+    expect(monotonePointAt(pts, 2)).toEqual(pts[2]);
+    expect(monotonePointAt(pts, 1)).toEqual(pts[1]);
+    // halfway through the first segment: the cubic bezier's own midpoint (1/8, 3/8, 3/8, 1/8)
+    const [seg] = parseCubics(monotonePath(pts));
+    const mid = monotonePointAt(pts, 0.5);
+    expect(mid.x).toBeCloseTo((seg.from.x + 3 * seg.c1.x + 3 * seg.c2.x + seg.to.x) / 8, 1);
+    expect(mid.y).toBeCloseTo((seg.from.y + 3 * seg.c1.y + 3 * seg.c2.y + seg.to.y) / 8, 1);
+    // outside the run it clamps; a lone point is itself
+    expect(monotonePointAt(pts, 9)).toEqual(pts[2]);
+    expect(monotonePointAt([{ x: 4, y: 5 }], 0.5)).toEqual({ x: 4, y: 5 });
   });
 
   it('a peak flattens its tangent (sign change) and monotone runs stay clamped in range', () => {
@@ -140,6 +159,81 @@ describe('MultiLine', () => {
     expect(d.startsWith('M')).toBe(true);
     expect(d.endsWith('Z')).toBe(true);
     expect(d.split(' C')).toHaveLength(3); // one segment out, one back — the gap at index 2 ends the band
+  });
+
+  it('#500: the selection is one marker on the line — every dot keeps its size, the marker stands on the picked point and moves there on a new pick', () => {
+    const onPick = vi.fn();
+    const { rerender } = render(
+      <MultiLine
+        series={[{ values: [10, 40, 20, 30], color: 'teal' }]}
+        height={120}
+        testId="sel"
+        onPointClick={onPick}
+        selected={{ seriesIndex: 0, pointIndex: 1 }}
+      />,
+    );
+    const dots = [...screen.getByTestId('sel').querySelectorAll('g[role="button"] > circle:first-child')];
+    expect(dots.map((dot) => dot.getAttribute('r'))).toEqual(['3', '3', '3', '3']);
+    const marker = () => screen.getByTestId('sel-selected');
+    const hit = (i: number) => screen.getByTestId(`sel-dot-0-${i}`);
+    expect(marker().getAttribute('cx')).toBe(hit(1).getAttribute('cx'));
+    expect(marker().getAttribute('cy')).toBe(hit(1).getAttribute('cy'));
+    expect(hit(1).parentElement?.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(hit(3));
+    expect(onPick).toHaveBeenCalledWith(0, 3);
+    rerender(
+      <MultiLine
+        series={[{ values: [10, 40, 20, 30], color: 'teal' }]}
+        height={120}
+        testId="sel"
+        onPointClick={onPick}
+        selected={{ seriesIndex: 0, pointIndex: 3 }}
+      />,
+    );
+    // tests snap to the end of the glide (no motion under vitest)
+    expect(marker().getAttribute('cx')).toBe(hit(3).getAttribute('cx'));
+    expect(marker().getAttribute('cy')).toBe(hit(3).getAttribute('cy'));
+  });
+
+  it('#510: a scrub reads any index — a guide, a dot on each line there, the tip, and the index reported upward; the keys walk it and Escape lets go', () => {
+    const onScrub = vi.fn();
+    render(
+      <MultiLine
+        series={[
+          { values: [0, 10, 25, null], color: 'teal' },
+          { values: [0, 5, 30, 40], color: 'grey', dashed: true },
+        ]}
+        height={120}
+        testId="scr"
+        scrub={{
+          origin: 2,
+          onScrub,
+          ariaLabel: 'compare',
+          tip: (i) => ({ title: `Day ${i + 1}`, rows: [{ color: 'teal', text: `now ${i}` }, { color: 'grey', dashed: true, text: `then ${i}` }] }),
+        }}
+      />,
+    );
+    const svg = screen.getByTestId('scr');
+    expect(svg.getAttribute('aria-hidden')).toBeNull();
+    expect(svg.getAttribute('aria-label')).toBe('compare');
+    expect(screen.queryByTestId('scr-tip')).toBeNull();
+    fireEvent.keyDown(svg, { key: 'ArrowLeft' });
+    expect(onScrub).toHaveBeenLastCalledWith(1);
+    expect(screen.getByTestId('scr-tip').textContent).toBe('Day 2now 1then 1');
+    // both lines carry a dot at the index
+    expect(screen.getByTestId('scr-scrub').querySelectorAll('circle')).toHaveLength(2);
+    fireEvent.keyDown(svg, { key: 'End' });
+    expect(onScrub).toHaveBeenLastCalledWith(3);
+    // the solid line has no day 4: one dot
+    expect(screen.getByTestId('scr-scrub').querySelectorAll('circle')).toHaveLength(1);
+    fireEvent.keyDown(svg, { key: 'Escape' });
+    expect(onScrub).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByTestId('scr-tip')).toBeNull();
+    // a finger lands at the left edge (happy-dom: a zero-width box) and lifts clean
+    fireEvent.pointerDown(svg, { pointerId: 1, clientX: 0 });
+    expect(onScrub).toHaveBeenLastCalledWith(0);
+    fireEvent.pointerUp(svg, { pointerId: 1 });
+    expect(onScrub).toHaveBeenLastCalledWith(null);
   });
 
   it('skipDotAt suppresses exactly that series-point dot; the path still passes through it', () => {
