@@ -1,4 +1,4 @@
-import { historyTransactions, visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
+import { asSpaceAccount, historyTransactions, visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceAccount, SpaceTx, TxTransformFields } from '@/db/joined';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
@@ -15,11 +15,19 @@ export type { SpaceAccount, SpaceTx, TxTransformFields };
  * entirely behind these hooks.
  */
 
-/** every transaction the active space sees (own rows + attached feeds), unsorted */
-export function useSpaceTransactions(): SpaceTx[] | undefined {
+/** every transaction the active space sees (own rows + attached feeds), unsorted — ONE live read per
+ *  space, shared by whoever asks (#554: the planning dot, Home's plan block and a detail screen each
+ *  joined every transaction again on every write); `active` false reads nothing */
+export function useSpaceTransactions(active = true): SpaceTx[] | undefined {
   const { store, spaceId } = useData();
   // #361: remount cache — tab returns render the last rows instantly
-  return useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId], undefined, `spaceTx:${spaceId}`);
+  return useQuery(
+    store,
+    async () => (active ? visibleTransactions(store, spaceId) : undefined),
+    [spaceId, active],
+    undefined,
+    active ? `spaceTx:${spaceId}` : undefined,
+  );
 }
 
 /** every account the active space sees (own + attached), with link info */
@@ -29,18 +37,27 @@ export function useSpaceAccounts(): SpaceAccount[] | undefined {
   return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId], undefined, `spaceAccts:${spaceId}`);
 }
 
+/** #545: one account as the active space sees it — the name the space gave
+ *  an attached account (and its type), never the global row's */
+export function useSpaceAccount(accountId: string | undefined): SpaceAccount | undefined {
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => (accountId ? asSpaceAccount(store, spaceId, await store.get('account', accountId)) : undefined),
+    [spaceId, accountId],
+  );
+}
+
 /** the space's FULL stored history, gates lifted — recurring detection
  *  only (user design 2026-08-01): patterns need the pre-start tail */
 export function useSpaceHistoryTransactions(): SpaceTx[] | undefined {
   const { store, spaceId } = useData();
-  return useQuery(store, async () => historyTransactions(store, spaceId), [spaceId]);
+  return useQuery(store, async () => historyTransactions(store, spaceId), [spaceId], undefined, `spaceHistTx:${spaceId}`);
 }
 
-/** one visible transaction by id (detail screens) */
+/** one visible transaction by id (detail screens) — out of the space's shared read */
 export function useSpaceTransaction(txId: string): SpaceTx | undefined {
-  const { store, spaceId } = useData();
-  const txs = useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId]);
-  return txs?.find((t) => t.id === txId);
+  return useSpaceTransactions()?.find((t) => t.id === txId);
 }
 
 /**

@@ -9,6 +9,7 @@ import { purgeAccountRemnants } from '@/application/accountPurge';
 import { logActivity } from '@/application/activity';
 import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { useData } from '@/app/data';
+import { useReadOnlySpaceIds } from '@/app/useCanEdit';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import type { AccountRow, AccountSource } from '@/db/types';
@@ -17,6 +18,7 @@ import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
+import { Picture } from '@/ui/Picture';
 import { Sheet } from '@/ui/Sheet';
 import { deleteFeedAccount } from './feedGateway';
 
@@ -93,6 +95,7 @@ export function AttachSheet({
   const [deleteStage, setDeleteStage] = useState<'server' | 'local'>('server');
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
+  const readOnlySpaces = useReadOnlySpaceIds(); // #505
   // LIVE link rows, not the entry snapshot: the checkboxes must flip the
   // moment a toggle writes to Dexie (user bug: they only updated after
   // leaving and re-entering the screen)
@@ -172,9 +175,10 @@ export function AttachSheet({
   };
 
   // #239: replace every space's own name with the fresh global one
+  // (#505: a space this identity only reads keeps its name for the account)
   const renameEverywhere = () => {
     for (const link of liveLinks ?? []) {
-      if (link.displayName) void repo.upsert('accountLink', link.spaceId, link.id, { displayName: null as never });
+      if (link.displayName) void repo.upkeep().upsert('accountLink', link.spaceId, link.id, { displayName: null as never });
     }
     setRenameAsk(null);
   };
@@ -189,14 +193,17 @@ export function AttachSheet({
       // when someone else still covers the account — server ruling)
       await deleteFeedAccount(feedSpaceId);
       // my synced mirrors tombstone through the normal outbox path; the
-      // feed's local rows are purged directly — it is no longer ours
+      // feed's local rows are purged directly — it is no longer ours.
+      // #505: a space this identity only reads gets the server's own
+      // tombstones (feed deletion writes them) — skipped here, never a halt
       setDeleteStage('local');
+      const upkeep = repo.upkeep();
       for (const link of liveLinks ?? []) {
-        await repo.remove('accountLink', link.spaceId, link.id);
+        await upkeep.remove('accountLink', link.spaceId, link.id);
       }
       // #279: the engine purge below is feed-keyed — member spaces keep
       // their txMeta overlays and the space's own rows unless swept here
-      await purgeAccountRemnants(store, repo, account.id, feedSpaceId);
+      await purgeAccountRemnants(store, upkeep, account.id, feedSpaceId);
       await engine?.purgeSpace(feedSpaceId);
       void logActivity(store, repo, spaceId, 'accountRemove', account.name);
       setDeleteOpen(false);
@@ -250,7 +257,7 @@ export function AttachSheet({
             className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-3 py-2.5 text-left text-[13px] text-ink"
           >
             {account.logo ? (
-              <img src={account.logo} alt="" className="h-6 w-6 rounded object-contain" />
+              <Picture src={account.logo} className="h-6 w-6 rounded object-contain" />
             ) : (
               <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
             )}
@@ -289,7 +296,7 @@ export function AttachSheet({
           by name — through the real flow: the intent pre-aims the space
           accounts screen, whose attach sheet opens on the final step
           (type pick + Attach, #310) — never a silent in-place attach */}
-      {canEdit && liveLinks?.length === 0 && activeSpace && (
+      {canEdit && liveLinks?.length === 0 && activeSpace && !readOnlySpaces.has(activeSpace.id) && (
         <Button
           variant="outline"
           className="mt-2 w-full"
@@ -316,14 +323,16 @@ export function AttachSheet({
               {/* #277: a shared space says so wherever it is listed */}
               {space.kind === 'shared' && <SharedSpaceBadge testId={`attach-space-shared-${space.id}`} />}
               {via?.historyFrom && <span className="font-mono text-[11px] text-ink-4">{via.historyFrom}</span>}
-              {via?.archived ? (
+              {via?.archived && (
                 <span
                   className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2"
                   data-testid={`attach-archived-${space.id}`}
                 >
                   {t('acct.archivedReconnect')}
                 </span>
-              ) : (
+              )}
+              {/* #505: a space this identity only reads keeps its accounts */}
+              {!via?.archived && !readOnlySpaces.has(space.id) && (
                 <button
                   aria-label={t('acct.detach')}
                   data-testid={`attach-detach-${space.id}`}

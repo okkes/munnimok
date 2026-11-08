@@ -3,6 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { globalAsEntry, linkAsEntry, useProposedMatches, useSpaceReceipts } from '@/application/receiptLinks';
 import type { ReceiptEntry } from '@/application/receiptLinks';
 import { useSpaceStoreConnLinks, useUnmatchedReceipts } from '@/application/connections';
@@ -67,6 +68,7 @@ export function ReceiptsScreen() {
   const proposals = useProposedMatches();
   const txs = useSpaceTransactions();
   const receiptOps = useReceiptOps();
+  const canEdit = useCanEdit(); // #505
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   // an answered match folds away before it leaves the data (user 2026-10-09)
@@ -74,7 +76,9 @@ export function ReceiptsScreen() {
 
   const entries = useMemo(() => {
     const linked = (links ?? []).map(linkAsEntry);
-    const open = (unmatched ?? []).map(globalAsEntry);
+    // a link that holds no transaction (a proposal, one taken off — #496) and its global row are one receipt
+    const inSpace = new Set(linked.map((entry) => entry.data.id));
+    const open = (unmatched ?? []).filter((row) => !inSpace.has(row.id)).map(globalAsEntry);
     const all = [...linked, ...open];
     all.sort((a, b) => b.data.date.localeCompare(a.data.date));
     return all;
@@ -194,7 +198,8 @@ export function ReceiptsScreen() {
         {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first. User ss 2026-10-05: the receipt
             and the transaction are both doors; user 2026-10-09: two rows of one shape on one card, the answer
             folds the card away */}
-        {toCheck.length > 0 && (
+        {/* #505: answering is the space's members' work — a reader sees the receipts, not the questions */}
+        {canEdit && toCheck.length > 0 && (
           <div className="mt-3" data-testid="receipts-to-check">
             <div className="m-cap mb-1 px-1">{t('receipts.toCheckTitle')}</div>
             <p className="mb-2 px-1 text-[11px] leading-snug text-ink-4">{t('receipts.toCheckSub')}</p>

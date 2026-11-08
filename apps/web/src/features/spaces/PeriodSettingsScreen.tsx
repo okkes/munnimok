@@ -6,6 +6,7 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { useSession } from '@/app/session';
 import { useMyRole } from './SpaceSharing';
+import { ReadOnlyNote } from './ReadOnlyNote';
 import type { SpacePeriodType, WeekStart } from '@/db/types';
 import { weekStartOf } from '@/lib/weekStart';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -157,11 +158,7 @@ export function PeriodSettingsScreen() {
             never apply against an unloaded row (silent no-op) */}
         {space && (
         <div className="flex flex-col gap-3 pt-1">
-          {readOnly && (
-            <p className="px-1 text-[12px] text-ink-3" data-testid="period-reader-note">
-              {t('space.readerNote')}
-            </p>
-          )}
+          <ReadOnlyNote spaceId={spaceId} testId="period-reader-note" />
 
           {/* #283: the money-rhythm explainer folds behind a hint on the
               caption row — the tinted paragraph shouted over the picker */}

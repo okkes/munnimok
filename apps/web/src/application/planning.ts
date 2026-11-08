@@ -23,8 +23,9 @@ import {
 import type { SubjectShape, SubjectView } from '@/domain/planning';
 import { measure } from '@/lib/perf';
 import { logActivity } from './activity';
-import { availabilityByCat, buildPlanning, loadPlanningData, planOverspentCount, sortSubjects } from './planningModel';
-import type { CategoryAvailability, PlanningModel } from './planningModel';
+import { availabilityByCat, buildPlanning, hasCurrentPlan, loadPlanningData, loadPlanningRows, sortSubjects } from './planningModel';
+import type { CategoryAvailability, PlanningData, PlanningModel } from './planningModel';
+import { useSpaceTransactions } from './transactions';
 
 export type { PlanAhead, PlanEditability, PlanningData, PlanningModel, CategoryAvailability } from './planningModel';
 export { segmentsOf, isMandatorySegment } from './planningModel';
@@ -35,30 +36,38 @@ export { segmentsOf, isMandatorySegment } from './planningModel';
  * the arithmetic lives in domain/planning and application/planningModel.
  */
 
-/** the live model of the active space */
-export function usePlanning(): PlanningModel | undefined {
+/** the model's rows joined with the space's one shared transaction read (#554); `active` false reads nothing */
+function usePlanningData(active = true): PlanningData | undefined {
   const { store, spaceId } = useData();
   // two spans (2026-10-09): the rows read and the model built — the tab's cost is measured, never guessed
-  const data = useQuery(store, () => measure('planning.load', () => loadPlanningData(store, spaceId)), [spaceId], undefined, `planning:${spaceId}`);
+  const rows = useQuery(
+    store,
+    () => (active ? measure('planning.load', () => loadPlanningRows(store, spaceId)) : Promise.resolve(undefined)),
+    [spaceId, active],
+    undefined,
+    active ? `planningRows:${spaceId}` : undefined,
+  );
+  const txs = useSpaceTransactions(active);
+  return useMemo(() => (rows && txs ? { ...rows, txs } : undefined), [rows, txs]);
+}
+
+/** the live model of the active space */
+export function usePlanning(): PlanningModel | undefined {
+  const data = usePlanningData();
   return useMemo(() => (data ? measure('planning.build', () => buildPlanning(data)) : undefined), [data]);
 }
 
-/** the tab's dot: does the current plan hold a subject in the red? */
+/** the tab's dot: does the current plan hold a subject in the red? Without a current plan it reads no transaction */
 export function usePlanningDot(): boolean {
   const { store, spaceId } = useData();
-  return useQuery(store, async () => (await planOverspentCount(store, spaceId)) > 0, [spaceId], false, `planDot:${spaceId}`) ?? false;
+  const current = useQuery(store, () => hasCurrentPlan(store, spaceId), [spaceId], false, `planCurrent:${spaceId}`) ?? false;
+  const data = usePlanningData(current);
+  return useMemo(() => !!data && buildPlanning(data).attention.length > 0, [data]);
 }
 
 /** the category picker's hint: what the plan still has per category (empty until asked) */
 export function useCategoryAvailability(active: boolean): ReadonlyMap<string, CategoryAvailability> {
-  const { store, spaceId } = useData();
-  const data = useQuery(
-    store,
-    () => (active ? loadPlanningData(store, spaceId) : Promise.resolve(undefined)),
-    [spaceId, active],
-    undefined,
-    active ? `planning:${spaceId}` : undefined,
-  );
+  const data = usePlanningData(active);
   return useMemo(() => (data ? availabilityByCat(buildPlanning(data)) : new Map<string, CategoryAvailability>()), [data]);
 }
 

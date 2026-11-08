@@ -3,16 +3,20 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useBudgets } from '@/application/budgets';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { budgetFamily, budgetOptsFor, budgetPeriodAt, budgetSpentCents, budgetStatus, cycleIndex } from '@/domain/budgets';
+import { budgetFamily, budgetOptsFor, budgetPayments, budgetPeriodAt, budgetSpentCents, budgetStatus, cycleIndex } from '@/domain/budgets';
+import { REIMBURSED_ID } from '@/domain/categories';
+import { netAmountCents } from '@/domain/reimbursement';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Bars } from '@/ui/charts/Bars';
 import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
+import { TxPartRow } from '@/ui/TxPartRow';
 import { TxRow } from '@/ui/TxRow';
 import { budgetColor, budgetSoft } from './budgetUi';
 
@@ -29,6 +33,7 @@ export function BudgetDetailScreen() {
   const budgets = useBudgets();
   const txs = useSpaceTransactions();
   const cats = useCategories();
+  const canEdit = useCanEdit(); // #505
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [offset, setOffset] = useState(0); // 0 = current cycle, negative = past
 
@@ -50,9 +55,9 @@ export function BudgetDetailScreen() {
     const spent = offset === 0 ? status.spentCents : budgetSpentCents(txs, family, period);
     const limit = offset === 0 ? status.limitCents : budget.amountCents;
     const listFamily = catFilter ? budgetFamily([catFilter], cats) : family;
-    const list = txs
-      .filter((tx) => tx.deleted === 0 && tx.txType === 'expense' && listFamily.has(tx.catId ?? '') && tx.date >= period.start && tx.date <= period.end)
-      .sort((a, b) => b.date.localeCompare(a.date));
+    // #579: the payments are the slices the spending counts — a split's
+    // part in the budget stands as its own line
+    const list = budgetPayments(txs, listFamily, period);
     const perCat = budget.catIds.map((catId) => ({
       catId,
       spentCents: budgetSpentCents(txs, budgetFamily([catId], cats), period),
@@ -93,13 +98,15 @@ export function BudgetDetailScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton
-            label={t('budgets.edit')}
-            testId="budgetdetail-edit"
-            onClick={() => void navigate({ to: '/budgets/$budgetId/edit', params: { budgetId: budget.id } })}
-          >
-            <Icon name="pencil-outline" size={20} />
-          </IconButton>
+          canEdit && (
+            <IconButton
+              label={t('budgets.edit')}
+              testId="budgetdetail-edit"
+              onClick={() => void navigate({ to: '/budgets/$budgetId/edit', params: { budgetId: budget.id } })}
+            >
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          )
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
@@ -182,10 +189,15 @@ export function BudgetDetailScreen() {
                 ariaLabels={history.map((h) => `${fmtDate(h.start)}: ${money(h.spentCents)}`)}
                 hollowLast
                 average={budget.amountCents}
+                // #375 r2 (user: "is that the average? … it should be clear"): the line names itself
+                averageLabel={t('budgets.limitLine', { amount: money(budget.amountCents) })}
                 height={100}
                 // #375 (user): a tap on a bar walks the period nav to that cycle
                 onSelect={(i) => setOffset(historyStart + i - currentIndex)}
               />
+              <p className="mt-1 text-[11px] text-ink-4" data-testid="budgetdetail-limit-legend">
+                {t(budget.carryOver === 1 ? 'budgets.limitLegendCarry' : 'budgets.limitLegend')}
+              </p>
             </div>
           </>
         )}
@@ -223,9 +235,34 @@ export function BudgetDetailScreen() {
         </div>
         {list.length > 0 ? (
           <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetdetail-txs">
-            {list.map((tx) => (
-              <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
-            ))}
+            {list.map(({ tx, part, spentCents }) => {
+              const rowParts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
+              // a real split shows the part the budget counts, opening the part's page
+              if (part && rowParts.length > 1) {
+                const index = rowParts.indexOf(part);
+                return (
+                  <TxPartRow
+                    key={`${tx.id}-${part.id ?? index}`}
+                    tx={tx}
+                    part={part}
+                    index={index}
+                    showDate
+                    amountText={fmt(-spentCents, tx.currency, { date: tx.date })}
+                    onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: part.id } })}
+                  />
+                );
+              }
+              // a whole row wears its usual face unless only some of it counts (a category spread)
+              return (
+                <TxRow
+                  key={tx.id}
+                  tx={tx}
+                  showDate
+                  amountOverrideCents={-spentCents === netAmountCents(tx) ? undefined : -spentCents}
+                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                />
+              );
+            })}
           </div>
         ) : (
           <p className="px-1 text-[12px] text-ink-4" data-testid="budgetdetail-empty">

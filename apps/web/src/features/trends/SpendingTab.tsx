@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import type { SpaceTx } from '@/application/transactions';
+import { useCanEdit } from '@/app/useCanEdit';
+import { useSpaceAccounts } from '@/application/transactions';
+import type { SpaceAccount, SpaceTx } from '@/application/transactions';
 import type { SpaceRow } from '@/db/types';
 import type { Period } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { Catalog } from '@/features/categories/useCategories';
 import { Icon } from '@/ui/Icon';
+import { accountsText } from './AccountTicks';
 import { CatPickerSheet } from './CatPickerSheet';
 import { GraphEditorSheet } from './GraphEditorSheet';
 import { SpendingCard } from './SpendingCard';
@@ -15,6 +18,7 @@ import { useTrendGraphOps } from './useTrendGraphs';
 import type { TrendGraph } from './useTrendGraphs';
 
 const ACCENT = 'var(--m-accent)';
+const NO_ACCOUNTS: SpaceAccount[] = [];
 
 /** a category's own colour, or its parent's for a sub */
 function colorOf(cats: Catalog, catId: string): string {
@@ -25,7 +29,7 @@ function colorOf(cats: Catalog, catId: string): string {
 /** a custom graph wears its one category's face; several share the chart glyph */
 function graphDef(cats: Catalog, graph: TrendGraph): GraphDef {
   const face = graph.catIds.length === 1 ? { icon: cats.byId(graph.catIds[0]).icon, color: colorOf(cats, graph.catIds[0]) } : { icon: 'chart-bar', color: ACCENT };
-  return { id: graph.id, name: graph.name, catIds: graph.catIds, ...face };
+  return { id: graph.id, name: graph.name, catIds: graph.catIds, accountIds: graph.accountIds ?? null, ...face };
 }
 
 /**
@@ -58,8 +62,10 @@ export function SpendingTab({
   const { t } = useLang();
   const { spaceId } = useData();
   const cats = useCategories();
+  const accounts = useSpaceAccounts() ?? NO_ACCOUNTS;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editor, setEditor] = useState<{ open: boolean; graph: TrendGraph | null }>({ open: false, graph: null });
+  const canEdit = useCanEdit(); // #505: the graphs are the space's
   const ops = useTrendGraphOps(space);
 
   const selected = catId ? cats.byId(catId) : undefined;
@@ -67,6 +73,7 @@ export function SpendingTab({
     id: 'all',
     name: selected ? catName(selected, t) : t('trends.allExpenses'),
     catIds: catId ? [catId] : null,
+    accountIds: null,
     icon: selected?.icon ?? 'shape-outline',
     color: catId ? colorOf(cats, catId) : ACCENT,
   };
@@ -102,28 +109,39 @@ export function SpendingTab({
             header={
               <div className="flex items-center gap-3">
                 <Icon name={def.icon} size={19} color={def.color} />
-                <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-ink">{graph.name}</span>
-                <button
-                  data-testid={`trends-graph-edit-${graph.id}`}
-                  aria-label={t('action.edit')}
-                  onClick={() => setEditor({ open: true, graph })}
-                  className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-3"
-                >
-                  <Icon name="pencil-outline" size={17} />
-                </button>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-semibold text-ink">{graph.name}</span>
+                  {graph.accountIds && (
+                    <span className="block truncate text-[11px] text-ink-4" data-testid={`trends-graph-accounts-${graph.id}`}>
+                      {accountsText(accounts, graph.accountIds)}
+                    </span>
+                  )}
+                </span>
+                {canEdit && (
+                  <button
+                    data-testid={`trends-graph-edit-${graph.id}`}
+                    aria-label={t('action.edit')}
+                    onClick={() => setEditor({ open: true, graph })}
+                    className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-3"
+                  >
+                    <Icon name="pencil-outline" size={17} />
+                  </button>
+                )}
               </div>
             }
           />
         );
       })}
-      <button
-        data-testid="trends-graph-new"
-        onClick={() => setEditor({ open: true, graph: null })}
-        className="m-tap mt-4 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-semibold text-accent-deep"
-      >
-        <Icon name="plus" size={16} />
-        {t('trends.newGraph')}
-      </button>
+      {canEdit && (
+        <button
+          data-testid="trends-graph-new"
+          onClick={() => setEditor({ open: true, graph: null })}
+          className="m-tap mt-4 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-semibold text-accent-deep"
+        >
+          <Icon name="plus" size={16} />
+          {t('trends.newGraph')}
+        </button>
+      )}
 
       <CatPickerSheet open={pickerOpen} onOpenChange={setPickerOpen} catId={catId} onPick={onCatId} />
       <GraphEditorSheet

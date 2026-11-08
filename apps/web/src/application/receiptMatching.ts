@@ -4,12 +4,12 @@ import { readSessionIdentity } from '@/app/session';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { ReceiptRow, TransactionRow } from '@/db/types';
-import { bestMatch } from '@/domain/storeReceipts';
+import { bestMatch, expensesByCost } from '@/domain/storeReceipts';
 import type { AccountTailOf } from '@/domain/storeReceipts';
 import { receiptLinkId } from '@/domain/feedIds';
 import { spaceAccountLinks, visibleTransactions } from '@/db/joined';
 import { measure } from '@/lib/perf';
-import { linkedTxIds, writeProposedLink } from './receiptLinks';
+import { linkedTxIds, writeProposedLinks } from './receiptLinks';
 
 /**
  * Receipts v3 matching, per space: fetched receipts live ONCE in the
@@ -91,6 +91,8 @@ export async function matchReceiptsIntoSpace(
   spaceId: string,
   receipts: readonly ReceiptRow[],
 ): Promise<MatchOutcome> {
+  // #505: a space this identity only reads gets its proposals from the members who may write it
+  if (!repo.canWrite(spaceId)) return NOTHING;
   // the space's VIEW: own rows and attached feed rows alike, the derived
   // types telling expenses from movements
   const [txs, links] = await Promise.all([visibleTransactions(storage, spaceId), storage.bySpace('receiptLink', spaceId)]);
@@ -99,20 +101,23 @@ export async function matchReceiptsIntoSpace(
   // asked about one, is spoken for
   const taken = new Set([...linkById.values()].flatMap((l) => [...linkedTxIds(l), l.proposedTxId]).filter((id): id is string => !!id));
   const tailOf = await accountTailResolver(storage);
+  // #554: each receipt meets the payments near its total, not every row of the space
+  const near = expensesByCost(txs);
 
-  const outcome: MatchOutcome = { linked: 0, proposed: 0 };
+  const proposals: { receipt: ReceiptRow; txId: string }[] = [];
   for (const receipt of receipts) {
     if (receipt.deleted !== 0) continue;
     const link = linkById.get(receiptLinkId(spaceId, receipt.id));
     if (link?.txId || link?.proposedTxId) continue;
     const rejected = new Set(link?.rejectedTxIds ?? []);
-    const txId = bestMatch(receipt, rejected.size ? txs.filter((tx) => !rejected.has(tx.id)) : txs, taken, tailOf);
+    const candidates = near(receipt.totalCents);
+    const txId = bestMatch(receipt, rejected.size ? candidates.filter((tx) => !rejected.has(tx.id)) : candidates, taken, tailOf);
     if (!txId) continue;
     taken.add(txId);
-    await writeProposedLink(repo, spaceId, receipt, txId);
-    outcome.proposed += 1;
+    proposals.push({ receipt, txId });
   }
-  return outcome;
+  await writeProposedLinks(repo, spaceId, proposals);
+  return { linked: 0, proposed: proposals.length };
 }
 
 /**

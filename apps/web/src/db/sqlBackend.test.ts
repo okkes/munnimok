@@ -4,7 +4,7 @@ import initSqlJs from 'sql.js';
 import type { Database } from 'sql.js';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
-import { DexieBackend } from './backend';
+import { DexieBackend, LIVE_QUERY_QUIET_MS } from './backend';
 import type { StorageBackend } from './backend';
 import { visibleTransactions, writeTxTransform } from './joined';
 import { Repo } from './repo';
@@ -221,6 +221,106 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
       ).rejects.toThrow('boom');
       expect(await store.get('event', 'e1'), name).toBeUndefined();
     }
+  });
+});
+
+/**
+ * #554: the native shells' live queries re-ran every query on every write
+ * (the matcher's first pass: 26 s). Now a write wakes only the queries
+ * that read what it touched, and a burst reaches each once.
+ */
+describe('SqlStorageBackend live queries', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const sqlStore = async () => {
+    const { store, repo } = (await bothBackends())[1];
+    return { store, repo };
+  };
+  const row = (i: number) => ({ accountId: 'a', date: '2026-10-09', amountCents: -100 * i, currency: 'EUR', merchant: `M${i}`, needsReview: 1 as const });
+  // a loaded machine stretches every step: wait for the value, not a fixed time
+  const untilSeen = async (seen: unknown[], value: unknown) => {
+    const until = Date.now() + 3000;
+    while (seen.at(-1) !== value && Date.now() < until) await sleep(10);
+  };
+
+  it('a write wakes only the queries that read what it touched — a table, a meta key, the outbox', async () => {
+    const { store, repo } = await sqlStore();
+    const rows: number[] = [];
+    const flags: unknown[] = [];
+    const pending: number[] = [];
+    const offs = [
+      store.subscribe(async () => (await store.bySpace('transaction', 's')).length, (n) => rows.push(n)),
+      store.subscribe(async () => (await store.metaGet('flag'))?.value, (v) => flags.push(v)),
+      store.subscribe(async () => (await store.outboxAll()).length, (n) => pending.push(n)),
+    ];
+    // one write each settles what the first (side-by-side) runs read
+    await repo.upsert('transaction', 's', 't1', row(1));
+    await store.metaPut('flag', 'on');
+    await untilSeen(rows, 1);
+    await untilSeen(flags, 'on');
+    await sleep(LIVE_QUERY_QUIET_MS * 3);
+    const before = { rows: rows.length, flags: flags.length, pending: pending.length };
+
+    await store.metaPut('lastSyncAt', 1); // nobody reads it — a sync round's stamp
+    await store.metaPut('flag', 'off');
+    await untilSeen(flags, 'off');
+    await sleep(LIVE_QUERY_QUIET_MS * 3);
+    expect(rows).toHaveLength(before.rows);
+    expect(flags).toHaveLength(before.flags + 1);
+
+    await store.outboxDelete((await store.outboxAll()).map((o) => o.opId)); // a push landed
+    await untilSeen(pending, 0);
+    await sleep(LIVE_QUERY_QUIET_MS * 3);
+    expect(rows).toHaveLength(before.rows);
+    expect(flags).toHaveLength(before.flags + 1);
+    for (const off of offs) off();
+  });
+
+  it('a burst of writes reaches each query once, with the final state', async () => {
+    const { store, repo } = await sqlStore();
+    const seen: number[] = [];
+    const off = store.subscribe(async () => (await store.bySpace('transaction', 's')).length, (n) => seen.push(n));
+    await untilSeen(seen, 0);
+    await sleep(LIVE_QUERY_QUIET_MS * 2);
+    // the review's confirm: writes spaced wider than the quiet window are still one burst
+    await store.burst!(async () => {
+      for (let i = 1; i <= 4; i++) {
+        await repo.upsert('transaction', 's', `t${i}`, row(i));
+        await sleep(LIVE_QUERY_QUIET_MS * 2);
+      }
+    });
+    await untilSeen(seen, 4);
+    await sleep(LIVE_QUERY_QUIET_MS * 3);
+    expect(seen).toEqual([0, 4]);
+
+    // writes back to back without a declared burst: a leading run and a trailing one, never one per write
+    for (let i = 5; i <= 16; i++) await repo.upsert('transaction', 's', `t${i}`, row(i));
+    await untilSeen(seen, 16);
+    await sleep(LIVE_QUERY_QUIET_MS * 3);
+    expect(seen.at(-1)).toBe(16);
+    expect(seen.length).toBeLessThanOrEqual(5);
+    off();
+  });
+
+  it('a transaction that rolls back wakes nobody; a closed subscription never emits again', async () => {
+    const { store, repo } = await sqlStore();
+    const seen: number[] = [];
+    const off = store.subscribe(async () => (await store.bySpace('event', SPACE)).length, (n) => seen.push(n));
+    await untilSeen(seen, 0);
+    await sleep(LIVE_QUERY_QUIET_MS * 2);
+    await expect(
+      store.transact(['event'], async () => {
+        await store.put('event', { id: 'e1', spaceId: SPACE, name: 'Trip' });
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    await sleep(LIVE_QUERY_QUIET_MS * 3);
+    expect(seen).toEqual([0]);
+    await store.burst!(async () => {
+      await repo.upsert('event', SPACE, 'e2', { name: 'Fair' });
+      off(); // closed while its re-run waits for the burst to end
+    });
+    await sleep(LIVE_QUERY_QUIET_MS * 4);
+    expect(seen).toEqual([0]);
   });
 });
 

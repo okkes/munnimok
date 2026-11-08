@@ -1,9 +1,10 @@
-import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router';
+import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
+import type { AnyRoute } from '@tanstack/react-router';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { cleanup, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, vi } from 'vitest';
-import { routeTree } from '@/app/router';
+import { createAppRouter, routeTree } from '@/app/router';
 import { LogtoAppProvider } from '@/features/auth/logto';
 import { LangProvider } from '@/i18n';
 import { ThemeProvider } from '@/app/theme';
@@ -17,6 +18,12 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals(); // renderAppAsUser stubs fetch
 });
+
+// #554: the lazy screens load once, up front, as the eager imports did — a
+// test never pays a screen's first transform inside its findBy timeout
+const preloadScreens = (route: AnyRoute): Promise<unknown> =>
+  Promise.all([route.options.component?.preload?.(), ...((route.children as AnyRoute[] | undefined) ?? []).map(preloadScreens)]);
+await preloadScreens(routeTree);
 
 /** static providers only (i18n + theme) */
 export function renderWithProviders(ui: ReactElement) {
@@ -62,7 +69,7 @@ export function renderApp(path: string, { signedIn = true, identity }: { signedI
   if (identity) useSession.getState().login(identity);
   else if (signedIn) useSession.getState().login({ kind: 'demo' });
   else useSession.getState().logout();
-  const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
+  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
   return render(
     <LogtoAppProvider>
       <ThemeProvider>
@@ -81,8 +88,8 @@ export const USER_TEST_SUB = 'test-user';
 export const USER_TEST_DB = `munni_user_${USER_TEST_SUB}`;
 
 export interface UserAppOptions {
-  /** spaces the fake server owns; their rows arrive via the bootstrap pull */
-  spaces?: { id: string; name: string; kind?: 'personal' | 'shared'; inviteLock?: 0 | 1 }[];
+  /** spaces the fake server owns; their rows arrive via the bootstrap pull. #505: `role` = the test user's role, named by the heads */
+  spaces?: { id: string; name: string; kind?: 'personal' | 'shared'; inviteLock?: 0 | 1; role?: 'owner' | 'contributor' | 'reader' }[];
   /** REST handlers keyed `${METHOD} ${pathname}` — everything unhandled is 404 */
   api?: Record<string, (body: unknown, url: URL) => unknown>;
 }
@@ -114,6 +121,26 @@ const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) 
   hlc: '000000100-0000-server',
 });
 
+/** #569: the heads round's answer, every listed space's head as moved (S3776: out of the fetch mock) */
+async function syncHeads(api: NonNullable<UserAppOptions['api']>, spaces: NonNullable<UserAppOptions['spaces']>, url: URL): Promise<Response> {
+  const listed = api['GET /me/spaces'] ? await api['GET /me/spaces'](undefined, url) : spaces.map((s) => s.id);
+  if (listed instanceof Response) return listed;
+  return json(
+    (listed as string[]).map((spaceId) => {
+      const role = spaces.find((s) => s.id === spaceId)?.role;
+      return { spaceId, latestSeq: Number.MAX_SAFE_INTEGER, ...(role ? { role } : {}) };
+    }),
+  );
+}
+
+/** one space's pull: its bootstrap op from zero, nothing after (S3776: out of the fetch mock) */
+function pullResponse(spaces: NonNullable<UserAppOptions['spaces']>, url: URL, encodedSpaceId: string): Response {
+  const space = spaces.find((s) => s.id === decodeURIComponent(encodedSpaceId));
+  const since = Number(url.searchParams.get('since') ?? 0);
+  if (space && since === 0) return json({ ops: [bootstrapSpaceOp(space)], latestSeq: 1 });
+  return json({ ops: [], latestSeq: since });
+}
+
 /**
  * The signed-in test user against the scripted server, without a render:
  * the session is logged in and global fetch answers the sync protocol plus
@@ -137,15 +164,14 @@ export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], 
       const out = await handler(body, url);
       return out instanceof Response ? out : json(out);
     }
+    // #569: a round reads every space's head at once; tests name the server's
+    // spaces through GET /me/spaces (or `spaces`) — no head is known here, so
+    // every one reads as moved and is pulled, as each was before
+    if (url.pathname === '/sync/heads') return syncHeads(api, spaces, url);
     if (url.pathname === '/me/spaces') return json(spaces.map((s) => s.id));
     if (/^\/sync\/[^/]+\/push$/.test(url.pathname)) return json({ lastSeq: 0 });
     const pull = /^\/sync\/([^/]+)\/pull$/.exec(url.pathname);
-    if (pull) {
-      const space = spaces.find((s) => s.id === decodeURIComponent(pull[1]));
-      const since = Number(url.searchParams.get('since') ?? 0);
-      if (space && since === 0) return json({ ops: [bootstrapSpaceOp(space)], latestSeq: 1 });
-      return json({ ops: [], latestSeq: since });
-    }
+    if (pull) return pullResponse(spaces, url, pull[1]);
     // SSE stream: an immediately-closed stream — the engine falls back to polling
     if (url.pathname === '/sync/events') return new Response('', { status: 200 });
     // the handshake must agree with THIS build's protocol, or every
@@ -159,7 +185,7 @@ export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], 
 
 export function renderAppAsUser(path: string, options: UserAppOptions = {}) {
   const fetchMock = mockUserServer(options);
-  const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
+  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
   const result = render(
     <LogtoAppProvider>
       <ThemeProvider>

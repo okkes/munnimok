@@ -87,11 +87,17 @@ const live = <T extends { deleted: 0 | 1 }>(rows: T[]): T[] => rows.filter((r) =
 
 /** every row the model needs, read once */
 export async function loadPlanningData(store: StorageBackend, spaceId: string): Promise<PlanningData> {
-  const [space, plans, subjects, txs, accounts, budgets, recurrings, events, goals, contributions, allSpaces, allCats, docRow] = await Promise.all([
+  const [rows, txs] = await Promise.all([loadPlanningRows(store, spaceId), visibleTransactions(store, spaceId)]);
+  return { ...rows, txs };
+}
+
+/** what the model needs besides the transactions — a screen joins those with the space's one shared
+ *  read (#554: the tab's dot and Home's block each joined every transaction again on every write) */
+export async function loadPlanningRows(store: StorageBackend, spaceId: string): Promise<Omit<PlanningData, 'txs'>> {
+  const [space, plans, subjects, accounts, budgets, recurrings, events, goals, contributions, allSpaces, allCats, docRow] = await Promise.all([
     store.get('space', spaceId),
     store.bySpace('plan', spaceId),
     store.bySpace('planSubject', spaceId),
-    visibleTransactions(store, spaceId),
     visibleAccounts(store, spaceId),
     store.bySpace('budget', spaceId),
     store.bySpace('recurring', spaceId),
@@ -112,7 +118,6 @@ export async function loadPlanningData(store: StorageBackend, spaceId: string): 
     plans: live(plans),
     removedPlanStarts: new Set(plans.filter((p) => p.deleted === 1 && p.kind === 'actual' && p.periodStart).map((p) => p.periodStart!)),
     subjects: live(subjects),
-    txs,
     accounts,
     budgets: live(budgets),
     recurrings: live(recurrings),
@@ -169,8 +174,8 @@ export interface PlanningModel {
   aheadCount: number;
   /** the next period without a plan yet */
   nextAheadPeriod: Period;
-  /** money the current plan holds for later: funded and not yet realized, plus everything funded ahead */
-  reservedCents: number;
+  /** what the current plan still holds per segment: funded and not yet realized, a one-off under its row's segment (#541: safe to spend's set-asides) */
+  heldBySegment: ReadonlyMap<PlanSegmentKind, number>;
   periodOf: (plan: PlanRow) => Period;
   editabilityOf: (plan: PlanRow) => PlanEditability;
   subjectsOf: (plan: PlanRow) => PlanSubjectRow[];
@@ -226,6 +231,13 @@ const realizedIn = (ledger: PeriodLedger, segment: PlanSegmentKind, sourceId: st
   return ledger.byRecurring.get(sourceId) ?? 0;
 };
 
+/** the recurring costs, loans and events the subjects fund, each with its segment (S3776) */
+function carriedSources(subjects: readonly PlanSubjectRow[]): Map<string, PlanSegmentKind> {
+  const sources = new Map<string, PlanSegmentKind>();
+  for (const s of subjects) if (CARRIED_SEGMENTS.has(s.segment) && s.sourceId) sources.set(s.sourceId, s.segment);
+  return sources;
+}
+
 /**
  * What earlier periods set aside for a recurring cost, a loan or an event
  * and never spent. A bill walks back to its last payment (funding before it
@@ -243,9 +255,7 @@ function carriedBySource(
   const earlier = [...actualByStart.values()]
     .filter((p) => p.periodStart && p.periodStart < forPeriod.start)
     .sort((a, b) => b.periodStart!.localeCompare(a.periodStart!));
-  const sources = new Map<string, PlanSegmentKind>();
-  for (const s of data.subjects) if (CARRIED_SEGMENTS.has(s.segment) && s.sourceId) sources.set(s.sourceId, s.segment);
-  for (const [sourceId, segment] of sources) {
+  for (const [sourceId, segment] of carriedSources(data.subjects)) {
     let carried = 0;
     for (const plan of earlier) {
       const subject = (subjectsByPlan.get(plan.id) ?? []).find((s) => s.sourceId === sourceId && s.segment === segment);
@@ -258,6 +268,15 @@ function carriedBySource(
   }
   return out;
 }
+
+/** the segment an Unplanned row's kind belongs to — where its one-off funding is held */
+const UNPLANNED_SEGMENT: Record<UnplannedRow['kind'], PlanSegmentKind> = {
+  category: 'expenses',
+  recurring: 'recurring',
+  debt: 'debts',
+  event: 'events',
+  goal: 'goals',
+};
 
 /** the plan's one-off funding per Unplanned row key (#494) */
 const oneOffMap = (plan: PlanRow): Map<string, number> => new Map((plan.oneOffs ?? []).filter((o) => o.fundedCents !== 0).map((o) => [o.key, o.fundedCents]));
@@ -450,7 +469,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   // plan never counts its own ahead funding twice. A period ahead has spent
   // nothing, so its reading is the pool minus funding, as before. The sandbox
   // and a past plan read their own subjects over their own period the same way.
-  // Home's safe-to-spend keeps reading funded-and-not-yet-spent (reservedCents).
+  // Home's safe-to-spend reads funded-and-not-yet-spent per segment (heldBySegment).
   // THE INVARIANCE (user 2026-10-09): "what already left" is every Unplanned
   // row of every kind plus the subjects' realized — a recurring cost, a loan or
   // a goal the period paid for sits under Unplanned until its subject exists,
@@ -468,8 +487,10 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   const nextAheadPeriod = candidates.find((candidate) => !taken.has(candidate.start)) ?? candidates[0];
 
   const currentViews = plan ? viewsOf(plan) : [];
-  const oneOffSlack = plan ? unplannedOf(plan).reduce((sum, r) => sum + Math.max(0, (r.fundedCents ?? 0) - r.cents), 0) : 0;
-  const reservedCents = currentViews.reduce((sum, v) => sum + slackCents(v), 0) + oneOffSlack + aheadFundedCents;
+  const heldBySegment = new Map<PlanSegmentKind, number>();
+  const hold = (segment: PlanSegmentKind, cents: number) => heldBySegment.set(segment, (heldBySegment.get(segment) ?? 0) + cents);
+  for (const view of currentViews) hold(view.subject.segment, slackCents(view));
+  if (plan) for (const row of unplannedOf(plan)) hold(UNPLANNED_SEGMENT[row.kind], Math.max(0, (row.fundedCents ?? 0) - row.cents));
 
   const editabilityOf = (p: PlanRow): PlanEditability => {
     if (p.kind !== 'actual' || !p.periodStart || p.periodStart >= period.start) return 'full';
@@ -503,7 +524,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     aheadFundedCents,
     aheadCount: ahead.reduce((sum, a) => sum + a.fraction, 0),
     nextAheadPeriod,
-    reservedCents,
+    heldBySegment,
     periodOf,
     editabilityOf,
     subjectsOf,

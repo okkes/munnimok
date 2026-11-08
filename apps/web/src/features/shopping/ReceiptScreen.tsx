@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
 import { useReceiptOps } from '@/application/receipts';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { connectorsAvailable, useStoreConnMetas } from '@/application/connections';
 import { globalAsEntry, linkAsEntry, spaceReceipts } from '@/application/receiptLinks';
 import type { ReceiptEntry } from '@/application/receiptLinks';
@@ -62,6 +64,8 @@ export function ReceiptScreen({
   const txs = useSpaceTransactions();
   const metas = useStoreConnMetas();
   const receiptOps = useReceiptOps();
+  // #505: a space's receipt is its members' to link, read or remove; a connection's own receipt stays the person's
+  const spaceLocked = !useCanEdit() && scope === 'space';
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const entry = useQuery(store, async () => findEntry(store, scope, spaceId, receiptId), [scope, spaceId, receiptId]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -189,7 +193,8 @@ export function ReceiptScreen({
                     </div>
                   </div>
                 )}
-                {!linkedTxId && (
+                <ReadOnlyNote testId="receipt-readonly-note" />
+                {!linkedTxId && !spaceLocked && (
                   <>
                     <Button variant="outline" className="w-full" data-testid="receipt-link-tx" onClick={() => setPicking((v) => !v)}>
                       {t('receipts.pickTx')}
@@ -221,7 +226,7 @@ export function ReceiptScreen({
                     )}
                   </>
                 )}
-                {photoBorn && !receipt.items?.length && connectorsAvailable() && (
+                {photoBorn && !spaceLocked && !receipt.items?.length && connectorsAvailable() && (
                   <>
                     <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
                       {t('receipt.readItems')}
@@ -240,9 +245,11 @@ export function ReceiptScreen({
               </p>
             )}
 
-            <Button variant="danger" className="w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
-              {confirmDelete ? t('action.confirm') : deleteLabel()}
-            </Button>
+            {!spaceLocked && (
+              <Button variant="danger" className="w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
+                {confirmDelete ? t('action.confirm') : deleteLabel()}
+              </Button>
+            )}
           </div>
         )}
       </div>

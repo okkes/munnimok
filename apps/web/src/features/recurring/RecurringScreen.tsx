@@ -5,6 +5,8 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
@@ -62,6 +64,7 @@ export function RecurringScreen() {
   const txs = useSpaceTransactions();
   const ops = useRecurringOps();
   const navigate = useNavigate();
+  const canEdit = useCanEdit(); // #505
 
   // #188 (user): this year, next year and All join the range filter.
   // #168 r5 (user): the tab survives a detour into a transaction — the
@@ -296,16 +299,20 @@ export function RecurringScreen() {
         trailing={
           <>
             <HelpButton tourId="recurring" />
-            <IconButton label={t('recurring.add')} testId="recurring-add" onClick={() => setFormInitial(emptyForm())}>
-              <Icon name="plus" size={22} />
-            </IconButton>
+            {canEdit && (
+              <IconButton label={t('recurring.add')} testId="recurring-add" onClick={() => setFormInitial(emptyForm())}>
+                <Icon name="plus" size={22} />
+              </IconButton>
+            )}
           </>
         }
       />
       <div ref={(el) => attachScrollMemory(el, 'recurring')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mt-1 mb-2" testId="recurring-readonly-note" />
         {/* date-range filter (#188): current range / next range / this
             year / next year / all — five tabs scroll when tight */}
-        <ScrollRow className="mt-1" tone="bg-2" scrollerClassName="rounded-xl bg-bg-2 p-0.5">
+        {/* the pill's backdrop sits on the wrapper: the strip's own edges fade (#376) */}
+        <ScrollRow className="mt-1 rounded-xl bg-bg-2" scrollerClassName="p-0.5">
           {(
             [
               ['period', rangeLabelFor(period)],
@@ -329,7 +336,7 @@ export function RecurringScreen() {
         </ScrollRow>
 
         {/* detection inbox entry: one quiet notification, details behind it */}
-        {suggestionCount > 0 && (
+        {canEdit && suggestionCount > 0 && (
           <button
             data-testid="recurring-suggestions-banner"
             onClick={() => void navigate({ to: '/recurring/suggestions' })}

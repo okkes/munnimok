@@ -1,7 +1,10 @@
-import { visibleTransactions } from '@/db/joined';
+import { visibleAccounts, visibleTransactions } from '@/db/joined';
+import type { SpaceTx } from '@/db/joined';
 import { buildMerchantMemory } from '@/domain/merchantMemory';
-import type { MerchantMemory } from '@/domain/merchantMemory';
+import type { MemoryInput, MerchantMemory } from '@/domain/merchantMemory';
 import { CATEGORY_BY_ID } from '@/domain/categories';
+import { isMintedLeg } from '@/domain/feedIds';
+import { accountStamp } from '@/domain/txType';
 import type { StorageBackend } from '@/db/backend';
 
 /**
@@ -22,20 +25,48 @@ export interface SpaceMemory {
   others: MerchantMemory;
 }
 
-export async function buildSpaceMerchantMemory(store: StorageBackend, spaceId: string): Promise<SpaceMemory> {
+/** where a pass reads each space's view of its transactions */
+export type SpaceViews = (spaceId: string) => Promise<SpaceTx[]>;
+
+/**
+ * #554: one read of each space's view per pass — every space's memory
+ * reads every space, so a pass over S spaces joined S + S² times (the
+ * join is the cost: the feed rows and the overlays read whole).
+ */
+export function memoViews(store: StorageBackend): SpaceViews {
+  const views = new Map<string, Promise<SpaceTx[]>>();
+  return (spaceId) => {
+    let view = views.get(spaceId);
+    if (!view) {
+      view = visibleTransactions(store, spaceId);
+      views.set(spaceId, view);
+    }
+    return view;
+  };
+}
+
+export async function buildSpaceMerchantMemory(store: StorageBackend, spaceId: string, views: SpaceViews = memoViews(store)): Promise<SpaceMemory> {
   // 2026-10-09 (user: Confirm stalled): only real spaces teach — a bank
   // feed or the private state space carries no kind and no categorised
   // row, and joining a feed's whole history for nothing doubled the cost
   // of every rebuild on a large account
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
-  const ownRows = [];
-  const otherRows = [];
+  const ownRows: MemoryInput[] = [];
+  const otherRows: MemoryInput[] = [];
   for (const space of spaces) {
-    const txs = await visibleTransactions(store, space.id);
-    if (space.id === spaceId) ownRows.push(...txs);
+    const [txs, accounts] = await Promise.all([views(space.id), visibleAccounts(store, space.id)]);
+    const typeOf = new Map(accounts.map((a) => [a.id, a.type]));
+    // #564 (user ss): a minted counter leg is munni's own bookkeeping, filed
+    // from the pot's side under the SOURCE's merchant — it taught "Set aside"
+    // to money coming back from savings. And a special account's own rows
+    // teach only rows on the same kind of ledger.
+    const taught = txs
+      .filter((t) => !isMintedLeg(t))
+      .map((t) => ({ ...t, ledger: accountStamp(typeOf.get(t.accountId)) }));
+    if (space.id === spaceId) ownRows.push(...taught);
     else {
       otherRows.push(
-        ...txs
+        ...taught
           .filter((t) => CATEGORY_BY_ID.has(t.catId ?? ''))
           .map((t) => ({ ...t, cats: undefined, eventId: undefined })),
       );

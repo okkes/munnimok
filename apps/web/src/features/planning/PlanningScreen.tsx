@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { usePlanning, usePlanningOps } from '@/application/planning';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
 import type { PlanRow, PlanSegmentKind, PlanSubjectRow } from '@/db/types';
@@ -290,6 +292,8 @@ export function PlanningScreen() {
   const currency = space?.currency ?? 'EUR';
   const model = usePlanning();
   const ops = usePlanningOps();
+  // #505 (user): a space this identity only reads shows its plan like a past period — nothing to change
+  const canEdit = useCanEdit();
 
   const [viewBack, setViewBack] = useState(0);
   const [sandboxMode, setSandboxMode] = useState(false);
@@ -312,14 +316,15 @@ export function PlanningScreen() {
   const continuable = !!model?.continuable;
   const carryKey = model ? `${spaceId}:${model.period.start}` : null;
   useEffect(() => {
-    if (!continuable || !carryKey || carried.current === carryKey) return;
+    // #505: the carry-over writes the plan — the devices of those who may write it carry it
+    if (!canEdit || !continuable || !carryKey || carried.current === carryKey) return;
     carried.current = carryKey;
     setCarry('running');
     ops
       .continuePlan()
       .then((done) => setCarry(done ? 'done' : 'failed'))
       .catch(() => setCarry('failed'));
-  }, [continuable, carryKey, ops]);
+  }, [canEdit, continuable, carryKey, ops]);
   const carrying = carry === 'running' || (carry === 'done' && continuable);
   // which segments are folded: this device remembers (user 2026-10-07)
   const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
@@ -333,7 +338,7 @@ export function PlanningScreen() {
   const plan = useMemo(() => (model ? viewedPlan(model, viewBack, sandboxMode) : null), [model, viewBack, sandboxMode]);
   const views = useMemo(() => (model && plan ? model.viewsOf(plan) : []), [model, plan]);
   const openView: SubjectView | null = views.find((v) => v.subject.id === openSubjectId) ?? null;
-  const editability = model && plan ? model.editabilityOf(plan) : 'readOnly';
+  const editability = canEdit && model && plan ? model.editabilityOf(plan) : 'readOnly';
   const editable = editability === 'full';
   const canFill = editability !== 'readOnly';
 
@@ -400,6 +405,13 @@ export function PlanningScreen() {
           </p>
         );
       }
+      if (viewBack === 0 && !canEdit) {
+        return (
+          <p className="py-8 text-center text-[13px] text-ink-4" data-testid="plan-none-readonly">
+            {t('plan.noPlanPast')}
+          </p>
+        );
+      }
       if (viewBack === 0) return <StartPlanCard model={model} ops={ops} currency={currency} />;
       if (viewBack > 0) {
         return (
@@ -412,7 +424,7 @@ export function PlanningScreen() {
       return (
         <div className="rounded-card border border-line bg-surface p-4 text-center" data-testid="plan-ahead-empty">
           <p className="text-[13px] text-ink-3">{t('plan.aheadEmpty')}</p>
-          {model.plan ? (
+          {model.plan && canEdit ? (
             <Button size="sm" className="mt-3" data-testid="plan-ahead-start" onClick={() => void ops.fundAhead(viewedPeriod(model, viewBack))}>
               {t('plan.aheadStart')}
             </Button>
@@ -432,20 +444,20 @@ export function PlanningScreen() {
           currency={currency}
           onFillAll={() => void ops.fillAll(plan)}
           onWithdrawAll={() => void ops.withdrawAll(plan)}
-          onAhead={() => setSheet('ahead')}
+          onAhead={() => canEdit && setSheet('ahead')}
         />
         {editability === 'moveOnly' && (
           <p className="mt-2 px-1 text-center text-[11px] text-ink-4" data-testid="plan-moveonly">
             {t('plan.previous')}
           </p>
         )}
-        {editability === 'readOnly' && (
+        {editability === 'readOnly' && canEdit && (
           <p className="mt-2 px-1 text-center text-[11px] text-ink-4" data-testid="plan-readonly">
             {t('plan.readOnly')}
           </p>
         )}
-        {viewBack === 0 && <SandboxStrip model={model} sandboxMode={sandboxMode} onMode={setSandboxMode} ops={ops} />}
-        {viewBack === 0 && plan.kind === 'actual' && aheadDiffers(model, plan) && (
+        {viewBack === 0 && canEdit && <SandboxStrip model={model} sandboxMode={sandboxMode} onMode={setSandboxMode} ops={ops} />}
+        {viewBack === 0 && canEdit && plan.kind === 'actual' && aheadDiffers(model, plan) && (
           <button
             data-testid="plan-ahead-differs-strip"
             onClick={() => setSheet('ahead')}
@@ -462,11 +474,12 @@ export function PlanningScreen() {
             <button
               type="button"
               data-testid="plan-attention-review"
+              disabled={!canEdit}
               onClick={() => setReviewOpen(true)}
               className="m-tap inline-flex items-center gap-2 border-none bg-transparent p-0"
             >
               <Pill tone="negative">{t('plan.home.red', { n: model.attention.length })}</Pill>
-              <span className="text-[11px] font-semibold text-accent-deep">{t('plan.review.open')}</span>
+              {canEdit && <span className="text-[11px] font-semibold text-accent-deep">{t('plan.review.open')}</span>}
             </button>
           </div>
         )}
@@ -496,13 +509,15 @@ export function PlanningScreen() {
       />
       <div ref={(el) => attachScrollMemory(el, 'planning')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="planning" />
+        <ReadOnlyNote className="mb-2" testId="plan-readonly-note" />
         {model && <PeriodPager model={model} viewBack={viewBack} onViewBack={setViewBack} />}
         {body()}
       </div>
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title={t('plan.menu.title')} size="form">
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-menu-sheet">
-          {MENU.filter((item) => item.id !== 'startOver' || editable).map((item) => (
+          {/* #505: a reader's menu keeps what only shows */}
+          {MENU.filter((item) => (item.id !== 'startOver' || editable) && (canEdit || item.id === 'insights')).map((item) => (
             <Row key={item.id} icon={item.icon} title={t(item.key)} testId={`plan-menu-${item.id}`} onClick={() => pick(item.id)} />
           ))}
         </div>

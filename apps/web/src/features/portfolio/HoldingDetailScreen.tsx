@@ -3,9 +3,13 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { usePortfolio, usePortfolioOps } from '@/application/portfolio';
 import { useData } from '@/app/data';
+import { useCanEdit } from '@/app/useCanEdit';
+import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useQuery } from '@/db/useQuery';
 import type { HoldingRow, LotRow } from '@/db/types';
 import { fmtCents, parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { MASK } from '@/features/privacy/sensitive';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -33,10 +37,13 @@ export function HoldingDetailScreen() {
   );
   const [formInitial, setFormInitial] = useState<HoldingRow | 'new' | null>(null);
   const [lotOpen, setLotOpen] = useState(false);
+  const canEdit = useCanEdit(); // #505
   const [kind, setKind] = useState<(typeof LOT_KINDS)[number]>('buy');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [qty, setQty] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
+  // #530: the position — its worth, size, gain, realized and dividends — hides with the sensitive figures; lots and prices stay
+  const { fmtSensitive, hideSensitive } = useDisplayMoney();
 
   const view = model?.views.find((v) => v.holding.id === holdingId);
   // deleted here or on another device: leave the orphaned detail
@@ -47,7 +54,8 @@ export function HoldingDetailScreen() {
     return <div className="h-full" data-testid="screen-holding-detail" />;
 
   const money = (cents: number) => fmtCents(cents, 'EUR', lang);
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
+  const worth = (cents: number, opts?: { sign?: boolean }) => fmtSensitive(cents, 'EUR', { ...opts, asRecorded: true });
+  const fmtDate =(iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   const saveLot = async () => {
     const quantity = Number.parseFloat(qty.replace(',', '.'));
@@ -81,14 +89,16 @@ export function HoldingDetailScreen() {
         <span className="block text-[11px] text-ink-4">{fmtDate(lot.date)}</span>
       </span>
       <span className="m-num text-[13px] font-semibold text-ink">{money(Math.abs(lot.totalCents))}</span>
-      <button
-        aria-label={t('action.delete')}
-        data-testid={`pf-lot-del-${lot.id}`}
-        onClick={() => void ops.removeLot(lot.id)}
-        className="m-tap flex h-8 w-8 items-center justify-center rounded-full border-none bg-transparent"
-      >
-        <Icon name="close" size={14} color="var(--m-ink-4)" />
-      </button>
+      {canEdit && (
+        <button
+          aria-label={t('action.delete')}
+          data-testid={`pf-lot-del-${lot.id}`}
+          onClick={() => void ops.removeLot(lot.id)}
+          className="m-tap flex h-8 w-8 items-center justify-center rounded-full border-none bg-transparent"
+        >
+          <Icon name="close" size={14} color="var(--m-ink-4)" />
+        </button>
+      )}
     </div>
   );
 
@@ -102,39 +112,44 @@ export function HoldingDetailScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('pf.edit')} testId="pfdetail-edit" onClick={() => setFormInitial(view.holding)}>
-            <Icon name="pencil-outline" size={20} />
-          </IconButton>
+          canEdit && (
+            <IconButton label={t('pf.edit')} testId="pfdetail-edit" onClick={() => setFormInitial(view.holding)}>
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          )
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ReadOnlyNote className="mb-3" testId="pfdetail-readonly-note" />
         <div className="rounded-card border border-line bg-surface p-4" data-testid="pfdetail-hero">
           <div className="m-num text-[24px] font-semibold text-ink" data-testid="pfdetail-value">
-            {view.valueCents === null ? t('pf.noPrice') : money(view.valueCents)}
+            {view.valueCents === null ? t('pf.noPrice') : worth(view.valueCents)}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-3">
             <span data-testid="pfdetail-qty">
-              {view.position.qty} {t('pf.units')}
+              {hideSensitive ? MASK : view.position.qty} {t('pf.units')}
             </span>
             {view.position.qty > 0 && <span>{t('pf.avgCost', { amount: money(Math.round(view.position.costCents / view.position.qty)) })}</span>}
             {view.gainCents !== null && (
               <span className="m-num font-medium" style={{ color: view.gainCents >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }}>
-                {fmtCents(view.gainCents, 'EUR', lang, { sign: true })}
+                {worth(view.gainCents, { sign: true })}
               </span>
             )}
           </div>
           {(view.position.realizedCents !== 0 || view.position.dividendCents > 0 || view.position.feeCents > 0) && (
             <div className="mt-2 flex flex-wrap gap-x-4 text-[11px] text-ink-4" data-testid="pfdetail-extras">
-              {view.position.realizedCents !== 0 && <span>{t('pf.realized', { amount: money(view.position.realizedCents) })}</span>}
-              {view.position.dividendCents > 0 && <span>{t('pf.dividends', { amount: money(view.position.dividendCents) })}</span>}
+              {view.position.realizedCents !== 0 && <span>{t('pf.realized', { amount: worth(view.position.realizedCents) })}</span>}
+              {view.position.dividendCents > 0 && <span>{t('pf.dividends', { amount: worth(view.position.dividendCents) })}</span>}
               {view.position.feeCents > 0 && <span>{t('pf.fees', { amount: money(view.position.feeCents) })}</span>}
             </div>
           )}
         </div>
 
-        <Button className="mt-3 w-full" data-testid="pfdetail-addlot" onClick={() => setLotOpen(true)}>
-          {t('pf.addLot')}
-        </Button>
+        {canEdit && (
+          <Button className="mt-3 w-full" data-testid="pfdetail-addlot" onClick={() => setLotOpen(true)}>
+            {t('pf.addLot')}
+          </Button>
+        )}
 
         <div className="m-cap mt-5 mb-1 px-1">
           {t('pf.lots')} · {lots?.length ?? 0}

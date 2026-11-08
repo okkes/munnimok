@@ -14,6 +14,13 @@ public sealed record PushResponse(long LastSeq, int Accepted, int Duplicates);
 public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq, long NextSince);
 public sealed record BootstrapRow(string Entity, string EntityId, bool Deleted, JsonElement Data, Dictionary<string, string> FieldVersions);
 public sealed record BootstrapResponse(List<BootstrapRow> Rows, long LatestSeq);
+/// <summary>
+/// Where one space the caller reaches stands: its head as the caller may pull
+/// it (capped for an archived feed), and the caller's role there (#505: a
+/// device refuses its own writes where it may only read) — a feed reached
+/// only through an attachment reads as "reader".
+/// </summary>
+public sealed record SpaceHead(string SpaceId, long LatestSeq, string Role);
 
 public static class SyncEndpoints
 {
@@ -30,6 +37,12 @@ public static class SyncEndpoints
             return Results.Ok(spaceIds.Union(feeds).ToList());
         }).RequireAuthorization();
 
+        // #569: every space the caller reaches with its head, in one call — a
+        // sync round pulls only the spaces that moved instead of asking each
+        // in turn (a round over ~25 spaces was ~25 requests, and a burst of
+        // writes ran the rate limiter dry: "too many requests" on attach)
+        app.MapGet("/sync/heads", Heads).RequireAuthorization();
+
         // near-real-time change stream: emits {"spaceId":…} whenever one of
         // the caller's spaces accepted new ops (push or bank ingest)
         app.MapGet("/sync/events", StreamEvents).RequireAuthorization();
@@ -38,6 +51,29 @@ public static class SyncEndpoints
         group.MapPost("/push", Push).WithValidation<PushRequest>();
         group.MapGet("/pull", Pull);
         group.MapGet("/bootstrap", Bootstrap);
+    }
+
+    /// <summary>
+    /// The caller's spaces (memberships and the feeds reachable through
+    /// attachments or ownership, as <c>/me/spaces</c> lists them) with the
+    /// head each pull would report: the space's last seq, capped where only
+    /// an archived attachment reaches a feed — the same rule <see cref="Pull"/>
+    /// applies.
+    /// </summary>
+    private static async Task<IResult> Heads(AppDbContext db, HttpContext http)
+    {
+        var userId = http.GetUserId();
+        var roles = await db.SpaceMembers.Where(m => m.UserId == userId).ToDictionaryAsync(m => m.SpaceId, m => m.Role, StringComparer.Ordinal);
+        var feedCaps = await Accounts.FeedAccess.ReadCapsAsync(db, userId);
+        var ids = roles.Keys.Union(feedCaps.Keys).ToList();
+        var lastSeqs = await db.Spaces.Where(s => ids.Contains(s.Id)).Select(s => new { s.Id, s.LastSeq }).ToDictionaryAsync(s => s.Id, s => s.LastSeq);
+        var heads = ids.Select(id =>
+        {
+            var member = roles.TryGetValue(id, out var role);
+            var cap = member ? long.MaxValue : feedCaps[id];
+            return new SpaceHead(id, Math.Min(lastSeqs.GetValueOrDefault(id), cap), member ? role! : Social.SpaceRoles.Reader);
+        }).ToList();
+        return Results.Ok(heads);
     }
 
     private static async Task<IResult> Push(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, HttpContext http)
@@ -81,8 +117,9 @@ public static class SyncEndpoints
         else
         {
             var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
+            if (membership is null) return Results.Forbid();
             // readers may pull but never push
-            if (membership is null || !Social.SpaceRoles.CanWrite(membership.Role)) return Results.Forbid();
+            if (!Social.SpaceRoles.CanWrite(membership.Role)) return Social.SpaceRoles.ReadOnly();
         }
 
         var writer = new SyncWriter(db);

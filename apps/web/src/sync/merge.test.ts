@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeHlc } from './hlc';
-import { applyOp } from './merge';
+import { applyOp, dropUnstamped, unstampWrites } from './merge';
 import type { Op, SyncEnvelope } from './merge';
 
 type Row = Record<string, unknown> & SyncEnvelope;
@@ -100,5 +100,31 @@ describe('applyOp', () => {
     expect(outcomes.size).toBe(1);
     const final = JSON.parse([...outcomes][0]);
     expect(final).toMatchObject({ name: 'C', color: 'blue', deleted: 0 });
+  });
+});
+
+describe('undoing writes the server never took (#505)', () => {
+  const server = hlc(1_000, 'owner');
+  const mine = hlc(2_000, 'reader');
+
+  it('the row keeps rendering until the server’s values come back over it', () => {
+    const local = applyAll(null, [op({ fields: { name: 'Food', color: 'red' }, hlc: server }), op({ fields: { name: 'Mine', note: 'x' }, hlc: mine })])!;
+
+    const unstamped = unstampWrites(local, new Set([mine]));
+    expect(unstamped).toMatchObject({ name: 'Mine', note: 'x', color: 'red' });
+    const repulled = applyOp(unstamped, op({ fields: { name: 'Food', color: 'red' }, hlc: server })).row;
+    expect(dropUnstamped(repulled)).toMatchObject({ name: 'Food', color: 'red', deleted: 0 });
+    expect(dropUnstamped(repulled)).not.toHaveProperty('note');
+  });
+
+  it('a delete of its own is taken back too', () => {
+    const local = applyAll(null, [op({ fields: { name: 'Food' }, hlc: server }), op({ fields: {}, deleted: true, hlc: mine })])!;
+    expect(local.deleted).toBe(1);
+    expect(unstampWrites(local, new Set([mine])).deleted).toBe(0);
+  });
+
+  it('a row only this device ever wrote is gone', () => {
+    const local = applyAll(null, [op({ fields: { name: 'Trip' }, hlc: mine })])!;
+    expect(dropUnstamped(unstampWrites(local, new Set([mine])))).toBeNull();
   });
 });

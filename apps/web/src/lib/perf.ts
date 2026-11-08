@@ -32,6 +32,8 @@ export const perfBudget: Readonly<Record<string, number>> = Object.freeze({
   'planning.build': 150,
   /** matching fetched receipts against transactions */
   'receipts.match': 500,
+  /** preparing the suggestions of every row waiting in the review (#565) */
+  'review.suggest': 500,
 });
 
 export type PerfAttributes = Record<string, string | number | boolean>;
@@ -203,6 +205,14 @@ export function isIdleSyncRound(event: TransactionEvent): boolean {
 /** beforeSendTransaction (after the zero-network gate): idle rounds out, every URL scrubbed */
 export const transactionFilter = (event: TransactionEvent): TransactionEvent | null =>
   isIdleSyncRound(event) ? null : scrubEvent(event);
+
+/**
+ * The responses the app holds open for minutes - the sync stream, a live
+ * view's pushed frames (#429) - are never a span: one still open keeps the
+ * pageload or navigation it started under waiting until its deadline, and
+ * reads as the slowest request there is. The API leaves them out the same way.
+ */
+export const isHeldStream = (url: string): boolean => /\/(?:sync\/events|live\/stream)(?:\?|$)/.test(url);
 
 /* ── the interaction the person felt ─────────────────────────────────── */
 

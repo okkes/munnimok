@@ -4,6 +4,7 @@ import type { INPMetricWithAttribution } from 'web-vitals/attribution';
 import type { TransactionEvent } from './perf';
 import {
   installWebVitals,
+  isHeldStream,
   isIdleSyncRound,
   mark,
   measure,
@@ -175,6 +176,15 @@ describe('the idle sync round', () => {
     expect(transactionFilter(navigation)).toBe(navigation);
     // no trace data at all: nothing moved by definition, under budget
     expect(isIdleSyncRound(transaction({ contexts: {} }))).toBe(true);
+  });
+});
+
+describe('the streams the app holds open', () => {
+  it('are no span: the sync stream and a live view pushed frames, never their neighbours', () => {
+    expect(isHeldStream('https://api.munni.test/sync/events')).toBe(true);
+    expect(isHeldStream('https://api.munni.test/connectors/ah/login/ses_1/challenges/chl_1/live/stream?after=4')).toBe(true);
+    expect(isHeldStream('https://api.munni.test/connectors/ah/login/ses_1/challenges/chl_1/live/frame?after=4')).toBe(false);
+    expect(isHeldStream('https://api.munni.test/sync/sp_1/pull?since=0')).toBe(false);
   });
 });
 

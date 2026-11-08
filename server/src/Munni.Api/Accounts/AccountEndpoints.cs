@@ -123,7 +123,8 @@ public static class AccountEndpoints
     {
         var me = http.GetUserId();
         var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
-        if (myRole is null || !SpaceRoles.CanWrite(myRole)) return Results.Forbid();
+        if (myRole is null) return Results.Forbid();
+        if (!SpaceRoles.CanWrite(myRole)) return SpaceRoles.ReadOnly();
         // you can only attach accounts you actually have: your own feed
         if (!await FeedAccess.IsFeedOwner(db, me, request.FeedSpaceId))
             return Results.Forbid();
@@ -200,7 +201,8 @@ public static class AccountEndpoints
     {
         var me = http.GetUserId();
         var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
-        if (myRole is null || !SpaceRoles.CanWrite(myRole)) return Results.Forbid();
+        if (myRole is null) return Results.Forbid();
+        if (!SpaceRoles.CanWrite(myRole)) return SpaceRoles.ReadOnly();
 
         var link = await db.SpaceAccountLinks.FirstOrDefaultAsync(l => l.Id == linkId && l.SpaceId == spaceId);
         if (link is not null)

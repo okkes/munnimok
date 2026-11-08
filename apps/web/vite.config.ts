@@ -55,7 +55,8 @@ export default defineConfig(({ mode }) => {
           // json matters: the vendored brand SVGs were precached but their
           // index (brands/index.json) was not — offline installs showed an
           // empty logo picker. jpg: the bundled event pictures must work
-          // offline/demo too.
+          // offline/demo too. js: every screen's own chunk (#554) — an
+          // offline start opens any screen.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,jpg}'],
           // never precache the runtime-config overlay: the nginx entrypoint
           // rewrites it per deployment, but the precache would pin the

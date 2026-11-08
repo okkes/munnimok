@@ -9,7 +9,8 @@ import { apiFetch } from '@/lib/api';
 import { fmtCents, parseCents } from '@/lib/money';
 import { netPositions, settlementPlan } from '@/domain/splitLedger';
 import type { LedgerEntry } from '@/domain/splitLedger';
-import type { TransactionRow } from '@/db/types';
+import type { EventRow, TransactionRow } from '@/db/types';
+import { EventPickList } from '@/features/events/EventPickList';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -212,7 +213,7 @@ export function SplitDetailScreen() {
   const [closeOpen, setCloseOpen] = useState(false);
   // SP5: MY event link (per-member, private) + auto-attach of searched txs
   const [eventOpen, setEventOpen] = useState(false);
-  const [myEvents, setMyEvents] = useState<{ id: string; name: string }[] | null>(null);
+  const [myEvents, setMyEvents] = useState<EventRow[] | null>(null);
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/splits/${splitId}`).catch(() => null);
@@ -306,7 +307,8 @@ export function SplitDetailScreen() {
       if (!txId) continue;
       const tx = await store.get('transaction', txId);
       if (tx?.deleted === 0 && !tx.eventId) {
-        await repo.upsert('transaction', tx.spaceId, txId, { eventId });
+        // #505: a follow-up, not the person's edit — a space they only read keeps its rows
+        await repo.upkeep().upsert('transaction', tx.spaceId, txId, { eventId });
       }
     }
   };
@@ -329,7 +331,7 @@ export function SplitDetailScreen() {
     if (!eventOpen) return;
     void (async () => {
       const rows = await store.bySpace('event', searchSpaceId);
-      setMyEvents(rows.filter((e) => e.deleted === 0).map((e) => ({ id: e.id, name: e.name })));
+      setMyEvents(rows.filter((e) => e.deleted === 0));
     })();
   }, [eventOpen, store, searchSpaceId]);
 
@@ -621,23 +623,17 @@ export function SplitDetailScreen() {
       <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('splits.eventCap')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] text-ink-2">{t('splits.eventHint')}</p>
-          <div className="overflow-hidden rounded-card border border-line bg-surface">
-            {(myEvents ?? []).map((event) => (
-              <button
-                key={event.id}
-                data-testid={`split-event-${event.id}`}
-                disabled={busy}
-                onClick={() => void linkEvent(event.id)}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
-              >
-                <Icon
-                  name={detail?.attachedEventId === event.id ? 'radiobox-marked' : 'radiobox-blank'}
-                  size={20}
-                  color={detail?.attachedEventId === event.id ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
-                />
-                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{event.name}</span>
-              </button>
-            ))}
+          <div className="overflow-hidden rounded-card border border-line bg-surface px-3">
+            {/* #537 (user ss): archived events say so, and each one can be peeked at before it is chosen */}
+            <EventPickList
+              events={myEvents ?? []}
+              selectedId={detail?.attachedEventId}
+              testIdPrefix="split-event-"
+              variant="radio"
+              onPick={(id) => {
+                if (!busy) void linkEvent(id);
+              }}
+            />
             {myEvents !== null && myEvents.length === 0 && (
               <div className="px-4 py-6 text-center text-[13px] text-ink-4">{t('splits.eventEmpty')}</div>
             )}

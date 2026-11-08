@@ -16,9 +16,9 @@ machine catches, and which spans still have to be added.
 | Where | Transactions (root spans) | Child spans | Notes |
 | --- | --- | --- | --- |
 | **web** (`apps/web`) | every **pageload** and **navigation**, named by the route *pattern* (`/transactions/$txId`, `/review`) through `tanstackRouterBrowserTracingIntegration` | the fetches it triggers, long animation frames with the script that caused them (`ui.long-animation-frame`), long tasks on browsers without LoAF, resource timings | an idle route with no activity ends its transaction after 1 s; interactions minutes later are NOT inside it — that is what the custom spans below are for |
-| web | **`sync.round`** (op `munni.sync`): one per push/pull round (`sync/engine.ts`) | `sync.handshake` (the `/health` protocol check), `sync.spaces` (`/me/spaces`), per space `sync.push` (`sync.ops`) and `sync.pull` (`sync.rows`), with the HTTP spans under them | attributes `sync.spaces`, `sync.ops_pushed`, `sync.rows_pulled`, `sync.ok` — counts only, never contents; a round that moved nothing and stayed under its 2 s budget is dropped before it leaves (`isIdleSyncRound`): one per 10 s per open tab would drown the view, a *slow* empty round still ships |
+| web | **`sync.round`** (op `munni.sync`): one per push/pull round (`sync/engine.ts`) | `sync.handshake` (the `/health` protocol check), `sync.spaces` (`/sync/heads`: every space with its head, #569), per space `sync.push` (`sync.ops`) and `sync.pull` (`sync.rows`, only for a space whose head moved or that this device pushed to), with the HTTP spans under them | attributes `sync.spaces`, `sync.ops_pushed`, `sync.rows_pulled`, `sync.ok` — counts only, never contents; a round that moved nothing and stayed under its 2 s budget is dropped before it leaves (`isIdleSyncRound`): one per 10 s per open tab would drown the view, a *slow* empty round still ships |
 | web | **`app.boot`** (op `munni.app`): `app/data.tsx`, the identity's store open to the first screen | `app.boot.open` (Dexie / SQLCipher open + migrations), `app.boot.seed` (demo), and `app.boot.heal` as its own transaction (the every-boot heals outlive the boot) | attributes `boot.identity` (demo/offline/user), `boot.spaces`, `boot.waited_for_server` (a brand-new device waits for the bootstrap pull), `boot.cancelled` (StrictMode's first mount) |
-| web | **custom spans** through `measure()` (`lib/perf.ts`) — the sites in §7 | nested `measure()` calls and the fetches under them | a root `measure` becomes a transaction; a nested one a row in the parent's waterfall |
+| web | **custom spans** through `measure()` (`lib/perf.ts`) — the sites in §7, and `review.suggest` (op `munni.review`): the background pass that prepares every row waiting in the review (#565) | nested `measure()` calls and the fetches under them | a root `measure` becomes a transaction; a nested one a row in the parent's waterfall. `review.suggest` carries `review.spaces` (asked), `review.prepared` (spaces prepared again) and `review.rows`; a pass that found nothing to prepare reads 0 |
 | web | **INP** — a *poor* interaction (> 500 ms from the tap to the next frame) | — | not a transaction: one **warning event** per element (`scope: web-vitals`, message `INP poor: button[data-testid="review-confirm"]`) with the value, the three phases (input delay / processing / presentation), the load state and the longest script's function and invoker, once per page life, reported when the page hides. GlitchTip has no Web Vitals page and does not render the SDK's standalone INP spans, so the event is how the number reaches an issue list |
 | **api** (`Munni.Api`) | every sampled request, named by its **route template** (`POST /sync/{spaceId}/push`, `GET /receipts/{id}`, `POST /connectors/...`) — Sentry.AspNetCore's tracing middleware | EF Core queries (`db.query`, the parameterised SQL — no values) and every `IHttpClientFactory` call (`http.client`: Logto, the connector relay, logo.dev, OCR, FCM, the quote providers) — the SDK's DiagnosticSource listener and `SentryHttpMessageHandler`, both bundled in `Sentry` 6.x | health probes and the SSE stream are never a transaction (`SentryNoise.IsHeartbeat`); a trace the web app started keeps its sampling decision (`SentryNoise.SampleTrace`) so a sampled `sync.round` shows its push on the api under the same trace id |
 | **connector control plane** (`Connector.Api`) | every sampled request of the relay (`/v1/...`) | its database and party calls | `/v1/health` (docker every 10 s), the operator's `/health` and the agents' `/heartbeat` never count; **no trace header leaves the process** — a bank's or a shop's site is nobody's tracing peer |
@@ -116,6 +116,13 @@ retention is `GLITCHTIP_MAX_TRANSACTION_EVENT_LIFE_DAYS` (inherits
 6. Filter by `environment` (production / staging / local) and by the
    `space.period` tag (month / week / biweekly / custom) when the period
    math is suspected; `release` carries the build number.
+7. Compare the platforms: the same span far slower on `<stack>-ios` or
+   `-android` than on `-pwa` points at the native store
+   (`db/sqlBackend.ts`, SQLCipher over the Capacitor bridge). Until #554
+   every write there re-ran every live query on screen — the matcher's
+   first pass on the perf dataset took 26 s, `receipts.match` averaged
+   70 s on the iOS app; its live queries now re-run on what a write
+   touched, like Dexie's.
 
 ## 5. The dev-time catch
 
@@ -128,6 +135,7 @@ retention is `GLITCHTIP_MAX_TRANSACTION_EVENT_LIFE_DAYS` (inherits
 | `sync.round` | 2 000 ms |
 | `planning.build` | 150 ms |
 | `receipts.match` | 500 ms |
+| `review.suggest` | 500 ms |
 
 * `measure(name, fn)` times `fn` with `performance.now()` whether or not
   Sentry is on. On the **dev server** an overrun prints
@@ -144,9 +152,15 @@ retention is `GLITCHTIP_MAX_TRANSACTION_EVENT_LIFE_DAYS` (inherits
 `apps/web/src/test/perfHarness.ts` builds a **deterministic** large store
 in fake-indexeddb — 1 500 transactions (18 months, the newest sixty
 awaiting review, a share linked to recurrings), 300 receipts (half of
-them twins of a transaction so the matcher has work), 40 recurring rows —
+them twins of a transaction so the matcher has work) with the shop's
+connection included in the space, 40 recurring rows —
 every row with a proper sync envelope, written in bulk so the seed is
 cheap. Same seed, same rows, same HLC stamps every run.
+`buildPerfStore(PERF_BANK_SIZE)` is the shape a connected household has
+(#554): three years of a bank's rows in a feed attached through an
+`accountLink`, the reviewed ones dressed by `txMeta`, 600 receipts and a
+second space attaching the same account — the joins, overlays and
+cross-space memory the plain dataset never exercises.
 
 A timed unit test (headroom for CI boxes):
 
