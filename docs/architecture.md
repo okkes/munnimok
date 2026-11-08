@@ -51,13 +51,13 @@ Three identity kinds run the **same app** with different wiring:
 |---|---|---|---|
 | **user** (Logto) | IndexedDB per user | full sync + REST | queued offline, flushed online |
 | **demo** | IndexedDB, reseeded on sign-out | **zero** — enforced at the `apiFetch` choke point | none, ever |
-| **offline** profile | IndexedDB, kept — ONE profile per device (spaces separate bookkeeping, not parallel profiles) | **zero** | none, ever |
+| **offline** profile | IndexedDB per profile, kept — a device may hold several, each a separate world (spaces split bookkeeping inside one) | **zero** | none, ever |
 
 All three run the same first-run onboarding (profile, language,
 country-of-use, optional app lock); conversions between the identity
-kinds are designed product paths (docs/online-to-offline-plan.md and
-the offline→online migration in docs/offline-backup-plan.md) — every
-new feature must state its fate in both directions.
+kinds are product paths (online → offline is Global settings → Go
+offline, which adopts the signed-in store; offline → online is #499) —
+every new feature must state its fate in both directions.
 
 ## 2. Frontend layering
 
@@ -198,9 +198,11 @@ accepts hand-typed transactions. Rows state their tier + provenance
 (created here / yours / shared by a member) and last-sync freshness.
 Two users consenting to the same IBAN share ONE feed (family
 accounts): each consent is independent, fetch quota is spent once, and
-one user's cleanup can never revoke the other's access. The next
-evolution (shared import feeds, roles, evidence-based dedupe) is
-designed in docs/financial-accounts-master-plan.md.
+one user's cleanup can never revoke the other's access. Imported rows
+carry their upload batch (`importBatchId`, `importedBy`) for per-batch
+rollback, and a reconcile hands an imported account's edits over to
+the bank-fed rows that cover it; what comes next (roles on a shared
+account, moving from one feed to another) is #238.
 
 Rate budget math: GoCardless allows ~4 calls/endpoint/day. The nightly
 schedule spends **1** transactions + **1** balances call per account per
@@ -340,7 +342,7 @@ escrow, no server-side recovery, no honeypot.
 | Connector relay, ingest + schedule (banks included) | `server/src/Munni.Api/Connectors/*` |
 | The connector platform (control plane, adapters, agent) | `server/src/connectors/*` |
 | Compose stacks + runbook | `deploy/` |
-| Active design docs | `docs/` (implemented designs are removed once shipped — recover any from git history) |
+| Docs | `docs/` holds living documentation only; a design lives in its GitHub ticket, and retired design docs stay in git history |
 
 The authoritative sync semantics live in code, twice on purpose:
 `apps/web/src/sync/` (TypeScript) and `server/src/Munni.Api/Sync/`
@@ -529,9 +531,9 @@ Push). Tokens are stored per user and pruned on 404/410.
 | AISP secrets | Server-side env only; never in client bundles or the repo. |
 | Transport | TLS everywhere (DSM reverse proxy, HSTS); native shells pin to https universal-link origins. |
 | At rest (server) | PostgreSQL on the operator's NAS volume; deletion pipeline erases user data + revokes consents + deletes the IdP identity (prod). |
-| At rest (device) | Native: optional SQLCipher store, passphrase in Keychain/Keystore; app lock via OS biometrics. |
-| AuthN | OIDC code+PKCE via Logto; rotating refresh tokens; audience-checked JWTs; single-flighted refresh to avoid rotation races. |
-| AuthZ | Space membership checks on every sync route; feed access derives from ownership/attachment with archive ceilings; admin = separate app + explicit grant list. |
+| At rest (device) | Native: always the SQLCipher store, passphrase in Keychain/Keystore; app lock via OS biometrics. |
+| AuthN | OIDC code+PKCE via Logto; refresh tokens rotate in the browsers, the phone app's never do (a fixed 90 days — docs/native-auth-popupless.md); audience-checked JWTs; single-flighted refresh to avoid rotation races. |
+| AuthZ | Space membership checks on every sync route; feed access derives from ownership/attachment with archive ceilings; admin = separate app + the access token's `admin` scope (a Logto role). |
 | Multi-user shared accounts | Each consent lives independently per user; one user's cleanup can never revoke another's access. |
 | Telemetry | PII-scrubbed error events only; demo/offline identities emit zero network traffic by construction. |
 | Data minimization | Server stores only what sync needs (ops + derived rows); budgets/goals stay client-side interpretation of synced facts; no analytics/tracking of any kind. |
@@ -550,9 +552,11 @@ flowchart LR
 Residual risks worth stating honestly: the NAS is a single-operator,
 single-node deployment (no HSM, no WAF beyond DSM defaults);
 browser-profile storage on the plain web app is not additionally
-encrypted; server data is not yet encrypted at rest and nightly
-backups are still plaintext (the remediation order lives in
-docs/backend-security-plan.md — encrypted backups first); and
+encrypted; server data is not yet encrypted at rest, one database
+role per environment owns the api's, Logto's and the connector's
+databases, and the rendered stacks take no database backup of their
+own (the nightly dump left with the legacy compose; backups are #581,
+the rest of the hardening #582); and
 GlitchTip receives stack traces which could incidentally contain
 identifiers if a future code path interpolated them (the current
 reporting scope tags are curated to avoid this).

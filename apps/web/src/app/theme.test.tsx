@@ -55,7 +55,7 @@ describe('ThemeProvider', () => {
     act(() => api.setMode('light'));
     expect(screen.getByTestId('theme').textContent).toBe('light');
     expect(localStorage.getItem('munni_theme')).toBe('light');
-    // "follow device" clears the pin (native-benefits §3)
+    // "follow device" clears the pin
     act(() => api.setMode('system'));
     expect(api.mode).toBe('system');
     expect(localStorage.getItem('munni_theme')).toBeNull();

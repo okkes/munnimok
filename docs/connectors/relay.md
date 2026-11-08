@@ -5,9 +5,7 @@ API, and the API's `Connectors/` slice (`server/src/Munni.Api/Connectors`)
 carries every call across: it mints the subject, binds sessions to the
 signed-in user, passes bundles through memory and back, files what a sync
 fetched into the feeds, and bridges the connector's event streams into the
-one stream the app already holds. This page is written from that code
-(docs/connector-integration-plan.md §5 is the plan it delivers; §14 records
-where it departs).
+one stream the app already holds. This page is written from that code.
 
 ## Configuration (`Connectors:*`)
 
@@ -43,7 +41,7 @@ An unconfigured one is simply absent — never a stand-in.
   their properties and the rows after every flow and finds no bundle.
   The exception is a bundle that holds no secret of the person's: a
   household agent's (`secret_custody: agent`) names an agent and a profile,
-  an open-banking consent's (`secret_custody: server`, §15) a consent id
+  an open-banking consent's (`secret_custody: server`, #414) a consent id
   and the accounts it reaches while the operator's key stays in the
   platform's configuration. The relay keeps those on the session row to
   sync unattended ("Scheduled syncs" below); the same scan proves a
@@ -92,7 +90,7 @@ An unconfigured one is simply absent — never a stand-in.
 Client custody syncs only when a device holds the bundle: the app on open,
 *Sync now*, after a bank sync. Two custodies are different — a
 household-agent party's bundle is a pointer to an agent and a profile on
-the person's own machine, an open-banking party's (§15) a consent id and
+the person's own machine, an open-banking party's (#414) a consent id and
 the accounts it reaches — so the relay keeps those bundles
 (`ConnectorSession.KeptBundle`, written at the single delivery and
 followed through every rotation) and `ConnectorScheduleService` drives
@@ -122,7 +120,7 @@ them the way the api's own open-banking service once did:
 - `GET /connectors/sessions` reports `scheduled`, `lastScheduledSyncAt` and
   `lastScheduleError` per binding.
 
-## Bank rows (§15)
+## Bank rows (#414)
 
 Every bank party's rows land through the same ingest, which keeps two
 things the api's own bank ingest kept:
@@ -231,7 +229,7 @@ The operator's routes are the connector lab's (#441, [lab.md](lab.md)); the admi
 | `GET /lab/jobs/{id}/scaffold?provider=&name=&product=&country=` | L5: the new-service scaffold from a recording — the trace and its digest read from the control plane, turned into a manifest stub, the OBSERVED options (every host and path seen, with what was observed in the doc comments), an adapter stub with a TODO per call, the JSON answers as redacted fixtures, a test skeleton wired to them, a README that says where to register it, and `digest.md`; zipped at their repo paths (`application/zip`, `<provider>-scaffold.zip`). `provider` kebab-case, `name` PascalCase, `product` shop/bank/registry, `country` ISO-3166 alpha-2 (400 otherwise); the control plane's envelope when the job has no recording |
 | `GET /lab/bench/retention/runs`, `POST …/runs`, `GET …/runs/{id}`, `POST …/runs/{id}/steps`, `POST …/runs/{id}/finish`, `DELETE …/runs/{id}` | L4: the retention bench's reports, the operator's own (`LabRetentionRun` in `Munni.Api.Lab`, migration `LabRetentionRuns`): a run is `{ provider, resource, agentId?, agentName?, label? }` → `{ id (lrr_…), state: running, steps: [] }`; a step `{ name, state ∈ running/pass/fail/skip, detail?, jobId?, sessionId? }` is written in the order taken and replaced by name (409 once the run ended, at most 32); `finish` is `{ state ∈ passed/failed/aborted }`; the list is newest first, a hundred at most. The lab drives the scenario itself through the bench's routes — sign in on the pinned agent with `record`, fetch, read `/lab/agents`, fetch again and read `/lab/jobs?session=…&kind=fetch`, release the hosted slot and poll the wipe — and writes each verdict here |
 | `POST /lab/bench/explore` | L3: `{ url, label?, preferAgent? }` → a sign-in to the control plane's own `explore` provider (operator-only, the lab trigger) with the address as its one input and `record` on: a browser on a fleet agent opens there, the lab's live view drives it with the navigation vocabulary (`navigate`, `back`, `reload`), `done` ends the run; the session is a lab session like any other, the recording lands in the job history. The address must be absolute http(s) (400 otherwise); the agent refuses a private host at run time |
-| `GET /lab/providers/{id}/remote-consents`, `DELETE …/remote-consents/{consentId}` | what the operator's account at the party holds (§15): every consent with `origin`, `status`, `reference`, `accountCount` — foreign environments' and legacy ones included — and a revoke, logged with the operator |
+| `GET /lab/providers/{id}/remote-consents`, `DELETE …/remote-consents/{consentId}` | what the operator's account at the party holds (#414): every consent with `origin`, `status`, `reference`, `accountCount` — foreign environments' and legacy ones included — and a revoke, logged with the operator |
 | `GET /lab/users/{sub}/sessions` | one user's bindings — the same rows `GET /admin/users/{sub}/diagnosis` now carries as `connectorSessions` |
 
 In production the machine token the relay mints must carry the control

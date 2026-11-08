@@ -9,7 +9,7 @@ namespace Munni.Api.Connectors;
 /// characters of base64url(HMAC-SHA256(salt, user id)). Opaque on purpose —
 /// the control plane never learns a user id, an e-mail or a name, and the
 /// same user is a different subject in every environment because every
-/// environment has its own salt (docs/connector-integration-plan.md §6).
+/// environment has its own salt (docs/connectors/relay.md, "What the relay guarantees").
 /// </summary>
 public sealed class SubjectMinter
 {

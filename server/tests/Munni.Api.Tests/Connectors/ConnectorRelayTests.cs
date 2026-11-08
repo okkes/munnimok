@@ -10,8 +10,8 @@ using Munni.Api.Accounts;
 namespace Munni.Api.Tests.Connectors;
 
 /// <summary>
-/// The relay against the real control plane (docs/connector-integration-plan.md
-/// §5, M1): subjects minted here, sessions bound to their user, bundles passing
+/// The relay against the real control plane (docs/connectors/relay.md, #367
+/// M1): subjects minted here, sessions bound to their user, bundles passing
 /// through and never resting, the catalogue in the app's casing, the sync
 /// landing records in the feeds. The mock providers are the ones the
 /// shipped catalogue carries.

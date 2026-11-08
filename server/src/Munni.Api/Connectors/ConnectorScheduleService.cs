@@ -6,7 +6,7 @@ using Munni.Api.Data;
 namespace Munni.Api.Connectors;
 
 /// <summary>
-/// The relay's own scheduler (docs/connector-integration-plan.md §5.5, §15):
+/// The relay's own scheduler (docs/connectors/relay.md, "Scheduled syncs"):
 /// syncs every session whose bundle the relay keeps — a household agent's
 /// pointer, an open-banking consent — on the provider's own interval, the
 /// way <c>GcFetchService</c> drove open banking. Hourly; each session is

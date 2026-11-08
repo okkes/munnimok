@@ -55,7 +55,7 @@ A provider's manifest declares its runtime:
 | --- | --- | --- |
 | `client` | in a **sealed bundle** the consumer holds (AES-GCM under the control plane's key ring, `sb_v1.<kid>.…`); the control plane keeps nothing | every T1–T3 provider today |
 | `agent` | in the household agent's browser profile on the user's own disk; the bundle names the agent and the profile | `asn-persistent` |
-| `server` | in a vault on the control plane, for unattended scheduled sync | none yet — slice M4 of the plan |
+| `server` | the session is the consent at the aggregator (its id and the accounts it reaches, never a credential), in the bundle the munni relay keeps for its scheduled syncs ([relay.md](relay.md)) | `gocardless`, `enablebanking` |
 
 A **credential bundle** (`cb_v1.…`) is the same seal around the login
 inputs, minted on request so a device can re-connect without asking again;

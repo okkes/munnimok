@@ -6,9 +6,10 @@ and an operator console (`apps/admin`). Everything works offline; the
 server only ferries encrypted-or-envelope data between your devices.
 
 - **Architecture deep-dive**: [docs/architecture.md](docs/architecture.md)
-- **Deploying**: [deploy/README.md](deploy/README.md)
-- **Design decisions**: the `docs/*-design.md` files record every
-  approved feature design.
+- **Deploying**: [infra/README.md](infra/README.md) — platforms,
+  environments and the setup wizard
+- **Design decisions**: in the GitHub ticket that asked for each
+  feature; `docs/` keeps the living documentation only.
 
 ## How "use my store logins on my other devices" works (in human terms)
 

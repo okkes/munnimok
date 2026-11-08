@@ -43,8 +43,8 @@ public sealed record ConnectorIngestResult(
 /// <summary>
 /// Turns the connector's normalised records into sync ops — the server
 /// acting as one more device, as the api's own open-banking ingest did
-/// before the banks became parties (docs/connector-integration-plan.md
-/// §5.6, §15). Receipts land in
+/// before the banks became parties (docs/connectors/relay.md, "Ingest" and
+/// "Bank rows"). Receipts land in
 /// the owner's store feed, bank accounts and their transactions in the
 /// account's IBAN feed (a card or wallet without one in a personal feed),
 /// registry positions as liability accounts in a personal registry feed.

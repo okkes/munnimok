@@ -2,7 +2,7 @@ namespace Munni.Api.Connectors;
 
 /// <summary>
 /// <c>Connectors:*</c> — the one connector control plane of this environment
-/// (docs/connector-integration-plan.md §5). Absent <see cref="BaseUrl"/>
+/// (docs/connectors/relay.md, "Configuration"). Absent <see cref="BaseUrl"/>
 /// means this environment runs no connectors: the relay is not mapped and
 /// <c>/health</c> says so. Present, every other setting it needs is required
 /// and a missing one refuses to start — a control plane that is reachable

@@ -501,7 +501,7 @@ export function GlobalSettingsScreen() {
 
       <Sheet open={langSheetOpen} onOpenChange={setLangSheetOpen} title={t('lang.title')}>
         <div className="flex flex-col pt-1">
-          {/* native-benefits §3: no pinned language = track the device */}
+          {/* no pinned language = track the device */}
           <button
             data-testid="lang-option-device"
             onClick={() => {

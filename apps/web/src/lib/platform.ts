@@ -288,7 +288,7 @@ export async function getNativePushToken(): Promise<string | null> {
 }
 
 /**
- * Native biometric gate (native-benefits §1): the OS Face/Touch ID or
+ * Native biometric gate: the OS Face/Touch ID or
  * fingerprint prompt via the Capacitor plugin. WKWebView has no WebAuthn
  * platform authenticator, so the native shell uses this path while
  * web/PWA keeps WebAuthn (both behind the same lock.ts seam).

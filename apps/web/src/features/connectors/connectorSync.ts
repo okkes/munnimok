@@ -10,8 +10,8 @@ import { useSyncActivity } from './syncActivity';
 import type { ErrorEnvelope, IngestedCounts, JobView } from './types';
 
 /**
- * One sync pass for one connection (docs/connector-integration-plan.md
- * §10.3): the bundle goes to the relay, the relay resumes the session,
+ * One sync pass for one connection (docs/connectors/client.md, "Sync"):
+ * the bundle goes to the relay, the relay resumes the session,
  * fetches, ingests into the feeds and acknowledges; the rows then arrive
  * through normal sync and the matcher runs per included space. A fetch
  * that outran its window comes back as a job this follows to its end.

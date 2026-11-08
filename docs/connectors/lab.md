@@ -57,7 +57,7 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 | `GET /lab/status`, `GET /control/connectors/status` | the control plane's status: providers with their health and budget, agents online, the queue, plus `relay.openStreams` |
 | `GET /lab/providers`, `GET /lab/providers/{id}` | the catalogue with every manifest and its status beside it — what the Providers screen and the test bench read |
 | `POST /lab/providers/{id}/status` | the kill switch: `{ state: healthy\|degraded\|paused\|retired, reasonKey? }`; the operator and the reason go to the server log |
-| `GET /lab/providers/{id}/remote-consents`, `DELETE …/{consentId}` | what the operator's account at the party holds (§15), every consent with its `origin`; a revoke, logged with the operator |
+| `GET /lab/providers/{id}/remote-consents`, `DELETE …/{consentId}` | what the operator's account at the party holds (#414), every consent with its `origin`; a revoke, logged with the operator |
 | `GET /lab/agents`, `DELETE /lab/agents/{id}` | every agent whoever owns it (the fleet, the people's own machines, the hosted slots); revoke any |
 | `POST /lab/agents/enrollment` | a one-time enrollment code **under the lab subject** with the household compose line — the operator's own test machine, serving the lab's runs and nobody else's |
 | `GET /lab/private-agents`, `POST …/requests/{id}/approve`, `POST …/requests/{id}/deny`, `POST …/{agentId}/release` | hosted private agents (#420 A2), with who holds each slot (the relay maps the pseudonym to the person per call and stores it nowhere) |

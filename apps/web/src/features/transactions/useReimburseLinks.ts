@@ -39,8 +39,8 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
   const { t } = useLang();
   const nameOf = (id: string) => catName(cats.byId(id), t);
 
-  // settlement rewrites category attribution (redesign, docs/
-  // reimbursement-redesign.md): slices keep the GROSS truth and the
+  // settlement rewrites category attribution (the reimbursement
+  // redesign): slices keep the GROSS truth and the
   // settled value moves into an explicit `reimbursed` slice on BOTH
   // sides. #228 (user): a container's settle lives on the PART each
   // link names — inside the part's own `cats` — never as a pseudo-part

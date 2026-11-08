@@ -10,7 +10,7 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>Start a session with a party (docs/connector-integration-plan.md §5.2).</summary>
+/// <summary>Start a session with a party (docs/connectors/relay.md, "Routes").</summary>
 /// <param name="ConnectionId">The client's stable id for this connection — the same on a re-login, so what the connection pulled stays keyed by it.</param>
 /// <param name="Inputs">What the user typed into the manifest's form; sealed by the connector, never stored here.</param>
 /// <param name="CredentialBundle">A credential bundle the connector sealed earlier, offered instead of asking again.</param>

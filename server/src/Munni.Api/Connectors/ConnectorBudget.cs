@@ -5,7 +5,7 @@ namespace Munni.Api.Connectors;
 /// <summary>
 /// The per-user budget on the two calls that reach a provider — logins and
 /// syncs — on top of the connector's own per-provider interval
-/// (docs/connector-integration-plan.md §5.2). A sliding hour per user per
+/// (docs/connectors/relay.md, "Configuration"). A sliding hour per user per
 /// kind, in memory: the API is a single instance, and a budget that did
 /// not survive a restart is a budget that resets on deploy, which is fine.
 /// </summary>

@@ -4,8 +4,7 @@ The web app (and the native shells around it) never talks to the
 connector control plane. It talks to the munni API's relay
 ([relay.md](relay.md)) and renders what the catalogue declares. This page
 is written from `apps/web/src/features/connectors` and
-`apps/web/src/application/connections.ts` (slice M3 of
-docs/connector-integration-plan.md §10; §14 records where it departs).
+`apps/web/src/application/connections.ts`.
 
 ## What a connection is, on a device
 
@@ -190,7 +189,7 @@ fleet takes the oldest first), `opening_provider` says a fresh browser is
 starting and may take half a minute, and every waiting state shows the
 seconds passing, so a spinner is never a spinner.
 
-## Your own computer (`AgentsScreen`, §10.4)
+## Your own computer (`AgentsScreen`)
 
 Settings → Connections → *Your own computer*, route
 `/connections/agents`. Some parties will only ever talk to a browser on
@@ -234,7 +233,7 @@ hosted agent) returns the slot after the warning that it is wiped for the
 next person. The admin portal hands slots out and takes them back
 (relay.md, "Operator").
 
-## Scheduled syncs (§5.5)
+## Scheduled syncs
 
 For a household-agent party the bundle names an agent and a profile and
 holds no secret, so the relay keeps it (see relay.md, "Scheduled

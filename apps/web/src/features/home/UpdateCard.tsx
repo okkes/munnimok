@@ -19,7 +19,7 @@ const writeState = (patch: Partial<UpdateCheckState>) =>
   localStorage.setItem(LS_KEY, JSON.stringify({ ...readState(), ...patch }));
 
 /**
- * Store-aware update nudge for the native shells (native-benefits §4):
+ * Store-aware update nudge for the native shells:
  * roughly once a day the shell compares its own build number against
  * the hosted web's version.json — both are stamped with the git commit
  * count of their release, so "hosted is newer" means an update sits on

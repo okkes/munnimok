@@ -24,7 +24,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   // own fallback (palette colors in charts, accents in drills)
   {"id":"general","nameKey":"cat.general","icon":"help-circle-outline","color":"#8A94A6","isParent":true,"hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
   {"id":"uncategorized","parentId":"general","nameKey":"cat.uncategorized","icon":"help-circle-outline","color":"#8A94A6","hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
-  // reimbursement redesign (2026-07-24, docs/reimbursement-redesign.md):
+  // reimbursement redesign (2026-07-24):
   // a LOCKED system main — no user subs, no edits. `reimburse` keeps its
   // historical id (old rows keep resolving) but now reads as "received
   // reimbursement"; `expenseReimburse` is the expected side; `reimbursed`
@@ -200,8 +200,8 @@ export const childrenOf = (parentId: string): BuiltinCategory[] =>
 
 export const UNCATEGORIZED_ID = 'uncategorized';
 
-// the locked reimbursement tree (docs/reimbursement-redesign.md): the
-// user may PICK these but never edit them or add siblings
+// the locked reimbursement tree: the user may PICK these but never edit
+// them or add siblings
 export const REIMBURSEMENT_MAIN_ID = 'reimbursement';
 
 /**

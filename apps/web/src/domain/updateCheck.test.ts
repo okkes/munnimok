@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { nativeStoreUrl, shouldCheckForUpdate, updateAvailable } from './updateCheck';
 
-describe('update check (native-benefits §4)', () => {
+describe('update check', () => {
   it('checks roughly daily', () => {
     const now = Date.now();
     expect(shouldCheckForUpdate({}, now)).toBe(true);

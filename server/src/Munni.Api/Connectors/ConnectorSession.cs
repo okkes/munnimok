@@ -2,7 +2,7 @@ namespace Munni.Api.Connectors;
 
 /// <summary>
 /// The binding between a connector session and the munni user it was
-/// started for (docs/connector-integration-plan.md §5.3). Ids and state,
+/// started for (docs/connectors/relay.md, "What the relay guarantees"). Ids and state,
 /// never a bundle, never inputs, never data: it exists so the relay can
 /// answer "whose session is this" and so an operator's diagnosis can list
 /// a user's connections. One row per connection: a re-login of the same

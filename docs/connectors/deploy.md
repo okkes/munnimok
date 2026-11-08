@@ -95,7 +95,7 @@ ConnectorAgent__ControlPlaneBaseUrl=http://localhost:5000/ ConnectorAgent__Enrol
   dotnet run --project server/src/connectors/Connector.Agent
 ```
 
-## What munni's platform renders (slice M2 of the plan)
+## What munni's platform renders
 
 `infra/modules/render.mjs`, from the committed config (`infra/platforms/`,
 see its README): an environment with `features.connectors` gets
@@ -114,7 +114,7 @@ see its README): an environment with `features.connectors` gets
   LAN mode) — the address household agents dial from outside. The control
   plane is reachable, and answers nobody without the machine token or an
   agent's own token; the health route alone is anonymous and carries no
-  data. This is the one departure from the plan's "publishes no port":
+  data. It is published on purpose, not hidden on the private network:
   household agents have to reach it from home, and a token-protected host is
   the honest way to do that;
 - **the api's relay settings** `Connectors:*` — the in-network base url,
