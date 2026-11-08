@@ -104,7 +104,11 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, 'src'),
       },
     },
-    base: './',
+    // absolute: a real-path landing two levels deep (/splits/join/<token>)
+    // must still load the bundle from the root — a relative base sent the
+    // browser to /splits/join/assets/…, which nginx answers with the shell
+    // (a blank page). The manifest keeps its own './' start_url/scope/id.
+    base: '/',
     build: {
       outDir: 'dist',
       assetsInlineLimit: 0,
