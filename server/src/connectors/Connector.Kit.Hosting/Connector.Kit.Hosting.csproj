@@ -50,7 +50,7 @@
       content, so the advisory is real even in a test-only code path.
       Belongs in Directory.Packages.props once that file can be edited.
     -->
-    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" VersionOverride="2.1.12" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" VersionOverride="2.1.14" />
   </ItemGroup>
 
   <ItemGroup>
