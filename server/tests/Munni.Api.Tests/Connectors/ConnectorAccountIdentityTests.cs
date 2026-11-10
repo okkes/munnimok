@@ -87,6 +87,50 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
         Assert.Equal(before.AccountRef, factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_bf_b")).AccountRef);
     }
 
+    /// <summary>
+    /// A consent that ended before identities were read never states its wallet's. Signing the same
+    /// connection in again continues the one wallet it reached; anything less certain files a new account.
+    /// </summary>
+    [Fact]
+    public async Task A_connection_signed_in_again_continues_the_one_wallet_it_reached_before_identities_were_read()
+    {
+        var userId = await UserAsync("identity-relogin");
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        ConnectorAccountRef Ref(string id) => factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == id));
+
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-relogin", "account", [Wallet("acc_rl_old", "uid-old", null)], ct);
+        var old = Ref("acc_rl_old");
+
+        // the same connection, a new consent: a new id per session, and now the identity
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-relogin", "account", [Wallet("acc_rl_new", "uid-new", "hash-rl")], ct);
+        var fresh = Ref("acc_rl_new");
+        Assert.Equal(old.AccountRef, fresh.AccountRef);
+        Assert.Equal(old.FeedSpaceId, fresh.FeedSpaceId);
+        Assert.Equal(old.AccountEntityId, fresh.AccountEntityId);
+        // the wallet is named now: a second wallet of a later consent does not land on it as well
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-relogin", "account", [Wallet("acc_rl_second", "uid-second", "hash-second")], ct);
+        Assert.Equal($"CONN:{Consent}:hash-second", Ref("acc_rl_second").AccountRef);
+
+        // another connection's wallet proves nothing about this one
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-rl-other", "account", [Wallet("acc_rl_other", "uid-other", null)], ct);
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-rl-third", "account", [Wallet("acc_rl_third", "uid-third", "hash-third")], ct);
+        Assert.Equal($"CONN:{Consent}:hash-third", Ref("acc_rl_third").AccountRef);
+
+        // two wallets reached before cannot be told apart
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-rl-two", "account", [Wallet("acc_rl_two_a", "uid-two-a", null), Wallet("acc_rl_two_b", "uid-two-b", null)], ct);
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-rl-two", "account", [Wallet("acc_rl_two_new", "uid-two-new", "hash-two")], ct);
+        Assert.Equal($"CONN:{Consent}:hash-two", Ref("acc_rl_two_new").AccountRef);
+
+        // nor can two wallets of the new consent
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-rl-pair", "account", [Wallet("acc_rl_pair_old", "uid-pair-old", null)], ct);
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-rl-pair", "account",
+            [Wallet("acc_rl_pair_a", "uid-pair-a", "hash-pair-a"), Wallet("acc_rl_pair_b", "uid-pair-b", "hash-pair-b")], ct);
+        Assert.Equal($"CONN:{Consent}:hash-pair-a", Ref("acc_rl_pair_a").AccountRef);
+        Assert.Equal($"CONN:{Consent}:hash-pair-b", Ref("acc_rl_pair_b").AccountRef);
+    }
+
     [Fact]
     public async Task A_new_wallet_with_an_identity_is_filed_under_it()
     {
@@ -144,5 +188,37 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
         var all = await offered.GetFromJsonAsync<JsonObject>("/connectors/providers");
         var mock = all!["providers"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "mock-store-simple")!;
         Assert.True(mock["fixture"]!.GetValue<bool>());
+    }
+
+    /// <summary>
+    /// The app keeps the catalogue with its ETag and revalidates it: a stored list that still holds the
+    /// stand-in parties must not be confirmed by an environment that leaves them out.
+    /// </summary>
+    [Fact]
+    public async Task A_stored_catalogue_with_the_stand_in_parties_is_not_confirmed_where_they_are_left_out()
+    {
+        using var offered = factory.ClientFor("etag-tester");
+        using var withFixtures = await offered.GetAsync("/connectors/providers");
+        var held = withFixtures.Headers.ETag!.ToString();
+
+        using var plain = factory.WithWebHostBuilder(builder => builder.UseSetting("Connectors:OfferFixtures", "false"));
+        using var client = plain.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", "etag-shopper");
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "device-etag");
+
+        using var revalidate = new HttpRequestMessage(HttpMethod.Get, "/connectors/providers");
+        revalidate.Headers.TryAddWithoutValidation("If-None-Match", held);
+        using var answer = await client.SendAsync(revalidate);
+        Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
+        var catalogue = await answer.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.DoesNotContain(catalogue!["providers"]!.AsArray(), p => p!["id"]!.GetValue<string>().StartsWith("mock-", StringComparison.Ordinal));
+
+        // and what it served is confirmed under its own tag
+        var own = answer.Headers.ETag!.ToString();
+        Assert.NotEqual(held, own);
+        using var again = new HttpRequestMessage(HttpMethod.Get, "/connectors/providers");
+        again.Headers.TryAddWithoutValidation("If-None-Match", own);
+        using var confirmed = await client.SendAsync(again);
+        Assert.Equal(HttpStatusCode.NotModified, confirmed.StatusCode);
     }
 }

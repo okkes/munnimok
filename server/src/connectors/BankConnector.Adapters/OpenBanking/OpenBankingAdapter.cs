@@ -46,8 +46,8 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
 
     protected abstract Task<IReadOnlyList<Institution>> InstitutionsAsync(HttpClient http, string country, CancellationToken ct);
 
-    /// <summary>Asks the aggregator for a consent of <paramref name="consentDays"/>; returns where to send the person, what to complete with, and the days the consent was asked for.</summary>
-    protected abstract Task<(string Url, string PendingId, int ConsentDays)> StartConsentAsync(
+    /// <summary>Asks the aggregator for a consent of <paramref name="consentDays"/>; returns where to send the person, what to complete with, and when the consent that was asked for ends.</summary>
+    protected abstract Task<(string Url, string PendingId, DateTimeOffset ExpiresAt)> StartConsentAsync(
         HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct);
 
     /// <summary>The bank came back: the consent's id at the aggregator and the accounts it reaches.</summary>
@@ -95,7 +95,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         var institution = await InstitutionAsync(ctx.Http, country, institutionId, ct).ConfigureAwait(false);
 
         var reference = Ids.New(ReferencePrefix);
-        var (url, pendingId, consentDays) = await StartConsentAsync(ctx.Http, institution, returnUrl, reference, ConsentDaysFor(institution), ct).ConfigureAwait(false);
+        var (url, pendingId, expiresAt) = await StartConsentAsync(ctx.Http, institution, returnUrl, reference, ConsentDaysFor(institution), ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.AwaitingHuman);
         var answer = await ctx.AskAsync(
@@ -134,7 +134,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
                 Type = AccountTypes.Wire(a.Iban is null ? AccountType.Unknown : AccountType.Current),
                 DisplayName = a.Name ?? a.Iban ?? institution.Name,
             })],
-            ExpiresAt = Time.GetUtcNow().AddDays(consentDays),
+            ExpiresAt = expiresAt,
         };
     }
 
@@ -147,7 +147,8 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         var consent = ConsentMaterial.From(ctx.Material, PartyId);
         var today = DateOnly.FromDateTime(Time.GetUtcNow().UtcDateTime);
         ctx.Progress(JobStep.OpeningProvider);
-        var (accounts, refreshed) = await AccountsAsync(ctx, consent, today, ct).ConfigureAwait(false);
+        // an older pass is after transactions only: the party budgets balance reads per account per day, and the regular pass needs them
+        var (accounts, refreshed) = await AccountsAsync(ctx, consent, today, balances: request.Until is null, ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.Parsing);
         var selected = BankAccountFilter.Select(accounts, request);
@@ -178,9 +179,9 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         }
     }
 
-    /// <summary>Details once per account for the life of the consent (handed back as refreshed material when learned); balances every time the party's budget allows.</summary>
+    /// <summary>Details once per account for the life of the consent (handed back as refreshed material when learned); balances when asked for and the party's budget allows.</summary>
     private async Task<(List<Account> Accounts, SessionMaterial? Refreshed)> AccountsAsync(
-        IJobContext ctx, ConsentMaterial consent, DateOnly today, CancellationToken ct)
+        IJobContext ctx, ConsentMaterial consent, DateOnly today, bool balances, CancellationToken ct)
     {
         var learned = false;
         var detailed = new List<ConsentAccount>(consent.Accounts.Count);
@@ -191,8 +192,8 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
             var account = stale ? await DetailedAsync(ctx, known, ct).ConfigureAwait(false) : known;
             learned |= account != known;
             detailed.Add(account);
-            accounts.Add(BankRecords.NewAccount(ctx.SessionId,
-                OpenBankingRecords.ToAccount(account, consent, await BalanceAsync(ctx, account, today, ct).ConfigureAwait(false))));
+            var balance = balances ? await BalanceAsync(ctx, account, today, ct).ConfigureAwait(false) : null;
+            accounts.Add(BankRecords.NewAccount(ctx.SessionId, OpenBankingRecords.ToAccount(account, consent, balance)));
         }
         return (accounts, learned ? (consent with { Accounts = detailed }).ToMaterial() : null);
     }

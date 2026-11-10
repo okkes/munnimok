@@ -212,9 +212,8 @@ public sealed class MockBankLedgerTests
     }
 
     /// <summary>
-    /// #460: a capped mock pass walks the way a live party does - newest first -
-    /// so what it leaves behind is older history, which a pass with until asks
-    /// for; each account keeps a contiguous run of its newest rows and its chain.
+    /// A capped mock pass cuts each account by itself, as ING's share of a page and Enable Banking's
+    /// page limit do: the accounts stop on different days, which is what an older pass has to cope with.
     /// </summary>
     [Fact]
     public void A_capped_pass_keeps_each_accounts_newest_rows_and_their_chain()
@@ -225,8 +224,10 @@ public sealed class MockBankLedgerTests
 
         Assert.Equal(10, page.Count);
         Assert.False(complete);
-        var cut = page.Min(t => t.BookedAt);
-        Assert.All(rows.Where(t => t.BookedAt > cut), t => Assert.Contains(t, page));
+        var cuts = page.GroupBy(t => t.AccountId).ToDictionary(g => g.Key, g => g.Min(t => t.BookedAt));
+        Assert.Equal(3, cuts.Count);
+        Assert.All(rows.Where(t => t.BookedAt > cuts[t.AccountId]), t => Assert.Contains(t, page));
+        Assert.True(cuts.Values.Distinct().Count() > 1, "every account was cut on the same day");
         BankEmission.VerifyPerAccount(ProviderId, page);
 
         var (whole, everything) = MockBankAdapter.Newest(rows, rows.Count);

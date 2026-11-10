@@ -112,8 +112,8 @@ public sealed class ConnectorSyncService(
     }
 
     /// <summary>
-    /// The oldest day a partial pass brought (#460): where the next backfill
-    /// pass asks up to. Absent when the pass was whole or brought nothing dated.
+    /// The day down to which a partial pass is whole: where the next older pass asks up to.
+    /// Absent when the pass was whole or brought nothing older.
     /// </summary>
     private static void StampOldest(JsonObject body, SyncRun run)
     {
@@ -153,7 +153,7 @@ public sealed class ConnectorSyncService(
         if (page[CompleteField]?.GetValue<bool>() == false)
         {
             run.Partial = true;
-            run.NoteOldest(OldestOf(page["data"] as JsonArray));
+            run.NoteOldest(OldestOf(page["data"] as JsonArray, Day(run.Request.Until)));
             return null;
         }
 
@@ -162,7 +162,8 @@ public sealed class ConnectorSyncService(
         // neither does a backfill pass, whose window ends long before today's pending rows
         if (shape == "transaction" && run.Request.Until is null)
         {
-            await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, run.Pending, ct);
+            var carried = ConnectorIngest.AccountIdsOf(page["data"] as JsonArray);
+            await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, carried, run.Pending, ct);
         }
         return null;
     }
@@ -286,7 +287,7 @@ public sealed class ConnectorSyncService(
             Partial = job[CompleteField]?.GetValue<bool>() == false,
             Rotated = rotated,
         };
-        if (run.Partial) run.NoteOldest(OldestOf(job["data"] as JsonArray));
+        if (run.Partial) run.NoteOldest(OldestOf(job["data"] as JsonArray, Day(call.Request.Until)));
         if (landed is not null) run.Attached.UnionWith(landed.Attached);
 
         var pending = await WalkOnAsync(run, row, job.Text(ResourceField), ct);
@@ -295,11 +296,9 @@ public sealed class ConnectorSyncService(
 
     /// <summary>
     /// The job's page landed, and the pending mirror settled when the job was a
-    /// complete pass over the transactions (§15) — an empty one included: the
-    /// bank reported nothing pending. (#508: this used to wait for a page
-    /// without a cursor, but every page that carries rows carries its ack
-    /// cursor, so a pass that outran the window never settled, and the rows
-    /// the bank booked meanwhile stayed beside their booked twins.)
+    /// complete pass over the transactions (§15). A page that still carries its
+    /// accounts is the party's word, also when it holds no reserved row; a page
+    /// that is gone - collected before, swept, taken over by a later job - is not.
     /// </summary>
     private async Task<ConnectorIngestResult?> LandJobAsync(JobPage page, bool backfill, CancellationToken ct)
     {
@@ -307,7 +306,8 @@ public sealed class ConnectorSyncService(
         // a backfill pass (#460) reads older history only: today's pending rows are outside its window
         if (!backfill && ShapeOf(page.Manifest, page.Job) == "transaction" && page.Job[CompleteField]?.GetValue<bool>() != false)
         {
-            await ingest.SettlePendingAsync(page.UserId, page.Provider, page.ConnectionId, landed?.PendingRows ?? [], ct);
+            var carried = ConnectorIngest.AccountIdsOf(page.Job["data"] as JsonArray);
+            await ingest.SettlePendingAsync(page.UserId, page.Provider, page.ConnectionId, carried, landed?.PendingRows ?? [], ct);
         }
         return landed;
     }
@@ -499,19 +499,33 @@ public sealed class ConnectorSyncService(
     }
 
     /// <summary>
-    /// The oldest day a page's records carry: a transaction's booking day, a
-    /// receipt's purchase day as its own clock dates it (the day the adapters'
-    /// window reads). Null when none is dated.
+    /// The day down to which a partial page is whole. A party caps each account by itself, so the
+    /// accounts stop on different days: the frontier is the NEWEST of their oldest days.
     /// </summary>
-    internal static DateOnly? OldestOf(JsonArray? records)
+    internal static DateOnly? OldestOf(JsonArray? records, DateOnly? until = null)
     {
-        DateOnly? oldest = null;
+        var perAccount = new Dictionary<string, DateOnly>(StringComparer.Ordinal);
         foreach (var record in records?.OfType<JsonObject>() ?? [])
         {
-            if (DayOf(record) is { } day && (oldest is null || day < oldest)) oldest = day;
+            // a reservation is kept whatever its day: it says nothing about where the walk stopped
+            if (record.Text("external_id")?.StartsWith(ConnectorIngest.PendingPrefix, StringComparison.Ordinal) == true) continue;
+            if (DayOf(record) is not { } day) continue;
+            var account = record.Text("account_id") ?? string.Empty;
+            if (!perAccount.TryGetValue(account, out var known) || day < known) perAccount[account] = day;
         }
-        return oldest;
+
+        DateOnly? frontier = null;
+        foreach (var day in perAccount.Values)
+        {
+            // an account that brought nothing below the day asked has nothing older left to hold the frontier up
+            if (until is { } asked && day >= asked) continue;
+            if (frontier is null || day > frontier) frontier = day;
+        }
+        return frontier;
     }
+
+    private static DateOnly? Day(string? text) =>
+        DateOnly.TryParseExact(text, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
 
     private static DateOnly? DayOf(JsonObject record)
     {
@@ -585,12 +599,13 @@ public sealed class ConnectorSyncService(
         /// <summary>A resource's pass came back incomplete: the party holds more than one fetch brings.</summary>
         public bool Partial { get; set; }
 
-        /// <summary>The oldest day an incomplete pass brought: the next backfill pass asks up to it (#460).</summary>
+        /// <summary>The day down to which an incomplete pass is whole: the next older pass asks up to it.</summary>
         public DateOnly? Oldest { get; private set; }
 
+        // several incomplete resources are all whole only above the newest of their frontiers
         public void NoteOldest(DateOnly? day)
         {
-            if (day is { } d && (Oldest is null || d < Oldest)) Oldest = d;
+            if (day is { } d && (Oldest is null || d > Oldest)) Oldest = d;
         }
 
         /// <summary>What the fetches declare themselves as: a person's call, or the scheduler's.</summary>

@@ -160,7 +160,8 @@ public static partial class ConnectorRelayEndpoints
     /// <summary>The catalogue, in this API's casing, revalidated with the connector's own ETag; the stand-in parties only where this environment offers them.</summary>
     private static async Task<IResult> Catalogue(HttpContext http, ConnectorRelay relay, ConnectorCatalogue catalogue, ConnectorOptions options, CancellationToken ct)
     {
-        var (etag, document) = await catalogue.GetAsync(relay.Client, ct);
+        var (upstream, document) = await catalogue.GetAsync(relay.Client, ct);
+        var etag = CatalogueTag(upstream, options.OfferFixtures);
         if (etag is not null)
         {
             if (string.Equals(http.Request.Headers.IfNoneMatch.ToString(), etag, StringComparison.Ordinal))
@@ -176,6 +177,10 @@ public static partial class ConnectorRelayEndpoints
         }
         return Results.Json(view);
     }
+
+    /// <summary>The connector's ETag names its own document; what is served here also depends on whether the stand-in parties are left out.</summary>
+    internal static string? CatalogueTag(string? upstream, bool offerFixtures) =>
+        upstream is null || offerFixtures ? upstream : upstream.TrimEnd('"') + ";people\"";
 
     /// <summary>A stand-in party (#526): the manifest says so itself.</summary>
     internal static bool IsFixture(JsonNode? manifest) =>

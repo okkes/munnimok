@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -81,7 +82,12 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
 
     private sealed record AgreementCreated([property: JsonPropertyName("id")] string Id);
 
-    private sealed record RequisitionList([property: JsonPropertyName("results")] List<GcRequisition> Results);
+    private const int RequisitionPageSize = 100;
+    private const int MaxRequisitionPages = 50;
+
+    private sealed record RequisitionList(
+        [property: JsonPropertyName("results")] List<GcRequisition>? Results,
+        [property: JsonPropertyName("next")] string? Next);
 
     private sealed record DetailsEnvelope([property: JsonPropertyName("account")] GcAccountDetails Account);
 
@@ -125,8 +131,19 @@ internal sealed class GoCardlessClient(GoCardlessOptions options, TimeProvider t
     public Task<GcRequisition> RequisitionAsync(HttpClient http, string id, CancellationToken ct) =>
         GetAsync<GcRequisition>(http, $"requisitions/{Uri.EscapeDataString(id)}/", "requisition", ct);
 
-    public async Task<IReadOnlyList<GcRequisition>> ListRequisitionsAsync(HttpClient http, CancellationToken ct) =>
-        (await GetAsync<RequisitionList>(http, "requisitions/?limit=100", "requisitions", ct).ConfigureAwait(false)).Results;
+    // the inventory exists to find leftovers: a first page alone would hide the rest
+    public async Task<IReadOnlyList<GcRequisition>> ListRequisitionsAsync(HttpClient http, CancellationToken ct)
+    {
+        var all = new List<GcRequisition>();
+        for (var page = 0; page < MaxRequisitionPages; page++)
+        {
+            var path = string.Create(CultureInfo.InvariantCulture, $"requisitions/?limit={RequisitionPageSize}&offset={page * RequisitionPageSize}");
+            var list = await GetAsync<RequisitionList>(http, path, "requisitions", ct).ConfigureAwait(false);
+            all.AddRange(list.Results ?? []);
+            if (list.Next is null) break;
+        }
+        return all;
+    }
 
     public async Task DeleteRequisitionAsync(HttpClient http, string id, CancellationToken ct)
     {

@@ -378,6 +378,38 @@ public sealed class GoCardlessAdapterTests
     }
 
     [Fact]
+    public async Task The_inventory_holds_every_consent_the_aggregator_lists_not_only_its_first_page()
+    {
+        static HttpResponseMessage Page(int from, int count, string? next) => Stub.Json(JsonSerializer.Serialize(new
+        {
+            next,
+            results = Enumerable.Range(from, count).Select(i => new
+            {
+                id = $"req{i}",
+                status = "EX",
+                institution_id = "ING_INGBNL2A",
+                created = "2026-05-01T10:00:00Z",
+                reference = $"r{i}",
+                accounts = Array.Empty<string>(),
+                redirect = "https://app.test/gc-callback",
+            }),
+        }));
+        var wire = Wire(req =>
+        {
+            if (req.Method != HttpMethod.Get || !req.Path.EndsWith("/requisitions/", StringComparison.Ordinal)) return null;
+            return req.Uri.Query.Contains("offset=100", StringComparison.Ordinal)
+                ? Page(100, 3, null)
+                : Page(0, 100, "https://gc.test/api/v2/requisitions/?limit=100&offset=100");
+        });
+        using var http = new HttpClient(wire);
+
+        var consents = await Adapter().ListRemoteAsync(http, CancellationToken.None);
+
+        Assert.Equal(103, consents.Count);
+        Assert.Equal("req102", consents[^1].Id);
+    }
+
+    [Fact]
     public void The_party_exists_only_when_the_operator_holds_an_account_there()
     {
         var none = BankAdapters.Real(new BankAdapterOptions()).Select(a => a.Describe().Id);

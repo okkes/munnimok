@@ -110,27 +110,25 @@ public abstract class MockBankAdapter : IProviderAdapter
     }
 
     /// <summary>
-    /// The rows a capped pass keeps, taken the way a live party walks: newest
-    /// first, stopping at the cap. What a partial pass leaves behind is then
-    /// OLDER history - the part a backfill pass asks for with <c>until</c>
-    /// (#460) - and every account keeps a contiguous run of its own newest
-    /// rows, so its balance chain still verifies. The emitted order stays the
-    /// ledger's own, oldest first per account.
+    /// The cap is the page's budget, shared out per account the way the live parties do it: each account
+    /// keeps its own newest rows, so the accounts of one partial page stop on different days.
     /// </summary>
     internal static (IReadOnlyList<Transaction> Page, bool Complete) Newest(IReadOnlyList<Transaction> ordered, int cap)
     {
         ArgumentNullException.ThrowIfNull(ordered);
         if (ordered.Count <= cap) return (ordered, true);
 
-        var kept = ordered
-            .Select((tx, index) => (tx.BookedAt, Index: index))
-            .OrderByDescending(r => r.BookedAt)
-            .ThenByDescending(r => r.Index)
-            .Take(cap)
-            .Select(r => r.Index)
-            .ToHashSet();
+        var accounts = ordered.GroupBy(t => t.AccountId, StringComparer.Ordinal).ToList();
+        var page = new List<Transaction>(cap);
+        for (var i = 0; i < accounts.Count; i++)
+        {
+            // what is left, divided by the accounts still to come: a quiet account passes its share on
+            var budget = Math.Max(1, (cap - page.Count) / (accounts.Count - i));
+            var rows = accounts[i].ToList();
+            page.AddRange(rows.Skip(Math.Max(0, rows.Count - budget)));
+        }
 
-        return ([.. ordered.Where((_, index) => kept.Contains(index))], false);
+        return (page, page.Count == ordered.Count);
     }
 
     protected static string RequireInput(IJobContext ctx, string key)
