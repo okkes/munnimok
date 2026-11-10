@@ -33,7 +33,7 @@ import { adoptOfflineProfile } from './offlineProfiles';
  */
 export interface GoOfflineContext {
   store: StorageBackend;
-  engine: { purgeSpace: (spaceId: string) => Promise<void>; halt: () => Promise<void>; resume: () => void } | null;
+  engine: { catchUp: () => Promise<boolean>; purgeSpace: (spaceId: string) => Promise<void>; halt: () => Promise<void>; resume: () => void } | null;
   identity: Identity;
 }
 
@@ -49,8 +49,20 @@ export interface GoOfflineOptions {
   profilePicture?: string;
 }
 
+/** nothing was changed: the device could not fetch what the server holds, so the server's copy stays */
+export class NotCaughtUpError extends Error {
+  constructor() {
+    super('the last round before going offline did not reach its end');
+    this.name = 'NotCaughtUpError';
+  }
+}
+
 export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOptions): Promise<string | null> {
   if (ctx.identity.kind !== 'user') return null;
+
+  // the server's copy is deleted at the end: what another device wrote since
+  // this one's last round would go with it, so it is fetched first — or nothing happens
+  if (ctx.engine && !(await ctx.engine.catchUp())) throw new NotCaughtUpError();
 
   // no round may run across the conversion: it would pull a dropped space
   // back, or read the ended memberships as evictions and purge what stays

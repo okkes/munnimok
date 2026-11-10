@@ -544,6 +544,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'goOffline.confirm': 'Çevrimdışına geç',
   'goOffline.confirmTitle': 'Çevrimdışı profile dönüştürülsün mü?',
   'goOffline.failed': 'Çevrimdışına geçiş bu cihazda tamamlanamadı. Hiçbir şey silinmedi ve oturumun hâlâ açık — tekrar dene.',
+  'goOffline.behind': 'munni en son verilerini sunucudan alamadı. Çevrimdışına geçmek oradaki kopyayı siler, bu yüzden önce her şeyin bu cihazda olması gerekir. Hiçbir şey değişmedi — bağlantını kontrol edip tekrar dene.',
   'goOffline.confirmBody': 'Sunucu verilerin silinir ve üyelikler herkes için sona erer. Yerel verilerin yeni bir çevrimdışı profil altında bu cihazda kalır. Bu hesapla oturum açmış diğer cihazlar bir sonraki eşitlemede kendilerini siler.',
   'offline.keepTitle': 'Neler seninle kalır',
   'offline.keep1': 'Tam gizlilik: hesap yok, her şey bu cihazda kalır ve munni hiçbir şey göndermez — hata raporları bile',

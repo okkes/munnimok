@@ -544,6 +544,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'goOffline.confirm': 'Offline gaan',
   'goOffline.confirmTitle': 'Omzetten naar een offlineprofiel?',
   'goOffline.failed': 'Offline gaan kon op dit apparaat niet worden voltooid. Er is niets verwijderd en je bent nog ingelogd — probeer het opnieuw.',
+  'goOffline.behind': 'munni kon je nieuwste gegevens niet van de server ophalen. Offline gaan verwijdert de kopie daar, dus alles moet eerst op dit apparaat staan. Er is niets gewijzigd — controleer je verbinding en probeer het opnieuw.',
   'goOffline.confirmBody': 'Je servergegevens worden verwijderd en lidmaatschappen eindigen voor iedereen. Je lokale gegevens blijven op dit apparaat onder een nieuw offlineprofiel. Andere apparaten met dit account wissen zichzelf bij hun volgende synchronisatie.',
   'offline.keepTitle': 'Wat je behoudt',
   'offline.keep1': 'Volledige privacy: geen account, alles blijft op dit apparaat en munni verstuurt nooit iets — zelfs geen foutrapporten',

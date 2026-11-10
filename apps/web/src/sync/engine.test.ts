@@ -564,6 +564,47 @@ describe('SyncEngine', () => {
     expect(useEvicted.getState().evicted).toBeNull();
   });
 
+  it('catchUp is one whole round that begins now: a round already under way does not count, and one that cannot finish says no (#499)', async () => {
+    const owner = await sharedSpace();
+    let wb = 2_000_000;
+    const behind = device('behind', () => ++wb, server);
+    dbs.push(behind.db);
+    await behind.engine.syncAll();
+
+    // a round that has the server's answer already, and is held there
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const heads = server.heads.bind(server);
+    let held = false;
+    server.heads = async () => {
+      const answer = await heads();
+      if (!held) {
+        held = true;
+        await gate;
+      }
+      return answer;
+    };
+    const early = behind.engine.syncAll();
+    await vi.waitFor(() => expect(held).toBe(true));
+    await owner.repo.upsert('account', 's1', 'acc2', { name: 'Written meanwhile' });
+    await owner.engine.syncAll();
+
+    const caughtUp = behind.engine.catchUp();
+    open();
+    expect(await caughtUp).toBe(true);
+    await early;
+    expect((await behind.db.accounts.get('acc2'))?.name).toBe('Written meanwhile');
+
+    // a server that fails leaves the device unsure of what it misses
+    server.pullStatus = 500;
+    expect(await behind.engine.catchUp()).toBe(false);
+    server.pullStatus = null;
+    await behind.engine.halt();
+    expect(await behind.engine.catchUp()).toBe(false);
+  });
+
   it('#306: eviction (push AND pull 403) reports ONCE — stragglers never re-raise or re-push', async () => {
     let w = 1_000_000;
     const a = device('devA', () => ++w, server);

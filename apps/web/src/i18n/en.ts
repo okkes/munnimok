@@ -544,6 +544,7 @@ export const en = {
   'goOffline.confirm': 'Go offline',
   'goOffline.confirmTitle': 'Convert to an offline profile?',
   'goOffline.failed': 'Going offline could not be completed on this device. Nothing was deleted and you are still signed in — try again.',
+  'goOffline.behind': 'munni could not fetch your latest data from the server. Going offline deletes the copy there, so everything has to be on this device first. Nothing was changed — check your connection and try again.',
   'goOffline.confirmBody': 'Your server data is deleted and memberships end for everyone. Your local data stays on this device under a new offline profile. Other devices signed into this account will wipe themselves on their next sync.',
   'offline.keepTitle': 'What you keep',
   'offline.keep1': 'Total privacy: no account, everything stays on this device, and munni never sends anything anywhere — not even crash reports',

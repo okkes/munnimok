@@ -10,7 +10,7 @@ import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
-import { convertToOffline } from './goOffline';
+import { NotCaughtUpError, convertToOffline } from './goOffline';
 
 const KEEP_ROWS = [
   ['database-check-outline', 'goOffline.keep1'],
@@ -47,7 +47,8 @@ export function GoOfflineScreen() {
   const [dropIds, setDropIds] = useState<ReadonlySet<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // `behind`: the last fetch before the server's copy goes did not get through — a state of the connection, not a fault
+  const [failed, setFailed] = useState<'behind' | 'fault' | null>(null);
 
   const toggleDrop = (id: string, drop: boolean) => {
     const next = new Set(dropIds);
@@ -59,7 +60,7 @@ export function GoOfflineScreen() {
   const run = async () => {
     if (identity?.kind !== 'user' || busy) return;
     setBusy(true);
-    setFailed(false);
+    setFailed(null);
     let profileId: string | null = null;
     try {
       // the active space must survive the purge — move to a kept one first
@@ -77,8 +78,9 @@ export function GoOfflineScreen() {
       );
     } catch (err) {
       // the conversion only throws before its server exit: the person is still signed in, nothing was deleted
-      reportError('goOffline', err);
-      setFailed(true);
+      const behind = err instanceof NotCaughtUpError;
+      if (!behind) reportError('goOffline', err);
+      setFailed(behind ? 'behind' : 'fault');
     } finally {
       if (!profileId) setBusy(false);
     }
@@ -147,8 +149,8 @@ export function GoOfflineScreen() {
 
         <p className="mb-3 px-1 text-[12px] leading-snug text-ink-3">{t('goOffline.noWayBack')}</p>
         {failed && (
-          <p className="mb-3 px-1 text-[13px] leading-snug text-negative" data-testid="gooffline-failed" role="alert">
-            {t('goOffline.failed')}
+          <p className="mb-3 px-1 text-[13px] leading-snug text-negative" data-testid={failed === 'behind' ? 'gooffline-behind' : 'gooffline-failed'} role="alert">
+            {t(failed === 'behind' ? 'goOffline.behind' : 'goOffline.failed')}
           </p>
         )}
         <Button variant="danger" data-testid="gooffline-open-confirm" disabled={busy} onClick={() => setConfirmOpen(true)}>

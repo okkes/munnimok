@@ -246,6 +246,52 @@ describe('Go offline (user identity, scripted server)', () => {
     expect(listOfflineProfiles()).toHaveLength(1);
   }, 30_000);
 
+  it('fetches what the server holds before its copy is deleted: a space another device made is on this one first (#499)', async () => {
+    await seedStore();
+    const calls: string[] = [];
+    const server = [{ id: 's-user', name: 'Personal' }];
+    renderAppAsUser('/settings/go-offline', {
+      spaces: server,
+      api: { ...api(calls), 'GET /me/spaces': () => [...server.map((s) => s.id), 'sh-1', 'feed-1'] },
+    });
+    await screen.findByTestId('screen-go-offline');
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    // the device's own round is past asking the server what exists
+    await waitFor(async () => expect(await db.spaces.get('s-user')).toBeTruthy(), { timeout: 8000 });
+    server.push({ id: 's-late', name: 'Made on the phone' });
+
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+    await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
+    await waitFor(() => expect(calls).toContain('delete-me'));
+
+    expect((await db.spaces.get('s-late'))?.name).toBe('Made on the phone');
+    db.close();
+  }, 30_000);
+
+  it('a server that cannot be asked keeps the account as it is: nothing converted, nothing deleted, and the screen says why (#499)', async () => {
+    await seedStore();
+    const calls: string[] = [];
+    renderAppAsUser('/settings/go-offline', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        ...api(calls),
+        'GET /sync/heads': () => {
+          throw new TypeError('Failed to fetch');
+        },
+      },
+    });
+    await screen.findByTestId('screen-go-offline');
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+
+    expect(await screen.findByTestId('gooffline-behind', {}, { timeout: 8000 })).toBeTruthy();
+    expect(useSession.getState().identity?.kind).toBe('user');
+    expect(calls).not.toContain('delete-me');
+    expect(listOfflineProfiles()).toHaveLength(0);
+  }, 30_000);
+
   it('converts happily next to an existing offline profile (arc 8)', async () => {
     await seedStore();
     localStorage.setItem(
