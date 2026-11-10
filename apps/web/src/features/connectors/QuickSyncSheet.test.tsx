@@ -65,13 +65,54 @@ describe('the quick sync on Home (#548)', () => {
     expect(screen.queryByTestId('quick-sync-c-ah')).toBeNull();
   }, 15_000);
 
-  it('Home offers no quick sync to someone whose connections all sync by themselves', async () => {
-    await seed([{ id: 'c-ah', manifest: AH, device: {} }]);
-    renderAppAsUser('/', { api: catalogue(AH) });
-    await screen.findByTestId('screen-home', {}, { timeout: 5000 });
-    // the cached catalogue is read before the button would show
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(screen.queryByTestId('home-quick-sync')).toBeNull();
+  it('Home offers no quick sync to someone whose connections all sync by themselves — the cache that knows every party answers without a call', async () => {
+    await seed([
+      { id: 'c-ing', manifest: ING, device: {} },
+      { id: 'c-ah', manifest: AH, device: {} },
+    ]);
+    let asked = 0;
+    renderAppAsUser('/', {
+      api: {
+        'GET /connectors/providers': () => {
+          asked += 1;
+          return catalogueOf(ING, AH);
+        },
+      },
+    });
+    await screen.findByTestId('home-quick-sync', {}, { timeout: 5000 });
+    // the button's query is live now: it must leave with the last connection synced by hand
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { storeFeedId } = await import('@/domain/feedIds');
+    const { USER_TEST_SUB } = await import('@/test/harness');
+    const db = new MunniDB(USER_TEST_DB);
+    await new Repo(new DexieBackend(db), new HlcClock('qs2'), { trackOutbox: false }).remove('storeConn', storeFeedId(USER_TEST_SUB), 'c-ing');
+    await waitFor(() => expect(screen.queryByTestId('home-quick-sync')).toBeNull(), { timeout: 5000 });
+    db.close();
+    expect(asked).toBe(0);
+  }, 15_000);
+
+  it('a device whose cached catalogue does not hold the party asks the relay once, and the button follows', async () => {
+    await seed([{ id: 'c-ing', manifest: ING, device: {} }]);
+    // as on a second device: the connection synced over, the catalogue was cached before ING existed
+    const { MunniDB } = await import('@/db/schema');
+    const { DexieBackend } = await import('@/db/backend');
+    const db = new MunniDB(USER_TEST_DB);
+    await new DexieBackend(db).metaPut('connectorCatalogue', { etag: 'old', catalogue: catalogueOf(AH), at: '2026-09-01T00:00:00Z' });
+    db.close();
+    let asked = 0;
+    renderAppAsUser('/', {
+      api: {
+        'GET /connectors/providers': () => {
+          asked += 1;
+          return catalogueOf(ING, AH);
+        },
+      },
+    });
+    expect(await screen.findByTestId('home-quick-sync', {}, { timeout: 5000 })).toBeTruthy();
+    expect(asked).toBe(1);
   }, 15_000);
 
   it('Sync on a session still alive runs the sync right there', async () => {
@@ -123,6 +164,27 @@ describe('the quick sync on Home (#548)', () => {
       db.close();
       expect(row?.credentialBundle).toBe('cb_v1.rotated');
     });
+  }, 20_000);
+
+  it('#460: older history still to fetch survives the sign-in a sync needs first — the sync after it goes on with it', async () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    await seed([{ id: 'c-ing', manifest: ING, device: { refreshedAt: twoHoursAgo, credentialBundle: 'cb_v1.kept', backfill: { until: '2026-03-10' } } }]);
+    const windows: { since?: string; until?: string }[] = [];
+    renderAppAsUser('/', {
+      api: {
+        ...catalogue(ING),
+        'POST /connectors/ing-nl/login': () => ({ sessionId: 'ses-new', state: 'active', bundle: 'sb_v1.fresh', notes: [] }),
+        'POST /connectors/ing-nl/sync': (body) => {
+          windows.push(body as { since?: string; until?: string });
+          return { sessionId: 'ses-new', state: 'active', ingested: NO_INGEST, complete: true };
+        },
+      },
+    });
+    fireEvent.click(await screen.findByTestId('home-quick-sync', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('quick-sync-go-c-ing', {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-saved-login', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await waitFor(() => expect(windows.map((w) => w.until)).toEqual([undefined, '2026-03-10']), { timeout: 5000 });
   }, 20_000);
 
   it('#543: "Use another login" brings the fields back', async () => {

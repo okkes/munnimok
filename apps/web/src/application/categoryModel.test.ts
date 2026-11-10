@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { writeTxTransform } from '@/db/joined';
 import { HlcClock } from '@/sync/hlc';
-import { cashWalletId, defaultAccountId, ensureCashWallet, walletForAutoLink } from './defaultAccounts';
+import { cashWalletId, defaultAccountId, ensureCashWallet, retireDefaultAccounts, walletForAutoLink } from './defaultAccounts';
 import { migrateBareSpecialRows, refileCashTransfers } from './categoryModel';
 
 const SPACE = 's1';
@@ -224,6 +225,42 @@ describe('the cash wallet + the bare-row migration', () => {
     expect(clueless?.splits?.[0]?.txType).toBeUndefined();
     expect(clueless?.needsReview).toBe(1);
 
+    expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+  });
+
+  it('a transfer whose account left the space keeps its category while it waits in the review, row and part alike — a clue still links, a prediction nobody filed still stands down', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', kind: 'personal', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
+    const bank = defaultAccountId(SPACE, 'transfer');
+    await repo.upsert('account', SPACE, bank, { name: 'Default bank account', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'transfer' });
+    await repo.upsert('transaction', SPACE, 'filed', {
+      accountId: 'main', date: '2026-07-01', amountCents: -2500, currency: 'EUR', merchant: 'Overboeking', catId: 'transferOut', needsReview: 0,
+    });
+    await writeTxTransform(repo, { id: 'filed', spaceId: SPACE, feedSpaceId: undefined, needsReview: 0 }, { linkedAccountId: bank });
+    await repo.upsert('transaction', SPACE, 'named', {
+      accountId: 'main', date: '2026-07-02', amountCents: -799, currency: 'EUR', merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', needsReview: 1,
+    });
+    await repo.upsert('transaction', SPACE, 'split', {
+      accountId: 'main', date: '2026-07-03', amountCents: -3000, currency: 'EUR', merchant: 'Verzamelbetaling', catId: 'transferOut', needsReview: 1,
+      splits: [
+        { id: 'q1', catId: 'transferOut', amountCents: 2000, txType: 'transfer' },
+        { id: 'q2', catId: 'groceries', amountCents: 1000 },
+      ],
+    });
+
+    await repo.upsert('transaction', SPACE, 'predicted', {
+      accountId: 'main', date: '2026-07-04', amountCents: -1200, currency: 'EUR', merchant: 'Verzamelbetaling batch 42', catId: 'transferOut', needsReview: 1,
+    });
+
+    await retireDefaultAccounts(store, repo);
+    expect(await migrateBareSpecialRows(store, repo)).toBe(2);
+
+    expect(await store.get('transaction', 'filed')).toMatchObject({ catId: 'transferOut', needsReview: 1 });
+    expect(await store.get('transaction', 'named')).toMatchObject({ linkedAccountId: 'pp', needsReview: 1 });
+    expect(await store.get('transaction', 'predicted')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
+    expect((await store.get('transaction', 'split'))?.splits?.[0]).toMatchObject({ id: 'q1', catId: 'transferOut', txType: 'transfer' });
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 

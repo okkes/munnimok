@@ -362,6 +362,19 @@ interface Older {
   asked?: JobView;
 }
 
+/** one older pass; null when a refusal or a fault ends the walk for now — a refusal that ends the session is thrown on */
+async function olderPass(storage: StorageBackend, row: ConnectorConnRow, bundle: string, backfill: ConnectorBackfill, options: SyncOptions): Promise<Landed | null> {
+  try {
+    return await passOnce(storage, row, bundle, { since: backfill.since, until: backfill.until }, options);
+  } catch (err) {
+    if (!(err instanceof ConnectorError)) return null;
+    if (ENDS_SESSION.has(err.envelope.code)) throw err;
+    // a refusal ended that job: left as pending, the next sync would resume it and report its failure as its own
+    await patchRow(storage, row.id, { pendingJob: undefined });
+    return null;
+  }
+}
+
 /**
  * #460 — the older history a partial pass left, fetched right away while the
  * person is here: pass after pass, each one relay sync with `until`, until a
@@ -377,13 +390,8 @@ async function fetchOlder(storage: StorageBackend, row: ConnectorConnRow, start:
     useSyncActivity.getState().older(row.id, backfill.until);
     const bundle = await readBundle(storage, row.id);
     if (!bundle) break;
-    let landed: Landed;
-    try {
-      landed = await passOnce(storage, row, bundle, { since: backfill.since, until: backfill.until }, options);
-    } catch (err) {
-      if (err instanceof ConnectorError && ENDS_SESSION.has(err.envelope.code)) throw err;
-      break;
-    }
+    const landed = await olderPass(storage, row, bundle, backfill, options);
+    if (!landed) break;
     if ('asked' in landed) return { ingested, remaining: backfill, asked: landed.asked };
     if (landed.ingested) ingested.push(landed.ingested);
     backfill = nextBackfill(backfill, landed.window, landed);

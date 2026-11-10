@@ -71,6 +71,23 @@ function resolveBarePot(
   return matchCounterAccount(clue, candidates.filter((a) => kinds.includes(a.type)), accountId)?.id;
 }
 
+/** where a bare cash or pot part links: the wallet for the ATM pair, else the account its text names */
+async function barePartAccount(
+  family: string,
+  at: {
+    store: StorageBackend;
+    repo: Repo;
+    spaceId: string;
+    raw: TransactionRow;
+    candidatesFor: (spaceId: string) => Promise<SpaceAccount[]>;
+  },
+  clue: ClueTx,
+  slice: TxSplit,
+): Promise<string | null | undefined> {
+  if (family === 'cash') return walletForAutoLink(at.store, at.repo, at.spaceId);
+  return resolveBarePot(clue, await at.candidatesFor(at.spaceId), at.raw.accountId, slice.catId);
+}
+
 /** the splits arm of the bare-row fold (S3776: out of migrateRow): the ATM
  *  pair takes the wallet, pot families the account their text names (#546),
  *  transfer parts resolve by clue or stand the container back to review
@@ -86,6 +103,8 @@ async function foldBareParts(
 ): Promise<(TxTransformFields & { splits: TxSplit[] }) | null> {
   if (!(splits ?? []).some((s) => !!barePartFamily(s))) return null;
   const clue = clueOf(raw, meta);
+  // a container already in the review keeps a clueless transfer part as filed, like a row
+  const waiting = (meta?.needsReview ?? raw.needsReview) === 1;
   const next: TxSplit[] = [];
   let sendBack = false;
   let changed = false;
@@ -97,15 +116,16 @@ async function foldBareParts(
     }
     if (family === 'transfer') {
       const folded = resolveBareTransferPart(slice, clue, await candidatesFor(spaceId), raw.accountId, raw.amountCents);
+      if (folded.sendBack && waiting) {
+        next.push(slice);
+        continue;
+      }
       next.push(folded.part);
       sendBack ||= !!folded.sendBack;
       changed = true;
       continue;
     }
-    const linkedAccountId =
-      family === 'cash'
-        ? await walletForAutoLink(store, repo, spaceId)
-        : resolveBarePot(clue, await candidatesFor(spaceId), raw.accountId, slice.catId);
+    const linkedAccountId = await barePartAccount(family, { store, repo, spaceId, raw, candidatesFor }, clue, slice);
     next.push(linkedAccountId ? { ...slice, linkedAccountId } : slice);
     changed ||= !!linkedAccountId;
   }
@@ -134,7 +154,9 @@ async function foldBareParts(
  *
  * #228 r3 (user rule): a TRANSFER needs the bank text to name a real
  * tracked account (the clue-matcher); without a clue the row stands down
- * to Uncategorized and goes back to review.
+ * to Uncategorized and goes back to review. A row whose account left the
+ * space is the exception while it waits in the review: it keeps the
+ * category it was filed with.
  */
 export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo): Promise<number> {
   const accounts = new Map((await store.allRows('account')).map((a) => [a.id, a]));
@@ -192,7 +214,12 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
     if (!family) return;
     if (family === 'transfer') {
       // #228 r3: clue-matched real account, or Uncategorized + review
-      await writeTxTransform(repo, tx, resolveBareTransfer(clueOf(raw, meta), await candidatesFor(spaceId), raw.accountId, raw.amountCents));
+      const fields = resolveBareTransfer(clueOf(raw, meta), await candidatesFor(spaceId), raw.accountId, raw.amountCents);
+      // null = its account left the space (never linked reads undefined): that row keeps the category it was
+      // filed with while the review asks for the account; a prediction nobody filed still stands down
+      const letGo = (meta ? meta.linkedAccountId : raw.linkedAccountId) === null;
+      if (!fields.linkedAccountId && letGo && tx.needsReview === 1) return;
+      await writeTxTransform(repo, tx, fields);
       touched++;
       return;
     }

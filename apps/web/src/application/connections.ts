@@ -398,6 +398,8 @@ async function keepDeviceRow(storage: StorageBackend, connectionId: string, prov
     state: view.state,
     refreshedAt: new Date().toISOString(),
     lastSyncAt: existing?.lastSyncAt,
+    // the days still to fetch are the connection's, not the session's
+    backfill: existing?.backfill,
     // the person's standing answer outlives the session (user 2026-10-07: a
     // re-login wiped it and the question came back); the old error and the
     // old session's job do not — this sign-in settled them

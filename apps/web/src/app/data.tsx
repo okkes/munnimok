@@ -19,9 +19,11 @@ import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
 import { measure, tagSpacePeriod } from '@/lib/perf';
 import { ensurePersistentStorage } from '@/lib/platform';
+import { disablePush } from '@/lib/push';
 import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
 import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
 import { clearQueryCache } from '@/db/useQuery';
+import { forgetNavCache } from '@/features/navigation/navCache';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 import { useEvicted } from './evicted';
@@ -113,6 +115,84 @@ async function restoreAndSync(
   if (isCancelled()) return;
   onAttempts(0);
   engine.start();
+}
+
+/**
+ * Whether the first sync round of this boot reached its end. The boot heals wait for it: a one-way
+ * fold stamped on a copy older than the server's overwrites what another device did since.
+ */
+export function firstRoundOf(engine: SyncEngine): { finished: Promise<boolean>; release: () => void } {
+  let settle: (ok: boolean) => void = () => undefined;
+  const finished = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
+  const off = engine.onStatus((status) => {
+    if (status === 'syncing') return;
+    off();
+    // idle alone proves nothing: a refused token ends idle as well
+    settle(status === 'idle' && engine.lastRoundOk());
+  });
+  return {
+    finished,
+    release: () => {
+      off();
+      settle(false);
+    },
+  };
+}
+
+/** an identity that never syncs holds the only copy there is: confirmed at once */
+function copyConfirmedBy(engine: SyncEngine | null): { finished: Promise<boolean>; release: () => void } {
+  return engine ? firstRoundOf(engine) : { finished: Promise.resolve(true), release: () => undefined };
+}
+
+/** the heals as their own transaction (they outlive the boot span), once the copy's state is known; none after a cancelled boot */
+function healOnceKnown(copyConfirmed: Promise<boolean>, cancelled: () => boolean, store: StorageBackend, upkeep: Repo): Promise<unknown> {
+  return copyConfirmed
+    .then((confirmed) => (cancelled() ? undefined : measure('app.boot.heal', () => bootHeals(store, upkeep, confirmed), undefined, { parent: null })))
+    .catch(() => undefined);
+}
+
+/** the every-boot heals, in order; the one-way folds only on a copy the server confirmed in this boot */
+async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean): Promise<void> {
+  // #228: reimbursement on a SPLIT transaction stays on the split.
+  // Every boot: links name their parts (a row split after it was
+  // linked) and each side's settle bookkeeping is recomputed
+  const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
+  await normalizeReimbursements(store, upkeep);
+  // #546: the retired family defaults leave their spaces (every boot
+  // until none is left — a default pulled later retires next boot)
+  const { retireDefaultAccounts } = await import('@/application/defaultAccounts');
+  if (confirmed) await retireDefaultAccounts(store, upkeep);
+  // #544: rows still naming an account their space lost let go of it
+  const { repairDanglingCounterparties } = await import('@/application/accountRelease');
+  if (confirmed) await repairDanglingCounterparties(store, upkeep);
+  // #133 ruling 3 / #546: bare movement rows link the account their
+  // text names (the ATM pair: the cash wallet) — balances move via the
+  // mirror lifecycle. Every boot: the server keeps writing predicted
+  // movement categories with no counterparty, so this heals continuously.
+  // #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
+  const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
+  // its leg shares an id with the leg another device minted for the same row: on an old copy it moves a second balance
+  if (confirmed) await migrateBareSpecialRows(store, upkeep);
+  if (confirmed) await refileCashTransfers(store, upkeep);
+  // #509: a loan typed at its original amount counts every payment linked to it, its date's included
+  const { settlePristineLoans } = await import('@/application/loanBalance');
+  if (confirmed) await settlePristineLoans(store, upkeep);
+  // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
+  // a linked row a fetch's overlay re-filed takes it back every boot
+  const { realignRecurringCategories } = await import('@/application/recurring');
+  await realignRecurringCategories(store, upkeep);
+  // transfers are ONE event with two legs — pair them within each
+  // space's own books (never across: funding covers that case)
+  const { linkTransferPairs } = await import('@/application/transferMatch');
+  await linkTransferPairs(store, upkeep);
+  // #533: a reserved charge the bank booked hands its story to the booked row
+  const { carryReservedOpinions } = await import('@/application/reservedCarry');
+  await carryReservedOpinions(store, upkeep);
+  // #578: the keys recurrings, loans and dismissals stored follow the merchant key's new spelling, once
+  const { rekeyMerchantKeys } = await import('@/application/merchantKeyRekey');
+  await rekeyMerchantKeys(store, upkeep);
 }
 
 /** a user identity's first sync once the boot opened its store (S3776: out of the boot) */
@@ -227,6 +307,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     let engine: SyncEngine | null = null;
     let openedStore: StorageBackend | null = null;
+    let releaseHeals: () => void = () => undefined;
     // #363: the remount cache is per identity — a sign-in after a wipe
     // must never seed a screen with the last user's rows
     clearQueryCache();
@@ -299,45 +380,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // its own transaction (parent null), since it outlives the boot span.
       // #505: through the upkeep view — a space this identity only reads is
       // healed by the devices of those who may write it
-      const bootChain = measure('app.boot.heal', async () => {
-        // #228: reimbursement on a SPLIT transaction stays on the split.
-        // Every boot: links name their parts (a row split after it was
-        // linked) and each side's settle bookkeeping is recomputed
-        const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
-        await normalizeReimbursements(store, upkeep);
-        // #546: the retired family defaults leave their spaces (every boot
-        // until none is left — a default pulled later retires next boot)
-        const { retireDefaultAccounts } = await import('@/application/defaultAccounts');
-        await retireDefaultAccounts(store, upkeep);
-        // #544: rows still naming an account their space lost let go of it
-        const { repairDanglingCounterparties } = await import('@/application/accountRelease');
-        await repairDanglingCounterparties(store, upkeep);
-        // #133 ruling 3 / #546: bare movement rows link the account their
-        // text names (the ATM pair: the cash wallet) — balances move via the
-        // mirror lifecycle. Every boot: the server keeps writing predicted
-        // movement categories with no counterparty, so this heals continuously.
-        // #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
-        const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
-        await migrateBareSpecialRows(store, upkeep);
-        await refileCashTransfers(store, upkeep);
-        // #509: a loan typed at its original amount counts every payment linked to it, its date's included
-        const { settlePristineLoans } = await import('@/application/loanBalance');
-        await settlePristineLoans(store, upkeep);
-        // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
-        // a linked row a fetch's overlay re-filed takes it back every boot
-        const { realignRecurringCategories } = await import('@/application/recurring');
-        await realignRecurringCategories(store, upkeep);
-        // transfers are ONE event with two legs — pair them within each
-        // space's own books (never across: funding covers that case)
-        const { linkTransferPairs } = await import('@/application/transferMatch');
-        await linkTransferPairs(store, upkeep);
-        // #533: a reserved charge the bank booked hands its story to the booked row
-        const { carryReservedOpinions } = await import('@/application/reservedCarry');
-        await carryReservedOpinions(store, upkeep);
-        // #578: the keys recurrings, loans and dismissals stored follow the merchant key's new spelling, once
-        const { rekeyMerchantKeys } = await import('@/application/merchantKeyRekey');
-        await rekeyMerchantKeys(store, upkeep);
-      }, undefined, { parent: null }).catch(() => undefined);
+      // The heals wait for the first round: a one-way fold on a copy the server did not confirm undoes
+      // what another device did since. An identity that never syncs holds the only copy there is.
+      const firstRound = copyConfirmedBy(engine);
+      releaseHeals = firstRound.release;
+      const bootChain = healOnceKnown(firstRound.finished, () => cancelled, store, upkeep);
       // test seam: the chain writes fire-and-forget, and a test that
       // deletes the database while a PREVIOUS boot's chain still holds
       // the connection boots the next app on a dying handle (its live
@@ -374,6 +421,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
     return () => {
       cancelled = true;
+      releaseHeals();
       engine?.stop();
       openedStore?.close();
       if (liveStore === openedStore) liveStore = null;
@@ -433,6 +481,11 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
   const { t } = useLang();
   const logout = useSession((s) => s.logout);
   const identity = useSession((s) => s.identity);
+  const signOut = () => {
+    // this screen means the server is out of reach or refuses: only the device can let go of its notifications
+    if (identity?.kind === 'user') void disablePush({ server: false }).catch(() => undefined);
+    logout();
+  };
   // SELF-HEAL (iOS field 401, 2026-07-29): signed-in user + 401s + NO
   // mintable token = the client-side Logto keys are gone while the IdP
   // session cookie usually survives — a silent re-sign-in round-trip
@@ -545,7 +598,7 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
           {unreachable && (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => void logout()}
+                onClick={signOut}
                 data-testid="connect-signout"
                 className="m-tap mt-2 rounded-full border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink"
               >
@@ -592,6 +645,8 @@ let revokedWipeIdentity: Identity | null = null;
 
 async function wipeRevokedDevice(identity: Identity): Promise<void> {
   const { useSession } = await import('./session');
+  // the server refuses this device already: asking it again would raise the disconnect once more
+  void disablePush({ server: false }).catch(() => undefined);
   useSession.getState().logout();
   await destroyIdentityData(identity);
   globalThis.location.assign('/#/login');
@@ -605,6 +660,8 @@ async function enforceAccountBinding(store: StorageBackend, identity: Identity):
   const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
   await verifyAccountBinding(store, identity, async () => {
     const { useSession } = await import('./session');
+    // the account is gone from the server: its notifications end on the device alone
+    void disablePush({ server: false }).catch(() => undefined);
     useSession.getState().logout();
     await destroyIdentityData(identity);
     globalThis.location.assign('/#/login');
@@ -633,4 +690,5 @@ export async function destroyIdentityData(identity: Identity): Promise<void> {
   } catch {
     // storage may be unavailable mid-wipe; the stale key is harmless
   }
+  forgetNavCache(identityKey(identity));
 }

@@ -51,6 +51,12 @@ describe('loan math (v2: the account IS the debt)', () => {
     expect(isDebtTracked(account({ type: 'credit', interestPctYear: 14, trackAsDebt: 0 }))).toBe(false);
   });
 
+  it('membership: a default account on its way out that holds nothing is no debt — one holding a debt, or kept as the person’s own, is', () => {
+    expect(isDebtTracked(account({ type: 'loan', defaultFor: 'debtPayment' }))).toBe(false);
+    expect(isDebtTracked(account({ type: 'loan', defaultFor: 'debtPayment', balanceCents: -5_000 }))).toBe(true);
+    expect(isDebtTracked(account({ type: 'loan', defaultFor: null as never }))).toBe(true);
+  });
+
   it('projects payoff with monthly compounding; impossible payments return null', () => {
     // 10k at 12% APR, 500/mo → ~22 months, some interest paid
     const projection = projectPayoff(1_000_000, 50_000, 12, '2026-07-09');

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -19,7 +19,7 @@ import { kindIcon, partyLogo } from './logos';
 import { errorKey } from './manifestForm';
 import { resultStillFresh, useSyncActivity } from './syncActivity';
 import type { JobView } from './types';
-import { CATALOGUE_META_KEY, useCatalogue } from './useCatalogue';
+import { CATALOGUE_META_KEY, refreshCatalogueCache, useCatalogue } from './useCatalogue';
 import type { Cached } from './useCatalogue';
 
 /** Home's door to the quick sync: only for a signed-in person who has a connection to sync by hand */
@@ -29,17 +29,33 @@ export function QuickSyncButton() {
   const [open, setOpen] = useState(false);
   const signedIn = connectorsAvailable();
   // the cached catalogue answers without a call — Home is opened far more often than this sheet
-  const due = useQuery(
+  const state = useQuery(
     store,
     async () => {
-      if (!signedIn) return false;
+      if (!signedIn) return null;
       const cached = (await store.metaGet(CATALOGUE_META_KEY))?.value as Cached | undefined;
       const manifests = new Map((cached?.catalogue.providers ?? []).map((p) => [p.id, p]));
-      return (await store.allRows('storeConn')).some((meta) => meta.deleted === 0 && syncsByHand(meta, manifests));
+      const parties = (await store.allRows('storeConn')).filter((meta) => meta.deleted === 0);
+      return {
+        due: parties.some((meta) => syncsByHand(meta, manifests)),
+        unknown: [...new Set(parties.filter((meta) => !manifests.has(meta.store)).map((meta) => meta.store))].sort((a, b) => a.localeCompare(b)).join(','),
+      };
     },
     [signedIn],
   );
-  if (!due) return null;
+  // A connection made on another device arrives without this device's cache knowing its party:
+  // the relay is asked once per set of unknown parties, so one it retired is not asked for again.
+  const unknown = state?.unknown ?? '';
+  const asked = useRef('');
+  useEffect(() => {
+    if (!unknown || asked.current === unknown) return;
+    asked.current = unknown;
+    void (async () => {
+      const cached = (await store.metaGet(CATALOGUE_META_KEY))?.value as Cached | undefined;
+      await refreshCatalogueCache(store, cached);
+    })().catch(() => undefined);
+  }, [store, unknown]);
+  if (!state?.due) return null;
   return (
     <>
       <IconButton label={t('quicksync.open')} testId="home-quick-sync" onClick={() => setOpen(true)}>

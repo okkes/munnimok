@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useSpaceAccounts } from './transactions';
 import { visibleAccounts } from '@/db/joined';
 import { isDebtTracked, loanProgress, loanRemainingCents } from '@/domain/debts';
+import { isRetiredDefault } from '@/domain/defaultAccounts';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
 
@@ -17,6 +18,8 @@ export async function debtsMissingRate(store: StorageBackend): Promise<AccountRo
   for (const space of spaces) {
     for (const account of await visibleAccounts(store, space.id)) {
       if (found.has(account.id) || account.archived === 1 || account.link?.archived === 1) continue;
+      // munni's own fixture, about to be removed: nothing to ask the person about
+      if (isRetiredDefault(account)) continue;
       if ((account.interestPctYear ?? undefined) === undefined && isDebtTracked(account)) found.set(account.id, account);
     }
   }

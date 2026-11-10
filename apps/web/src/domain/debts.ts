@@ -1,4 +1,5 @@
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
+import { isRetiredDefault } from './defaultAccounts';
 import { nextDueDate } from './recurring';
 
 /**
@@ -16,10 +17,13 @@ export const DEBT_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set(['loan', 'mo
  * is an account with a balance, not a payoff journey).
  */
 export function isDebtTracked(
-  account: Pick<AccountRow, 'type' | 'trackAsDebt' | 'interestPctYear' | 'originalCents' | 'paymentCents'>,
+  account: Pick<AccountRow, 'type' | 'trackAsDebt' | 'interestPctYear' | 'originalCents' | 'paymentCents'> &
+    Partial<Pick<AccountRow, 'defaultFor' | 'balanceCents'>>,
 ): boolean {
   if (!DEBT_ACCOUNT_TYPES.has(account.type)) return false;
   if (account.trackAsDebt !== undefined) return account.trackAsDebt === 1;
+  // a retired default stays until a device that may write its space removed it: empty, it is nobody's loan
+  if (isRetiredDefault(account) && (account.balanceCents ?? 0) === 0) return false;
   if (account.type !== 'credit') return true;
   return account.interestPctYear !== undefined || account.originalCents !== undefined || !!account.paymentCents;
 }

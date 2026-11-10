@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/app/data';
 import { connectorsAvailable } from '@/application/connections';
+import type { StorageBackend } from '@/db/backend';
 import type { ReachedBy } from '@/domain/accountCoverage';
 import { ConnectorError, connectorApi } from './api';
 import type { BindingView, Catalogue, ErrorEnvelope, ProviderManifest, RelayInfo } from './types';
@@ -23,21 +24,10 @@ export function useRelayInfo(): RelayInfo | null | undefined {
 }
 
 /**
- * The relay's own bindings, by connection id — what it last heard from a
- * session and whether it syncs the connection by itself (§5.5). Read once
- * per hub open; the device rows stay the truth for custody.
- */
-export function useRelayBindings(refresh?: string | number): ReadonlyMap<string, BindingView> {
-  return useRelayBindingsRead(refresh) ?? NO_BINDINGS;
-}
-
-const NO_BINDINGS: ReadonlyMap<string, BindingView> = new Map();
-
-/**
- * The same, undefined until the relay answered (offline, demo: never) —
- * "no binding" then means none is kept. A new refresh key (a connection
- * made since) reads as unknown again until the relay answers for it, so a
- * fresh connection never reads as one the relay dropped.
+ * The relay's own bindings, by connection id (§5.5) — undefined until the
+ * relay answered (offline, demo: never), so "no binding" means none is kept.
+ * A new refresh key (a connection made since) reads as unknown again until
+ * the relay answers for it: a fresh connection never reads as one it dropped.
  */
 export function useRelayBindingsRead(refresh?: string | number): ReadonlyMap<string, BindingView> | undefined {
   const [bindings, setBindings] = useState<ReadonlyMap<string, BindingView> | undefined>(undefined);
@@ -117,6 +107,14 @@ const UNREACHABLE: ErrorEnvelope = {
   messageKey: 'connect.error.provider_unavailable',
 };
 
+/** The relay's catalogue into the identity's cache; null when the cached copy still holds (the ETag spared the body). */
+export async function refreshCatalogueCache(store: StorageBackend, cached: Cached | undefined): Promise<Catalogue | null> {
+  const fresh = await connectorApi.catalogue(cached?.etag ?? null);
+  if (!fresh) return null;
+  await store.metaPut(CATALOGUE_META_KEY, { etag: fresh.etag, catalogue: fresh.catalogue, at: new Date().toISOString() } satisfies Cached);
+  return fresh.catalogue;
+}
+
 export function useCatalogue(): CatalogueState {
   const { store } = useData();
   const [snapshot, setSnapshot] = useState<Snapshot>({ catalogue: null, loading: connectorsAvailable(), error: null });
@@ -127,10 +125,9 @@ export function useCatalogue(): CatalogueState {
     const cached = (await store.metaGet(CATALOGUE_META_KEY))?.value as Cached | undefined;
     if (cached) setSnapshot({ catalogue: cached.catalogue, loading: true, error: null });
     try {
-      const fresh = await connectorApi.catalogue(cached?.etag ?? null);
+      const fresh = await refreshCatalogueCache(store, cached);
       if (fresh) {
-        await store.metaPut(CATALOGUE_META_KEY, { etag: fresh.etag, catalogue: fresh.catalogue, at: new Date().toISOString() } satisfies Cached);
-        setSnapshot({ catalogue: fresh.catalogue, loading: false, error: null });
+        setSnapshot({ catalogue: fresh, loading: false, error: null });
       } else {
         setSnapshot((s) => ({ ...s, loading: false }));
       }

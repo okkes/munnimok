@@ -8,7 +8,7 @@ import { SyncEngine } from '@/sync/engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
-import { bootstrapUserSpaces } from './data';
+import { bootstrapUserSpaces, firstRoundOf } from './data';
 
 /**
  * Regression suite for the bug that stranded devices on an empty
@@ -125,6 +125,46 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     // confirmed empty → tutorial pending, still no auto-created space
     expect((await db.meta.get('minaTutorialPending'))?.value).toBe(true);
     expect(await db.spaces.filter((s) => s.deleted === 0).count()).toBe(0);
+    db.close();
+  });
+});
+
+describe('firstRoundOf (what the boot heals wait for)', () => {
+  it('says yes once the first round reached its end', async () => {
+    const { db, engine } = setup();
+    const first = firstRoundOf(engine);
+    await engine.syncAll();
+    expect(await first.finished).toBe(true);
+    db.close();
+  });
+
+  it('says no when the first round was refused — a later round that succeeds does not change the word for this boot', async () => {
+    const { db, server, engine } = setup();
+    server.failuresLeft = 1;
+    const first = firstRoundOf(engine);
+    await engine.syncAll();
+    expect(engine.getStatus()).toBe('idle');
+    expect(await first.finished).toBe(false);
+    await engine.syncAll();
+    expect(engine.lastRoundOk()).toBe(true);
+    expect(await first.finished).toBe(false);
+    db.close();
+  });
+
+  it('says no when the server cannot be reached', async () => {
+    const { db, server, engine } = setup();
+    server.heads = () => Promise.reject(new TypeError('Failed to fetch'));
+    const first = firstRoundOf(engine);
+    await engine.syncAll();
+    expect(await first.finished).toBe(false);
+    db.close();
+  });
+
+  it('a boot that is torn down first lets its heals go without a word from the server', async () => {
+    const { db, engine } = setup();
+    const first = firstRoundOf(engine);
+    first.release();
+    expect(await first.finished).toBe(false);
     db.close();
   });
 });
