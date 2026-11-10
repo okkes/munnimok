@@ -14,11 +14,11 @@ export const GROUPS = [
       {
         key: '02-shell-tabs',
         title: 'Tab navigation',
-        desc: 'Tapping each tab switches screens: Transactions → Spaces → Settings.',
+        desc: 'Tapping each tab switches screens: Transactions → Planning → Settings.',
         tags: ['navigation'],
         steps: [
           'Transactions tab',
-          'Spaces tab',
+          'Planning tab',
           'Settings tab',
         ],
       },
@@ -35,15 +35,15 @@ export const GROUPS = [
     ],
   },
   {
-    name: 'Appearance & Language',
+    name: 'Offline profile',
     tests: [
       {
         key: '38-offline',
         title: 'Offline mode lifecycle',
-        desc: 'Create a fully local profile (zero network, ever): personal space named after it, accounts and transactions work offline, signing out keeps the data, and the profile is selectable again on the login screen.',
+        desc: 'Create a fully local profile (zero network, ever): its first space, an account and a transaction work offline, signing out keeps the data, and the profile is selectable again on the login screen.',
         tags: ['state', 'edge-case'],
         steps: [
-          'Offline profile sheet',
+          'Naming the offline profile',
           'Offline transaction added',
           'Data intact after sign-out and re-entry',
         ],

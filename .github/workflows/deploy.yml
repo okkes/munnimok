@@ -59,7 +59,7 @@ jobs:
       - run: npx vitest run --coverage
         working-directory: apps/web
 
-      # Sync API for the two-device e2e specs (they skip if this is down)
+      # Sync API for the two-device e2e specs (on CI they fail when it does not answer)
       - name: Start sync test stack
         run: docker compose -f deploy/docker-compose.test.yml up --build -d --wait
 

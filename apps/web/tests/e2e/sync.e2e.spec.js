@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown, syncApiUp } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown, syncApiOrFail } from '../helpers/base.js';
 
 // Critical flows only a real API + Postgres + two browsers can prove: two
 // devices converge, an edit shows live on the other device, a shared space
 // reaches the friend it was offered to, and a brand-new account onboards
-// once. Runs against deploy/docker-compose.test.yml; skips when it is down.
+// once. Runs against deploy/docker-compose.test.yml: a stack that is down
+// skips them on a developer's machine and fails them on CI.
 
 async function addCashAccount(page, name, balance) {
   await gotoGlobalSettings(page);
@@ -58,7 +59,7 @@ for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
 
   test(`sync-a1 two devices converge; a returning user has one personal space [${V.id}]`, async ({ browser }) => {
-    test.skip(!(await syncApiUp()), 'sync API not running (docker compose -f deploy/docker-compose.test.yml up -d)');
+    test.skip(!(await syncApiOrFail()), 'sync API not running (docker compose -f deploy/docker-compose.test.yml up -d)');
     test.setTimeout(120_000);
     const sub = `e2e-${Date.now()}`;
 
@@ -95,7 +96,7 @@ for (const V of VARIANTS) {
   });
 
   test(`sync-a2 an edit on one device shows on the other without a reload [${V.id}]`, async ({ browser }) => {
-    test.skip(!(await syncApiUp()), 'sync API not running');
+    test.skip(!(await syncApiOrFail()), 'sync API not running');
     test.setTimeout(120_000);
     const sub = `e2e-live-${Date.now()}`;
 
@@ -134,7 +135,7 @@ for (const V of VARIANTS) {
   });
 
   test(`sync-a3 a shared space reaches the friend it is offered to [${V.id}]`, async ({ browser }) => {
-    test.skip(!(await syncApiUp()), 'sync API not running');
+    test.skip(!(await syncApiOrFail()), 'sync API not running');
     test.setTimeout(180_000);
     const run = Date.now();
 
@@ -178,7 +179,7 @@ for (const V of VARIANTS) {
   });
 
   test(`sync-a4 a brand-new account onboards once and keeps its currency [${V.id}]`, async ({ browser }) => {
-    test.skip(!(await syncApiUp()), 'sync API not running');
+    test.skip(!(await syncApiOrFail()), 'sync API not running');
     const sub = `e2e-onboard-${Date.now()}`;
 
     const a = await createPage(browser, V);

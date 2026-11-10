@@ -220,6 +220,18 @@ export async function syncApiUp() {
   }
 }
 
+// On CI the test stack is part of the job: a sync API that stays silent fails the flow, it never skips it.
+// It gets 15 s: one slow /health must not fail a deploy, and a test's own 30 s timeout must not hide the reason.
+export async function syncApiOrFail() {
+  if (await syncApiUp()) return true;
+  if (!process.env.CI) return false;
+  for (const until = Date.now() + 15_000; Date.now() < until; ) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (await syncApiUp()) return true;
+  }
+  throw new Error(`the sync test API at ${TEST_API_URL} does not answer on CI (deploy/docker-compose.test.yml) — its flows must run, not skip`);
+}
+
 // Wait for the m-fade animation (280ms) to finish before screenshotting.
 // Never a synchronisation point: a spec waits for its own conditions.
 export async function shot(page, name) {
