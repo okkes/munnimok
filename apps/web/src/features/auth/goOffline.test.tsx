@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Repo } from '@/db/repo';
 import type { MunniDB } from '@/db/schema';
@@ -109,6 +109,10 @@ describe('Go offline (user identity, scripted server)', () => {
     // server: clean exit
     await waitFor(() => expect(calls).toContain('delete-me'));
 
+    // the worker keeps no session of the account to sync the adopted store with
+    const { readSwSession } = await import('@/sync/swSync');
+    await waitFor(async () => expect(await readSwSession()).toBeNull());
+
     // registry: ONE profile, adopting the user store
     const profile = listOfflineProfiles()[0];
     expect(profile?.storeKey).toBe(`user_${USER_TEST_SUB}`);
@@ -204,6 +208,43 @@ describe('Go offline (user identity, scripted server)', () => {
       registry.refuses = false;
     }
   }, 20_000);
+
+  it('the same login signing in again leaves the profile’s data alone: the fresh account gets a store of its own', async () => {
+    await seedStore();
+    const calls: string[] = [];
+    renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api(calls) });
+    await screen.findByTestId('screen-go-offline');
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+    await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
+    await screen.findByTestId('screen-home', {}, { timeout: 8000 });
+    await waitFor(() => expect(calls).toContain('delete-me'));
+    cleanup();
+
+    // the server made the login a fresh account: another user id answers /me
+    renderAppAsUser('/home', {
+      spaces: [],
+      api: {
+        ...api(calls),
+        'GET /me/spaces': () => [],
+        'GET /me/feeds': () => [],
+        'GET /me': () => ({ userId: '00000000-0000-0000-0000-000000000002', displayName: 'Okkes', picture: null }),
+      },
+    });
+    const { MunniDB, identityDbName } = await import('@/db/schema');
+    const fresh = identityDbName(identityKey({ kind: 'user', sub: USER_TEST_SUB }));
+    expect(fresh).not.toBe(USER_TEST_DB);
+    // the binding check ran against the fresh account, on the fresh store
+    const own = new MunniDB(fresh);
+    await waitFor(async () => expect((await own.meta.get('boundUserId'))?.value).toBe('00000000-0000-0000-0000-000000000002'), { timeout: 8000 });
+    own.close();
+
+    const kept = new MunniDB(USER_TEST_DB);
+    expect((await kept.accounts.get('feedacct-1'))?.source).toBe('manual');
+    expect(await kept.spaces.get('s-user')).toBeTruthy();
+    kept.close();
+    expect(listOfflineProfiles()).toHaveLength(1);
+  }, 30_000);
 
   it('converts happily next to an existing offline profile (arc 8)', async () => {
     await seedStore();

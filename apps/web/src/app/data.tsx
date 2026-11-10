@@ -24,6 +24,7 @@ import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
 import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
 import { clearQueryCache } from '@/db/useQuery';
 import { forgetNavCache } from '@/features/navigation/navCache';
+import { adoptedStoreKeys } from '@/features/auth/offlineProfiles';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 import { useEvicted } from './evicted';
@@ -243,7 +244,8 @@ function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: S
       return { bearer };
     },
   });
-  return new SyncEngine(store, repo, backend, getDeviceId(), { access });
+  // "Go offline" in another tab hands this store to a profile: from then on it is not this account's to sync or purge
+  return new SyncEngine(store, repo, backend, getDeviceId(), { access, frozen: () => adoptedStoreKeys().has(key) });
 }
 
 /** what the boot does with each engine status (S2004: out of the boot's nested callbacks) */
@@ -297,6 +299,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clearSwSession(); // signed out: background sync stops immediately
       return;
     }
+    // an identity that never syncs leaves the worker nothing to do: the mirror of the account before it must go
+    if (identity.kind !== 'user') clearSwSession();
     let cancelled = false;
     const isCancelled = () => cancelled;
     const onAttempts = (n: number) => {

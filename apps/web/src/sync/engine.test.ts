@@ -109,7 +109,7 @@ class InMemoryServer implements SyncBackend {
 let dbCounter = 0;
 
 /** `guarded`: the app's wiring (#505) — the engine records roles and the repo refuses a reader's writes */
-function device(name: string, wall: () => number, server: InMemoryServer, now?: () => number, guarded = false) {
+function device(name: string, wall: () => number, server: InMemoryServer, now?: () => number, guarded = false, frozen?: () => boolean) {
   const db = new MunniDB(`engine_test_${name}_${dbCounter}`);
   const storeBackend = new DexieBackend(db);
   const access = new SpaceAccess(storeBackend);
@@ -117,7 +117,7 @@ function device(name: string, wall: () => number, server: InMemoryServer, now?: 
     trackOutbox: true,
     ...(guarded ? { readOnly: (spaceId: string) => access.isReadOnly(spaceId) } : {}),
   });
-  const engine = new SyncEngine(storeBackend, repo, server, name, { ...(now ? { now } : {}), ...(guarded ? { access } : {}) });
+  const engine = new SyncEngine(storeBackend, repo, server, name, { ...(now ? { now } : {}), ...(guarded ? { access } : {}), ...(frozen ? { frozen } : {}) });
   return { db, repo, engine, storeBackend, access };
 }
 
@@ -537,6 +537,30 @@ describe('SyncEngine', () => {
 
     expect((await leaver.db.spaces.get('s1'))?.name).toBe('Shared');
     expect((await leaver.db.accounts.get('acc1'))?.name).toBe('Theirs');
+    expect(useEvicted.getState().evicted).toBeNull();
+  });
+
+  it('a store another identity took over is frozen: no round runs on it and a refused space is never purged from it', async () => {
+    const owner = await sharedSpace();
+    let wb = 2_000_000;
+    let frozen = false;
+    const tab = device('otherTab', () => ++wb, server, undefined, false, () => frozen);
+    dbs.push(tab.db);
+    await tab.engine.syncAll();
+    await owner.repo.upsert('account', 's1', 'acc2', { name: 'New' });
+    await owner.engine.syncAll();
+
+    // the account went offline in another tab: its server side is gone, and this tab's store is the profile's now
+    frozen = true;
+    server.forbiddenSpaces.add('s1');
+    const heads = server.headsCalls;
+    await tab.engine.syncAll();
+    // a space whose sync was already under way when the store froze: refused, and left alone
+    await tab.engine.syncSpace('s1').catch(() => undefined);
+
+    expect(server.headsCalls).toBe(heads);
+    expect((await tab.db.spaces.get('s1'))?.name).toBe('Shared');
+    expect((await tab.db.accounts.get('acc1'))?.name).toBe('Theirs');
     expect(useEvicted.getState().evicted).toBeNull();
   });
 

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
+import { adoptOfflineProfile } from '@/features/auth/offlineProfiles';
 import { identityKey, readSessionIdentity, useSession } from './session';
 
 describe('session persistence (local-first: restarts must not sign out)', () => {
@@ -33,6 +34,27 @@ describe('session persistence (local-first: restarts must not sign out)', () => 
     expect(readSessionIdentity()).toBeNull();
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'nonsense' }));
     expect(readSessionIdentity()).toBeNull();
+  });
+
+  it('a store an offline profile adopted is that profile’s: the same login signing in again gets a store of its own', () => {
+    expect(identityKey({ kind: 'user', sub: 'abc' })).toBe('user_abc');
+    const profile = adoptOfflineProfile('Was online', undefined, 'user_abc');
+
+    expect(identityKey({ kind: 'offline', profileId: profile.id })).toBe('user_abc');
+    expect(identityKey({ kind: 'user', sub: 'abc' })).toBe('user_abc_2');
+    // another login on the device is untouched
+    expect(identityKey({ kind: 'user', sub: 'xyz' })).toBe('user_xyz');
+  });
+
+  it('the store a login moved to stays its store when the profile is deleted, and a second go-offline moves it on', () => {
+    adoptOfflineProfile('First', undefined, 'user_abc');
+    expect(identityKey({ kind: 'user', sub: 'abc' })).toBe('user_abc_2');
+
+    localStorage.removeItem('munni_offline_profiles');
+    expect(identityKey({ kind: 'user', sub: 'abc' })).toBe('user_abc_2');
+
+    adoptOfflineProfile('Second', undefined, 'user_abc_2');
+    expect(identityKey({ kind: 'user', sub: 'abc' })).toBe('user_abc_3');
   });
 
   it('identityKey sanitizes subs for db names', () => {

@@ -47,6 +47,8 @@ export interface SyncEngineOptions {
   now?: () => number;
   /** #505: this identity's role per space — each round's heads update it, a read-only space takes no push */
   access?: SpaceAccess;
+  /** true once the store belongs to another identity (a profile adopted it): nothing syncs or is purged from here on */
+  frozen?: () => boolean;
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
@@ -78,6 +80,7 @@ export class SyncEngine {
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
   /** the identity is leaving sync: a round now would read its ended memberships as evictions and purge */
   private halted = false;
+  private readonly frozen: () => boolean;
   private inFlight: Promise<void> | null = null;
   private readonly now: () => number;
   private readonly access: SpaceAccess | null;
@@ -91,6 +94,11 @@ export class SyncEngine {
   ) {
     this.now = options.now ?? Date.now;
     this.access = options.access ?? null;
+    this.frozen = options.frozen ?? (() => false);
+  }
+
+  private get stopped(): boolean {
+    return this.halted || this.frozen();
   }
 
   onStatus(listener: (status: SyncStatus) => void): () => void {
@@ -195,7 +203,7 @@ export class SyncEngine {
     // stream) is folded into ONE more round after it, and one inside a pause
     // the server asked for waits for its end — a burst of writes used to
     // stack round on round until the rate limiter answered 429 for everything
-    if (this.halted) return;
+    if (this.stopped) return;
     if (this.running || this.now() < this.pausedUntil) {
       this.rerun = true;
       return;
@@ -252,7 +260,7 @@ export class SyncEngine {
       let firstError: unknown = null;
       const serverSet = new Set(serverSpaces);
       for (const spaceId of spaceIds) {
-        if (this.halted) return;
+        if (this.stopped) return;
         try {
           // #306 (user): a space we KNOW evicted us stays untouched until
           // the server re-grants it — no request may leave for it
@@ -265,7 +273,7 @@ export class SyncEngine {
           firstError ??= err;
         }
       }
-      if (this.halted) return;
+      if (this.stopped) return;
       await this.purgeOrphanFeeds(serverSpaces);
       if (firstError) throw firstError;
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
@@ -434,7 +442,7 @@ export class SyncEngine {
       }
       await this.settleUndo(spaceId);
     } catch (err) {
-      if (err instanceof SyncHttpError && err.status === 403 && !this.halted) {
+      if (err instanceof SyncHttpError && err.status === 403 && !this.stopped) {
         // #173: a 403 on a MEMBER space is an eviction (feed sweeps stay
         // silent: they route through purgeOrphanFeeds, not this catch)
         await this.evictSpace(spaceId);

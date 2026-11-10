@@ -54,6 +54,11 @@ export function adoptOfflineProfile(name: string, picture: string | undefined, s
   return profile;
 }
 
+/** the stores "Go offline" handed to a profile: no signed-in identity opens one again */
+export function adoptedStoreKeys(): Set<string> {
+  return new Set(listOfflineProfiles().flatMap((p) => (p.storeKey ? [p.storeKey] : [])));
+}
+
 export function offlineProfileName(id: string): string | undefined {
   return listOfflineProfiles().find((p) => p.id === id)?.name;
 }
