@@ -1212,11 +1212,14 @@ export function HomeScreen() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{goal.name}</span>
-                    <span className="m-num shrink-0 text-[12px] font-semibold text-accent-deep">
-                      {Math.round(progress * 100)}%
-                    </span>
+                    {/* the goal's page shows its target: a percentage or a filled bar here would give the hidden amount away */}
+                    {!hideSensitive && (
+                      <span className="m-num shrink-0 text-[12px] font-semibold text-accent-deep">
+                        {Math.round(progress * 100)}%
+                      </span>
+                    )}
                   </span>
-                  <ProgressBar className="mt-1" size="sm" value={progress} />
+                  <ProgressBar className="mt-1" size="sm" value={hideSensitive ? 0 : progress} />
                 </span>
               </button>
             );

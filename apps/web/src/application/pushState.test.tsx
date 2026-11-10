@@ -6,7 +6,7 @@ import { usePushState } from './pushState';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
-const push = vi.hoisted(() => ({ supported: true, enabled: false, caps: { push: true, vapidPublicKey: 'key' } as Record<string, unknown> }));
+const push = vi.hoisted(() => ({ supported: true, enabled: false, answered: true, caps: { push: true, vapidPublicKey: 'key' } as Record<string, unknown> }));
 
 vi.mock('@/lib/push', () => ({
   pushSupported: () => push.supported,
@@ -14,6 +14,7 @@ vi.mock('@/lib/push', () => ({
 }));
 vi.mock('@/lib/api', () => ({
   getApiCapabilities: async () => push.caps,
+  apiCapabilitiesKnown: () => push.answered,
 }));
 
 /** the device's mirror of the spaces switched off (#549) */
@@ -26,6 +27,7 @@ afterEach(() => {
   useSession.getState().logout();
   push.supported = true;
   push.enabled = false;
+  push.answered = true;
   push.caps = { push: true, vapidPublicKey: 'key' };
 });
 
@@ -63,5 +65,21 @@ describe('usePushState (#534: can a warning about this space reach this device?)
     push.supported = false;
     const noBrowser = renderHook(() => usePushState(metaStore(), 's1'));
     await waitFor(() => expect(noBrowser.result.current).toBe('unsupported'));
+  });
+
+  it('a device that could not reach the server answers from what it knows itself — never "cannot receive"', async () => {
+    useSession.getState().login({ kind: 'user', sub: 'u1', testAuth: true });
+    // the handshake failed: no capabilities came back, and nothing was learnt about the server
+    push.caps = {};
+    push.answered = false;
+    push.enabled = true;
+    const registered = renderHook(() => usePushState(metaStore(), 's1'));
+    await waitFor(() => expect(registered.result.current).toBe('on'));
+    const muted = renderHook(() => usePushState(metaStore(['s1']), 's1'));
+    await waitFor(() => expect(muted.result.current).toBe('off'));
+    // not registered: that much the device knows — off, with the way to switch it on
+    push.enabled = false;
+    const unregistered = renderHook(() => usePushState(metaStore(), 's1'));
+    await waitFor(() => expect(unregistered.result.current).toBe('off'));
   });
 });

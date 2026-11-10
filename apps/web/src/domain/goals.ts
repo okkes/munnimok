@@ -64,7 +64,7 @@ const parseLocal = (iso: string): Date => {
  * months fall around them. A whole-month count said one, and asked for
  * the lot at once. null undated.
  */
-export function periodsLeft(space: PaceSpace, targetDate: string | undefined, today: string): number | null {
+export function periodsLeft(space: PaceSpace, targetDate: string | null | undefined, today: string): number | null {
   if (!targetDate) return null;
   const type = space?.periodType ?? 'month';
   const day = space?.periodDay ?? 1;

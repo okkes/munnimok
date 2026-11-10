@@ -7,6 +7,7 @@ import type { SpaceTx } from '@/application/transactions';
 import type { Period } from '@/domain/periods';
 import { netAmountCents } from '@/domain/reimbursement';
 import { expenseSeries, finishedAverage, localDate, scopeIds, scopedContribution } from '@/domain/trends';
+import type { InSpaceCurrency } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { AutoHeight } from '@/ui/AutoHeight';
 import { Bars } from '@/ui/charts/Bars';
@@ -85,6 +86,7 @@ export function SpendingCard({
   currency,
   spaceId,
   fmt,
+  inSpace,
   testId,
   chartTestId,
   currentTestId,
@@ -99,6 +101,8 @@ export function SpendingCard({
   currency: string;
   spaceId: string;
   fmt: (cents: number) => string;
+  /** the sums restate another currency; the rows behind the door stay as recorded */
+  inSpace: InSpaceCurrency;
   testId?: string;
   chartTestId?: string;
   currentTestId?: string;
@@ -117,7 +121,7 @@ export function SpendingCard({
     return allTxs.filter((tx) => picked.has(tx.accountId));
   }, [allTxs, graph.accountIds]);
   const ids = useMemo(() => scopeIds(cats, graph.catIds), [cats, graph.catIds]);
-  const values = useMemo(() => expenseSeries(txs, periods, ids), [txs, periods, ids]);
+  const values = useMemo(() => expenseSeries(txs, periods, ids, inSpace), [txs, periods, ids, inSpace]);
   const average = useMemo(() => finishedAverage(values), [values]);
   const index = Math.min(selected, periods.length - 1);
   const period = periods[index];
@@ -189,10 +193,10 @@ export function SpendingCard({
           </>
         )}
         {view === 'compare' && (
-          <CompareView graphId={graph.id} periods={periods} selected={index} txs={txs} catIds={graph.catIds} today={today} color={graph.color} fmt={fmt} />
+          <CompareView graphId={graph.id} periods={periods} selected={index} txs={txs} catIds={graph.catIds} today={today} color={graph.color} fmt={fmt} inSpace={inSpace} />
         )}
         {view === 'breakdown' && (
-          <BreakdownView graphId={graph.id} period={period} txs={txs} ids={ids} fmt={fmt} onPickSub={(catId) => setSheet({ open: true, subId: catId })} />
+          <BreakdownView graphId={graph.id} period={period} txs={txs} ids={ids} fmt={fmt} inSpace={inSpace} onPickSub={(catId) => setSheet({ open: true, subId: catId })} />
         )}
         {view !== 'periods' && (
           <PeriodNav

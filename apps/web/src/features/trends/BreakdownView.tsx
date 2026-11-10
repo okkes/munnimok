@@ -3,6 +3,7 @@ import { useLang } from '@/i18n';
 import type { TxView } from '@/db/types';
 import type { Period } from '@/domain/periods';
 import { scopedBreakdown } from '@/domain/trends';
+import type { InSpaceCurrency } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Icon } from '@/ui/Icon';
 
@@ -20,6 +21,7 @@ export function BreakdownView({
   txs,
   ids,
   fmt,
+  inSpace,
   onPickSub,
 }: Readonly<{
   graphId: string;
@@ -27,11 +29,12 @@ export function BreakdownView({
   txs: readonly TxView[];
   ids: ReadonlySet<string> | null;
   fmt: (cents: number) => string;
+  inSpace: InSpaceCurrency;
   onPickSub: (catId: string) => void;
 }>) {
   const { t } = useLang();
   const cats = useCategories();
-  const groups = useMemo(() => scopedBreakdown(txs, period, ids), [txs, period, ids]);
+  const groups = useMemo(() => scopedBreakdown(txs, period, ids, inSpace), [txs, period, ids, inSpace]);
   const total = groups.reduce((sum, group) => sum + group.cents, 0);
   const rows = groups.slice(0, TOP);
   const rest = groups.slice(TOP).reduce((sum, group) => sum + group.cents, 0);

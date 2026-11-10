@@ -176,13 +176,14 @@ export function BudgetFormScreen() {
       amountCents,
       every,
       anchor,
-      resetDay: every === 'month' && resetDayText.trim() ? resetDay : undefined,
+      // null, never undefined: JSON drops an undefined field, so a choice taken back would not reach the other devices
+      resetDay: every === 'month' && resetDayText.trim() ? resetDay : null,
       catIds,
       carryOver: carryOver ? 1 : 0,
-      carryMode: carryOver ? carryMode : undefined,
-      carryPeriods: carryOver && carryMode === 'periods' ? Math.max(1, carryPeriods) : undefined,
-      carryCapCents: carryOver && carryMode === 'cap' && Number.isFinite(capCents) && capCents > 0 ? capCents : undefined,
-      notifyAtPct: notifyAtPct || undefined,
+      carryMode: carryOver ? carryMode : null,
+      carryPeriods: carryOver && carryMode === 'periods' ? Math.max(1, carryPeriods) : null,
+      carryCapCents: carryOver && carryMode === 'cap' && Number.isFinite(capCents) && capCents > 0 ? capCents : null,
+      notifyAtPct: notifyAtPct || null,
       active: editing?.active ?? 1,
     });
     if (editing) await navigate({ to: '/budgets/$budgetId', params: { budgetId: editing.id }, replace: true });

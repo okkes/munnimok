@@ -6,6 +6,7 @@ import { useSpaceAccounts } from '@/application/transactions';
 import type { SpaceAccount, SpaceTx } from '@/application/transactions';
 import type { SpaceRow } from '@/db/types';
 import type { Period } from '@/domain/periods';
+import type { InSpaceCurrency } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { Catalog } from '@/features/categories/useCategories';
 import { Icon } from '@/ui/Icon';
@@ -47,6 +48,7 @@ export function SpendingTab({
   catId,
   onCatId,
   fmt,
+  inSpace,
 }: Readonly<{
   space: SpaceRow | undefined;
   periods: readonly Period[];
@@ -58,6 +60,7 @@ export function SpendingTab({
   catId: string | undefined;
   onCatId: (catId: string | undefined) => void;
   fmt: (cents: number) => string;
+  inSpace: InSpaceCurrency;
 }>) {
   const { t } = useLang();
   const { spaceId } = useData();
@@ -77,7 +80,7 @@ export function SpendingTab({
     icon: selected?.icon ?? 'shape-outline',
     color: catId ? colorOf(cats, catId) : ACCENT,
   };
-  const shared = { periods, labels, txs, today, currency, spaceId, fmt };
+  const shared = { periods, labels, txs, today, currency, spaceId, fmt, inSpace };
 
   return (
     <>

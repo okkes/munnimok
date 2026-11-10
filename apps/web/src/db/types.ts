@@ -437,18 +437,18 @@ export interface BudgetRow extends SyncEnvelope {
   every: BudgetEvery;
   /** yyyy-mm-dd the budget starts on: its first period opens here (and may be partial) */
   anchor: string;
-  /** #371: monthly budgets reset on this day of the month (1-28); absent = the start date's day */
-  resetDay?: number;
+  /** #371: monthly budgets reset on this day of the month (1-28); absent or null = the start date's day */
+  resetDay?: number | null;
   /** main and/or sub category ids; exclusive across a space's budgets */
   catIds: string[];
   carryOver?: 0 | 1;
-  carryMode?: BudgetCarryMode;
+  carryMode?: BudgetCarryMode | null;
   /** carry unused money at most N periods forward (carryMode 'periods') */
-  carryPeriods?: number;
+  carryPeriods?: number | null;
   /** or accumulate up to this cap (carryMode 'cap') */
-  carryCapCents?: number;
-  /** warn when spending crosses this percentage; absent = quiet */
-  notifyAtPct?: number;
+  carryCapCents?: number | null;
+  /** warn when spending crosses this percentage; absent or null = quiet */
+  notifyAtPct?: number | null;
   active: 0 | 1;
 }
 
@@ -489,10 +489,11 @@ export interface GoalRow extends SyncEnvelope {
   name: string;
   icon?: string;
   color?: string;
-  /** cover image like events: bundled path or uploaded data url */
-  picture?: string;
+  /** cover image like events: bundled path or uploaded data url; null once taken off */
+  picture?: string | null;
   targetCents: number;
-  targetDate?: string;
+  /** null once the deadline is taken off */
+  targetDate?: string | null;
   /** running total, maintained by contributions */
   allocatedCents: number;
   archived?: 0 | 1;

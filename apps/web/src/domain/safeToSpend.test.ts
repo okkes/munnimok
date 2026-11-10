@@ -122,6 +122,35 @@ describe('safe to spend — the hard facts', () => {
     expect(early.dues[0]).toMatchObject({ dates: ['2026-07-23', '2026-07-30'], cents: 5_000 });
   });
 
+  it('a payment booked just after the period began paid the occurrence before it — this period’s own stays due', () => {
+    // the 31st of October was a Saturday: the bank took the rent on Monday the 2nd
+    const endOfMonth = rec({ dueDay: 31 });
+    const late = tx({ date: '2026-11-02', amountCents: -85_000, recurringId: 'rent' });
+    const result = run({ recurrings: [endOfMonth], txs: [late], today: '2026-11-09' })!;
+    expect(result.dues).toEqual([{ kind: 'recurring', id: 'rent', name: 'Rent', dates: ['2026-11-30'], cents: 85_000 }]);
+    expect(result.cents).toBe(152_000 - 85_000);
+    // with October's own payment on record, a second one this early is November's, paid ahead
+    const onTime = tx({ date: '2026-10-30', amountCents: -85_000, recurringId: 'rent' });
+    expect(run({ recurrings: [endOfMonth], txs: [onTime, late], today: '2026-11-09' })!.dues).toEqual([]);
+    // paid on the last day before the period for the 1st: nothing is due on the 1st
+    const first = rec({ dueDay: 1 });
+    const dayBefore = tx({ date: '2026-10-31', amountCents: -85_000, recurringId: 'rent' });
+    expect(run({ recurrings: [first], txs: [dayBefore], today: '2026-11-01' })!.dues).toEqual([]);
+  });
+
+  it('a payment covers its occurrence whatever it came to — an estimate paid for less leaves nothing listed', () => {
+    const energy = rec({ id: 'energy', name: 'Energy', amountCents: 5_000, dueDay: 25 });
+    const lower = tx({ date: '2026-11-20', amountCents: -4_500, recurringId: 'energy' });
+    expect(run({ recurrings: [energy], txs: [lower], today: '2026-11-21' })!.dues).toEqual([]);
+  });
+
+  it('a loan’s payments are matched the same way: last period’s, booked late, leaves this period’s due', () => {
+    const endOfMonthLoan = account('car', 'loan', -500_000, { paymentCents: 25_000, paymentDay: 31 });
+    const late = tx({ date: '2026-11-02', amountCents: -25_000, linkedAccountId: 'car' });
+    const result = run({ accounts: [main, wallet, endOfMonthLoan], txs: [late], today: '2026-11-09' })!;
+    expect(result.dues).toEqual([{ kind: 'loan', id: 'car', name: 'car', dates: ['2026-11-30'], cents: 25_000 }]);
+  });
+
   it('a loan payment still due comes off; one paid this period, or a loan among the picked accounts, does not', () => {
     const due = run({ accounts: [main, wallet, carLoan] })!;
     expect(due.dues).toEqual([{ kind: 'loan', id: 'car', name: 'car', dates: ['2026-07-15'], cents: 25_000 }]);

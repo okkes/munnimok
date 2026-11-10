@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import type { PushState } from '@/application/pushState';
 
 /** the device's notification state, set per test (#534) */
@@ -65,4 +65,55 @@ describe('the budget form (#534)', () => {
     fireEvent.click(screen.getByTestId('budgetform-notify-why-toggle'));
     expect(screen.getByTestId('budgetform-notify-why').textContent).toMatch(/Sign in with an account/);
   });
+});
+
+describe('the budget form, signed in', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    device.push = 'on';
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('a choice taken back reaches the server: Off, an emptied reset day and carry-over switched off travel as null', async () => {
+    // what the server is sent for the budget, as the JSON it arrives in
+    const sent: Record<string, unknown>[] = [];
+    renderAppAsUser('/budgets/new', {
+      api: {
+        'POST /sync/s-user/push': (body) => {
+          for (const op of (body as { ops: { entity: string; fields: Record<string, unknown> }[] }).ops) if (op.entity === 'budget') sent.push(op.fields);
+          return { lastSeq: 0 };
+        },
+      },
+    });
+    await screen.findByTestId('screen-budget-form');
+    fireEvent.change(screen.getByTestId('budgetform-name'), { target: { value: 'Fun' } });
+    fireEvent.change(screen.getByTestId('budgetform-amount'), { target: { value: '50' } });
+    fireEvent.click(await screen.findByTestId('budget-cat-entertainment'));
+    fireEvent.change(screen.getByTestId('budgetform-resetday'), { target: { value: '12' } });
+    fireEvent.click(screen.getByTestId('budgetform-carry'));
+    fireEvent.click(await screen.findByTestId('budgetform-carrymode-cap'));
+    fireEvent.change(screen.getByTestId('budgetform-carrycap'), { target: { value: '150' } });
+    fireEvent.click(chip(90));
+    fireEvent.click(screen.getByTestId('budgetform-save'));
+    await screen.findByTestId('screen-budgets');
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ notifyAtPct: 90, resetDay: 12, carryMode: 'cap', carryCapCents: 15_000 }));
+
+    const card = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="budget-card-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('budgetdetail-edit'));
+    await waitFor(() => expect((screen.getByTestId('budgetform-resetday') as HTMLInputElement).value).toBe('12'));
+    fireEvent.click(chip(0));
+    fireEvent.change(screen.getByTestId('budgetform-resetday'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('budgetform-carry'));
+    fireEvent.click(screen.getByTestId('budgetform-save'));
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ notifyAtPct: null, resetDay: null, carryOver: 0, carryMode: null, carryPeriods: null, carryCapCents: null }));
+  }, 20_000);
 });

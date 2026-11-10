@@ -89,7 +89,7 @@ export function OverviewScreen() {
   const barValues = useMemo(
     () =>
       periods.map((period) =>
-        txsForKind(kind, txs ?? [], accountsById, period, cashedOut).reduce((sum, tx) => sum + contributionCents(kind, tx), 0),
+        txsForKind(kind, txs ?? [], accountsById, period, cashedOut).reduce((sum, tx) => sum + contributionCents(kind, tx, accountsById), 0),
       ),
     [periods, txs, accountsById, kind, cashedOut],
   );

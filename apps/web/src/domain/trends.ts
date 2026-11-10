@@ -21,6 +21,10 @@ interface CatalogLookup {
 /** the earlier of two ISO dates (lexicographic — these are strings, not numbers) */
 export const minIso = (a: string, b: string): string => (a < b ? a : b); // NOSONAR(S7766)
 
+/** an amount of `currency` restated in the space's own: a sum never adds two currencies */
+export type InSpaceCurrency = (cents: number, currency: string | undefined) => number;
+const AS_RECORDED: InSpaceCurrency = (cents) => cents;
+
 // funding rows are standard-typed since the type retired (2026-08-05)
 // but the shared pot is not spending — the category family excludes them
 const countable = (tx: TxView): boolean =>
@@ -78,12 +82,17 @@ export interface BreakdownRow {
 /** a period's spending inside a scope by the category each slice is
  *  actually filed under (the sub, or a main a row sits on directly),
  *  largest first — the Breakdown view (user 2026-10-08) */
-export function scopedBreakdown(txs: readonly TxView[], period: Period, ids: ReadonlySet<string> | null): BreakdownRow[] {
+export function scopedBreakdown(
+  txs: readonly TxView[],
+  period: Period,
+  ids: ReadonlySet<string> | null,
+  inSpace: InSpaceCurrency = AS_RECORDED,
+): BreakdownRow[] {
   const sums = new Map<string, number>();
   for (const tx of txs) {
     if (!countable(tx) || tx.date < period.start || tx.date > period.end) continue;
     for (const slice of scopedSlices(tx, ids)) {
-      if (slice.cents > 0) sums.set(slice.catId, (sums.get(slice.catId) ?? 0) + slice.cents);
+      if (slice.cents > 0) sums.set(slice.catId, (sums.get(slice.catId) ?? 0) + inSpace(slice.cents, tx.currency));
     }
   }
   return [...sums].map(([catId, cents]) => ({ catId, cents })).sort((a, b) => b.cents - a.cents);
@@ -94,11 +103,16 @@ export const scopedContribution = (tx: TxView, ids: ReadonlySet<string> | null):
   countable(tx) ? txContribution(tx, ids) : 0;
 
 /** expense cents per period inside a scope (null = every expense) */
-export function expenseSeries(txs: readonly TxView[], periods: readonly Period[], ids: ReadonlySet<string> | null): number[] {
+export function expenseSeries(
+  txs: readonly TxView[],
+  periods: readonly Period[],
+  ids: ReadonlySet<string> | null,
+  inSpace: InSpaceCurrency = AS_RECORDED,
+): number[] {
   return periods.map((period) => {
     let sum = 0;
     for (const tx of txs) {
-      if (countable(tx) && tx.date >= period.start && tx.date <= period.end) sum += txContribution(tx, ids);
+      if (countable(tx) && tx.date >= period.start && tx.date <= period.end) sum += inSpace(txContribution(tx, ids), tx.currency);
     }
     return sum;
   });
@@ -144,12 +158,13 @@ export function cumulativeByDay(
   period: Period,
   catIds: readonly string[] | null,
   catalog: CatalogLookup,
+  inSpace: InSpaceCurrency = AS_RECORDED,
 ): number[] {
   const ids = scopeIds(catalog, catIds);
   const perDay = new Array<number>(periodDays(period)).fill(0);
   for (const tx of txs) {
     if (!countable(tx) || tx.date < period.start || tx.date > period.end) continue;
-    perDay[dayIndexOf(tx.date, period)] += txContribution(tx, ids);
+    perDay[dayIndexOf(tx.date, period)] += inSpace(txContribution(tx, ids), tx.currency);
   }
   let running = 0;
   const out: number[] = [];
@@ -174,15 +189,15 @@ export interface CashflowPoint {
 }
 
 /** income vs expense per period (gross income, net expenses) */
-export function cashflowSeries(txs: readonly TxView[], periods: readonly Period[]): CashflowPoint[] {
+export function cashflowSeries(txs: readonly TxView[], periods: readonly Period[], inSpace: InSpaceCurrency = AS_RECORDED): CashflowPoint[] {
   return periods.map((period) => {
     let income = 0;
     let expense = 0;
     for (const tx of txs) {
       if (tx.deleted !== 0 || tx.pending === 1 || tx.date < period.start || tx.date > period.end) continue;
       if (mainCatOf(tx.catId) === 'funding') continue; // the pot is not cashflow
-      if (tx.txType === 'income') income += tx.amountCents;
-      else if (tx.txType === 'expense') expense += Math.abs(netAmountCents(tx));
+      if (tx.txType === 'income') income += inSpace(tx.amountCents, tx.currency);
+      else if (tx.txType === 'expense') expense += inSpace(Math.abs(netAmountCents(tx)), tx.currency);
     }
     return { incomeCents: income, expenseCents: expense, netCents: income - expense };
   });
@@ -200,16 +215,17 @@ export interface NetWorthPoint {
  * savings/brokerage rows that only carry a balance.
  */
 export function netWorthSeries(
-  accounts: readonly Pick<AccountRow, 'id' | 'balanceCents' | 'archived' | 'deleted'>[],
+  accounts: readonly (Pick<AccountRow, 'id' | 'balanceCents' | 'archived' | 'deleted'> & Partial<Pick<AccountRow, 'currency'>>)[],
   txs: readonly TxView[],
   dates: readonly string[],
+  inSpace: InSpaceCurrency = AS_RECORDED,
 ): NetWorthPoint[] {
   const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1);
-  const nowCents = live.reduce((sum, account) => sum + account.balanceCents, 0);
+  const nowCents = live.reduce((sum, account) => sum + inSpace(account.balanceCents, account.currency), 0);
   const accountIds = new Set(live.map((account) => account.id));
   const movements = txs
     .filter((tx) => tx.deleted === 0 && tx.pending !== 1 && accountIds.has(tx.accountId))
-    .map((tx) => ({ date: tx.date, cents: tx.amountCents }));
+    .map((tx) => ({ date: tx.date, cents: inSpace(tx.amountCents, tx.currency) }));
   return dates.map((date) => {
     const after = movements.reduce((sum, m) => (m.date > date ? sum + m.cents : sum), 0);
     return { date, cents: nowCents - after };
@@ -221,7 +237,7 @@ export interface DailyPoint {
   cents: number;
 }
 
-type LiquidAccount = Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived' | 'deleted'>;
+type LiquidAccount = Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived' | 'deleted'> & Partial<Pick<AccountRow, 'currency'>>;
 
 /**
  * The money in hand per calendar day (user 2026-10-08: the filled
@@ -237,17 +253,19 @@ export function dailyBalanceSeries(
   from: string,
   to: string,
   picked: readonly string[] | null = null,
+  inSpace: InSpaceCurrency = AS_RECORDED,
 ): DailyPoint[] {
   const counts = (account: LiquidAccount) => (picked ? picked.includes(account.id) : LIQUID_TYPES.has(account.type));
   const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1 && counts(account));
-  const nowCents = live.reduce((sum, account) => sum + account.balanceCents, 0);
+  const nowCents = live.reduce((sum, account) => sum + inSpace(account.balanceCents, account.currency), 0);
   const accountIds = new Set(live.map((account) => account.id));
   const perDay = new Map<string, number>();
   let beyond = 0; // movements after the window — already "after" every day in it
   for (const tx of txs) {
     if (tx.deleted !== 0 || tx.pending === 1 || !accountIds.has(tx.accountId)) continue;
-    if (tx.date > to) beyond += tx.amountCents;
-    else perDay.set(tx.date, (perDay.get(tx.date) ?? 0) + tx.amountCents);
+    const cents = inSpace(tx.amountCents, tx.currency);
+    if (tx.date > to) beyond += cents;
+    else perDay.set(tx.date, (perDay.get(tx.date) ?? 0) + cents);
   }
   const out: DailyPoint[] = [];
   let after = beyond;
@@ -269,14 +287,15 @@ export interface IncomeSpike {
 /** the days a sizeable credit landed (≥ €500 by default) and who paid it
  *  — the largest credit of the day names it; income rows only, so a
  *  shuffle between two of your own accounts never reads as salary */
-export function incomeSpikes(txs: readonly TxView[], from: string, to: string, minCents = 50_000): IncomeSpike[] {
+export function incomeSpikes(txs: readonly TxView[], from: string, to: string, minCents = 50_000, inSpace: InSpaceCurrency = AS_RECORDED): IncomeSpike[] {
   const byDay = new Map<string, IncomeSpike>();
   for (const tx of txs) {
-    if (tx.deleted !== 0 || tx.pending === 1 || tx.txType !== 'income' || tx.amountCents < minCents) continue;
-    if (tx.date < from || tx.date > to) continue;
+    if (tx.deleted !== 0 || tx.pending === 1 || tx.txType !== 'income' || tx.date < from || tx.date > to) continue;
+    const cents = inSpace(tx.amountCents, tx.currency);
+    if (cents < minCents) continue;
     const prev = byDay.get(tx.date);
-    if (!prev || tx.amountCents > prev.cents) {
-      byDay.set(tx.date, { date: tx.date, merchant: tx.titleOverride?.trim() || tx.merchant, cents: tx.amountCents });
+    if (!prev || cents > prev.cents) {
+      byDay.set(tx.date, { date: tx.date, merchant: tx.titleOverride?.trim() || tx.merchant, cents });
     }
   }
   return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));

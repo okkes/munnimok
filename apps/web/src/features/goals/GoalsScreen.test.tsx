@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DexieBackend } from '@/db/backend';
+import { Repo } from '@/db/repo';
+import { MunniDB } from '@/db/schema';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 async function createGoal(name: string, target: string) {
   fireEvent.click(await screen.findByTestId('goals-add'));
@@ -257,4 +262,80 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-goals-row'));
     await screen.findByTestId('screen-goals');
   }, 15_000);
+});
+
+describe('Goals, west of Greenwich', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('a cashed-out goal names the day it was cashed out, not the day before', async () => {
+    const first = renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    // the boot chain settles before the seed opens its own connection
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-cashout'), { trackOutbox: false });
+    await repo.upsert('goal', DEMO_SPACE_ID, 'goal_car', { name: 'Car', targetCents: 100_000, allocatedCents: 0, archived: 1, cashOut: { date: '2026-10-14', txIds: [] } });
+    db.close();
+    first.unmount();
+
+    // a day string parsed as UTC midnight is the evening before here
+    vi.stubEnv('TZ', 'America/New_York');
+    renderApp('/goals');
+    const card = await screen.findByTestId('goal-card-goal_car', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('Cashed out on 14 Oct 2026');
+    fireEvent.click(card);
+    expect((await screen.findByTestId('goaldetail-pace')).textContent).toContain('Cashed out on 14 Oct 2026');
+  }, 20_000);
+});
+
+describe('Goals, signed in', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('a deadline and a picture taken off a goal reach the server as null', async () => {
+    // what the server is sent for the goal, as the JSON it arrives in
+    const sent: Record<string, unknown>[] = [];
+    renderAppAsUser('/goals', {
+      api: {
+        'POST /sync/s-user/push': (body) => {
+          for (const op of (body as { ops: { entity: string; fields: Record<string, unknown> }[] }).ops) if (op.entity === 'goal') sent.push(op.fields);
+          return { lastSeq: 0 };
+        },
+      },
+    });
+    await screen.findByTestId('screen-goals');
+    fireEvent.click(await screen.findByTestId('goals-add'));
+    fireEvent.click(await screen.findByTestId('goalform-pic-bike'));
+    fireEvent.change(screen.getByTestId('goalform-name'), { target: { value: 'Bike' } });
+    fireEvent.change(screen.getByTestId('goalform-target'), { target: { value: '900' } });
+    fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: '2031-06-01' } });
+    fireEvent.click(screen.getByTestId('goalform-save'));
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ picture: '/goals/bike.jpg', targetDate: '2031-06-01' }));
+
+    const card = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="goal-card-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('goaldetail-edit'));
+    await waitFor(() => expect((screen.getByTestId('goalform-date') as HTMLInputElement).value).toBe('2031-06-01'));
+    fireEvent.click(screen.getByTestId('goalform-pic-none'));
+    fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('goalform-save'));
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ picture: null, targetDate: null }));
+  }, 20_000);
 });

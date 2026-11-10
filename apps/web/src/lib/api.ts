@@ -154,6 +154,9 @@ export function resetApiCapabilitiesCache(): void {
 /** the last /health handshake verdict — null while unknown or compatible */
 export const getProtocolIssue = (): ProtocolIssue | null => protocolIssue;
 
+/** false until /health has answered: an empty answer from getApiCapabilities then means "could not ask", not "offers nothing" */
+export const apiCapabilitiesKnown = (): boolean => capabilities !== null;
+
 /** Server feature flags from /health (cached per page load). */
 export async function getApiCapabilities(): Promise<ApiCapabilities> {
   if (capabilities) return capabilities;

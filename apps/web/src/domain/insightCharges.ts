@@ -78,16 +78,18 @@ export function billChanged(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const rec of inputs.recurrings) {
     if (rec.deleted !== 0 || rec.active !== 1 || rec.kind !== 'fixed' || isFundingRec(rec, inputs.catalog)) continue;
-    const cycles = new Map<string, { date: string; cents: number; tx: TxView }>();
+    const cycles = new Map<string, { first: string; date: string; cents: number; tx: TxView }>();
     for (const charge of chargesOf(rec, inputs.txs)) {
       const key = cycleKeyOf(rec, charge.date);
       const seen = cycles.get(key);
-      cycles.set(key, { date: charge.date, cents: (seen?.cents ?? 0) + charge.cents, tx: charge.tx });
+      cycles.set(key, { first: seen?.first ?? charge.date, date: charge.date, cents: (seen?.cents ?? 0) + charge.cents, tx: charge.tx });
     }
     const list = [...cycles.values()];
     const latest = list.at(-1);
     const previous = list.at(-2);
     if (!latest || !previous || latest.date < window.start || latest.tx.currency !== previous.tx.currency) continue;
+    // charges half a cycle apart are two bills in one calendar cycle (the next one paid ahead), not one bill in two goes
+    if (dayDiff(latest.first, latest.date) > cycleDays(rec) / 2) continue;
     const delta = latest.cents - previous.cents;
     if (delta < Math.max(500, Math.round(previous.cents * 0.1))) continue;
     const yearly = Math.round((delta * 12) / cycleMonths(rec));

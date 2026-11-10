@@ -7,6 +7,7 @@ import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useGoalOps, useGoals } from '@/application/goals';
+import { parseLocalDate } from '@/application/planningModel';
 import { localToday } from '@/application/recurring';
 import { goalOverview, goalProgress, paceCentsPerPeriod, periodUnitKey, periodsLeft } from '@/domain/goals';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -71,7 +72,7 @@ export function GoalDetailScreen() {
   useEffect(() => {
     if (goals && !goal) void navigate({ to: '/goals', replace: true });
   }, [goals, goal, navigate]);
-  const { fmt, fmtSensitive } = useDisplayMoney();
+  const { fmt, fmtSensitive, hideSensitive } = useDisplayMoney();
   if (!goal) return <div className="h-full" data-testid="screen-goal-detail" />;
 
   const currency = space?.currency ?? 'EUR';
@@ -102,7 +103,7 @@ export function GoalDetailScreen() {
     setAttempted(false);
   };
 
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
+  const fmtDate = (iso: string) => parseLocalDate(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   // #455: what paid for the goal — the rows still visible to the space, the money they took out of savings
   const cashOut = goal.cashOut ?? null;
@@ -144,8 +145,9 @@ export function GoalDetailScreen() {
           }
           number={<span data-testid="goaldetail-allocated">{balance(goal.allocatedCents)}</span>}
           sub={t('budgets.of', { amount: money(goal.targetCents) })}
-          right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
-          progress={<ProgressBar value={progress} />}
+          // beside the visible target the percentage and a filled bar would give the hidden amount away
+          right={hideSensitive ? undefined : <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
+          progress={<ProgressBar value={hideSensitive ? 0 : progress} />}
           meta={
             <span className="flex flex-col">
               {!reached && <span data-testid="goaldetail-togo">{toGoLine}</span>}
