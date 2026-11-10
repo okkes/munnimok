@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useOfflineReason } from '@/app/OfflineBanner';
 import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { usePlanning, usePlanningOps } from '@/application/planning';
@@ -25,6 +26,7 @@ import { Sheet } from '@/ui/Sheet';
 import { AddSourceSheet } from './AddSourceSheet';
 import { AheadSheet, aheadDiffers, periodLabel } from './AheadSheet';
 import { BlueprintsSheet } from './BlueprintsSheet';
+import { useCarryGate, useCarryOver } from './carryGate';
 import { InsightsSheet } from './InsightsSheet';
 import { OverspentReview } from './OverspentReview';
 import { PlanHeader } from './PlanHeader';
@@ -286,7 +288,7 @@ function PeriodPager({ model, viewBack, onViewBack }: Readonly<{ model: Planning
  */
 export function PlanningScreen() {
   const { t } = useLang();
-  const { store, spaceId } = useData();
+  const { store, spaceId, engine } = useData();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const { fmt } = useDisplayMoney();
   const currency = space?.currency ?? 'EUR';
@@ -311,21 +313,15 @@ export function PlanningScreen() {
 
   // #557 (user 2026-10-23): a new period carries the last plan over by itself instead of showing the
   // start screen — once per period here; while it runs the start screen stays away
-  const carried = useRef<string | null>(null);
-  const [carry, setCarry] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
-  const continuable = !!model?.continuable;
-  const carryKey = model ? `${spaceId}:${model.period.start}` : null;
-  useEffect(() => {
-    // #505: the carry-over writes the plan — the devices of those who may write it carry it
-    if (!canEdit || !continuable || !carryKey || carried.current === carryKey) return;
-    carried.current = carryKey;
-    setCarry('running');
-    ops
-      .continuePlan()
-      .then((done) => setCarry(done ? 'done' : 'failed'))
-      .catch(() => setCarry('failed'));
-  }, [canEdit, continuable, carryKey, ops]);
-  const carrying = carry === 'running' || (carry === 'done' && continuable);
+  const unreachable = useOfflineReason() !== null;
+  const synced = useCarryGate(engine, unreachable);
+  const carrying = useCarryOver({
+    canEdit,
+    continuable: !!model?.continuable,
+    carryKey: model ? `${spaceId}:${model.period.start}` : null,
+    synced,
+    carry: ops.continuePlan,
+  });
   // which segments are folded: this device remembers (user 2026-10-07)
   const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
   const toggleSegmentFold = (kind: PlanSegmentKind) =>
@@ -516,8 +512,9 @@ export function PlanningScreen() {
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title={t('plan.menu.title')} size="form">
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-menu-sheet">
-          {/* #505: a reader's menu keeps what only shows */}
-          {MENU.filter((item) => (item.id !== 'startOver' || editable) && (canEdit || item.id === 'insights')).map((item) => (
+          {/* #505: a reader's menu keeps what only shows. Start over stays with this period: a period ahead started
+              over keeps the mark of it, and would not continue the plan once it arrives */}
+          {MENU.filter((item) => (item.id !== 'startOver' || (editable && viewBack >= 0)) && (canEdit || item.id === 'insights')).map((item) => (
             <Row key={item.id} icon={item.icon} title={t(item.key)} testId={`plan-menu-${item.id}`} onClick={() => pick(item.id)} />
           ))}
         </div>

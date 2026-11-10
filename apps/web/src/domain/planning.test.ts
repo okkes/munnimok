@@ -43,6 +43,7 @@ import {
   canSkipPeriod,
 } from './planning';
 import type { PeriodLedger, SliceOwners, SubjectContext, SubjectView } from './planning';
+import { eventTotals } from './events';
 import type { TxSliceView } from './txSlices';
 
 const space = { periodType: 'month' as const, periodDay: 1 };
@@ -203,6 +204,17 @@ describe('realization: one owner per slice (#557)', () => {
     expect(ledger.byEvent.get('ev2')).toBe(0);
     // what an event cost before a date, for its target
     expect(eventNetBefore([tx({ id: 'a', amountCents: -700, eventId: 'ev', date: '2026-09-20' }), ...txs], 'ev', period.start, { ...NO_OWNERS, eventIds: new Set(['ev']) })).toBe(700);
+  });
+
+  it('what was paid back and settled is no event spending: the plan reads an event as the event’s own screen does (#493)', () => {
+    const eventOwners = { ...NO_OWNERS, eventIds: new Set(['ev']) };
+    // a €100 dinner on the trip, €60 of it settled by a friend's transfer that is no part of the event
+    const dinner = tx({ id: 'd', amountCents: -100_00, catId: 'sub_food_a', eventId: 'ev', cats: [{ catId: 'sub_food_a', amountCents: 40_00 }, { catId: 'reimbursed', amountCents: 60_00 }] });
+    const settledEarlier = tx({ id: 'b', date: '2026-09-20', amountCents: -50_00, catId: 'sub_food_a', eventId: 'ev', cats: [{ catId: 'reimbursed', amountCents: 50_00 }] });
+    expect(sliceOwner(slice({ eventId: 'ev', catId: 'reimbursed' }), owners)).toBeNull();
+    expect(periodLedger([dinner], period, eventOwners).byEvent.get('ev')).toBe(40_00);
+    expect(eventNetBefore([dinner, settledEarlier], 'ev', period.start, eventOwners)).toBe(0);
+    expect(eventTotals([dinner], 'ev').netCents).toBe(40_00);
   });
 });
 
@@ -469,6 +481,22 @@ describe('the subject view', () => {
     expect(goalView.realizedCents).toBe(100_00);
     expect(goalView.targetCents).toBe(Math.ceil(1000_00 / 3));
     expect(subjectView(subject({ segment: 'budgets', sourceId: 'gone' }), ctx()).orphaned).toBe(true);
+  });
+
+  it('a goal’s target is what the period needed when it began: the money the period itself puts in does not shrink it (#517)', () => {
+    // €1,200 by January, €200 saved before October: October, November, December, January take €250 each
+    const goalWith = (given: number) => ({ id: 'g', name: 'Car', targetCents: 1200_00, allocatedCents: 200_00 + given, targetDate: '2027-01-15', ...envelope }) as GoalRow;
+    const contributionsWith = (given: number) =>
+      [
+        { id: 'c0', goalId: 'g', amountCents: 200_00, date: '2026-09-10', ...envelope },
+        { id: 'c1', goalId: 'g', amountCents: given, date: '2026-10-10', ...envelope },
+      ] as GoalContributionRow[];
+    const viewWith = (given: number, fundedCents: number) =>
+      subjectView(subject({ segment: 'goals', sourceId: 'g', fundedCents }), ctx({ goalsById: new Map([['g', goalWith(given)]]), contributions: contributionsWith(given) }));
+    // exactly what was planned went in: funded, not "past target"
+    expect(viewWith(250_00, 250_00)).toMatchObject({ targetCents: 250_00, realizedCents: 250_00, status: 'funded' });
+    // more than the period needed, and covered: that is past the target
+    expect(viewWith(400_00, 400_00)).toMatchObject({ targetCents: 250_00, realizedCents: 400_00, status: 'overTarget' });
   });
 });
 

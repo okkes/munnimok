@@ -270,6 +270,18 @@ describe('Planning (demo identity)', () => {
     expect(screen.getByTestId('plan-segment-empty-expenses')).toBeTruthy();
   }, 25_000);
 
+  it('Start over belongs to this period: a period planned ahead does not offer it', async () => {
+    await startEmptyPlan();
+    await addHousingSubject('100');
+    await screen.findByText('Housing');
+    fireEvent.click(screen.getByTestId('plan-next'));
+    fireEvent.click(await screen.findByTestId('plan-ahead-start'));
+    await screen.findByTestId('plan-header');
+    fireEvent.click(screen.getByTestId('plan-menu'));
+    await screen.findByTestId('plan-menu-blueprints');
+    expect(screen.queryByTestId('plan-menu-startOver')).toBeNull();
+  }, 20_000);
+
   it('a subject in the red is covered from one with room; the tab wears the dot', async () => {
     await startEmptyPlan();
     await addHousingSubject('500');

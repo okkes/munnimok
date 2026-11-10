@@ -23,6 +23,7 @@ import {
 import type { SubjectShape, SubjectView } from '@/domain/planning';
 import { measure } from '@/lib/perf';
 import { logActivity } from './activity';
+import { carriedWrites, orderStamp } from './planningCarry';
 import { availabilityByCat, buildPlanning, hasCurrentPlan, loadPlanningData, loadPlanningRows, sortSubjects } from './planningModel';
 import type { CategoryAvailability, PlanningData, PlanningModel } from './planningModel';
 import { useSpaceTransactions } from './transactions';
@@ -195,12 +196,24 @@ const planFields = (kind: PlanKind, periodStart: string, segments: PlanSegmentCo
   oneOffs: [],
 });
 
+/** a subject as a new plan lays it down: its row there, and the stamps of the fields it is copied from */
+interface LaidRow {
+  id: string;
+  fields: SubjectFields;
+  versions: Readonly<Record<string, string>>;
+}
+
+// what a copy sets itself instead of taking from its source: these ride with the row's first write
+const OWN_SUBJECT_FIELDS = ['planId', 'fundedCents', 'snoozed'] as const;
+const OWN_PLAN_FIELDS = ['periodStart', 'oneOffs'] as const;
+
 /** the Unplanned row a mirrored segment's subject takes the place of (#494) */
 const ONE_OFF_KIND: Partial<Record<PlanSegmentKind, string>> = { recurring: 'recurring', debts: 'debt', events: 'event', goals: 'goal' };
 
-/** a subject's identity across copies: the mirrored source, or the expense subject's name and categories */
+/** a subject's identity across copies: the mirrored source, or the expense subject's name and categories —
+ *  in one order: a row keeps them as they were ticked, a shape sorted */
 const signatureOf = (s: Pick<PlanSubjectRow, 'segment' | 'sourceId' | 'name' | 'catIds'>): string =>
-  `${s.segment}|${s.sourceId ?? ''}|${s.sourceId ? '' : s.name}|${(s.catIds ?? []).join(',')}`;
+  `${s.segment}|${s.sourceId ?? ''}|${s.sourceId ? '' : s.name}|${[...(s.catIds ?? [])].sort((a, b) => a.localeCompare(b)).join(',')}`;
 
 /** the funding a copied subject inherits from its twin in the source list */
 const fundingFrom =
@@ -234,6 +247,37 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
       .filter((s) => stillRelevant(s, period, model.relevance))
       .map(subjectShape);
 
+  /** a plan's subjects on the rows they take in the plan `targetId` — the same rows whichever device or door copies them */
+  const carriedRows = (model: PlanningModel, source: PlanRow, period: Period, targetId: string): LaidRow[] =>
+    byBirth(model.subjectsOf(source))
+      .filter((row) => stillRelevant(row, period, model.relevance))
+      .map((row) => {
+        const shape = subjectShape(row);
+        return { id: carriedIdFor(targetId, shape, row.id), fields: shapeFields(shape, targetId), versions: row.fieldVersions };
+      });
+
+  /**
+   * A period's plan and its first subjects. A device that knows of no plan for the period may simply not have
+   * pulled it, so the rows go down stamped: nothing written elsewhere is overwritten, whenever this runs.
+   */
+  const layOut = async (model: PlanningModel, period: Period, rows: readonly LaidRow[], from: Pick<PlanRow, 'segments' | 'fieldVersions'> | undefined): Promise<number> => {
+    const id = planId(spaceId, 'actual', period.start);
+    const plan = planFields('actual', period.start, from?.segments);
+    const known = await store.get('plan', id);
+    if (!known) {
+      // the subjects before the plan: a push cut short leaves no plan standing, and whoever opens the period next finishes it
+      return repo.upsertStamped(spaceId, [
+        ...rows.flatMap((row) => carriedWrites('planSubject', row.id, row.fields, row.versions, 'planId', OWN_SUBJECT_FIELDS)),
+        ...carriedWrites('plan', id, plan, from?.fieldVersions ?? {}, 'kind', OWN_PLAN_FIELDS),
+      ]);
+    }
+    // started over: the new rows must outrank the tombstones, and nothing of before comes back with them
+    if (known.deleted === 1) await removeSubjects(model.data.subjects.filter((s) => s.planId === id));
+    await repo.upsert('plan', spaceId, id, plan);
+    for (const row of rows) await write(row.id, row.fields);
+    return rows.length + 1;
+  };
+
   /** a new subject takes over what the plan gave its Unplanned row for this period only (#494) */
   const absorbOneOffs = async (model: PlanningModel, planIdOf: string, keys: readonly string[]): Promise<number> => {
     const row = model.data.plans.find((p) => p.id === planIdOf);
@@ -261,16 +305,17 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     for (const row of rows) await repo.remove('planSubject', spaceId, row.id);
   };
 
-  /** a target plan takes a new shape: twins keep their funding (or not), strangers go */
+  /** a target plan takes a new shape: twins keep their row and their funding (or not), strangers go */
   const replaceSubjects = async (model: PlanningModel, target: PlanRow, shapes: readonly SubjectShape[], keepFunding: boolean) => {
     const existing = model.subjectsOf(target);
-    const existingById = new Map(existing.map((s) => [s.id, s]));
+    // by what the subject is, not by its id: an expense subject has no id two plans share, and its money must not go with a new one
+    const twins = new Map(existing.map((s) => [signatureOf(s), s]));
     const kept = new Set<string>();
     for (const shape of shapes) {
-      const id = idForShape(repo, target.id, shape);
+      const twin = twins.get(signatureOf(shape));
+      const id = twin?.id ?? idForShape(repo, target.id, shape);
       kept.add(id);
-      const funded = keepFunding ? (existingById.get(id)?.fundedCents ?? 0) : 0;
-      await write(id, shapeFields(shape, target.id, funded));
+      await write(id, shapeFields(shape, target.id, keepFunding ? (twin?.fundedCents ?? 0) : 0));
     }
     await removeSubjects(existing.filter((s) => !kept.has(s.id)));
   };
@@ -297,35 +342,26 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     }
   };
 
-  const shapesForStart = (model: PlanningModel, period: Period, from: PlanStart): SubjectShape[] => {
-    switch (from.kind) {
-      case 'last': {
-        const source = model.pastPlans.find((p) => p.periodStart! < period.start);
-        return source ? relevantShapes(model, model.subjectsOf(source), period) : [];
-      }
-      case 'blueprint': {
-        const blueprint = model.blueprints.find((b) => b.id === from.id);
-        return blueprint ? relevantShapes(model, model.subjectsOf(blueprint), period) : [];
-      }
-      case 'recommendation':
-        return recommendSubjects({
-          catalog: model.data.catalog,
-          nameOf: from.nameOf,
-          pastLedgers: model.pastLedgers,
-          budgets: model.data.budgets,
-          recurrings: model.data.recurrings,
-          accounts: model.data.accounts,
-          poolIds: model.poolIds,
-          events: model.data.events,
-          goals: model.data.goals,
-          incomeCents: from.incomeCents,
-          space: model.data.space ?? { periodType: 'month', periodDay: 1 },
-          period,
-        });
-      default:
-        return [];
-    }
-  };
+  /** munni's suggestion on rows two devices agree on: a mirrored source's own, an expense subject's by its main category */
+  const recommendedRows = (model: PlanningModel, period: Period, from: Extract<PlanStart, { kind: 'recommendation' }>, targetId: string): LaidRow[] =>
+    recommendSubjects({
+      catalog: model.data.catalog,
+      nameOf: from.nameOf,
+      pastLedgers: model.pastLedgers,
+      budgets: model.data.budgets,
+      recurrings: model.data.recurrings,
+      accounts: model.data.accounts,
+      poolIds: model.poolIds,
+      events: model.data.events,
+      goals: model.data.goals,
+      incomeCents: from.incomeCents,
+      space: model.data.space ?? { periodType: 'month', periodDay: 1 },
+      period,
+    }).map((shape, index) => ({
+      id: shape.sourceId ? mirroredSubjectId(targetId, shape.segment, shape.sourceId) : `psub:${targetId}:expenses:${shape.catIds?.[0] ?? index}`,
+      fields: shapeFields(shape, targetId),
+      versions: { planId: orderStamp(index) },
+    }));
 
   const copyWithFunding = async (targetId: string, source: readonly PlanSubjectRow[]) =>
     copyShapes(targetId, byBirth(source).map(subjectShape), fundingFrom(source));
@@ -339,32 +375,25 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     startPlan: async (period, from) => {
       const model = await fresh();
       const id = planId(spaceId, 'actual', period.start);
-      const blueprint = from.kind === 'blueprint' ? model.blueprints.find((b) => b.id === from.id) : undefined;
-      // the segments as the person last set them: the blueprint's, else the latest plan's
-      const segments = blueprint?.segments ?? model.pastPlans[0]?.segments;
-      await repo.upsert('plan', spaceId, id, planFields('actual', period.start, segments));
-      await copyShapes(id, shapesForStart(model, period, from));
+      const latest = model.pastPlans.find((p) => p.periodStart! < period.start);
+      // "Like last period" and a blueprint are copies of a plan; the others take the segments as the person last set them
+      const source = from.kind === 'last' ? latest : model.blueprints.find((b) => from.kind === 'blueprint' && b.id === from.id);
+      let rows: LaidRow[] = [];
+      if (source) rows = carriedRows(model, source, period, id);
+      else if (from.kind === 'recommendation') rows = recommendedRows(model, period, from, id);
+      await layOut(model, period, rows, source ?? latest);
       act('planStart');
       return id;
     },
 
     continuePlan: async () => {
       const model = await fresh();
-      const source = model.previousPlan;
+      const source = model.pastPlans.at(0);
       if (!model.continuable || !source) return false;
       const id = planId(spaceId, 'actual', model.period.start);
-      if (await store.get('plan', id)) return false; // made meanwhile, or started over on another device
-      // the spending starts at nothing by itself; the funding stays behind — what a bill or an event
-      // set aside and did not spend still reaches it as carried (carriedBySource)
-      await repo.batch(async () => {
-        await repo.upsert('plan', spaceId, id, planFields('actual', model.period.start, source.segments));
-        for (const row of byBirth(model.subjectsOf(source))) {
-          if (!stillRelevant(row, model.period, model.relevance)) continue;
-          const shape = subjectShape(row);
-          await write(carriedIdFor(id, shape, row.id), shapeFields(shape, id));
-        }
-      });
-      act('planStart');
+      // made meanwhile, or started over on another device
+      if (await store.get('plan', id)) return false;
+      if ((await layOut(model, model.period, carriedRows(model, source, model.period, id), source)) > 0) act('planStart');
       return true;
     },
 
@@ -522,11 +551,9 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
       if (existing) {
         subjects = model.subjectsOf(existing);
       } else {
-        // the period takes the current plan's shape — the subjects that still matter then (an event
-        // over by that period stays behind); the ids are minted ONCE so the funding below lands on the rows just written
-        await repo.upsert('plan', spaceId, id, planFields('actual', period.start, model.segmentsOf(model.plan)));
-        const rows = relevantShapes(model, model.subjectsOf(model.plan), period).map((shape) => ({ id: idForShape(repo, id, shape), fields: shapeFields(shape, id) }));
-        for (const row of rows) await write(row.id, row.fields);
+        // the rows a carry-over into that period would take: a device that never pulled this plan then lands on it, not beside it
+        const rows = carriedRows(model, model.plan, period, id);
+        await layOut(model, period, rows, model.plan);
         subjects = sortSubjects(
           rows.map((row) => ({ ...row.fields, id: row.id, spaceId, hlc: '', deleted: 0 as const, fieldVersions: {} })),
           model.segmentsOf(model.plan),

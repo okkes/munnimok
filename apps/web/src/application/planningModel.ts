@@ -148,7 +148,6 @@ export interface PlanningModel {
   /** newest last, the current one excluded — what the estimates look at */
   pastPeriods: Period[];
   plan: PlanRow | null;
-  previousPlan: PlanRow | null;
   /** the actual plans of past periods, newest first (the previous one included) */
   pastPlans: PlanRow[];
   sandbox: PlanRow | null;
@@ -160,8 +159,8 @@ export interface PlanningModel {
   /** the source rows a copy checks a subject against (stillRelevant) */
   relevance: RelevanceSources;
   /**
-   * #557 (user 2026-10-23): the period has no plan, was not started over, and
-   * the previous period's plan has subjects — its plan carries over by itself
+   * #557 (user 2026-10-23): the period has no plan, was not started over, and the newest plan before it has
+   * subjects — that plan carries over by itself, whether or not the periods in between were planned
    */
   continuable: boolean;
   /** the past periods' ledgers, newest last — what the estimates and the recommendation read */
@@ -405,7 +404,6 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   };
 
   const plan = actualByStart.get(period.start) ?? null;
-  const previousPlan = actualByStart.get(previousPeriod.start) ?? null;
   const pastPlans = [...actualByStart.values()]
     .filter((p) => p.periodStart! < period.start)
     .sort((a, b) => b.periodStart!.localeCompare(a.periodStart!));
@@ -504,7 +502,6 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     previousPeriod,
     pastPeriods,
     plan,
-    previousPlan,
     pastPlans,
     sandbox,
     blueprints,
@@ -512,12 +509,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     poolAccounts,
     poolIds,
     relevance: { recurringsById, loansById, budgetsById, eventsById, goalsById, poolIds },
-    continuable:
-      !plan &&
-      !data.removedPlanStarts.has(period.start) &&
-      !!previousPlan &&
-      previousPlan.periodStart !== period.start &&
-      (subjectsByPlan.get(previousPlan.id) ?? []).length > 0,
+    continuable: !plan && !data.removedPlanStarts.has(period.start) && pastPlans.length > 0 && (subjectsByPlan.get(pastPlans[0].id) ?? []).length > 0,
     pastLedgers: pastPeriods.map(ledgerFor),
     aheadSuggested: aheadSuggested(space.periodType),
     ahead,
@@ -546,12 +538,6 @@ export async function hasCurrentPlan(store: StorageBackend, spaceId: string): Pr
   const current = periodHistory(space.periodType, space.periodDay, 1)[0];
   const row = await store.get('plan', planId(spaceId, 'actual', current.start));
   return !!row && row.deleted === 0;
-}
-
-/** how many subjects of the current actual plan are in the red — the tab's dot, the home block, the notification */
-export async function planOverspentCount(store: StorageBackend, spaceId: string): Promise<number> {
-  if (!(await hasCurrentPlan(store, spaceId))) return 0;
-  return buildPlanning(await loadPlanningData(store, spaceId)).attention.length;
 }
 
 export interface CategoryAvailability {

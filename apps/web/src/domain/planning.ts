@@ -14,7 +14,7 @@ import type {
 import { compareHlc } from '@/sync/hlc';
 import { budgetFamily, budgetPeriodAt, cycleIndex } from './budgets';
 import type { BudgetPeriodOpts } from './budgets';
-import { LOCKED_MAIN_IDS } from './categories';
+import { LOCKED_MAIN_IDS, REIMBURSED_ID } from './categories';
 import { isDebtTracked, loanRemainingCents, nextDebtPaymentDate } from './debts';
 import { isEventMoney } from './events';
 import { nextDueDate, occurrencesBetween } from './recurring';
@@ -292,7 +292,10 @@ export function sliceOwner(slice: TxSliceView, owners: SliceOwners): SliceOwner 
   if (linked && owners.loanIds.has(linked)) return slice.amountCents < 0 ? { kind: 'debt', id: linked } : null;
   if (slice.recurringId && owners.recurringIds.has(slice.recurringId)) return { kind: 'recurring', id: slice.recurringId };
   if (linked) return null;
-  if (slice.eventId && owners.eventIds.has(slice.eventId) && isEventMoney(slice.effType)) return { kind: 'event', id: slice.eventId };
+  if (slice.eventId && owners.eventIds.has(slice.eventId) && isEventMoney(slice.effType)) {
+    // the settled part of a paid-back expense is bookkeeping on both rows: the event's own total leaves it out too
+    return slice.catId === REIMBURSED_ID ? null : { kind: 'event', id: slice.eventId };
+  }
   return slice.effType === 'expense' ? { kind: 'category', catId: slice.catId ?? '' } : null;
 }
 
@@ -532,6 +535,9 @@ export function unplannedRows(
   const last = mirrored.filter((r) => r.kind === 'event' || r.kind === 'goal');
   return [...first, ...unplannedByCategory(ledger, covered, catalog), ...last];
 }
+
+const goalHeldBefore = (goalId: string, contributions: readonly GoalContributionRow[], period: Period): number =>
+  contributions.filter((c) => c.deleted === 0 && c.goalId === goalId && c.date < period.start).reduce((sum, c) => sum + c.amountCents, 0);
 
 /** what a goal was given in the period (the Goals screen's contributions) */
 export function goalRealizedCents(goalId: string, contributions: readonly GoalContributionRow[], period: Period): number {
@@ -799,8 +805,10 @@ const MEASURE: Record<PlanSegmentKind, Measure> = {
   goals: (subject, ctx) => {
     const goal = source(ctx.goalsById, subject);
     if (!goal) return null;
+    // from what the goal held when the period began: a target that shrinks with the period's own contributions reads them as past it
+    const heldBefore = goalHeldBefore(goal.id, ctx.contributions, ctx.period);
     return {
-      target: goalTargetCents(goal, ctx.space, ctx.period),
+      target: goalTargetCents({ ...goal, allocatedCents: heldBefore }, ctx.space, ctx.period),
       realized: goalRealizedCents(goal.id, ctx.contributions, ctx.period),
       dueThisPeriod: !!goal.targetDate && goal.targetDate <= ctx.period.end,
     };

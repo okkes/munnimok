@@ -115,14 +115,30 @@ export class Repo {
     this.options.onWrite?.();
   }
 
-  private opFor(entity: EntityName, spaceId: string, entityId: string, fields: Record<string, unknown>, deleted: boolean): OutboxRow {
+  /** stamps the caller derives from the content, not the clock: every device writes the same op, and one that
+   *  changes nothing queues nothing — all in one storage transaction, so a run cut short leaves no half */
+  async upsertStamped(
+    spaceId: string,
+    writes: readonly { entity: EntityName; entityId: string; fields: Record<string, unknown>; hlc: string }[],
+  ): Promise<number> {
+    if (writes.length === 0 || !this.admits(spaceId)) return 0;
+    const ops = writes.map((w) => this.opFor(w.entity, spaceId, w.entityId, w.fields, false, w.hlc));
+    let changed = 0;
+    await this.store.transact([...new Set(writes.map((w) => w.entity)), 'outbox'], async () => {
+      for (const op of ops) if (await this.mergeLocal(op, false)) changed += 1;
+    });
+    if (changed > 0) this.options.onWrite?.();
+    return changed;
+  }
+
+  private opFor(entity: EntityName, spaceId: string, entityId: string, fields: Record<string, unknown>, deleted: boolean, hlc = this.clock.now()): OutboxRow {
     return {
       opId: uuidv7(),
       spaceId,
       entity,
       entityId,
       fields,
-      hlc: this.clock.now(),
+      hlc,
       ...(deleted ? { deleted: true } : {}),
     } satisfies OutboxRow;
   }
@@ -136,17 +152,19 @@ export class Repo {
   ): Promise<void> {
     if (!this.admits(spaceId)) return;
     const op = this.opFor(entity, spaceId, entityId, fields, deleted);
-    await this.store.transact([entity, 'outbox'], () => this.mergeLocal(op, deleted));
+    await this.store.transact([entity, 'outbox'], async () => {
+      await this.mergeLocal(op, deleted);
+    });
     this.options.onWrite?.();
   }
 
-  /** one local op onto its row, inside the caller's transaction */
-  private async mergeLocal(op: OutboxRow, deleted: boolean): Promise<void> {
+  /** one local op onto its row, inside the caller's transaction; false when the op changed nothing */
+  private async mergeLocal(op: OutboxRow, deleted: boolean): Promise<boolean> {
     const local = ((await this.store.get(op.entity, op.entityId)) ?? null) as
       | (Record<string, unknown> & SyncEnvelope)
       | null;
     const { row, changed } = applyOp(local, op);
-    if (!changed) return;
+    if (!changed) return false;
     // model-level invariants on the MERGED row (user request: the
     // FluentValidation idea) — a violation blocks the write and lands
     // in GlitchTip, because it means a screen's own validation leaked.
@@ -161,6 +179,7 @@ export class Repo {
     }
     await this.store.put(op.entity, merged);
     if (this.options.trackOutbox) await this.store.outboxAdd(op);
+    return true;
   }
 
   /**

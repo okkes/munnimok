@@ -5,8 +5,10 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
+import { eventTotals } from '@/domain/events';
 import { mirroredSubjectId, planId, unplannedKey } from '@/domain/planning';
-import { availabilityByCat, buildPlanning, loadPlanningData, planOverspentCount, segmentsOf, sortSubjects } from './planningModel';
+import { reimbSettleFields } from '@/domain/reimbursement';
+import { availabilityByCat, buildPlanning, loadPlanningData, segmentsOf, sortSubjects } from './planningModel';
 
 const SPACE = 's1';
 const TODAY = '2026-03-15';
@@ -87,7 +89,6 @@ describe('planning model (#128)', () => {
     expect(model.heldBySegment.get('recurring')).toBe(0);
     expect(model.aheadFundedCents).toBe(50_000);
     expect(model.estimate(new Set(['groceries'])).lastCents).toBe(9_000);
-    expect(await planOverspentCount(store, SPACE)).toBe(0); // the real today has no plan in this fixture
   });
 
   it('the pool reads as what the period started with (user 2026-10-08): the balance plus what already left, assigned by hand', async () => {
@@ -238,6 +239,45 @@ describe('planning model (#128)', () => {
     expect(model.startedWithOf(model.plan!)).toBe(started);
   });
 
+  it('a dated goal that is given exactly what the plan set aside for it reads funded, not past its target (#517)', async () => {
+    const { store, repo } = await bareFixture();
+    stores.push(store);
+    // €1,200 by June: March, April, May, June — €300 a period
+    await repo.upsert('goal', SPACE, 'car', { name: 'Car', targetCents: 120_000, allocatedCents: 0, targetDate: '2026-06-15' });
+    await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(march, 'goals', 'car'), { planId: march, segment: 'goals', order: 0, name: 'Car', sourceId: 'car', fundedCents: 30_000 });
+    await repo.upsert('goalContribution', SPACE, 'c1', { goalId: 'car', amountCents: 30_000, date: '2026-03-10' });
+    const model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.viewsOf(model.plan!)[0]).toMatchObject({ targetCents: 30_000, fundedCents: 30_000, realizedCents: 30_000, status: 'funded' });
+    // the period after reads what March left to do: €900 over three periods
+    await repo.upsert('plan', SPACE, april, { kind: 'actual', periodStart: '2026-04-01' });
+    await repo.upsert('planSubject', SPACE, mirroredSubjectId(april, 'goals', 'car'), { planId: april, segment: 'goals', order: 0, name: 'Car', sourceId: 'car', fundedCents: 0 });
+    const ahead = buildPlanning(await loadPlanningData(store, SPACE), TODAY).ahead[0];
+    expect(ahead.views[0].targetCents).toBe(30_000);
+  });
+
+  it('linking a paid-back expense to an event does not change “already spent”: the settled part is nobody’s spending (#493)', async () => {
+    const { store, repo } = await bareFixture();
+    stores.push(store);
+    await repo.upsert('event', SPACE, 'trip', { name: 'Trip', from: '2026-03-10', to: '2026-03-12', budgetCents: 30_000 });
+    // a €100 dinner of which a friend paid €60 back — the settle rewrite on both rows, as the app writes it
+    const nameOf = (id: string) => id;
+    const dinner = reimbSettleFields({ amountCents: -10_000, catId: 'groceries' }, 6_000, new Map(), nameOf);
+    const payback = reimbSettleFields({ amountCents: 6_000, catId: 'reimburse' }, 6_000, new Map(), nameOf);
+    const row = { accountId: 'main', currency: 'EUR', needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'dinner', { ...row, date: '2026-03-11', amountCents: -10_000, merchant: 'Resto', catId: 'groceries', cats: dinner.cats ?? undefined, reimbursements: [{ txId: 'payback', amountCents: 6_000 }] });
+    await repo.upsert('transaction', SPACE, 'payback', { ...row, date: '2026-03-14', amountCents: 6_000, merchant: 'Friend', catId: 'reimburse', cats: payback.cats ?? undefined });
+    await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
+    let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    const before = model.startedWithOf(model.plan!);
+
+    await repo.upsert('transaction', SPACE, 'dinner', { eventId: 'trip' });
+    model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.unplannedOf(model.plan!).find((r) => r.kind === 'event')).toMatchObject({ sourceId: 'trip', cents: 4_000 });
+    expect(model.unplannedOf(model.plan!).find((r) => r.kind === 'event')?.cents).toBe(eventTotals(model.data.txs, 'trip').netCents);
+    expect(model.startedWithOf(model.plan!)).toBe(before);
+  });
+
   it('a one-off funds an Unplanned row for this period only: the head comes down, the row reads funded, and money for a row that spent nothing still shows (#494)', async () => {
     const { store, repo } = await bareFixture();
     stores.push(store);
@@ -291,6 +331,18 @@ describe('planning model (#128)', () => {
     expect(model.continuable).toBe(false);
   });
 
+  it('a period nobody planned in does not end the chain: the newest plan before it carries over (#557)', async () => {
+    const { store, repo } = await fixture();
+    stores.push(store);
+    await repo.upsert('plan', SPACE, february, { kind: 'actual', periodStart: '2026-02-01' });
+    await repo.upsert('planSubject', SPACE, 'gro', { planId: february, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 0 });
+    // March went by without a plan; in April February's is still the last one
+    const model = buildPlanning(await loadPlanningData(store, SPACE), '2026-04-15');
+    expect(model.plan).toBeNull();
+    expect(model.pastPlans.map((p) => p.id)).toEqual([february]);
+    expect(model.continuable).toBe(true);
+  });
+
   it('what an earlier period set aside and never spent carries into the next one', async () => {
     const { store, repo } = await fixture();
     stores.push(store);
@@ -304,8 +356,8 @@ describe('planning model (#128)', () => {
     const rent = model.viewsOf(model.plan!)[0];
     expect(rent.carriedCents).toBe(100_000);
     expect(rent.targetCents).toBe(0);
-    expect(model.previousPlan?.id).toBe(february);
-    expect(model.editabilityOf(model.previousPlan!)).toBe('moveOnly');
+    expect(model.pastPlans.map((p) => p.id)).toEqual([february]);
+    expect(model.editabilityOf(model.pastPlans[0])).toBe('moveOnly');
     expect(model.editabilityOf(model.plan!)).toBe('full');
   });
 
