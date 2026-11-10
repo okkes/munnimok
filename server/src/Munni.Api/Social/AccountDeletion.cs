@@ -34,9 +34,9 @@ public sealed class AccountDeletion(
         //     (decision ①: other members keep readable history)
         var survivingSpaceIds = await LeaveOrDeleteSpacesAsync(db, user.Id);
 
-        // 4 · owned bank feeds: keep the ones surviving shared spaces still
-        //     read (their archived history stays, decision ①); delete the rest
-        await PruneOwnedFeedsAsync(db, user.Id, survivingSpaceIds);
+        // 4 · bank feeds: one someone else still covers lives on — a co-owner's own
+        //     consent, or a surviving shared space that reads it (decision ①); the rest go
+        await LeaveFeedsAsync(db, user.Id, survivingSpaceIds);
 
         // 5 · social graph
         db.Friendships.RemoveRange(await db.Friendships.Where(f => f.UserAId == user.Id || f.UserBId == user.Id).ToListAsync());
@@ -59,9 +59,13 @@ public sealed class AccountDeletion(
     private static async Task<List<string>> LeaveOrDeleteSpacesAsync(AppDbContext db, Guid userId)
     {
         var memberships = await db.SpaceMembers.Where(m => m.UserId == userId).ToListAsync();
+        var memberOf = memberships.Select(m => m.SpaceId).ToList();
+        var feedIds = (await db.FeedSpaces.Where(f => memberOf.Contains(f.Id)).Select(f => f.Id).ToListAsync()).ToHashSet();
         var survivingSpaceIds = new List<string>();
         foreach (var membership in memberships)
         {
+            // a feed's owner is its member too, often its only one: who else uses the feed decides in LeaveFeedsAsync
+            if (feedIds.Contains(membership.SpaceId)) continue;
             var others = await db.SpaceMembers
                 .Where(m => m.SpaceId == membership.SpaceId && m.UserId != userId)
                 .ToListAsync();
@@ -83,17 +87,32 @@ public sealed class AccountDeletion(
         return survivingSpaceIds;
     }
 
-    private static async Task PruneOwnedFeedsAsync(AppDbContext db, Guid userId, List<string> survivingSpaceIds)
+    private static async Task LeaveFeedsAsync(AppDbContext db, Guid userId, List<string> survivingSpaceIds)
     {
-        var feedSpaces = await db.FeedSpaces.Where(f => f.OwnerUserId == userId).ToListAsync();
-        foreach (var feed in feedSpaces)
+        var coOwned = await db.FeedOwners.Where(o => o.UserId == userId).Select(o => o.FeedSpaceId).ToListAsync();
+        var feeds = await db.FeedSpaces.Where(f => f.OwnerUserId == userId || coOwned.Contains(f.Id)).ToListAsync();
+        foreach (var feed in feeds)
         {
+            var successor = (await db.FeedOwners.FirstOrDefaultAsync(o => o.FeedSpaceId == feed.Id && o.UserId != userId))?.UserId;
             var stillRead = await db.SpaceAccountLinks
                 .AnyAsync(l => l.FeedSpaceId == feed.Id && survivingSpaceIds.Contains(l.SpaceId));
-            if (stillRead) continue;
-            db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
-            await DeleteSpaceDataAsync(db, feed.Id);
-            db.FeedSpaces.Remove(feed);
+            if (feed.OwnerUserId == userId && successor is null && !stillRead)
+            {
+                db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
+                await DeleteSpaceDataAsync(db, feed.Id);
+                db.FeedSpaces.Remove(feed);
+                continue;
+            }
+
+            db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == userId).ToListAsync());
+            db.SpaceMembers.RemoveRange(await db.SpaceMembers.Where(m => m.SpaceId == feed.Id && m.UserId == userId).ToListAsync());
+            if (feed.OwnerUserId != userId || successor is not Guid next) continue;
+            // the co-owner's own consent keeps fetching: the feed is theirs to write from here on
+            feed.OwnerUserId = next;
+            db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == next).ToListAsync());
+            var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == feed.Id && m.UserId == next);
+            if (member is null) db.SpaceMembers.Add(new SpaceMember { SpaceId = feed.Id, UserId = next, Role = SpaceRoles.Owner });
+            else member.Role = SpaceRoles.Owner;
         }
     }
 

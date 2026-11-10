@@ -155,6 +155,68 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
     }
 
     [Fact]
+    public async Task A_bank_feed_a_shared_space_still_reads_keeps_its_history_when_its_owner_leaves()
+    {
+        var (leaverId, _) = await SeedWorldAsync("feed-leaver", "feed-reader", "d5");
+        using (var seed = _factory.Services.CreateScope())
+        {
+            // the way a feed is born: its owner is a member of the feed space, and its only one
+            var db = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = "d5-feed-shared", UserId = leaverId, Role = SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True((await ClientFor("feed-leaver").DeleteAsync("/me")).IsSuccessStatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var after = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.True(await after.FeedSpaces.AnyAsync(f => f.Id == "d5-feed-shared"));
+        Assert.True(await after.EntityRows.AnyAsync(r => r.SpaceId == "d5-feed-shared" && r.EntityId == "f1"));
+        Assert.False(await after.SpaceMembers.AnyAsync(m => m.SpaceId == "d5-feed-shared" && m.UserId == leaverId));
+    }
+
+    [Fact]
+    public async Task A_bank_feed_two_people_connected_passes_to_the_other_when_its_owner_leaves()
+    {
+        Guid leaverId, partnerId;
+        using (var seed = _factory.Services.CreateScope())
+        {
+            var db = seed.ServiceProvider.GetRequiredService<AppDbContext>();
+            var leaver = new User { Id = Guid.NewGuid(), Sub = "joint-leaver" };
+            var partner = new User { Id = Guid.NewGuid(), Sub = "joint-partner" };
+            (leaverId, partnerId) = (leaver.Id, partner.Id);
+            db.Users.AddRange(leaver, partner);
+            db.Spaces.AddRange(new Space { Id = "d6-leaver-own" }, new Space { Id = "d6-partner-own" }, new Space { Id = "d6-feed" });
+            db.FeedSpaces.Add(new FeedSpace { Id = "d6-feed", OwnerUserId = leaver.Id, AccountRef = "NL06" });
+            db.FeedOwners.Add(new FeedOwner { FeedSpaceId = "d6-feed", UserId = partner.Id });
+            db.SpaceMembers.AddRange(
+                new SpaceMember { SpaceId = "d6-leaver-own", UserId = leaver.Id, Role = SpaceRoles.Owner },
+                new SpaceMember { SpaceId = "d6-partner-own", UserId = partner.Id, Role = SpaceRoles.Owner },
+                new SpaceMember { SpaceId = "d6-feed", UserId = leaver.Id, Role = SpaceRoles.Owner },
+                new SpaceMember { SpaceId = "d6-feed", UserId = partner.Id, Role = SpaceRoles.Contributor });
+            db.EntityRows.Add(new EntityRow { SpaceId = "d6-feed", Entity = "transaction", EntityId = "j1", DataJson = "{}", FieldVersionsJson = "{}" });
+            db.SpaceAccountLinks.AddRange(
+                new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = "d6-leaver-own", FeedSpaceId = "d6-feed", AccountId = "a6", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" },
+                new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = "d6-partner-own", FeedSpaceId = "d6-feed", AccountId = "a6", AttachedBy = partner.Id, HistoryFrom = "2026-01-01", Type = "checking" });
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True((await ClientFor("joint-leaver").DeleteAsync("/me")).IsSuccessStatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var after = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var feed = await after.FeedSpaces.SingleAsync(f => f.Id == "d6-feed");
+        Assert.Equal(partnerId, feed.OwnerUserId);
+        Assert.True(await after.EntityRows.AnyAsync(r => r.SpaceId == "d6-feed" && r.EntityId == "j1"));
+        Assert.False(await after.FeedOwners.AnyAsync(o => o.FeedSpaceId == "d6-feed"));
+        var member = await after.SpaceMembers.SingleAsync(m => m.SpaceId == "d6-feed");
+        Assert.Equal(partnerId, member.UserId);
+        Assert.Equal(SpaceRoles.Owner, member.Role);
+        var link = await after.SpaceAccountLinks.SingleAsync(l => l.FeedSpaceId == "d6-feed");
+        Assert.Equal("d6-partner-own", link.SpaceId);
+    }
+
+    [Fact]
     public async Task AdminDeletesAUser_ButNeverThemselves()
     {
         await SeedWorldAsync("del-target", "del-witness", "d2");
