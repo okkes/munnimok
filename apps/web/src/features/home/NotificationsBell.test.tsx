@@ -76,6 +76,44 @@ describe('NotificationsBell (user identity)', () => {
     expect(await screen.findByTestId('history-empty')).toBeTruthy();
   }, 15_000);
 
+  it('once per session the app files this device with the server again — no visit to Settings needed', async () => {
+    const subscription = { endpoint: 'https://push.example/bell', toJSON: () => ({ keys: { p256dh: 'p', auth: 'a' } }) };
+    const pushManager = { getSubscription: () => Promise.resolve(subscription) };
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { ready: Promise.resolve({ pushManager }) } });
+    Object.defineProperty(window, 'PushManager', { configurable: true, value: function PushManager() {} });
+    Object.defineProperty(window, 'Notification', { configurable: true, value: { permission: 'default' } });
+    const registrations: unknown[] = [];
+    let listAsked = 0;
+    try {
+      renderAppAsUser('/home', {
+        api: {
+          'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+          'GET /me/invites': () => {
+            listAsked += 1;
+            return [];
+          },
+          'POST /me/push-subscriptions': (body) => {
+            registrations.push(body);
+            return {};
+          },
+        },
+      });
+      await screen.findByTestId('screen-home');
+      // the server may have lost the device, or still know it under the account that used it before
+      await waitFor(() => expect(registrations).toEqual([expect.objectContaining({ endpoint: 'https://push.example/bell' })]), { timeout: 5000 });
+
+      // a push reaching the open app reloads the list — the registration is not sent a second time
+      const before = listAsked;
+      window.dispatchEvent(new Event('munni-push'));
+      await waitFor(() => expect(listAsked).toBeGreaterThan(before));
+      expect(registrations).toHaveLength(1);
+    } finally {
+      Reflect.deleteProperty(navigator, 'serviceWorker');
+      Reflect.deleteProperty(window, 'PushManager');
+      Reflect.deleteProperty(window, 'Notification');
+    }
+  }, 15_000);
+
   /** the device's list before the app opens: one plan row about `spaceId`, this release already seen */
   async function seedInbox(spaceId: string) {
     const store = new DexieBackend(new MunniDB(USER_TEST_DB));

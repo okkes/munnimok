@@ -16,7 +16,7 @@ interface CapacitorGlobal {
   getPlatform?: () => string;
   Plugins?: {
     App?: CapacitorPluginListener & {
-      getInfo?: () => Promise<{ build?: string; version?: string }>;
+      getInfo?: () => Promise<{ id?: string; build?: string; version?: string }>;
     };
     /** the platform auth session (AppDelegate.swift): a sheet the app can end itself */
     AuthSession?: {
@@ -30,6 +30,7 @@ interface CapacitorGlobal {
     PushNotifications?: CapacitorPluginListener & {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
+      unregister?: () => Promise<void>;
       removeAllDeliveredNotifications?: () => Promise<void>;
     };
     StatusBar?: {
@@ -216,14 +217,15 @@ export function syncNativeStatusBar(theme: 'light' | 'dark'): void {
 export const nativePlatform = (): string | undefined =>
   isNativeApp() ? capacitor()?.getPlatform?.() : undefined;
 
-/** the shell binary's build number (git commit count), null on the web */
-export async function getNativeAppBuild(): Promise<number | null> {
+// the store numbers a binary by the clock: only the bundle's own commit count compares with the hosted version.json
+export const bundledWebBuild = (): number => Number(__BUILD_NUMBER__);
+
+// every environment is its own app in the stores, so the id comes from the shell — never from the channel
+export async function getNativeAppId(): Promise<string | null> {
   const app = capacitor()?.Plugins?.App;
   if (!isNativeApp() || !app?.getInfo) return null;
   try {
-    const info = await app.getInfo();
-    const build = Number.parseInt(info.build ?? '', 10);
-    return Number.isFinite(build) ? build : null;
+    return (await app.getInfo()).id ?? null;
   } catch {
     return null;
   }
@@ -267,6 +269,14 @@ export async function pickPhotoNative(): Promise<File | null> {
   return takeNativePhoto('PROMPT');
 }
 
+/** the phone's own yes to notifications — the OS asks once, afterwards only its settings change the answer */
+export async function nativePushPermitted(): Promise<boolean> {
+  const push = capacitor()?.Plugins?.PushNotifications;
+  if (!isNativeApp() || !push?.requestPermissions) return false;
+  const permission = await push.requestPermissions().catch(() => undefined);
+  return permission?.receive === 'granted';
+}
+
 /**
  * Native push registration (N4): resolves the FCM/APNs device token, or
  * null when not native / permission denied. Web push stays in lib/push.
@@ -274,8 +284,7 @@ export async function pickPhotoNative(): Promise<File | null> {
 export async function getNativePushToken(): Promise<string | null> {
   const push = capacitor()?.Plugins?.PushNotifications;
   if (!isNativeApp() || !push?.register) return null;
-  const permission = await push.requestPermissions?.();
-  if (permission?.receive !== 'granted') return null;
+  if (!(await nativePushPermitted())) return null;
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 10_000); // registration never answered
     push.addListener?.('registration', (token: { value?: string }) => {
@@ -387,6 +396,12 @@ export function onNativePushTap(callback: (payload: unknown) => void): void {
       }
     },
   );
+}
+
+/** the phone lets go of its push token by itself: an account can leave the device while the server is out of reach */
+export async function unregisterNativePush(): Promise<void> {
+  if (!isNativeApp()) return;
+  await capacitor()?.Plugins?.PushNotifications?.unregister?.().catch(() => undefined);
 }
 
 /** #580: takes munni's notifications off the phone's notification centre; false outside the shell (or an older one) */

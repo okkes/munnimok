@@ -1,7 +1,7 @@
 import type { StorageBackend } from '@/db/backend';
 import { apiFetch } from '@/lib/api';
 import { clearNativeDeliveredNotifications } from '@/lib/platform';
-import { clearInboxUpTo, readInboxClearedAt } from './notifications';
+import { clearInboxNow, clearInboxUpTo, readInboxClearedAt } from './notifications';
 
 /**
  * #580: clearing the notifications list on one device clears it on the
@@ -13,6 +13,9 @@ import { clearInboxUpTo, readInboxClearedAt } from './notifications';
  * must show what it delivers, and iOS throttles silent pushes).
  */
 const PENDING_KEY = 'notifClearPending';
+
+/** a clear still waiting for the server has nowhere to go once the identity leaves its account */
+export const forgetPendingClear = (store: Pick<StorageBackend, 'metaDelete'>): Promise<void> => store.metaDelete(PENDING_KEY);
 
 /**
  * Closes the OS notifications this device still shows — the shell's own, or
@@ -31,7 +34,7 @@ export async function dismissDeliveredNotifications(upTo?: number): Promise<void
 
 /** the Clear button: empties the list here, closes what the OS shows and — signed in — tells the other devices */
 export async function clearNotifications(store: StorageBackend, syncing: boolean): Promise<void> {
-  await clearInboxUpTo(store, new Date().toISOString());
+  await clearInboxNow(store);
   await dismissDeliveredNotifications();
   if (!syncing) return;
   await store.metaPut(PENDING_KEY, true);

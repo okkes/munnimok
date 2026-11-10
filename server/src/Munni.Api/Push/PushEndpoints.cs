@@ -116,7 +116,9 @@ public static class PushEndpoints
             // the moment only moves forward (a late device never brings old notifications back), and never past the
             // server's clock — a device running ahead would otherwise hide what arrives after it
             var now = DateTimeOffset.UtcNow;
-            var at = request.ClearedAt > now ? now : request.ClearedAt;
+            // postgres refuses a timestamptz that is not at offset zero
+            var asked = request.ClearedAt.ToUniversalTime();
+            var at = asked > now ? now : asked;
             if (user.NotificationsClearedAt is null || at > user.NotificationsClearedAt)
             {
                 user.NotificationsClearedAt = at;

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '@/lib/api';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
-import { appendNotification, readInbox } from './notifications';
+import { appendNotification, readInbox, readInboxClearedAt } from './notifications';
 import { clearNotifications, syncNotificationsCleared } from './inboxClear';
 
 vi.mock('@/lib/api', () => ({ apiFetch: vi.fn() }));
@@ -99,6 +99,21 @@ describe('clearing notifications (#580)', () => {
     // the same moment again is old news
     apiFetchMock.mockResolvedValueOnce(json({ clearedAt: elsewhere }));
     expect(await syncNotificationsCleared(store)).toBe(false);
+  });
+
+  it('the person’s own Clear empties the list even while this device’s clock is behind the remembered moment', async () => {
+    const store = fresh();
+    installShown([]);
+    // a clear made elsewhere, stamped by a clock three minutes ahead of this device's
+    const ahead = new Date(Date.now() + 3 * 60_000).toISOString();
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: ahead }));
+    await syncNotificationsCleared(store);
+    await appendNotification(store, 'recurringDue', { name: 'Rent', date: '12 Nov' }, 'rec_rent');
+
+    await clearNotifications(store, false);
+    expect(await readInbox(store)).toEqual([]);
+    // the later moment stays: going back would let the other device's older clear count as news again
+    expect(await readInboxClearedAt(store)).toBe(ahead);
   });
 
   it('a profile without a server clears on this device alone', async () => {

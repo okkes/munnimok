@@ -56,16 +56,20 @@ export async function appendNotification(
   payload?: Record<string, string>,
   dedupeKey?: string,
 ): Promise<void> {
-  const list = await readInbox(store);
-  if (dedupeKey && list.some((e) => e.kind === kind && e.payload?.dedupe === dedupeKey)) return;
-  if (dedupeKey && (await readRetired(store)).includes(retiredKey(kind, dedupeKey))) return;
-  const entry: InboxEntry = {
-    id: crypto.randomUUID(),
-    kind,
-    ts: new Date().toISOString(),
-    payload: { ...payload, ...(dedupeKey ? { dedupe: dedupeKey } : {}) },
-  };
-  await store.metaPut(LIST_KEY, [entry, ...list].slice(0, CAP));
+  // one step with the clear: the app and the worker both write this list, and a write between
+  // the other's read and write loses the new entry or brings cleared ones back
+  await store.transact(['meta'], async () => {
+    const list = await readInbox(store);
+    if (dedupeKey && list.some((e) => e.kind === kind && e.payload?.dedupe === dedupeKey)) return;
+    if (dedupeKey && (await readRetired(store)).includes(retiredKey(kind, dedupeKey))) return;
+    const entry: InboxEntry = {
+      id: crypto.randomUUID(),
+      kind,
+      ts: new Date().toISOString(),
+      payload: { ...payload, ...(dedupeKey ? { dedupe: dedupeKey } : {}) },
+    };
+    await store.metaPut(LIST_KEY, [entry, ...list].slice(0, CAP));
+  });
 }
 
 /** unread = entries newer than the last time the tab was opened */
@@ -86,18 +90,37 @@ export async function readInboxClearedAt(store: Pick<StorageBackend, 'metaGet'>)
 }
 
 /**
- * #580: drops every entry up to `at` (ISO, UTC) and remembers the moment;
- * false when the list was already cleared that far. A clear made here
- * passes now; one made on another device passes its own moment.
+ * #580: a clear made on another device — drops every entry up to its moment
+ * `at` (ISO, UTC) and remembers it; false when the list was already cleared that far.
  */
 export async function clearInboxUpTo(store: StorageBackend, at: string): Promise<boolean> {
-  const cleared = await readInboxClearedAt(store);
-  if (cleared && cleared >= at) return false;
+  let moved = false;
+  await store.transact(['meta'], async () => {
+    const cleared = await readInboxClearedAt(store);
+    if (cleared && cleared >= at) return;
+    await dropFromInbox(store, at, (e) => e.ts <= at);
+    moved = true;
+  });
+  return moved;
+}
+
+/**
+ * #580: the person's own Clear empties the list whatever the clocks say — the
+ * remembered moment may come from a clock ahead of this device's; the later one stays.
+ */
+export async function clearInboxNow(store: StorageBackend): Promise<void> {
+  await store.transact(['meta'], async () => {
+    const cleared = await readInboxClearedAt(store);
+    const now = new Date().toISOString();
+    await dropFromInbox(store, cleared && cleared > now ? cleared : now, () => true);
+  });
+}
+
+/** inside the caller's meta transaction */
+async function dropFromInbox(store: StorageBackend, at: string, goes: (entry: InboxEntry) => boolean): Promise<void> {
   const list = await readInbox(store);
-  const dropped = list.filter((e) => e.ts <= at);
-  const keys = dropped.flatMap((e) => (e.payload?.dedupe ? [retiredKey(e.kind, e.payload.dedupe)] : []));
+  const keys = list.filter(goes).flatMap((e) => (e.payload?.dedupe ? [retiredKey(e.kind, e.payload.dedupe)] : []));
   if (keys.length > 0) await store.metaPut(RETIRED_KEY, [...keys, ...(await readRetired(store))].slice(0, RETIRED_CAP));
   await store.metaPut(CLEARED_KEY, at);
-  await store.metaPut(LIST_KEY, list.filter((e) => e.ts > at));
-  return true;
+  await store.metaPut(LIST_KEY, list.filter((e) => !goes(e)));
 }

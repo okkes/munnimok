@@ -11,6 +11,7 @@ import { refreshSpacesNotifyOff } from '@/application/spaceNotifications';
 import { WhatsNewSheet } from '@/features/help/WhatsNew';
 import { latestWhatsNewVersion, useMarkWhatsNewSeen, useWhatsNewUnseen } from '@/features/help/releaseNotes';
 import { apiFetch } from '@/lib/api';
+import { refreshPushRegistrationOnce } from '@/lib/push';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { fmtTimeAgo } from '@/lib/text';
 import { Icon } from '@/ui/Icon';
@@ -247,6 +248,8 @@ export function NotificationsBell() {
     // the spaces switched off (#549) and a clear made elsewhere (#580)
     void refreshSpacesNotifyOff(store);
     void syncNotificationsCleared(store);
+    // a device another account used, or one the server lost, is filed under this account again
+    void refreshPushRegistrationOnce(store);
     const [friendsRes, invitesRes] = await Promise.all([
       apiFetch('/friends').catch(() => null),
       apiFetch('/me/invites').catch(() => null),
