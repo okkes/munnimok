@@ -37,6 +37,8 @@ const PUSH_CHUNK = 300;
 export const LAST_SYNC_KEY = 'lastSyncAt';
 /** #569: how long a pause lasts when the server asked for one without saying how long (its limiter says ten seconds) */
 export const DEFAULT_PAUSE_MS = 10_000;
+/** how long `halt` waits for the round in flight: a request that hangs must not hold its caller */
+export const HALT_WAIT_MS = 5_000;
 
 const isTransient = (err: unknown): err is SyncHttpError => err instanceof SyncHttpError && TRANSIENT_STATUSES.has(err.status);
 
@@ -74,6 +76,9 @@ export class SyncEngine {
   /** #569: until when the server asked for quiet (Retry-After); no request leaves before it */
   private pausedUntil = 0;
   private pauseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** the identity is leaving sync: a round now would read its ended memberships as evictions and purge */
+  private halted = false;
+  private inFlight: Promise<void> | null = null;
   private readonly now: () => number;
   private readonly access: SpaceAccess | null;
 
@@ -127,6 +132,21 @@ export class SyncEngine {
     this.eventsAbort = null;
   }
 
+  /**
+   * No round begins until `resume`, whatever asks. Resolves once the round in flight is over
+   * (waited for HALT_WAIT_MS at most) — it evicts and purges nothing meanwhile.
+   */
+  async halt(): Promise<void> {
+    this.halted = true;
+    const round = this.inFlight;
+    if (round) await Promise.race([round, sleep(HALT_WAIT_MS)]);
+  }
+
+  resume(): void {
+    this.halted = false;
+    void this.syncAll();
+  }
+
   /** near-real-time: the server announces changed spaces over SSE */
   private async listenEvents(): Promise<void> {
     if (!this.backend.events) return;
@@ -175,6 +195,7 @@ export class SyncEngine {
     // stream) is folded into ONE more round after it, and one inside a pause
     // the server asked for waits for its end — a burst of writes used to
     // stack round on round until the rate limiter answered 429 for everything
+    if (this.halted) return;
     if (this.running || this.now() < this.pausedUntil) {
       this.rerun = true;
       return;
@@ -191,7 +212,9 @@ export class SyncEngine {
     // stayed under budget never leaves the device (lib/perf). Always a
     // root of its own: the first round starts inside the boot span and
     // usually outlives it
-    await measure('sync.round', (round) => this.runRound(round), undefined, { parent: null });
+    this.inFlight = measure('sync.round', (round) => this.runRound(round), undefined, { parent: null });
+    await this.inFlight;
+    this.inFlight = null;
     if (this.rerun && this.now() >= this.pausedUntil) void this.syncAll();
   }
 
@@ -229,6 +252,7 @@ export class SyncEngine {
       let firstError: unknown = null;
       const serverSet = new Set(serverSpaces);
       for (const spaceId of spaceIds) {
+        if (this.halted) return;
         try {
           // #306 (user): a space we KNOW evicted us stays untouched until
           // the server re-grants it — no request may leave for it
@@ -241,6 +265,7 @@ export class SyncEngine {
           firstError ??= err;
         }
       }
+      if (this.halted) return;
       await this.purgeOrphanFeeds(serverSpaces);
       if (firstError) throw firstError;
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
@@ -362,6 +387,23 @@ export class SyncEngine {
     if (stillParked.length !== parked.length) await this.store.metaPut(parkedKey(spaceId), stillParked);
   }
 
+  /** what leaves for a space before its pull; a 403 on the push means write access is gone */
+  private async pushPhase(spaceId: string, round?: Span): Promise<{ queued: number; writeDenied: boolean }> {
+    if (this.access?.isReadOnly(spaceId)) {
+      // #505: no push leaves for a space this identity only reads; what
+      // is still queued for it can never land — undone here, said once
+      await this.undoUnsaved(spaceId);
+      return { queued: 0, writeDenied: false };
+    }
+    await this.retryParked(spaceId);
+    try {
+      return { queued: await this.pushOutbox(spaceId, round), writeDenied: false };
+    } catch (err) {
+      if (!(err instanceof SyncHttpError) || err.status !== 403) throw err;
+      return { queued: 0, writeDenied: true };
+    }
+  }
+
   /**
    * `round`: the sync.round span this space's push/pull spans nest under;
    * `head`: the space's head as the round read it (#569) — at or below the
@@ -375,26 +417,15 @@ export class SyncEngine {
       // true eviction. Before this, every push-403 raised the "removed
       // from space" sheet and purged — and the still-granted pull
       // resurrected the space, looping forever.
-      let writeDenied = false;
-      let queued = 0;
-      if (this.access?.isReadOnly(spaceId)) {
-        // #505: no push leaves for a space this identity only reads; what
-        // is still queued for it can never land — undone here, said once
-        await this.undoUnsaved(spaceId);
-      } else {
-        await this.retryParked(spaceId);
-        try {
-          queued = await this.pushOutbox(spaceId, round);
-        } catch (err) {
-          if (!(err instanceof SyncHttpError) || err.status !== 403) throw err;
-          writeDenied = true;
-        }
-      }
+      const { queued, writeDenied } = await this.pushPhase(spaceId, round);
 
       // pull everything after our cursor and merge (own ops no-op) —
       // paged until drained (#305 bug 4; the loop lives in sync/drain.ts)
-      const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
-      if (head === undefined || head > since || queued > 0 || writeDenied) await this.pullSpace(spaceId, since, round);
+      // an undo waits for the server's values from the START — never from the cursor, which
+      // another tab or the service worker may have stamped past them meanwhile
+      const undoing = !!(await this.store.metaGet(undoKey(spaceId)));
+      const since = undoing ? 0 : (((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0);
+      if (undoing || head === undefined || head > since || queued > 0 || writeDenied) await this.pullSpace(spaceId, since, round);
       if (writeDenied) {
         // #505: the pull answered — still a member, without write access (a
         // role changed after the round's heads, or a server naming no roles)
@@ -403,7 +434,7 @@ export class SyncEngine {
       }
       await this.settleUndo(spaceId);
     } catch (err) {
-      if (err instanceof SyncHttpError && err.status === 403) {
+      if (err instanceof SyncHttpError && err.status === 403 && !this.halted) {
         // #173: a 403 on a MEMBER space is an eviction (feed sweeps stay
         // silent: they route through purgeOrphanFeeds, not this catch)
         await this.evictSpace(spaceId);
@@ -467,7 +498,9 @@ export class SyncEngine {
     const own = new Set(ops.map((o) => o.hlc));
     const rows = [...new Set(ops.filter((o) => KNOWN_ENTITIES.has(o.entity)).map((o) => `${o.entity}:${o.entityId}`))];
     const pending = ((await this.store.metaGet(undoKey(spaceId)))?.value as string[] | undefined) ?? [];
-    const spaceName = (await this.store.get('space', spaceId))?.name ?? '';
+    const space = await this.store.get('space', spaceId);
+    // a feed has no space row: the notice names the account another member shares through it
+    const accountName = space ? undefined : (await this.store.bySpace('account', spaceId)).find((a) => a.deleted === 0)?.name;
     await this.store.transact([...entitiesOf(rows), 'outbox', 'meta'], async () => {
       for (const key of rows) {
         const [entity, entityId] = splitRowKey(key);
@@ -478,7 +511,10 @@ export class SyncEngine {
       await this.store.metaDelete(parkedKey(spaceId));
       await this.store.metaDelete(cursorKey(spaceId));
       await this.store.metaPut(undoKey(spaceId), [...new Set([...pending, ...rows])]);
-      await noteUnsavedUndone(this.store, { spaceId, spaceName, count: ops.length });
+      // counted by row: one change of the person is several ops, and the app's own passes queued ops too
+      if (rows.length > 0) {
+        await noteUnsavedUndone(this.store, { spaceId, spaceName: space?.name ?? '', ...(accountName ? { accountName } : {}), count: rows.length });
+      }
     });
     return true;
   }

@@ -21,6 +21,7 @@ import { HeroCard, ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { LoanTile, paymentLabelKey } from './DebtsScreen';
 import { LoanMatchSheet } from './LoanMatchSheet';
+import { OthersLoanNote, useLoanWritable } from './sharedLoan';
 
 /** One loan: the payoff story — numbers, projection, payment history.
  *  The account row IS the loan (v2); Edit opens the account editor. */
@@ -38,6 +39,7 @@ export function DebtDetailScreen() {
   const [editing, setEditing] = useState<AccountRow | null>(null);
   const [matchOpen, setMatchOpen] = useState(false);
   const canEdit = useCanEdit(); // #505
+  const loanWritable = useLoanWritable();
 
   const status = statuses?.find((s) => s.account.id === debtId);
   // deleted or untracked here or on another device: leave the orphan
@@ -71,6 +73,7 @@ export function DebtDetailScreen() {
   if (!status) return <div className="h-full" data-testid="screen-debt-detail" />;
 
   const { account, remainingCents, progress } = status;
+  const canChange = loanWritable(account);
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmt(cents, currency);
   // #530: what is owed and the loan's size hide with the sensitive figures; payments stay
@@ -199,11 +202,12 @@ export function DebtDetailScreen() {
           </p>
         )}
 
-        {canEdit && (
+        {canChange && (
           <Button variant="outline" className="mt-5 w-full" data-testid="debtdetail-archive" onClick={wayOut}>
             <Icon name={isCredit ? 'eye-off-outline' : 'flag-checkered'} size={16} /> {wayOutLabel()}
           </Button>
         )}
+        {canEdit && !canChange && <OthersLoanNote account={account} testId="debtdetail-owner-note" className="mt-5 px-1 text-center" />}
       </div>
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
       <LoanMatchSheet accountId={matchOpen ? account.id : null} onClose={() => setMatchOpen(false)} />

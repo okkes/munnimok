@@ -17,6 +17,7 @@ import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
 import { EXPECTED_REIMBURSE_ID, specialCatType } from '@/domain/categories';
 import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 import { measure } from '@/lib/perf';
+import type { SyncEnvelope } from '@/sync/merge';
 import type { AccountRow, AccountType, RecurringRow } from '@/db/types';
 import { autoReceiptFor } from '@/features/review/reviewReceipt';
 import { candidatesFor } from '@/features/shopping/receiptPick';
@@ -184,7 +185,8 @@ export interface SuggestPassOutcome {
  * prepared on today's inputs and speaks for every row in its review is
  * left as it is (#554: a confirm's counter leg, a row leaving the review);
  * any other is prepared again whole, so its rows read the newest memory
- * together.
+ * together. A space asked for BY NAME is always prepared: the asker (the
+ * review after a Confirm) knows the memory moved, which no input shows.
  */
 export async function prepareReviewSuggestions(store: StorageBackend, spaceIds?: readonly string[]): Promise<SuggestPassOutcome> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind && (!spaceIds || spaceIds.includes(s.id)));
@@ -193,7 +195,7 @@ export async function prepareReviewSuggestions(store: StorageBackend, spaceIds?:
   const outcome: SuggestPassOutcome = { prepared: 0, rows: 0 };
   for (const space of spaces) {
     const stored = (await store.metaGet(keyFor(space.id)))?.value as StoredSuggestions | undefined;
-    const current = stored?.v === VERSION && stored.inputs === inputs;
+    const current = !spaceIds && stored?.v === VERSION && stored.inputs === inputs;
     if (current && (await views(space.id)).filter(queued).every((tx) => suggestionFor(stored.byTx, tx))) continue;
     const byTx = await prepareSpaceSuggestions(store, space.id, views);
     await store.metaPut(keyFor(space.id), { v: VERSION, inputs, byTx } satisfies StoredSuggestions);
@@ -226,8 +228,9 @@ export function useReviewSuggestions(): ReviewSuggestions | undefined {
 }
 
 /**
- * What the pass reads, counted cheaply (index counts, no rows), in two
- * parts: the INPUTS every suggestion reads besides its own row — each
+ * What the pass reads, told cheaply (index counts; field stamps for the
+ * small tables a person edits), in two parts:
+ * the INPUTS every suggestion reads besides its own row — each
  * space's accounts (own and attached), recurring costs, events and
  * categories, and the shops' receipts — and the ROWS that may wait in a
  * review: each space's own and each attached feed's, with the history
@@ -244,10 +247,8 @@ async function fingerprints(store: StorageBackend): Promise<{ inputs: string; ro
   const feeds = new Set<string>();
   for (const space of spaces) {
     const links = await spaceAccountLinks(store, space.id);
-    const [txCount, ...counts] = await Promise.all(
-      (['transaction', 'account', 'recurring', 'event', 'category'] as const).map((entity) => store.countBySpace(entity, space.id)),
-    );
-    inputs.push(`${space.id}:${counts.join(',')}:${links.length}`);
+    const [txCount, eventCount] = await Promise.all([store.countBySpace('transaction', space.id), store.countBySpace('event', space.id)]);
+    inputs.push(`${space.id}:${eventCount}:${links.length}`);
     rows.push(`${space.id}:${txCount}:${space.historyStartDate ?? ''}`);
     for (const link of links) {
       feeds.add(link.feedSpaceId);
@@ -260,7 +261,41 @@ async function fingerprints(store: StorageBackend): Promise<{ inputs: string; ro
   // a shop's receipts land in its store feed
   const storeFeeds = [...new Set((await store.allRows('storeConn')).filter((c) => c.deleted === 0).map((c) => c.spaceId))].sort((a, b) => a.localeCompare(b));
   for (const feedId of storeFeeds) inputs.push(`r:${feedId}:${await store.countBySpace('receipt', feedId)}`);
+  // an edit or a removal keeps the count: these small tables are read by their field stamps instead.
+  // Events stay counted — their rows carry pictures, and the card itself refuses an archived or removed event.
+  const [accounts, accountLinks, recurrings, categories] = await Promise.all([
+    store.allRows('account'),
+    store.allRows('accountLink'),
+    store.allRows('recurring'),
+    store.allRows('category'),
+  ]);
+  inputs.push(`e:${stampOf(accounts, BALANCE_FIELDS)},${stampOf(accountLinks)},${stampOf(recurrings)},${stampOf(categories)}`);
   return { inputs: `v${VERSION}|${inputs.join('|')}`, rows: rows.join('|') };
+}
+
+/** every bank sync moves these, and no suggestion reads them */
+const BALANCE_FIELDS: ReadonlySet<string> = new Set(['balanceCents', 'balanceAsOf']);
+const NO_FIELDS: ReadonlySet<string> = new Set();
+
+/** FNV-1a, 32 bit */
+function hash32(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.codePointAt(i) ?? 0;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash;
+}
+
+/** the rows' field stamps folded order-free: any write to any field — a tombstone too — moves it */
+function stampOf(rows: readonly (SyncEnvelope & { id: string })[], skip: ReadonlySet<string> = NO_FIELDS): string {
+  let digest = 0;
+  for (const row of rows) {
+    for (const [field, version] of Object.entries(row.fieldVersions ?? {})) {
+      if (!skip.has(field)) digest ^= hash32(`${row.id}|${field}|${version}`);
+    }
+  }
+  return (digest >>> 0).toString(36);
 }
 
 /** both parts as one — what the trigger watches */

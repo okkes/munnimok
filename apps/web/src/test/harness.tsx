@@ -90,6 +90,8 @@ export const USER_TEST_DB = `munni_user_${USER_TEST_SUB}`;
 export interface UserAppOptions {
   /** spaces the fake server owns; their rows arrive via the bootstrap pull. #505: `role` = the test user's role, named by the heads */
   spaces?: { id: string; name: string; kind?: 'personal' | 'shared'; inviteLock?: 0 | 1; role?: 'owner' | 'contributor' | 'reader' }[];
+  /** the heads' role for any listed id, feeds too — the real server names a feed reached only through an attachment "reader" */
+  roles?: Record<string, 'owner' | 'contributor' | 'reader'>;
   /** REST handlers keyed `${METHOD} ${pathname}` — everything unhandled is 404 */
   api?: Record<string, (body: unknown, url: URL) => unknown>;
 }
@@ -122,12 +124,17 @@ const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) 
 });
 
 /** #569: the heads round's answer, every listed space's head as moved (S3776: out of the fetch mock) */
-async function syncHeads(api: NonNullable<UserAppOptions['api']>, spaces: NonNullable<UserAppOptions['spaces']>, url: URL): Promise<Response> {
+async function syncHeads(
+  api: NonNullable<UserAppOptions['api']>,
+  spaces: NonNullable<UserAppOptions['spaces']>,
+  roles: NonNullable<UserAppOptions['roles']>,
+  url: URL,
+): Promise<Response> {
   const listed = api['GET /me/spaces'] ? await api['GET /me/spaces'](undefined, url) : spaces.map((s) => s.id);
   if (listed instanceof Response) return listed;
   return json(
     (listed as string[]).map((spaceId) => {
-      const role = spaces.find((s) => s.id === spaceId)?.role;
+      const role = roles[spaceId] ?? spaces.find((s) => s.id === spaceId)?.role;
       return { spaceId, latestSeq: Number.MAX_SAFE_INTEGER, ...(role ? { role } : {}) };
     }),
   );
@@ -148,7 +155,7 @@ function pullResponse(spaces: NonNullable<UserAppOptions['spaces']>, url: URL, e
  * lives outside the route tree (the party return page) mounts its own
  * providers on top.
  */
-export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], api = {} }: UserAppOptions = {}) {
+export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], roles = {}, api = {} }: UserAppOptions = {}) {
   localStorage.setItem('munni_lang', 'en');
   clearQueryCache(); // #361: no cross-test row bleed (fresh dbs, same ids)
   useSession.getState().login({ kind: 'user', sub: USER_TEST_SUB, testAuth: true });
@@ -167,7 +174,7 @@ export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], 
     // #569: a round reads every space's head at once; tests name the server's
     // spaces through GET /me/spaces (or `spaces`) — no head is known here, so
     // every one reads as moved and is pulled, as each was before
-    if (url.pathname === '/sync/heads') return syncHeads(api, spaces, url);
+    if (url.pathname === '/sync/heads') return syncHeads(api, spaces, roles, url);
     if (url.pathname === '/me/spaces') return json(spaces.map((s) => s.id));
     if (/^\/sync\/[^/]+\/push$/.test(url.pathname)) return json({ lastSeq: 0 });
     const pull = /^\/sync\/([^/]+)\/pull$/.exec(url.pathname);

@@ -418,6 +418,55 @@ describe('SyncEngine', () => {
     expect(server.pushAttempts.slice(ownersPushes)).not.toContain('s1');
   });
 
+  it('#505: changes undone in another member’s account are told by the account’s name, one per row', async () => {
+    let wa = 1_000_000;
+    const owner = device('feedOwner', () => ++wa, server);
+    dbs.push(owner.db);
+    // a feed carries no space row: its account is all there is to name
+    await owner.repo.upsert('account', 'feed-x', 'loan', { name: 'DUO', type: 'loan', source: 'connector', currency: 'EUR', balanceCents: -500_000 });
+    await owner.engine.syncAll();
+    server.readerSpaces.add('feed-x');
+    let wb = 2_000_000;
+    const member = device('feedReader', () => ++wb, server, undefined, true);
+    dbs.push(member.db);
+    await member.engine.syncAll();
+    // what an older build left parked: two edits of that one account, refused by the server
+    const parked = (field: string, value: number, n: number) => ({ opId: `old-${n}`, spaceId: 'feed-x', entity: 'account', entityId: 'loan', fields: { [field]: value }, hlc: `00300000${n}-0000-feedReader` });
+    await member.db.meta.put({ key: 'parkedOps_feed-x', value: [parked('debtStress', 3, 1), parked('paymentCents', 10_000, 2)] });
+
+    await member.engine.syncAll();
+
+    expect(await readUnsavedUndone(member.storeBackend)).toEqual([{ spaceId: 'feed-x', spaceName: '', accountName: 'DUO', count: 1 }]);
+  });
+
+  it('#505: a cursor another tab or the worker stamps between the undo and the pull does not cost the server’s values', async () => {
+    await sharedSpace();
+    let wb = 2_000_000;
+    const member = device('racer', () => ++wb, server, undefined, true);
+    dbs.push(member.db);
+    await member.engine.syncAll();
+    await member.repo.upsert('account', 's1', 'acc1', { name: 'Edited offline' });
+    server.readerSpaces.add('s1');
+    // the other context is mid-pull of the same space: its drain stamps the head right after this one's undo dropped the cursor
+    const head = (await server.pull('s1', 0)).latestSeq;
+    const store = member.storeBackend;
+    const transact = store.transact.bind(store);
+    let stamped = false;
+    store.transact = async (tables, fn) => {
+      await transact(tables, fn);
+      if (!stamped && (await store.metaGet('undoPending_s1'))) {
+        stamped = true;
+        await store.metaPut('syncCursor_s1', head);
+      }
+    };
+
+    await member.engine.syncAll();
+
+    expect(stamped).toBe(true);
+    expect((await member.db.accounts.get('acc1'))?.name).toBe('Theirs');
+    expect(await member.db.meta.get('undoPending_s1')).toBeUndefined();
+  });
+
   it('#505: promoted again, the device writes and pushes as before', async () => {
     await sharedSpace();
     server.readerSpaces.add('s1');
@@ -434,6 +483,61 @@ describe('SyncEngine', () => {
 
     expect(member.repo.canWrite('s1')).toBe(true);
     expect((await server.pull('s1', 0)).ops.some((op) => op.fields.color === '#0a0')).toBe(true);
+  });
+
+  it('halted, the engine starts no round whoever asks; resumed, it sends what waited', async () => {
+    let w = 1_000_000;
+    const a = device('devHalt', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Leaving', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+
+    await a.engine.halt();
+    const heads = server.headsCalls;
+    await a.repo.upsert('account', 's1', 'acc', { name: 'Typed after' });
+    await a.engine.syncAll();
+    expect(server.headsCalls).toBe(heads);
+    expect(await a.db.outbox.count()).toBe(1);
+
+    a.engine.resume();
+    await vi.waitFor(async () => expect(await a.db.outbox.count()).toBe(0));
+    expect(server.headsCalls).toBeGreaterThan(heads);
+  });
+
+  it('halt waits out the round in flight, and a membership that ends under that round purges nothing', async () => {
+    const owner = await sharedSpace();
+    let wb = 2_000_000;
+    const leaver = device('leaver', () => ++wb, server);
+    dbs.push(leaver.db);
+    await leaver.engine.syncAll();
+    // the space moved, so the next round pulls it — and the server holds that answer back
+    await owner.repo.upsert('account', 's1', 'acc2', { name: 'New' });
+    await owner.engine.syncAll();
+    let reached: () => void = () => undefined;
+    let release: () => void = () => undefined;
+    const pulling = new Promise<void>((resolve) => (reached = resolve));
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const pull = server.pull.bind(server);
+    server.pull = async (spaceId, since) => {
+      reached();
+      await held;
+      return pull(spaceId, since);
+    };
+    const round = leaver.engine.syncAll();
+    await pulling;
+
+    let halted = false;
+    const halting = leaver.engine.halt().then(() => (halted = true));
+    // the account leaves the server while the request hangs: the pull comes back refused
+    server.forbiddenSpaces.add('s1');
+    expect(halted).toBe(false);
+    release();
+    await halting;
+    await round;
+
+    expect((await leaver.db.spaces.get('s1'))?.name).toBe('Shared');
+    expect((await leaver.db.accounts.get('acc1'))?.name).toBe('Theirs');
+    expect(useEvicted.getState().evicted).toBeNull();
   });
 
   it('#306: eviction (push AND pull 403) reports ONCE — stragglers never re-raise or re-push', async () => {

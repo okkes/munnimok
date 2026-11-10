@@ -107,4 +107,46 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     const map = ((await store.metaGet(`reviewSuggest:${SPACE}`))?.value as { byTx: ReviewSuggestions }).byTx;
     expect(map.q5?.recurringId).toBe('rec2');
   });
+
+  const storedMap = async (store: DexieBackend) => ((await store.metaGet(`reviewSuggest:${SPACE}`))?.value as { byTx: ReviewSuggestions }).byTx;
+  const waiting = async (store: DexieBackend, id: string) => (await visibleTransactions(store, SPACE)).find((t) => t.id === id)!;
+
+  it('asked for by name — the review after a Confirm — a space is prepared again: the shop just filed pre-fills its next card', async () => {
+    const { store, repo } = await seed();
+    const kiosk = { accountId: 'chk', currency: 'EUR', merchant: 'Zorro Kiosk', catId: 'uncategorized', needsReview: 1 as const };
+    await repo.upsert('transaction', SPACE, 'k1', { ...kiosk, date: '2026-10-30', amountCents: -500 });
+    await repo.upsert('transaction', SPACE, 'k2', { ...kiosk, date: '2026-10-31', amountCents: -730 });
+    await prepareReviewSuggestions(store);
+    expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))?.predictedCatId).not.toBe('groceries');
+
+    await repo.upsert('transaction', SPACE, 'k1', { catId: 'groceries', needsReview: 0 });
+    // nobody asked for this space: the map stands (the pass over every space stays cheap)
+    expect(await prepareReviewSuggestions(store)).toEqual({ prepared: 0, rows: 0 });
+    expect(await prepareReviewSuggestions(store, [SPACE])).toMatchObject({ prepared: 1 });
+
+    expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))).toMatchObject({ predictedCatId: 'groceries', draft: { catId: 'groceries' } });
+  });
+
+  it('an edited recurring cost moves the fingerprint and its row is prepared again; a balance that moved does not', async () => {
+    const { store, repo } = await seed();
+    await prepareReviewSuggestions(store);
+    expect((await storedMap(store)).q4.recurringId).toBe('rec1');
+    const before = await suggestionInputFingerprint(store);
+
+    // a bank sync moves a balance: no suggestion reads it
+    await repo.upsert('account', SPACE, 'chk', { balanceCents: 12_345 });
+    expect(await suggestionInputFingerprint(store)).toBe(before);
+
+    // the subscription's price is corrected: the waiting charge no longer is that recurring cost
+    await repo.upsert('recurring', SPACE, 'rec1', { amountCents: 900 });
+    expect(await suggestionInputFingerprint(store)).not.toBe(before);
+    expect(await prepareReviewSuggestions(store)).toMatchObject({ prepared: 1 });
+    expect((await storedMap(store)).q4.recurringId).toBeUndefined();
+
+    // a category the person removes counts the same way: the row stays, as a tombstone
+    await repo.upsert('category', SPACE, 'cat-own', { name: 'Hobby' });
+    const withCategory = await suggestionInputFingerprint(store);
+    await repo.remove('category', SPACE, 'cat-own');
+    expect(await suggestionInputFingerprint(store)).not.toBe(withCategory);
+  });
 });

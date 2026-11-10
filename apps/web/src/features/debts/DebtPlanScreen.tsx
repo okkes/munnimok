@@ -47,6 +47,7 @@ import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { LoanTile } from './DebtsScreen';
 import { PayoffChart } from './PayoffChart';
+import { OthersLoanNote, useLoanWritable } from './sharedLoan';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
@@ -360,6 +361,8 @@ interface DebtCardProps {
   money: Money;
   /** the tsunami weight chips, when that order is on */
   stress?: ReactNode;
+  /** stands where Apply would: the loan is another member's to change */
+  ownerNote?: ReactNode;
 }
 
 /**
@@ -373,7 +376,7 @@ interface DebtCardProps {
  * raised payment to the loan itself. Both walks are memoised per card:
  * the slider re-walks one loan, nothing else.
  */
-function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today, money, stress }: Readonly<DebtCardProps>) {
+function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today, money, stress, ownerNote }: Readonly<DebtCardProps>) {
   const { t, lang } = useLang();
   // #530: the balance and the chart's scale hide with the sensitive figures
   const owed = useDisplayMoney().sensitive(money);
@@ -495,6 +498,7 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
           {t('debtplan.apply')}
         </Button>
       )}
+      {ownerNote}
       {stress}
       {/* a raised payment is undone on the loan's edit sheet: no cooldown, the sheet is the pause */}
       <DangerConfirmSheet
@@ -521,15 +525,17 @@ interface PayoffOrderProps {
   /** #505: Apply and the weights write the loan — both absent where the space is read-only */
   onApply?: (id: string, paymentCents: number) => void;
   onStress?: (id: string, level: DebtStress) => void;
+  /** false for a loan whose own row is another member's to change */
+  writable: (account: AccountRow) => boolean;
   today: string;
   money: Money;
 }
 
 /** the payoff order, debt by debt, each on its own card */
-function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, onApply, onStress, today, money }: Readonly<PayoffOrderProps>) {
+function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, onApply, onStress, writable, today, money }: Readonly<PayoffOrderProps>) {
   const { t } = useLang();
-  const stressChips = (account: AccountRow) => (
-    <div className="mt-3 flex items-center gap-1.5" inert={onStress ? undefined : true}>
+  const stressChips = (account: AccountRow, open: boolean) => (
+    <div className="mt-3 flex items-center gap-1.5" inert={onStress && open ? undefined : true}>
       <span className="mr-1 text-[11px] text-ink-4">{t('debtplan.stress')}</span>
       {STRESS_LEVELS.map((level) => (
         <Chip
@@ -553,6 +559,7 @@ function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, on
           const status = statuses.find((s) => s.account.id === outcome.id);
           const debt = debts.find((d) => d.id === outcome.id);
           if (!status || !debt) return null;
+          const open = writable(status.account);
           return (
             <DebtCard
               key={outcome.id}
@@ -561,10 +568,11 @@ function PayoffOrder({ plan, debts, statuses, strategy, extraByDebt, onExtra, on
               debt={debt}
               extraCents={extraByDebt[outcome.id] ?? 0}
               onExtra={(amount) => onExtra(outcome.id, amount)}
-              onApply={onApply ? (paymentCents) => onApply(outcome.id, paymentCents) : undefined}
+              onApply={onApply && open ? (paymentCents) => onApply(outcome.id, paymentCents) : undefined}
               today={today}
               money={money}
-              stress={strategy === 'tsunami' ? stressChips(status.account) : undefined}
+              stress={strategy === 'tsunami' ? stressChips(status.account, open) : undefined}
+              ownerNote={onApply && !open ? <OthersLoanNote account={status.account} testId={`debtplan-owner-${outcome.id}`} className="mt-2" /> : undefined}
             />
           );
         })}
@@ -664,6 +672,7 @@ export function DebtPlanScreen() {
   const today = localToday();
   // #505: the plan stays a what-if for a reader — what it writes to the loans does not
   const canEdit = useCanEdit();
+  const loanWritable = useLoanWritable();
   const [inputs, setInputs] = useState<PlanInputs>(() => readInputs(spaceId));
   const [extraText, setExtraText] = useState(() => eurosText(inputs.extraCents));
   const [lumpText, setLumpText] = useState(() => eurosText(inputs.lumpCents));
@@ -928,6 +937,7 @@ export function DebtPlanScreen() {
               onExtra={setDebtExtra}
               onApply={canEdit ? applyPayment : undefined}
               onStress={canEdit ? setStress : undefined}
+              writable={loanWritable}
               today={today}
               money={money}
             />
