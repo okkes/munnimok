@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 /** #348: the category first — a movement picked in the editor, its ask
  *  answered with `pot` (or walked away from with null) */
@@ -108,6 +108,43 @@ describe('TxFormSheet (demo identity)', () => {
     );
     expect(screen.queryByTestId('screen-tx-create')).toBeNull();
     // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
+
+  it('a new entry just after midnight is dated the person’s own day — east of Greenwich the UTC day is still yesterday', async () => {
+    const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
+    const zone = env.TZ;
+    env.TZ = 'Europe/Amsterdam';
+    // 00:30 on 10 November in Amsterdam
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-09T23:30:00Z') });
+    try {
+      await openForm();
+      expect((screen.getByTestId('txform-date') as HTMLInputElement).value).toBe('2026-11-10');
+    } finally {
+      vi.useRealTimers();
+      if (zone === undefined) delete env.TZ;
+      else env.TZ = zone;
+    }
+  }, 15_000);
+
+  it('Add tapped twice writes the transaction once', async () => {
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Double Tap Bakery' } });
+    const add = screen.getByTestId('txform-save');
+    // the screen stays up until the saved row's page is there: a second tap lands on the same button
+    fireEvent.click(add);
+    fireEvent.click(add);
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const written = await waitFor(async () => {
+      const rows = (await db.transactions.toArray()).filter((row) => row.merchant === 'Double Tap Bakery');
+      expect(rows.length).toBeGreaterThan(0);
+      return rows;
+    }, { timeout: 5000 });
+    expect(written).toHaveLength(1);
+    await screen.findByTestId('screen-tx-detail', {}, { timeout: 5000 });
+    db.close();
   }, 15_000);
 
   it('#348 (user): the counterparty waits for the category — an ordinary filing leaves it shut, a movement opens it', async () => {
@@ -499,4 +536,36 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-amount').textContent).toContain('+€50.00'), { timeout: 5000 });
   }, 15_000);
+});
+
+describe('the create screen in a space this member only reads (#505)', () => {
+  const SPACE = 's-shared';
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+
+  it('has no door that saves: neither Add nor the reimbursement link that saves first', async () => {
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB(USER_TEST_DB);
+    await db.meta.put({ key: 'activeSpaceId', value: SPACE });
+    await db.meta.put({ key: 'spaceRoles', value: { [SPACE]: 'reader' } });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-reader'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'Eukesh', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('account', SPACE, 'acc-joint', { name: 'Joint', type: 'checking', source: 'manual', balanceCents: 0, currency: 'EUR' });
+    db.close();
+
+    renderAppAsUser('/transactions/new', { spaces: [{ id: SPACE, name: 'Eukesh', kind: 'shared', role: 'reader' }] });
+    await screen.findByTestId('txform-readonly-note', {}, { timeout: 8000 });
+    expect(screen.getByTestId('txform-event')).toBeTruthy();
+    expect(screen.queryByTestId('txform-save')).toBeNull();
+    expect(screen.queryByTestId('txform-link-reimb')).toBeNull();
+  }, 20_000);
 });

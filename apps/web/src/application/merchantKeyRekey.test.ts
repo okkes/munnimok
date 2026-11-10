@@ -7,7 +7,9 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { recurringDismissId } from '@/domain/feedIds';
 import { merchantKeyBefore578 } from '@/domain/merchantKey';
-import { rekeyMerchantKeys } from './merchantKeyRekey';
+import { useSession } from '@/app/session';
+import { LAST_SYNC_KEY } from '@/sync/engine';
+import { MERCHANT_KEY_REKEY_MARKER, rekeyMerchantKeys } from './merchantKeyRekey';
 
 const SPACE = 'sp1';
 const AH = 'Albert Heijn 1842 >S-GRAVENH30.10.2026 1';
@@ -15,6 +17,7 @@ const AH = 'Albert Heijn 1842 >S-GRAVENH30.10.2026 1';
 describe('#578: stored merchant keys follow the new spelling once', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {
+    useSession.getState().logout();
     for (const s of stores.splice(0)) await s.destroy();
   });
 
@@ -51,6 +54,27 @@ describe('#578: stored merchant keys follow the new spelling once', () => {
     await repo.upsert('recurring', SPACE, 'rec1', { merchantKey: oldKey });
     expect(await rekeyMerchantKeys(store, repo)).toBe(0);
     expect((await store.get('recurring', 'rec1'))?.merchantKey).toBe(oldKey);
+  });
+
+  it('a signed-in device that has not finished a sync round neither runs nor marks — what it pulls moves afterwards', async () => {
+    useSession.getState().login({ kind: 'user', sub: 'u-rekey' });
+    const store = new DexieBackend(new MunniDB(`munni_rekey_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rekey'), { trackOutbox: false });
+    // a new install reaches the migration before its first pull: nothing is here to read the keys through
+    expect(await rekeyMerchantKeys(store, repo)).toBe(0);
+    expect((await store.metaGet(MERCHANT_KEY_REKEY_MARKER))?.value).toBeFalsy();
+
+    // the first round lands the account's rows, still in the old spelling
+    const oldKey = merchantKeyBefore578(AH);
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('transaction', SPACE, 't1', { accountId: 'a', currency: 'EUR', needsReview: 0, catId: 'groceries', date: '2026-10-30', amountCents: -1309, merchant: AH });
+    await repo.upsert('recurring', SPACE, 'rec1', { name: 'Groceries', amountCents: 1309, every: 'month', active: 1, merchantKey: oldKey });
+    await store.metaPut(LAST_SYNC_KEY, Date.now());
+
+    expect(await rekeyMerchantKeys(store, repo)).toBe(1);
+    expect((await store.get('recurring', 'rec1'))?.merchantKey).toBe('albert heijn');
+    expect((await store.metaGet(MERCHANT_KEY_REKEY_MARKER))?.value).toBe(true);
   });
 
   it('a key no transaction carries any more is re-read on its own', async () => {

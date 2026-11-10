@@ -18,7 +18,7 @@ import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { useRecurrings } from '@/application/recurring';
+import { localToday, useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Chip } from '@/ui/primitives';
@@ -44,8 +44,6 @@ interface TxFormSheetProps {
    *  door): the form opens as a transfer onto this counterparty */
   prefill?: { linkedAccountId: string; merchant?: string };
 }
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** one string per form state — the dirty guard compares it to the
  *  seeded baseline (order fixed; JSON keeps null/undefined distinct) */
@@ -90,7 +88,7 @@ function applyManualBalanceDeltas(
   entries: ReturnType<typeof manualBalanceDeltas>,
 ): void {
   for (const { account, delta } of entries) {
-    void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta });
+    void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta }).catch(() => undefined);
   }
 }
 
@@ -160,7 +158,7 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
       amount: suggested?.amount ?? '',
       isExpense: true,
       merchant: prefill?.merchant ?? suggested?.merchant ?? '',
-      date: todayIso(),
+      date: localToday(),
       accountId: null,
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
       adjustment: false,
@@ -655,6 +653,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
+  const canEdit = useCanEdit();
   const cats = useCategories();
   const events = useEvents();
   // #348: the story fields the detail offers, on the create screen too
@@ -666,7 +665,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const [amountEntryMode, setAmountEntryMode] = useState<AmountEntryMode>('register');
   const [isExpense, setIsExpense] = useState(true);
   const [merchant, setMerchant] = useState('');
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(localToday());
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
   // #211: the split-CATEGORIES editor (the same sheet as review/detail) —
@@ -687,6 +686,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const baselineRef = useRef('');
+  // the host stays up until the saved row's page is there: a second tap must not write the row again
+  const saving = useRef(false);
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
@@ -725,6 +726,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
     setNotes(tx?.notes ?? '');
     setEventId(tx?.eventId ?? null);
     setAttempted(false);
+    saving.current = false;
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
@@ -767,7 +769,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
   const save = (next?: 'reimb') => {
-    if (!valid || !effectiveAccount || cents === null) return;
+    if (!valid || !effectiveAccount || cents === null || saving.current) return;
+    saving.current = true;
     // #269: target mode writes the DIFFERENCE to the named balance
     const signed = signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
     const rowId = tx?.id ?? repo.newId();
@@ -827,7 +830,9 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
         }
         await plan.execute(repo);
       }
-    })().catch(() => undefined);
+    })().catch(() => {
+      saving.current = false;
+    });
     if (!next) onSaved(rowId);
   };
 
@@ -845,6 +850,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const empty = writable.length === 0 && !tx;
   const pickedEvent = events?.find((e) => e.id === eventId);
   const trySave = (next?: 'reimb') => {
+    if (!canEdit) return;
     if (!valid) {
       setAttempted(true);
       return;
@@ -1023,6 +1029,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
               notes={notes}
               onNotes={setNotes}
               credit={!isExpense}
+              canLinkReimb={canEdit}
               onLinkReimb={() => trySave('reimb')}
             />
           )}
@@ -1160,6 +1167,7 @@ function StoryRows({
   notes,
   onNotes,
   credit,
+  canLinkReimb,
   onLinkReimb,
 }: Readonly<{
   eventName: string | undefined;
@@ -1168,6 +1176,8 @@ function StoryRows({
   onNotes: (notes: string) => void;
   /** a credit pays an expense back; an expense gets paid back */
   credit: boolean;
+  /** false where nothing may be saved: the door saves the row first */
+  canLinkReimb: boolean;
   onLinkReimb: () => void;
 }>) {
   const { t } = useLang();
@@ -1191,18 +1201,20 @@ function StoryRows({
         rows={3}
         className="w-full resize-none rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-4"
       />
-      <button
-        data-testid="txform-link-reimb"
-        onClick={onLinkReimb}
-        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-      >
-        <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
-          <span className="block truncate text-[11px] text-ink-4">{t('txform.reimbAfterSave')}</span>
-        </span>
-        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-      </button>
+      {canLinkReimb && (
+        <button
+          data-testid="txform-link-reimb"
+          onClick={onLinkReimb}
+          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+        >
+          <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
+            <span className="block truncate text-[11px] text-ink-4">{t('txform.reimbAfterSave')}</span>
+          </span>
+          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+        </button>
+      )}
     </>
   );
 }

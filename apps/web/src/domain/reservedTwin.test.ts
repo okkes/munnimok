@@ -20,6 +20,13 @@ describe('the booked twin of a reserved charge (#533)', () => {
     expect(twinScore(hold, row('b', '2026-10-07', -1450, 'Jumbo'))).toBeNull();
   });
 
+  it('the amount alone never names the booking — a stranger of the same sum is not the twin', () => {
+    const hold = row('r', '2026-10-06', -10_000, 'Hotel Les Sorbiers');
+    const stranger = row('b', '2026-10-12', -10_000, 'Coolblue BV');
+    expect(twinScore(hold, stranger)).toBeNull();
+    expect(pairReservedWithBooked([hold], [stranger]).size).toBe(0);
+  });
+
   it('pairs one booked row per hold — the older hold chooses first, so repeated payments stay in order', () => {
     const holds = [row('h1', '2026-10-06', -1300, 'TU Delft'), row('h2', '2026-10-07', -1300, 'TU Delft')];
     const booked = [row('b1', '2026-10-07', -1300, 'TU Delft'), row('b2', '2026-10-08', -1300, 'TU Delft'), row('x', '2026-10-07', -999, 'Spotify')];

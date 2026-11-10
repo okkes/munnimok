@@ -1,8 +1,10 @@
+import { readSessionIdentity } from '@/app/session';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { RecurringDismissRow } from '@/db/types';
 import { recurringDismissId } from '@/domain/feedIds';
 import { merchantKey, merchantKeyBefore578 } from '@/domain/merchantKey';
+import { LAST_SYNC_KEY } from '@/sync/engine';
 
 /** the migration's marker: it ran on this database */
 export const MERCHANT_KEY_REKEY_MARKER = 'merchantKeyRekey:578';
@@ -77,6 +79,8 @@ async function rekeyDismissals(repo: Repo, dismissals: readonly RecurringDismiss
  */
 export async function rekeyMerchantKeys(store: StorageBackend, repo: Repo): Promise<number> {
   if ((await store.metaGet(MERCHANT_KEY_REKEY_MARKER))?.value) return 0;
+  // before a first full round the rows the keys are read through are not all here: running now would settle on nothing
+  if (readSessionIdentity()?.kind === 'user' && !(await store.metaGet(LAST_SYNC_KEY))?.value) return 0;
   const recurrings = (await store.allRows('recurring')).filter((r) => r.deleted === 0 && !!r.merchantKey);
   const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && !!a.merchantKey);
   const dismissals = (await store.allRows('recurringDismiss')).filter((d) => d.deleted === 0 && !!d.merchantKey);

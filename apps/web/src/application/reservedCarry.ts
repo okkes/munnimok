@@ -5,7 +5,7 @@ import type { SpaceTx, TxTransformFields } from '@/db/joined';
 import type { TransactionRow, TxMetaRow, TxReimbursement, TxSplit } from '@/db/types';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { mirrorTxId, partMirrorSourceId } from '@/domain/feedIds';
-import { pairReservedWithBooked } from '@/domain/reservedTwin';
+import { TWIN_DAYS_AFTER, TWIN_DAYS_BEFORE, pairReservedWithBooked } from '@/domain/reservedTwin';
 import { scaleCatsTo } from '@/domain/txSlices';
 import { cursorKey } from '@/sync/drain';
 import { decodeHlc } from '@/sync/hlc';
@@ -23,11 +23,15 @@ import { removeMirrorForDeletedSource } from './mirrorMint';
  * at the reserved one (a reimbursement it paid, a transfer leg, a
  * receipt) point at the twin. The reserved row's overlay is retired once
  * carried, so every device and member converges on one carry; a
- * reservation that never booked lets its overlay go after a month.
+ * reservation that never booked lets its overlay go once no booking can
+ * follow any more.
  */
 
-/** a reserved row gone this long without a booked twin was cancelled, not booked */
-const GIVE_UP_MS = 30 * 86_400_000;
+const DAY_MS = 86_400_000;
+/** a reserved row gone longer than a booking may follow was released, not booked */
+const GIVE_UP_MS = TWIN_DAYS_AFTER * DAY_MS;
+/** how far apart two reservations can lie and still claim the same booking */
+const REACH_MS = (TWIN_DAYS_BEFORE + TWIN_DAYS_AFTER) * DAY_MS;
 const FINGERPRINT_KEY = 'reservedCarryFingerprint';
 
 /** an overlay that says something a person (or the review) decided */
@@ -90,9 +94,15 @@ function amountBoundFields(meta: TxMetaRow, same: boolean, targetAbs: number): A
   return fields;
 }
 
+// a part still naming the hold's own minted leg would read as a picked row: the twin's leg would never be minted
+const withoutOwnLegs = (parts: readonly TxSplit[], holdId: string): TxSplit[] =>
+  parts.map((part) => (part.id && part.transferPeerId === mirrorTxId(partMirrorSourceId(holdId, part.id)) ? { ...part, transferPeerId: undefined } : part));
+
 /** the reserved row's opinions as the booked row's fields — the review flag stays the booked row's own */
 export function carriedFields(meta: TxMetaRow, reserved: TransactionRow, booked: TransactionRow): TxTransformFields {
-  const { cats, splits, reimbursements } = amountBoundFields(meta, reserved.amountCents === booked.amountCents, Math.abs(booked.amountCents));
+  const bound = amountBoundFields(meta, reserved.amountCents === booked.amountCents, Math.abs(booked.amountCents));
+  const { cats, reimbursements } = bound;
+  const splits = bound.splits && withoutOwnLegs(bound.splits, reserved.id);
   const fields: TxTransformFields = {};
   if (meta.catId && meta.catId !== UNCATEGORIZED_ID) fields.catId = meta.catId;
   if (cats) fields.cats = cats;
@@ -144,17 +154,29 @@ async function repointReferences(store: StorageBackend, repo: Repo, spaceId: str
   await repointReceiptLinks(store, repo, spaceId, fromId, toId);
 }
 
-/** the receipts linked to the reserved row now link its twin (S3776) */
-async function repointReceiptLinks(store: StorageBackend, repo: Repo, spaceId: string, fromId: string, toId: string): Promise<void> {
+/** the receipts linked to the reserved row, or asked about on it, now name its twin; how many did (S3776) */
+async function repointReceiptLinks(store: StorageBackend, repo: Repo, spaceId: string, fromId: string, toId: string): Promise<number> {
+  let moved = 0;
   for (const link of await store.bySpace('receiptLink', spaceId)) {
     if (link.deleted !== 0) continue;
     const first = link.txId === fromId;
     const also = link.alsoTxIds?.includes(fromId);
-    if (!first && !also) continue;
+    const asked = link.proposedTxId === fromId;
+    if (!first && !also && !asked) continue;
     await repo.upsert('receiptLink', spaceId, link.id, {
       ...(first ? { txId: toId } : {}),
       ...(also ? { alsoTxIds: link.alsoTxIds!.map((id) => (id === fromId ? toId : id)) } : {}),
+      ...(asked ? { proposedTxId: toId } : {}),
     });
+    moved += 1;
+  }
+  return moved;
+}
+
+async function freeProposals(store: StorageBackend, repo: Repo, spaceId: string, txId: string): Promise<void> {
+  for (const link of await store.bySpace('receiptLink', spaceId)) {
+    // the matcher passes over a receipt that still asks about a row: the question must go before it can ask again
+    if (link.deleted === 0 && link.proposedTxId === txId) await repo.upsert('receiptLink', spaceId, link.id, { proposedTxId: null as never });
   }
 }
 
@@ -178,9 +200,10 @@ async function feedRows(store: StorageBackend, spaceId: string): Promise<{ gone:
   return { gone, booked };
 }
 
-/** a hold that holds an opinion, and the booked twin it pairs with */
+/** a hold with a story, and the booked twin it pairs with */
 interface Carry extends GoneHold {
-  meta: TxMetaRow;
+  /** absent when a receipt is all the hold carried */
+  meta: TxMetaRow | undefined;
   twin: TransactionRow;
   twinMeta: TxMetaRow | undefined;
 }
@@ -188,20 +211,54 @@ interface Carry extends GoneHold {
 /** the twin takes the hold's story, the rows that named the hold name the twin, and the hold's overlay goes (S3776) */
 async function carryOnto(store: StorageBackend, repo: Repo, spaceId: string, carry: Carry, viewed: readonly SpaceTx[]): Promise<void> {
   const { raw, feedSpaceId, meta, twin, twinMeta } = carry;
-  // a real other leg (never the hold's own minted one) pairs with the twin
-  const ownMirror = mirrorTxId(raw.id);
-  const peerId = [meta.transferPeerId, viewed.find((row) => row.transferPeerId === raw.id && row.deleted === 0)?.id].find(
-    (id) => !!id && id !== ownMirror,
-  );
-  await writeTxTransform(
-    repo,
-    { id: twin.id, spaceId, feedSpaceId, needsReview: twinMeta?.needsReview ?? 1, amountCents: twin.amountCents, date: twin.date },
-    { ...carriedFields(meta, raw, twin), ...(peerId ? { transferPeerId: peerId } : {}) },
-  );
+  if (meta) {
+    // a real other leg (never the hold's own minted one) pairs with the twin
+    const ownMirror = mirrorTxId(raw.id);
+    const peerId = [meta.transferPeerId, viewed.find((row) => row.transferPeerId === raw.id && row.deleted === 0)?.id].find(
+      (id) => !!id && id !== ownMirror,
+    );
+    const fields = { ...carriedFields(meta, raw, twin), ...(peerId ? { transferPeerId: peerId } : {}) };
+    if (Object.keys(fields).length > 0) {
+      await writeTxTransform(
+        repo,
+        { id: twin.id, spaceId, feedSpaceId, needsReview: twinMeta?.needsReview ?? 1, amountCents: twin.amountCents, date: twin.date },
+        fields,
+      );
+    }
+  }
   await repointReferences(store, repo, spaceId, viewed, raw.id, twin.id);
   // the hold's own counter legs go; the twin minted its own above
+  await retire(store, repo, spaceId, raw, meta);
+}
+
+async function retire(store: StorageBackend, repo: Repo, spaceId: string, raw: TransactionRow, meta: TxMetaRow | undefined): Promise<void> {
+  if (!meta) return;
   await retireHoldLegs(store, repo, raw, meta);
   await repo.remove('txMeta', spaceId, meta.id);
+}
+
+function twinsOf(waiting: readonly GoneHold[], gone: readonly GoneHold[], booked: readonly TransactionRow[]): Map<string, TransactionRow> {
+  const days = waiting.map((hold) => Date.parse(hold.raw.date)).filter((ms) => !Number.isNaN(ms));
+  if (days.length === 0) return new Map();
+  // only the rows near the waiting ones: years of reservations and bookings need not meet each other
+  const from = Math.min(...days) - REACH_MS;
+  const to = Math.max(...days) + REACH_MS;
+  const within = (row: TransactionRow, slack: number): boolean => {
+    const day = Date.parse(row.date);
+    return day >= from - slack && day <= to + slack;
+  };
+  // every reservation in reach claims its own booking — with a story or not, filed or not —
+  // so none of them is left to take a look-alike's
+  const claimants = gone.map((hold) => hold.raw).filter((raw) => within(raw, 0));
+  const candidates = booked.filter((row) => within(row, REACH_MS));
+  const pairs = pairReservedWithBooked(claimants, candidates);
+  const byId = new Map(candidates.map((row) => [row.id, row]));
+  const twins = new Map<string, TransactionRow>();
+  for (const { raw } of waiting) {
+    const twin = byId.get(pairs.get(raw.id) ?? '');
+    if (twin) twins.set(raw.id, twin);
+  }
+  return twins;
 }
 
 /** one space's reserved rows the bank took out, carried onto their twins; how many were carried */
@@ -209,36 +266,66 @@ async function carryInSpace(store: StorageBackend, repo: Repo, spaceId: string, 
   const { gone, booked } = await feedRows(store, spaceId);
   if (gone.size === 0) return 0;
   const metas = new Map((await store.bySpace('txMeta', spaceId)).filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
-  const orphans = [...gone.values()].filter(({ raw }) => {
+  // a receipt lives on its link, not on the overlay: a reserved row may carry nothing else
+  const withReceipt = new Set(
+    (await store.bySpace('receiptLink', spaceId))
+      .filter((link) => link.deleted === 0)
+      .flatMap((link) => [link.txId, ...(link.alsoTxIds ?? []), link.proposedTxId]),
+  );
+  const stories = [...gone.values()].filter(({ raw }) => {
     const meta = metas.get(raw.id);
-    return !!meta && holdsOpinion(meta);
+    return (!!meta && holdsOpinion(meta)) || withReceipt.has(raw.id);
   });
-  if (orphans.length === 0) return 0;
+  if (stories.length === 0) return 0;
 
-  // a booked row the review already filed is the person's own decision — never overwritten
-  const fresh = (row: TransactionRow) => (metas.get(row.id)?.needsReview ?? 1) === 1;
   let carried = 0;
   let viewed: SpaceTx[] | null = null;
-  for (const [accountId, reservedRows] of groupBy(orphans, (o) => o.raw.accountId)) {
-    const candidates = (booked.get(accountId) ?? []).filter(fresh);
-    const pairs = pairReservedWithBooked(reservedRows.map((o) => o.raw), candidates);
-    for (const { raw, feedSpaceId } of reservedRows) {
-      const meta = metas.get(raw.id)!;
-      const twin = candidates.find((row) => row.id === pairs.get(raw.id));
-      if (!twin) {
-        // no booking within reach: a cancelled hold lets its story go after a month
-        if (now - tombstoneMs(raw) > GIVE_UP_MS) {
-          await retireHoldLegs(store, repo, raw, meta);
-          await repo.remove('txMeta', spaceId, meta.id);
-        }
-        continue;
-      }
-      viewed ??= await visibleTransactions(store, spaceId);
-      await carryOnto(store, repo, spaceId, { raw, feedSpaceId, meta, twin, twinMeta: metas.get(twin.id) }, viewed);
-      carried += 1;
+  const view = async () => (viewed ??= await visibleTransactions(store, spaceId));
+  const at: CarryAt = { store, repo, spaceId, metas };
+  for (const [accountId, holds] of groupBy(stories, (hold) => hold.raw.accountId)) {
+    const waiting = await stillWaiting(at, holds, now);
+    const twins = twinsOf(waiting, [...gone.values()].filter((hold) => hold.raw.accountId === accountId), booked.get(accountId) ?? []);
+    for (const hold of waiting) {
+      const twin = twins.get(hold.raw.id);
+      if (twin && (await carryHold(at, hold, twin, view))) carried += 1;
     }
   }
   return carried;
+}
+
+interface CarryAt {
+  store: StorageBackend;
+  repo: Repo;
+  spaceId: string;
+  metas: ReadonlyMap<string, TxMetaRow>;
+}
+
+/** the holds a booking may still follow; one gone longer is retired — whatever still looks like it is another payment's */
+async function stillWaiting({ store, repo, spaceId, metas }: CarryAt, holds: readonly GoneHold[], now: number): Promise<GoneHold[]> {
+  const waiting: GoneHold[] = [];
+  for (const hold of holds) {
+    if (now - tombstoneMs(hold.raw) <= GIVE_UP_MS) {
+      waiting.push(hold);
+      continue;
+    }
+    await retire(store, repo, spaceId, hold.raw, metas.get(hold.raw.id));
+    await freeProposals(store, repo, spaceId, hold.raw.id);
+  }
+  return waiting;
+}
+
+/** one hold onto its twin; whether anything of it was carried */
+async function carryHold({ store, repo, spaceId, metas }: CarryAt, { raw, feedSpaceId }: GoneHold, twin: TransactionRow, view: () => Promise<SpaceTx[]>): Promise<boolean> {
+  const meta = metas.get(raw.id);
+  const twinMeta = metas.get(twin.id);
+  // a booking the review already filed is the person's own decision: only the receipt follows it there
+  if (twinMeta?.needsReview === 0) {
+    const moved = await repointReceiptLinks(store, repo, spaceId, raw.id, twin.id);
+    await retire(store, repo, spaceId, raw, meta);
+    return moved > 0;
+  }
+  await carryOnto(store, repo, spaceId, { raw, feedSpaceId, meta, twin, twinMeta }, await view());
+  return true;
 }
 
 function groupBy<T>(items: readonly T[], keyOf: (item: T) => string): Map<string, T[]> {
@@ -262,12 +349,13 @@ async function pullCursor(store: StorageBackend, spaceId: string): Promise<numbe
   return typeof value === 'number' ? value : 0;
 }
 
-/** where the pulls stand: unchanged means nothing arrived since the last pass */
+/** what can make a carry due: a feed's pull (a reservation goes, a booking lands) or a story landing late */
 async function pullFingerprint(store: StorageBackend): Promise<string> {
   const parts: string[] = [];
   const feeds = new Set<string>();
   for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind)) {
-    parts.push(`${space.id}:${await pullCursor(store, space.id)}`);
+    // the stories are counted; the space's own pull position is left out — it moves with the echo of every local write
+    parts.push(`${space.id}:${await store.countBySpace('txMeta', space.id)}:${await store.countBySpace('receiptLink', space.id)}`);
     for (const link of await spaceAccountLinks(store, space.id)) feeds.add(link.feedSpaceId);
   }
   for (const feedId of [...feeds].sort((a, b) => a.localeCompare(b))) {

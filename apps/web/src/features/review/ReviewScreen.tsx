@@ -1,6 +1,5 @@
 import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useSpaceAccount, useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { requestReviewSuggestions, suggestionFor, useReviewSuggestions } from '@/application/reviewSuggestions';
@@ -1643,23 +1642,7 @@ const askCounterTypes = (catId: string | null): readonly AccountType[] | undefin
  */
 export function ReviewScreen() {
   const { t, lang } = useLang();
-  const { store, repo, spaceId, setActiveSpace } = useData();
-  const navigate = useNavigate();
-  // #132: a new-transactions notification names its space — arriving
-  // with ?space= switches there (membership-checked), then strips the
-  // param so refresh/back don't re-switch
-  const { space: spaceParam } = useSearch({ strict: false }) as { space?: string };
-  useEffect(() => {
-    if (!spaceParam) return;
-    if (spaceParam !== spaceId) {
-      void store.get('space', spaceParam).then((row) => {
-        if (row?.deleted === 0) void setActiveSpace(spaceParam);
-      });
-    }
-    void navigate({ to: '/review', search: {}, replace: true });
-    // one-shot per arriving param — the strip itself clears it
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spaceParam]);
+  const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const allTxs = useSpaceTransactions();
   const transform = useTxTransform();
@@ -2312,6 +2295,8 @@ export function ReviewScreen() {
       // in an idle moment, off the tap's path (2026-10-09); a confirm that
       // linked none leaves nothing to adopt (#554: it re-read the space after every card)
       if (recurringId || draft.splits?.some((s) => !!s.recurringId)) runWhenIdle(() => void recurringOps.reconcile().catch(() => undefined));
+      // what this card taught reaches the cards still waiting: no stored input shows that the memory moved
+      if ((queue?.length ?? 0) > 1) requestReviewSuggestions(spaceId);
       logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
       hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
     } finally {
@@ -2598,7 +2583,7 @@ export function ReviewScreen() {
                 splits={draft.splits}
                 rowType={draft.txType}
                 tx={tx}
-                activeEvents={activeEvents}
+                activeEvents={events ?? []}
                 // #289 (user): parts pick freely — a split confirm never
                 // carries the recurring link anyway (container-only)
                 allowedCatIds={undefined}

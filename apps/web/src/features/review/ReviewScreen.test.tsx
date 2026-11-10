@@ -476,15 +476,17 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click((await screen.findAllByTestId('counter-pick-demo_save')).at(-1)!);
     await waitFor(() => expect(screen.queryByTestId('review-counter-required')).toBeNull());
 
-    // the confirm carries the picked pot: the row lands linked and reviewed
+    // the confirm carries the picked pot: THIS card's row lands linked and reviewed, its leg on the pot
+    // (the seed's own savings transfers already name the pot, so only the card's row can tell)
+    const cardId = screen.getByTestId('review-card').closest('[data-card-id]')!.getAttribute('data-card-id')!;
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
-      const row = await db.transactions
-        .filter((t) => t.catId === 'savingDeposit' && t.linkedAccountId === 'demo_save' && t.needsReview === 0)
-        .first();
-      expect(row).toBeTruthy();
+      const row = await db.transactions.get(cardId);
+      expect(row).toMatchObject({ catId: 'savingDeposit', linkedAccountId: 'demo_save', needsReview: 0 });
+      const leg = row?.transferPeerId ? await db.transactions.get(row.transferPeerId) : undefined;
+      expect(leg?.accountId).toBe('demo_save');
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
