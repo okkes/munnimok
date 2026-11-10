@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from 'uuid';
+import { forgetNavCache } from '@/features/navigation/navCache';
 
 /**
  * Registry of offline profiles on this device (localStorage). Offline
@@ -79,5 +80,6 @@ export async function deleteOfflineProfile(id: string): Promise<void> {
   const key = getOfflineProfile(id)?.storeKey ?? `offline_${id}`;
   await destroyStorage(identityDbName(key)).catch(() => undefined);
   localStorage.removeItem(`munni_lock_${key}`);
+  forgetNavCache(key);
   localStorage.setItem(KEY, JSON.stringify(listOfflineProfiles().filter((p) => p.id !== id)));
 }

@@ -82,6 +82,13 @@ export function IconPicker({ value, onChange, featured, query, onQuery, testIdPr
     wasSearching.current = needle !== '';
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needle]);
+  // an icon the host sets itself is no tap: an edit form loads its row after the picker mounted, and that icon must lead like the one it opened with
+  const tapped = useRef(value);
+  useLayoutEffect(() => {
+    if (value === tapped.current) return;
+    tapped.current = value;
+    setPinned(value);
+  }, [value]);
 
   const lead = useMemo(() => (pinned && !featured.includes(pinned) ? [pinned, ...featured] : [...featured]), [pinned, featured]);
   const rows = useMemo<GridRow[]>(() => {
@@ -161,7 +168,10 @@ export function IconPicker({ value, onChange, featured, query, onQuery, testIdPr
                         title={name}
                         aria-pressed={selected}
                         disabled={disabled || refused}
-                        onClick={() => onChange(name)}
+                        onClick={() => {
+                          tapped.current = name;
+                          onChange(name);
+                        }}
                         className={`m-tap flex h-11 items-center justify-center rounded-xl border disabled:cursor-not-allowed ${
                           selected ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
                         } ${refused ? 'opacity-30' : 'disabled:opacity-45'}`}

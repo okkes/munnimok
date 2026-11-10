@@ -10,6 +10,7 @@ import { forgetLastAccount } from '@/features/auth/lastAccount';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
+import { disablePush } from '@/lib/push';
 import { downscaleImage, isDataImage } from '@/lib/image';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { COUNTRIES, CURRENCIES } from '@/domain/countries';
@@ -167,6 +168,7 @@ export function ProfileScreen() {
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const [displayCurrencyOpen, setDisplayCurrencyOpen] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [refused, setRefused] = useState(false);
   const [copied, setCopied] = useState(false);
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
@@ -205,6 +207,8 @@ export function ProfileScreen() {
     logout();
     // #559: the login screen no longer offers to continue as an account that is gone
     forgetLastAccount();
+    // the server erased the account with its devices: only this device's own registration is left to end
+    void disablePush({ server: false }).catch(() => undefined);
     try {
       await destroyIdentityData(current);
     } catch (err) {
@@ -281,14 +285,20 @@ export function ProfileScreen() {
 
   const save = async () => {
     if (!name.trim()) return;
+    setRefused(false);
     if (identity?.kind === 'user') {
       // displayCurrency '' = the server's explicit "clear back to as recorded"
-      await apiFetch('/me', {
+      const res = await apiFetch('/me', {
         method: 'PUT',
         body: JSON.stringify({ displayName: name.trim(), picture, country, displayCurrency: displayCurrency ?? '' }),
       }).catch(
-        () => undefined, // offline is fine — retried on next profile save
+        () => null, // offline is fine — retried on next profile save
       );
+      // an answer that is not a yes: the device copy stays what the server has, or the next load would silently take the edit back
+      if (res && !res.ok) {
+        setRefused(true);
+        return;
+      }
     } else if (identity?.kind === 'offline') {
       updateOfflineProfile(identity.profileId, { name: name.trim(), picture });
     }
@@ -483,6 +493,7 @@ export function ProfileScreen() {
         >
           {saved ? t('profile.saved') : t('action.save')}
         </Button>
+        <FormBlockerNote show={refused} text={t('profile.saveRefused')} testId="profile-save-refused" className="mt-2 px-1" />
 
         {identity?.kind === 'user' && (
           <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { useLang } from '@/i18n';
@@ -112,7 +112,8 @@ export function CopyCategoriesSheet({
     if (open) setPicked(new Set());
   }, [open]);
 
-  const facesOf = (group: CopyGroup) => copyFaces(group, new Set(group.intoId ? cats.childrenOf(group.intoId).map((c) => c.icon) : []));
+  // one computation for the rows and for the copy: what the sheet shows is what lands
+  const faces = useMemo(() => copyFaces(groups, (mainId) => cats.childrenOf(mainId).map((c) => c.icon)), [groups, cats]);
   const pickedCount = groups.flatMap(idsOf).filter((id) => picked.has(id)).length;
 
   const toggleGroup = (group: CopyGroup) =>
@@ -139,7 +140,7 @@ export function CopyCategoriesSheet({
   const copySelected = async () => {
     for (const group of groups) {
       if (groupTick(group, picked) === 'off') continue;
-      await copyGroupToSpace(store, repo, spaceId, group, picked, facesOf(group));
+      await copyGroupToSpace(repo, spaceId, group, picked, faces);
       const added = group.main ? [group.main.name] : group.subs.filter((sub) => picked.has(sub.id)).map((sub) => sub.name);
       for (const name of added) void logActivity(store, repo, spaceId, 'catAdd', name);
     }
@@ -174,7 +175,7 @@ export function CopyCategoriesSheet({
                     into={group.intoId ? cats.byId(group.intoId) : null}
                     first={i === 0}
                     picked={picked}
-                    faces={facesOf(group)}
+                    faces={faces}
                     onToggleGroup={toggleGroup}
                     onToggleSub={toggleSub}
                   />

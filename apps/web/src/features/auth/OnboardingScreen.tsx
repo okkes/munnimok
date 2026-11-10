@@ -28,6 +28,19 @@ const countryLabel = (code: string, lang: Lang) => {
   return c ? c[lang] : code;
 };
 
+/** offline is fine and the app never blocks on the API: past this wait the form moves on, and the request finishes on its own */
+const PROFILE_ANSWER_WAIT_MS = 4000;
+
+function answerWithin(request: Promise<Response | null>, ms: number): Promise<Response | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    void request.then((answer) => {
+      clearTimeout(timer);
+      resolve(answer);
+    });
+  });
+}
+
 /**
  * First-run setup for new identities — online AND offline (user ruling):
  * display name (with the why), avatar (upload or preset), app language
@@ -60,6 +73,8 @@ export function OnboardingScreen() {
   // #195: tappable — an invalid tap names the blocker (one flag per step)
   const [attempted, setAttempted] = useState(false);
   const [lockAttempted, setLockAttempted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [refused, setRefused] = useState(false);
 
   useEffect(() => {
     void biometricAvailable().then(setBioAvailable);
@@ -138,13 +153,21 @@ export function OnboardingScreen() {
   const applyProfile = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    await store.metaPut('profile', { name: trimmed, picture, country });
+    setRefused(false);
     if (identity?.kind === 'user') {
-      // best-effort: offline is fine, the app never blocks on the API
-      void apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: trimmed, picture, country }) }).catch(
-        () => undefined,
+      setSaving(true);
+      const res = await answerWithin(
+        apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: trimmed, picture, country }) }).catch(() => null),
+        PROFILE_ANSWER_WAIT_MS,
       );
+      setSaving(false);
+      // an answer that is not a yes: the name and picture are on no server, so the form does not move on as if they were
+      if (res && !res.ok) {
+        setRefused(true);
+        return;
+      }
     }
+    await store.metaPut('profile', { name: trimmed, picture, country });
     if (identity?.kind === 'offline') updateOfflineProfile(identity.profileId, { name: trimmed, picture });
     // the personal space was auto-named before the user could type —
     // an offline rename here follows into it
@@ -265,6 +288,7 @@ export function OnboardingScreen() {
 
             <Button
               data-testid="onboarding-save"
+              disabled={saving}
               onClick={() => {
                 if (!name.trim()) {
                   setAttempted(true);
@@ -275,6 +299,7 @@ export function OnboardingScreen() {
             >
               {t('login.continue')}
             </Button>
+            <FormBlockerNote show={refused} text={t('profile.saveRefused')} testId="onboarding-save-refused" />
           </div>
         )}
 

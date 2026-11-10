@@ -73,6 +73,21 @@ describe('#522: a transparent picture never comes back on black', () => {
     expect(await downscaleImage(new Blob(['x']), 256)).toBe('data:image/png;base64,x');
   });
 
+  it('a see-through picture too heavy for the field it is stored in is drawn smaller until it fits', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 256, height: 256, close: vi.fn() }));
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage, getImageData: () => ({ data: pixels(true) }) }) as never);
+    // a photo as PNG, a character per pixel: at 256×256 more than the 65,536 the server takes for a profile picture
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function (this: HTMLCanvasElement) {
+      return `data:image/png;base64,${'x'.repeat(this.width * this.height)}`;
+    });
+
+    const url = await downscaleImage(new Blob(['x']), 256);
+    expect(url.length).toBeLessThan(65_536);
+    expect(url.startsWith('data:image/png')).toBe(true);
+    expect(drawImage).toHaveBeenLastCalledWith(expect.anything(), 0, 0, 192, 192);
+  });
+
   it('a large transparent picture lands on a white page, still a JPEG', async () => {
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 2000, height: 1000, close: vi.fn() }));
     const { drawn, toDataURL } = stubCanvas(pixels(true), (type) => `data:${type};base64,x`);

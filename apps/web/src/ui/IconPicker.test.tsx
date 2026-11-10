@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LangProvider } from '@/i18n';
@@ -8,9 +8,18 @@ import { MDI_NAMES } from '@/generated/mdiNames';
 import '@/test/harness';
 import { IconPicker, iconNeedle, searchIcons } from './IconPicker';
 
-function Host({ onChange = () => undefined, taken, disabled }: Readonly<{ onChange?: (name: string) => void; taken?: ReadonlySet<string>; disabled?: boolean }>) {
+function Host({
+  onChange = () => undefined,
+  taken,
+  disabled,
+  saved,
+}: Readonly<{ onChange?: (name: string) => void; taken?: ReadonlySet<string>; disabled?: boolean; saved?: string }>) {
   const [value, setValue] = useState('cart-outline');
   const [query, setQuery] = useState('');
+  // an edit form mounts on its default and sets the row's icon once the row has loaded
+  useEffect(() => {
+    if (saved) setValue(saved);
+  }, [saved]);
   return (
     <IconPicker
       value={value}
@@ -75,6 +84,20 @@ describe('#563 / #389: the icon picker', () => {
     const firstTile = screen.getByTestId('picks').querySelector('button');
     expect(firstTile?.dataset.testid).toBe('pick-campfire');
     expect(firstTile?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('an icon the form sets after it opened — the saved one of the row being edited — leads the list as the pick', () => {
+    renderHost({ saved: 'campfire' });
+    const firstTile = screen.getByTestId('picks').querySelector('button');
+    expect(firstTile?.dataset.testid).toBe('pick-campfire');
+    expect(firstTile?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('a tap while browsing selects the tile where it stands — the grid does not reshuffle under the finger', () => {
+    renderHost();
+    fireEvent.click(screen.getByTestId(`pick-${MDI_NAMES[0]}`));
+    expect(screen.getByTestId(`pick-${MDI_NAMES[0]}`).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('picks').querySelector('button')?.dataset.testid).toBe('pick-cart-outline');
   });
 
   it('refuses the icons a sibling wears: shown, asleep, untappable', () => {

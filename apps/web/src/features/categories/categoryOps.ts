@@ -52,6 +52,8 @@ export interface CopyGroup {
   space: SpaceRow;
   /** the other space's custom main this space lacks — it comes along (with its Other) when ticked */
   main?: CategoryRow;
+  /** that main's locked Other: copied with it, and a sibling whose icon the subs may not share */
+  other?: CategoryRow;
   /** or: the main the subs join here — a catalog main, or this space's own main of the same name */
   intoId?: string;
   /** the custom subs this space lacks under that main — each one a pick of its own (#390 r2) */
@@ -89,6 +91,29 @@ function addMain(scan: CopyScan, space: SpaceRow, row: CategoryRow): void {
   if (!scan.hereMains.has(normName(row.name))) groupOf(scan, space, row.id).main = row;
 }
 
+function addOther(scan: CopyScan, space: SpaceRow, row: CategoryRow): void {
+  if (row.parentId && scan.mains.has(row.parentId)) groupOf(scan, space, row.parentId).other = row;
+}
+
+/** spaces often hold the same category (it was copied between them): only the first space's offer stands, or ticking both would write it twice */
+function offeredOnce(groups: readonly CopyGroup[]): CopyGroup[] {
+  const mains = new Set<string>();
+  const subs = new Set<string>();
+  const offered: CopyGroup[] = [];
+  for (const group of groups) {
+    if (group.main) {
+      const name = normName(group.main.name);
+      if (!mains.has(name)) offered.push(group);
+      mains.add(name);
+      continue;
+    }
+    const fresh = group.subs.filter((sub) => !subs.has(`${group.intoId}|${normName(sub.name)}`));
+    for (const sub of fresh) subs.add(`${group.intoId}|${normName(sub.name)}`);
+    if (fresh.length > 0) offered.push({ ...group, subs: fresh });
+  }
+  return offered;
+}
+
 /** a sub joins the group of its main, noting the main it joins here (a catalog main, or this space's main of that name); an orphan, a locked special or a name already under that main stays out */
 function addSub(scan: CopyScan, space: SpaceRow, row: CategoryRow): void {
   if (!row.parentId) return;
@@ -118,39 +143,50 @@ export function copyGroups(spaceId: string, spaces: readonly SpaceRow[], rows: r
   const mains = new Map(live.filter((r) => r.isParent === 1).map((r) => [r.id, r]));
   const scan: CopyScan = { hereMains, hereSubs, mains, groups: new Map() };
   for (const row of live) {
-    if (row.spaceId === spaceId || row.isOther === 1) continue;
+    if (row.spaceId === spaceId) continue;
     const space = spaceById.get(row.spaceId);
     if (!space) continue;
     if (row.isParent === 1) addMain(scan, space, row);
+    else if (row.isOther === 1) addOther(scan, space, row);
     else addSub(scan, space, row);
   }
   const byName = (a: CategoryRow, b: CategoryRow) => (a.name ?? '').localeCompare(b.name ?? '');
-  return [...scan.groups.values()]
+  const ordered = [...scan.groups.values()]
     .filter((g) => g.main || (g.intoId && g.subs.length > 0))
     .map((g) => ({ ...g, subs: [...g.subs].sort(byName) }))
     .sort(
       (a, b) =>
         a.space.name.localeCompare(b.space.name) ||
+        // two spaces may share a name: the id keeps one space's groups together and the first offer the same on every render
+        a.space.id.localeCompare(b.space.id) ||
         Number(!a.main) - Number(!b.main) ||
         (a.main?.name ?? a.intoId ?? '').localeCompare(b.main?.name ?? b.intoId ?? ''),
     );
+  return offeredOnce(ordered);
 }
 
 /** how much the banner announces: a main counts once with its subs, a sub joining a main here counts on its own */
 export const copyCount = (groups: readonly CopyGroup[]): number => groups.reduce((n, g) => n + (g.main ? 1 : g.subs.length), 0);
 
-/**
- * #389: the face each sub of a group lands with — its own, unless a sibling
- * there wears it already (then the first free one). Decided for the whole
- * group in its order, so the sheet previews exactly what a copy writes.
- */
-export function copyFaces(group: CopyGroup, wornThere: ReadonlySet<string>): Map<string, string> {
-  const worn = new Set(wornThere);
+/** a new main has one sibling already: the Other that is copied with it */
+function wornWhere(group: CopyGroup, wornUnder: (mainId: string) => Iterable<string>): Iterable<string> {
+  if (group.intoId) return wornUnder(group.intoId);
+  return group.other ? [group.other.icon] : [];
+}
+
+/** #389: decided over ALL groups in their order, one worn set per main they land under — two groups joining one main must not hand out the same icon, and the sheet previews exactly what a copy writes */
+export function copyFaces(groups: readonly CopyGroup[], wornUnder: (mainId: string) => Iterable<string>): Map<string, string> {
+  const wornByTarget = new Map<string, Set<string>>();
   const faces = new Map<string, string>();
-  for (const sub of group.subs) {
-    const face = worn.has(sub.icon) ? firstFreeIcon(worn) : sub.icon;
-    worn.add(face);
-    faces.set(sub.id, face);
+  for (const group of groups) {
+    const target = group.intoId ? `into:${group.intoId}` : `new:${group.main?.id ?? ''}`;
+    const worn = wornByTarget.get(target) ?? new Set(wornWhere(group, wornUnder));
+    wornByTarget.set(target, worn);
+    for (const sub of group.subs) {
+      const face = worn.has(sub.icon) ? firstFreeIcon(worn) : sub.icon;
+      worn.add(face);
+      faces.set(sub.id, face);
+    }
   }
   return faces;
 }
@@ -360,7 +396,6 @@ const categoryCopyFields = (r: CategoryRow, overrides: Partial<CategoryRow>): Re
  * `copyFaces` decided. Transactions are not touched.
  */
 export async function copyGroupToSpace(
-  store: StorageBackend,
   repo: Repo,
   targetSpaceId: string,
   group: CopyGroup,
@@ -372,8 +407,7 @@ export async function copyGroupToSpace(
     if (!picked.has(group.main.id)) return;
     parentId = repo.newId();
     await repo.upsert('category', targetSpaceId, parentId, categoryCopyFields(group.main, { parentId: undefined }));
-    const other = (await subsOf(store, group.main)).find((sub) => sub.isOther === 1);
-    if (other) await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(other, { parentId }));
+    if (group.other) await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(group.other, { parentId }));
   }
   if (!parentId) return;
   for (const sub of group.subs) {
