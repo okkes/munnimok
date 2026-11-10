@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
-import { config, publicOrigin } from '@/app/config';
-import { nativeStoreUrl, shouldCheckForUpdate, updateAvailable } from '@/domain/updateCheck';
+import { publicOrigin } from '@/app/config';
+import { shouldCheckForUpdate, storeUrlOf, updateAvailable } from '@/domain/updateCheck';
 import type { UpdateCheckState } from '@/domain/updateCheck';
-import { getNativeAppBuild, isNativeApp, nativePlatform } from '@/lib/platform';
+import { bundledWebBuild, getNativeAppId, isNativeApp, nativePlatform } from '@/lib/platform';
 import { Icon } from '@/ui/Icon';
 
 const LS_KEY = 'munni_update_check';
@@ -18,17 +18,11 @@ const readState = (): UpdateCheckState => {
 const writeState = (patch: Partial<UpdateCheckState>) =>
   localStorage.setItem(LS_KEY, JSON.stringify({ ...readState(), ...patch }));
 
-/**
- * Store-aware update nudge for the native shells:
- * roughly once a day the shell compares its own build number against
- * the hosted web's version.json — both are stamped with the git commit
- * count of their release, so "hosted is newer" means an update sits on
- * the store. Dismissing silences that build; the next release nudges
- * again. The old PWA service-worker toast never applied to the shells.
- */
+// The shell's BUNDLED web build against the hosted version.json, roughly once a day: both carry the commit
+// count, the store's build number does not. Dismissing silences that build; the next release nudges again.
 export function UpdateCard() {
   const { t } = useLang();
-  const [update, setUpdate] = useState<{ build: number; version: string } | null>(null);
+  const [update, setUpdate] = useState<{ build: number; version: string; storeUrl: string | null } | null>(null);
 
   useEffect(() => {
     if (!isNativeApp()) return;
@@ -40,8 +34,8 @@ export function UpdateCard() {
         if (!res.ok) return;
         const remote = (await res.json()) as { build: number; version: string };
         writeState({ lastCheckedAt: Date.now() });
-        const appBuild = await getNativeAppBuild();
-        if (appBuild !== null && updateAvailable(appBuild, remote.build, state.dismissedBuild)) setUpdate(remote);
+        if (!updateAvailable(bundledWebBuild(), remote.build, state.dismissedBuild)) return;
+        setUpdate({ build: remote.build, version: remote.version, storeUrl: storeUrlOf(nativePlatform(), await getNativeAppId()) });
       } catch {
         // offline or origin unreachable — try again another day
       }
@@ -49,7 +43,7 @@ export function UpdateCard() {
   }, []);
 
   if (!update) return null;
-  const storeUrl = nativeStoreUrl(nativePlatform(), config.channel);
+  const { storeUrl } = update;
 
   return (
     <div
