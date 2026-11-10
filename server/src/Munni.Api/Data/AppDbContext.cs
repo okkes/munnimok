@@ -211,7 +211,8 @@ public class SplitInvite
     public required string SplitId { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset ExpiresAt { get; set; }
+    /// <summary>Null: the link does not run out (links from before 5.21 keep their seven days).</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }
 
 /// <summary>operator-editable server-wide settings (the catalog document, …)</summary>

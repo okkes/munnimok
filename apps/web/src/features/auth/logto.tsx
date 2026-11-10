@@ -24,6 +24,7 @@ import {
   watchForRevival,
 } from '@/app/sessionExpiry';
 import { useSession } from '@/app/session';
+import { takeAfterLogin } from '@/app/afterLogin';
 import { continueOptions, readLastAccount, readSignInWay, rememberLastAccount } from './lastAccount';
 import { Logo } from '@/ui/Logo';
 
@@ -180,7 +181,7 @@ function useFinishSignIn(): (getToken?: () => Promise<string | null | undefined>
       ]);
     }
     rememberLastAccount(name, await way);
-    window.location.replace(`${window.location.origin}/#/home`);
+    window.location.replace(`${window.location.origin}/#${takeAfterLogin() ?? '/home'}`);
     return true;
   };
 }

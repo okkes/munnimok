@@ -95,6 +95,54 @@ public class SplitsEndpointsTests : IClassFixture<AdminApiFactory>
     }
 
     [Fact]
+    public async Task A_split_has_one_link_that_only_an_owner_reads_or_replaces_and_that_does_not_run_out()
+    {
+        var owner = await TouchAsync("lk-owner");
+        var member = await TouchAsync("lk-member");
+        Assert.True((await owner.PostAsJsonAsync("/splits", new { id = "split-lk", name = "Trip", currency = "EUR", spaceId = "s-own" })).IsSuccessStatusCode);
+        await JoinAsync("split-lk", "lk-member");
+
+        // nothing yet: looking makes no link, and a link is the owner's to make
+        Assert.Null((await owner.GetFromJsonAsync<ActiveInvite>("/splits/split-lk/invites"))!.Token);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.GetAsync("/splits/split-lk/invites")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PostAsync("/splits/split-lk/invites", null)).StatusCode);
+
+        var minted = await (await owner.PostAsync("/splits/split-lk/invites", null)).Content.ReadFromJsonAsync<ActiveInvite>();
+        Assert.NotNull(minted!.Token);
+        Assert.Null(minted.ExpiresAt);
+        // reading it, however often, never replaces the link that was sent out
+        Assert.Equal(minted.Token, (await owner.GetFromJsonAsync<ActiveInvite>("/splits/split-lk/invites"))!.Token);
+        Assert.Equal(minted.Token, (await owner.GetFromJsonAsync<ActiveInvite>("/splits/split-lk/invites"))!.Token);
+    }
+
+    [Fact]
+    public async Task A_link_tells_its_maker_and_a_member_so_and_opening_it_again_changes_nothing()
+    {
+        var owner = await TouchAsync("lk2-owner");
+        var guest = await TouchAsync("lk2-guest");
+        Assert.True((await owner.PostAsJsonAsync("/splits", new { id = "split-lk2", name = "Trip", currency = "EUR", spaceId = "s-own" })).IsSuccessStatusCode);
+        var token = (await (await owner.PostAsync("/splits/split-lk2/invites", null)).Content.ReadFromJsonAsync<ActiveInvite>())!.Token;
+
+        var own = await owner.GetFromJsonAsync<InviteStanding>($"/splits/invites/{token}");
+        Assert.True(own!.Mine);
+        Assert.True(own.Member);
+        Assert.Equal("split-lk2", own.SplitId);
+        // a stranger still learns the name and the inviter only
+        var before = await guest.GetFromJsonAsync<InviteStanding>($"/splits/invites/{token}");
+        Assert.False(before!.Mine);
+        Assert.False(before.Member);
+        Assert.Null(before.SplitId);
+
+        Assert.True((await guest.PostAsJsonAsync($"/splits/invites/{token}/accept", new { spaceId = "s-guest" })).IsSuccessStatusCode);
+        var after = await guest.GetFromJsonAsync<InviteStanding>($"/splits/invites/{token}");
+        Assert.True(after!.Member);
+        Assert.Equal("split-lk2", after.SplitId);
+        // the link opened once more: still a member, and the space picked the first time stays
+        Assert.True((await guest.PostAsJsonAsync($"/splits/invites/{token}/accept", new { spaceId = "s-other" })).IsSuccessStatusCode);
+        Assert.Equal("s-guest", (await guest.GetFromJsonAsync<SplitDetailProbe>("/splits/split-lk2"))!.AttachedSpaceId);
+    }
+
+    [Fact]
     public async Task SettlementsAreEntries_AndOnlyTheOwnerCloses()
     {
         var owner = await TouchAsync("sp4-owner");
@@ -162,6 +210,8 @@ public class SplitsEndpointsTests : IClassFixture<AdminApiFactory>
     }
 
     private sealed record InviteMinted(string Token);
+    private sealed record ActiveInvite(string? Token, DateTimeOffset? ExpiresAt);
+    private sealed record InviteStanding(string SplitName, bool Mine, bool Member, string? SplitId);
     private sealed record InvitePeek(string SplitName, string Currency, string? InviterName);
     private sealed record SplitDetailProbe(string Id, string? AttachedSpaceId, string? AttachedEventId, List<MemberProbe> Members);
     private sealed record MemberProbe(Guid UserId, string Role);

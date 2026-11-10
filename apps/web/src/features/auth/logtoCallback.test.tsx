@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
-import { render } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { rememberAfterLogin } from '@/app/afterLogin';
 
 /**
  * The 2026-07-29 iOS 401 regression: the Logto context error is SHARED —
@@ -13,24 +15,31 @@ import type { ReactNode } from 'react';
  */
 let mockError: Error | null = null;
 let mockAuthed = false;
+let mockClaims: { sub: string } | undefined;
 
 vi.mock('@logto/react', () => ({
   LogtoProvider: ({ children }: { children: ReactNode }) => children,
   useLogto: () => ({
-    getIdTokenClaims: async () => undefined,
+    getIdTokenClaims: async () => mockClaims,
     getAccessToken: async () => undefined,
     isAuthenticated: mockAuthed,
     isLoading: false,
     signIn: async () => undefined,
     signOut: async () => undefined,
   }),
-  useHandleSignInCallback: () => ({ error: mockError, isAuthenticated: mockAuthed, isLoading: false }),
+  useHandleSignInCallback: (done?: () => void) => {
+    useEffect(() => {
+      if (mockClaims) done?.();
+    }, [done]);
+    return { error: mockError, isAuthenticated: mockAuthed, isLoading: false };
+  },
 }));
 
 describe('WebCallbackScreen error handling', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    mockClaims = undefined;
     localStorage.setItem('logto:app:idToken', 'fresh');
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 's' }));
   });
@@ -51,5 +60,23 @@ describe('WebCallbackScreen error handling', () => {
     render(<CallbackScreen />);
     expect(localStorage.getItem('logto:app:idToken')).toBeNull();
     expect(localStorage.getItem('munni_last_logto_wipe')).toContain('web-callback-error');
+  });
+
+  it('a sign-in that started from an invitation lands on it, once; the next one lands on Home (#538)', async () => {
+    mockError = null;
+    mockAuthed = true;
+    mockClaims = { sub: 's' };
+    const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
+    rememberAfterLogin('/splits/join/tok-abc');
+    const { CallbackScreen } = await import('./logto');
+
+    render(<CallbackScreen />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith(expect.stringMatching(/\/#\/splits\/join\/tok-abc$/)));
+    cleanup();
+    replace.mockClear();
+
+    render(<CallbackScreen />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith(expect.stringMatching(/\/#\/home$/)));
+    replace.mockRestore();
   });
 });

@@ -40,6 +40,7 @@ public static class SplitsEndpoints
         group.MapDelete("/{splitId}/entries/{entryId}", DeleteEntry);
         // SP3: share-link invites — the ONLY way in besides creating.
         // Minting/accepting reach other people → the strict social limiter
+        group.MapGet("/{splitId}/invites", ActiveInvite);
         group.MapPost("/{splitId}/invites", MintInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
         group.MapGet("/invites/{token}", PeekInvite);
         group.MapPost("/invites/{token}/accept", AcceptInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
@@ -80,13 +81,28 @@ public static class SplitsEndpoints
         return Results.Ok(new { id = splitId, status = split.Status });
     }
 
-    /// <summary>any member can mint; a fresh link retires the previous one
+    /// <summary>the split's link as it stands: reading never replaces it, so a link already sent out keeps working</summary>
+    private static async Task<IResult> ActiveInvite(string splitId, AppDbContext db, HttpContext http)
+    {
+        var me = http.GetUserId();
+        var (split, membership) = await MemberGateAsync(db, splitId, me);
+        if (split is null || membership is null) return Results.NotFound();
+        if (membership.Role != "owner") return Results.Forbid();
+        var now = DateTimeOffset.UtcNow;
+        var live = split.Status == "open"
+            ? await db.SplitInvites.Where(i => i.SplitId == splitId && (i.ExpiresAt == null || i.ExpiresAt >= now)).OrderByDescending(i => i.CreatedAt).FirstOrDefaultAsync()
+            : null;
+        return Results.Ok(new { token = live?.Token, expiresAt = live?.ExpiresAt });
+    }
+
+    /// <summary>a new link is the owner's explicit act and retires the previous one
     /// (one active link per split keeps revocation trivial)</summary>
     private static async Task<IResult> MintInvite(string splitId, AppDbContext db, HttpContext http)
     {
         var me = http.GetUserId();
         var (split, membership) = await MemberGateAsync(db, splitId, me);
         if (split is null || membership is null) return Results.NotFound();
+        if (membership.Role != "owner") return Results.Forbid();
         if (split.Status != "open") return Results.BadRequest(new { error = "split settled" });
         db.SplitInvites.RemoveRange(await db.SplitInvites.Where(i => i.SplitId == splitId).ToListAsync());
         var invite = new SplitInvite
@@ -95,7 +111,6 @@ public static class SplitsEndpoints
                 .Replace('+', '-').Replace('/', '_').TrimEnd('='),
             SplitId = splitId,
             CreatedBy = me,
-            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
         };
         db.SplitInvites.Add(invite);
         await db.SaveChangesAsync();
@@ -103,14 +118,26 @@ public static class SplitsEndpoints
     }
 
     /// <summary>the join screen shows ONLY the split name + inviter (design:
-    /// an invitee learns nothing else); invalid/expired tokens 404</summary>
-    private static async Task<IResult> PeekInvite(string token, AppDbContext db)
+    /// an invitee learns nothing else), and whether the link is the caller's own or
+    /// one they already used; invalid/expired tokens 404</summary>
+    private static async Task<IResult> PeekInvite(string token, AppDbContext db, HttpContext http)
     {
+        var me = http.GetUserId();
         var found = await LiveInviteAsync(db, token);
         if (found is null) return Results.NotFound();
         var (invite, split) = found.Value;
         var inviter = await db.Users.FindAsync(invite.CreatedBy);
-        return Results.Ok(new { splitName = split.Name, currency = split.Currency, inviterName = inviter?.DisplayName });
+        var member = await db.SplitMembers.AnyAsync(m => m.SplitId == split.Id && m.UserId == me);
+        return Results.Ok(new
+        {
+            splitName = split.Name,
+            currency = split.Currency,
+            inviterName = inviter?.DisplayName,
+            mine = invite.CreatedBy == me,
+            member,
+            // the id opens the split: only for someone who is already in it
+            splitId = member ? split.Id : null,
+        });
     }
 
     private static async Task<IResult> AcceptInvite(string token, AcceptInviteRequest request, AppDbContext db, HttpContext http)
@@ -120,12 +147,8 @@ public static class SplitsEndpoints
         if (found is null) return Results.NotFound();
         var (invite, split) = found.Value;
         var existing = await db.SplitMembers.FirstOrDefaultAsync(m => m.SplitId == invite.SplitId && m.UserId == me);
-        if (existing is not null)
-        {
-            // idempotent re-join may still (re)pick the attachment
-            if (request.SpaceId is not null) existing.AttachedSpaceId = request.SpaceId;
-        }
-        else
+        // a member opening the link again stays as they are: the attachment has its own door (Attach)
+        if (existing is null)
         {
             db.SplitMembers.Add(new SplitMember
             {
@@ -144,7 +167,7 @@ public static class SplitsEndpoints
     private static async Task<(SplitInvite Invite, Split Split)?> LiveInviteAsync(AppDbContext db, string token)
     {
         var invite = await db.SplitInvites.FindAsync(token);
-        if (invite is null || invite.ExpiresAt < DateTimeOffset.UtcNow) return null;
+        if (invite is null || invite.ExpiresAt < DateTimeOffset.UtcNow) return null; // no end date compares false: such a link does not run out
         var split = await db.Splits.FindAsync(invite.SplitId);
         if (split is null || split.Status != "open") return null;
         return (invite, split);

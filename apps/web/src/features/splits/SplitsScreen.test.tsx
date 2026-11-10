@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
-import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+import { takeAfterLogin } from '@/app/afterLogin';
 
 const ME = '11111111-1111-1111-1111-111111111111';
 const ANNA = '22222222-2222-2222-2222-222222222222';
@@ -192,12 +193,17 @@ describe('Splits (SP1)', () => {
     });
   });
 
-  it('mints a share link from the members card (SP3)', async () => {
+  it('the invite sheet shows the link the split already has: opening it never makes a new one (#538)', async () => {
+    let minted = 0;
     renderAppAsUser('/splits/split-1', {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => DETAIL,
-        'POST /splits/split-1/invites': () => ({ token: 'tok-abc', expiresAt: '2026-07-23' }),
+        'GET /splits/split-1/invites': () => ({ token: 'tok-abc', expiresAt: null }),
+        'POST /splits/split-1/invites': () => {
+          minted += 1;
+          return { token: 'tok-new', expiresAt: null };
+        },
       },
     });
 
@@ -205,6 +211,98 @@ describe('Splits (SP1)', () => {
     // real path (no #): verified app links can only match real paths
     await waitFor(() => expect(screen.getByTestId('split-invite-link').textContent).toContain('/splits/join/tok-abc'));
     expect(screen.getByTestId('split-invite-link').textContent).not.toContain('#');
+    expect(minted).toBe(0);
+  });
+
+  it('without a link the owner makes one; a new link takes a second, explicit tap (#538)', async () => {
+    let minted = 0;
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /splits/split-1': () => DETAIL,
+        'GET /splits/split-1/invites': () => ({ token: null, expiresAt: null }),
+        'POST /splits/split-1/invites': () => {
+          minted += 1;
+          return { token: `tok-${minted}`, expiresAt: null };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-invite'));
+    fireEvent.click(await screen.findByTestId('split-invite-create'));
+    await waitFor(() => expect(screen.getByTestId('split-invite-link').textContent).toContain('/splits/join/tok-1'));
+
+    // the link that was sent out dies with a new one: asked for, then confirmed
+    fireEvent.click(screen.getByTestId('split-invite-new'));
+    expect(minted).toBe(1);
+    fireEvent.click(await screen.findByTestId('split-invite-new-confirm'));
+    await waitFor(() => expect(screen.getByTestId('split-invite-link').textContent).toContain('/splits/join/tok-2'));
+  });
+
+  it('a member who is not an owner has no invite row (#538)', async () => {
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /splits/split-1': () => ({ ...DETAIL, role: 'member' }),
+      },
+    });
+    await screen.findByTestId('split-members');
+    expect(screen.queryByTestId('split-invite')).toBeNull();
+  });
+
+  it('my own link, or one I already used, says so and opens the split instead of joining again (#538)', async () => {
+    renderAppAsUser('/splits/join/tok-own', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /splits/invites/tok-own': () => ({ splitName: 'Barcelona', currency: 'EUR', inviterName: 'Me', mine: true, member: true, splitId: 'split-1' }),
+        'GET /splits/invites/tok-used': () => ({ splitName: 'Barcelona', currency: 'EUR', inviterName: 'Anna', mine: false, member: true, splitId: 'split-1' }),
+        'GET /splits/split-1': () => DETAIL,
+      },
+    });
+    expect(await screen.findByTestId('split-join-own')).toBeTruthy();
+    expect(screen.queryByTestId('split-join-confirm')).toBeNull();
+    fireEvent.click(screen.getByTestId('split-join-open'));
+    await screen.findByTestId('screen-split-detail');
+    cleanup();
+
+    renderAppAsUser('/splits/join/tok-used', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /splits/invites/tok-used': () => ({ splitName: 'Barcelona', currency: 'EUR', inviterName: 'Anna', mine: false, member: true, splitId: 'split-1' }),
+      },
+    });
+    expect(await screen.findByTestId('split-join-already')).toBeTruthy();
+    expect(screen.queryByTestId('split-join-confirm')).toBeNull();
+  });
+
+  it('an invitation the server cannot be asked about says that, not "no longer valid", and can be tried again (#538)', async () => {
+    let asked = 0;
+    renderAppAsUser('/splits/join/tok-abc', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /splits/invites/tok-abc': () => {
+          asked += 1;
+          return asked === 1 ? new Response(null, { status: 503 }) : { splitName: 'Barcelona', currency: 'EUR', inviterName: 'Anna', mine: false, member: false, splitId: null };
+        },
+      },
+    });
+    expect(await screen.findByTestId('split-join-unreachable')).toBeTruthy();
+    expect(screen.queryByTestId('split-join-invalid')).toBeNull();
+    fireEvent.click(screen.getByTestId('split-join-retry'));
+    expect((await screen.findByTestId('split-join-card')).textContent).toContain('Barcelona');
+  });
+
+  it('a profile without an account is told an invitation needs one (#538)', async () => {
+    renderApp('/splits/join/tok-abc');
+    expect(await screen.findByTestId('split-join-needs-account')).toBeTruthy();
+  });
+
+  it('an invitation opened while signed out is remembered for after the sign-in (#538)', async () => {
+    renderApp('/splits/join/tok-abc', { signedIn: false });
+    await screen.findByTestId('screen-login');
+    expect(takeAfterLogin()).toBe('/splits/join/tok-abc');
+    // once only: the next sign-in lands on Home again
+    expect(takeAfterLogin()).toBeNull();
   });
 
   it('join screen shows ONLY name + inviter, then accepts with MY chosen space (SP3)', async () => {

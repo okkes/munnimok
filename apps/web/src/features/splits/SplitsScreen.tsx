@@ -44,6 +44,81 @@ interface SplitEntryRow {
   sourceTxId?: string | null;
   createdBy: string;
 }
+
+type InviteState = { state: 'loading' } | { state: 'none' } | { state: 'failed' } | { state: 'link'; url: string };
+
+interface InviteLinkPanelProps {
+  invite: InviteState;
+  copied: boolean;
+  confirmNew: boolean;
+  onShare: () => void;
+  onAskNew: () => void;
+  onNew: () => void;
+  onRetry: () => void;
+}
+
+/** the invite sheet's body: the link the split has, or the way to make one */
+function InviteLinkPanel({ invite, copied, confirmNew, onShare, onAskNew, onNew, onRetry }: Readonly<InviteLinkPanelProps>) {
+  const { t } = useLang();
+  const box = 'w-full overflow-x-auto rounded-input border border-line bg-surface px-4 py-3 text-[12px] whitespace-nowrap text-ink-2';
+  if (invite.state === 'loading') {
+    return (
+      <div data-testid="split-invite-link" className={box}>
+        …
+      </div>
+    );
+  }
+  if (invite.state === 'failed') {
+    return (
+      <>
+        <p className="text-[13px] text-warning" data-testid="split-invite-failed">
+          {t('splits.inviteFailed')}
+        </p>
+        <Button variant="outline" data-testid="split-invite-retry" onClick={onRetry}>
+          {t('splits.joinRetry')}
+        </Button>
+      </>
+    );
+  }
+  if (invite.state === 'none') {
+    return (
+      <>
+        <p className="text-[12px] text-ink-4" data-testid="split-invite-none">
+          {t('splits.inviteNone')}
+        </p>
+        <Button data-testid="split-invite-create" onClick={onNew}>
+          {t('splits.inviteCreate')}
+        </Button>
+      </>
+    );
+  }
+  return (
+    <>
+      <div data-testid="split-invite-link" className={`${box} font-mono`}>
+        {invite.url}
+      </div>
+      <p className="text-[12px] text-ink-4">{t('splits.linkExpires')}</p>
+      <Button data-testid="split-invite-share" onClick={onShare}>
+        {copied ? t('splits.copied') : t('splits.copyLink')}
+      </Button>
+      {confirmNew ? (
+        <>
+          <p className="text-[12px] text-warning" data-testid="split-invite-new-note">
+            {t('splits.inviteNewNote')}
+          </p>
+          <Button variant="danger" data-testid="split-invite-new-confirm" onClick={onNew}>
+            {t('splits.inviteNew')}
+          </Button>
+        </>
+      ) : (
+        <Button variant="outline" data-testid="split-invite-new" onClick={onAskNew}>
+          {t('splits.inviteNew')}
+        </Button>
+      )}
+    </>
+  );
+}
+
 interface SplitDetail {
   id: string;
   name: string;
@@ -207,7 +282,8 @@ export function SplitDetailScreen() {
   // SP3: share-link invites — anyone with the link joins, no friendship
   // needed, and joining grants ZERO space access (server-enforced)
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [invite, setInvite] = useState<InviteState>({ state: 'loading' });
+  const [confirmNew, setConfirmNew] = useState(false);
   const [copied, setCopied] = useState(false);
   // SP4: members settle their own debts; only the owner closes (Q3)
   const [closeOpen, setCloseOpen] = useState(false);
@@ -384,28 +460,42 @@ export function SplitDetailScreen() {
         })
       : entry.description;
 
-  const openInvite = async () => {
-    setInviteOpen(true);
-    setCopied(false);
-    if (inviteLink) return; // one active link per split — reuse this session's
-    const res = await apiFetch(`/splits/${splitId}/invites`, { method: 'POST' }).catch(() => null);
-    if (!res?.ok) return;
-    const { token } = (await res.json()) as { token: string };
+  // GET reads the link the split has; only POST — the owner's explicit tap — makes a new one, which ends the old
+  const readInvite = async (method: 'GET' | 'POST') => {
+    setInvite({ state: 'loading' });
+    const res = await apiFetch(`/splits/${splitId}/invites`, { method }).catch(() => null);
+    if (!res?.ok) {
+      setInvite({ state: 'failed' });
+      return;
+    }
+    const { token } = (await res.json()) as { token: string | null };
     // the hosted https origin, never capacitor://localhost — the link
-    // must open for people on any platform (user report)
-    const base = `${publicOrigin()}/`;
+    // must open for people on any platform (user report).
     // real path (no #): verified app links open the app directly; the
     // web shell bounces it into the hash router
-    setInviteLink(`${base}splits/join/${token}`);
+    setInvite(token ? { state: 'link', url: `${publicOrigin()}/splits/join/${token}` } : { state: 'none' });
+  };
+
+  const openInvite = () => {
+    setInviteOpen(true);
+    setCopied(false);
+    setConfirmNew(false);
+    void readInvite('GET');
+  };
+
+  const newInvite = () => {
+    setCopied(false);
+    setConfirmNew(false);
+    void readInvite('POST');
   };
 
   const shareInvite = async () => {
-    if (!inviteLink || !detail) return;
+    if (invite.state !== 'link' || !detail) return;
     if (navigator.share) {
-      await navigator.share({ title: detail.name, url: inviteLink }).catch(() => undefined);
+      await navigator.share({ title: detail.name, url: invite.url }).catch(() => undefined);
       return;
     }
-    await navigator.clipboard?.writeText(inviteLink).catch(() => undefined);
+    await navigator.clipboard?.writeText(invite.url).catch(() => undefined);
     setCopied(true);
   };
 
@@ -561,10 +651,10 @@ export function SplitDetailScreen() {
               {member.role === 'owner' && <span className="text-[11px] text-ink-4">{t('space.permOwner')}</span>}
             </div>
           ))}
-          {detail?.status === 'open' && (
+          {detail?.status === 'open' && detail.role === 'owner' && (
             <button
               data-testid="split-invite"
-              onClick={() => void openInvite()}
+              onClick={openInvite}
               className="m-tap flex w-full items-center gap-3 border-t border-line-2 bg-transparent px-4 py-2.5 text-left"
             >
               <Icon name="account-plus-outline" size={18} color="var(--m-accent-deep)" />
@@ -802,16 +892,15 @@ export function SplitDetailScreen() {
       <Sheet open={inviteOpen} onOpenChange={setInviteOpen} title={t('splits.inviteRow')} size="compact">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] text-ink-2">{t('splits.inviteHint')}</p>
-          <div
-            data-testid="split-invite-link"
-            className="w-full overflow-x-auto rounded-input border border-line bg-surface px-4 py-3 font-mono text-[12px] whitespace-nowrap text-ink-2"
-          >
-            {inviteLink ?? '…'}
-          </div>
-          <p className="text-[12px] text-ink-4">{t('splits.linkExpires')}</p>
-          <Button data-testid="split-invite-share" disabled={!inviteLink} onClick={() => void shareInvite()}>
-            {copied ? t('splits.copied') : t('splits.copyLink')}
-          </Button>
+          <InviteLinkPanel
+            invite={invite}
+            copied={copied}
+            confirmNew={confirmNew}
+            onShare={() => void shareInvite()}
+            onAskNew={() => setConfirmNew(true)}
+            onNew={newInvite}
+            onRetry={openInvite}
+          />
         </div>
       </Sheet>
     </div>

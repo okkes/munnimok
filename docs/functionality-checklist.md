@@ -120,6 +120,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Splits (bill splitting) & friends
 - [ ] Split session with a friend end to end (invite, expenses, settle)
+- [ ] The split's invitation link (#538): only the owner has the Invite row; the sheet shows the link the split already has (opening it never makes a new one) or Create link when there is none; New link asks once more, because it ends the link that was sent out; a link has no end date. Opening a link: signed out → the sign-in, then back on the invitation (a brand-new account that goes through onboarding opens the link again); a profile without an account is told it needs one; your own link or one you already used says so and opens the split; a server that cannot be reached says that with Try again — only a link that really ended reads "no longer valid"
 - [ ] Friends: add by ID, accept, profile sheet (copy ID, remove)
 
 ## Connectors (server platform, #367)
