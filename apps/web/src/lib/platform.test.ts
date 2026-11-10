@@ -165,7 +165,7 @@ describe('§5 niceties seam', () => {
     setCapacitor(undefined);
     const { hapticNotify, shareNativeFile } = await import('./platform');
     expect(() => hapticNotify('SUCCESS')).not.toThrow();
-    expect(await shareNativeFile('x.csv', 'a;b')).toBe(false);
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('unavailable');
   });
 
   it('native share writes to the cache and opens the OS sheet', async () => {
@@ -176,12 +176,16 @@ describe('§5 niceties seam', () => {
       Plugins: { Filesystem: { writeFile }, Share: { share } },
     });
     const { shareNativeFile } = await import('./platform');
-    expect(await shareNativeFile('x.csv', 'a;b')).toBe(true);
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('shared');
     expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'x.csv', directory: 'CACHE' }));
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ files: ['file:///cache/x.csv'] }));
 
-    share.mockRejectedValue(new Error('dismissed'));
-    expect(await shareNativeFile('x.csv', 'a;b')).toBe(false); // closing the sheet degrades to download
+    // a closed sheet is not a saved file, and not a reason to try a download the shell cannot do
+    share.mockRejectedValue(new Error('Share canceled'));
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('dismissed');
+
+    writeFile.mockRejectedValue(new Error('no space left'));
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('failed');
   });
 
   it('notification taps hand the PARSED payload to the bridge', async () => {

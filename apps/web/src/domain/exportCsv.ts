@@ -1,5 +1,6 @@
-import type { AccountRow, RecurringRow, TxView } from '@/db/types';
+import type { AccountRow, RecurringRow, SpaceRow, TxView } from '@/db/types';
 import type { Cat, Catalog } from './catalog';
+import { periodHistory } from './periods';
 import { cleanBankText } from '@/lib/text';
 import { givenCents, netAmountCents, netCreditCents } from './reimbursement';
 
@@ -17,19 +18,40 @@ export interface ExportContext {
   typeName: (txType: TxView['txType']) => string;
   recurrings?: readonly RecurringRow[];
   events?: readonly { id: string; name: string }[];
-  /** adds tx/account ids for power users */
-  technical?: boolean;
+  /** the space being exported: a bank row is stored in its feed, which is another space */
+  spaceId: string;
   /** set when exporting several spaces into one file — becomes a leading column */
   spaceName?: string;
 }
 
+// ids come last: names can repeat or change, and the readable columns keep their place
 export const CSV_COLUMNS = [
   'date', 'time', 'account', 'merchant', 'description', 'amount', 'currency', 'net_amount',
   'category', 'main_category', 'type', 'status', 'split', 'notes', 'counterparty_iban',
   'recurring', 'event',
+  'tx_id', 'account_id', 'category_id', 'space_id',
 ] as const;
 
-const TECHNICAL_COLUMNS = ['tx_id', 'account_id'] as const;
+export interface ExportWindow {
+  from: string;
+  to: string;
+}
+
+export type ExportRange = 'period' | 'year' | 'all' | 'custom';
+
+/** the dates one space's export covers (null = everything): "this period" is the space's own period */
+export function exportWindow(
+  range: ExportRange,
+  space: Partial<Pick<SpaceRow, 'periodType' | 'periodDay'>>,
+  today: string,
+  custom: ExportWindow,
+): ExportWindow | null {
+  if (range === 'all') return null;
+  if (range === 'year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
+  if (range === 'custom') return custom;
+  const period = periodHistory(space.periodType ?? 'month', space.periodDay ?? 1, 1)[0];
+  return { from: period.start, to: period.end };
+}
 
 const cents = (value: number): string => (value / 100).toFixed(2);
 
@@ -86,7 +108,7 @@ export function toCsvRows(txs: readonly TxView[], ctx: ExportContext): string[][
   const recurringById = new Map((ctx.recurrings ?? []).map((r) => [r.id, r.name]));
   const eventById = new Map((ctx.events ?? []).map((e) => [e.id, e.name]));
   const spaceColumn = ctx.spaceName === undefined ? [] : ['space'];
-  const header = [...spaceColumn, ...CSV_COLUMNS, ...(ctx.technical ? TECHNICAL_COLUMNS : [])];
+  const header = [...spaceColumn, ...CSV_COLUMNS];
   const rows: string[][] = [header];
 
   const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
@@ -113,7 +135,10 @@ export function toCsvRows(txs: readonly TxView[], ctx: ExportContext): string[][
       tx.counterIban ?? '',
       tx.recurringId ? (recurringById.get(tx.recurringId) ?? '') : '',
       eventOf ? (eventById.get(eventOf) ?? '') : '',
-      ...(ctx.technical ? [tx.id, tx.accountId] : []),
+      tx.id,
+      tx.accountId,
+      catOf.id,
+      ctx.spaceId,
     ];
     rows.push(base('', cat, main, tx.amountCents));
     pushCatRows(rows, tx, ctx.catalog, base);

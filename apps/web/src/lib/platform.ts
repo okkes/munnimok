@@ -338,14 +338,17 @@ export function hapticNotify(type: 'SUCCESS' | 'WARNING' = 'SUCCESS'): void {
   void capacitor()?.Plugins?.Haptics?.notification?.({ type })?.catch(() => undefined);
 }
 
+/** `unavailable`: not a shell — only then does a caller download in the browser */
+export type NativeShare = 'shared' | 'dismissed' | 'failed' | 'unavailable';
+
 /**
  * Native share sheet for exports: writes the content to the app cache
- * and hands the file to the OS sheet (Files/mail/drive). false = not
- * native or share failed — callers fall back to the browser download.
+ * and hands the file to the OS sheet (Files/mail/drive).
  */
-export async function shareNativeFile(fileName: string, content: string): Promise<boolean> {
+export async function shareNativeFile(fileName: string, content: string): Promise<NativeShare> {
   const plugins = capacitor()?.Plugins;
-  if (!isNativeApp() || !plugins?.Filesystem?.writeFile || !plugins.Share?.share) return false;
+  if (!isNativeApp() || !plugins?.Filesystem?.writeFile || !plugins.Share?.share) return 'unavailable';
+  let uri: string;
   try {
     const written = await plugins.Filesystem.writeFile({
       path: fileName,
@@ -353,10 +356,16 @@ export async function shareNativeFile(fileName: string, content: string): Promis
       directory: 'CACHE',
       encoding: 'utf8',
     });
-    await plugins.Share.share({ title: fileName, files: [written.uri] });
-    return true;
+    uri = written.uri;
   } catch {
-    return false; // user closed the sheet or the OS refused — download instead
+    return 'failed';
+  }
+  try {
+    await plugins.Share.share({ title: fileName, files: [uri] });
+    return 'shared';
+  } catch {
+    // the plugin rejects a closed sheet: the file went nowhere, and a download does nothing in a webview
+    return 'dismissed';
   }
 }
 
