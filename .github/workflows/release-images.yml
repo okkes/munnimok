@@ -29,6 +29,10 @@ jobs:
     # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
+    # the hosts pull the moving channel tag: a newer push of this branch cancels the older build before it can move the tag back
+    concurrency:
+      group: images-${{ github.ref }}-tests
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -68,6 +72,10 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    # per architecture: in one group the two legs of a run would cancel each other
+    concurrency:
+      group: images-${{ github.ref }}-${{ matrix.arch }}
+      cancel-in-progress: true
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       build: ${{ steps.meta.outputs.build }}
@@ -198,6 +206,10 @@ jobs:
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     needs: images
     runs-on: ubuntu-latest
+    # never cancelled: stopped between two images the channel would point at a mix of two builds — a second one waits its turn
+    concurrency:
+      group: images-${{ github.ref }}-manifest
+      cancel-in-progress: false
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v4
