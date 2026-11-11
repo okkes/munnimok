@@ -33,7 +33,7 @@ import {
   validateValues,
 } from './manifestForm';
 import type { FieldProblem, FormField } from './manifestForm';
-import { pendingFromView, usePendingLogins } from './pendingLogins';
+import { pendingFromView, pendingStateOf, usePendingLogins } from './pendingLogins';
 import type { AgentView, ErrorEnvelope, ProviderManifest, SessionView } from './types';
 
 /**
@@ -284,31 +284,29 @@ export function ConnectFlowSheet({
   /** the sheet let go of the sign-in an answer belongs to — closed, or showing another one — while the answer was on its way */
   const letGo = (id: string) => released.current || id !== connectionId.current;
 
+  /** a sign-in that landed, under the connection it was started for */
+  const land = async (view: SessionView, id: string): Promise<void> => {
+    // the bundle is handed over exactly once: on the settling answer, or
+    // on the first view read after it
+    const full = view.bundle ? view : await connectorApi.login(provider, view.sessionId);
+    const result = await ops.adopt({ manifest, view: full, connectionId: id, reconnect });
+    // two reads can cross as a sign-in lands, and the relay gives the bundle to one of them (#430):
+    // both answers are adopted, the sheet finishes once
+    if (landed.current === full.sessionId) return;
+    landed.current = full.sessionId;
+    pending.remove(id);
+    // the sign-in landed: what was typed for it is forgotten
+    typedDrafts.delete(draftKey);
+    if (!letGo(id)) setPhase({ kind: 'done' });
+    onDone(result, reconnect);
+  };
+
   const handleView = async (view: SessionView, id = connectionId.current): Promise<void> => {
     if (!letGo(id)) stopFollowing.current();
-    if (view.state === 'active') {
-      // the bundle is handed over exactly once: on the settling answer, or
-      // on the first view read after it
-      const full = view.bundle ? view : await connectorApi.login(provider, view.sessionId);
-      const result = await ops.adopt({ manifest, view: full, connectionId: id, reconnect });
-      // two reads can cross as a sign-in lands, and the relay gives the bundle to one of them (#430):
-      // both answers are adopted, the sheet finishes once
-      if (landed.current === full.sessionId) return;
-      landed.current = full.sessionId;
-      pending.remove(id);
-      // the sign-in landed: what was typed for it is forgotten
-      typedDrafts.delete(draftKey);
-      if (!letGo(id)) setPhase({ kind: 'done' });
-      onDone(result, reconnect);
-      return;
-    }
+    if (view.state === 'active') return land(view, id);
     if (letGo(id)) {
       // the hub follows it from here: attaching again would leave a poller nobody can see or stop
-      pending.patch(id, {
-        state: view.state,
-        asking: view.state === 'awaiting_input',
-        error: TERMINAL_STATES.has(view.state) ? (view.error ?? failedWith(view.state)) : undefined,
-      });
+      pending.patch(id, pendingStateOf(view));
       return;
     }
     if (view.state === 'awaiting_input' && view.challenge) {
