@@ -30,6 +30,8 @@ public sealed record AddEntryRequest(string Id, string Kind, Guid? PaidByUserId,
 /// </summary>
 public static class SplitsEndpoints
 {
+    private const string OwnerRole = "owner";
+
     public static void MapSplits(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/splits").RequireAuthorization().WithSafeRouteParams();
@@ -71,7 +73,7 @@ public static class SplitsEndpoints
         var me = http.GetUserId();
         var (split, membership) = await MemberGateAsync(db, splitId, me);
         if (split is null || membership is null) return Results.NotFound();
-        if (membership.Role != "owner") return Results.Forbid();
+        if (membership.Role != OwnerRole) return Results.Forbid();
         if (split.Status != "settled")
         {
             split.Status = "settled";
@@ -87,7 +89,7 @@ public static class SplitsEndpoints
         var me = http.GetUserId();
         var (split, membership) = await MemberGateAsync(db, splitId, me);
         if (split is null || membership is null) return Results.NotFound();
-        if (membership.Role != "owner") return Results.Forbid();
+        if (membership.Role != OwnerRole) return Results.Forbid();
         var now = DateTimeOffset.UtcNow;
         var live = split.Status == "open"
             ? await db.SplitInvites.Where(i => i.SplitId == splitId && (i.ExpiresAt == null || i.ExpiresAt >= now)).OrderByDescending(i => i.CreatedAt).FirstOrDefaultAsync()
@@ -102,7 +104,7 @@ public static class SplitsEndpoints
         var me = http.GetUserId();
         var (split, membership) = await MemberGateAsync(db, splitId, me);
         if (split is null || membership is null) return Results.NotFound();
-        if (membership.Role != "owner") return Results.Forbid();
+        if (membership.Role != OwnerRole) return Results.Forbid();
         if (split.Status != "open") return Results.BadRequest(new { error = "split settled" });
         db.SplitInvites.RemoveRange(await db.SplitInvites.Where(i => i.SplitId == splitId).ToListAsync());
         var invite = new SplitInvite
@@ -204,7 +206,7 @@ public static class SplitsEndpoints
             return Results.BadRequest(new { error = "invalid name" });
         if (await db.Splits.AnyAsync(s => s.Id == request.Id)) return Results.Ok(new { id = request.Id }); // idempotent
         db.Splits.Add(new Split { Id = request.Id, Name = request.Name.Trim(), Currency = request.Currency, CreatedBy = me });
-        db.SplitMembers.Add(new SplitMember { SplitId = request.Id, UserId = me, Role = "owner", AttachedSpaceId = request.SpaceId });
+        db.SplitMembers.Add(new SplitMember { SplitId = request.Id, UserId = me, Role = OwnerRole, AttachedSpaceId = request.SpaceId });
         await db.SaveChangesAsync();
         return Results.Ok(new { id = request.Id });
     }
@@ -284,7 +286,7 @@ public static class SplitsEndpoints
         var entry = await db.SplitEntries.FirstOrDefaultAsync(e => e.SplitId == splitId && e.Id == entryId);
         if (entry is null) return Results.Ok(); // idempotent
         // only the author or the split owner takes an entry back
-        if (entry.CreatedBy != me && membership.Role != "owner") return Results.Forbid();
+        if (entry.CreatedBy != me && membership.Role != OwnerRole) return Results.Forbid();
         db.SplitEntries.Remove(entry);
         await db.SaveChangesAsync();
         return Results.Ok();

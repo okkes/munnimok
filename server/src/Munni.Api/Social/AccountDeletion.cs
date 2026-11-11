@@ -98,22 +98,31 @@ public sealed class AccountDeletion(
                 .AnyAsync(l => l.FeedSpaceId == feed.Id && survivingSpaceIds.Contains(l.SpaceId));
             if (feed.OwnerUserId == userId && successor is null && !stillRead)
             {
-                db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
-                await DeleteSpaceDataAsync(db, feed.Id);
-                db.FeedSpaces.Remove(feed);
+                await EraseFeedAsync(db, feed);
                 continue;
             }
 
             db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == userId).ToListAsync());
             db.SpaceMembers.RemoveRange(await db.SpaceMembers.Where(m => m.SpaceId == feed.Id && m.UserId == userId).ToListAsync());
-            if (feed.OwnerUserId != userId || successor is not Guid next) continue;
-            // the co-owner's own consent keeps fetching: the feed is theirs to write from here on
-            feed.OwnerUserId = next;
-            db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == next).ToListAsync());
-            var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == feed.Id && m.UserId == next);
-            if (member is null) db.SpaceMembers.Add(new SpaceMember { SpaceId = feed.Id, UserId = next, Role = SpaceRoles.Owner });
-            else member.Role = SpaceRoles.Owner;
+            if (feed.OwnerUserId == userId && successor is Guid next) await HandFeedOverAsync(db, feed, next);
         }
+    }
+
+    private static async Task EraseFeedAsync(AppDbContext db, Accounts.FeedSpace feed)
+    {
+        db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
+        await DeleteSpaceDataAsync(db, feed.Id);
+        db.FeedSpaces.Remove(feed);
+    }
+
+    /// <summary>the co-owner's own consent keeps fetching: the feed is theirs to write from here on</summary>
+    private static async Task HandFeedOverAsync(AppDbContext db, Accounts.FeedSpace feed, Guid next)
+    {
+        feed.OwnerUserId = next;
+        db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == next).ToListAsync());
+        var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == feed.Id && m.UserId == next);
+        if (member is null) db.SpaceMembers.Add(new SpaceMember { SpaceId = feed.Id, UserId = next, Role = SpaceRoles.Owner });
+        else member.Role = SpaceRoles.Owner;
     }
 
     /// <summary>space/feed erasure: state, oplog, invites, links, cursor row</summary>
