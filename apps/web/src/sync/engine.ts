@@ -81,8 +81,9 @@ export class SyncEngine {
   /** the identity is leaving sync: a round now would read its ended memberships as evictions and purge */
   private halted = false;
   private readonly frozen: () => boolean;
-  /** resolves with whether the round reached its end: read here, before a follow-up round resets the flag */
-  private inFlight: Promise<boolean> | null = null;
+  private inFlight: Promise<void> | null = null;
+  /** whether the round that finished last reached its end */
+  private finishedOk = false;
   private readonly now: () => number;
   private readonly access: SpaceAccess | null;
 
@@ -163,8 +164,8 @@ export class SyncEngine {
   async catchUp(): Promise<boolean> {
     while (this.inFlight) await this.inFlight;
     if (this.stopped || this.now() < this.pausedUntil) return false;
-    void this.syncAll();
-    return (await this.inFlight) ?? false;
+    await this.syncAll();
+    return this.finishedOk;
   }
 
   /** near-real-time: the server announces changed spaces over SSE */
@@ -232,8 +233,10 @@ export class SyncEngine {
     // stayed under budget never leaves the device (lib/perf). Always a
     // root of its own: the first round starts inside the boot span and
     // usually outlives it
-    this.inFlight = measure('sync.round', (round) => this.runRound(round).then(() => this.roundOk), undefined, { parent: null });
+    this.inFlight = measure('sync.round', (round) => this.runRound(round), undefined, { parent: null });
     await this.inFlight;
+    // kept apart from roundOk: the follow-up round below resets that flag before a waiting caller reads it
+    this.finishedOk = this.roundOk;
     this.inFlight = null;
     if (this.rerun && this.now() >= this.pausedUntil) void this.syncAll();
   }

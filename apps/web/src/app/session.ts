@@ -58,7 +58,11 @@ function userStoreKey(sub: string): string {
   const taken = adoptedStoreKeys();
   let key = localStorage.getItem(USER_STORE_PREFIX + base) ?? base;
   if (!taken.has(key)) return key;
-  for (let n = 2; taken.has(key); n += 1) key = `${base}_${n}`;
+  let n = 2;
+  while (taken.has(key)) {
+    key = `${base}_${n}`;
+    n += 1;
+  }
   // remembered: deleting the profile later must not send the login back to an empty first store
   localStorage.setItem(USER_STORE_PREFIX + base, key);
   return key;
