@@ -95,9 +95,15 @@ describe('Goals (demo identity)', () => {
     await fund('goaldetail-fund', '100', /€100[.,]00/);
     await fund('goaldetail-withdraw', '40', /€60[.,]00/);
 
-    const history = screen.getByTestId('goaldetail-history');
-    expect(history.textContent).toContain('+€100.00');
-    expect(history.textContent).toMatch(/-€40[.,]00/);
+    // the amount and the history are two reads: a history line can land a moment after the amount it belongs to
+    await waitFor(
+      () => {
+        const history = screen.getByTestId('goaldetail-history');
+        expect(history.textContent).toContain('+€100.00');
+        expect(history.textContent).toMatch(/-€40[.,]00/);
+      },
+      { timeout: 5000 },
+    );
   }, 15_000);
 
   it('allocating more than the savings balance flags the rebalance note', async () => {
