@@ -387,9 +387,35 @@ const defaultName = (metas: readonly StoreConnRow[], base: string): string => {
 const metaOf = async (storage: StorageBackend, connectionId: string): Promise<StoreConnRow | undefined> =>
   (await storage.allRows('storeConn')).find((c) => c.id === connectionId && c.deleted === 0);
 
+/**
+ * One adoption per connection at a time. The relay hands a sign-in's bundle to exactly one reader, and two
+ * reads can cross as it lands (a poll and the sheet's own read, the sheet and the hub's follower): their
+ * answers must not write the device row over each other.
+ */
+const adopting = new Map<string, Promise<unknown>>();
+
+function inTurn<T>(connectionId: string, work: () => Promise<T>): Promise<T> {
+  const mine = (adopting.get(connectionId) ?? Promise.resolve()).catch(() => undefined).then(work);
+  adopting.set(connectionId, mine);
+  const done = () => {
+    if (adopting.get(connectionId) === mine) adopting.delete(connectionId);
+  };
+  mine.then(done, done);
+  return mine;
+}
+
 /** the device row after a login: custody first, the bundle right behind it */
 async function keepDeviceRow(storage: StorageBackend, connectionId: string, provider: string, view: SessionView): Promise<void> {
   const existing = await storage.connectorConnGet(connectionId);
+  // the same sign-in answered again (#430): the row is this session's already. Rewriting it took the bundle the
+  // first answer brought out of a phone's row — only what this answer carries itself is news
+  if (existing?.sessionId === view.sessionId && existing.state === view.state) {
+    if (view.credentialBundle && view.credentialBundle !== existing.credentialBundle) {
+      await storage.connectorConnPut({ ...existing, credentialBundle: view.credentialBundle });
+    }
+    if (view.bundle) await keepBundle(storage, connectionId, view.bundle);
+    return;
+  }
   await storage.connectorConnPut({
     id: connectionId,
     provider,
@@ -418,41 +444,45 @@ export function useConnectionOps(): ConnectionOps {
     void syncConnection(storage, repo, connectionId, { engine }).catch(() => undefined);
   };
 
-  return {
-    adopt: async ({ manifest, view, connectionId, reconnect, label }) => {
-      await keepDeviceRow(storage, connectionId, manifest.id, view);
-      void pushConnection(storage, connectionId).catch(() => undefined);
-      if (reconnect) {
-        const meta = await metaOf(storage, connectionId);
-        if (meta) await repo.upsert('storeConn', meta.spaceId, connectionId, { status: 'ok' });
-        firstSync(connectionId);
-        return { connectionId };
-      }
-      const feedId = await ensureStoreFeed(storage);
-      if (!feedId) throw new Error('the store feed could not be registered');
-      const metas = (await storage.allRows('storeConn')).filter((c) => c.deleted === 0);
-      const externalId = view.providerAccount?.externalId;
-      const providerAccountHash = externalId ? await hashIdentity(manifest.id, externalId) : undefined;
-      const duplicateOf = providerAccountHash
-        ? metas.find((m) => m.store === manifest.id && m.providerAccountHash === providerAccountHash)?.id
-        : undefined;
-      const displayName = label?.trim() || defaultName(metas, manifest.name);
-      await repo.upsert('storeConn', feedId, connectionId, {
-        store: manifest.id,
-        kind: manifest.kind,
-        displayName,
-        providerAccountHash,
-        connectedAt: new Date().toISOString().slice(0, 10),
-        status: 'ok',
-      });
-      // a connection is the person's, not a space's (user ruling 2026-10-02):
-      // nothing joins a space by itself — a shop's spaces are picked on the
-      // step after naming or from its card, a bank's accounts are attached
-      // one by one on the space's accounts screen, like every other feed account
-      void logActivity(storage, repo, spaceId, 'storeConnect', displayName);
+  const adoptOne = async ({ manifest, view, connectionId, reconnect, label }: AdoptArgs): Promise<AdoptResult> => {
+    await keepDeviceRow(storage, connectionId, manifest.id, view);
+    void pushConnection(storage, connectionId).catch(() => undefined);
+    const known = await metaOf(storage, connectionId);
+    // a connection that exists is signed in again — also when a new one's sign-in is answered a second time:
+    // naming it afresh would call it "… 2" and report it as a duplicate of itself
+    if (reconnect || known) {
+      if (known) await repo.upsert('storeConn', known.spaceId, connectionId, { status: 'ok' });
       firstSync(connectionId);
-      return { connectionId, duplicateOf };
-    },
+      return { connectionId };
+    }
+    const feedId = await ensureStoreFeed(storage);
+    if (!feedId) throw new Error('the store feed could not be registered');
+    const metas = (await storage.allRows('storeConn')).filter((c) => c.deleted === 0);
+    const externalId = view.providerAccount?.externalId;
+    const providerAccountHash = externalId ? await hashIdentity(manifest.id, externalId) : undefined;
+    const duplicateOf = providerAccountHash
+      ? metas.find((m) => m.store === manifest.id && m.providerAccountHash === providerAccountHash)?.id
+      : undefined;
+    const displayName = label?.trim() || defaultName(metas, manifest.name);
+    await repo.upsert('storeConn', feedId, connectionId, {
+      store: manifest.id,
+      kind: manifest.kind,
+      displayName,
+      providerAccountHash,
+      connectedAt: new Date().toISOString().slice(0, 10),
+      status: 'ok',
+    });
+    // a connection is the person's, not a space's (user ruling 2026-10-02):
+    // nothing joins a space by itself — a shop's spaces are picked on the
+    // step after naming or from its card, a bank's accounts are attached
+    // one by one on the space's accounts screen, like every other feed account
+    void logActivity(storage, repo, spaceId, 'storeConnect', displayName);
+    firstSync(connectionId);
+    return { connectionId, duplicateOf };
+  };
+
+  return {
+    adopt: (args) => inTurn(args.connectionId, () => adoptOne(args)),
     rename: async (connectionId, displayName) => {
       const meta = await metaOf(storage, connectionId);
       if (!meta || !displayName.trim()) return;

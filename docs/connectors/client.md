@@ -70,6 +70,15 @@ republishes in-process (`events.ts`) with a poll behind them; every
 frame or tick reads the view afresh, because the bundle is handed over
 exactly once and never rides a frame.
 
+Two reads can still cross as a sign-in lands (the sheet's poll and the
+hub's follower after a close, a streamed page ending under a poll), and
+only one of the answers carries the bundle. Adoption therefore runs one
+at a time per connection and is safe to repeat: an answer for the session
+the device row already holds adds what it carries and rewrites nothing
+(`keepDeviceRow`), a new connection answered twice is named once, and
+the sheet finishes once. A sheet that was closed while an answer was on
+its way leaves the sign-in to the hub — it never attaches again.
+
 Every question the party asks is rendered by its typed kind
 (`ChallengeCard`):
 

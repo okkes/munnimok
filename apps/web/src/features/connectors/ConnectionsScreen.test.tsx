@@ -517,6 +517,48 @@ describe('Connections hub (signed-in user)', () => {
     await screen.findByTestId('conn-name-input', {}, { timeout: 10000 });
   }, 25_000);
 
+  it('#430: an answer that reaches a closed sheet leaves the sign-in with the hub: the sheet does not attach again and poll on unseen', async () => {
+    const waiting = { sessionId: 'ses_z', state: 'queued', progress: { step: 'queued', stepsDone: [], ahead: 1 }, notes: [] };
+    let reads = 0;
+    let letThrough: (view: unknown) => void = () => undefined;
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: () => waiting,
+        [`GET /connectors/${PROVIDER}/login/ses_z`]: () => {
+          reads += 1;
+          // the sheet's own poll is held on its way back
+          if (reads === 1) {
+            return new Promise((resolve) => {
+              letThrough = resolve;
+            });
+          }
+          return waiting;
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-field-username');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('connect-progress', {}, { timeout: 5000 });
+    await waitFor(() => expect(reads).toBe(1), { timeout: 6000 });
+
+    fireEvent.click(screen.getByTestId('connect-running-close'));
+    await screen.findByTestId(/^conn-pending-continue-/);
+    letThrough(waiting);
+    // the hub's follower is the one reader from here on
+    await waitFor(() => expect(reads).toBeGreaterThanOrEqual(3), { timeout: 10_000 });
+    const [login] = Object.values(usePendingLogins.getState().logins);
+    expect(login.sessionId).toBe('ses_z');
+    expect(login.attached).toBeFalsy();
+  }, 25_000);
+
   it('a party that asks a code mid-login gets it answered; the bundle is read once it settles', async () => {
     let answered = false;
     renderAppAsUser('/connections', {

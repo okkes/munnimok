@@ -162,6 +162,10 @@ export function ConnectFlowSheet({
   const attempt = useRef(0);
   const stopFollowing = useRef<() => void>(() => {});
   const inFlight = useRef(false);
+  // the session whose landing this sheet has already finished on
+  const landed = useRef('');
+  // closed, or gone with the hub: whatever is still pending is the hub's to follow
+  const released = useRef(true);
   const startedAt = useRef('');
   // the resumed session is read once the handlers below exist (they close over this render)
   const pickUp = useRef<(sessionId: string) => void>(() => {});
@@ -180,6 +184,7 @@ export function ConnectFlowSheet({
     setLandscape(false);
     setSavedLogin(false);
     attempt.current += 1;
+    released.current = false;
     if (resume) {
       connectionId.current = resume.connectionId;
       startedAt.current = usePendingLogins.getState().logins[resume.connectionId]?.startedAt ?? new Date().toISOString();
@@ -191,6 +196,7 @@ export function ConnectFlowSheet({
     }
     return () => {
       stopFollowing.current();
+      released.current = true;
       // the sheet is gone (unmounted with the hub, or closed): whatever is still pending is the hub's to follow
       usePendingLogins.getState().patch(connectionId.current, { attached: false });
     };
@@ -275,18 +281,34 @@ export function ConnectFlowSheet({
     pending.put({ ...pendingFromView({ connectionId: connectionId.current, provider, reconnect, startedAt: startedAt.current }, view), attached: true });
   };
 
-  const handleView = async (view: SessionView): Promise<void> => {
-    stopFollowing.current();
+  /** the sheet let go of the sign-in an answer belongs to — closed, or showing another one — while the answer was on its way */
+  const letGo = (id: string) => released.current || id !== connectionId.current;
+
+  const handleView = async (view: SessionView, id = connectionId.current): Promise<void> => {
+    if (!letGo(id)) stopFollowing.current();
     if (view.state === 'active') {
       // the bundle is handed over exactly once: on the settling answer, or
       // on the first view read after it
       const full = view.bundle ? view : await connectorApi.login(provider, view.sessionId);
-      const result = await ops.adopt({ manifest, view: full, connectionId: connectionId.current, reconnect });
-      pending.remove(connectionId.current);
+      const result = await ops.adopt({ manifest, view: full, connectionId: id, reconnect });
+      // two reads can cross as a sign-in lands, and the relay gives the bundle to one of them (#430):
+      // both answers are adopted, the sheet finishes once
+      if (landed.current === full.sessionId) return;
+      landed.current = full.sessionId;
+      pending.remove(id);
       // the sign-in landed: what was typed for it is forgotten
       typedDrafts.delete(draftKey);
-      setPhase({ kind: 'done' });
+      if (!letGo(id)) setPhase({ kind: 'done' });
       onDone(result, reconnect);
+      return;
+    }
+    if (letGo(id)) {
+      // the hub follows it from here: attaching again would leave a poller nobody can see or stop
+      pending.patch(id, {
+        state: view.state,
+        asking: view.state === 'awaiting_input',
+        error: TERMINAL_STATES.has(view.state) ? (view.error ?? failedWith(view.state)) : undefined,
+      });
       return;
     }
     if (view.state === 'awaiting_input' && view.challenge) {
@@ -320,11 +342,13 @@ export function ConnectFlowSheet({
   };
 
   const guarded = async (work: () => Promise<void>) => {
+    const id = connectionId.current;
     setBusy(true);
     try {
       await work();
     } catch (err) {
-      fail(err instanceof ConnectorError ? err.envelope : failedWith('failed'));
+      // a sign-in the sheet let go of meanwhile is the hub's to read, its failure included
+      if (!letGo(id)) fail(err instanceof ConnectorError ? err.envelope : failedWith('failed'));
     } finally {
       setBusy(false);
     }
@@ -332,13 +356,16 @@ export function ConnectFlowSheet({
 
   /** a run in flight: every frame (and the poll) reads the view afresh */
   const follow = (sessionId: string) => {
+    const id = connectionId.current;
     const refresh = () => {
       if (inFlight.current) return;
       inFlight.current = true;
       void connectorApi
         .login(provider, sessionId)
-        .then((view) => handleView(view))
-        .catch((err: unknown) => fail(err instanceof ConnectorError ? err.envelope : failedWith('failed')))
+        .then((view) => handleView(view, id))
+        .catch((err: unknown) => {
+          if (!letGo(id)) fail(err instanceof ConnectorError ? err.envelope : failedWith('failed'));
+        })
         .finally(() => {
           inFlight.current = false;
         });
@@ -352,23 +379,27 @@ export function ConnectFlowSheet({
     };
   };
 
-  pickUp.current = (sessionId: string) => void guarded(async () => handleView(await connectorApi.login(provider, sessionId)));
+  pickUp.current = (sessionId: string) => {
+    const id = connectionId.current;
+    void guarded(async () => handleView(await connectorApi.login(provider, sessionId), id));
+  };
 
   const start = () =>
     guarded(async () => {
+      const id = connectionId.current;
       const { inputs, config } = splitValues(manifest, values, provided);
       const device = reconnectId ? await store.connectorConnGet(reconnectId) : undefined;
       startedAt.current = new Date().toISOString();
       const { view } = await connectorApi.startLogin(provider, {
-        connectionId: connectionId.current,
+        connectionId: id,
         // #543: no inputs with a kept login — the connector opens the sealed one in their place
         inputs: !savedLogin && Object.keys(inputs).length ? inputs : undefined,
         config: Object.keys(config).length ? config : undefined,
         credentialBundle: device?.credentialBundle,
         preferAgent: ownComputer ? (agentId ?? undefined) : undefined,
-        idempotencyKey: `${connectionId.current}:${attempt.current}`,
+        idempotencyKey: `${id}:${attempt.current}`,
       });
-      await handleView(view);
+      await handleView(view, id);
     });
 
   const toAgents = () => {
@@ -396,7 +427,8 @@ export function ConnectFlowSheet({
   const answer = (view: SessionView) => (value: string) =>
     guarded(async () => {
       if (!view.challenge) return;
-      await handleView(await connectorApi.answer(provider, view.sessionId, view.challenge.id, value));
+      const id = connectionId.current;
+      await handleView(await connectorApi.answer(provider, view.sessionId, view.challenge.id, value), id);
     });
 
   // the party's own page needs every pixel: the sheet grows to the full
@@ -430,7 +462,8 @@ export function ConnectFlowSheet({
   /** the platform ended the streamed page: read where the session stands now */
   const liveEnded = (view: SessionView) => {
     stopFollowing.current();
-    void guarded(async () => handleView(await connectorApi.login(provider, view.sessionId)));
+    const id = connectionId.current;
+    void guarded(async () => handleView(await connectorApi.login(provider, view.sessionId), id));
   };
 
   /** the control a field is edited with: a party's own list, a fixed list, or a text box */
