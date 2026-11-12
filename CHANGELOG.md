@@ -1,5 +1,47 @@
 # Changelog
 
+## [5.21.0](https://github.com/okkes/munnimok/compare/v5.20.0...v5.21.0) (2026-11-12)
+
+
+### ✨ Features
+
+* **budgets:** the carry-over maximum is the most one period may hold ([fe9e2a6](https://github.com/okkes/munnimok/commit/fe9e2a643d15c8f3b3a721add5442aa8fd18a9fb)), closes [#534](https://github.com/okkes/munnimok/issues/534)
+* **connectors:** an agent says which browser it runs; the agent browsers renew themselves ([90432f8](https://github.com/okkes/munnimok/commit/90432f83744c4f9b59ba05e0799bc031cf402566)), closes [#562](https://github.com/okkes/munnimok/issues/562)
+* **goals:** cash out any time, name what the goal bought ([026d439](https://github.com/okkes/munnimok/commit/026d43945eeeaeb6365f429c8e655f86cb1f709a)), closes [#455](https://github.com/okkes/munnimok/issues/455)
+* **pictures:** search the web for a picture wherever one is taken ([4cd63ca](https://github.com/okkes/munnimok/commit/4cd63ca53e58bbac174e87325eb17cf00190f554)), closes [#521](https://github.com/okkes/munnimok/issues/521)
+* **planning:** leftover funding rolls over as funding; nothing to fund ahead ([ab9e793](https://github.com/okkes/munnimok/commit/ab9e793a09d9ff52d199fd7c2a21497aa0ba7147)), closes [#557](https://github.com/okkes/munnimok/issues/557)
+* **receipts:** a vision model reads receipt photos ([94deddd](https://github.com/okkes/munnimok/commit/94deddd2e0f54ad49cb5ffaf31648ef88038fd0c)), closes [#567](https://github.com/okkes/munnimok/issues/567)
+* **receipts:** categorise a payment by its receipt's lines ([400d5f3](https://github.com/okkes/munnimok/commit/400d5f3b8e196a4b670a381f22561b5891274c5b)), closes [#567](https://github.com/okkes/munnimok/issues/567)
+* **receipts:** keep a receipt before its transaction exists; shop line discounts are kept ([c94db47](https://github.com/okkes/munnimok/commit/c94db47258eba64a8f540db8115c4df94e84a7e8)), closes [#567](https://github.com/okkes/munnimok/issues/567)
+* **splits:** split events rebuilt — roles, invitations, shares, exact settling, events ([81e0ff6](https://github.com/okkes/munnimok/commit/81e0ff682c9c26f5b95346e683847729cd9a444d)), closes [#538](https://github.com/okkes/munnimok/issues/538)
+* **transactions:** an entry typed on a bank account pairs with the bank's row ([3d7a3dd](https://github.com/okkes/munnimok/commit/3d7a3dd3b36d88f3ee74fe2d77313a85f53774d9)), closes [#547](https://github.com/okkes/munnimok/issues/547)
+* **transactions:** type an entry on a bank account, see it linked, take it apart ([40cdaeb](https://github.com/okkes/munnimok/commit/40cdaeb8ad1e0fa0e92ca9f05ccdb8169de257ff)), closes [#547](https://github.com/okkes/munnimok/issues/547)
+
+
+### 🐞 Bug Fixes
+
+* **api:** a bank feed others still use keeps its history when its owner's account goes ([945d2ac](https://github.com/okkes/munnimok/commit/945d2acfcc2ce0300165fbfaf65179802c3a0344)), closes [#499](https://github.com/okkes/munnimok/issues/499)
+* **auth:** a first start never waits for good, and says which step it is on ([dea3259](https://github.com/okkes/munnimok/commit/dea3259130e5467a0f9893d12215ffc2d7dff46e)), closes [#594](https://github.com/okkes/munnimok/issues/594)
+* **auth:** going offline fetches what the server holds before the server's copy is deleted ([522400a](https://github.com/okkes/munnimok/commit/522400a9c935b7b630a3e8d0f58ecd6d1acd5596)), closes [#499](https://github.com/okkes/munnimok/issues/499)
+* **auth:** the same login signing in again never opens or wipes the store an offline profile adopted ([2fb52ad](https://github.com/okkes/munnimok/commit/2fb52ad1987b8e5805b029b3ecf399d3147778cb)), closes [#499](https://github.com/okkes/munnimok/issues/499)
+* **connectors:** a sign-in on a phone keeps its bundle when two answers cross ([cd2330e](https://github.com/okkes/munnimok/commit/cd2330eee37e323d74516e12263db3166ab8efb5)), closes [#430](https://github.com/okkes/munnimok/issues/430)
+* **connectors:** older history is fetched without gaps on a connection with several accounts ([106bbed](https://github.com/okkes/munnimok/commit/106bbed42d11d3af9d6e0e648468ceafb07e6b9b))
+* **export:** several spaces in one export, each cut at its own period, ids in every CSV row ([aaedba9](https://github.com/okkes/munnimok/commit/aaedba990f3320ab6c554b9e6999a91192e6b75c)), closes [#498](https://github.com/okkes/munnimok/issues/498)
+* **help:** the first-run tutorial gets past "Add account" again ([e198b4d](https://github.com/okkes/munnimok/commit/e198b4d282015ee807a35e268080b600c1b3d20b)), closes [#527](https://github.com/okkes/munnimok/issues/527)
+* **insights:** safe to spend deducts this period's bill when last period's payment booked late ([aa84865](https://github.com/okkes/munnimok/commit/aa84865bb161b2a76827cd32956b4619f2e3ca92))
+* **native:** a picture chosen in the phone apps arrives as it is, transparency included ([421bced](https://github.com/okkes/munnimok/commit/421bced827ebf6b60b30d63b2566489c8f756439)), closes [#522](https://github.com/okkes/munnimok/issues/522)
+* **native:** the "update is ready" card compares the web build inside the shell ([9d93f26](https://github.com/okkes/munnimok/commit/9d93f267f0193eb10d1846fc7c0d9f0fa9858828)), closes [#497](https://github.com/okkes/munnimok/issues/497)
+* **notifications:** a device the server lost registers itself again ([bcda43c](https://github.com/okkes/munnimok/commit/bcda43c3f3a271b8de2368aeb9a85daadf27464a))
+* **permissions:** Go offline finishes or changes nothing ([b047318](https://github.com/okkes/munnimok/commit/b047318cd5add01d56eed5ae28a05f33241060c9))
+* **planning:** a plan carried into a new period never overwrites what another device did ([ac2a74e](https://github.com/okkes/munnimok/commit/ac2a74e74e7987e122ea61993417f92e3e46a5c3))
+* **splits:** a name that opens a balances row starts with a capital ([e4323ce](https://github.com/okkes/munnimok/commit/e4323ce686fa89995af81ebfdefc5cc6272c74d8)), closes [#538](https://github.com/okkes/munnimok/issues/538)
+* **splits:** an invitation link that survives the sign-in, and is only replaced when its owner says so ([3b6815d](https://github.com/okkes/munnimok/commit/3b6815d1c242b813e813a132e811594ec208a74e)), closes [#538](https://github.com/okkes/munnimok/issues/538)
+* **sync:** a push too large for the server is split until it fits ([ac9c464](https://github.com/okkes/munnimok/commit/ac9c46402ab574ded6382390eccbc1fe6cfca114)), closes [#567](https://github.com/okkes/munnimok/issues/567)
+* **sync:** the one-way boot repairs wait for the copy the server confirmed ([a260d50](https://github.com/okkes/munnimok/commit/a260d502a16c2fa6036f8ce9764a0bca9bf1e300))
+* **transactions:** a reserved row's story lands only on its own booking ([0bf98c1](https://github.com/okkes/munnimok/commit/0bf98c194691911e02b80a76be4af6056e41d8dc))
+* **ui:** picked colours read on dark surfaces; tracks and idle bars stay visible there ([23aedee](https://github.com/okkes/munnimok/commit/23aedee843edbf90a2ea73147a9fb949fe21055c)), closes [#592](https://github.com/okkes/munnimok/issues/592)
+* **web:** a see-through picture fits the server's limit, and a refused profile save says so ([adcc0a8](https://github.com/okkes/munnimok/commit/adcc0a87689fa5d401ff2ae8b0cc8c0a08e733f7))
+
 ## [5.20.0](https://github.com/okkes/munnimok/compare/v5.19.0...v5.20.0) (2026-11-08)
 
 
