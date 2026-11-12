@@ -6,7 +6,7 @@ import { useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import type { ImageFocus } from '@/lib/imageFocus';
 import { ImageFocusFrame } from '@/ui/ImageFocusFrame';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { apiFetch } from '@/lib/api';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -57,21 +57,11 @@ export function SpacePhotoStrip({
   const { t } = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => {
-        if (file) applySpacePhoto(file, onPicture);
-      });
-      return;
-    }
-    fileRef.current?.click();
-  };
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => applySpacePhoto(file, onPicture), () => fileRef.current?.click());
 
   return (
     <>
+      {pictureSheet}
       <input
         ref={fileRef}
         type="file"

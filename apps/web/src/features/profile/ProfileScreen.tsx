@@ -12,7 +12,7 @@ import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { disablePush } from '@/lib/push';
 import { downscaleImage, isDataImage } from '@/lib/image';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { COUNTRIES, CURRENCIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
 import { MANUAL_RATES_META_KEY, readManualRates } from '@/lib/rates';
@@ -244,16 +244,7 @@ export function ProfileScreen() {
     }
   };
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => void onPhotoPicked(file ?? undefined));
-      return;
-    }
-    fileRef.current?.click();
-  };
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onPhotoPicked(file), () => fileRef.current?.click());
 
   // load current values per identity kind
   useEffect(() => {
@@ -361,6 +352,7 @@ export function ProfileScreen() {
             </button>
           ))}
         </div>
+        {pictureSheet}
         {/* own photo: downscaled on-device, synced as a tiny data URL */}
         <input
           ref={fileRef}

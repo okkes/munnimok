@@ -6,7 +6,7 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage } from '@/lib/image';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { COUNTRIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
 import { AVATARS, Avatar } from '@/features/profile/ProfileScreen';
@@ -109,16 +109,7 @@ export function OnboardingScreen() {
     setPicture(await downscaleImage(file));
   };
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
-      return;
-    }
-    fileRef.current?.click();
-  };
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => fileRef.current?.click());
 
   /** same shape as the settings flow: PIN is the fallback, biometrics
    *  best-effort — a cancelled prompt still yields a PIN-locked app */
@@ -240,6 +231,7 @@ export function OnboardingScreen() {
                     <Icon name="camera-outline" size={17} color="var(--m-ink-3)" />
                   </button>
                 )}
+                {pictureSheet}
                 <input ref={fileRef} type="file" accept="image/*" hidden data-testid="onboarding-avatar-file" onChange={(e) => void onUpload(e.target.files?.[0])} />
               </div>
             </div>

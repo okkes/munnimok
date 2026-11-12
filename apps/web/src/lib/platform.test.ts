@@ -268,20 +268,15 @@ describe('§5 niceties seam', () => {
     expect(await takeNativePhoto()).toBeNull(); // no bytes returned
   });
 
-  it('pickPhotoNative rides the OS chooser, receipts keep the direct camera (#166)', async () => {
-    const { pickPhotoNative, takeNativePhoto } = await import('./platform');
-    // web: callers fall back to the hidden file input instead
-    expect(await pickPhotoNative()).toBeNull();
-
+  it('the camera door asks the plugin for the camera; the library door of a receipt for the photos (#166, #496)', async () => {
+    const { takeNativePhoto } = await import('./platform');
     const getPhoto = vi.fn(() => Promise.resolve({ base64String: btoa('img-bytes'), format: 'jpeg' }));
     setCapacitor({ isNativePlatform: () => true, Plugins: { Camera: { getPhoto } } });
-    const file = await pickPhotoNative();
+    const file = await takeNativePhoto();
     expect(file?.type).toBe('image/jpeg');
-    expect(getPhoto).toHaveBeenCalledWith(expect.objectContaining({ source: 'PROMPT' }));
-
-    // the default stays CAMERA so the receipt flow is untouched
-    await takeNativePhoto();
     expect(getPhoto).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'CAMERA' }));
+    await takeNativePhoto('PHOTOS');
+    expect(getPhoto).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'PHOTOS' }));
   });
 
   it('biometric availability reflects the plugin and fails closed', async () => {

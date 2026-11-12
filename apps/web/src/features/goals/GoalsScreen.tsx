@@ -1,6 +1,6 @@
 import { ScrollRow } from '@/ui/ScrollRow';
 import { downscaleImage } from '@/lib/image';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -81,16 +81,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     setPicture(await downscaleImage(file, 1080, 0.72));
   };
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
-      return;
-    }
-    uploadRef.current?.click();
-  };
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click());
 
   const targetCents = parseCents(target);
   const nameMissing = name.trim().length === 0;
@@ -182,6 +173,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             <img src={picture} alt="" className="h-16 w-full object-cover" />
           </div>
         )}
+        {pictureSheet}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
         {/* #563 (user): the goal's suggestions lead, the whole icon font follows — to scroll or to search */}

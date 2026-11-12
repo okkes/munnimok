@@ -15,7 +15,7 @@ import { focusStyle } from '@/lib/imageFocus';
 import type { ImageFocus } from '@/lib/imageFocus';
 import { ImageFocusFrame } from '@/ui/ImageFocusFrame';
 import { downscaleImage } from '@/lib/image';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -104,16 +104,7 @@ export function EventFormSheet({
     setFocus(null);
   };
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
-      return;
-    }
-    uploadRef.current?.click();
-  };
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click());
 
   const save = async () => {
     if (!name.trim()) return;
@@ -201,6 +192,7 @@ export function EventFormSheet({
         {picture.startsWith('data:') && (
           <ImageFocusFrame src={picture} focus={focus} onFocus={setFocus} zoom zoomLabel={t('image.zoom')} hint={t('events.dragToFrame')} testId="eventform-focus" />
         )}
+        {pictureSheet}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="eventform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
         <input

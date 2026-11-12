@@ -235,12 +235,13 @@ export async function getNativeAppId(): Promise<string | null> {
  * Native camera capture: the webview's <input capture> path crashes on
  * iOS and offers gallery-only on Android (user report), so the shells
  * use the Camera plugin instead. 'CAMERA' opens the camera directly
- * (receipts); 'PHOTOS' the photo library (#496: a receipt picture already
- * taken); 'PROMPT' shows the OS Camera-or-Photos chooser (#166 — the
- * generic upload sites). Returns a File ready for the existing attach
- * pipeline, or null when cancelled/unavailable.
+ * (receipts, and the camera door of every picture upload — ui/PictureSource);
+ * 'PHOTOS' the photo library (#496: a receipt picture already taken). Every
+ * picture comes back as a JPEG, so a picture that may be see-through never
+ * takes the 'PHOTOS' door (#522). Returns a File ready for the existing
+ * attach pipeline, or null when cancelled/unavailable.
  */
-export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' | 'PROMPT' = 'CAMERA'): Promise<File | null> {
+export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' = 'CAMERA'): Promise<File | null> {
   const camera = capacitor()?.Plugins?.Camera;
   if (!isNativeApp() || !camera?.getPhoto) return null;
   try {
@@ -257,16 +258,6 @@ export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' | 'PROMPT' = '
   } catch {
     return null; // user cancelled or permission denied — the button stays usable
   }
-}
-
-/** #166: native Android's file input is gallery-only — route the tap
- *  through the Camera plugin's chooser; the web input stays for browsers.
- *  Callers must treat null differently per platform: native null = the
- *  user cancelled the chooser (do nothing), web null = not native at
- *  all (fall back to clicking the hidden file input). */
-export async function pickPhotoNative(): Promise<File | null> {
-  if (!isNativeApp()) return null;
-  return takeNativePhoto('PROMPT');
 }
 
 /** the phone's own yes to notifications — the OS asks once, afterwards only its settings change the answer */
