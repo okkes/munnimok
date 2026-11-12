@@ -80,6 +80,24 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
     }
 
     [Fact]
+    public async Task APublishReplacesTheAnswerTheReadKeeps()
+    {
+        var admin = ClientFor("the-admin", "admin");
+        await admin.PutAsJsonAsync("/admin/catalog", Payload("padel"));
+        // the read keeps its answer between publishes: this one is what a later read must not serve again
+        var before = await ClientFor(null).GetAsync("/catalog");
+
+        var published = await admin.PutAsJsonAsync("/admin/catalog", Payload("squash"));
+        var version = JsonDocument.Parse(await published.Content.ReadAsStringAsync()).RootElement.GetProperty("version").GetInt32();
+
+        var after = await ClientFor(null).GetAsync("/catalog");
+        Assert.Contains($"catalog-v{version}", after.Headers.ETag!.Tag);
+        Assert.NotEqual(before.Headers.ETag!.Tag, after.Headers.ETag!.Tag);
+        var doc = JsonDocument.Parse(await after.Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal("squash", doc.GetProperty("keywords")[0].GetProperty("keyword").GetString());
+    }
+
+    [Fact]
     public async Task Publish_IsTheWholeDocument_EverySectionAnArray()
     {
         var admin = ClientFor("the-admin", "admin");
