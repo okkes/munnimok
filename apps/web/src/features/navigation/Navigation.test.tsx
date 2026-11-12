@@ -52,13 +52,13 @@ describe('navigation (demo identity)', () => {
     expect(screen.queryByTestId('home-shortcuts')).toBeNull();
   });
 
-  it('#523: the side panel lists every feature; splits wait for a signed-in account', async () => {
+  it('#523: the side panel lists every feature — splits too in the demo, which shows examples of them (#538)', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     for (const id of ['home', 'transactions', 'planning', 'portfolio', 'budgets', 'goals', 'debts', 'upcoming', 'recurring', 'events', 'receipts', 'insights', 'trends', 'settings']) {
       expect(screen.getByTestId(`side-tab-${id}`)).toBeTruthy();
     }
-    expect(screen.queryByTestId('side-tab-splits')).toBeNull();
+    expect(screen.getByTestId('side-tab-splits')).toBeTruthy();
     fireEvent.click(screen.getByTestId('side-tab-goals'));
     expect(await screen.findByTestId('screen-goals')).toBeTruthy();
     expect(screen.getByTestId('side-tab-goals').className).toContain('bg-accent-soft');

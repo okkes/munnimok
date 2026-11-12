@@ -47,6 +47,29 @@ describe('buildNotification', () => {
     expect(buildNotification({ type: 'space-join', fromName: 'Bob', spaceId: 'sp7', spaceName: 'Big Family' }, 'en')!.url).toBe('./#/spaces/sp7/members');
   });
 
+  it('words what happens in a split (#538): settled by the receiver’s own figure, and the tap opens the split — or the list when they are not in it', () => {
+    const split = { type: 'split', splitId: 'sp-1', splitName: 'Ski trip', currency: 'EUR', fromName: 'Anna' };
+    const invited = buildNotification({ ...split, kind: 'invited' }, 'en')!;
+    expect(invited.body).toBe('Anna invited you to the split "Ski trip"');
+    expect(invited).toMatchObject({ url: './#/splits', pull: false, tag: 'split-invited-sp-1' });
+    expect(buildNotification({ ...split, kind: 'approved' }, 'nl')!).toMatchObject({ body: 'Je doet mee: "Ski trip"', url: './#/splits/sp-1' });
+    expect(buildNotification({ ...split, kind: 'removed' }, 'tr')!.url).toBe('./#/splits');
+
+    expect(buildNotification({ ...split, kind: 'settled', cents: 4250 }, 'en')!.body).toBe('"Ski trip" is settled: you get 42.50 EUR');
+    expect(buildNotification({ ...split, kind: 'settled', cents: -20_450 }, 'nl')!.body).toBe('"Ski trip" is afgerekend: je betaalt 204.50 EUR');
+    expect(buildNotification({ ...split, kind: 'settled', cents: 0 }, 'tr')!.body).toBe('"Ski trip" hesaplaşıldı: borcun da alacağın da yok');
+    expect(buildNotification({ ...split, kind: 'payment-paid', cents: 1500 }, 'en')!.body).toBe('Anna marked a payment of 15.00 EUR as paid in "Ski trip"');
+    // every kind the server sends has its words in every language
+    for (const lang of ['en', 'nl', 'tr']) {
+      for (const kind of ['join-request', 'refused', 'invite-accepted', 'invite-declined', 'delete-planned', 'delete-stopped', 'made-owner']) {
+        expect(buildNotification({ ...split, kind }, lang)!.body).toContain('Ski trip');
+      }
+    }
+    // a kind this build does not know shows nothing; a split id that is no id never rides into a route
+    expect(buildNotification({ ...split, kind: 'something-new' }, 'en')).toBeNull();
+    expect(buildNotification({ ...split, splitId: '../x?y', kind: 'approved', fromName: undefined }, 'en')!.url).toBe('./#/splits');
+  });
+
   it('localizes membership pushes for the affected member (#172/#173)', () => {
     const removed = buildNotification({ type: 'member-removed', fromName: 'Alice', spaceName: 'Big Family' }, 'en')!;
     expect(removed.body).toBe('You were removed from "Big Family" by Alice');

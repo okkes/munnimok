@@ -36,6 +36,7 @@ for (const V of VARIANTS) {
     // two manual expenses, both paid by me (solo split: net stays 0)
     for (const [desc, amount] of [['Tapas night', '30,00'], ['Metro cards', '9,50']]) {
       await page.click('[data-testid="split-add-entry"]');
+      await page.click('[data-testid="split-add-manual"]');
       await page.fill('[data-testid="split-entry-desc"]', desc);
       await page.fill('[data-testid="split-entry-amount"]', amount);
       await page.click('[data-testid="split-entry-save"]');
@@ -68,7 +69,7 @@ for (const V of VARIANTS) {
     await host.page.fill('[data-testid="split-name"]', 'Ski trip');
     await host.page.click('[data-testid="split-create"]');
     await host.page.waitForSelector('[data-testid="screen-split-detail"]');
-    await host.page.click('[data-testid="split-invite"]');
+    await host.page.click('[data-testid="split-people-row"]');
     // #538: a split has no link until its owner makes one
     await host.page.click('[data-testid="split-invite-create"]');
     const linkBox = host.page.locator('[data-testid="split-invite-link"]');
@@ -86,13 +87,13 @@ for (const V of VARIANTS) {
     await shot(guest.page, k('69-split-join'));
     await guest.page.click('[data-testid="split-join-confirm"]');
     await guest.page.waitForSelector('[data-testid="screen-split-detail"]');
+    await guest.page.click('[data-testid="split-people-row"]');
     await expect(guest.page.locator('[data-testid="split-members"]')).toContainText('Owner');
 
     // the host sees the new member after reopening
     await host.page.reload();
-    await host.page.waitForSelector('[data-testid="split-members"]');
-    const memberRows = host.page.locator('[data-testid="split-members"] .mdi-account-outline');
-    await expect(memberRows).toHaveCount(2);
+    await host.page.click('[data-testid="split-people-row"]');
+    await expect(host.page.locator('[data-testid="split-members"] [data-testid^="split-member-"]')).toHaveCount(2);
 
     await teardown(guest.page, guest.ctx, k('69-split-join') + '--guest');
     await teardown(host.page, host.ctx, k('69-split-join'));

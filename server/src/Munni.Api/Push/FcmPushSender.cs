@@ -49,6 +49,80 @@ public static class FcmTexts
             "Birisi", "bir alan", "Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓"),
     };
 
+    private const string SettledGet = "settled-get";
+    private const string SettledPay = "settled-pay";
+    private const string SettledEven = "settled-even";
+
+    /// <summary>#538: what happens in a split event, by kind; `settled` is worded by the receiver's own figure</summary>
+    private static readonly Dictionary<string, Dictionary<string, string>> Split = new()
+    {
+        ["en"] = new()
+        {
+            ["invited"] = "{name} invited you to the split event \"{split}\"",
+            ["join-request"] = "{name} asks to join \"{split}\"",
+            ["approved"] = "You are in: \"{split}\"",
+            ["refused"] = "Your request to join \"{split}\" was turned down",
+            ["invite-accepted"] = "{name} joined \"{split}\"",
+            ["invite-declined"] = "{name} declined the invitation to \"{split}\"",
+            [SettledGet] = "\"{split}\" is settled: you get {amount}",
+            [SettledPay] = "\"{split}\" is settled: you pay {amount}",
+            [SettledEven] = "\"{split}\" is settled: you are even",
+            ["payment-paid"] = "{name} marked a payment of {amount} as paid in \"{split}\"",
+            ["delete-planned"] = "{name} is deleting \"{split}\" — it is gone in 7 days unless an owner stops it",
+            ["delete-stopped"] = "\"{split}\" stays: its deletion was stopped",
+            ["removed"] = "{name} took you out of \"{split}\"",
+            ["made-owner"] = "{name} made you an owner of \"{split}\"",
+        },
+        ["nl"] = new()
+        {
+            ["invited"] = "{name} heeft je uitgenodigd voor het splitevenement \"{split}\"",
+            ["join-request"] = "{name} wil meedoen met \"{split}\"",
+            ["approved"] = "Je doet mee: \"{split}\"",
+            ["refused"] = "Je verzoek om mee te doen met \"{split}\" is afgewezen",
+            ["invite-accepted"] = "{name} doet mee met \"{split}\"",
+            ["invite-declined"] = "{name} heeft de uitnodiging voor \"{split}\" afgeslagen",
+            [SettledGet] = "\"{split}\" is afgerekend: je krijgt {amount}",
+            [SettledPay] = "\"{split}\" is afgerekend: je betaalt {amount}",
+            [SettledEven] = "\"{split}\" is afgerekend: je staat quitte",
+            ["payment-paid"] = "{name} heeft een betaling van {amount} in \"{split}\" als betaald gemarkeerd",
+            ["delete-planned"] = "{name} verwijdert \"{split}\" — over 7 dagen is het weg, tenzij een eigenaar het stopt",
+            ["delete-stopped"] = "\"{split}\" blijft: het verwijderen is gestopt",
+            ["removed"] = "{name} heeft je uit \"{split}\" gehaald",
+            ["made-owner"] = "{name} heeft je eigenaar gemaakt van \"{split}\"",
+        },
+        ["tr"] = new()
+        {
+            ["invited"] = "{name} seni \"{split}\" bölüşme etkinliğine davet etti",
+            ["join-request"] = "{name} \"{split}\" etkinliğine katılmak istiyor",
+            ["approved"] = "Katıldın: \"{split}\"",
+            ["refused"] = "\"{split}\" etkinliğine katılma isteğin reddedildi",
+            ["invite-accepted"] = "{name} \"{split}\" etkinliğine katıldı",
+            ["invite-declined"] = "{name} \"{split}\" davetini reddetti",
+            [SettledGet] = "\"{split}\" hesaplaşıldı: {amount} alacaksın",
+            [SettledPay] = "\"{split}\" hesaplaşıldı: {amount} ödeyeceksin",
+            [SettledEven] = "\"{split}\" hesaplaşıldı: borcun da alacağın da yok",
+            ["payment-paid"] = "{name} \"{split}\" içindeki {amount} tutarındaki ödemeyi ödendi olarak işaretledi",
+            ["delete-planned"] = "{name} \"{split}\" etkinliğini siliyor — bir sahip durdurmazsa 7 gün sonra silinir",
+            ["delete-stopped"] = "\"{split}\" kalıyor: silme işlemi durduruldu",
+            ["removed"] = "{name} seni \"{split}\" etkinliğinden çıkardı",
+            ["made-owner"] = "{name} seni \"{split}\" etkinliğinin sahibi yaptı",
+        },
+    };
+
+    /// <summary>The sentence for a split event's notice, or null for a kind this build does not word.</summary>
+    private static string? SplitBody(JsonElement payload, string lang, string someone)
+    {
+        string Str(string name, string fallback) =>
+            payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
+        var cents = payload.TryGetProperty("cents", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt64() : 0;
+        var kind = Str("kind", "");
+        if (kind == "settled") kind = cents switch { > 0 => SettledGet, < 0 => SettledPay, _ => SettledEven };
+        var texts = Split.GetValueOrDefault(lang) ?? Split["en"];
+        if (!texts.TryGetValue(kind, out var template)) return null;
+        var amount = $"{(Math.Abs(cents) / 100m).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)} {Str("currency", "")}".Trim();
+        return template.Replace("{name}", Str("fromName", someone)).Replace("{split}", Str("splitName", "")).Replace("{amount}", amount);
+    }
+
     /// <summary>title+body for a payload, or null for types with no visible text</summary>
     public static (string Title, string Body)? Build(JsonElement payload, string lang)
     {
@@ -71,6 +145,7 @@ public static class FcmTexts
             "space-join" => Social(texts.SpaceJoin),
             "member-removed" => Social(texts.MemberRemoved),
             "member-role" => Social(texts.MemberRole).Replace("{role}", Role()),
+            "split" => SplitBody(payload, lang, texts.Someone),
             "test" => texts.Test,
             _ => null,
         };

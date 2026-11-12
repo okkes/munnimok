@@ -2607,6 +2607,19 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
         {/* #547: a hand-typed entry and the bank's own transaction — linked, or still waiting */}
         {!partView && <EntryLinkSection tx={tx} account={account} readOnly={!canEdit} />}
 
+        {/* #538: the payment sits in a split — said to everyone in the space, so nobody adds it twice */}
+        {!partView && tx.splitRef && (
+          <button
+            data-testid="tx-detail-split"
+            onClick={() => void navigate({ to: '/splits/$splitId', params: { splitId: tx.splitRef?.splitId ?? '' } })}
+            className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left text-[13px] text-ink-2"
+          >
+            <Icon name="account-cash-outline" size={18} color="var(--m-accent-deep)" />
+            <span className="min-w-0 flex-1 truncate">{t('tx.inSplit', { name: tx.splitRef.name })}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        )}
+
         {/* block: categories — ONE edit affordance for the whole block
             (user: a pencil per slice read wrong); rows stay tappable.
             r9: on a container the block lists PARTS, and says so */}

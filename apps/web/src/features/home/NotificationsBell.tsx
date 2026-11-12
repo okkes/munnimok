@@ -11,6 +11,8 @@ import { refreshSpacesNotifyOff } from '@/application/spaceNotifications';
 import { WhatsNewSheet } from '@/features/help/WhatsNew';
 import { latestWhatsNewVersion, useMarkWhatsNewSeen, useWhatsNewUnseen } from '@/features/help/releaseNotes';
 import { apiFetch } from '@/lib/api';
+import { serverSplits } from '@/application/splitsApi';
+import type { SplitInvitation } from '@/application/splitsApi';
 import { refreshPushRegistrationOnce } from '@/lib/push';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { fmtTimeAgo } from '@/lib/text';
@@ -212,6 +214,7 @@ export function NotificationsBell() {
   const [tab, setTab] = useState<'notifications' | 'activity'>('notifications');
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [splitInvites, setSplitInvites] = useState<SplitInvitation[]>([]);
   const [whatsnewOpen, setWhatsnewOpen] = useState(false);
   const { store, spaceId } = useData();
   const markWhatsNewSeen = useMarkWhatsNewSeen();
@@ -262,14 +265,16 @@ export function NotificationsBell() {
       setRequests(body.receivedPending);
     }
     if (invitesRes?.ok) setInvites((await invitesRes.json()) as PendingInvite[]);
+    // #538: an owner asked the person into a split — it waits here like a space's invitation
+    setSplitInvites((await serverSplits.invitations()) ?? []);
   }, [isUser, store]);
 
   useEffect(() => void reload(), [reload]);
   useServerRefresh(reload);
 
-  const count = requests.length + invites.length + (unread ?? 0);
+  const count = requests.length + invites.length + splitInvites.length + (unread ?? 0);
 
-  const go = (to: '/friends' | '/spaces') => {
+  const go = (to: '/friends' | '/spaces' | '/splits') => {
     setOpen(false);
     void navigate({ to });
   };
@@ -386,6 +391,22 @@ export function NotificationsBell() {
                       name: invite.fromName ?? t('notif.someone'),
                       space: invite.spaceName ?? short(invite.spaceId),
                     })}
+                  </span>
+                  <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
+                </button>
+              ))}
+              {splitInvites.map((invite) => (
+                <button
+                  key={invite.id}
+                  data-testid={`notif-split-invite-${invite.id}`}
+                  onClick={() => go('/splits')}
+                  className="m-tap flex items-center gap-3 border-b border-line-2 bg-transparent px-1 py-3 text-left last:border-0"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft">
+                    <Icon name="account-cash-outline" size={18} color="var(--m-accent-deep)" />
+                  </span>
+                  <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink">
+                    {t('splits.invitedTo', { name: invite.fromName ?? t('notif.someone'), split: invite.splitName })}
                   </span>
                   <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
                 </button>

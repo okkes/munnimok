@@ -12,6 +12,12 @@ export interface PushPayload {
   fromName?: string;
   spaceName?: string;
   role?: string;
+  /** #538: what happened in a split, the split it happened in, and — settled, a payment — the receiver's own figure */
+  kind?: string;
+  splitId?: string;
+  splitName?: string;
+  currency?: string;
+  cents?: number;
 }
 
 interface PushTexts {
@@ -78,6 +84,81 @@ const TEXTS: Record<string, PushTexts> = {
     test: 'Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓',
   },
 };
+
+/** #538: a split's notices by kind — the twin of the server's wording for the phone apps (FcmTexts) */
+const SPLIT_TEXTS: Record<string, Record<string, string>> = {
+  en: {
+    invited: '{name} invited you to the split "{split}"',
+    'join-request': '{name} asks to join "{split}"',
+    approved: 'You are in: "{split}"',
+    refused: 'Your request to join "{split}" was turned down',
+    'invite-accepted': '{name} joined "{split}"',
+    'invite-declined': '{name} declined the invitation to "{split}"',
+    'settled-get': '"{split}" is settled: you get {amount}',
+    'settled-pay': '"{split}" is settled: you pay {amount}',
+    'settled-even': '"{split}" is settled: you are even',
+    'payment-paid': '{name} marked a payment of {amount} as paid in "{split}"',
+    'delete-planned': '{name} is deleting "{split}" — it is gone in 7 days unless an owner stops it',
+    'delete-stopped': '"{split}" stays: its deletion was stopped',
+    removed: '{name} took you out of "{split}"',
+    'made-owner': '{name} made you an owner of "{split}"',
+  },
+  nl: {
+    invited: '{name} heeft je uitgenodigd voor de split "{split}"',
+    'join-request': '{name} wil meedoen met "{split}"',
+    approved: 'Je doet mee: "{split}"',
+    refused: 'Je verzoek om mee te doen met "{split}" is afgewezen',
+    'invite-accepted': '{name} doet mee met "{split}"',
+    'invite-declined': '{name} heeft de uitnodiging voor "{split}" afgeslagen',
+    'settled-get': '"{split}" is afgerekend: je krijgt {amount}',
+    'settled-pay': '"{split}" is afgerekend: je betaalt {amount}',
+    'settled-even': '"{split}" is afgerekend: je staat quitte',
+    'payment-paid': '{name} heeft een betaling van {amount} in "{split}" als betaald gemarkeerd',
+    'delete-planned': '{name} verwijdert "{split}" — over 7 dagen is hij weg, tenzij een eigenaar het stopt',
+    'delete-stopped': '"{split}" blijft: het verwijderen is gestopt',
+    removed: '{name} heeft je uit "{split}" gehaald',
+    'made-owner': '{name} heeft je eigenaar gemaakt van "{split}"',
+  },
+  tr: {
+    invited: '{name} seni "{split}" bölüşmesine davet etti',
+    'join-request': '{name} "{split}" bölüşmesine katılmak istiyor',
+    approved: 'Katıldın: "{split}"',
+    refused: '"{split}" bölüşmesine katılma isteğin reddedildi',
+    'invite-accepted': '{name} "{split}" bölüşmesine katıldı',
+    'invite-declined': '{name} "{split}" davetini reddetti',
+    'settled-get': '"{split}" hesaplaşıldı: {amount} alacaksın',
+    'settled-pay': '"{split}" hesaplaşıldı: {amount} ödeyeceksin',
+    'settled-even': '"{split}" hesaplaşıldı: borcun da alacağın da yok',
+    'payment-paid': '{name} "{split}" içindeki {amount} tutarındaki ödemeyi ödendi olarak işaretledi',
+    'delete-planned': '{name} "{split}" bölüşmesini siliyor — bir sahip durdurmazsa 7 gün sonra silinir',
+    'delete-stopped': '"{split}" kalıyor: silme işlemi durduruldu',
+    removed: '{name} seni "{split}" bölüşmesinden çıkardı',
+    'made-owner': '{name} seni "{split}" bölüşmesinin sahibi yaptı',
+  },
+};
+
+/** the kinds after which the receiver is not (or not yet) in the split: the tap lands on the list */
+const SPLIT_OUTSIDE = new Set(['invited', 'refused', 'removed']);
+
+/** settled is worded by the receiver's own figure: what they get, what they pay, or that they are even */
+const settledKind = (cents: number): string => {
+  if (cents > 0) return 'settled-get';
+  return cents < 0 ? 'settled-pay' : 'settled-even';
+};
+
+function splitBody(payload: PushPayload, lang: string, someone: string): { body: string; url: string; tag: string } | null {
+  const cents = payload.cents ?? 0;
+  const kind = payload.kind === 'settled' ? settledKind(cents) : (payload.kind ?? '');
+  const template = (SPLIT_TEXTS[lang] ?? SPLIT_TEXTS.en)[kind];
+  if (!template) return null;
+  const amount = `${(Math.abs(cents) / 100).toFixed(2)} ${payload.currency ?? ''}`.trim();
+  const splitId = payload.splitId && /^[A-Za-z0-9._:-]+$/.test(payload.splitId) ? payload.splitId : undefined;
+  return {
+    body: template.replace('{name}', payload.fromName ?? someone).replace('{split}', payload.splitName ?? '').replace('{amount}', amount),
+    url: splitId && !SPLIT_OUTSIDE.has(kind) ? `./#/splits/${splitId}` : './#/splits',
+    tag: `split-${kind}-${splitId ?? ''}`,
+  };
+}
 
 export interface WorkerNotification {
   title: string;
@@ -149,7 +230,7 @@ export function buildNotification(payload: PushPayload, lang: string): WorkerNot
     // the proof that push reaches this device — the tap lands back on the space's notifications row
     return { title: spaceTitle, body: texts.test, tag: 'test', url: spaceId ? `./#/settings?space=${spaceId}` : './#/settings', pull: false };
   }
-  const social = socialBody(payload, texts);
+  const social = payload.type === 'split' ? splitBody(payload, lang, texts.someone) : socialBody(payload, texts);
   return social ? { title: texts.title, ...social, pull: false } : null;
 }
 

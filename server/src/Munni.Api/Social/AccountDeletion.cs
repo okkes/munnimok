@@ -42,6 +42,10 @@ public sealed class AccountDeletion(
         db.Friendships.RemoveRange(await db.Friendships.Where(f => f.UserAId == user.Id || f.UserBId == user.Id).ToListAsync());
         db.SpaceInvites.RemoveRange(await db.SpaceInvites.Where(i => i.ToUserId == user.Id || i.FromUserId == user.Id).ToListAsync());
 
+        // 5b · split events: the person leaves each one but stays in its arithmetic,
+        //      and their open requests and invitations go with them
+        await LeaveSplitsAsync(db, user.Id);
+
         // 6 · the Logto identity (kills the login + other sessions). Optional:
         //     without the M2M credential the server data still disappears.
         //     Go-offline conversions KEEP the identity in every environment
@@ -52,6 +56,17 @@ public sealed class AccountDeletion(
         // 7 · the user row last — a retry after any partial failure can re-enter
         db.Users.Remove(user);
         await db.SaveChangesAsync();
+    }
+
+    private static async Task LeaveSplitsAsync(AppDbContext db, Guid userId)
+    {
+        db.SplitJoinRequests.RemoveRange(await db.SplitJoinRequests.Where(r => r.UserId == userId).ToListAsync());
+        db.SplitFriendInvites.RemoveRange(await db.SplitFriendInvites.Where(i => i.ToUserId == userId || i.FromUserId == userId).ToListAsync());
+        var now = DateTimeOffset.UtcNow;
+        foreach (var mine in await db.SplitMembers.Where(m => m.UserId == userId && m.State == Splits.SplitWords.Active).ToListAsync())
+        {
+            await Splits.SplitStore.LeaveAsync(db, mine, now, CancellationToken.None);
+        }
     }
 
     /// <summary>sole-member spaces are erased; shared ones get a leave-and-

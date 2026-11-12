@@ -115,6 +115,13 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
         await SendToUsersAsync([toUserId], new { type = "member-role", spaceId, spaceName, role }, ct);
     }
 
+    /// <summary>#538: something happened in a split event — invited, let in, settled with the receiver's own
+    /// figure, a payment marked paid, a deletion planned…; the service worker words it by `kind`</summary>
+    public Task NotifySplitAsync(IReadOnlyCollection<Guid> toUserIds, string kind, Split split, string? fromName, long? cents, CancellationToken ct) =>
+        toUserIds.Count == 0
+            ? Task.CompletedTask
+            : SendToUsersAsync(toUserIds, new { type = "split", kind, splitId = split.Id, splitName = split.Name, currency = split.Currency, fromName, cents }, ct);
+
     /// <summary>"Test notification" to every device of ONE user — the Settings row that proves push works end to
     /// end (user request 2026-09-28); sent from a space's settings it names that space (#551). Returns how many
     /// devices were tried.</summary>

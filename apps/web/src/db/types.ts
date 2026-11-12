@@ -299,6 +299,9 @@ export interface TransactionRow extends SyncEnvelope {
   recurringId?: string;
   /** the event this transaction belongs to (holiday, wedding, …) */
   eventId?: string;
+  /** #538: the split the payment was added to — a mark for everyone in the space, so the same payment is not
+   *  added twice; the split's members never learn which space it came from */
+  splitRef?: SplitRef | null;
   /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
    *  the linked manual loan's balance (one-shot marker) */
   loanCounted?: 1;
@@ -358,6 +361,7 @@ export interface TxMetaRow extends SyncEnvelope {
   transferPeerId?: string;
   recurringId?: string;
   eventId?: string;
+  splitRef?: SplitRef | null;
   /** loans v2 (2026-08-01): this row predates the loan's known-true
    *  balance date but the user chose to count it in anyway (one-shot) */
   loanCounted?: 1;
@@ -492,6 +496,11 @@ export interface EventRow extends SyncEnvelope {
   /** optional planning number */
   budgetCents?: number;
   archived?: 0 | 1;
+  /** #538: the split this event belongs to — the event's own fact, so whoever shares the space shares the bond;
+   *  several events may name one split */
+  splitId?: string | null;
+  /** #538: payments the person said to ignore when munni compares the event with its split */
+  splitSkips?: string[];
 }
 
 /**
@@ -557,6 +566,12 @@ export interface ReceiptItem {
   /** #567: what came off this very line (negative), as the shop states it — `totalCents` is the line before it */
   discountCents?: number;
   discountLabel?: string;
+}
+
+/** #538: the split a payment was added to, by the name it had then */
+export interface SplitRef {
+  splitId: string;
+  name: string;
 }
 
 /** #567: one receipt line filed under a category, for one transaction */

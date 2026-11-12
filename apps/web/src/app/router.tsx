@@ -44,7 +44,7 @@ const AccountsScreen = lazyScreen(() => import('@/features/accounts/AccountsScre
 const ManageCategoriesScreen = lazyScreen(() => import('@/features/categories/ManageCategoriesScreen'), 'ManageCategoriesScreen');
 const FriendsScreen = lazyScreen(() => import('@/features/friends/FriendsScreen'), 'FriendsScreen');
 const SplitsScreen = lazyScreen(() => import('@/features/splits/SplitsScreen'), 'SplitsScreen');
-const SplitDetailScreen = lazyScreen(() => import('@/features/splits/SplitsScreen'), 'SplitDetailScreen');
+const SplitDetailScreen = lazyScreen(() => import('@/features/splits/SplitDetailScreen'), 'SplitDetailScreen');
 const SplitJoinScreen = lazyScreen(() => import('@/features/splits/SplitJoinScreen'), 'SplitJoinScreen');
 const OverviewScreen = lazyScreen(() => import('@/features/overview/OverviewScreen'), 'OverviewScreen');
 const CategoryDrillScreen = lazyScreen(() => import('@/features/overview/CategoryDrillScreen'), 'CategoryDrillScreen');

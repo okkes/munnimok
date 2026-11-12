@@ -339,6 +339,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.splits.2t', bodyKey: 'tour.splits.2b', illustration: '➕', anchor: 'splits-add' },
       { titleKey: 'tour.splits.3t', bodyKey: 'tour.splits.3b', illustration: '⚖️' },
       { titleKey: 'tour.splits.4t', bodyKey: 'tour.splits.4b', illustration: '🔗' },
+      { titleKey: 'tour.splits.5t', bodyKey: 'tour.splits.5b', illustration: '🗓️' },
     ],
   },
 ];

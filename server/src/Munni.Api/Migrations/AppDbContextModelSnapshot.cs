@@ -384,6 +384,9 @@ namespace Munni.Api.Migrations
                     b.Property<string>("Id")
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -394,8 +397,26 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("DeleteAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeleteBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EndDate")
+                        .HasColumnType("text");
+
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Picture")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("SettledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StartDate")
                         .HasColumnType("text");
 
                     b.Property<string>("Status")
@@ -429,15 +450,31 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("HasReceipt")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Kind")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long?>("OriginalCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("OriginalCurrency")
                         .HasColumnType("text");
 
                     b.Property<Guid>("PaidByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ShareMode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("SharesJson")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceSpaceId")
                         .HasColumnType("text");
 
                     b.Property<string>("SourceTxId")
@@ -454,6 +491,41 @@ namespace Munni.Api.Migrations
                     b.ToTable("SplitEntries");
                 });
 
+            modelBuilder.Entity("Munni.Api.Data.SplitFriendInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("FromUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SplitId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ToUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SplitId");
+
+                    b.HasIndex("ToUserId");
+
+                    b.ToTable("SplitFriendInvites");
+                });
+
             modelBuilder.Entity("Munni.Api.Data.SplitInvite", b =>
                 {
                     b.Property<string>("Token")
@@ -468,15 +540,54 @@ namespace Munni.Api.Migrations
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("MaxUses")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("NeedsApproval")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("SplitId")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int>("Uses")
+                        .HasColumnType("integer");
 
                     b.HasKey("Token");
 
                     b.HasIndex("SplitId");
 
                     b.ToTable("SplitInvites");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.SplitJoinRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SplitId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SplitId", "UserId");
+
+                    b.ToTable("SplitJoinRequests");
                 });
 
             modelBuilder.Entity("Munni.Api.Data.SplitMember", b =>
@@ -496,7 +607,14 @@ namespace Munni.Api.Migrations
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("LeftAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("State")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -505,6 +623,55 @@ namespace Munni.Api.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("SplitMembers");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.SplitPayment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("FromUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SplitId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ToUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SplitId");
+
+                    b.ToTable("SplitPayments");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.SplitReceipt", b =>
+                {
+                    b.Property<string>("EntryId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Image")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SplitId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("EntryId");
+
+                    b.HasIndex("SplitId");
+
+                    b.ToTable("SplitReceipts");
                 });
 
             modelBuilder.Entity("Munni.Api.Data.SyncOpRow", b =>

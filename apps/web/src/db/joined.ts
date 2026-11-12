@@ -81,6 +81,7 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     transferPeerId: meta?.transferPeerId,
     recurringId: meta?.recurringId,
     eventId: meta?.eventId,
+    splitRef: meta?.splitRef,
     loanCounted: meta?.loanCounted,
   };
 }
@@ -299,7 +300,7 @@ export async function asSpaceAccount(
 export type TxTransformFields = Partial<
   Pick<
     TxMetaRow,
-    'catId' | 'needsReview' | 'notes' | 'titleOverride' | 'cats' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
+    'catId' | 'needsReview' | 'notes' | 'titleOverride' | 'cats' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted' | 'splitRef'
   >
 >;
 

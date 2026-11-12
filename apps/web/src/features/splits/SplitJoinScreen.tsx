@@ -1,28 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
-import { apiFetch } from '@/lib/api';
+import { serverSplits } from '@/application/splitsApi';
+import type { SplitPeek } from '@/application/splitsApi';
+import { EVENT_PICTURES } from '@/features/events/EventsScreen';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 
-interface InvitePeek {
-  splitName: string;
-  currency: string;
-  inviterName: string | null;
-  /** the caller made this link */
-  mine?: boolean;
-  /** the caller is in the split already; `splitId` opens it */
-  member?: boolean;
-  splitId?: string | null;
-}
-
-/** only a 404 says the link is dead: a failed request or a busy server says nothing about it */
-type Lookup = { state: 'loading' } | { state: 'invalid' } | { state: 'unreachable' } | { state: 'found'; peek: InvitePeek };
+/** only "gone" says the link is dead: a failed request or a busy server says nothing about it */
+type Lookup =
+  | { state: 'loading' }
+  | { state: 'invalid' }
+  | { state: 'unreachable' }
+  | { state: 'waiting' }
+  | { state: 'removed' }
+  | { state: 'found'; peek: SplitPeek };
 
 function Notice({ icon, text, testId, children }: Readonly<{ icon: string; text: string; testId: string; children?: ReactNode }>) {
   return (
@@ -35,28 +31,29 @@ function Notice({ icon, text, testId, children }: Readonly<{ icon: string; text:
 }
 
 /**
- * Join screen (SP3): an invitee sees ONLY the split name + inviter —
- * design rule — and picks which of THEIR OWN spaces the split attaches
- * to (per-member attachment; nobody else ever sees the choice).
+ * The join screen (#538): an invitee sees ONLY the split's name, its
+ * picture and who invited them — design rule — and where they stand with
+ * this link: their own, already in, waiting for an owner, or taken out
+ * before. A link that asks for approval says so before it is used.
  */
 export function SplitJoinScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
   const { token } = useParams({ strict: false }) as { token: string };
   const { identity } = useSession();
-  const { store, spaceId: activeSpaceId } = useData();
+  const { spaceId } = useData();
   const [lookup, setLookup] = useState<Lookup>({ state: 'loading' });
-  const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const signedIn = identity?.kind === 'user';
 
-  const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
-
   const load = useCallback(async () => {
     setLookup({ state: 'loading' });
-    const res = await apiFetch(`/splits/invites/${token}`).catch(() => null);
-    if (res?.ok) setLookup({ state: 'found', peek: (await res.json()) as InvitePeek });
-    else setLookup({ state: res?.status === 404 ? 'invalid' : 'unreachable' });
+    const peek = await serverSplits.peek(token);
+    if (peek === 'gone') setLookup({ state: 'invalid' });
+    else if (!peek) setLookup({ state: 'unreachable' });
+    else if (peek.removed) setLookup({ state: 'removed' });
+    else if (peek.waiting) setLookup({ state: 'waiting' });
+    else setLookup({ state: 'found', peek });
   }, [token]);
 
   useEffect(() => {
@@ -67,17 +64,13 @@ export function SplitJoinScreen() {
 
   const join = async () => {
     setBusy(true);
-    const res = await apiFetch(`/splits/invites/${token}/accept`, {
-      method: 'POST',
-      body: JSON.stringify({ spaceId: picked ?? activeSpaceId }),
-    }).catch(() => null);
+    const answer = await serverSplits.accept(token, spaceId);
     setBusy(false);
-    if (!res?.ok) {
-      setLookup({ state: res?.status === 404 ? 'invalid' : 'unreachable' });
-      return;
-    }
-    const { splitId } = (await res.json()) as { splitId: string };
-    await open(splitId);
+    if (answer === 'gone') setLookup({ state: 'invalid' });
+    else if (answer === 'removed') setLookup({ state: 'removed' });
+    else if (!answer) setLookup({ state: 'unreachable' });
+    else if (answer.state === 'waiting' || !answer.splitId) setLookup({ state: 'waiting' });
+    else await open(answer.splitId);
   };
 
   const body = () => {
@@ -85,6 +78,8 @@ export function SplitJoinScreen() {
     if (!signedIn) return <Notice icon="account-alert-outline" text={t('splits.joinNeedsAccount')} testId="split-join-needs-account" />;
     if (lookup.state === 'loading') return <div className="px-4 py-16 text-center text-[13px] text-ink-4">…</div>;
     if (lookup.state === 'invalid') return <Notice icon="link-variant-off" text={t('splits.inviteInvalid')} testId="split-join-invalid" />;
+    if (lookup.state === 'waiting') return <Notice icon="account-clock-outline" text={t('splits.joinWaiting')} testId="split-join-waiting" />;
+    if (lookup.state === 'removed') return <Notice icon="account-cancel-outline" text={t('splits.joinRemoved')} testId="split-join-removed" />;
     if (lookup.state === 'unreachable') {
       return (
         <Notice icon="cloud-off-outline" text={t('splits.joinUnreachable')} testId="split-join-unreachable">
@@ -98,11 +93,7 @@ export function SplitJoinScreen() {
     if (peek.member && peek.splitId) {
       const splitId = peek.splitId;
       return (
-        <Notice
-          icon="account-check-outline"
-          text={t(peek.mine ? 'splits.joinOwn' : 'splits.joinAlready')}
-          testId={peek.mine ? 'split-join-own' : 'split-join-already'}
-        >
+        <Notice icon="account-check-outline" text={t(peek.mine ? 'splits.joinOwn' : 'splits.joinAlready')} testId={peek.mine ? 'split-join-own' : 'split-join-already'}>
           <Button data-testid="split-join-open" onClick={() => void open(splitId)}>
             {t('splits.joinOpen')}
           </Button>
@@ -111,38 +102,22 @@ export function SplitJoinScreen() {
     }
     return (
       <>
-        <div className="mt-4 rounded-card border border-line bg-surface p-5 text-center" data-testid="split-join-card">
-          <Icon name="account-cash-outline" size={36} color="var(--m-accent-deep)" />
-          {peek.inviterName && <p className="mt-2 text-[13px] text-ink-3">{t('splits.invitedBy', { name: peek.inviterName })}</p>}
-          <p className="mt-1 text-[19px] font-semibold text-ink">{peek.splitName}</p>
+        <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface text-center" data-testid="split-join-card">
+          <img src={peek.picture ?? EVENT_PICTURES[0]} alt="" className="h-28 w-full object-cover" />
+          <div className="p-5">
+            {peek.inviterName && <p className="text-[13px] text-ink-3">{t('splits.invitedBy', { name: peek.inviterName })}</p>}
+            <p className="mt-1 text-[19px] font-semibold text-ink">{peek.splitName}</p>
+          </div>
         </div>
-
-        <div className="m-cap mt-6 mb-1 px-1">{t('splits.attachPrompt')}</div>
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {(spaces ?? []).map((space) => {
-            const active = (picked ?? activeSpaceId) === space.id;
-            return (
-              <button
-                key={space.id}
-                data-testid={`split-join-space-${space.id}`}
-                onClick={() => setPicked(space.id)}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
-              >
-                <Icon
-                  name={active ? 'radiobox-marked' : 'radiobox-blank'}
-                  size={20}
-                  color={active ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
-                />
-                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{space.name}</span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-2 px-1 text-[12px] text-ink-4">{t('splits.attachHint')}</p>
-
+        <p className="mt-3 px-1 text-[12px] leading-snug text-ink-4">{t('splits.joinHint')}</p>
+        {peek.needsApproval && (
+          <p className="mt-2 px-1 text-[12px] leading-snug text-ink-3" data-testid="split-join-approval">
+            {t('splits.joinApproval')}
+          </p>
+        )}
         <div className="mt-6 flex flex-col">
           <Button data-testid="split-join-confirm" disabled={busy} onClick={() => void join()}>
-            {t('splits.join')}
+            {t(peek.needsApproval ? 'splits.joinAsk' : 'splits.join')}
           </Button>
         </div>
       </>

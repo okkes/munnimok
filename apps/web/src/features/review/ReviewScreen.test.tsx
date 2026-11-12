@@ -1552,19 +1552,22 @@ describe('ReviewScreen (user identity, split settlements)', () => {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [
-          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
+          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', state: 'active', memberCount: 2, entryCount: 1 },
         ],
         'GET /splits/split-1': () => ({
-          id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner',
+          split: { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', state: 'active' },
           members: [
-            { userId: ME, role: 'owner', displayName: 'Me', isMe: true },
-            { userId: ANNA, role: 'member', displayName: 'Anna', isMe: false },
+            { userId: ME, role: 'owner', state: 'active', displayName: 'Me', isMe: true },
+            { userId: ANNA, role: 'contributor', state: 'active', displayName: 'Anna', isMe: false },
           ],
           entries: [{
-            id: 'e-settle', kind: 'settlement', paidByUserId: ANNA, description: 'Settlement',
-            amountCents: 1500, date: '2026-07-16',
+            id: 'e-settle', kind: 'settlement', paidByUserId: ANNA, description: 'settlement',
+            amountCents: 1500, date: '2026-07-16', shareMode: 'exact',
             shares: [{ userId: ME, cents: 1500 }], createdBy: ANNA,
           }],
+          payments: [],
+          requests: null,
+          friendInvites: null,
         }),
       },
     });

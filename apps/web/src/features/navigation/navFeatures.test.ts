@@ -29,8 +29,10 @@ describe('the bar a space shows after Home', () => {
   });
 
   it('skips what this build does not know, doubles, and what the identity cannot open', () => {
-    expect(resolveNavTabs(['review', 'goals', 'goals', 42, 'splits'], navUsableFor('demo'))).toEqual(['goals']);
+    // splits live on the server: a profile without an account has none; an account has its own, the demo seeded ones (#538)
+    expect(resolveNavTabs(['review', 'goals', 'goals', 42, 'splits'], navUsableFor('offline'))).toEqual(['goals']);
     expect(resolveNavTabs(['splits'], navUsableFor('user'))).toEqual(['splits']);
+    expect(resolveNavTabs(['splits'], navUsableFor('demo'))).toEqual(['splits']);
   });
 
   it('cuts past the cap and reads a damaged value as the default', () => {

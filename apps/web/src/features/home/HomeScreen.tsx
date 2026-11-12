@@ -1121,10 +1121,9 @@ export function HomeScreen() {
   }
 
   function renderSplitsBlock() {
-    // online-only, signed-in feature: loading and every degraded state
-    // renders nothing; no open split shows the teaser (user request:
-    // reach the current split from Home, or all of them via see-all)
-    if (identity?.kind !== 'user') return null;
+    // an account's feature (the demo shows examples): loading and every
+    // degraded state renders nothing; no open split shows the teaser (user
+    // request: reach the current split from Home, or all of them via see-all)
     if (topSplit === undefined) return null;
     if (topSplit === null) return null; // Explore carries the door (#121 v2)
     const netLine = () => {

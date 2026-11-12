@@ -110,6 +110,7 @@ export function carriedFields(meta: TxMetaRow, reserved: TransactionRow, booked:
   if (meta.notes) fields.notes = meta.notes;
   if (meta.titleOverride) fields.titleOverride = meta.titleOverride;
   if (meta.eventId) fields.eventId = meta.eventId;
+  if (meta.splitRef) fields.splitRef = meta.splitRef;
   if (meta.recurringId) fields.recurringId = meta.recurringId;
   if (meta.linkedAccountId) fields.linkedAccountId = meta.linkedAccountId;
   if (reimbursements) fields.reimbursements = reimbursements;
