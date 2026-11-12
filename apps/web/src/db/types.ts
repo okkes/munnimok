@@ -445,7 +445,7 @@ export interface BudgetRow extends SyncEnvelope {
   carryMode?: BudgetCarryMode | null;
   /** carry unused money at most N periods forward (carryMode 'periods') */
   carryPeriods?: number | null;
-  /** or accumulate up to this cap (carryMode 'cap') */
+  /** or pile up to this much ON TOP of the amount (carryMode 'cap') — the form shows amount + this, the most a period may hold (#534) */
   carryCapCents?: number | null;
   /** warn when spending crosses this percentage; absent or null = quiet */
   notifyAtPct?: number | null;

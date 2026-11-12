@@ -7,7 +7,9 @@ import {
   budgetSpentCents,
   budgetStatus,
   carriedCents,
+  carryCapFor,
   categoryConflicts,
+  periodMaxOf,
   currentBudgetPeriod,
   sortByUrgency,
 } from './budgets';
@@ -159,6 +161,29 @@ describe('carry-over replay', () => {
     const capped = budget({ carryOver: 1, carryMode: 'cap', carryCapCents: 12_000 });
     // three empty weeks would carry 300 — the cap holds it at 120
     expect(carriedCents(capped, [], budgetFamily(['groceries'], catalog), '2026-06-24')).toBe(12_000);
+  });
+
+  it('#534: the maximum is the most a period may hold — the coffee budget of the ticket, week by week', () => {
+    // €20 a week, never more than €50 in a week; the weeks spend 10, 5, 8 and 38
+    const coffee = budget({ amountCents: 2000, carryOver: 1, carryMode: 'cap', carryCapCents: carryCapFor(5000, 2000) });
+    const family = budgetFamily(['groceries'], catalog);
+    const txs = [tx('2026-06-02', -1000), tx('2026-06-09', -500), tx('2026-06-16', -800), tx('2026-06-23', -3800)];
+    const holds = (today: string) => coffee.amountCents + carriedCents(coffee, txs, family, today);
+    expect(holds('2026-06-08')).toBe(3000);
+    expect(holds('2026-06-15')).toBe(4500);
+    // 45 − 8 + 20 would be 57: the maximum holds it at 50
+    expect(holds('2026-06-22')).toBe(5000);
+    expect(holds('2026-06-29')).toBe(3200);
+  });
+
+  it('#534: a stored budget shows the same maximum it always had in effect: what may pile up, plus the period\'s own amount', () => {
+    const stored = budget({ amountCents: 2000, carryOver: 1, carryMode: 'cap', carryCapCents: 5000 });
+    expect(periodMaxOf(stored)).toBe(7000);
+    expect(carryCapFor(7000, 2000)).toBe(5000);
+    // a maximum that leaves no room above the amount piles nothing up
+    expect(carryCapFor(2000, 2000)).toBe(0);
+    expect(carryCapFor(1500, 2000)).toBe(0);
+    expect(periodMaxOf(budget({ carryOver: 1, carryMode: 'periods' }))).toBeNull();
   });
 
   it('overspending eats into the carried amount, never below zero', () => {

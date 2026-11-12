@@ -96,11 +96,17 @@ describe('the budget form, signed in', () => {
     fireEvent.change(screen.getByTestId('budgetform-resetday'), { target: { value: '12' } });
     fireEvent.click(screen.getByTestId('budgetform-carry'));
     fireEvent.click(await screen.findByTestId('budgetform-carrymode-cap'));
-    fireEvent.change(screen.getByTestId('budgetform-carrycap'), { target: { value: '150' } });
+    // #534: the field is the most a period may hold — a maximum that leaves nothing above the amount is refused by name
+    fireEvent.change(screen.getByTestId('budgetform-carrycap'), { target: { value: '50' } });
     fireEvent.click(chip(90));
     fireEvent.click(screen.getByTestId('budgetform-save'));
+    expect(await screen.findByTestId('budgetform-carrycap-blocker')).toBeTruthy();
+    expect(screen.queryByTestId('screen-budgets')).toBeNull();
+    fireEvent.change(screen.getByTestId('budgetform-carrycap'), { target: { value: '150' } });
+    fireEvent.click(screen.getByTestId('budgetform-save'));
     await screen.findByTestId('screen-budgets');
-    await waitFor(() => expect(sent.at(-1)).toMatchObject({ notifyAtPct: 90, resetDay: 12, carryMode: 'cap', carryCapCents: 15_000 }));
+    // stored as what may pile up on top of the period's own 50
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ notifyAtPct: 90, resetDay: 12, carryMode: 'cap', carryCapCents: 10_000 }));
 
     const card = await waitFor(() => {
       const el = document.querySelector('[data-testid^="budget-card-"]');
