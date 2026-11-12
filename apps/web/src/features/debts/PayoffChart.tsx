@@ -1,4 +1,5 @@
 import { monotonePath } from '@/ui/charts/monotone';
+import { useUserInk } from '@/ui/userInk';
 import { axisFraction, hasTail } from '@/domain/debtPlan';
 import type { ChartAxis, ChartTick, WalkPoint } from '@/domain/debtPlan';
 
@@ -80,7 +81,7 @@ function AmountCue({ x, y, anchor, text, testId }: Readonly<{ x: number; y: numb
 }
 
 export function PayoffChart({
-  series,
+  series: given,
   axis,
   ticks,
   height = 120,
@@ -95,6 +96,8 @@ export function PayoffChart({
   /** words an amount of cents for the scale's two cues; none = no cues */
   amount?: (cents: number) => string;
 }>) {
+  const ink = useUserInk();
+  const series = given.map((s) => ({ ...s, color: ink(s.color) }));
   if (!series.some((s) => s.points.length > 1)) return null;
   // balances never go below zero: the scale runs from the zero line to the biggest opening balance
   const top = Math.max(1, ...series.flatMap((s) => s.points.map((point) => point.value)));

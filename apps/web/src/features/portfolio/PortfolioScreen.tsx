@@ -296,7 +296,7 @@ export function PortfolioScreen() {
             </div>
             {/* allocation as a stacked bar — the mix at a glance */}
             {model.totals.totalCents > 0 && (
-              <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-bg-2" data-testid="pf-allocation">
+              <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-track" data-testid="pf-allocation">
                 {model.totals.allocation.map((slice) => (
                   <span key={slice.assetClass} style={{ width: `${slice.share * 100}%`, background: CLASS_COLORS[slice.assetClass] }} />
                 ))}

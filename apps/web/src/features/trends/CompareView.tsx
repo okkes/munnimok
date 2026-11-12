@@ -143,7 +143,7 @@ export function CompareView({
             return (
               <div key={row.period.start} className="flex items-center gap-2 text-[11px]" data-testid={`trends-compare-row-${graphId}-${i}`}>
                 <span className={`w-14 shrink-0 ${current ? 'font-semibold text-ink' : 'text-ink-3'}`}>{fmtDay(row.period.start, lang)}</span>
-                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-bg-2">
+                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
                   <span
                     className="block h-full rounded-full"
                     style={{ width: `${(row.cents / max) * 100}%`, background: current ? color : 'var(--m-ink-4)' }}

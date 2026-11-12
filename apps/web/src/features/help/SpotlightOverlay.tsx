@@ -173,7 +173,7 @@ export function SpotlightOverlay({
         <div className="mt-3 flex items-center gap-2">
           <div className="flex flex-1 gap-1.5" data-testid="spotlight-dots">
             {tour.steps.map((s, i) => (
-              <span key={s.titleKey} className={`h-1.5 w-1.5 rounded-full ${i === step ? 'bg-accent' : 'bg-bg-2'}`} />
+              <span key={s.titleKey} className={`h-1.5 w-1.5 rounded-full ${i === step ? 'bg-accent' : 'bg-track'}`} />
             ))}
           </div>
           <button data-testid="spotlight-end" onClick={onEnd} className="m-tap border-none bg-transparent text-[12px] text-ink-4">

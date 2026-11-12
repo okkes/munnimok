@@ -69,7 +69,7 @@ export function BreakdownView({
                   {fmt(cents)} · {share(cents)}
                 </span>
               </span>
-              <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-bg-2">
+              <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-track">
                 <span className="block h-full rounded-full" style={{ width: `${(cents / top) * 100}%`, background: color }} />
               </span>
             </span>

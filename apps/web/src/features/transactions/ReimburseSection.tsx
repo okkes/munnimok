@@ -172,7 +172,11 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
             {t('reimb.settled')}
           </div>
         )}
-        {(linkedTxs ?? []).length === 0 && total === 0 && <div className="px-4 py-4" data-testid="reimb-empty-note" />}
+        {(linkedTxs ?? []).length === 0 && total === 0 && (
+          <div className="px-4 py-4 text-center text-[12px] text-ink-4" data-testid="reimb-empty-note">
+            {t('reimb.noneYet')}
+          </div>
+        )}
       </div>
     </>
   );

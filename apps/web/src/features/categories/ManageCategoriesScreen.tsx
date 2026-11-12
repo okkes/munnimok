@@ -14,6 +14,7 @@ import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
+import { useUserInk } from '@/ui/userInk';
 import { IconPicker } from '@/ui/IconPicker';
 import { Sheet } from '@/ui/Sheet';
 import {
@@ -184,6 +185,7 @@ function GroupHeader({
   onEdit?: () => void;
   t: TFunc;
 }>) {
+  const ink = useUserInk();
   const hold = useHoldMenu(true, onMenu);
   return (
     <div className="mt-5 mb-1 flex items-center gap-2 px-1">
@@ -196,7 +198,7 @@ function GroupHeader({
           onToggle();
         }}
         className={`m-tap relative isolate flex h-8 min-w-0 flex-1 select-none items-center gap-2.5 border-none bg-transparent p-0 text-left text-[14px] font-semibold ${hold.holding ? 'm-holding' : ''}`}
-        style={{ color: parent.color }}
+        style={{ color: ink(parent.color) }}
       >
         <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} />
         <Icon name={parent.icon} size={20} />
@@ -223,6 +225,7 @@ function GroupHeader({
 
 /** a main while a sub is lifted: a drop row, or a refused one that says why */
 function DropRow({ parent, state, target, home, t }: Readonly<{ parent: Cat; state: DropState; target: boolean; home: boolean; t: TFunc }>) {
+  const ink = useUserInk();
   if (state !== 'open') {
     return (
       <div
@@ -242,7 +245,7 @@ function DropRow({ parent, state, target, home, t }: Readonly<{ parent: Cat; sta
   return (
     <div data-testid={`cats-drop-${parent.id}`} className={`mt-2 flex items-center gap-2.5 rounded-card border px-4 py-3.5 transition-colors ${tone}`}>
       <Icon name={parent.icon} size={17} color={parent.color} />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: parent.color }}>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: ink(parent.color) }}>
         {catName(parent, t)}
       </span>
       <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold text-ink-3">{t(`tx.type.${parent.txTypes[0]}`)}</span>
@@ -287,6 +290,7 @@ export function ManageCategoriesScreen() {
       return next;
     });
   const { t } = useLang();
+  const ink = useUserInk();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
   // #505: the space's categories are its members' to change — a reader only browses them
@@ -769,7 +773,7 @@ export function ManageCategoriesScreen() {
                   {i === 1 && <Icon name="arrow-right" size={17} color="var(--m-ink-4)" />}
                   <span
                     className="flex min-w-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] font-medium"
-                    style={{ color: end?.color }}
+                    style={{ color: ink(end?.color) }}
                   >
                     <Icon name={end?.icon ?? 'help-circle-outline'} size={15} />
                     <span className="max-w-[110px] truncate">{end ? catName(end, t) : '?'}</span>

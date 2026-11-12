@@ -50,6 +50,9 @@ switch ($Mode) {
     }
 }
 
+# PW_VARIANT (e.g. en-dark-mobile) rides along when the caller set it: the same scenes in another look
+if ($env:PW_VARIANT) { $extra += @('-e', "PW_VARIANT=$($env:PW_VARIANT)") }
+
 docker run --rm --network munni-e2e_default -v "${root}:/work" -w /work/apps/web `
     @extra -e PW_BASE_URL='http://localhost:5174' -e E2E_API_URL='http://api:8080' `
     "mcr.microsoft.com/playwright:v$ver-noble" sh -c $run

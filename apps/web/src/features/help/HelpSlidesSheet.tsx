@@ -41,7 +41,7 @@ export function HelpSlidesSheet({
           <p className="min-h-16 text-[13px] leading-relaxed text-ink-2">{t(slide.bodyKey)}</p>
           <div className="flex gap-1.5 py-1" data-testid="help-dots">
             {tour.steps.map((s, i) => (
-              <span key={s.titleKey} className={`h-1.5 w-1.5 rounded-full ${i === step ? 'bg-accent' : 'bg-bg-2'}`} />
+              <span key={s.titleKey} className={`h-1.5 w-1.5 rounded-full ${i === step ? 'bg-accent' : 'bg-track'}`} />
             ))}
           </div>
           <div className="flex w-full gap-2 pt-1">

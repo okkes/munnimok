@@ -32,7 +32,7 @@ export function AheadCircle({
   const body = (
     <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--m-bg-2)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--m-track)" strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}

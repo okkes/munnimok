@@ -18,6 +18,10 @@
   --m-ink-4: #9a9384;
   --m-line: #e2dcce;
   --m-line-2: #efeae0;
+  /* what a progress bar or a ring runs along, and a chart's bars that are not the picked one: quiet, but
+     always lighter or darker than the card they sit on (#592: in dark the page tone vanished on a card) */
+  --m-track: #efeae0;
+  --m-bar-idle: #e2dcce;
 
   --m-brand: #08372b;
   --m-on-brand: #f7f4ee;
@@ -50,6 +54,8 @@
   --m-ink-4: #7a7466;
   --m-line: #383530;
   --m-line-2: #2e2b26;
+  --m-track: #3b3832;
+  --m-bar-idle: #4d483f;
 
   --m-brand: #6fae97;
   --m-on-brand: #10231d;
@@ -77,6 +83,7 @@
   --color-ink-4: var(--m-ink-4);
   --color-line: var(--m-line);
   --color-line-2: var(--m-line-2);
+  --color-track: var(--m-track);
   --color-brand: var(--m-brand);
   --color-on-brand: var(--m-on-brand);
   --color-accent: var(--m-accent);

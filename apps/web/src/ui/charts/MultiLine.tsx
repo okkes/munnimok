@@ -7,12 +7,13 @@
  *  `onPointClick` the chart stays decorative: aria-hidden, one end-dot
  *  per series. #168 r3 (user): smoothing is monotone cubic (no
  *  overshoot dips) and the plot keeps dot-sized vertical padding. */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import { monotonePath, monotonePointAt } from './monotone';
 import type { ChartPt } from './monotone';
 import { pointerFraction, scrubKeyTarget } from './scrub';
 import { useGlide } from './useGlide';
+import { useUserInk } from '@/ui/userInk';
 
 /** #168 r3 (user): room for the r=4.5 selected dot + 2px stroke — the
  *  peak's dot clipped the viewBox edge */
@@ -222,7 +223,7 @@ function ChartDot({
 }
 
 export function MultiLine({
-  series,
+  series: given,
   labels,
   height = 140,
   testId,
@@ -257,6 +258,8 @@ export function MultiLine({
   /** #510: read any index with a finger, a mouse or the arrow keys */
   scrub?: ChartScrub;
 }>) {
+  const ink = useUserInk();
+  const series = useMemo(() => given.map((s) => ({ ...s, color: ink(s.color) })), [given, ink]);
   const [scrubbed, setScrubbed] = useState<number | null>(null);
   // a landing finger glides the bead in from its resting point; a drag follows directly
   const [dragging, setDragging] = useState(false);

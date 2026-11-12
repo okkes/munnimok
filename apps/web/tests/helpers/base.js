@@ -40,9 +40,9 @@ export function freshCamtFixture() {
 // id format: '{lang}-{theme}-{viewport}'
 // Single default variant: EN, light, mobile.
 // Dark / TR / desktop are evaluated manually when explicitly requested.
-export const VARIANTS = [
-  { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 },
-];
+const DEFAULT_VARIANT = { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 };
+// PW_VARIANT=en-dark-mobile: the same run in the dark theme, for a visual pass asked for by hand (#592)
+export const VARIANTS = [process.env.PW_VARIANT === 'en-dark-mobile' ? { ...DEFAULT_VARIANT, id: 'en-dark-mobile', dark: true } : DEFAULT_VARIANT];
 
 // The gallery's screenshots and videos are local artefacts (the guide, the
 // visual review); CI keeps neither, so it records no video and takes no shots.
