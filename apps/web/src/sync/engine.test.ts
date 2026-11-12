@@ -50,6 +50,8 @@ class InMemoryServer implements SyncBackend {
   /** the spaces each pull asked for, in order */
   pulledSpaces: string[] = [];
   pushCalls: number[] = [];
+  /** a push of more ops than this answers 413 — the stand-in for a body-size cap */
+  maxOpsPerPush: number | null = null;
   /** every push REQUEST that arrived, denied ones included */
   pushAttempts: string[] = [];
 
@@ -57,6 +59,7 @@ class InMemoryServer implements SyncBackend {
     this.pushAttempts.push(spaceId);
     if (this.forbiddenSpaces.has(spaceId) || this.readerSpaces.has(spaceId)) throw new SyncHttpError(403);
     if (this.rejectedSpaces.has(spaceId)) throw new SyncHttpError(400);
+    if (this.maxOpsPerPush !== null && ops.length > this.maxOpsPerPush) throw new SyncHttpError(413);
     this.pushCalls.push(ops.length);
     for (const op of ops) {
       if (this.seenOpIds.has(op.opId)) continue;
@@ -794,6 +797,20 @@ describe('SyncEngine', () => {
     expect(poisonOutbox).toHaveLength(0);
     const parked = (await a.db.meta.get('parkedOps_s-poison'))?.value as unknown[];
     expect(parked.length).toBeGreaterThan(0);
+  });
+
+  it('a push too large for the server (413) is split until it fits: everything arrives and nothing is parked', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Photos', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    for (let i = 0; i < 9; i++) await a.repo.upsert('receipt', 's1', `photo${i}`, { source: 'photo', totalCents: i });
+    server.maxOpsPerPush = 3;
+    await a.engine.syncAll();
+    expect(await a.db.outbox.count()).toBe(0);
+    expect(server.pushCalls).toEqual([3, 2, 3, 2]);
+    expect(await a.db.meta.get('parkedOps_s1')).toBeUndefined();
+    expect((await server.pull('s1', 0)).ops.filter((op) => op.entity === 'receipt')).toHaveLength(9);
   });
 
   it('parked (400-rejected) ops are re-offered and catch up once the server accepts them', async () => {

@@ -394,13 +394,14 @@ export class SyncEngine {
       await this.store.outboxDelete(chunk.map((o) => o.opId));
       this.pushed += chunk.length;
     } catch (err) {
-      if (!(err instanceof SyncHttpError) || err.status !== 400) throw err;
+      // 413: the request outgrew what the server or a proxy before it takes — the same ops fit in smaller pushes
+      if (!(err instanceof SyncHttpError) || (err.status !== 400 && err.status !== 413)) throw err;
       if (chunk.length === 1) {
         const op = chunk[0];
         const parked = ((await this.store.metaGet(parkedKey(spaceId)))?.value as OutboxRow[] | undefined) ?? [];
         await this.store.metaPut(parkedKey(spaceId), [...parked, op].slice(-500));
         await this.store.outboxDelete([op.opId]);
-        reportError('sync', new Error(`server rejected op (400), parked: entity=${op.entity} entityId=${String(op.entityId).slice(0, 140)} space=${spaceId}`));
+        reportError('sync', new Error(`server rejected op (${err.status}), parked: entity=${op.entity} entityId=${String(op.entityId).slice(0, 140)} space=${spaceId}`));
         return;
       }
       const mid = Math.ceil(chunk.length / 2);
