@@ -60,6 +60,7 @@ describe('reading a receipt photo', () => {
     expect(categories.find((c) => c.id === 'groceries')?.name).toBe('Consumption › Grocery');
     expect(onRead).toHaveBeenCalledWith({
       reconciled: true,
+      totalCents: 879,
       currency: 'EUR',
       items: [
         { name: 'Melk', totalCents: 129, catId: 'groceries' },
@@ -91,6 +92,16 @@ describe('reading a receipt photo', () => {
     }
     expect(screen.queryByTestId('receipt-ai-ask')).toBeNull();
     expect(onRead).not.toHaveBeenCalled();
+
+    // the switch back: off on this device, and the next tap asks before anything is sent
+    expect(screen.getByTestId('receipt-ai-on').textContent).toContain('Claude, by Anthropic');
+    fireEvent.click(screen.getByTestId('receipt-ai-off'));
+    expect(receiptAi.receiptAiChoice()).toBe('no');
+    expect(screen.queryByTestId('receipt-ai-on')).toBeNull();
+    const reads = read.mock.calls.length;
+    fireEvent.click(button);
+    expect(await screen.findByTestId('receipt-ai-ask')).toBeTruthy();
+    expect(read.mock.calls).toHaveLength(reads);
   });
 
   it('the API is asked with the photos and the categories; no answer is "not available", never an error', async () => {

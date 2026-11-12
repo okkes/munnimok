@@ -5,7 +5,7 @@ import { receiptLinkId } from '@/domain/feedIds';
 import { logActivity } from './activity';
 import { acceptProposal, attachReceiptTo, detachReceiptFrom, linkedTxIds, rejectProposal, releaseLink } from './receiptLinks';
 import { myStoreFeedId } from './storeFeed';
-import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 
 /**
@@ -26,7 +26,9 @@ export interface ReceiptOps {
   /** OCR result: line items extracted from the photo (S2) */
   setItems: (linkId: string, items: ReceiptRow['items']) => Promise<void>;
   /** #567: what a reader made of the photo — its lines, whether they add up, the currency it saw */
-  setRead: (linkId: string, read: { items: NonNullable<ReceiptRow['items']>; reconciled: boolean; currency?: string }) => Promise<void>;
+  setRead: (linkId: string, read: { items: NonNullable<ReceiptRow['items']>; reconciled: boolean; totalCents: number; currency?: string }) => Promise<void>;
+  /** #567: the lines one transaction's categories were built from — kept so the sheet reopens as it was left and the next receipt learns from it */
+  setPicks: (linkId: string, txId: string, picks: ReceiptPick[]) => Promise<void>;
   /** manual attach from the picker: snapshot-link a global receipt into the space — a receipt attached
    *  elsewhere is attached here as well, the other transactions keep it */
   linkReceipt: (receipt: ReceiptRow, txId: string) => Promise<void>;
@@ -56,8 +58,8 @@ export function useReceiptOps(): ReceiptOps {
   };
   return {
     attachPhoto: async (tx, file) => {
-      // receipts want more pixels than avatars — text must stay readable
-      const image = await downscaleImage(file, 1280, 0.7);
+      // #567 (user): a reader can only read what is stored — small print on a long receipt needs these pixels
+      const image = await downscaleImage(file, 2048, 0.8);
       await repo.upsert('receiptLink', spaceId, repo.newId(), {
         txId: tx.id,
         source: 'photo',
@@ -77,7 +79,20 @@ export function useReceiptOps(): ReceiptOps {
       await repo.upsert('receiptLink', spaceId, linkId, { items });
     },
     setRead: async (linkId, read) => {
-      await repo.upsert('receiptLink', spaceId, linkId, { items: read.items, reconciled: read.reconciled, ...(read.currency ? { currency: read.currency } : {}) });
+      // the lines are new: picks made on the old ones point at other lines now
+      // and the total is the receipt's own from here on — a photo starts with its transaction's amount as a stand-in
+      await repo.upsert('receiptLink', spaceId, linkId, {
+        items: read.items,
+        reconciled: read.reconciled,
+        picks: {},
+        ...(read.totalCents > 0 ? { totalCents: read.totalCents } : {}),
+        ...(read.currency ? { currency: read.currency } : {}),
+      });
+    },
+    setPicks: async (linkId, txId, picks) => {
+      const link = await store.get('receiptLink', linkId);
+      if (!link || link.deleted === 1) return;
+      await repo.upsert('receiptLink', spaceId, linkId, { picks: { ...link.picks, [txId]: picks } });
     },
     linkReceipt: async (receipt, txId) => {
       // a 'receipts.attach' span (2026-10-09): the tap on "Yes, attach" is measured, never guessed

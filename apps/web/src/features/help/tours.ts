@@ -326,6 +326,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.receipts.1t', bodyKey: 'tour.receipts.1b', illustration: '🧾', anchor: 'receipts-search' },
       { titleKey: 'tour.receipts.2t', bodyKey: 'tour.receipts.2b', illustration: '❓' },
       { titleKey: 'tour.receipts.3t', bodyKey: 'tour.receipts.3b', illustration: '🔍' },
+      { titleKey: 'tour.receipts.4t', bodyKey: 'tour.receipts.4b', illustration: '🏷️' },
     ],
   },
   {

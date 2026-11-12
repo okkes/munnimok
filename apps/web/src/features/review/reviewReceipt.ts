@@ -45,6 +45,20 @@ export function markedReceiptId(stage: ReceiptStage, attachedId: string | null |
   return attachedId ?? autoId ?? null;
 }
 
+/** the receipt the transaction holds once the card is confirmed as it stands — the one whose lines may file it (#567) */
+export function cardReceipt(
+  stage: ReceiptStage,
+  attached: ReceiptRow | null | undefined,
+  proposal: ReceiptLinkRow | undefined,
+  auto: ReceiptRow | null,
+): Pick<ReceiptRow, 'id' | 'totalCents' | 'items'> | null {
+  if (stage.kind === 'none') return null;
+  if (stage.kind === 'picked') return stage.receipt;
+  if (attached) return attached;
+  if (proposal) return { id: proposal.receiptId ?? proposal.id, totalCents: proposal.totalCents, items: proposal.items };
+  return auto;
+}
+
 /** what the confirm writes for the card's receipt */
 export type ReceiptSettlement =
   | { kind: 'keep' }

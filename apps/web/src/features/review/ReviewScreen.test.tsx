@@ -1756,6 +1756,66 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     db.close();
   }, 25_000);
 
+  it('a receipt that says the card’s own amount files it by its lines (#567): the card shows the split before the confirm, the confirm writes it and keeps the lines with the receipt', async () => {
+    await seedShopsAndCard();
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfile'), { trackOutbox: false });
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    const { receiptLinkId } = await import('@/domain/feedIds');
+    // the Amazon receipt's lines — and an older receipt whose coffee beans the person filed under Coffee
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, {
+      items: [
+        { name: 'Koffiebonen 1 kg', totalCents: 4000 },
+        { name: 'USB-C kabel', totalCents: 1956 },
+      ],
+    });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'older_receipt', {
+      source: 'photo', date: '2025-12-01', totalCents: 4000, txId: 'dm101', auto: 0,
+      items: [{ name: 'koffiebonen 1 KG', totalCents: 4000 }],
+      picks: { dm101: [{ line: 0, catId: 'coffee', amountCents: 4000 }] },
+    });
+    seed.close();
+
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('suggested'), { timeout: 5000 });
+    // the beans as the person filed beans before, the cable under what the card suggested anyway
+    await waitFor(() => expect(screen.getByTestId('review-cats').textContent).toMatch(/Coffee/));
+    expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('ra1');
+      expect(tx?.needsReview).toBe(0);
+      expect(tx?.cats?.map(({ catId, amountCents }) => ({ catId, amountCents }))).toEqual([
+        { catId: 'coffee', amountCents: 4000 },
+        { catId: 'groceries', amountCents: 1956 },
+      ]);
+      const link = await db.receiptLinks.get(receiptLinkId(DEMO_SPACE_ID, AMAZON));
+      expect(link?.txId).toBe('ra1');
+      expect(link?.picks).toEqual({ ra1: [{ line: 0, catId: 'coffee', amountCents: 4000 }] });
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
+  it('"No receipt" on such a card leaves the filing out with the receipt (#567): the card’s own category is confirmed', async () => {
+    await seedShopsAndCard();
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfile2'), { trackOutbox: false });
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, { items: [{ name: 'Koffiebonen 1 kg', totalCents: 5956, catId: 'coffee' }] });
+    seed.close();
+
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-cats').textContent).toMatch(/Coffee/), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('review-receipt-row'));
+    fireEvent.click(await screen.findByTestId('review-receipt-none'));
+    await waitFor(() => expect(screen.getByTestId('review-cats').textContent).not.toMatch(/Coffee/));
+    expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
+  }, 25_000);
+
   /** the card's Amazon receipt, attached already */
   async function attachAmazonToCard() {
     const seed = new MunniDB('munni_demo');

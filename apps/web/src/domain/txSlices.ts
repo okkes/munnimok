@@ -113,7 +113,7 @@ export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
 
 /** floor + largest remainder: `weights` partitioned onto `targetCents`,
  *  summing exactly — the same fairness rule the pct editor uses */
-function largestRemainder(weights: readonly number[], weightTotal: number, targetCents: number): number[] {
+export function largestRemainder(weights: readonly number[], weightTotal: number, targetCents: number): number[] {
   const raw = weights.map((w) => (w * targetCents) / weightTotal);
   const floors = raw.map(Math.floor);
   let rest = targetCents - floors.reduce((a, b) => a + b, 0);

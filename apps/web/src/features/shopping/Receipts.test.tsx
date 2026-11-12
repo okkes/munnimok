@@ -173,6 +173,99 @@ describe('Receipts (demo identity)', () => {
     }
   }, 15_000);
 
+  it('a photo read to the payment’s own amount files the payment by its lines at once (#567); the receipt carries its own total from then on', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('./receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue({
+      state: 'ok',
+      until: null,
+      receipt: {
+        merchant: 'Albert Heijn',
+        date: '2026-11-12',
+        currency: 'EUR',
+        totalCents: 2310,
+        reconciled: true,
+        lines: [
+          { name: 'Halfvolle melk', quantity: 1, unitCents: 1000, totalCents: 1000, kind: 'item', categoryId: null },
+          { name: 'Chocolade', quantity: 1, unitCents: 800, totalCents: 800, kind: 'item', categoryId: 'sweets' },
+          { name: 'Brood', quantity: 1, unitCents: 760, totalCents: 760, kind: 'item', categoryId: null },
+          { name: 'Bonus', quantity: 1, unitCents: 250, totalCents: -250, kind: 'discount', categoryId: null },
+        ],
+      },
+    });
+    receiptAi.setReceiptAiChoice('yes');
+    try {
+      renderApp('/transactions/dm101');
+      await screen.findByTestId('receipt-empty');
+      fireEvent.click(await attachPhoto());
+      await screen.findByTestId('screen-receipt');
+      fireEvent.click(await screen.findByTestId('receipt-ai-read'));
+      await screen.findByText('Chocolade');
+
+      const { db, repo } = await demoRepo();
+      await waitFor(async () => {
+        const tx = await repo.store.get('transaction', 'dm101');
+        expect(tx?.cats?.map(({ catId, amountCents }) => ({ catId, amountCents }))).toEqual([
+          { catId: 'sweets', amountCents: 722 },
+          { catId: 'groceries', amountCents: 1588 },
+        ]);
+      });
+      const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0);
+      expect(link?.totalCents).toBe(2310);
+      expect(link?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
+      db.close();
+    } finally {
+      caps.mockRestore();
+      read.mockRestore();
+    }
+  }, 20_000);
+
+  it('a payment is categorised by its receipt’s lines (#567): a ticked line takes a category and its paid share, the rest stays where it was, and the sheet reopens on it', async () => {
+    renderApp('/transactions/dm101');
+    await screen.findByTestId('receipt-empty');
+    await attachPhoto();
+    // a photo nobody read yet has no lines to categorise by
+    expect(screen.queryByTestId('receipt-categorise')).toBeNull();
+
+    // the lines a reader would hand back: 25.60 printed, 2.50 off, 23.10 paid — the payment's own amount
+    const { db, repo } = await demoRepo();
+    const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0)!;
+    await repo.upsert('receiptLink', 'demo_space', link.id, {
+      totalCents: 2310,
+      items: [
+        { name: 'Halfvolle melk', totalCents: 1000 },
+        { name: 'Chocolade', totalCents: 800 },
+        { name: 'Brood', totalCents: 760 },
+        { name: 'Bonus', totalCents: -250, kind: 'discount' },
+      ],
+    });
+
+    fireEvent.click(await screen.findByTestId('receipt-categorise'));
+    await screen.findByTestId('receiptcats-sheet');
+    expect(screen.getByTestId('receiptcats-left').textContent).toContain('23.10');
+    fireEvent.click(screen.getByTestId('receiptcats-tick-1'));
+    fireEvent.click(screen.getByTestId('receiptcats-categorise'));
+    fireEvent.click(await screen.findByTestId('catpicker-sweets'));
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect(screen.getByTestId('receiptcats-left').textContent).toContain('15.88');
+    expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Grocery');
+    fireEvent.click(screen.getByTestId('receiptcats-apply'));
+
+    // the payment carries the spread: the chocolate apart, the rest still groceries
+    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Sweets & Treats.*7\.22/));
+    expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Grocery.*15\.88/);
+    await waitFor(async () => {
+      const stored = await repo.store.get('receiptLink', link.id);
+      expect(stored?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
+    });
+    db.close();
+
+    fireEvent.click(screen.getByTestId('receipt-categorise'));
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
+  }, 20_000);
+
   it('the receipts browser lists receipts and opens the full view', async () => {
     await openFirstTx();
     await attachPhoto();

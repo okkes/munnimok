@@ -11,6 +11,8 @@ import type { ReadCategory, ReceiptReadReply } from './receiptAi';
 export interface ReceiptReadOutcome {
   items: ReceiptItem[];
   reconciled: boolean;
+  /** what the receipt itself says was paid */
+  totalCents: number;
   currency?: string;
 }
 
@@ -45,6 +47,8 @@ export function ReceiptAiRead({
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState<ReceiptReadReply | null>(null);
+  // the person's say, mirrored so the off-switch shows and hides without a reload
+  const [agreed, setAgreed] = useState(() => receiptAiChoice() === 'yes');
 
   const read = async () => {
     setBusy(true);
@@ -53,7 +57,12 @@ export function ReceiptAiRead({
       const answer = await readReceiptPhotos(images, categories);
       setReply(answer);
       if (answer.state === 'ok' && answer.receipt) {
-        await onRead({ items: itemsFromRead(answer.receipt), reconciled: answer.receipt.reconciled, ...(answer.receipt.currency ? { currency: answer.receipt.currency } : {}) });
+        await onRead({
+          items: itemsFromRead(answer.receipt),
+          reconciled: answer.receipt.reconciled,
+          totalCents: answer.receipt.totalCents,
+          ...(answer.receipt.currency ? { currency: answer.receipt.currency } : {}),
+        });
       }
     } finally {
       setBusy(false);
@@ -84,6 +93,22 @@ export function ReceiptAiRead({
           {note[reply.state]}
         </p>
       )}
+      {/* user: a switch to turn it off again — where the reading happens, so it is found */}
+      {agreed && (
+        <p className="text-center text-[11px] leading-snug text-ink-4" data-testid="receipt-ai-on">
+          {t('receipt.ai.onNote')}{' '}
+          <button
+            data-testid="receipt-ai-off"
+            onClick={() => {
+              setReceiptAiChoice('no');
+              setAgreed(false);
+            }}
+            className="m-tap border-none bg-transparent p-0 text-[11px] font-medium text-accent-deep underline"
+          >
+            {t('receipt.ai.turnOff')}
+          </button>
+        </p>
+      )}
       <Sheet open={asking} onOpenChange={setAsking} title={t('receipt.ai.askTitle')} size="form">
         <div className="flex flex-col gap-3 pt-1" data-testid="receipt-ai-ask">
           <p className="text-[13px] leading-snug text-ink-2">{t('receipt.ai.askBody')}</p>
@@ -92,6 +117,7 @@ export function ReceiptAiRead({
             data-testid="receipt-ai-yes"
             onClick={() => {
               setReceiptAiChoice('yes');
+              setAgreed(true);
               setAsking(false);
               void read();
             }}
@@ -103,6 +129,7 @@ export function ReceiptAiRead({
             data-testid="receipt-ai-no"
             onClick={() => {
               setReceiptAiChoice('no');
+              setAgreed(false);
               setAsking(false);
             }}
           >

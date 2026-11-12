@@ -19,6 +19,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { ReceiptAiRead } from './ReceiptAiRead';
+import { useFileByReceipt } from './useFileByReceipt';
 import { ReceiptBody, receiptTitle } from './ReceiptBody';
 import type { ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
@@ -65,6 +66,7 @@ export function ReceiptScreen({
   const txs = useSpaceTransactions();
   const metas = useStoreConnMetas();
   const receiptOps = useReceiptOps();
+  const fileByReceipt = useFileByReceipt();
   // #505: a space's receipt is its members' to link, read or remove; a connection's own receipt stays the person's
   const spaceLocked = !useCanEdit() && scope === 'space';
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
@@ -210,7 +212,7 @@ export function ReceiptScreen({
                             tx={tx}
                             showDate
                             onClick={() => {
-                              void receiptOps.linkReceipt(receipt, tx.id);
+                              void receiptOps.linkReceipt(receipt, tx.id).then(() => fileByReceipt(tx.id));
                               setPicking(false);
                             }}
                           />
@@ -233,7 +235,11 @@ export function ReceiptScreen({
                   <ReceiptAiRead
                     images={[receipt.image]}
                     hasItems={!!receipt.items?.length}
-                    onRead={(outcome) => receiptOps.setRead(entry.linkId!, outcome)}
+                    onRead={async (outcome) => {
+                      await receiptOps.setRead(entry.linkId!, outcome);
+                      // #567: now that the lines are known, a payment of the same amount is filed by them
+                      for (const txId of entry.txIds ?? []) await fileByReceipt(txId);
+                    }}
                   />
                 )}
                 {photoBorn && !spaceLocked && !aiReader && !receipt.items?.length && connectorsAvailable() && (

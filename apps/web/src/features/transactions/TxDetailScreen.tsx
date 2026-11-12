@@ -2494,6 +2494,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const savePartLabel = (raw: string): void => writePartLabel(transform, tx, partView, partDefault, raw);
   const renameProps = renameSheetProps(tx, partView, partDefault, savePartLabel, renameTitle);
   const screenTitle = detailScreenTitle(tx, parts, partView, t);
+  // #567: an ordinary payment whose categories are the person's to edit can be filed by its receipt's lines; the
+  // offer to repeat a spread on similar payments stays out — their receipts are other receipts
+  const byReceipt =
+    canEdit && !partView && !multiPart && !categoryLocked && tx.amountCents < 0 && tx.txType === 'expense'
+      ? (entries: TxSplitCat[]) =>
+          applyRowCats({ tx, settledCents: settledPartitionCents, transform, applySingle: applySingleEntry, armCatsBulk: () => undefined }, entries)
+      : undefined;
   const trailingAction = canEdit ? detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true)) : null;
   // the values editor edits the STAGE when one exists, else the stored
   // parts; classic mode stays uncontrolled
@@ -2685,7 +2692,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
                 />
               ),
               reimburse: attachable ? <ReimburseSection tx={tx} /> : null,
-              receipts: attachable ? <ReceiptSection tx={tx} /> : null,
+              receipts: attachable ? <ReceiptSection tx={tx} onCategorise={byReceipt} /> : null,
               notes: attachable ? (
                 <>
                   <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>

@@ -556,6 +556,15 @@ export interface ReceiptItem {
   catId?: string;
 }
 
+/** #567: one receipt line filed under a category, for one transaction */
+export interface ReceiptPick {
+  /** the line's index among the receipt's items */
+  line: number;
+  catId: string;
+  /** what of the transaction the line stands for: its printed value, what was paid after the discount, or a typed amount */
+  amountCents: number;
+}
+
 /** a document the party issued for the purchase — an invoice, mostly
  *  (the connector's `include=invoice`); carried inline as a data URL */
 export interface ReceiptDocument {
@@ -755,6 +764,8 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   reconciled?: boolean;
   /** #567: the currency a reader found on the receipt; absent = the space's */
   currency?: string;
+  /** #567: how each attached transaction's categories were built from the lines, by transaction id */
+  picks?: Record<string, ReceiptPick[]>;
   image?: string;
   payment?: ReceiptPayment;
   /** the invoices ride the snapshot like a photo does — members open them without the owner's feed */

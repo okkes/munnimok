@@ -65,8 +65,9 @@ import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVis
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
 import { BulkCounterQueue, CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
 import { setReviewReturn, takeReviewReturn } from './reviewReturn';
-import { AUTO_STAGE, markedReceiptId, receiptSettlement } from './reviewReceipt';
+import { AUTO_STAGE, cardReceipt, markedReceiptId, receiptSettlement } from './reviewReceipt';
 import type { ReceiptStage } from './reviewReceipt';
+import { keepFiledPicks, useReceiptFiled } from './useReceiptFiled';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -76,6 +77,12 @@ const REASON_KEYS = {
   'history-amount': 'review.reasonAmount',
   keyword: 'review.reasonKeyword',
 } as const;
+
+/** why the card shows its category: its receipt's lines filed it (#567), else the prediction's own reason */
+function cardReason(filedByReceipt: boolean, shown: ReviewSuggestion | undefined, t: ReturnType<typeof useLang>['t']): string | null {
+  if (filedByReceipt) return t('receiptcats.autoNote');
+  return shown?.source ? t(REASON_KEYS[shown.source], { n: shown.evidence ?? 1 }) : null;
+}
 
 /** #228 feedback: the card Counterparty row's two doors — tap opens the
  *  ask (narrowed by the staged category), detach resets the pick (the
@@ -1850,7 +1857,6 @@ export function ReviewScreen() {
     () => (tx ? (suggestion?.draft ?? fileRememberedCounter(initDraft(tx, undefined, cats), spaceAccounts, cats, tx.amountCents, ownStamp)) : null),
     [tx, suggestion, cats, spaceAccounts, ownStamp],
   );
-  const draft = stagedDraft ?? spreadDraft;
   // user ss 2026-10-05: the receipt is part of the review — a fetched
   // receipt that fits this card asks HERE (yes / no / pick another); what
   // the person decides here is decided on the Receipts screen as well
@@ -1889,6 +1895,14 @@ export function ReviewScreen() {
         : null,
     [tx, receiptProposal, attachedReceipt, receiptCandidates, preparedReceiptId],
   );
+  // #567 (user): a receipt that says the card's own amount files it by its lines — the card shows that filing and
+  // Confirm writes it; a category staged by hand outranks it, and so does "no receipt"
+  const filingReceipt = useMemo(
+    () => cardReceipt(receiptStage, attachedReceipt, receiptProposal, autoReceipt),
+    [receiptStage, attachedReceipt, receiptProposal, autoReceipt],
+  );
+  const receiptFiled = useReceiptFiled(tx, spreadDraft, stagedDraft, filingReceipt, cats);
+  const draft = stagedDraft ?? receiptFiled?.draft ?? spreadDraft;
   const receiptRow = tx ? receiptRowFor({ attached: attachedReceipt, proposal: receiptProposal, stage: receiptStage, auto: autoReceipt }, tx.currency, lang, t) : null;
   const lookAtReceipt = (receipt: ReceiptRow) => {
     setReceiptLook(receipt);
@@ -1980,7 +1994,8 @@ export function ReviewScreen() {
   const draftSplits = draft?.splits;
   const draftCats = draft?.cats;
   const similar = useMemo(() => {
-    if (!tx || !queue) return [] as SpaceTx[];
+    // a filing made from this card's receipt is this payment's alone: similar payments have receipts of their own
+    if (!tx || !queue || receiptFiled) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
     const mustMatchAmount =
       (!!draftSplits?.length && !splitsArePct(draftSplits)) ||
@@ -2003,7 +2018,7 @@ export function ReviewScreen() {
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
-  }, [tx, queue, draftSplits, draftCats, skipped]);
+  }, [tx, queue, draftSplits, draftCats, skipped, receiptFiled]);
 
   // fresh card: reset the staged draft and offer the link. This runs
   // DURING render (previous-id ref pattern), not in an effect — a late
@@ -2115,8 +2130,7 @@ export function ReviewScreen() {
   });
 
   const showReason = !!tx && !stagedDraft && !!suggestion?.source && suggestion.predictedCatId === draft?.catId;
-  const reasonLine =
-    showReason && suggestion?.source ? t(REASON_KEYS[suggestion.source], { n: suggestion.evidence ?? 1 }) : null;
+  const reasonLine = cardReason(!!receiptFiled, showReason ? suggestion : undefined, t);
 
   // #211: the cats editor spreads the NET money — a settled `reimbursed`
   // entry is bookkeeping, held aside and re-attached on stage
@@ -2213,6 +2227,7 @@ export function ReviewScreen() {
       if (plan.reject) await receiptOps.rejectMatch(plan.reject);
       await applyPick(receiptOps, tx.id, receiptEntry ?? null, plan.receipt);
     }
+    await keepFiledPicks(receiptOps, spaceId, tx.id, receiptFiled, { receiptId: attachedReceipt?.id, linkId: receiptEntry?.linkId });
   };
 
   /** what a bulk confirm leaves to walk (#268, #495): the counter queue first — the receipt walk then takes the
