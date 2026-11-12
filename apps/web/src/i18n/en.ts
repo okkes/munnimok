@@ -1369,6 +1369,7 @@ export const en = {
   'sync.step.server': 'Asking the server about your account',
   'sync.step.spaces': 'Fetching your spaces',
   'sync.step.count': '{done} of {total}',
+  'sync.step.changes': '{count} changes',
   'sync.stillWaiting': 'This is taking longer than it should. munni is still waiting at the step in bold. Keep waiting, or sign out and sign in again — Diagnose shows what the app sees.',
   'sync.diagnose': 'Diagnose',
   'sync.status': 'Sync',

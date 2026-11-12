@@ -1370,6 +1370,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'sync.step.server': 'De server naar je account vragen',
   'sync.step.spaces': 'Je ruimtes ophalen',
   'sync.step.count': '{done} van {total}',
+  'sync.step.changes': '{count} wijzigingen',
   'sync.stillWaiting': 'Dit duurt langer dan zou moeten. munni wacht nog bij de vetgedrukte stap. Blijf wachten, of log uit en meld je opnieuw aan — Diagnose laat zien wat de app ziet.',
   'sync.diagnose': 'Diagnose',
   'sync.status': 'Synchronisatie',

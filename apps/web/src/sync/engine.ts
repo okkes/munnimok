@@ -54,7 +54,8 @@ export interface SyncEngineOptions {
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
 
 /** a round asks the server what exists, then takes the spaces one by one */
-export type RoundProgress = { phase: 'server' } | { phase: 'spaces'; done: number; total: number };
+/** `changes`: what the round has fetched so far — one large space holds a first sync at `done: 0` for a long time */
+export type RoundProgress = { phase: 'server' } | { phase: 'spaces'; done: number; total: number; changes: number };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -263,8 +264,9 @@ export class SyncEngine {
    */
   private async syncEach(spaceIds: string[], serverSet: ReadonlySet<string>, headOf: ReadonlyMap<string, number>, round: Span): Promise<unknown> {
     let firstError: unknown = null;
-    let done = 0;
-    this.tell({ phase: 'spaces', done, total: spaceIds.length });
+    this.spacesDone = 0;
+    this.spacesTotal = spaceIds.length;
+    this.tellSpaces();
     for (const spaceId of spaceIds) {
       if (this.stopped) return firstError;
       try {
@@ -277,10 +279,18 @@ export class SyncEngine {
         if (isTransient(err)) throw err;
         firstError ??= err;
       }
-      done += 1;
-      this.tell({ phase: 'spaces', done, total: spaceIds.length });
+      this.spacesDone += 1;
+      this.tellSpaces();
     }
     return firstError;
+  }
+
+  /** the spaces of the round in flight, for its progress */
+  private spacesDone = 0;
+  private spacesTotal = 0;
+
+  private tellSpaces(): void {
+    this.tell({ phase: 'spaces', done: this.spacesDone, total: this.spacesTotal, changes: this.pulled });
   }
 
   private async runRound(round: Span): Promise<void> {
@@ -519,8 +529,11 @@ export class SyncEngine {
     await measure(
       'sync.pull',
       async (pull) => {
-        const rows = await drainPull(this.store, this.repo, this.backend, spaceId, { since });
-        this.pulled += rows;
+        const onPage = (applied: number) => {
+          this.pulled += applied;
+          this.tellSpaces();
+        };
+        const rows = await drainPull(this.store, this.repo, this.backend, spaceId, { since, onPage });
         pull.setAttribute('sync.rows', rows);
       },
       undefined,

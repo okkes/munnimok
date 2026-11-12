@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setOidcSignIn } from '@/app/authToken';
+import { useBootStep } from '@/app/bootStep';
 import { connectTuning } from '@/app/data';
 import { useSession } from '@/app/session';
 import { HlcClock } from '@/sync/hlc';
@@ -104,6 +105,15 @@ describe('DataProvider startup (local-first)', () => {
     fireEvent.click(screen.getByTestId('connect-diagnose'));
     const report = await screen.findByTestId('connect-diagnose-report', {}, { timeout: 4000 });
     expect((report as HTMLTextAreaElement).value).toContain('waitingAt: server');
+
+    // one large space keeps the count of spaces at 0 for a long while: the changes fetched so far say that it
+    // moves — on the screen and in the report, where two copies a minute apart tell a standstill from a slow start
+    act(() => useBootStep.getState().set({ step: 'spaces', done: 0, total: 24, changes: 12_000 }));
+    await waitFor(() => expect(steps.querySelector('[data-step="spaces"]')?.textContent).toContain('0 of 24 · 12000 changes'));
+    fireEvent.click(screen.getByTestId('connect-diagnose'));
+    await waitFor(() =>
+      expect((screen.getByTestId('connect-diagnose-report') as HTMLTextAreaElement).value).toContain('waitingAt: spaces 0/24, 12000 changes'),
+    );
   }, 15_000);
 
   it(

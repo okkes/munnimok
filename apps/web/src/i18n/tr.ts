@@ -1370,6 +1370,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'sync.step.server': 'Sunucuya hesabın soruluyor',
   'sync.step.spaces': 'Alanların getiriliyor',
   'sync.step.count': '{done} / {total}',
+  'sync.step.changes': '{count} değişiklik',
   'sync.stillWaiting': 'Bu, olması gerekenden uzun sürüyor. munni hâlâ kalın yazılı adımda bekliyor. Beklemeye devam et ya da çıkış yapıp yeniden giriş yap — Tanıla, uygulamanın ne gördüğünü gösterir.',
   'sync.diagnose': 'Tanıla',
   'sync.status': 'Senkronizasyon',

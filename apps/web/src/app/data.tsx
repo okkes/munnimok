@@ -21,7 +21,7 @@ import { measure, tagSpacePeriod } from '@/lib/perf';
 import { ensurePersistentStorage } from '@/lib/platform';
 import { disablePush } from '@/lib/push';
 import { authWaits, getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
-import { BOOT_STEPS, useBootStep } from './bootStep';
+import { BOOT_STEPS, bootStepText, useBootStep } from './bootStep';
 import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
 import { clearQueryCache } from '@/db/useQuery';
 import { forgetNavCache } from '@/features/navigation/navCache';
@@ -116,7 +116,7 @@ async function restoreAndSync(
   await waitForAuthReady();
   if (isCancelled()) return;
   // only the first round says where it stands: later ones have a whole app to show for themselves
-  const off = engine.onProgress((p) => at(p.phase === 'server' ? { step: 'server' } : { step: 'spaces', done: p.done, total: p.total }));
+  const off = engine.onProgress((p) => at(p.phase === 'server' ? { step: 'server' } : { step: 'spaces', done: p.done, total: p.total, changes: p.changes }));
   try {
     await bootstrapUserSpaces(store, engine, isCancelled, undefined, onAttempts);
   } finally {
@@ -522,6 +522,7 @@ function BootSteps() {
             <span className={state === 'now' ? 'font-semibold' : ''}>
               {t(STEP_LABEL[step])}
               {step === 'spaces' && at.step === 'spaces' && at.total > 0 && ` — ${t('sync.step.count', { done: at.done, total: at.total })}`}
+              {step === 'spaces' && at.step === 'spaces' && at.changes > 0 && ` · ${t('sync.step.changes', { count: at.changes })}`}
             </span>
           </li>
         );
@@ -608,7 +609,7 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
       `lastLogtoWipe: ${localStorage.getItem(LOGTO_WIPE_KEY) ?? '-'}`,
       `rehealAttempts: ${sessionStorage.getItem(REHEAL_KEY) ?? '0'}`,
       `lastError: ${errorDetail ?? '-'}`,
-      `waitingAt: ${useBootStep.getState().at.step}`,
+      `waitingAt: ${bootStepText(useBootStep.getState().at)}`,
       `restore: ${authWaits().restore} tokenMint: ${authWaits().mint}`,
     ];
     try {
