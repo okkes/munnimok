@@ -140,6 +140,45 @@ describe('SyncEngine', () => {
     while (dbs.length) await dbs.pop()!.delete();
   });
 
+  it('a request that ran into its time limit is the network\'s business: offline, nothing reported, and the next round goes out (#594)', async () => {
+    let w = 2_000_000;
+    const a = device('devStall', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Stalled', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+    const statuses: string[] = [];
+    a.engine.onStatus((s) => statuses.push(s));
+    vi.mocked(reportError).mockClear();
+
+    const heads = server.heads.bind(server);
+    server.heads = async () => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    };
+    await a.engine.syncAll();
+    expect(statuses.at(-1)).toBe('offline');
+    expect(a.engine.lastRoundOk()).toBe(false);
+    expect(reportError).not.toHaveBeenCalled();
+
+    server.heads = heads;
+    await a.engine.syncAll();
+    expect(a.engine.lastRoundOk()).toBe(true);
+  });
+
+  it('a round tells where it stands: asking the server, then each space as it is done (#594: the first start shows it)', async () => {
+    let w = 3_000_000;
+    const a = device('devSteps', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'One', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.repo.upsert('space', 's2', 's2', { name: 'Two', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    const seen: string[] = [];
+    const off = a.engine.onProgress((p) => seen.push(p.phase === 'server' ? 'server' : `${p.done}/${p.total}`));
+    await a.engine.syncAll();
+    off();
+    expect(seen).toEqual(['server', '0/2', '1/2', '2/2']);
+    await a.engine.syncAll();
+    expect(seen).toHaveLength(4);
+  });
+
   it('a refused token (401) leaves the engine idle — the session\'s business, never an outage (user ss 2026-10-07: "Offline" right after a sign-in)', async () => {
     let w = 2_000_000;
     const a = device('devAuth', () => ++w, server);

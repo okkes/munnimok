@@ -25,9 +25,33 @@ export function signalAuthReady(): void {
   authReadyResolve = null;
 }
 
-/** resolves once the OIDC session restore finished (test auth: immediately) */
+/**
+ * #594: neither wait below may be endless. A restore that never reported back, or a mint that never
+ * answered, left a phone on the connecting screen with nothing failing — so nothing was ever offered.
+ * Past its limit a wait counts as lost: requests go out without a bearer and the 401 path takes over.
+ */
+export const AUTH_READY_WAIT_MS = 15_000;
+export const TOKEN_MINT_WAIT_MS = 20_000;
+
+/** what the two waits came to — the connecting screen's diagnosis reads it */
+const waits: { restore: 'pending' | 'done' | 'timed out'; mint: 'ok' | 'timed out' } = { restore: 'pending', mint: 'ok' };
+export const authWaits = (): Readonly<typeof waits> => waits;
+
+let restoreDeadline: ReturnType<typeof setTimeout> | null = null;
+
+/** resolves once the OIDC session restore finished (test auth: immediately) — or its limit passed */
 export function waitForAuthReady(): Promise<void> {
-  return authReadyPromise;
+  // the first waiter starts the clock: a restore nobody waits for needs none
+  if (authReadyResolve) {
+    restoreDeadline ??= setTimeout(() => {
+      if (!authReadyResolve) return;
+      waits.restore = 'timed out';
+      signalAuthReady();
+    }, AUTH_READY_WAIT_MS);
+  }
+  return authReadyPromise.then(() => {
+    if (waits.restore === 'pending') waits.restore = 'done';
+  });
 }
 
 // Single-flight: Logto ROTATES refresh tokens, so two concurrent refreshes
@@ -43,7 +67,24 @@ let inflight: Promise<string | undefined> | null = null;
 // the connection back" state). A Web Lock serializes the refresh across
 // every context of the origin; where unsupported, behavior is unchanged.
 const withCrossTabLock = (fn: TokenGetter): Promise<string | undefined> =>
-  typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('munni:oidc-token', fn) : fn();
+  !lockStuck && typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('munni:oidc-token', fn) : fn();
+
+// a mint that never answered still holds the lock: the mints after it would queue behind it for good
+let lockStuck = false;
+
+/** the mint, or nothing once its limit passed — which counts as a failed refresh, so the next callers ask nobody for a while */
+function withinLimit(mint: Promise<string | undefined>): Promise<string | undefined> {
+  let limit: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    limit = setTimeout(() => {
+      waits.mint = 'timed out';
+      lockStuck = true;
+      noteRefreshFailed();
+      resolve(undefined);
+    }, TOKEN_MINT_WAIT_MS);
+  });
+  return Promise.race([mint, late]).finally(() => clearTimeout(limit));
+}
 
 // The single-flight folds CONCURRENT callers only: the very next call after
 // a refresh that FAILED ran its own refresh again (prod Logto logs
@@ -72,13 +113,15 @@ export const isRefreshBackedOff = (): boolean => Date.now() < retryAfter;
 /** test seam — the cooldown is module state and must not leak between specs */
 export function resetRefreshBackoffForTests(): void {
   retryAfter = 0;
+  // `lockStuck` stays: a mint that never answered holds the lock for the life of the process
+  waits.mint = 'ok';
 }
 
 export async function getAccessToken(): Promise<string | undefined> {
   if (!getter) return undefined;
   if (isRefreshBackedOff()) return undefined;
   const current = getter;
-  inflight ??= withCrossTabLock(current).finally(() => {
+  inflight ??= withinLimit(withCrossTabLock(current)).finally(() => {
     inflight = null;
   });
   return inflight;

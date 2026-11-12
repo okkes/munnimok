@@ -8,7 +8,7 @@ import { ENTITY_NAMES } from '@/db/types';
 import type { EntityName, OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
-import { SyncHttpError } from './backend';
+import { SyncHttpError, isLostConnection } from './backend';
 import { cursorKey, drainPull } from './drain';
 import { dropUnstamped, unstampWrites } from './merge';
 import type { SyncEnvelope } from './merge';
@@ -53,6 +53,9 @@ export interface SyncEngineOptions {
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
 
+/** a round asks the server what exists, then takes the spaces one by one */
+export type RoundProgress = { phase: 'server' } | { phase: 'spaces'; done: number; total: number };
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -70,6 +73,7 @@ export class SyncEngine {
   private running = false;
   private roundOk = false;
   private readonly listeners = new Set<(status: SyncStatus) => void>();
+  private readonly progressListeners = new Set<(progress: RoundProgress) => void>();
   private status: SyncStatus = 'idle';
   private eventsAbort: AbortController | null = null;
   private eventDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -106,6 +110,16 @@ export class SyncEngine {
   onStatus(listener: (status: SyncStatus) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** where a round stands — a first start has nothing else to show (#594) */
+  onProgress(listener: (progress: RoundProgress) => void): () => void {
+    this.progressListeners.add(listener);
+    return () => this.progressListeners.delete(listener);
+  }
+
+  private tell(progress: RoundProgress): void {
+    for (const listener of this.progressListeners) listener(progress);
   }
 
   private setStatus(status: SyncStatus) {
@@ -241,8 +255,37 @@ export class SyncEngine {
     if (this.rerun && this.now() >= this.pausedUntil) void this.syncAll();
   }
 
+  /**
+   * Every space in turn. One space's failure must not starve the rest: a single poisoned
+   * outbox (one rejected op) used to abort the whole loop, so nothing else on the device
+   * synced anymore (user report: store receipts + "offline" while the server was fine).
+   * Returns the first such failure.
+   */
+  private async syncEach(spaceIds: string[], serverSet: ReadonlySet<string>, headOf: ReadonlyMap<string, number>, round: Span): Promise<unknown> {
+    let firstError: unknown = null;
+    let done = 0;
+    this.tell({ phase: 'spaces', done, total: spaceIds.length });
+    for (const spaceId of spaceIds) {
+      if (this.stopped) return firstError;
+      try {
+        // #306 (user): a space we KNOW evicted us stays untouched until
+        // the server re-grants it — no request may leave for it
+        if (!(await this.skipKnownEvicted(spaceId, serverSet))) await this.syncSpace(spaceId, round, headOf.get(spaceId));
+      } catch (err) {
+        // #569: the server's pause (or its gateway's) holds for every space
+        // alike — the rest would only be answered the same, so stop asking
+        if (isTransient(err)) throw err;
+        firstError ??= err;
+      }
+      done += 1;
+      this.tell({ phase: 'spaces', done, total: spaceIds.length });
+    }
+    return firstError;
+  }
+
   private async runRound(round: Span): Promise<void> {
     try {
+      this.tell({ phase: 'server' });
       // version handshake FIRST (lib/protocol.ts): native apps and the
       // API deploy separately — a contract mismatch must refuse to sync
       // instead of exchanging ops both sides half-understand. Fresh
@@ -268,26 +311,7 @@ export class SyncEngine {
       const headOf = new Map(heads.map((h) => [h.spaceId, h.latestSeq]));
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
       round.setAttribute('sync.spaces', spaceIds.length);
-      // one space's failure must not starve the rest: a single poisoned
-      // outbox (one rejected op) used to abort the whole loop, so nothing
-      // else on the device synced anymore (user report: store receipts +
-      // "offline" while the server was fine)
-      let firstError: unknown = null;
-      const serverSet = new Set(serverSpaces);
-      for (const spaceId of spaceIds) {
-        if (this.stopped) return;
-        try {
-          // #306 (user): a space we KNOW evicted us stays untouched until
-          // the server re-grants it — no request may leave for it
-          if (await this.skipKnownEvicted(spaceId, serverSet)) continue;
-          await this.syncSpace(spaceId, round, headOf.get(spaceId));
-        } catch (err) {
-          // #569: the server's pause (or its gateway's) holds for every space
-          // alike — the rest would only be answered the same, so stop asking
-          if (isTransient(err)) throw err;
-          firstError ??= err;
-        }
-      }
+      const firstError = await this.syncEach(spaceIds, new Set(serverSpaces), headOf, round);
       if (this.stopped) return;
       await this.purgeOrphanFeeds(serverSpaces);
       if (firstError) throw firstError;
@@ -322,7 +346,7 @@ export class SyncEngine {
    */
   private settleFailure(err: unknown): void {
     this.lastError = String(err); // surfaced on the connecting screen
-    const offline = err instanceof TypeError; // fetch network errors are TypeError
+    const offline = isLostConnection(err); // a fetch that failed, or one that ran into its time limit
     const authState = err instanceof SyncHttpError && (err.status === 401 || err.status === 403);
     const transient = isTransient(err);
     if (transient) this.pause(err.retryAfterMs ?? DEFAULT_PAUSE_MS);

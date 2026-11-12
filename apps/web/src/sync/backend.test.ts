@@ -26,6 +26,17 @@ describe('ApiSyncBackend', () => {
     expect(init!.method).toBe('POST');
   });
 
+  it('every request of a round ends by itself: a connection that stalls is a failed request, not a round that never returns (#594)', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse([]));
+    const api = backend({ bearer: 'tok' });
+    await api.heads();
+    await api.pull('s1', 0);
+    await api.push('s1', 'dev1', []);
+    await api.listSpaces();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (const [, init] of fetchMock.mock.calls) expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('a 410 device-revoked answer raises the remote-disconnect event before failing', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'device-revoked' }, 410));
     const seen = vi.fn();

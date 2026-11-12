@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setOidcSignIn } from '@/app/authToken';
+import { connectTuning } from '@/app/data';
 import { useSession } from '@/app/session';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
@@ -32,6 +33,8 @@ vi.mock('@/app/config', async (importOriginal) => ({
  */
 describe('DataProvider startup (local-first)', () => {
   beforeEach(() => {
+    connectTuning.patienceMs = 20_000;
+    connectTuning.probeMs = 300;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
@@ -77,6 +80,31 @@ describe('DataProvider startup (local-first)', () => {
     expect(await screen.findByTestId('data-loading', {}, { timeout: 2000 })).toBeTruthy();
     expect(screen.queryByTestId('screen-home')).toBeNull();
   });
+
+  it('#594: a first start that gets no answer at all still says where it waits, and offers its exits once the patience is over', async () => {
+    connectTuning.patienceMs = 400;
+    const hang = () => new Promise<never>(() => undefined);
+    renderAppAsUser('/', {
+      api: {
+        'GET /health': hang,
+        'GET /me/spaces': hang,
+        'GET /me': hang,
+      },
+    });
+
+    // the steps of a first start, the one under way marked
+    const steps = await screen.findByTestId('connect-steps', {}, { timeout: 4000 });
+    expect(steps.querySelector('[data-step="server"]')?.getAttribute('data-state')).toBe('now');
+    expect(steps.querySelector('[data-step="signin"]')?.getAttribute('data-state')).toBe('done');
+    expect(steps.querySelector('[data-step="spaces"]')?.getAttribute('data-state')).toBe('ahead');
+
+    // no attempt ever failed (nothing answered): the exits come all the same
+    expect(await screen.findByTestId('connect-waiting', {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.getByTestId('connect-signout')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('connect-diagnose'));
+    const report = await screen.findByTestId('connect-diagnose-report', {}, { timeout: 4000 });
+    expect((report as HTMLTextAreaElement).value).toContain('waitingAt: server');
+  }, 15_000);
 
   it(
     'repeated failures surface Diagnose, whose report includes the auth probes',

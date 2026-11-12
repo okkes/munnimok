@@ -20,7 +20,8 @@ import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge'
 import { measure, tagSpacePeriod } from '@/lib/perf';
 import { ensurePersistentStorage } from '@/lib/platform';
 import { disablePush } from '@/lib/push';
-import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
+import { authWaits, getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
+import { BOOT_STEPS, useBootStep } from './bootStep';
 import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
 import { clearQueryCache } from '@/db/useQuery';
 import { forgetNavCache } from '@/features/navigation/navCache';
@@ -110,9 +111,17 @@ async function restoreAndSync(
   isCancelled: () => boolean,
   onAttempts: (n: number) => void,
 ): Promise<void> {
+  const at = useBootStep.getState().set;
+  at({ step: 'signin' });
   await waitForAuthReady();
   if (isCancelled()) return;
-  await bootstrapUserSpaces(store, engine, isCancelled, undefined, onAttempts);
+  // only the first round says where it stands: later ones have a whole app to show for themselves
+  const off = engine.onProgress((p) => at(p.phase === 'server' ? { step: 'server' } : { step: 'spaces', done: p.done, total: p.total }));
+  try {
+    await bootstrapUserSpaces(store, engine, isCancelled, undefined, onAttempts);
+  } finally {
+    off();
+  }
   if (isCancelled()) return;
   onAttempts(0);
   engine.start();
@@ -315,6 +324,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // #363: the remount cache is per identity — a sign-in after a wipe
     // must never seed a screen with the last user's rows
     clearQueryCache();
+    useBootStep.getState().set({ step: 'opening' });
 
     // the boot span (user 2026-10-09, docs/observability.md): the store
     // open, the demo seed, the first queries and — on a brand-new device —
@@ -481,6 +491,42 @@ async function mirrorSpaceLinks(store: StorageBackend, repo: Repo): Promise<void
  */
 const REHEAL_KEY = 'munni_auth_reheal';
 
+/** how long the connecting screen stays calm, and how long its diagnosis waits for the server (a test seam) */
+export const connectTuning = { patienceMs: 20_000, probeMs: 10_000 };
+
+const STEP_LABEL = {
+  opening: 'sync.step.opening',
+  signin: 'sync.step.signin',
+  server: 'sync.step.server',
+  spaces: 'sync.step.spaces',
+} as const;
+
+/** the steps of a first start, the one under way marked — with the count while the spaces come in */
+function BootSteps() {
+  const { t } = useLang();
+  const at = useBootStep((s) => s.at);
+  const now = BOOT_STEPS.indexOf(at.step);
+  return (
+    <ol className="flex w-[260px] max-w-[80vw] list-none flex-col gap-1.5 p-0 text-left text-[12px]" data-testid="connect-steps">
+      {BOOT_STEPS.map((step, index) => {
+        let state: 'done' | 'now' | 'ahead' = 'ahead';
+        if (index < now) state = 'done';
+        else if (index === now) state = 'now';
+        const icons = { done: 'check-circle', now: 'progress-clock', ahead: 'circle-outline' } as const;
+        return (
+          <li key={step} data-step={step} data-state={state} className={`flex items-center gap-2 ${state === 'ahead' ? 'text-ink-4' : 'text-ink-2'}`}>
+            <Icon name={icons[state]} size={15} color={state === 'done' ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+            <span className={state === 'now' ? 'font-semibold' : ''}>
+              {t(STEP_LABEL[step])}
+              {step === 'spaces' && at.step === 'spaces' && at.total > 0 && ` — ${t('sync.step.count', { done: at.done, total: at.total })}`}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?: number; errorDetail?: string | null }) {
   const { t } = useLang();
   const logout = useSession((s) => s.logout);
@@ -523,11 +569,14 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
   // (user ss 2026-07-28) — past 20s the truth beats the calm.
   const [patienceOver, setPatienceOver] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setPatienceOver(true), 20_000);
+    const timer = setTimeout(() => setPatienceOver(true), connectTuning.patienceMs);
     return () => clearTimeout(timer);
   }, []);
   const authSettling = (errorDetail ?? '').includes('401') && !patienceOver;
   const unreachable = (failedAttempts >= 2 && !authSettling) || (patienceOver && failedAttempts >= 1);
+  // #594: nothing failed because nothing ever answered — the exits are owed all the same
+  const waiting = patienceOver && failedAttempts === 0;
+  const exits = unreachable || waiting;
   // the stuck platform is iOS-only, where DevTools are out of reach — a
   // built-in probe produces a copyable report instead (user: "I don't
   // know how to provide you info")
@@ -556,6 +605,8 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
       `lastLogtoWipe: ${localStorage.getItem(LOGTO_WIPE_KEY) ?? '-'}`,
       `rehealAttempts: ${sessionStorage.getItem(REHEAL_KEY) ?? '0'}`,
       `lastError: ${errorDetail ?? '-'}`,
+      `waitingAt: ${useBootStep.getState().at.step}`,
+      `restore: ${authWaits().restore} tokenMint: ${authWaits().mint}`,
     ];
     try {
       localStorage.setItem('munni_probe', '1');
@@ -578,8 +629,10 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
     }
     try {
       const { apiFetch } = await import('@/lib/api');
-      const res = await apiFetch('/me');
-      lines.push(`GET /me: ${res.status}`, `www-authenticate: ${res.headers.get('www-authenticate') ?? '-'}`);
+      // a server that never answers is a finding too: the report does not wait for it
+      const res = await Promise.race([apiFetch('/me'), new Promise<null>((resolve) => setTimeout(() => resolve(null), connectTuning.probeMs))]);
+      if (res) lines.push(`GET /me: ${res.status}`, `www-authenticate: ${res.headers.get('www-authenticate') ?? '-'}`);
+      else lines.push(`GET /me: no answer in ${connectTuning.probeMs / 1000} s`);
     } catch (err) {
       const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       lines.push(`GET /me threw: ${detail}`);
@@ -594,12 +647,18 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
           <p className="max-w-[280px] text-center text-[13px]" data-testid={unreachable ? 'connect-error' : undefined}>
             {unreachable ? t('sync.serverUnreachable') : t('sync.connecting')}
           </p>
+          <BootSteps />
+          {waiting && (
+            <p className="max-w-[280px] text-center text-[12px] text-warning" data-testid="connect-waiting">
+              {t('sync.stillWaiting')}
+            </p>
+          )}
           {unreachable && errorDetail && (
             <p className="max-w-[280px] text-center font-mono text-[10px] break-words text-ink-4" data-testid="connect-error-detail">
               {errorDetail}
             </p>
           )}
-          {unreachable && (
+          {exits && (
             <div className="flex items-center gap-2">
               <button
                 onClick={signOut}
