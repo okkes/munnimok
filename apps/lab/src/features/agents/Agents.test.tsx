@@ -152,6 +152,9 @@ describe('Agents', () => {
     expect(capabilityLines(HOSTED_AGENT).map((l) => l.value)).toEqual(['every party this connector has', 'browser_persistent, browser_interactive', 'residential · NL', '1']);
     expect(agentHealth({ ...base, revoked: true }).label).toBe('revoked');
     expect(agentHealth({ ...base, stale: true }).label).toBe('stale catalogue');
+    // #562: an online agent on an older browser reads so; one that is offline is offline first
+    expect(agentHealth({ ...base, online: true, browserBehind: true }).label).toBe('browser behind');
+    expect(agentHealth({ ...base, online: false, browserBehind: true }).label).toBe('offline');
     expect(agentHealth({ ...base, online: false }).label).toBe('offline');
     expect(slotHolder({ agent: { ...base, resetting: true }, subject: null }).label).toBe('wiping…');
     expect(slotHolder({ agent: { ...base, bound: true }, subject: 'u_x', who: null }).label).toBe('u_x');

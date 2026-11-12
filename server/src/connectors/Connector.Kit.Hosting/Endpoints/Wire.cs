@@ -581,6 +581,18 @@ public sealed record AgentView
 
     /// <summary>What the agent claimed on its last heartbeat (#441 L4): the parties and runtimes it serves, its egress, its concurrency.</summary>
     public AgentProtocol.AgentCapabilities? Capabilities { get; init; }
+
+    /// <summary>
+    /// #562: the agent runs an older browser than this platform (or one from before it said which). It still
+    /// takes work - a bank may turn an outdated browser away, and its owner is the one who can renew it.
+    /// </summary>
+    public bool BrowserBehind { get; init; }
+
+    /// <summary>The browser the agent said it runs; null when it never said.</summary>
+    public string? BrowserVersion { get; init; }
+
+    /// <summary>The browser this platform runs: what "behind" is measured against.</summary>
+    public string? PlatformBrowserVersion { get; init; }
 }
 
 /// <summary>The caller's standing with the hosted private agents (#420 A2).</summary>

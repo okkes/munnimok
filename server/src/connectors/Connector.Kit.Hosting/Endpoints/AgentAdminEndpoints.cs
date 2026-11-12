@@ -165,22 +165,30 @@ internal static class AgentAdminEndpoints
     }
 
     internal static AgentView View(
-        AgentRow agent, IReadOnlyList<ProfileRow> profiles, IProviderRegistry registry, DateTimeOffset now) => new()
+        AgentRow agent, IReadOnlyList<ProfileRow> profiles, IProviderRegistry registry, DateTimeOffset now)
     {
+        var claimed = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities());
+
+        return new()
+        {
         Id = agent.Id,
         Name = agent.Name,
         Class = agent.Class,
         Revoked = agent.Revoked,
         LastHeartbeatAt = agent.LastHeartbeatAt,
         Online = AgentLiveness.IsOnline(agent, now),
-        Stale = AgentCatalogue.IsStale(ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities()), registry),
+        Stale = AgentCatalogue.IsStale(claimed, registry),
         Profiles = [.. profiles.Where(p => p.AgentId == agent.Id).Select(Profile)],
         Hosted = agent.Hosted,
         Bound = PrivateAgentEndpoints.IsBound(agent),
         BoundAt = agent.BoundAt,
         Resetting = agent.ResetRequestedAt is not null,
-        Capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities()),
-    };
+        Capabilities = claimed,
+        BrowserBehind = AgentBrowser.IsBehind(claimed.BrowserVersion),
+        BrowserVersion = claimed.BrowserVersion,
+        PlatformBrowserVersion = AgentBrowser.Version,
+        };
+    }
 
     internal static ProfileView Profile(ProfileRow profile) => new()
     {

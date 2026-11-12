@@ -9,6 +9,8 @@ import { AbsentCard } from '../dashboard/DashboardScreen';
 export function agentHealth(agent: AgentView): { label: string; chip: string } {
   if (agent.revoked) return { label: 'revoked', chip: 'danger-chip' };
   if (agent.stale) return { label: 'stale catalogue', chip: 'warn-chip' };
+  // #562: it takes work, and a bank may turn its old browser away — the fleet follows a deploy, a household agent its owner
+  if (agent.online && agent.browserBehind) return { label: 'browser behind', chip: 'warn-chip' };
   if (agent.online) return { label: 'online', chip: 'ok-chip' };
   return { label: 'offline', chip: 'warn-chip' };
 }

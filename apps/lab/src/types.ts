@@ -116,6 +116,10 @@ export interface AgentView {
   lab?: boolean;
   bound?: boolean;
   boundAt?: string | null;
+  /** #562: it runs an older browser than the platform, or one from before it said which */
+  browserBehind?: boolean;
+  browserVersion?: string | null;
+  platformBrowserVersion?: string | null;
   resetting?: boolean;
   /** what the agent claimed on its last heartbeat (#441 L4) */
   capabilities?: AgentCapabilities | null;

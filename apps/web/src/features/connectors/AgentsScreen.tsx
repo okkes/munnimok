@@ -246,6 +246,15 @@ export function AgentsScreen() {
                       <span className="block text-[11px] text-ink-4">
                         {agent.lastHeartbeatAt ? t('agents.lastSeen', { when: fmtTimeAgo(agent.lastHeartbeatAt, lang) }) : t('agents.neverSeen')}
                       </span>
+                      {/* #562: munni renews its own agents with every deploy — one on somebody's computer waits for its owner */}
+                      {agent.browserBehind && !agent.revoked && !agent.hosted && (
+                        <span className="mt-1 block text-[11px] leading-snug text-warning" data-testid={`agent-browser-${agent.id}`}>
+                          {agent.browserVersion
+                            ? t('agents.browserBehind', { theirs: agent.browserVersion, ours: agent.platformBrowserVersion ?? '' })
+                            : t('agents.browserBehindUnknown')}{' '}
+                          {t('agents.browserRenew')}
+                        </span>
+                      )}
                     </span>
                     {!agent.revoked && (
                       <Button size="sm" variant="outline" data-testid={`agent-revoke-${agent.id}`} disabled={busy} onClick={() => setRevoking(agent)}>

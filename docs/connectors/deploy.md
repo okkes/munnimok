@@ -25,8 +25,10 @@ fails every agent at launch. The device descriptor the agent presents
 agent, so what a site sees is what runs; nothing is disguised.
 
 - **Renovate raises the pair as one PR** (`renovate.json`, group
-  "playwright (agent browsers)", any day of the week): merging it is the
-  renewal. CI runs the agent's browser tests on the new Chromium first.
+  "playwright (agent browsers)", any day of the week) **and merges it
+  into dev by itself** once its checks are green — the one group that
+  does (#562): the merge is the renewal. CI runs the agent's browser
+  tests on the new Chromium first.
 - **Every environment's agents follow by themselves**: the merge rebuilds
   `munni-connector-agent` (`release-images.yml`), the NAS deploy follows the
   image build (`deploy-nas.yml`), and the NAS poller recreates the pooled
@@ -35,6 +37,13 @@ agent, so what a site sees is what runs; nothing is disguised.
 - **A household agent** (`household-agent.yml`, a person's own computer)
   runs `:latest` and is renewed by its owner:
   `docker compose -f household-agent.yml pull && docker compose -f household-agent.yml up -d`.
+  **It is told when**: every agent states the Playwright release it runs
+  (`browser_version` in its capabilities, on enrolment and every
+  heartbeat), the control plane compares it with its own
+  (`AgentBrowser`), and an agent that names an older one — or none, an
+  image from before the claim — is listed as behind: a line with both
+  versions and the two commands on the app's "Your own computer" screen,
+  "browser behind" in the lab. It keeps taking work meanwhile.
 - **A page that still finds the browser outdated** is passed where the
   party offers a way on (ASN: "Naar ASN Online Bankieren") and the job's
   notes say so — "this agent's browser wants renewing" — in the lab.

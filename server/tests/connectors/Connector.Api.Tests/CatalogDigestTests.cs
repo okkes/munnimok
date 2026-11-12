@@ -8,6 +8,7 @@ using Connector.Kit.Hosting;
 using Connector.Kit.Hosting.Agents;
 using Connector.Kit.Hosting.Auth;
 using Connector.Kit.Hosting.Data;
+using Connector.Kit.Hosting.Endpoints;
 using Connector.Kit.Hosting.Infrastructure;
 using Connector.Kit.Hosting.Jobs;
 using Connector.Kit.Jobs;
@@ -50,6 +51,36 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
         // lease is concerned
         Assert.NotEqual(registry.CatalogDigest, registry.AgentCatalogDigest);
         Assert.True(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = registry.CatalogDigest }, registry));
+    }
+
+    /// <summary>
+    /// #562: unlike another catalogue, an older browser costs an agent no work - a bank may turn it away, and
+    /// the listing tells its owner, with both versions.
+    /// </summary>
+    [Fact]
+    public void An_agent_on_an_older_browser_lists_as_behind_and_one_that_never_said_does_too()
+    {
+        var registry = factory.Services.GetRequiredService<IProviderRegistry>();
+        var now = DateTimeOffset.UtcNow;
+        AgentRow Agent(string? browser) => new()
+        {
+            Id = "agt_browser",
+            Name = "desk",
+            CapabilitiesJson = ConnectorJson.Serialize(new AgentCapabilities { BrowserVersion = browser }),
+        };
+
+        var current = AgentAdminEndpoints.View(Agent(AgentBrowser.Version), [], registry, now);
+        Assert.False(current.BrowserBehind);
+        Assert.Equal(AgentBrowser.Version, current.PlatformBrowserVersion);
+
+        var old = AgentAdminEndpoints.View(Agent("1.0.0"), [], registry, now);
+        Assert.True(old.BrowserBehind);
+        Assert.Equal("1.0.0", old.BrowserVersion);
+        Assert.False(old.Stale);
+
+        var silent = AgentAdminEndpoints.View(Agent(null), [], registry, now);
+        Assert.True(silent.BrowserBehind);
+        Assert.Null(silent.BrowserVersion);
     }
 
     [Fact]

@@ -48,6 +48,13 @@ public sealed record AgentCapabilities
     public string? CatalogDigest { get; init; }
 
     /// <summary>
+    /// The browser this agent runs (<see cref="AgentBrowser.Version"/>, #562). Null from an agent
+    /// built before the claim existed - which is itself the answer to "is it behind".
+    /// </summary>
+    [JsonPropertyName("browser_version")]
+    public string? BrowserVersion { get; init; }
+
+    /// <summary>
     /// Whether this agent's browser is one a human could actually reach.
     ///
     /// False by default, exactly as headless is the default everywhere: an
