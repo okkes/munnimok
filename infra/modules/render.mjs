@@ -489,6 +489,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       Logos__SecretKey: \${LOGODEV_SECRET_KEY:-}
       Logos__PublicToken: \${LOGODEV_PUBLIC_TOKEN:-}
       ImageSearch__BraveKey: \${BRAVE_SEARCH_API_KEY:-}
+      ReceiptAi__ApiKey: \${RECEIPT_AI_API_KEY:-}
       Sentry__Dsn: \${API_SENTRY_DSN:-}
       Sentry__TracesSampleRate: "${s.tracing.sampleRate}"
       Logto__M2mAppId: \${LOGTO_M2M_APP_ID:-}
@@ -654,6 +655,7 @@ FCM_SERVICE_ACCOUNT_JSON='\${FCM_SERVICE_ACCOUNT_JSON}'
 LOGODEV_SECRET_KEY=\${LOGODEV_SECRET_KEY}
 LOGODEV_PUBLIC_TOKEN=\${LOGODEV_PUBLIC_TOKEN}
 BRAVE_SEARCH_API_KEY=\${BRAVE_SEARCH_API_KEY}
+RECEIPT_AI_API_KEY=\${RECEIPT_AI_API_KEY}
 ${s.features.connectors ? `
 # the connector control plane (#367): its bundle seal key and enrollment HMAC, the api's subject
 # salt and machine app (written back by the logto module), the environment's fleet enrollment code (its pooled agents enroll

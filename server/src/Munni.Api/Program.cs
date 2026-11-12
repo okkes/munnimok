@@ -111,6 +111,15 @@ if (logosEnabled)
     });
 }
 
+// the receipt reader (#567) — a vision model behind one interface, enabled when the operator gave its key
+var receiptAiKey = builder.Configuration["ReceiptAi:ApiKey"];
+var receiptAiEnabled = !string.IsNullOrEmpty(receiptAiKey);
+builder.Services.AddSingleton<ReceiptReadCounts>();
+if (receiptAiEnabled)
+{
+    builder.Services.AddSingleton<IReceiptReader>(_ => new ClaudeReceiptReader(new Anthropic.AnthropicClient { ApiKey = receiptAiKey }));
+}
+
 // picture search on the web (#521, Brave Search) — enabled when its key is configured
 var imageSearchEnabled = !string.IsNullOrEmpty(builder.Configuration["ImageSearch:BraveKey"]);
 builder.Services.AddSingleton<ImageSearchState>();
@@ -266,6 +275,7 @@ app.MapGet("/health", () => Results.Ok(new
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
         logos = logosEnabled,
         imageSearch = imageSearchEnabled,
+        receiptAi = receiptAiEnabled,
         ocr = ocrEnabled,
         quotes = true,
         // the Connections hub's "connect a party" door (#367)
@@ -281,6 +291,7 @@ app.MapSplits();
 app.MapPush();
 app.MapLogos(app.Configuration);
 app.MapImageSearch(imageSearchEnabled);
+app.MapReceiptReading(receiptAiEnabled);
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapRates();

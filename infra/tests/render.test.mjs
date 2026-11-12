@@ -242,6 +242,9 @@ test('environment stack on lcl: in-network Logto metadata over http, CORS with t
   // #521: the Brave key rides the same road — empty where the feature is off, and the api reads it by its own name
   assert.match(plain.env, /^BRAVE_SEARCH_API_KEY=$/m);
   assert.match(plain.compose, /ImageSearch__BraveKey: \$\{BRAVE_SEARCH_API_KEY:-\}/);
+  // #567: the receipt reader's key the same way
+  assert.match(plain.env, /^RECEIPT_AI_API_KEY=$/m);
+  assert.match(plain.compose, /ReceiptAi__ApiKey: \$\{RECEIPT_AI_API_KEY:-\}/);
   assert.doesNotMatch(plain.env, /\$\{/);
   const dev = render('munni-lcl-dev', values);
   assert.deepEqual(corsOf(block(dev.compose, 'api-dev')), ['http://localhost:8480', 'http://localhost:8481', 'http://localhost:8488', 'https://localhost', 'capacitor://localhost'], 'dev does not power the cockpit');

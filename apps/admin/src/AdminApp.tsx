@@ -4,6 +4,7 @@ import bundledCatalog from './generated/bundledCatalog.json';
 import { InvitationsScreen, type InvitationsDoc, type InviteResult } from './InvitationsScreen';
 import { BankConnectionsScreen, type BankConnectionRow, type BankConnectionsDoc } from './BankConnectionsScreen';
 import { ImageSearchScreen, type ImageSearchDoc } from './ImageSearchScreen';
+import { ReceiptReadingScreen, type ReceiptReadingDoc } from './ReceiptReadingScreen';
 import { DiagnosisPanel, type UserDiagnosis } from './DiagnosisPanel';
 import { outcomeLine, type DisconnectOutcome, type SessionRow } from './sessionBits';
 
@@ -35,6 +36,12 @@ async function readInvitations(res: Response | null): Promise<InvitationsDoc | s
   return failureLine(res);
 }
 
+/** #567: the receipt reader's settings, or why they could not be read (an older API answers 404) */
+async function readReceiptReading(res: Response | null): Promise<ReceiptReadingDoc | string> {
+  if (res?.ok) return (await res.json()) as ReceiptReadingDoc;
+  return failureLine(res);
+}
+
 /** #521: the picture search's limit and month, or why they could not be read (an older API answers 404) */
 async function readImageSearch(res: Response | null): Promise<ImageSearchDoc | string> {
   if (res?.ok) return (await res.json()) as ImageSearchDoc;
@@ -53,8 +60,8 @@ async function failureLine(res: Response | null): Promise<string> {
   return body?.error ?? (res ? `HTTP ${res.status}` : 'network');
 }
 
-type Screen = 'overview' | 'users' | 'invitations' | 'connectors' | 'bank-connections' | 'catalog' | 'image-search';
-const SCREENS: Screen[] = ['overview', 'users', 'invitations', 'connectors', 'bank-connections', 'catalog', 'image-search'];
+type Screen = 'overview' | 'users' | 'invitations' | 'connectors' | 'bank-connections' | 'catalog' | 'image-search' | 'receipt-reading';
+const SCREENS: Screen[] = ['overview', 'users', 'invitations', 'connectors', 'bank-connections', 'catalog', 'image-search', 'receipt-reading'];
 
 /** the operator-published catalog document (admin-catalog design AC2) */
 interface CatalogCategory {
@@ -163,6 +170,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   const [bankConnections, setBankConnections] = useState<BankConnectionsDoc | string | null>(null);
   const [bankAll, setBankAll] = useState(false);
   const [imageSearch, setImageSearch] = useState<ImageSearchDoc | string | null>(null);
+  const [receiptReading, setReceiptReading] = useState<ReceiptReadingDoc | string | null>(null);
   // what the last act came to, where it has something to say (a disconnect's outcome at the party)
   const [notice, setNotice] = useState<string | null>(null);
   // 'denied' = the api really said 403; 'unreachable' = the ping never
@@ -216,17 +224,19 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
-    const [catalogRes, invitesRes, bankRes, imageRes] = await Promise.all([
+    const [catalogRes, invitesRes, bankRes, imageRes, receiptRes] = await Promise.all([
       call('/catalog').catch(() => null),
       call('/admin/invitations').catch(() => null),
       call(`/admin/bank-connections${bankAll ? '?all=true' : ''}`).catch(() => null),
       call('/admin/image-search').catch(() => null),
+      call('/admin/receipt-reading').catch(() => null),
     ]);
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
     setInvitations(await readInvitations(invitesRes));
     setBankConnections(await readBankConnections(bankRes));
     setImageSearch(await readImageSearch(imageRes));
+    setReceiptReading(await readReceiptReading(receiptRes));
   }, [call, config.apiUrl, sessionExpired, bankAll]);
 
   useEffect(() => {
@@ -297,6 +307,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
               ['bank-connections', 'Bank connections'],
               ['catalog', 'Catalog'],
               ['image-search', 'Picture search'],
+              ['receipt-reading', 'Receipt reading'],
             ] as [Screen, string][]
           ).map(([id, label]) => (
             <button
@@ -400,6 +411,13 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
             doc={imageSearch}
             busy={busy}
             onSave={(dailyPerUser) => void act(() => call('/admin/image-search', { method: 'PUT', body: JSON.stringify({ dailyPerUser }) }))}
+          />
+        )}
+        {!blocked && screen === 'receipt-reading' && (
+          <ReceiptReadingScreen
+            doc={receiptReading}
+            busy={busy}
+            onSave={(settings) => void act(() => call('/admin/receipt-reading', { method: 'PUT', body: JSON.stringify(settings) }))}
           />
         )}
         {!blocked && screen === 'users' && (

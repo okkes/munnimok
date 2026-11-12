@@ -13,11 +13,12 @@ import { myStoreFeedId } from '@/application/storeFeed';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
+import { ReceiptAiRead } from './ReceiptAiRead';
 import { ReceiptBody, receiptTitle } from './ReceiptBody';
 import type { ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
@@ -72,6 +73,8 @@ export function ReceiptScreen({
   const [picking, setPicking] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  // #567: where the environment has a vision model read receipts, that takes the old text reading's place
+  const aiReader = useQuery(store, async () => (await getApiCapabilities()).receiptAi === true, [spaceId]) === true;
 
   const receipt = entry?.data ?? null;
 
@@ -226,7 +229,14 @@ export function ReceiptScreen({
                     )}
                   </>
                 )}
-                {photoBorn && !spaceLocked && !receipt.items?.length && connectorsAvailable() && (
+                {photoBorn && !spaceLocked && aiReader && receipt.image && entry.linkId && (
+                  <ReceiptAiRead
+                    images={[receipt.image]}
+                    hasItems={!!receipt.items?.length}
+                    onRead={(outcome) => receiptOps.setRead(entry.linkId!, outcome)}
+                  />
+                )}
+                {photoBorn && !spaceLocked && !aiReader && !receipt.items?.length && connectorsAvailable() && (
                   <>
                     <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
                       {t('receipt.readItems')}

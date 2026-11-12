@@ -132,6 +132,47 @@ describe('Receipts (demo identity)', () => {
     expect(screen.queryByTestId('receipt-linked-tx')).toBeNull();
   }, 15_000);
 
+  it('where the environment has a vision model read receipts (#567), a photo’s screen offers that reading: the lines land on the receipt and can be read again', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('./receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue({
+      state: 'ok',
+      until: null,
+      receipt: {
+        merchant: 'Albert Heijn',
+        date: '2026-11-12',
+        currency: 'EUR',
+        totalCents: 328,
+        reconciled: true,
+        lines: [
+          { name: 'Halfvolle melk', quantity: 1, unitCents: 129, totalCents: 129, kind: 'item', categoryId: 'groceries' },
+          { name: 'Volkoren brood', quantity: 1, unitCents: 199, totalCents: 199, kind: 'item', categoryId: null },
+        ],
+      },
+    });
+    try {
+      await openFirstTx();
+      fireEvent.click(await attachPhoto());
+      await screen.findByTestId('screen-receipt');
+      const door = await screen.findByTestId('receipt-ai-read');
+      expect(door.textContent).toBe('Read this receipt');
+      // the old text reading does not stand beside it
+      expect(screen.queryByTestId('receipt-read-items')).toBeNull();
+
+      fireEvent.click(door);
+      fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
+      await screen.findByText('Halfvolle melk');
+      expect(screen.getByText('Volkoren brood')).toBeTruthy();
+      expect(screen.getByText(/^Suggested: .*Grocery/)).toBeTruthy();
+      expect(read.mock.calls[0][0]).toEqual([FAKE_PHOTO]);
+      await waitFor(() => expect(screen.getByTestId('receipt-ai-read').textContent).toBe('Read again'));
+    } finally {
+      caps.mockRestore();
+      read.mockRestore();
+    }
+  }, 15_000);
+
   it('the receipts browser lists receipts and opens the full view', async () => {
     await openFirstTx();
     await attachPhoto();

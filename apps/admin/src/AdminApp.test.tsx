@@ -741,3 +741,65 @@ describe('AdminApp (picture search, #521)', () => {
     expect((await screen.findByTestId('image-search-unreadable')).textContent).toContain('HTTP 404');
   });
 });
+
+describe('AdminApp (receipt reading, #567)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  const openReceiptReading = async () => {
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-receipt-reading'));
+    return screen.findByTestId('receipt-reading-screen');
+  };
+
+  it('shows how the month stands and saves the model and the two limits — empty is no limit', async () => {
+    let stored = { dailyPerUser: 20 as number | null, monthlyCap: 1000 as number | null, model: null as string | null };
+    const bodies: string[] = [];
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/receipt-reading': () => ({ body: { enabled: true, provider: 'anthropic', defaultModel: 'claude-opus-5-5', readThisMonth: 42, ...stored } }),
+      'PUT /admin/receipt-reading': (init) => {
+        bodies.push(String(init?.body));
+        stored = JSON.parse(String(init?.body)) as typeof stored;
+        return { body: stored };
+      },
+    });
+    await openReceiptReading();
+    expect(screen.getByTestId('receipt-reading-month').textContent).toContain('42 receipts read this month of 1,000');
+    expect(screen.getByTestId('receipt-reading-month').textContent).toContain('anthropic');
+    expect((screen.getByTestId('receipt-reading-daily') as HTMLInputElement).value).toBe('20');
+    const save = screen.getByTestId('receipt-reading-save') as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    // the cheap model, five a day, no cap on the month
+    fireEvent.change(screen.getByTestId('receipt-reading-model'), { target: { value: 'claude-haiku-5-5' } });
+    fireEvent.change(screen.getByTestId('receipt-reading-daily'), { target: { value: 'many' } });
+    expect(screen.getByTestId('receipt-reading-invalid')).toBeTruthy();
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('receipt-reading-daily'), { target: { value: '5' } });
+    fireEvent.change(screen.getByTestId('receipt-reading-cap'), { target: { value: '' } });
+    fireEvent.click(save);
+    await waitFor(() => expect(bodies).toEqual(['{"dailyPerUser":5,"monthlyCap":null,"model":"claude-haiku-5-5"}']));
+    await waitFor(() => expect(screen.getByTestId('receipt-reading-month').textContent).toBe('42 receipts read this month · provider: anthropic.'));
+    expect((screen.getByTestId('receipt-reading-model') as HTMLSelectElement).value).toBe('claude-haiku-5-5');
+  });
+
+  it('says when the environment has no key, keeps a model this list does not know, and says when the API does not know the screen', async () => {
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/receipt-reading': () => ({ body: { enabled: false, provider: null, defaultModel: null, model: 'some-other-model', dailyPerUser: null, monthlyCap: null, readThisMonth: 0 } }),
+    });
+    await openReceiptReading();
+    expect(screen.getByTestId('receipt-reading-off').textContent).toContain('no key for the receipt reader');
+    expect(screen.queryByTestId('receipt-reading-month')).toBeNull();
+    expect((screen.getByTestId('receipt-reading-model') as HTMLSelectElement).value).toBe('some-other-model');
+
+    cleanup();
+    scriptFetch(HAPPY_ROUTES());
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-receipt-reading'));
+    expect((await screen.findByTestId('receipt-reading-unreadable')).textContent).toContain('HTTP 404');
+  });
+});

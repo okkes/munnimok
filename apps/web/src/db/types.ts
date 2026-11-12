@@ -552,6 +552,8 @@ export interface ReceiptItem {
   totalCents: number;
   /** a line that is not a product (the connector says which) — absent = product */
   kind?: 'fee' | 'deposit' | 'discount' | 'adjustment' | 'unattributed';
+  /** #567: the category the reader suggests for the line — a suggestion, the transaction's own split is the truth */
+  catId?: string;
 }
 
 /** a document the party issued for the purchase — an invoice, mostly
@@ -749,6 +751,10 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   totalCents: number;
   merchant?: string;
   items?: ReceiptItem[];
+  /** #567: false when the lines a reader found do not add up to the total */
+  reconciled?: boolean;
+  /** #567: the currency a reader found on the receipt; absent = the space's */
+  currency?: string;
   image?: string;
   payment?: ReceiptPayment;
   /** the invoices ride the snapshot like a photo does — members open them without the owner's feed */

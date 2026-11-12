@@ -189,6 +189,19 @@ export const VALIDATORS = {
     return { ok: true, detail: left ? `key accepted (one search spent, ${left} left this month)` : 'key accepted (one search spent)' };
   },
 
+  /** the receipt reader's key (#567): listing models proves it and costs nothing */
+  async anthropic(values, fetchImpl) {
+    const gap = need(values, ['RECEIPT_AI_API_KEY']);
+    if (gap) return { ok: false, detail: gap };
+    const res = await fetchImpl('https://api.anthropic.com/v1/models?limit=1', {
+      headers: { 'x-api-key': values.RECEIPT_AI_API_KEY, 'anthropic-version': '2023-06-01' },
+      signal: T(),
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, detail: `Claude rejected the key (${res.status}) — it must be an API key from the Claude Console (sk-ant-…), not a claude.ai login` };
+    if (!res.ok) return { ok: false, detail: `the Claude API answered ${res.status}` };
+    return { ok: true, detail: 'key accepted (no receipt was read, nothing was spent)' };
+  },
+
   /** dummy-code trick: invalid_client = bad creds, any other error = client is real */
   async google(values, fetchImpl, { redirectUris = [] } = {}) {
     const gap = need(values, ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET']);

@@ -309,7 +309,7 @@ async function vaultAccountEndpoint(req, res) {
 
 /* ── platform config as code (infra/platforms) ────────────────────── */
 // inviteOnly: invitation-only sign-up — a Bootstrap applies it to the environment's Logto (user 2026-10-07)
-const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'imageSearch', 'telemetry', 'pgadmin', 'connectors', 'inviteOnly'];
+const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'imageSearch', 'receiptAi', 'telemetry', 'pgadmin', 'connectors', 'inviteOnly'];
 const BANKING = ['gocardless', 'enablebanking'];
 const SIGNIN = ['google', 'apple'];
 function normalizeFeatures(raw = {}) {
@@ -1782,6 +1782,7 @@ const VAULT_PURPOSE = {
   LOGODEV_SECRET_KEY: 'logo.dev secret key (server-side merchant-logo search).',
   LOGODEV_PUBLIC_TOKEN: 'logo.dev publishable token (client-side logo images).',
   BRAVE_SEARCH_API_KEY: 'Brave Search API key (server-side picture search on the web; paid per search beyond the monthly credit).',
+  RECEIPT_AI_API_KEY: 'Claude API key (server-side reading of receipt photos; paid per receipt — a Claude subscription does not cover it).',
   LOGTO_GOOGLE_CLIENT_ID: 'Google OAuth client id for “Sign in with Google”.',
   LOGTO_GOOGLE_CLIENT_SECRET: 'Google OAuth client secret — pairs with the client id.',
   APPLE_DEV_CERT_P12: 'The machine’s persistent Apple Development certificate (.p12, base64) — CI imports it instead of minting a throwaway one per build.',

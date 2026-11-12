@@ -140,6 +140,8 @@ export interface ApiCapabilities {
   logos?: boolean;
   /** #521: the API searches the web for pictures (Brave Search key configured) */
   imageSearch?: boolean;
+  /** #567: the API has a vision model read receipt photos (the reader's key configured) */
+  receiptAi?: boolean;
   /** sign-up is closed: accounts come from invitation links (Logto's magic link, /invite) */
   inviteOnly?: boolean;
 }

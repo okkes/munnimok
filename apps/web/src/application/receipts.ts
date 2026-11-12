@@ -25,6 +25,8 @@ export interface ReceiptOps {
   remove: (linkId: string, txId?: string) => Promise<void>;
   /** OCR result: line items extracted from the photo (S2) */
   setItems: (linkId: string, items: ReceiptRow['items']) => Promise<void>;
+  /** #567: what a reader made of the photo — its lines, whether they add up, the currency it saw */
+  setRead: (linkId: string, read: { items: NonNullable<ReceiptRow['items']>; reconciled: boolean; currency?: string }) => Promise<void>;
   /** manual attach from the picker: snapshot-link a global receipt into the space — a receipt attached
    *  elsewhere is attached here as well, the other transactions keep it */
   linkReceipt: (receipt: ReceiptRow, txId: string) => Promise<void>;
@@ -73,6 +75,9 @@ export function useReceiptOps(): ReceiptOps {
     },
     setItems: async (linkId, items) => {
       await repo.upsert('receiptLink', spaceId, linkId, { items });
+    },
+    setRead: async (linkId, read) => {
+      await repo.upsert('receiptLink', spaceId, linkId, { items: read.items, reconciled: read.reconciled, ...(read.currency ? { currency: read.currency } : {}) });
     },
     linkReceipt: async (receipt, txId) => {
       // a 'receipts.attach' span (2026-10-09): the tap on "Yes, attach" is measured, never guessed

@@ -13,13 +13,13 @@ export interface ImageSearchDoc {
 
 export const MAX_DAILY_SEARCHES = 10_000;
 
-/** what the field holds as a limit: empty is no limit, a whole number from 1 up is one, anything else is not an answer */
-export function parseDailyLimit(text: string): number | null | 'invalid' {
+/** what the field holds as a limit: empty is no limit, a whole number from 1 up to `max` is one, anything else is not an answer */
+export function parseDailyLimit(text: string, max = MAX_DAILY_SEARCHES): number | null | 'invalid' {
   const value = text.trim();
   if (value === '') return null;
-  if (!/^\d{1,5}$/.test(value)) return 'invalid';
+  if (!/^\d{1,7}$/.test(value)) return 'invalid';
   const limit = Number(value);
-  return limit >= 1 && limit <= MAX_DAILY_SEARCHES ? limit : 'invalid';
+  return limit >= 1 && limit <= max ? limit : 'invalid';
 }
 
 function monthLine(doc: ImageSearchDoc): string {

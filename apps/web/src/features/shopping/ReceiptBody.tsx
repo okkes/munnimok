@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { partyName } from '@/features/connectors/logos';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
@@ -84,6 +85,7 @@ export function ReceiptBody({
     setViewOpen(true);
   };
   const id = (suffix: string): string => `${testIdPrefix}-${suffix}`;
+  const cats = useCategories();
   const picture = receipt.image;
   const money = (cents: number) => fmtCents(cents, currency, lang);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
@@ -141,9 +143,18 @@ export function ReceiptBody({
             {t('receipt.itemsTitle')} · {receipt.items.length}
           </div>
           <div className="rounded-card border border-line bg-surface px-4 py-1" data-testid={id('items')}>
-            {receipt.items.map((item) => (
-              <div key={`${item.name}-${item.totalCents}`} className="flex items-baseline gap-2 border-b border-line-2 py-2.5 text-[13px] last:border-0">
-                <span className="min-w-0 flex-1 text-ink">{item.name}</span>
+            {receipt.items.map((item, index) => (
+              // two identical lines on one receipt are two lines: the position keeps them apart
+              <div key={`${index}-${item.name}-${item.totalCents}`} className="flex items-baseline gap-2 border-b border-line-2 py-2.5 text-[13px] last:border-0">
+                <span className="min-w-0 flex-1 text-ink">
+                  {item.name}
+                  {/* #567: the reader's suggestion — the transaction's own split stays the truth */}
+                  {item.catId && (
+                    <span className="block text-[11px] text-ink-4" data-testid={id(`item-cat-${index}`)}>
+                      {t('receipt.itemCategory', { name: catName(cats.byId(item.catId), t) })}
+                    </span>
+                  )}
+                </span>
                 {item.qty !== undefined && <span className="text-[11px] text-ink-4">×{item.qty}</span>}
                 <span className="m-num text-ink">{money(item.totalCents)}</span>
               </div>
