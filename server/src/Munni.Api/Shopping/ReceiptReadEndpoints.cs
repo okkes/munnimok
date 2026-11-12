@@ -128,7 +128,9 @@ public static class ReceiptReadEndpoints
         catch (Exception e) when (e is not OperationCanceledException)
         {
             // the provider's own error text may quote the request: only its type is logged
+#pragma warning disable S6667 // deliberate: the exception itself stays out of the log, see above
             logs.CreateLogger("ReceiptReading").LogWarning("receipt read failed at {Provider}: {Kind}", reader.Provider, e.GetType().Name);
+#pragma warning restore S6667
             counts.Refund(user);
             return Results.Ok(new ReceiptReadReply("unavailable", null, null));
         }

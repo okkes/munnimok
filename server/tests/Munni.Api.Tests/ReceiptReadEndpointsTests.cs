@@ -119,6 +119,8 @@ public class ReceiptReadEndpointsTests
         Assert.True(health.GetProperty("capabilities").GetProperty("receiptAi").GetBoolean());
     }
 
+    private static readonly string[] NotPhotos = ["data:application/pdf;base64,JVBERi0=", "data:image/jpeg;base64,not base64!", "https://example.com/receipt.jpg"];
+
     [Fact]
     public async Task What_is_no_receipt_photo_is_refused_before_a_read_is_spent()
     {
@@ -129,9 +131,10 @@ public class ReceiptReadEndpointsTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().PostAsJsonAsync("/receipts/read", new { images = new[] { Jpeg } })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, await Post(new { images = Array.Empty<string>() }));
         Assert.Equal(HttpStatusCode.BadRequest, await Post(new { images = new[] { Jpeg, Jpeg, Jpeg, Jpeg, Jpeg } }));
-        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { images = new[] { "data:application/pdf;base64,JVBERi0=" } }));
-        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { images = new[] { "data:image/jpeg;base64,not base64!" } }));
-        Assert.Equal(HttpStatusCode.BadRequest, await Post(new { images = new[] { "https://example.com/receipt.jpg" } }));
+        foreach (var notAPhoto in NotPhotos)
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, await Post(new { images = new[] { notAPhoto } }));
+        }
         Assert.Equal(0, factory.Reader.Reads);
     }
 

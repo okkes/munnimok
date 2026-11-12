@@ -86,9 +86,9 @@ public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
 
     public string DefaultModel => Model;
 
-    public async Task<ReadReceipt?> ReadAsync(IReadOnlyList<ReceiptPhoto> photos, IReadOnlyList<ReadCategory> categories, string? chosenModel, CancellationToken ct)
+    public async Task<ReadReceipt?> ReadAsync(IReadOnlyList<ReceiptPhoto> photos, IReadOnlyList<ReadCategory> categories, string? model, CancellationToken ct)
     {
-        var model = string.IsNullOrWhiteSpace(chosenModel) ? Model : chosenModel;
+        var chosen = string.IsNullOrWhiteSpace(model) ? Model : model;
         List<BetaContentBlockParam> content = [];
         foreach (var photo in photos)
         {
@@ -99,11 +99,11 @@ public sealed class ClaudeReceiptReader(AnthropicClient client) : IReceiptReader
         }
         content.Add(new BetaTextBlockParam { Text = CategoryList(categories) });
 
-        var fallback = FallbackModels.Contains(model);
+        var fallback = FallbackModels.Contains(chosen);
         var response = await client.Beta.Messages.Create(
             new MessageCreateParams
             {
-                Model = model,
+                Model = chosen,
                 MaxTokens = 16000,
                 System = Instructions,
                 // a declined request is re-run on another model inside the same call, where the model offers that
