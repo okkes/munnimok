@@ -27,11 +27,41 @@ public class ConnectorScheduleNoiseTests
             Lines.Add((logLevel, formatter(state, exception)));
     }
 
-    private static (ConnectorScheduleService Service, CapturingLogger Log) Build()
+    private static (ConnectorScheduleService Service, CapturingLogger Log) Build(Action<IServiceCollection>? register = null)
     {
         var log = new CapturingLogger();
-        var scopes = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var services = new ServiceCollection();
+        register?.Invoke(services);
+        var scopes = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         return (new ConnectorScheduleService(scopes, TimeProvider.System, log), log);
+    }
+
+    /// <summary>A cycle whose first call times out the way HttpClient reports it: a TaskCanceledException nobody asked for.</summary>
+    private static (ConnectorScheduleService Service, CapturingLogger Log) BuildTimingOut() =>
+        Build(services => services.AddScoped<ConnectorRelay>(_ => throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 10 seconds elapsing.")));
+
+    [Fact]
+    public async Task A_call_that_times_out_costs_the_cycle_and_never_the_service()
+    {
+        var (service, log) = BuildTimingOut();
+
+        // an exception that leaves a BackgroundService stops the host — here that is the whole api
+        await service.CycleAsync(CancellationToken.None);
+
+        var line = Assert.Single(log.Lines);
+        Assert.Equal(LogLevel.Warning, line.Level);
+        Assert.Contains("cycle 1 of 3", line.Message);
+    }
+
+    [Fact]
+    public async Task The_hosts_own_stop_still_ends_the_cycle()
+    {
+        var (service, log) = BuildTimingOut();
+        using var stopping = new CancellationTokenSource();
+        await stopping.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.CycleAsync(stopping.Token));
+        Assert.Empty(log.Lines);
     }
 
     [Fact]

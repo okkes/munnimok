@@ -48,16 +48,24 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
         do
         {
-            try
-            {
-                await RunOnceAsync(stoppingToken);
-                _unreachableCycles = 0;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                NoteCycleFailure(ex);
-            }
+            await CycleAsync(stoppingToken);
         } while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>One tick: a cycle, and what its failure means for the next one.</summary>
+    internal async Task CycleAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await RunOnceAsync(stoppingToken);
+            _unreachableCycles = 0;
+        }
+        // a call that timed out is an OperationCanceledException too, and one that leaves this loop stops the whole api:
+        // only the host's own stop may
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            NoteCycleFailure(ex);
+        }
     }
 
     /// <summary>
@@ -195,7 +203,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
                 Refused(row, code, end.RetryAfter);
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogError(ex, "scheduled connector sync of {Provider} failed", row.Provider);
             row.LastScheduleError = InternalCode;
@@ -296,7 +304,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         {
             end = await PassAsync(sync, row, subject, pass, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "backfill pass of {Provider} failed; it is asked again on the next scheduled run", row.Provider);
             return;
