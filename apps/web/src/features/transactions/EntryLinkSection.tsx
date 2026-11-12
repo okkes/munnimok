@@ -153,6 +153,8 @@ export function EntryLinkSection({ tx, account, readOnly }: Readonly<{ tx: Space
   const counts = waiting && tx.inBalance === 1;
   const canCount = !!account && canCountInBalance(tx.date, account);
   const setCounts = (on: boolean) => void repo.upsert('transaction', spaceId, tx.id, { inBalance: on ? 1 : 0 });
+  let balanceLine = t('txform.inBalanceLocked', { date: account?.balanceAsOf ?? '' });
+  if (canCount) balanceLine = t(counts ? 'entry.counted' : 'entry.notCounted');
 
   return (
     <>
@@ -176,9 +178,7 @@ export function EntryLinkSection({ tx, account, readOnly }: Readonly<{ tx: Space
               disabled={readOnly || !canCount}
               onChange={(e) => setCounts(e.target.checked)}
             />
-            <span className="min-w-0 flex-1">
-              {canCount ? t(counts ? 'entry.counted' : 'entry.notCounted') : t('txform.inBalanceLocked', { date: account?.balanceAsOf ?? '' })}
-            </span>
+            <span className="min-w-0 flex-1">{balanceLine}</span>
           </label>
         )}
         {!readOnly && (
@@ -209,7 +209,7 @@ export function EntryLinkSection({ tx, account, readOnly }: Readonly<{ tx: Space
               />
             </div>
           ))}
-          {bank && bank.candidates.length === 0 && (
+          {bank?.candidates.length === 0 && (
             <p className="px-1 py-4 text-[12px] leading-snug text-ink-4" data-testid="tx-entry-candidates-empty">
               {t('entry.pickEmpty')}
             </p>

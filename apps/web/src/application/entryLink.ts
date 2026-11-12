@@ -169,6 +169,39 @@ async function spaceAccounts(store: StorageBackend, spaceId: string): Promise<Ma
   return accounts;
 }
 
+interface SpaceAt {
+  store: StorageBackend;
+  repo: Repo;
+  spaceId: string;
+  now: number;
+}
+
+/**
+ * An entry whose bank row is gone. A reserved row the bank is replacing
+ * keeps its claim while its booked twin may still land (the carry moves
+ * the link) — false; any other row that is gone, a rolled-back import or
+ * a hold that never booked, frees the entry — true.
+ */
+async function freedFromGoneRow({ store, repo, spaceId, now }: SpaceAt, entry: TransactionRow, bankId: string): Promise<boolean> {
+  const gone = await store.get('transaction', bankId);
+  if (gone?.pending === 1 && now - tombstoneMs(gone) <= GIVE_UP_MS) return false;
+  const feedSpaceId = gone && gone.spaceId !== spaceId ? gone.spaceId : undefined;
+  await unlinkEntry(store, repo, spaceId, entry, gone ? { raw: gone, feedSpaceId } : undefined);
+  return true;
+}
+
+/** the entries free to be linked, and the bank rows other entries hold — entries whose bank row is gone are freed on the way */
+async function freeAndTaken(at: SpaceAt, entries: readonly TransactionRow[], bankRows: ReadonlyMap<string, BankRowRef>) {
+  const free: TransactionRow[] = [];
+  const taken = new Set<string>();
+  for (const entry of entries) {
+    if (!entry.bankTxId) free.push(entry);
+    else if (bankRows.has(entry.bankTxId)) taken.add(entry.bankTxId);
+    else if (await freedFromGoneRow(at, entry, entry.bankTxId)) free.push({ ...entry, bankTxId: null });
+  }
+  return { free, taken };
+}
+
 /** one space: entries whose bank row is gone are freed, and every free entry with one exact fit is linked; how many links were made */
 async function linkInSpace(store: StorageBackend, repo: Repo, spaceId: string, now: number): Promise<number> {
   const own = (await store.bySpace('transaction', spaceId)).filter((row) => row.deleted === 0);
@@ -176,21 +209,7 @@ async function linkInSpace(store: StorageBackend, repo: Repo, spaceId: string, n
   const entries = own.filter((row) => isEntry(row, accounts.get(row.accountId)));
   if (entries.length === 0) return 0;
   const bankRows = await bankRowsOf(store, spaceId, accounts);
-
-  const free: TransactionRow[] = [];
-  const taken = new Set<string>();
-  for (const entry of entries) {
-    if (!entry.bankTxId) free.push(entry);
-    else if (bankRows.has(entry.bankTxId)) taken.add(entry.bankTxId);
-    else {
-      // a reserved row the bank is replacing keeps its claim while its booked twin may still land (the carry moves the
-      // link); any other row that is gone — a rolled-back import, a hold that never booked — frees the entry
-      const gone = await store.get('transaction', entry.bankTxId);
-      if (gone?.pending === 1 && now - tombstoneMs(gone) <= GIVE_UP_MS) continue;
-      await unlinkEntry(store, repo, spaceId, entry, gone ? { raw: gone, feedSpaceId: gone.spaceId === spaceId ? undefined : gone.spaceId } : undefined);
-      free.push({ ...entry, bankTxId: null });
-    }
-  }
+  const { free, taken } = await freeAndTaken({ store, repo, spaceId, now }, entries, bankRows);
 
   let linked = 0;
   for (const [entryId, bankId] of autoLinks(free, [...bankRows.values()].map((row) => row.raw), taken)) {
