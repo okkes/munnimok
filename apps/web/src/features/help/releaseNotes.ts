@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.21.0',
+    date: '2026-11-12',
+    items: [
+      {
+        en: 'Splits are rebuilt: a split has a picture, days and a currency; owners invite with a link (a QR code, a limit on people or days, or their approval first) or ask a friend; an expense is divided equally, by amounts or by percentages — in another currency too, with a photo of the receipt — and can be one of your own transactions from any space. Settling works out the fewest payments, tells everyone their amount, and archives the split when all are marked paid. Link a split to your events to see what the whole thing cost.',
+        nl: 'Splits zijn herbouwd: een split heeft een foto, dagen en een valuta; eigenaren nodigen uit met een link (een QR-code, een limiet op mensen of dagen, of eerst hun goedkeuring) of vragen een vriend; een uitgave verdeel je gelijk, in bedragen of in percentages — ook in een andere valuta, met een foto van de bon — en kan een van je eigen transacties uit elke ruimte zijn. Afrekenen berekent de minste betalingen, vertelt iedereen zijn bedrag en archiveert de split zodra alles als betaald is gemarkeerd. Koppel een split aan je evenementen om te zien wat het geheel heeft gekost.',
+        tr: 'Bölüşmeler yeniden kuruldu: bir bölüşmenin fotoğrafı, günleri ve para birimi var; sahipler bir bağlantıyla (QR kodu, kişi ya da gün sınırı ya da önce kendi onayları) davet eder ya da bir arkadaşa sorar; bir harcama eşit, tutarlara ya da yüzdelere göre bölüştürülür — başka bir para biriminde de, fiş fotoğrafıyla — ve herhangi bir alanınızdaki kendi işlemlerinizden biri olabilir. Hesaplaşma en az sayıda ödemeyi bulur, herkese tutarını bildirir ve hepsi ödendi olarak işaretlenince bölüşmeyi arşivler. Tamamının neye mal olduğunu görmek için bir bölüşmeyi etkinliklerinize bağlayın.',
+      },
+      {
+        en: 'Receipts: categorise a payment by the lines of its receipt — tick lines, pick a category, and munni keeps count of what is left; a receipt that says exactly the payment’s amount is filed by itself from what you chose before. Keep a receipt from Home before its transaction exists and munni proposes it when the payment arrives. Discounts on single lines of shop receipts are kept. Where your munni has it switched on, a photo is read into lines by AI — it asks you first.',
+        nl: 'Bonnen: categoriseer een betaling per regel van de bon — vink regels aan, kies een categorie en munni houdt bij wat er over is; een bon met precies het bedrag van de betaling wordt vanzelf ingedeeld op basis van wat je eerder koos. Bewaar een bon vanaf Home nog voordat de transactie er is en munni stelt hem voor zodra de betaling binnenkomt. Kortingen op losse regels van winkelbonnen blijven bewaard. Waar jouw munni het aan heeft staan, leest AI een foto uit tot regels — het vraagt het je eerst.',
+        tr: 'Fişler: bir ödemeyi fişinin satırlarına göre kategorileyin — satırları işaretleyin, bir kategori seçin, munni kalanı takip eder; tutarı ödemeyle birebir aynı olan fiş, daha önce seçtiklerinize göre kendiliğinden kategorilenir. İşlemi henüz yokken Ana sayfadan bir fiş saklayın; ödeme geldiğinde munni onu önerir. Mağaza fişlerinde tek tek satırlardaki indirimler korunur. munni’nizde açıksa bir fotoğraf yapay zekâyla satırlara dönüştürülür — önce size sorar.',
+      },
+      {
+        en: 'Bank accounts: type a transaction on a bank account for what the bank has not shown yet. It counts in that account’s balance in this space, and when the bank’s own transaction arrives munni links the two, so it counts once.',
+        nl: 'Bankrekeningen: typ een transactie op een bankrekening voor wat de bank nog niet heeft getoond. Hij telt mee in het saldo van die rekening in deze ruimte, en zodra de eigen transactie van de bank binnenkomt koppelt munni de twee, zodat hij één keer telt.',
+        tr: 'Banka hesapları: bankanın henüz göstermediği bir harcama için banka hesabına bir işlem yazın. Bu alanda o hesabın bakiyesine sayılır ve bankanın kendi işlemi geldiğinde munni ikisini birbirine bağlar; böylece bir kez sayılır.',
+      },
+      {
+        en: 'Planning, goals and budgets: what a planned row did not use rolls over as funding for the next period; a goal can be cashed out at any time and names what it bought; a budget’s carry-over has a maximum.',
+        nl: 'Plannen, doelen en budgetten: wat een geplande rij niet gebruikte, schuift door als geld voor de volgende periode; een doel kun je op elk moment verzilveren en het zegt wat ervan gekocht is; het doorschuiven van een budget heeft een maximum.',
+        tr: 'Planlama, hedefler ve bütçeler: planlanan bir satırın kullanmadığı tutar bir sonraki döneme kaynak olarak devreder; bir hedef istediğiniz zaman nakde çevrilebilir ve neyin alındığını söyler; bir bütçenin devri için üst sınır var.',
+      },
+      {
+        en: 'Pictures and looks: search the web for a picture wherever you can add one (where switched on); see-through pictures keep their transparency; the colours you pick stay readable in dark mode.',
+        nl: 'Afbeeldingen en uiterlijk: zoek op het web naar een afbeelding overal waar je er een kunt toevoegen (waar het aan staat); doorzichtige afbeeldingen blijven doorzichtig; de kleuren die je kiest blijven leesbaar in de donkere modus.',
+        tr: 'Resimler ve görünüm: resim ekleyebildiğiniz her yerde web’de resim arayın (açık olduğu yerde); saydam resimler saydamlığını korur; seçtiğiniz renkler koyu modda okunaklı kalır.',
+      },
+      {
+        en: 'Sturdier: going offline finishes or changes nothing; the first start on a phone no longer waits forever and says which step it is on; an invitation link survives the sign-in; an export can cover several spaces; notifications recover on a device the server lost.',
+        nl: 'Steviger: offline gaan maakt het af of verandert niets; de eerste start op een telefoon wacht niet meer eindeloos en zegt bij welke stap hij is; een uitnodigingslink overleeft het inloggen; een export kan meerdere ruimtes bevatten; meldingen herstellen zich op een toestel dat de server kwijt was.',
+        tr: 'Daha sağlam: çevrimdışına geçiş ya tamamlanır ya da hiçbir şeyi değiştirmez; telefonda ilk açılış artık sonsuza dek beklemez ve hangi adımda olduğunu söyler; davet bağlantısı oturum açmadan sonra da çalışır; dışa aktarma birden fazla alanı kapsayabilir; sunucunun kaybettiği cihazda bildirimler kendini toparlar.',
+      },
+    ],
+  },
+  {
     version: '5.20.0',
     date: '2026-11-08',
     items: [
