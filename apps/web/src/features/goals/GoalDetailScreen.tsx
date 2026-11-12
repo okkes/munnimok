@@ -97,6 +97,65 @@ function GoalActions({ reached, onCashOut, onFund, onWithdraw }: Readonly<{ reac
   );
 }
 
+/** #455: the goal was spent — what paid for it, what it bought, where the rest went, and the way back */
+function CashedOutCard({
+  goal,
+  cashOut,
+  txs,
+  money,
+  balance,
+  canEdit,
+  onNameBought,
+  onUndo,
+  onOpenTx,
+}: Readonly<{
+  goal: GoalRow;
+  cashOut: NonNullable<GoalRow['cashOut']>;
+  txs: readonly SpaceTx[];
+  money: (cents: number) => string;
+  balance: (cents: number) => string;
+  canEdit: boolean;
+  onNameBought: () => void;
+  onUndo: () => void;
+  onOpenTx: (txId: string) => void;
+}>) {
+  const { t } = useLang();
+  // the rows still visible to the space, and the money they took out of savings
+  const live = txs.filter((tx) => tx.deleted === 0);
+  const cashedTxs = live.filter((tx) => cashOut.txIds.includes(tx.id));
+  const boughtTxs = live.filter((tx) => cashOut.purchaseTxIds?.includes(tx.id));
+  const cashedCents = cashedTxs.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
+  const leftover = goal.allocatedCents - cashedCents;
+  return (
+    <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="goaldetail-cashedout">
+      <div className="flex items-center gap-2">
+        <Icon name="flag-checkered" size={18} color="var(--m-accent-deep)" />
+        <span className="text-[14px] font-semibold text-ink">{t('goals.cashedOutTitle')}</span>
+      </div>
+      <p className="mt-1 text-[13px] leading-snug text-ink-2" data-testid="goaldetail-cashedout-sum">
+        {t('goals.cashedOutBody', { amount: money(cashedCents) })}
+      </p>
+      {leftover !== 0 && (
+        <p className="mt-1 text-[12px] leading-snug text-ink-3" data-testid="goaldetail-cashedout-rest">
+          {leftover > 0 ? t('goals.cashedOutBack', { amount: balance(leftover) }) : t('goals.cashedOutBeyond', { amount: balance(-leftover) })}
+        </p>
+      )}
+      <CashOutRows rows={cashedTxs} testId="goaldetail-cashedout-txs" onOpen={onOpenTx} />
+      <CashOutRows rows={boughtTxs} title={t('goals.boughtPick')} testId="goaldetail-bought-txs" onOpen={onOpenTx} />
+      {canEdit && (
+        <div className="mt-3 flex flex-col gap-2">
+          <Button variant="outline" className="w-full" data-testid="goaldetail-name-bought" onClick={onNameBought}>
+            {t(boughtTxs.length > 0 ? 'goals.boughtChange' : 'goals.boughtName')}
+          </Button>
+          <Button variant="outline" className="w-full" data-testid="goaldetail-undo-cashout" onClick={onUndo}>
+            {t('goals.cashOutUndo')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** One goal: progress, pace, and the funding audit trail. */
 export function GoalDetailScreen() {
   const { t, lang } = useLang();
@@ -164,11 +223,6 @@ export function GoalDetailScreen() {
 
   // #455: what paid for the goal — the rows still visible to the space, the money they took out of savings
   const cashOut = goal.cashOut ?? null;
-  const cashedTxs = cashOut ? (txs ?? []).filter((tx) => tx.deleted === 0 && cashOut.txIds.includes(tx.id)) : [];
-  const cashedCents = cashedTxs.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
-  const leftover = goal.allocatedCents - cashedCents;
-  const boughtIds = cashOut?.purchaseTxIds ?? [];
-  const boughtTxs = (txs ?? []).filter((tx) => tx.deleted === 0 && boughtIds.includes(tx.id));
   const openCashOut = () => void navigate({ to: '/goals/$goalId/cashout', params: { goalId: goal.id } });
   const openTx = (txId: string) => void navigate({ to: '/transactions/$txId', params: { txId } });
 
@@ -218,33 +272,17 @@ export function GoalDetailScreen() {
         />
 
         {cashOut ? (
-          // #455: the goal was spent — what paid for it, where the rest went, and the way back
-          <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="goaldetail-cashedout">
-            <div className="flex items-center gap-2">
-              <Icon name="flag-checkered" size={18} color="var(--m-accent-deep)" />
-              <span className="text-[14px] font-semibold text-ink">{t('goals.cashedOutTitle')}</span>
-            </div>
-            <p className="mt-1 text-[13px] leading-snug text-ink-2" data-testid="goaldetail-cashedout-sum">
-              {t('goals.cashedOutBody', { amount: money(cashedCents) })}
-            </p>
-            {leftover !== 0 && (
-              <p className="mt-1 text-[12px] leading-snug text-ink-3" data-testid="goaldetail-cashedout-rest">
-                {leftover > 0 ? t('goals.cashedOutBack', { amount: balance(leftover) }) : t('goals.cashedOutBeyond', { amount: balance(-leftover) })}
-              </p>
-            )}
-            <CashOutRows rows={cashedTxs} testId="goaldetail-cashedout-txs" onOpen={openTx} />
-            <CashOutRows rows={boughtTxs} title={t('goals.boughtPick')} testId="goaldetail-bought-txs" onOpen={openTx} />
-            {canEdit && (
-              <div className="mt-3 flex flex-col gap-2">
-                <Button variant="outline" className="w-full" data-testid="goaldetail-name-bought" onClick={openCashOut}>
-                  {t(boughtTxs.length > 0 ? 'goals.boughtChange' : 'goals.boughtName')}
-                </Button>
-                <Button variant="outline" className="w-full" data-testid="goaldetail-undo-cashout" onClick={() => void ops.undoCashOut(goal)}>
-                  {t('goals.cashOutUndo')}
-                </Button>
-              </div>
-            )}
-          </div>
+          <CashedOutCard
+            goal={goal}
+            cashOut={cashOut}
+            txs={txs ?? []}
+            money={money}
+            balance={balance}
+            canEdit={canEdit}
+            onNameBought={openCashOut}
+            onUndo={() => void ops.undoCashOut(goal)}
+            onOpenTx={openTx}
+          />
         ) : (
           canEdit && <GoalActions reached={reached} onCashOut={openCashOut} onFund={() => setFundOpen('fund')} onWithdraw={() => setFundOpen('withdraw')} />
         )}
