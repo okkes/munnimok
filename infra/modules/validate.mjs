@@ -174,6 +174,21 @@ export const VALIDATORS = {
     return { ok: true, detail: 'both keys accepted (search + image fetch)' };
   },
 
+  /** one real search (#521) — it is spent from the month's credit, and a month already used up still proves the key */
+  async brave(values, fetchImpl) {
+    const gap = need(values, ['BRAVE_SEARCH_API_KEY']);
+    if (gap) return { ok: false, detail: gap };
+    const res = await fetchImpl('https://api.search.brave.com/res/v1/images/search?q=logo&count=1', {
+      headers: { 'x-subscription-token': values.BRAVE_SEARCH_API_KEY, accept: 'application/json' },
+      signal: T(),
+    });
+    if (res.status === 429) return { ok: true, detail: 'key accepted — this month’s searches are used up, so the app shows the pause until the reset' };
+    if (res.status === 401 || res.status === 403 || res.status === 422) return { ok: false, detail: `Brave Search rejected the key (${res.status}) — is it a key of a Search plan, with image search included?` };
+    if (!res.ok) return { ok: false, detail: `Brave Search answered ${res.status}` };
+    const left = (res.headers?.get?.('x-ratelimit-remaining') ?? '').split(',').pop()?.trim();
+    return { ok: true, detail: left ? `key accepted (one search spent, ${left} left this month)` : 'key accepted (one search spent)' };
+  },
+
   /** dummy-code trick: invalid_client = bad creds, any other error = client is real */
   async google(values, fetchImpl, { redirectUris = [] } = {}) {
     const gap = need(values, ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET']);

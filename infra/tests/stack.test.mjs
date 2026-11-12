@@ -133,7 +133,7 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
   assert.equal(prod.appChannel, 'production');
   assert.equal(prod.publishedPath, '/docker/munni-nas/published');
   assert.equal(prod.registry, 'ghcr.io/okkes');
-  assert.deepEqual(prod.features, { android: true, ios: true, push: true, logos: true, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: ['gocardless'], signin: ['google', 'apple'] });
+  assert.deepEqual(prod.features, { android: true, ios: true, push: true, logos: true, imageSearch: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: ['gocardless'], signin: ['google', 'apple'] });
   assert.equal(loadStack('munni-nas-shared').agents, null, 'the shared stack runs no agents (#420); the environments carry theirs');
 
   const staging = loadStack('munni-nas-staging');
@@ -204,7 +204,7 @@ test('environments as files: nextSlot fills the lowest gap, saveEnv normalizes, 
   const qa = saveEnv('nas', { env: 'qa', slot: nextSlot('nas'), channel: 'dev' });
   assert.deepEqual(qa, {
     env: 'qa', slot: 2, channel: 'dev', appChannel: 'staging', label: 'munni qa-nas',
-    features: { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: [], signin: [] },
+    features: { android: false, ios: false, push: false, logos: false, imageSearch: false, telemetry: true, pgadmin: true, connectors: false, inviteOnly: false, banking: [], signin: [] },
     agents: { pooled: 1, concurrency: 2, privateSlots: 0 },
     tracing: { sampleRate: 1 },
     store: { androidPackage: 'app.munni.nas.qa', iosBundleId: 'app.munni.nas.qa', androidCertSha256: null },

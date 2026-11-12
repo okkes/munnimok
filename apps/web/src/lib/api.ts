@@ -138,6 +138,8 @@ export interface ApiCapabilities {
   vapidPublicKey?: string;
   /** logo.dev brand search proxy configured server-side */
   logos?: boolean;
+  /** #521: the API searches the web for pictures (Brave Search key configured) */
+  imageSearch?: boolean;
   /** sign-up is closed: accounts come from invitation links (Logto's magic link, /invite) */
   inviteOnly?: boolean;
 }

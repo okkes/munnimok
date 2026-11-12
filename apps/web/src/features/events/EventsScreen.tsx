@@ -104,7 +104,7 @@ export function EventFormSheet({
     setFocus(null);
   };
 
-  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click());
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click(), name.trim());
 
   const save = async () => {
     if (!name.trim()) return;

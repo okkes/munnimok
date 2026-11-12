@@ -172,7 +172,9 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
       .catch(() => undefined);
   };
 
-  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource(applyPhoto, () => uploadRef.current?.click());
+  // #521: the web search starts from what the sheet is looking for — "<name> logo"
+  const searchWords = (query || initialQuery).trim();
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource(applyPhoto, () => uploadRef.current?.click(), searchWords ? `${searchWords} logo` : '');
 
   return (
     <>

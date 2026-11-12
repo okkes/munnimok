@@ -184,6 +184,7 @@ jobs:
           FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
           LOGODEV_SECRET_KEY: ${{ secrets.LOGODEV_SECRET_KEY }}
           LOGODEV_PUBLIC_TOKEN: ${{ secrets.LOGODEV_PUBLIC_TOKEN }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
           # the connector control plane and the relay (#367)
           CONNECTOR_SEAL_KEY_K1: ${{ secrets.CONNECTOR_SEAL_KEY_K1 }}
           CONNECTOR_ENROLLMENT_HMAC: ${{ secrets.CONNECTOR_ENROLLMENT_HMAC }}

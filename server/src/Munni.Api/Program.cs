@@ -14,6 +14,7 @@ using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.ImportWatch;
 using Munni.Api.Investments;
+using Munni.Api.Images;
 using Munni.Api.Logos;
 using Munni.Api.Rates;
 using Munni.Api.Push;
@@ -108,6 +109,23 @@ if (logosEnabled)
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", builder.Configuration["Logos:SecretKey"]);
         client.Timeout = TimeSpan.FromSeconds(5);
     });
+}
+
+// picture search on the web (#521, Brave Search) — enabled when its key is configured
+var imageSearchEnabled = !string.IsNullOrEmpty(builder.Configuration["ImageSearch:BraveKey"]);
+builder.Services.AddSingleton<ImageSearchState>();
+if (imageSearchEnabled)
+{
+    builder.Services.AddHttpClient(ImageSearchEndpoints.SearchClientName, client =>
+    {
+        client.BaseAddress = new Uri("https://api.search.brave.com/"); // NOSONAR(S1075) vendor API base
+        client.DefaultRequestHeaders.Add("X-Subscription-Token", builder.Configuration["ImageSearch:BraveKey"]);
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        client.Timeout = TimeSpan.FromSeconds(8);
+    });
+    // the picked picture comes from Brave's image store and from nowhere a redirect points to
+    builder.Services.AddHttpClient(ImageSearchEndpoints.StoreClientName, client => client.Timeout = TimeSpan.FromSeconds(8))
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 }
 
 if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
@@ -247,6 +265,7 @@ app.MapGet("/health", () => Results.Ok(new
         fcm = pushCaps.Fcm,
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
         logos = logosEnabled,
+        imageSearch = imageSearchEnabled,
         ocr = ocrEnabled,
         quotes = true,
         // the Connections hub's "connect a party" door (#367)
@@ -261,6 +280,7 @@ app.MapSocial();
 app.MapSplits();
 app.MapPush();
 app.MapLogos(app.Configuration);
+app.MapImageSearch(imageSearchEnabled);
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapRates();

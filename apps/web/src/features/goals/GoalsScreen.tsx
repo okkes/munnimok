@@ -81,7 +81,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     setPicture(await downscaleImage(file, 1080, 0.72));
   };
 
-  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click());
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click(), name.trim());
 
   const targetCents = parseCents(target);
   const nameMissing = name.trim().length === 0;
