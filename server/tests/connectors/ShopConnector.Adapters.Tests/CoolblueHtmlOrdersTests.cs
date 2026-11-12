@@ -475,7 +475,7 @@ public sealed partial class CoolblueHtmlOrdersTests
     {
         // The heading survives; its amount does not.
         var priceless = Details.Replace(
-            "<div class=\"css-1u8qly9\">€ 399,-</div>", "<div class=\"css-1u8qly9\"></div>",
+            "<div class=\"css-1u8qly9\">€\u00A0399,-</div>", "<div class=\"css-1u8qly9\"></div>",
             StringComparison.Ordinal);
 
         var error = Assert.Throws<ConnectorException>(
