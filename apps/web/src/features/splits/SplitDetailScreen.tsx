@@ -109,7 +109,7 @@ function Ledger({ detail }: Readonly<{ detail: SplitDetail }>) {
           const net = nets.get(member.userId) ?? 0;
           return (
             <div key={member.userId} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0" data-testid={`split-net-${member.userId}`}>
-              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{memberName(member, t)}</span>
+              <span className="min-w-0 flex-1 truncate text-[14px] text-ink first-letter:uppercase">{memberName(member, t)}</span>
               <span className={`m-num text-[14px] font-semibold ${netTone(net)}`}>{fmtCents(net, detail.split.currency, lang, { sign: true })}</span>
             </div>
           );
