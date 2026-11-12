@@ -140,7 +140,8 @@ fi
 
 # don't die before the status dump below — it captures WHY up failed
 UP_RC=0
-compose up -d || UP_RC=$?
+# --remove-orphans: a service that left the stack must leave the NAS too — its container would otherwise keep (re)starting
+compose up -d --remove-orphans || UP_RC=$?
 [ "$UP_RC" -eq 0 ] && { logto_seed; glitchtip_seed; }
 docker image prune -f
 

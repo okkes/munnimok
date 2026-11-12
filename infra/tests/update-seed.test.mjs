@@ -77,7 +77,7 @@ test('update.sh apply: without a registry token the stored ghcr login is DROPPED
   const withToken = apply({ token: 'ghp_fresh' });
   assert.ok(withToken.calls.some((c) => c === 'login ghcr.io -u okkes --password-stdin'), 'a token logs in');
   assert.ok(!withToken.calls.some((c) => c === 'logout ghcr.io'), 'a working login is kept');
-  assert.ok(withToken.calls.some((c) => c.includes(' up -d')), 'then the stack comes up');
+  assert.ok(withToken.calls.some((c) => c.endsWith(' up -d --remove-orphans')), 'then the stack comes up, and what left it goes');
 });
 
 test('logto seed (an environment): waits for Logto\'s roles in the environment\'s OWN postgres service, then upserts the infra app + its Management API role and the admin-tenant app with m-admin\'s roles — idempotent statements only', () => {

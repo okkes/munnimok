@@ -92,12 +92,15 @@ describe('TransactionsScreen (demo identity)', () => {
       });
       // one page stands; the older rows wait behind the list's end
       await waitFor(() => expect(rows()).toHaveLength(120), slow);
-      const more = await screen.findByTestId('tx-list-more', {}, slow);
-      // the count the list names — the boot's own background steps may still move a demo row, so it is read, not assumed
-      const behind = Number(/\((\d+)/.exec(more.textContent ?? '')?.[1]);
-      expect(120 + behind).toBeGreaterThanOrEqual(150 + demoRows - 3);
+      // the count the list names — the boot's own background steps may still move a demo row, so it is read, not
+      // assumed; and the seeded rows reach the list in bursts, so it is read once it covers them all
+      let behind = 0;
+      await waitFor(() => {
+        behind = Number(/\((\d+)/.exec(screen.getByTestId('tx-list-more').textContent ?? '')?.[1]);
+        expect(120 + behind).toBeGreaterThanOrEqual(150 + demoRows - 3);
+      }, slow);
       // each step brings the next page, down to the end of what the list named (a boot step may still add a demo row)
-      fireEvent.click(more);
+      fireEvent.click(screen.getByTestId('tx-list-more'));
       await waitFor(() => expect(rows()).toHaveLength(240), slow);
       fireEvent.click(screen.getByTestId('tx-list-more'));
       await waitFor(() => {

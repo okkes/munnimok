@@ -44,14 +44,16 @@ const proxyOf = (caddy, address) => {
 test('shared stack on lcl: glitchtip with its own database, vault, control, pgadmin, ocr, valkey and the family Caddy, joined by the platform\'s shared network; the env renders with real values', () => {
   const { compose, env, files, read, stack } = render('munni-lcl-shared', { POSTGRES_PASSWORD: 'pg-1', GLITCHTIP_SECRET_KEY: 'sk', PGADMIN_PASSWORD: 'pga', GLITCHTIP_ADMIN_PASSWORD: 'gap', GLITCHTIP_API_TOKEN: 'tok', CONTROL_LOGTO_APP_ID: 'ctl' });
   assert.deepEqual(files, ['.env.munni-lcl-shared', 'Caddyfile', 'docker-compose.munni-lcl-shared.yml', 'initdb', 'pgadmin-servers.json']);
-  assert.deepEqual(servicesOf(compose), ['glitchtip-db', 'glitchtip', 'glitchtip-worker', 'valkey', 'ocr', 'vaultwarden', 'family-tls', 'control', 'pgadmin']);
+  assert.deepEqual(servicesOf(compose), ['glitchtip-db', 'glitchtip', 'valkey', 'ocr', 'vaultwarden', 'family-tls', 'control', 'pgadmin']);
+  // GlitchTip's major is named: a new one changes how it is run, so it must not arrive with a pull
+  assert.match(block(compose, 'glitchtip'), /^    image: glitchtip\/glitchtip:\d+$/m);
   assert.match(compose, /^name: munni-lcl-shared$/m);
   assert.equal(sharedNet('lcl'), 'munni-lcl-shared-net');
   assert.match(compose, /^    name: munni-lcl-shared-net$/m);
   const gt = envOf(block(compose, 'glitchtip'));
   assert.equal(gt.DATABASE_URL, 'postgres://munni:${POSTGRES_PASSWORD}@glitchtip-db:5432/glitchtip');
   assert.equal(gt.GLITCHTIP_DOMAIN, 'http://localhost:8383');
-  assert.equal(gt.REDIS_URL, 'redis://valkey:6379/0');
+  assert.equal(gt.VALKEY_URL, 'redis://valkey:6379/0');
   assert.deepEqual(portsOf(block(compose, 'glitchtip')), ['8383:8000']);
   assert.equal(envOf(block(compose, 'glitchtip-db')).POSTGRES_DB, 'glitchtip');
   assert.equal(envOf(block(compose, 'vaultwarden')).DOMAIN, 'https://localhost:8384');
@@ -108,7 +110,7 @@ test('shared stack in LAN mode: the family Caddy takes 443 and fronts every envi
 test('shared stack on nas: the same services behind DSM\'s reverse proxy — every service publishes its port, no family Caddy, the env stays a TEMPLATE for CI', () => {
   const { compose, env, files, stack } = render('munni-nas-shared');
   assert.deepEqual(files, ['.env.munni-nas-shared', 'docker-compose.munni-nas-shared.yml', 'initdb', 'pgadmin-servers.json']);
-  assert.deepEqual(servicesOf(compose), ['glitchtip-db', 'glitchtip', 'glitchtip-worker', 'valkey', 'ocr', 'vaultwarden', 'control', 'pgadmin']);
+  assert.deepEqual(servicesOf(compose), ['glitchtip-db', 'glitchtip', 'valkey', 'ocr', 'vaultwarden', 'control', 'pgadmin']);
   assert.deepEqual(portsOf(block(compose, 'vaultwarden')), ['8384:80']);
   assert.deepEqual(portsOf(block(compose, 'glitchtip')), ['8383:8000']);
   assert.deepEqual(portsOf(block(compose, 'control')), ['8385:80']);

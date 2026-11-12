@@ -83,13 +83,15 @@ is sent; the dev server traces at 1 when `VITE_GLITCHTIP_DSN` is set.
 
 ## 4. Reading a slow Confirm in GlitchTip
 
-GlitchTip (the shared stack runs `glitchtip/glitchtip:latest`, see
-`infra/modules/render.mjs`) has shown transactions since 1.3; there is
-nothing to enable in the UI — the Performance page lists transaction
-groups as soon as an SDK sends them with a sample rate above 0. The
-retention is `GLITCHTIP_MAX_TRANSACTION_EVENT_LIFE_DAYS` (inherits
-`GLITCHTIP_MAX_EVENT_LIFE_DAYS`, 90 days); set it in the shared stack's
-`&glitchtip_env` block if the volume ever matters.
+GlitchTip (the shared stack runs `glitchtip/glitchtip:7` as one
+container — since 7.0 the same process serves the site and does the
+background work; see `infra/modules/render.mjs`) has shown transactions
+since 1.3; there is nothing to enable in the UI — the Performance page
+lists transaction groups as soon as an SDK sends them with a sample rate
+above 0. The retention is `GLITCHTIP_TRANSACTION_RETENTION_DAYS`
+(inherits `GLITCHTIP_RETENTION_DAYS`, 90 days); set it in the
+`glitchtip` service's environment if the volume ever matters. The names
+that ended in `_LIFE_DAYS` are ignored since 7.0.
 
 1. Open the environment's web project (`<stack>-pwa`, e.g.
    `munni-nas-prod-pwa`) → **Performance**.

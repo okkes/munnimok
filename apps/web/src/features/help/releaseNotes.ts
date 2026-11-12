@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.21.1',
+    date: '2026-11-12',
+    items: [
+      {
+        en: 'Behind the scenes: the service that collects crash reports was updated by its maker and one of its parts kept restarting on the server. It runs as one part now; nothing changes in the app.',
+        nl: 'Achter de schermen: de dienst die crashrapporten verzamelt is door de maker bijgewerkt, waarna een onderdeel ervan op de server steeds opnieuw startte. Hij draait nu als één onderdeel; in de app verandert niets.',
+        tr: 'Perde arkasında: çökme raporlarını toplayan hizmet üreticisi tarafından güncellendi ve bir parçası sunucuda sürekli yeniden başlıyordu. Artık tek parça olarak çalışıyor; uygulamada hiçbir şey değişmiyor.',
+      },
+    ],
+  },
+  {
     version: '5.21.0',
     date: '2026-11-12',
     items: [

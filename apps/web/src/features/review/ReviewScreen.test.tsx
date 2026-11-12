@@ -335,8 +335,12 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-receipt-proposal');
     fireEvent.click(screen.getByTestId('review-receipt-accept'));
     // the row now reads the attached receipt; the deck is otherwise untouched (the card is still to confirm)
-    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).not.toContain('Receipt to check'));
-    expect(screen.getByTestId('review-receipt-row').textContent).toContain('Albert Heijn');
+    // (both in one wait: between "to check" and attached the row reads nothing for a moment)
+    await waitFor(() => {
+      const text = screen.getByTestId('review-receipt-row').textContent ?? '';
+      expect(text).toContain('Albert Heijn');
+      expect(text).not.toContain('Receipt to check');
+    });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const link = await db.receiptLinks.get('rlink-review');
