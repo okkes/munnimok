@@ -56,6 +56,17 @@ jobs:
         env:
           MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
           MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
+      # #587: production follows a green Web CI only. The dev channel deploys regardless, and a dispatch is the operator's own word.
+      - name: Web CI passed? (production)
+        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'master' }}
+        run: |
+          VERDICT=$(node infra/ci/ci-passed.mjs --sha "${{ github.event.workflow_run.head_sha }}" --wait-minutes 30)
+          if [ "$VERDICT" != "passed" ]; then
+            echo "::error::production is not deployed: Web CI for ${{ github.event.workflow_run.head_sha }} is '$VERDICT'. Re-run Web CI; once it is green, re-run this run."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Which stacks
         id: m
         # a stack rides in its GitHub environment; without one it was never bootstrapped — an image build skips it (a dispatch names its stack: the Bootstrap chain created the environment)

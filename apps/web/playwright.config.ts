@@ -10,7 +10,7 @@ const externalBaseUrl = process.env.PW_BASE_URL;
 // playwright.shots.config.ts (tests/shots), which never gates a deploy.
 export default defineConfig({
   testDir: 'tests/e2e',
-  workers: process.env.CI ? 3 : 2, // CI: 3; local: 2 (more workers overwhelm vite dev server)
+  workers: process.env.CI ? 3 : 2,
   outputDir: 'tests/results',
   projects: [
     { name: 'e2e', testMatch: '**/*.e2e.spec.js', use: { browserName: 'chromium' as const } },
@@ -30,14 +30,19 @@ export default defineConfig({
   ...(externalBaseUrl
     ? {}
     : {
+        // #587: the gate runs what ships — the production build behind an index.html fallback. The dev
+        // server answers absolute paths and transforms on the fly, which is how a blank /splits/join page
+        // passed here. CI built it in its own step; a local run builds first.
         webServer: {
-          command: 'npm run dev -- --port 5174 --strictPort',
+          command: process.env.CI ? 'npx vite preview --port 5174 --strictPort' : 'npx vite build && npx vite preview --port 5174 --strictPort',
           url: 'http://localhost:5174',
-          reuseExistingServer: true,
+          // a server left from an earlier run may hold an older build
+          reuseExistingServer: false,
+          timeout: 240_000,
           stdout: 'ignore',
           stderr: 'pipe',
           env: {
-            // e2e talks to the header-auth test API (deploy/docker-compose.test.yml)
+            // e2e talks to the header-auth test API (deploy/docker-compose.test.yml); read at build time
             VITE_API_URL: 'http://localhost:8181',
           },
         },
