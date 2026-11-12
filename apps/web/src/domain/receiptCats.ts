@@ -20,18 +20,17 @@ export interface ReceiptLine {
  */
 export function receiptLines(items: readonly ReceiptItem[] | undefined): ReceiptLine[] {
   const all = items ?? [];
-  const costs = all.map((item, index) => ({ item, index })).filter(({ item }) => item.totalCents > 0);
-  const printed = costs.reduce((sum, { item }) => sum + item.totalCents, 0);
-  if (printed === 0) return [];
+  // a discount the shop states on a line is that line's alone; the receipt's own discount lines are everyone's
+  const costs = all
+    .map((item, index) => ({ item, index, own: Math.max(0, item.totalCents + Math.min(0, item.discountCents ?? 0)) }))
+    .filter(({ item }) => item.totalCents > 0);
+  if (costs.length === 0) return [];
+  const owed = costs.reduce((sum, { own }) => sum + own, 0);
   const off = Math.min(
-    printed,
+    owed,
     all.reduce((sum, item) => sum - Math.min(0, item.totalCents), 0),
   );
-  const paid = largestRemainder(
-    costs.map(({ item }) => item.totalCents),
-    printed,
-    printed - off,
-  );
+  const paid = owed > 0 ? largestRemainder(costs.map(({ own }) => own), owed, owed - off) : costs.map(() => 0);
   return costs.map(({ item, index }, at) => ({ index, name: item.name, printedCents: item.totalCents, paidCents: paid[at] }));
 }
 

@@ -154,6 +154,12 @@ export function ReceiptBody({
                       {t('receipt.itemCategory', { name: catName(cats.byId(item.catId), t) })}
                     </span>
                   )}
+                  {/* #567: what came off this very line, in the shop's own words */}
+                  {!!item.discountCents && (
+                    <span className="block text-[11px] text-ink-4" data-testid={id(`item-discount-${index}`)}>
+                      {[money(item.discountCents), item.discountLabel].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
                 </span>
                 {item.qty !== undefined && <span className="text-[11px] text-ink-4">×{item.qty}</span>}
                 <span className="m-num text-ink">{money(item.totalCents)}</span>

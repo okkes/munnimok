@@ -178,6 +178,14 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.NotEqual(0, first.GetProperty("totalCents").GetInt64());
         Assert.StartsWith($"{MockStore}:", first.GetProperty("storeRef").GetString(), StringComparison.Ordinal);
         Assert.True(first.GetProperty("items").GetArrayLength() > 0);
+        // a line's own discount rides along: without it the lines add up to more than the receipt charged
+        var discounted = receipts
+            .Select(r => JsonDocument.Parse(r.DataJson).RootElement)
+            .Where(r => r.TryGetProperty("items", out _))
+            .SelectMany(r => r.GetProperty("items").EnumerateArray())
+            .First(line => line.TryGetProperty("discountCents", out var off) && off.ValueKind == JsonValueKind.Number);
+        Assert.True(discounted.GetProperty("discountCents").GetInt64() < 0);
+        Assert.False(string.IsNullOrEmpty(discounted.GetProperty("discountLabel").GetString()));
         AssertNothingStoredResembles(bundle);
 
         // the same sync again is a no-op: every op id is deterministic

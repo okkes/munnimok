@@ -62,6 +62,8 @@ describe('reading a receipt photo', () => {
       reconciled: true,
       totalCents: 879,
       currency: 'EUR',
+      merchant: 'Albert Heijn',
+      date: '2026-11-12',
       items: [
         { name: 'Melk', totalCents: 129, catId: 'groceries' },
         { name: 'Appels', qty: 0.75, unitCents: 1200, totalCents: 900 },

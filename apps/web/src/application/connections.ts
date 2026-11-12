@@ -151,10 +151,13 @@ export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
 const includedConnections = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
   new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
 
-/** the owner's global receipts the space may attach: every receipt of its included connections, newest first */
+/** the owner's global receipts the space may attach: every receipt of its included connections and — #567 — the
+ *  photos the person kept without a transaction, which belong to all their spaces; newest first */
 async function attachableRows(store: StorageBackend, spaceId: string, feedId: string): Promise<ReceiptRow[]> {
   const included = await includedConnections(store, spaceId);
-  const rows = (await store.bySpace('receipt', feedId)).filter((r) => r.deleted === 0 && r.instanceId != null && included.has(r.instanceId));
+  const rows = (await store.bySpace('receipt', feedId)).filter(
+    (r) => r.deleted === 0 && (r.source === 'photo' || (r.instanceId != null && included.has(r.instanceId))),
+  );
   rows.sort((a, b) => b.date.localeCompare(a.date));
   return rows;
 }

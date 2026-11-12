@@ -266,6 +266,44 @@ describe('Receipts (demo identity)', () => {
     expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
   }, 20_000);
 
+  it('a receipt kept from Home before its transaction exists (#567): its facts are typed on its own screen, and the payment it fits is asked about it', async () => {
+    renderApp('/home');
+    fireEvent.click(await screen.findByTestId('home-fab'));
+    fireEvent.click(await screen.findByTestId('home-quick-receipt'));
+    await screen.findByTestId('receipt-quick-sheet');
+    fireEvent.change(await screen.findByTestId('receipt-quick-file'), { target: { files: [new File(['x'], 'bon.jpg', { type: 'image/jpeg' })] } });
+
+    // its screen opens at once: no amount yet, so nothing to recognise a payment by
+    await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
+    await screen.findByTestId('receipt-facts');
+    expect(screen.queryByTestId('receipt-waiting')).toBeNull();
+    expect((screen.getByTestId('receipt-facts-save') as HTMLButtonElement).disabled).toBe(true);
+
+    // the demo's Albert Heijn payment of 23.10 was yesterday — and is reviewed, so the fit asks instead of attaching
+    fireEvent.change(screen.getByTestId('receipt-facts-shop'), { target: { value: 'Albert Heijn' } });
+    fireEvent.change(screen.getByTestId('receipt-facts-amount'), { target: { value: '23,10' } });
+    fireEvent.click(screen.getByTestId('receipt-facts-save'));
+
+    const { db, repo } = await demoRepo();
+    let photoId = '';
+    await waitFor(async () => {
+      const proposal = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.proposedTxId === 'dm101' && l.deleted === 0);
+      expect(proposal?.source).toBe('photo');
+      expect(proposal?.totalCents).toBe(2310);
+      expect(proposal?.image).toBe(FAKE_PHOTO);
+      photoId = proposal!.receiptId!;
+    });
+    // the person's own receipt stays theirs, whatever a space copied of it
+    expect((await repo.store.get('receipt', photoId))?.merchant).toBe('Albert Heijn');
+    db.close();
+
+    cleanup();
+    renderApp('/transactions/dm101');
+    fireEvent.click(await screen.findByTestId('receipt-proposal-accept'));
+    const card = await screen.findByTestId('receipt-card');
+    expect(card.textContent).toContain('23.10');
+  }, 25_000);
+
   it('the receipts browser lists receipts and opens the full view', async () => {
     await openFirstTx();
     await attachPhoto();

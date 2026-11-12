@@ -4,7 +4,9 @@ import { measure } from '@/lib/perf';
 import { receiptLinkId } from '@/domain/feedIds';
 import { logActivity } from './activity';
 import { acceptProposal, attachReceiptTo, detachReceiptFrom, linkedTxIds, rejectProposal, releaseLink } from './receiptLinks';
-import { myStoreFeedId } from './storeFeed';
+import { matchReceiptEverywhere } from './receiptMatching';
+import { localToday } from './recurring';
+import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
 import type { ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 
@@ -18,6 +20,16 @@ import type { SpaceTx } from '@/db/joined';
  * remove or unlink that names a transaction lets go of that one only,
  * and the link survives while another transaction still holds it.
  */
+/** the facts of a receipt the person keeps themselves: typed on its screen, or found by a reader */
+export interface OwnReceiptFacts {
+  date?: string;
+  totalCents?: number;
+  merchant?: string;
+  items?: NonNullable<ReceiptRow['items']>;
+  reconciled?: boolean;
+  currency?: string;
+}
+
 export interface ReceiptOps {
   /** photo path: downscale on-device, attach to the transaction */
   attachPhoto: (tx: Pick<SpaceTx, 'id' | 'date' | 'merchant' | 'amountCents'>, file: Blob) => Promise<void>;
@@ -40,6 +52,12 @@ export interface ReceiptOps {
   swapReceipt: (currentLinkId: string, receipt: ReceiptRow, txId: string) => Promise<void>;
   /** delete an unmatched receipt from the owner's global store feed */
   removeGlobalReceipt: (receiptId: string) => Promise<void>;
+  /** #567 (user): a receipt kept before its transaction exists — a photo among the person's own receipts, which
+   *  every space of theirs lists; null when their receipts cannot be reached yet (an account never online here) */
+  addOwnPhoto: (file: Blob) => Promise<string | null>;
+  /** #567: what an own photo says, typed or read — with an amount it is proposed to the payment it fits, in
+   *  whichever space that is */
+  setOwnFacts: (receiptId: string, facts: OwnReceiptFacts) => Promise<void>;
   /** "Matches to check" (§5.7): the human's yes or no on a proposal */
   acceptMatch: (link: ReceiptLinkRow) => Promise<void>;
   rejectMatch: (link: ReceiptLinkRow) => Promise<void>;
@@ -118,6 +136,23 @@ export function useReceiptOps(): ReceiptOps {
         await repo.remove('receipt', feedId, receiptId);
         void logActivity(store, repo, spaceId, 'receiptRemove', row?.merchant);
       }
+    },
+    addOwnPhoto: async (file) => {
+      const feedId = await ensureStoreFeed(store);
+      if (!feedId) return null;
+      const image = await downscaleImage(file, 2048, 0.8);
+      const id = repo.newId();
+      // the amount is not known yet: nothing to match until it is typed or read
+      await repo.upsert('receipt', feedId, id, { source: 'photo', date: localToday(), totalCents: 0, image });
+      void logActivity(store, repo, spaceId, 'receiptAdd');
+      return id;
+    },
+    setOwnFacts: async (receiptId, facts) => {
+      const feedId = myStoreFeedId();
+      if (!feedId) return;
+      await repo.upsert('receipt', feedId, receiptId, facts);
+      const row = await store.get('receipt', receiptId);
+      if (row?.deleted === 0 && row.totalCents > 0) await matchReceiptEverywhere(store, repo, row);
     },
     acceptMatch: async (link) => {
       await acceptProposal(repo, spaceId, link);

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -11,6 +11,7 @@ import {
   createMatchScheduler,
   includedSpaces,
   matchInputFingerprint,
+  matchReceiptEverywhere,
   matchReceiptsIntoSpace,
   reevaluateSpace,
   rematchSpace,
@@ -136,6 +137,54 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     const proposed = (await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId);
     expect(proposed.map((l) => l.instanceId)).toEqual(['conn-other']);
     expect(await includedSpaces(backend, CONN)).toEqual([SPACE]);
+  });
+});
+
+describe('a receipt kept without a transaction (#567)', () => {
+  const OWN = 'demo_store_feed';
+  const photo = (id: string, fields: Record<string, unknown>) =>
+    repo.upsert('receipt', OWN, id, { source: 'photo', date: '2026-07-04', totalCents: 0, image: 'data:image/jpeg;base64,ZmFrZQ==', ...fields } as never);
+
+  beforeEach(async () => {
+    // the demo identity's own receipts live in its device-only feed
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
+    await repo.upsert('space', 's2', 's2', { name: 'No shops', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('transaction', 's2', 'coffee', { accountId: 'a1', date: '2026-07-05', amountCents: -420, currency: 'EUR', merchant: 'Koffiebar', needsReview: 1 });
+  });
+  afterEach(() => localStorage.removeItem('munni_session'));
+
+  it('is proposed to the payment it fits in a space that includes no shop — once it has an amount, never before', async () => {
+    await photo('photo1', {});
+    expect((await rematchSpaces(backend, repo)).proposed).toBe(0);
+
+    await photo('photo1', { totalCents: 420 });
+    expect((await rematchSpaces(backend, repo)).proposed).toBe(1);
+    const link = await backend.get('receiptLink', receiptLinkId('s2', 'photo1'));
+    expect(link?.proposedTxId).toBe('coffee');
+    expect(link?.txId ?? null).toBeNull();
+    // the space's copy carries the picture: its members read it without the owner's feed
+    expect(link?.source).toBe('photo');
+    expect(link?.image).toContain('data:image/jpeg');
+    // asked once: a second pass has nothing to add
+    expect((await rematchSpaces(backend, repo)).proposed).toBe(0);
+  });
+
+  it('one photo against every space at once; a pass about one connection leaves the photos out; the fingerprint counts them', async () => {
+    const before = await matchInputFingerprint(backend);
+    await photo('photo2', { totalCents: 420, merchant: 'Koffiebar Centraal' });
+    expect(await matchInputFingerprint(backend)).not.toBe(before);
+
+    expect((await reevaluateSpace(backend, repo, 's2', CONN)).proposed).toBe(0);
+    const row = (await backend.get('receipt', 'photo2'))!;
+    expect((await matchReceiptEverywhere(backend, repo, row)).proposed).toBe(1);
+    expect((await backend.get('receiptLink', receiptLinkId('s2', 'photo2')))?.proposedTxId).toBe('coffee');
+    // the other space has no such payment: nothing was written there
+    expect(await backend.get('receiptLink', receiptLinkId(SPACE, 'photo2'))).toBeUndefined();
+  });
+
+  it('a name that fits no payment keeps the photo waiting', async () => {
+    await photo('photo3', { totalCents: 420, merchant: 'Bakker Bart' });
+    expect((await rematchSpaces(backend, repo)).proposed).toBe(0);
   });
 });
 

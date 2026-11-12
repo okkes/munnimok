@@ -14,6 +14,9 @@ export interface ReceiptReadOutcome {
   /** what the receipt itself says was paid */
   totalCents: number;
   currency?: string;
+  /** the shop and the day as printed — a receipt kept without a transaction has no other source for them */
+  merchant?: string;
+  date?: string;
 }
 
 /** the expense categories the reader may choose from: every sub under its main, and a main that stands alone */
@@ -62,6 +65,8 @@ export function ReceiptAiRead({
           reconciled: answer.receipt.reconciled,
           totalCents: answer.receipt.totalCents,
           ...(answer.receipt.currency ? { currency: answer.receipt.currency } : {}),
+          ...(answer.receipt.merchant ? { merchant: answer.receipt.merchant } : {}),
+          ...(answer.receipt.date ? { date: answer.receipt.date } : {}),
         });
       }
     } finally {

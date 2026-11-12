@@ -5,6 +5,7 @@ import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
 import { useReceiptOps } from '@/application/receipts';
+import type { ReceiptOps } from '@/application/receipts';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { connectorsAvailable, useStoreConnMetas } from '@/application/connections';
 import { globalAsEntry, linkAsEntry, spaceReceipts } from '@/application/receiptLinks';
@@ -19,10 +20,35 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { ReceiptAiRead } from './ReceiptAiRead';
+import type { ReceiptReadOutcome } from './ReceiptAiRead';
+import { ReceiptFacts } from './ReceiptFacts';
 import { useFileByReceipt } from './useFileByReceipt';
 import { ReceiptBody, receiptTitle } from './ReceiptBody';
 import type { ReceiptRow } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
+
+/**
+ * A photo's standing (#567): `born` on a transaction — the link IS the receipt; `own` — kept by the person
+ * without a transaction, among their own receipts; `linked` — an own photo attached or proposed in this space.
+ */
+const photoKind = (entry: ReceiptEntry | null | undefined): 'born' | 'own' | 'linked' | null => {
+  if (entry?.data.source !== 'photo') return null;
+  if (entry.kind === 'global') return 'own';
+  return entry.data.id === entry.linkId ? 'born' : 'linked';
+};
+
+/** what a reader found goes where the photo lives: onto its link in the space, or onto the person's own receipt */
+async function keepRead(ops: ReceiptOps, fileByReceipt: (txId: string) => Promise<boolean>, entry: ReceiptEntry, outcome: ReceiptReadOutcome): Promise<void> {
+  if (!entry.linkId) {
+    const { totalCents, ...found } = outcome;
+    // a reading that found no total leaves a typed one alone
+    await ops.setOwnFacts(entry.data.id, totalCents > 0 ? { ...found, totalCents } : found);
+    return;
+  }
+  await ops.setRead(entry.linkId, outcome);
+  // now that the lines are known, a payment of the same amount is filed by them
+  for (const txId of entry.txIds ?? []) await fileByReceipt(txId);
+}
 
 /** where a receipt is looked at from: a space (links, matching) or the connections hub (the party's own list) */
 export type ReceiptScope = 'space' | 'global';
@@ -107,7 +133,10 @@ export function ReceiptScreen({
   const detachOne = !!contextTxId && linkedIds.length > 1 && linkedIds.includes(contextTxId);
   const ladder = receipt && scope === 'space' ? candidateLadder(receipt, txs ?? []) : { primary: [], more: [] };
   const candidates = () => (showMore ? [...ladder.primary, ...ladder.more] : ladder.primary);
-  const photoBorn = entry?.kind === 'link' && entry.data.source === 'photo';
+  const photo = photoKind(entry);
+  const photoBorn = photo === 'born';
+  // an own photo is the person's to read whatever the space allows; one in the space follows the space
+  const readable = photo === 'own' || (photo !== null && !spaceLocked);
   const connection = receipt?.instanceId ? metas?.find((m) => m.id === receipt.instanceId) : undefined;
 
   const readItems = async () => {
@@ -198,6 +227,22 @@ export function ReceiptScreen({
                     </div>
                   </div>
                 )}
+                {/* #567: a receipt kept without a transaction — its facts are typed here or read below, and it waits
+                    for the payment it fits */}
+                {photo === 'own' && (
+                  <>
+                    <ReceiptFacts
+                      key={`${receipt.date}:${receipt.totalCents}:${receipt.merchant ?? ''}`}
+                      receipt={receipt}
+                      onSave={(facts) => receiptOps.setOwnFacts(receipt.id, facts)}
+                    />
+                    {receipt.totalCents > 0 && (
+                      <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="receipt-waiting">
+                        {t('receipt.waiting')}
+                      </p>
+                    )}
+                  </>
+                )}
                 <ReadOnlyNote testId="receipt-readonly-note" />
                 {!linkedTxId && !spaceLocked && (
                   <>
@@ -231,16 +276,8 @@ export function ReceiptScreen({
                     )}
                   </>
                 )}
-                {photoBorn && !spaceLocked && aiReader && receipt.image && entry.linkId && (
-                  <ReceiptAiRead
-                    images={[receipt.image]}
-                    hasItems={!!receipt.items?.length}
-                    onRead={async (outcome) => {
-                      await receiptOps.setRead(entry.linkId!, outcome);
-                      // #567: now that the lines are known, a payment of the same amount is filed by them
-                      for (const txId of entry.txIds ?? []) await fileByReceipt(txId);
-                    }}
-                  />
+                {readable && aiReader && receipt.image && (
+                  <ReceiptAiRead images={[receipt.image]} hasItems={!!receipt.items?.length} onRead={(outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome)} />
                 )}
                 {photoBorn && !spaceLocked && !aiReader && !receipt.items?.length && connectorsAvailable() && (
                   <>

@@ -215,12 +215,16 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var name = line.Text(NameField);
         var total = Money(line["total"]);
         if (name is null || total is null) return null;
+        var discount = line["discount"] as JsonObject;
         return new
         {
             name,
             qty = line["quantity"]?.GetValue<decimal>(),
             unitCents = Money(line["unit_price"])?.Value,
             totalCents = total.Value.Value,
+            // what came off this very line: without it the lines add up to more than the receipt charged
+            discountCents = Money(discount?["amount"])?.Value,
+            discountLabel = discount?.Text("label"),
             kind = line.Text("kind") is { } kind && kind != "product" ? kind : null,
         };
     }

@@ -26,6 +26,22 @@ describe('receipt lines as categories', () => {
     ]);
   });
 
+  it('a discount the shop states on a line comes off that line alone; the receipt’s own discount lines still come off all of them', () => {
+    const lines = receiptLines([
+      { name: 'Melk 2×', totalCents: 238, discountCents: -30, discountLabel: '2e halve prijs' },
+      { name: 'Brood', totalCents: 189 },
+    ]);
+    expect(lines.map((line) => [line.printedCents, line.paidCents])).toEqual([[238, 208], [189, 189]]);
+    const both = receiptLines([
+      { name: 'Melk 2×', totalCents: 238, discountCents: -38 },
+      { name: 'Brood', totalCents: 200 },
+      { name: 'Bonus', totalCents: -40, kind: 'discount' },
+    ]);
+    expect(both.map((line) => line.paidCents)).toEqual([180, 180]);
+    // a line discounted to nothing claims nothing — and never less
+    expect(receiptLines([{ name: 'Gratis', totalCents: 100, discountCents: -150 }])[0].paidCents).toBe(0);
+  });
+
   it('no discount leaves every line at its printed value; a receipt without paid lines has none; a discount never pays out', () => {
     expect(receiptLines([{ name: 'Milk', totalCents: 129 }, { name: 'Bread', totalCents: 199 }]).map((line) => line.paidCents)).toEqual([129, 199]);
     expect(receiptLines(undefined)).toEqual([]);

@@ -554,6 +554,9 @@ export interface ReceiptItem {
   kind?: 'fee' | 'deposit' | 'discount' | 'adjustment' | 'unattributed';
   /** #567: the category the reader suggests for the line — a suggestion, the transaction's own split is the truth */
   catId?: string;
+  /** #567: what came off this very line (negative), as the shop states it — `totalCents` is the line before it */
+  discountCents?: number;
+  discountLabel?: string;
 }
 
 /** #567: one receipt line filed under a category, for one transaction */

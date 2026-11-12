@@ -74,6 +74,8 @@ import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { presetTxFilters } from '@/features/transactions/txFilters';
 import { StatementImportFlow } from '@/features/accounts/StatementImportFlow';
+import { ReceiptQuickAdd } from '@/features/shopping/ReceiptQuickAdd';
+import { myStoreFeedId } from '@/application/storeFeed';
 import { setCategoriesCreateIntent } from '@/features/categories/categoriesHandoff';
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { setFriendsAddIntent } from '@/features/friends/friendsHandoff';
@@ -238,6 +240,9 @@ export function HomeScreen() {
   // #180: the quick-add speed dial + its two in-place hosts
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickImportOpen, setQuickImportOpen] = useState(false);
+  const [quickReceiptOpen, setQuickReceiptOpen] = useState(false);
+  // #567: a receipt without a transaction lives among the person's own receipts — a profile without an account has none
+  const ownReceipts = myStoreFeedId() !== null;
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
@@ -499,6 +504,7 @@ export function HomeScreen() {
               // #348: adding a transaction is a screen of its own
               ['tx', 'receipt-text-plus-outline', () => void navigate({ to: '/transactions/new' })],
               ['import', 'file-upload-outline', () => setQuickImportOpen(true)],
+              ...(ownReceipts ? ([['receipt', 'camera-plus-outline', () => setQuickReceiptOpen(true)]] as const) : []),
               ['category', 'shape-plus-outline', () => {
                 setCategoriesCreateIntent();
                 void navigate({ to: '/categories' });
@@ -534,6 +540,7 @@ export function HomeScreen() {
       </Sheet>
       {/* the FAB's in-place host — sheets are siblings (#241 rule) */}
       <StatementImportFlow open={quickImportOpen} onOpenChange={setQuickImportOpen} />
+      <ReceiptQuickAdd open={quickReceiptOpen} onOpenChange={setQuickReceiptOpen} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* desktop ruling (§4.4) + D4: strict two-column split — the
             balance heads the left column (a 1040px band saying one number
