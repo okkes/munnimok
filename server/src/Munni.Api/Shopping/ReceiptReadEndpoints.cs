@@ -125,7 +125,8 @@ public static class ReceiptReadEndpoints
         {
             read = await reader.ReadAsync(photos, categories, await ModelAsync(db, ct), ct);
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        // a provider that takes too long is a cancelled call too: only the app going away is not the provider's failure
+        catch (Exception e) when (!ct.IsCancellationRequested)
         {
             // the provider's own error text may quote the request: only its type is logged
 #pragma warning disable S6667 // deliberate: the exception itself stays out of the log, see above

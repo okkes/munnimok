@@ -217,6 +217,9 @@ public class ReceiptReadEndpointsTests
 
         factory.Reader.Answer = () => throw new HttpRequestException("the provider is away");
         Assert.Equal("unavailable", (await ReadAsync(shopper, Jpeg)).GetProperty("state").GetString());
+        // a provider that takes too long reports a cancelled call nobody asked for: the same answer, not an error
+        factory.Reader.Answer = () => throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 60 seconds elapsing.");
+        Assert.Equal("unavailable", (await ReadAsync(shopper, Jpeg)).GetProperty("state").GetString());
         Assert.Equal(0, (await admin.GetFromJsonAsync<JsonElement>("/admin/receipt-reading")).GetProperty("readThisMonth").GetInt32());
         // the one read of the day is still there
         factory.Reader.Answer = () => new ReadReceipt("Shop", null, null, 100, [new ReadLine("Thing", null, null, 100, "item", null)]);

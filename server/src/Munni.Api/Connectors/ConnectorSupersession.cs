@@ -95,7 +95,8 @@ public sealed class ConnectorSupersession(AppDbContext db, ConnectorClient clien
                     session.Id, session.Provider, reply.Error?.Code ?? "-");
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        // best effort includes a control plane that is too slow: its timeout arrives as a cancelled call
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "could not end superseded connector session {Session} of {Provider} at the control plane", session.Id, session.Provider);
         }
