@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.21.2',
+    date: '2026-11-12',
+    items: [
+      {
+        en: 'Behind the scenes: the server no longer restarts itself when its hourly bank and shop update runs into a slow connection, and it answers the question the app asks at every start faster.',
+        nl: 'Achter de schermen: de server start niet meer opnieuw op wanneer de bank- en winkelupdate van elk uur op een trage verbinding stuit, en beantwoordt de vraag die de app bij elke start stelt sneller.',
+        tr: 'Perde arkasında: saatlik banka ve mağaza güncellemesi yavaş bir bağlantıya takıldığında sunucu artık kendini yeniden başlatmıyor ve uygulamanın her açılışta sorduğu soruyu daha hızlı yanıtlıyor.',
+      },
+    ],
+  },
+  {
     version: '5.21.1',
     date: '2026-11-12',
     items: [
