@@ -117,6 +117,7 @@ export function AgentScreen({ id, call, busy, act }: Readonly<{ id: string } & S
           <Fact label="Last heartbeat" value={`${ago(agent.lastHeartbeatAt)} · ${when(agent.lastHeartbeatAt)}`} />
           <Fact label="Online" value={agent.online ? 'yes' : 'no'} />
           <Fact label="Catalogue" value={agent.stale ? 'stale — rebuild the image' : 'matches the control plane'} />
+          <Fact label="Browser" value={browserLine(agent)} />
           <Fact label="Revoked" value={agent.revoked ? 'yes' : 'no'} />
           {agent.hosted && <Fact label="Holder" value={holderLine(agent, holder)} />}
           {capabilityLines(agent).map((line) => (
@@ -226,6 +227,13 @@ export function AgentScreen({ id, call, busy, act }: Readonly<{ id: string } & S
       </section>
     </>
   );
+}
+
+/** #562: the Playwright release names the Chromium an agent drives */
+export function browserLine(agent: AgentView): string {
+  const theirs = agent.browserVersion ? `Playwright ${agent.browserVersion}` : 'not stated (an image from before the claim)';
+  if (!agent.browserBehind) return theirs;
+  return `${theirs} — behind the platform's ${agent.platformBrowserVersion ?? '?'}: pull the image and start the agent again`;
 }
 
 function Fact({ label, value }: Readonly<{ label: string; value: React.ReactNode }>) {

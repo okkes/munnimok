@@ -269,7 +269,8 @@ export function StatementImportFlow({
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
     await linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
-    await linkTransferPairs(store, repo).catch(() => undefined);
+    // every space is walked: one this identity only reads is left to its writers, never the pass's end
+    await linkTransferPairs(store, repo.upkeep()).catch(() => undefined);
     await applyTitleMemory(store, repo, spaceId).catch(() => undefined);
     // the import may have registered new feeds — hosts refresh ownership
     if (feeds) void fetchMyFeedIds().catch(() => undefined);

@@ -18,7 +18,8 @@ import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import type { Catalog } from '@/domain/catalog';
 import type { CatalogDoc } from '@/domain/catalogDoc';
 import { isDebtTracked } from '@/domain/debts';
-import { periodHistory } from '@/domain/periods';
+import { goalPaidTxs } from '@/domain/goals';
+import { nextPeriod, periodHistory } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
 import { slackCents,
   OPTIONAL_SEGMENTS,
@@ -27,6 +28,8 @@ import { slackCents,
   categoryReservations,
   estimateTarget,
   eventNetBefore,
+  goalRealizedCents,
+  isLongCadence,
   periodLedger,
   periodsAhead,
   planFundedFraction,
@@ -148,7 +151,6 @@ export interface PlanningModel {
   /** newest last, the current one excluded — what the estimates look at */
   pastPeriods: Period[];
   plan: PlanRow | null;
-  previousPlan: PlanRow | null;
   /** the actual plans of past periods, newest first (the previous one included) */
   pastPlans: PlanRow[];
   sandbox: PlanRow | null;
@@ -160,8 +162,8 @@ export interface PlanningModel {
   /** the source rows a copy checks a subject against (stillRelevant) */
   relevance: RelevanceSources;
   /**
-   * #557 (user 2026-10-23): the period has no plan, was not started over, and
-   * the previous period's plan has subjects — its plan carries over by itself
+   * #557 (user 2026-10-23): the period has no plan, was not started over, and the newest plan before it has
+   * subjects — that plan carries over by itself, whether or not the periods in between were planned
    */
   continuable: boolean;
   /** the past periods' ledgers, newest last — what the estimates and the recommendation read */
@@ -194,6 +196,13 @@ export interface PlanningModel {
    * one-off whose row spent nothing (yet, or any more) still shows.
    */
   unplannedOf: (plan: PlanRow) => UnplannedRow[];
+  /**
+   * #455 (user 2026-11-12): what cashed-out goals bought inside the plan's
+   * period, largest first — shown under Goals as the goal itself. Its
+   * savings paid, so it is no part of what the period started with and asks
+   * for no funding.
+   */
+  goalPurchasesOf: (plan: PlanRow) => GoalPurchase[];
   estimate: (family: ReadonlySet<string>) => TargetEstimate;
   contextFor: (period: Period) => SubjectContext;
   /** the current actual plan's subjects in the red */
@@ -222,51 +231,64 @@ export const sortSubjects = (rows: readonly PlanSubjectRow[], segments: readonly
 
 const DEFAULT_SPACE = { periodType: 'month', periodDay: 1 } as SpaceRow;
 
-/** the kinds whose unspent funding carries into the next period */
-const CARRIED_SEGMENTS: ReadonlySet<PlanSegmentKind> = new Set(['recurring', 'debts', 'events']);
+/** how far a plan's leftover looks past its own period for spending, when the periods after it were never planned */
+const GAP_PERIODS = 24;
 
-const realizedIn = (ledger: PeriodLedger, segment: PlanSegmentKind, sourceId: string): number => {
-  if (segment === 'debts') return ledger.byDebt.get(sourceId) ?? 0;
-  if (segment === 'events') return ledger.byEvent.get(sourceId) ?? 0;
-  return ledger.byRecurring.get(sourceId) ?? 0;
-};
+const NOTHING_ROLLED: ReadonlyMap<string, number> = new Map();
 
-/** the recurring costs, loans and events the subjects fund, each with its segment (S3776) */
-function carriedSources(subjects: readonly PlanSubjectRow[]): Map<string, PlanSegmentKind> {
-  const sources = new Map<string, PlanSegmentKind>();
-  for (const s of subjects) if (CARRIED_SEGMENTS.has(s.segment) && s.sourceId) sources.set(s.sourceId, s.segment);
-  return sources;
+/** what a plan leaves behind per source — see `rollOver` */
+interface Leftover {
+  start: string;
+  left: ReadonlyMap<string, number>;
+}
+
+interface RollOverInput {
+  /** the actual plans, oldest first */
+  chain: readonly PlanRow[];
+  subjectsByPlan: ReadonlyMap<string, PlanSubjectRow[]>;
+  periodOf: (plan: PlanRow) => Period;
+  periodAfter: (period: Period) => Period;
+  /** does this subject keep what a period leaves unspent? */
+  keeps: (subject: PlanSubjectRow, period: Period) => boolean;
+  /** what the subject's source took out of one period */
+  realized: (subject: PlanSubjectRow, period: Period) => number;
 }
 
 /**
- * What earlier periods set aside for a recurring cost, a loan or an event
- * and never spent. A bill walks back to its last payment (funding before it
- * was spent); an event's money adds up over every period before (#504).
+ * #557 (user 2026-11-11, option B): what each plan leaves behind — the
+ * funding of a long-cadence recurring cost, an event or a goal that the
+ * period did not spend, on top of what rolled into it. It reads as funding
+ * in the plan after it, so the chain runs oldest first, each plan on the
+ * one before. Spending in periods nobody planned comes off too: a yearly
+ * bill paid in a skipped month has used its money up.
  */
-function carriedBySource(
-  data: PlanningData,
-  space: SpaceRow,
-  forPeriod: Period,
-  actualByStart: ReadonlyMap<string, PlanRow>,
-  subjectsByPlan: ReadonlyMap<string, PlanSubjectRow[]>,
-  ledgerFor: (period: Period) => PeriodLedger,
-): Map<string, number> {
-  const out = new Map<string, number>();
-  const earlier = [...actualByStart.values()]
-    .filter((p) => p.periodStart && p.periodStart < forPeriod.start)
-    .sort((a, b) => b.periodStart!.localeCompare(a.periodStart!));
-  for (const [sourceId, segment] of carriedSources(data.subjects)) {
-    let carried = 0;
-    for (const plan of earlier) {
-      const subject = (subjectsByPlan.get(plan.id) ?? []).find((s) => s.sourceId === sourceId && s.segment === segment);
-      if (!subject) continue;
-      const realized = realizedIn(ledgerFor(periodHistory(space.periodType, space.periodDay, 1, parseLocalDate(plan.periodStart!))[0]), segment, sourceId);
-      carried += Math.max(0, subject.fundedCents - realized);
-      if (segment !== 'events' && realized > 0) break; // the bill was paid in that period: funding before it was spent
+function rollOver(input: RollOverInput): Leftover[] {
+  const out: Leftover[] = [];
+  let before: ReadonlyMap<string, number> = NOTHING_ROLLED;
+  for (const [index, plan] of input.chain.entries()) {
+    const own = input.periodOf(plan);
+    const nextStart = input.chain[index + 1]?.periodStart;
+    const left = new Map<string, number>();
+    for (const subject of input.subjectsByPlan.get(plan.id) ?? []) {
+      if (subject.deleted !== 0 || !subject.sourceId || !input.keeps(subject, own)) continue;
+      let cents = subject.fundedCents + (before.get(subject.sourceId) ?? 0) - input.realized(subject, own);
+      let gap = input.periodAfter(own);
+      for (let n = 0; n < GAP_PERIODS && nextStart && gap.start < nextStart; n += 1) {
+        cents -= input.realized(subject, gap);
+        gap = input.periodAfter(gap);
+      }
+      if (cents > 0) left.set(subject.sourceId, cents);
     }
-    if (carried > 0) out.set(sourceId, carried);
+    out.push({ start: plan.periodStart!, left });
+    before = left;
   }
   return out;
+}
+
+/** a cashed-out goal and what it bought in one period */
+export interface GoalPurchase {
+  goal: GoalRow;
+  cents: number;
 }
 
 /** the segment an Unplanned row's kind belongs to — where its one-off funding is held */
@@ -348,6 +370,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     loanIds: new Set([...loansById.keys()].filter((id) => !poolIds.has(id))),
     eventIds: new Set(eventsById.keys()),
     poolIds,
+    goalByTx: goalPaidTxs(data.goals),
   };
 
   const ledgers = new Map<string, PeriodLedger>();
@@ -357,6 +380,45 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     const ledger = periodLedger(data.txs, forPeriod, owners);
     ledgers.set(forPeriod.start, ledger);
     return ledger;
+  };
+
+  const periodOf = (plan: PlanRow): Period =>
+    plan.periodStart ? periodHistory(space.periodType, space.periodDay, 1, parseLocalDate(plan.periodStart))[0] : period;
+  const chain = [...actualByStart.values()].sort((a, b) => a.periodStart!.localeCompare(b.periodStart!));
+  const realizedOf = (subject: PlanSubjectRow, forPeriod: Period): number => {
+    const sourceId = subject.sourceId ?? '';
+    if (subject.segment === 'goals') return goalRealizedCents(sourceId, data.contributions, forPeriod);
+    if (subject.segment === 'events') return ledgerFor(forPeriod).byEvent.get(sourceId) ?? 0;
+    if (subject.segment === 'debts') return ledgerFor(forPeriod).byDebt.get(sourceId) ?? 0;
+    return ledgerFor(forPeriod).byRecurring.get(sourceId) ?? 0;
+  };
+  let leftovers: Leftover[] | null = null;
+  /** what rolled into a period: the leftover of the last plan before it */
+  const rolledInto = (forPeriod: Period): ReadonlyMap<string, number> => {
+    leftovers ??= rollOver({
+      chain,
+      subjectsByPlan,
+      periodOf,
+      periodAfter: (p) => nextPeriod(space.periodType, space.periodDay, parseLocalDate(p.end)),
+      keeps: (subject, own) => {
+        if (subject.segment === 'events' || subject.segment === 'goals') return true;
+        const rec = subject.segment === 'recurring' ? recurringsById.get(subject.sourceId ?? '') : undefined;
+        return !!rec && isLongCadence(rec, own);
+      },
+      realized: realizedOf,
+    });
+    for (let i = leftovers.length - 1; i >= 0; i -= 1) if (leftovers[i].start < forPeriod.start) return leftovers[i].left;
+    return NOTHING_ROLLED;
+  };
+  /** ahead (#557): what the plans from the current period up to `forPeriod` hold for a loan and have not paid yet */
+  const debtHeldBefore = (forPeriod: Period) => (loanId: string): number => {
+    let held = 0;
+    for (const plan of chain) {
+      if (plan.periodStart! < period.start || plan.periodStart! >= forPeriod.start) continue;
+      const subject = (subjectsByPlan.get(plan.id) ?? []).find((s) => s.deleted === 0 && s.segment === 'debts' && s.sourceId === loanId);
+      if (subject) held += Math.max(0, subject.fundedCents - realizedOf(subject, periodOf(plan)));
+    }
+    return held;
   };
 
   const contexts = new Map<string, SubjectContext>();
@@ -383,15 +445,15 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
         spentBefore.set(eventId, net);
         return net;
       },
-      carriedBySource: carriedBySource(data, space, forPeriod, actualByStart, subjectsByPlan, ledgerFor),
+      carriedBySource: rolledInto(forPeriod),
+      ahead: forPeriod.start > period.start,
+      debtFundedBefore: forPeriod.start > period.start ? debtHeldBefore(forPeriod) : undefined,
       budgetOpts,
     };
     contexts.set(forPeriod.start, ctx);
     return ctx;
   };
 
-  const periodOf = (plan: PlanRow): Period =>
-    plan.periodStart ? periodHistory(space.periodType, space.periodDay, 1, parseLocalDate(plan.periodStart))[0] : period;
   const reservationsOf = (plan: PlanRow): Map<string, Reservation> => categoryReservations(subjectsOf(plan), budgetsById, data.catalog);
   const views = new Map<string, SubjectView[]>();
   const viewsOf = (plan: PlanRow): SubjectView[] => {
@@ -404,8 +466,9 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     return list;
   };
 
+  // a period ahead holds what it was given itself: the money that rolled into it is the plans' before it, counted there (#557)
+  const ownFunded = (list: readonly SubjectView[]): number => list.reduce((sum, v) => sum + Math.max(0, v.subject.fundedCents), 0);
   const plan = actualByStart.get(period.start) ?? null;
-  const previousPlan = actualByStart.get(previousPeriod.start) ?? null;
   const pastPlans = [...actualByStart.values()]
     .filter((p) => p.periodStart! < period.start)
     .sort((a, b) => b.periodStart!.localeCompare(a.periodStart!));
@@ -418,7 +481,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
         period: periodOf(p),
         plan: p,
         views: list,
-        fundedCents: list.reduce((sum, v) => sum + v.fundedCents, 0),
+        fundedCents: ownFunded(list),
         fraction: planFundedFraction(list),
       };
     });
@@ -456,6 +519,13 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     unplanned.set(p.id, list);
     return list;
   };
+  const goalPurchasesOf = (p: PlanRow): GoalPurchase[] =>
+    [...ledgerFor(periodOf(p)).byGoal]
+      .flatMap(([id, cents]): GoalPurchase[] => {
+        const goal = goalsById.get(id);
+        return goal && cents > 0 ? [{ goal, cents }] : [];
+      })
+      .sort((a, b) => b.cents - a.cents);
   const oneOffsFunded = (p: PlanRow): number => [...oneOffMap(p).values()].reduce((sum, cents) => sum + cents, 0);
 
   // THE POOL RULE (user 2026-10-08): the pool reads as what the period STARTED
@@ -479,7 +549,10 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
   // own source sets keep this sum the same with or without subjects — an overlap no longer counts twice
   const startedWithOf = (p: PlanRow): number =>
     pool + viewsOf(p).reduce((sum, v) => sum + v.realizedCents, 0) + unplannedOf(p).reduce((sum, m) => sum + m.cents, 0);
-  const fundedOf = (p: PlanRow): number => viewsOf(p).reduce((sum, v) => sum + v.fundedCents, 0) + oneOffsFunded(p);
+  const isAhead = (p: PlanRow): boolean => p.kind === 'actual' && !!p.periodStart && p.periodStart > period.start;
+  // #557: what rolled over is money in the pool that is spoken for — it comes off like the period's own funding
+  const fundedOf = (p: PlanRow): number =>
+    (isAhead(p) ? ownFunded(viewsOf(p)) : viewsOf(p).reduce((sum, v) => sum + v.fundedCents, 0)) + oneOffsFunded(p);
   const aheadHeldExcept = (p: PlanRow): number => ahead.filter((a) => a.plan.id !== p.id).reduce((sum, a) => sum + a.fundedCents, 0);
 
   const taken = new Set(ahead.map((a) => a.period.start));
@@ -504,7 +577,6 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     previousPeriod,
     pastPeriods,
     plan,
-    previousPlan,
     pastPlans,
     sandbox,
     blueprints,
@@ -512,12 +584,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     poolAccounts,
     poolIds,
     relevance: { recurringsById, loansById, budgetsById, eventsById, goalsById, poolIds },
-    continuable:
-      !plan &&
-      !data.removedPlanStarts.has(period.start) &&
-      !!previousPlan &&
-      previousPlan.periodStart !== period.start &&
-      (subjectsByPlan.get(previousPlan.id) ?? []).length > 0,
+    continuable: !plan && !data.removedPlanStarts.has(period.start) && pastPlans.length > 0 && (subjectsByPlan.get(pastPlans[0].id) ?? []).length > 0,
     pastLedgers: pastPeriods.map(ledgerFor),
     aheadSuggested: aheadSuggested(space.periodType),
     ahead,
@@ -534,6 +601,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     toAllocateOf: (p) => startedWithOf(p) - fundedOf(p) - aheadHeldExcept(p),
     reservationsOf,
     unplannedOf,
+    goalPurchasesOf,
     estimate: (family) => estimateTarget(family, pastPeriods.map(ledgerFor)),
     contextFor,
     attention: currentViews.filter((v) => v.status === 'overspent'),
@@ -546,12 +614,6 @@ export async function hasCurrentPlan(store: StorageBackend, spaceId: string): Pr
   const current = periodHistory(space.periodType, space.periodDay, 1)[0];
   const row = await store.get('plan', planId(spaceId, 'actual', current.start));
   return !!row && row.deleted === 0;
-}
-
-/** how many subjects of the current actual plan are in the red — the tab's dot, the home block, the notification */
-export async function planOverspentCount(store: StorageBackend, spaceId: string): Promise<number> {
-  if (!(await hasCurrentPlan(store, spaceId))) return 0;
-  return buildPlanning(await loadPlanningData(store, spaceId)).attention.length;
 }
 
 export interface CategoryAvailability {

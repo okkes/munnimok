@@ -525,4 +525,18 @@ public class PushTests : IClassFixture<SyncApiFactory>
         var held = (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt!.Value;
         Assert.True(held <= DateTimeOffset.UtcNow && held > first);
     }
+
+    [Fact]
+    public async Task A_cleared_moment_given_in_another_time_zone_is_kept_as_the_same_instant_in_utc()
+    {
+        var client = ClientFor($"clr-{Guid.NewGuid():N}");
+        var local = DateTimeOffset.UtcNow.AddMinutes(-10).ToOffset(TimeSpan.FromHours(2));
+
+        var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(local));
+
+        // postgres takes a timestamptz at offset zero only: another offset must not reach it
+        var kept = (await put.Content.ReadFromJsonAsync<ClearedMoment>())!.ClearedAt!.Value;
+        Assert.Equal(local, kept);
+        Assert.Equal(TimeSpan.Zero, kept.Offset);
+    }
 }

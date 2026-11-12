@@ -3,10 +3,9 @@ import { useData } from '@/app/data';
 import { identityKey, useSession } from '@/app/session';
 import { logActivity } from '@/application/activity';
 import { useQuery } from '@/db/useQuery';
+import { cachedNavTabs, rememberNavTabs } from './navCache';
 import { MAX_NAV_PICKS, navUsableFor, resolveNavTabs, storedNavTabs } from './navFeatures';
 import type { NavFeatureId } from './navFeatures';
-
-const CACHE_KEY = 'munni_nav_tabs';
 
 /** Tailwind's md — where AppLayout swaps the bottom bar for the side panel */
 const SIDE_NAV_QUERY = '(min-width: 48rem)';
@@ -19,29 +18,6 @@ const readSideNav = () => globalThis.matchMedia?.(SIDE_NAV_QUERY)?.matches ?? fa
 
 /** true where the side panel lists every feature instead of the bottom bar */
 export const useSideNavShown = (): boolean => useSyncExternalStore(subscribeSideNav, readSideNav, () => false);
-
-/** per identity, per space: the bar this device drew last */
-type NavCache = Record<string, Record<string, string[]>>;
-
-function readCache(): NavCache {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}');
-    return parsed && typeof parsed === 'object' ? (parsed as NavCache) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeCache(who: string, spaceId: string, tabs: readonly NavFeatureId[]): void {
-  try {
-    const cache = readCache();
-    if (cache[who]?.[spaceId]?.join() === tabs.join()) return;
-    cache[who] = { ...cache[who], [spaceId]: [...tabs] };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    // a full or blocked storage only costs the first frame after a cold start
-  }
-}
 
 /**
  * The active space's bar after Home. Until the space row has loaded, the
@@ -57,9 +33,9 @@ export function useNavTabs(): NavFeatureId[] {
   const row = useQuery(store, async () => (await store.get('space', spaceId)) ?? null, [spaceId], undefined, `nav:${spaceId}`);
   const resolved = useMemo(() => (row === undefined ? undefined : resolveNavTabs(row?.navTabs, usable)), [row, usable]);
   useEffect(() => {
-    if (resolved && who) writeCache(who, spaceId, resolved);
+    if (resolved && who) rememberNavTabs(who, spaceId, resolved);
   }, [resolved, who, spaceId]);
-  return resolved ?? resolveNavTabs(readCache()[who]?.[spaceId], usable);
+  return resolved ?? resolveNavTabs(cachedNavTabs(who, spaceId), usable);
 }
 
 export interface NavOps {

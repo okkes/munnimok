@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCatalog } from './catalog';
-import { CSV_COLUMNS, delimiterForLang, serializeCsv, toCsvRows } from './exportCsv';
+import { CSV_COLUMNS, delimiterForLang, exportWindow, serializeCsv, toCsvRows } from './exportCsv';
 import type { ExportContext } from './exportCsv';
 import type { AccountRow, TxView } from '@/db/types';
 
@@ -26,6 +26,7 @@ const ctx: ExportContext = {
   catalog: buildCatalog([], false),
   catName: (cat) => cat.nameKey ?? cat.name ?? cat.id,
   typeName: (t) => t,
+  spaceId: 's-export',
 };
 
 describe('toCsvRows', () => {
@@ -82,17 +83,32 @@ describe('toCsvRows', () => {
     expect(rows[3][CSV_COLUMNS.indexOf('amount')]).toBe('-7.50');
   });
 
-  it('technical mode appends ids', () => {
-    const rows = toCsvRows([tx({})], { ...ctx, technical: true });
-    expect(rows[0]).toContain('tx_id');
-    expect(rows[1]).toContain('t1');
-    expect(rows[1]).toContain('a1');
+  it('every row ends with its ids: a part names its parent transaction and its own category (#498)', () => {
+    const rows = toCsvRows(
+      [tx({ catId: 'groceries', splits: [{ catId: 'alcohol', amountCents: 500 }, { catId: 'groceries', amountCents: 750 }] })],
+      ctx,
+    );
+    expect(rows[0].slice(-4)).toEqual(['tx_id', 'account_id', 'category_id', 'space_id']);
+    // the space is the one being exported: a bank row can live in another space's feed
+    expect(rows[1].slice(-4)).toEqual(['t1', 'a1', 'groceries', 's-export']);
+    expect(rows[2].slice(-4)).toEqual(['t1', 'a1', 'alcohol', 's-export']);
   });
 
   it('multi-space exports lead with the space column', () => {
     const rows = toCsvRows([tx({})], { ...ctx, spaceName: 'Household' });
     expect(rows[0][0]).toBe('space');
     expect(rows[1][0]).toBe('Household');
+  });
+});
+
+describe('exportWindow', () => {
+  it('"this period" is the space\'s own period; the other ranges are the same for every space (#498)', () => {
+    const custom = { from: '2026-01-05', to: '2026-02-05' };
+    expect(exportWindow('all', {}, '2026-07-15', custom)).toBeNull();
+    expect(exportWindow('year', {}, '2026-07-15', custom)).toEqual({ from: '2026-01-01', to: '2026-07-15' });
+    expect(exportWindow('custom', {}, '2026-07-15', custom)).toEqual(custom);
+    expect(exportWindow('period', { periodType: 'month', periodDay: 1 }, '2026-07-15', custom)?.from.slice(8)).toBe('01');
+    expect(exportWindow('period', { periodType: 'month', periodDay: 10 }, '2026-07-15', custom)?.from.slice(8)).toBe('10');
   });
 });
 

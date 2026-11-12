@@ -27,6 +27,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
     public DbSet<SplitEntry> SplitEntries => Set<SplitEntry>();
     public DbSet<SplitInvite> SplitInvites => Set<SplitInvite>();
+    public DbSet<SplitJoinRequest> SplitJoinRequests => Set<SplitJoinRequest>();
+    public DbSet<SplitFriendInvite> SplitFriendInvites => Set<SplitFriendInvite>();
+    public DbSet<SplitPayment> SplitPayments => Set<SplitPayment>();
+    public DbSet<SplitReceipt> SplitReceipts => Set<SplitReceipt>();
     public DbSet<ConnectorSession> ConnectorSessions => Set<ConnectorSession>();
     public DbSet<ConnectorAccountRef> ConnectorAccountRefs => Set<ConnectorAccountRef>();
     public DbSet<ConnectorPendingTx> ConnectorPendingTxs => Set<ConnectorPendingTx>();
@@ -143,6 +147,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Token);
             e.HasIndex(x => x.SplitId);
         });
+        modelBuilder.Entity<SplitJoinRequest>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.SplitId, x.UserId });
+        });
+        modelBuilder.Entity<SplitFriendInvite>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SplitId);
+            e.HasIndex(x => x.ToUserId);
+        });
+        modelBuilder.Entity<SplitPayment>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SplitId);
+        });
+        modelBuilder.Entity<SplitReceipt>(e =>
+        {
+            e.HasKey(x => x.EntryId);
+            e.HasIndex(x => x.SplitId);
+        });
     }
 }
 
@@ -158,16 +183,31 @@ public class Split
     public required string Name { get; set; }
     /// <summary>fixed at creation (user decision Q2)</summary>
     public required string Currency { get; set; }
-    public string Status { get; set; } = "open"; // open | settled
+    /// <summary>open: running · settled: the plan of payments stands and is being paid · archived: closed for good</summary>
+    public string Status { get; set; } = "open";
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>#538: the event's cover, as a regular event has one — one of the app's own (a path) or an uploaded one (a downscaled data URL)</summary>
+    public string? Picture { get; set; }
+    /// <summary>yyyy-mm-dd, both optional: an event that has not started is planned, one that ended is over</summary>
+    public string? StartDate { get; set; }
+    public string? EndDate { get; set; }
+    public DateTimeOffset? SettledAt { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
+    /// <summary>a deletion counting down: the event is gone once this passes, unless an owner stops it</summary>
+    public DateTimeOffset? DeleteAt { get; set; }
+    public Guid? DeleteBy { get; set; }
 }
 
 public class SplitMember
 {
     public required string SplitId { get; set; }
     public Guid UserId { get; set; }
-    public required string Role { get; set; } // owner | member
+    public required string Role { get; set; } // owner | contributor
+    /// <summary>active · left · removed — someone who went stays in the arithmetic of what they took part in,
+    /// and still reads the event: they may owe or be owed</summary>
+    public string State { get; set; } = "active";
+    public DateTimeOffset? LeftAt { get; set; }
     /// <summary>the member's OWN space this split is wired to (per-member
     /// attachment, user clarification) — personal, only ever shown to them</summary>
     public string? AttachedSpaceId { get; set; }
@@ -195,6 +235,15 @@ public class SplitEntry
     public required string SharesJson { get; set; }
     /// <summary>backlink to the adder's space transaction (SP2) — only ever shown to the adder</summary>
     public string? SourceTxId { get; set; }
+    /// <summary>#538: the space that transaction lives in — the adder's, and shown to nobody else</summary>
+    public string? SourceSpaceId { get; set; }
+    /// <summary>how the shares were given: equal | exact | percent — the cents are stored either way</summary>
+    public string ShareMode { get; set; } = "equal";
+    /// <summary>what was paid in another currency than the event's; AmountCents is what it came to in the event's</summary>
+    public string? OriginalCurrency { get; set; }
+    public long? OriginalCents { get; set; }
+    /// <summary>a photo of the receipt exists — it lives in its own table, so reading entries never drags pictures along</summary>
+    public bool HasReceipt { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -211,7 +260,55 @@ public class SplitInvite
     public required string SplitId { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset ExpiresAt { get; set; }
+    /// <summary>Null: the link does not run out (links from before 5.21 keep their seven days).</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+    /// <summary>#538: how many people the link lets in — 0 = any number; used up, it is as good as gone</summary>
+    public int MaxUses { get; set; }
+    public int Uses { get; set; }
+    /// <summary>people who use the link wait until an owner lets them in</summary>
+    public bool NeedsApproval { get; set; }
+}
+
+/// <summary>#538: the photo of an entry's receipt (a data URL), kept apart from the entry.</summary>
+public class SplitReceipt
+{
+    public required string EntryId { get; set; }
+    public required string SplitId { get; set; }
+    public required string Image { get; set; }
+}
+
+/// <summary>#538: someone used a link that asks for approval and waits for an owner's word.</summary>
+public class SplitJoinRequest
+{
+    public Guid Id { get; set; }
+    public required string SplitId { get; set; }
+    public Guid UserId { get; set; }
+    public string Status { get; set; } = "pending"; // pending | approved | refused
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? AnsweredAt { get; set; }
+}
+
+/// <summary>#538: an owner asked a friend in — no link, no waiting once they say yes.</summary>
+public class SplitFriendInvite
+{
+    public Guid Id { get; set; }
+    public required string SplitId { get; set; }
+    public Guid FromUserId { get; set; }
+    public Guid ToUserId { get; set; }
+    public string Status { get; set; } = "pending"; // pending | accepted | declined | cancelled
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? AnsweredAt { get; set; }
+}
+
+/// <summary>#538: one payment of a settlement's plan — who pays whom, and whether it was said to be paid.</summary>
+public class SplitPayment
+{
+    public Guid Id { get; set; }
+    public required string SplitId { get; set; }
+    public Guid FromUserId { get; set; }
+    public Guid ToUserId { get; set; }
+    public long AmountCents { get; set; }
+    public DateTimeOffset? PaidAt { get; set; }
 }
 
 /// <summary>operator-editable server-wide settings (the catalog document, …)</summary>

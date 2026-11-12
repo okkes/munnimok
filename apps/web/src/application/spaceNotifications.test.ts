@@ -4,7 +4,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '@/lib/api';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
-import { osNotifyAllowed, readSpacesNotifyOff, refreshSpacesNotifyOff, setSpaceNotify, spaceNotifyOn } from './spaceNotifications';
+import { clearNotifications, syncNotificationsCleared } from './inboxClear';
+import {
+  forgetSpacesNotifyOff,
+  osNotifyAllowed,
+  readSpacesNotifyOff,
+  refreshSpacesNotifyOff,
+  setSpaceNotify,
+  spaceNotifyOn,
+} from './spaceNotifications';
 
 vi.mock('@/lib/api', () => ({ apiFetch: vi.fn() }));
 const apiFetchMock = vi.mocked(apiFetch);
@@ -61,6 +69,21 @@ describe('notifications chosen per space (#549)', () => {
     apiFetchMock.mockResolvedValueOnce(json({ spaceId: 's1', on: true }));
     expect(await setSpaceNotify(store, 's1', true)).toBe(true);
     expect(await spaceNotifyOn(store, 's1')).toBe(true);
+  });
+
+  it('leaving the account forgets what its server said: no space stays switched off, no clear waits to be sent', async () => {
+    const store = fresh();
+    apiFetchMock.mockResolvedValueOnce(json({ off: ['s1'] }));
+    await refreshSpacesNotifyOff(store);
+    // a clear the server never heard about
+    apiFetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await clearNotifications(store, true);
+
+    await forgetSpacesNotifyOff(store);
+    expect(await spaceNotifyOn(store, 's1')).toBe(true);
+    apiFetchMock.mockResolvedValueOnce(json({ clearedAt: null }));
+    await syncNotificationsCleared(store);
+    expect(apiFetchMock).toHaveBeenLastCalledWith('/me/notifications/cleared');
   });
 
   it('the device shows its own alerts only with permission, and only for spaces switched on', async () => {

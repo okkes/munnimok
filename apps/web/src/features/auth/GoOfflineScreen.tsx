@@ -4,12 +4,13 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { useQuery } from '@/db/useQuery';
+import { reportError } from '@/lib/report';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
-import { convertToOffline } from './goOffline';
+import { NotCaughtUpError, convertToOffline } from './goOffline';
 
 const KEEP_ROWS = [
   ['database-check-outline', 'goOffline.keep1'],
@@ -31,7 +32,7 @@ const END_ROWS = [
  */
 export function GoOfflineScreen() {
   const { t } = useLang();
-  const { store, repo, engine, spaceId, setActiveSpace } = useData();
+  const { store, engine, spaceId, setActiveSpace } = useData();
   const { identity, logout, login } = useSession();
   const navigate = useNavigate();
   const router = useRouter();
@@ -46,6 +47,8 @@ export function GoOfflineScreen() {
   const [dropIds, setDropIds] = useState<ReadonlySet<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // `behind`: the last fetch before the server's copy goes did not get through — a state of the connection, not a fault
+  const [failed, setFailed] = useState<'behind' | 'fault' | null>(null);
 
   const toggleDrop = (id: string, drop: boolean) => {
     const next = new Set(dropIds);
@@ -57,23 +60,31 @@ export function GoOfflineScreen() {
   const run = async () => {
     if (identity?.kind !== 'user' || busy) return;
     setBusy(true);
-    // the active space must survive the purge — move to a kept one first
-    if (dropIds.has(spaceId)) {
-      const survivor = (spaces ?? []).find((s) => !dropIds.has(s.id));
-      if (survivor) await setActiveSpace(survivor.id);
+    setFailed(null);
+    let profileId: string | null = null;
+    try {
+      // the active space must survive the purge — move to a kept one first
+      if (dropIds.has(spaceId)) {
+        const survivor = (spaces ?? []).find((s) => !dropIds.has(s.id));
+        if (survivor) await setActiveSpace(survivor.id);
+      }
+      profileId = await convertToOffline(
+        { store, engine, identity },
+        {
+          dropSpaceIds: [...dropIds],
+          profileName: profile?.name ?? 'munni',
+          profilePicture: profile?.picture,
+        },
+      );
+    } catch (err) {
+      // the conversion only throws before its server exit: the person is still signed in, nothing was deleted
+      const behind = err instanceof NotCaughtUpError;
+      if (!behind) reportError('goOffline', err);
+      setFailed(behind ? 'behind' : 'fault');
+    } finally {
+      if (!profileId) setBusy(false);
     }
-    const profileId = await convertToOffline(
-      { store, repo, engine, identity },
-      {
-        dropSpaceIds: [...dropIds],
-        profileName: profile?.name ?? 'munni',
-        profilePicture: profile?.picture,
-      },
-    );
-    if (!profileId) {
-      setBusy(false);
-      return; // not a user identity — nothing to convert
-    }
+    if (!profileId) return;
     logout();
     login({ kind: 'offline', profileId });
     await navigate({ to: '/home' });
@@ -137,6 +148,11 @@ export function GoOfflineScreen() {
         )}
 
         <p className="mb-3 px-1 text-[12px] leading-snug text-ink-3">{t('goOffline.noWayBack')}</p>
+        {failed && (
+          <p className="mb-3 px-1 text-[13px] leading-snug text-negative" data-testid={failed === 'behind' ? 'gooffline-behind' : 'gooffline-failed'} role="alert">
+            {t(failed === 'behind' ? 'goOffline.behind' : 'goOffline.failed')}
+          </p>
+        )}
         <Button variant="danger" data-testid="gooffline-open-confirm" disabled={busy} onClick={() => setConfirmOpen(true)}>
           {t('goOffline.confirm')}
         </Button>

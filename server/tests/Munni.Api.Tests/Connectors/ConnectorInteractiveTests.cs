@@ -74,7 +74,7 @@ public class ConnectorInteractiveTests(ConnectorApiFactory factory) : IClassFixt
         Assert.True(answered.IsSuccessStatusCode, await answered.Content.ReadAsStringAsync());
         var settled = await AwaitBundleAsync(client, Captcha, sessionId);
         Assert.StartsWith("sb_v1.", settled, StringComparison.Ordinal);
-        Assert.Equal("active", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
+        Assert.Equal("active", await factory.SessionStateAsync(sessionId, "active"));
 
         // and the rest of the run through the same stream, without a bundle
         var frames = await DrainFramesAsync(reader, TimeSpan.FromSeconds(10), f => f["sessionId"]?.GetValue<string>() == sessionId);

@@ -3,7 +3,7 @@ import { useLang } from '@/i18n';
 import { readSessionIdentity } from '@/app/session';
 import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { downscaleImage } from '@/lib/image';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { IconPicker } from '@/ui/IconPicker';
@@ -172,18 +172,9 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
       .catch(() => undefined);
   };
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => {
-        if (file) applyPhoto(file);
-      });
-      return;
-    }
-    uploadRef.current?.click();
-  };
+  // #521: the web search starts from what the sheet is looking for — "<name> logo"
+  const searchWords = (query || initialQuery).trim();
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource(applyPhoto, () => uploadRef.current?.click(), searchWords ? `${searchWords} logo` : '');
 
   return (
     <>
@@ -269,6 +260,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '',
             {t('webcam.use')}
           </button>
         )}
+        {pictureSheet}
         <input
           ref={uploadRef}
           data-testid="brandpicker-upload-input"

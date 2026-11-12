@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readSessionIdentity } from '@/app/session';
+import { MunniDB } from '@/db/schema';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 // demo identity is fully local: profile edits must not touch the network
@@ -135,5 +136,47 @@ describe('ProfileScreen (user identity, scripted server)', () => {
     fireEvent.click(screen.getByTestId('profile-save'));
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]).toMatchObject({ displayName: 'New Name' });
+  }, 15_000);
+
+  it('a save the server refuses is not saved: the form says so, stays a draft, and the device keeps what the server has', async () => {
+    renderAppAsUser('/profile', {
+      api: {
+        'GET /me': () => ({ userId: 'uid-123', displayName: 'Server Name', picture: null }),
+        'PUT /me': () => new Response(JSON.stringify({ errors: { Picture: ['too long'] } }), { status: 400 }),
+      },
+    });
+    const name = await screen.findByTestId('profile-name');
+    await waitFor(() => expect((name as HTMLInputElement).value).toBe('Server Name'));
+
+    fireEvent.change(name, { target: { value: 'New Name' } });
+    fireEvent.click(screen.getByTestId('profile-save'));
+    expect(await screen.findByTestId('profile-save-refused')).toBeTruthy();
+    expect(screen.queryByText('Saved')).toBeNull();
+
+    const db = new MunniDB(USER_TEST_DB);
+    expect((await db.meta.get('profile'))?.value).toMatchObject({ name: 'Server Name' });
+    db.close();
+
+    // still a draft: leaving asks first
+    fireEvent.click(screen.getByTestId('profile-back'));
+    expect(await screen.findByTestId('screen-discard')).toBeTruthy();
+  }, 15_000);
+
+  it('a server that cannot be reached does not hold the save up — the device keeps the edit', async () => {
+    renderAppAsUser('/profile', {
+      api: {
+        'GET /me': () => ({ userId: 'uid-123', displayName: 'Server Name', picture: null }),
+        'PUT /me': () => {
+          throw new TypeError('Failed to fetch');
+        },
+      },
+    });
+    const name = await screen.findByTestId('profile-name');
+    await waitFor(() => expect((name as HTMLInputElement).value).toBe('Server Name'));
+
+    fireEvent.change(name, { target: { value: 'New Name' } });
+    fireEvent.click(screen.getByTestId('profile-save'));
+    await screen.findByText('Saved');
+    expect(screen.queryByTestId('profile-save-refused')).toBeNull();
   }, 15_000);
 });

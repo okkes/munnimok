@@ -14,6 +14,8 @@ export interface TrendGraphDraft {
   catIds: string[];
   /** #531: the accounts it reads; null = every account */
   accountIds: string[] | null;
+  /** #455: what cashed-out goals bought stays out */
+  skipGoalSpending?: boolean;
 }
 
 export interface CashflowGraphDraft {
@@ -47,7 +49,13 @@ export function useTrendGraphOps(space: SpaceRow | undefined): GraphOps<TrendGra
     save: async (draft) => {
       const id = draft.id ?? repo.newId();
       // every account is the absence of a list — accounts added later join by themselves
-      const row: TrendGraph = { id, name: draft.name.trim(), catIds: [...draft.catIds], ...(draft.accountIds ? { accountIds: [...draft.accountIds] } : {}) };
+      const row: TrendGraph = {
+        id,
+        name: draft.name.trim(),
+        catIds: [...draft.catIds],
+        ...(draft.accountIds ? { accountIds: [...draft.accountIds] } : {}),
+        ...(draft.skipGoalSpending ? { skipGoalSpending: true } : {}),
+      };
       const exists = current.some((graph) => graph.id === id);
       await write(withGraph(current, row));
       void logActivity(store, repo, spaceId, exists ? 'trendGraphEdit' : 'trendGraphAdd', row.name);

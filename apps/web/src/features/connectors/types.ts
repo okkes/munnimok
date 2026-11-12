@@ -294,6 +294,10 @@ export interface AgentView {
   hosted?: boolean;
   bound?: boolean;
   resetting?: boolean;
+  /** #562: it runs an older browser than the platform, or one from before it said which */
+  browserBehind?: boolean;
+  browserVersion?: string | null;
+  platformBrowserVersion?: string | null;
 }
 
 /** `POST /connectors/agents/enrollment` — the code and the line that starts the agent */

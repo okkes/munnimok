@@ -84,9 +84,8 @@ export default defineConfig(({ mode }) => {
         ],
       },
       {
-        // the native shells poll this to learn a newer release shipped:
-        // web deploys and store binaries are stamped with the same git
-        // commit count, so build > shell build ⇒ an update exists
+        // the native shells poll this: the hosted web and the bundle inside a shell both carry this commit
+        // count (the store numbers a binary by the clock), so hosted > bundled ⇒ a newer release shipped
         name: 'munni:version-json',
         generateBundle() {
           this.emitFile({

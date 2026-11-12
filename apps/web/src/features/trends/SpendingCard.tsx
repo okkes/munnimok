@@ -3,10 +3,13 @@ import type { ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
+import { useGoals } from '@/application/goals';
 import type { SpaceTx } from '@/application/transactions';
+import { goalPaidTxs } from '@/domain/goals';
 import type { Period } from '@/domain/periods';
 import { netAmountCents } from '@/domain/reimbursement';
 import { expenseSeries, finishedAverage, localDate, scopeIds, scopedContribution } from '@/domain/trends';
+import type { InSpaceCurrency } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { AutoHeight } from '@/ui/AutoHeight';
 import { Bars } from '@/ui/charts/Bars';
@@ -26,6 +29,8 @@ export interface GraphDef {
   catIds: string[] | null;
   /** #531: the financial accounts it reads; null = every account */
   accountIds: string[] | null;
+  /** #455: what cashed-out goals bought stays out */
+  skipGoalSpending?: boolean;
   icon: string;
   color: string;
 }
@@ -85,6 +90,7 @@ export function SpendingCard({
   currency,
   spaceId,
   fmt,
+  inSpace,
   testId,
   chartTestId,
   currentTestId,
@@ -99,6 +105,8 @@ export function SpendingCard({
   currency: string;
   spaceId: string;
   fmt: (cents: number) => string;
+  /** the sums restate another currency; the rows behind the door stay as recorded */
+  inSpace: InSpaceCurrency;
   testId?: string;
   chartTestId?: string;
   currentTestId?: string;
@@ -110,14 +118,17 @@ export function SpendingCard({
   const [selected, setSelected] = useState(periods.length - 1);
   const [sheet, setSheet] = useState<{ open: boolean; subId: string | null }>({ open: false, subId: null });
 
-  // #531: a graph narrowed to some accounts reads only their rows — every view and the door alike
+  // #531: a graph narrowed to some accounts reads only their rows — every view and the door alike;
+  // #455: one that leaves out what goals bought drops those rows the same way
+  const goals = useGoals();
+  const goalPaid = useMemo(() => (graph.skipGoalSpending ? goalPaidTxs(goals ?? []) : null), [graph.skipGoalSpending, goals]);
   const txs = useMemo(() => {
-    if (!graph.accountIds) return allTxs;
-    const picked = new Set(graph.accountIds);
-    return allTxs.filter((tx) => picked.has(tx.accountId));
-  }, [allTxs, graph.accountIds]);
+    const picked = graph.accountIds ? new Set(graph.accountIds) : null;
+    if (!picked && !goalPaid) return allTxs;
+    return allTxs.filter((tx) => (!picked || picked.has(tx.accountId)) && !goalPaid?.has(tx.id));
+  }, [allTxs, graph.accountIds, goalPaid]);
   const ids = useMemo(() => scopeIds(cats, graph.catIds), [cats, graph.catIds]);
-  const values = useMemo(() => expenseSeries(txs, periods, ids), [txs, periods, ids]);
+  const values = useMemo(() => expenseSeries(txs, periods, ids, inSpace), [txs, periods, ids, inSpace]);
   const average = useMemo(() => finishedAverage(values), [values]);
   const index = Math.min(selected, periods.length - 1);
   const period = periods[index];
@@ -189,10 +200,10 @@ export function SpendingCard({
           </>
         )}
         {view === 'compare' && (
-          <CompareView graphId={graph.id} periods={periods} selected={index} txs={txs} catIds={graph.catIds} today={today} color={graph.color} fmt={fmt} />
+          <CompareView graphId={graph.id} periods={periods} selected={index} txs={txs} catIds={graph.catIds} today={today} color={graph.color} fmt={fmt} inSpace={inSpace} />
         )}
         {view === 'breakdown' && (
-          <BreakdownView graphId={graph.id} period={period} txs={txs} ids={ids} fmt={fmt} onPickSub={(catId) => setSheet({ open: true, subId: catId })} />
+          <BreakdownView graphId={graph.id} period={period} txs={txs} ids={ids} fmt={fmt} inSpace={inSpace} onPickSub={(catId) => setSheet({ open: true, subId: catId })} />
         )}
         {view !== 'periods' && (
           <PeriodNav

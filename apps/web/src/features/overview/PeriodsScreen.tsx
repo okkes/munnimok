@@ -63,12 +63,12 @@ export function periodLabels(periods: readonly Period[], periodType: SpacePeriod
 
 type Translate = ReturnType<typeof useLang>['t'];
 
-function deltaText(delta: PeriodDelta | null, money: (cents: number) => string, t: Translate): string {
+function deltaText(delta: PeriodDelta | null, money: (cents: number) => string, t: Translate, withPct: boolean): string {
   if (delta === null) return t('periods.noPrevious');
   if (delta.cents === 0) return t('periods.same');
   const arrow = delta.cents > 0 ? '▲' : '▼';
   const sign = delta.pct !== null && delta.pct > 0 ? '+' : '';
-  const pct = delta.pct === null ? '' : ` · ${sign}${delta.pct}%`;
+  const pct = delta.pct === null || !withPct ? '' : ` · ${sign}${delta.pct}%`;
   return `${arrow} ${money(Math.abs(delta.cents))}${pct} ${t('periods.vsPrevious')}`;
 }
 
@@ -86,7 +86,7 @@ export function PeriodsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
-  const { fmt, fmtSensitive } = useDisplayMoney();
+  const { fmt, fmtSensitive, hideSensitive } = useDisplayMoney();
   const currency = space?.currency ?? 'EUR';
   const periodType = space?.periodType ?? 'month';
   const periodDay = space?.periodDay ?? 1;
@@ -202,6 +202,8 @@ export function PeriodsScreen() {
               index={index}
               labels={labels}
               money={SENSITIVE_KINDS.has(kind) ? privateMoney : money}
+              // a percentage beside a hidden amount gives half of it away
+              withPct={!(hideSensitive && SENSITIVE_KINDS.has(kind))}
               onSelect={select}
               onOpen={() => open(kind)}
               cashedOutCents={kind === 'saving' ? goalCashOutsIn(goals ?? [], allTxs ?? [], selected).reduce((sum, c) => sum + c.cents, 0) : 0}
@@ -219,6 +221,7 @@ function MetricCard({
   index,
   labels,
   money,
+  withPct,
   onSelect,
   onOpen,
   cashedOutCents,
@@ -229,6 +232,7 @@ function MetricCard({
   index: number;
   labels: string[];
   money: (cents: number) => string;
+  withPct: boolean;
   onSelect: (index: number) => void;
   onOpen: () => void;
   /** #455: what reached goals took out of savings in the selected period — named, not counted */
@@ -274,7 +278,7 @@ function MetricCard({
         <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
       </button>
       <div className={`mt-1 text-[11px] ${TONE_CLASS[tone]}`} data-testid={`periods-delta-${kind}`}>
-        {deltaText(delta, money, t)}
+        {deltaText(delta, money, t, withPct)}
       </div>
       {cashedOutCents > 0 && (
         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-accent-deep" data-testid={`periods-cashout-${kind}`}>

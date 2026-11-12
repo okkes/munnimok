@@ -33,6 +33,8 @@ export interface NavItem {
   iconActive: string;
   /** signed-in identities only (splits are a server feature) */
   userOnly?: boolean;
+  /** #538 (user): … and the demo, which shows seeded examples so the feature can be understood without an account */
+  demoToo?: boolean;
   /** wears the planning dot (a subject in the red) */
   dot?: boolean;
 }
@@ -47,7 +49,7 @@ export const NAV_FEATURES: Record<NavFeatureId, NavItem> = {
   goals: { id: 'goals', to: '/goals', labelKey: 'goals.title', icon: 'flag-outline', iconActive: 'flag' },
   debts: { id: 'debts', to: '/debts', labelKey: 'debts.title', icon: 'hand-coin-outline', iconActive: 'hand-coin' },
   events: { id: 'events', to: '/events', labelKey: 'tab.events', icon: 'party-popper', iconActive: 'party-popper' },
-  splits: { id: 'splits', to: '/splits', labelKey: 'splits.title', icon: 'account-cash-outline', iconActive: 'account-cash', userOnly: true },
+  splits: { id: 'splits', to: '/splits', labelKey: 'splits.title', icon: 'account-cash-outline', iconActive: 'account-cash', userOnly: true, demoToo: true },
   recurring: { id: 'recurring', to: '/recurring', labelKey: 'screen.recurring', icon: 'autorenew', iconActive: 'autorenew' },
   upcoming: { id: 'upcoming', to: '/upcoming', labelKey: 'recurring.upcoming', icon: 'calendar-clock-outline', iconActive: 'calendar-clock' },
   insights: { id: 'insights', to: '/insights', labelKey: 'tab.insights', icon: 'lightbulb-outline', iconActive: 'lightbulb' },
@@ -81,7 +83,7 @@ export const isNavFeatureId = (id: unknown): id is NavFeatureId => typeof id ===
 export const navUsableFor =
   (identityKind: string | undefined) =>
   (id: NavFeatureId): boolean =>
-    !NAV_FEATURES[id].userOnly || identityKind === 'user';
+    !NAV_FEATURES[id].userOnly || identityKind === 'user' || (identityKind === 'demo' && NAV_FEATURES[id].demoToo === true);
 
 /**
  * The bar's features after Home, as the space stores them: absent or null =

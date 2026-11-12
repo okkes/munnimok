@@ -1,9 +1,12 @@
+import { useMemo } from 'react';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { receiptLinkId } from '@/domain/feedIds';
+import { itemMemoryOf } from '@/domain/receiptCats';
+import type { ItemMemory } from '@/domain/receiptCats';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
-import type { ReceiptDocument, ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { ReceiptDocument, ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
 
 /**
  * Receipts v3 (approved redesign, rulings 1+2): the per-space presence
@@ -25,6 +28,8 @@ export interface ReceiptSnapshot {
   image?: string;
   payment?: ReceiptRow['payment'];
   documents?: ReceiptDocument[];
+  currency?: string;
+  reconciled?: boolean;
 }
 
 /** the snapshot a link carries, built from a global receipt row */
@@ -40,6 +45,9 @@ export function receiptSnapshot(receipt: ReceiptRow): ReceiptSnapshot {
     image: receipt.image,
     payment: receipt.payment,
     documents: receipt.documents,
+    // the party's currency and its "lines do not add up" travel with the copy: members read them without the owner's feed
+    ...(receipt.currency ? { currency: receipt.currency } : {}),
+    ...(receipt.reconciled === false ? { reconciled: false } : {}),
   };
 }
 
@@ -199,6 +207,12 @@ export function useSpaceReceipts(): ReceiptLinkRow[] | undefined {
   return useQuery(store, async () => spaceReceipts(store, spaceId), [spaceId]);
 }
 
+/** #567: what this space's receipts were filed as, product by product — the suggestions a new receipt starts from */
+export function useItemMemory(): ItemMemory {
+  const links = useSpaceReceipts();
+  return useMemo(() => itemMemoryOf(links ?? []), [links]);
+}
+
 // ── normalized entries (what the screens render and act on) ──────────────
 
 export type ReceiptKind = 'link' | 'global';
@@ -215,6 +229,8 @@ export interface ReceiptEntry {
   txId?: string;
   /** every transaction the link is attached to, `txId` first (user 2026-10-08: one receipt, several payments) */
   txIds?: string[];
+  /** #567: the lines each attached transaction's categories were built from, by transaction id */
+  picks?: Record<string, ReceiptPick[]>;
 }
 
 const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
@@ -229,6 +245,8 @@ const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
   instanceId: link.instanceId,
   payment: link.payment,
   documents: link.documents,
+  currency: link.currency,
+  reconciled: link.reconciled,
   fieldVersions: link.fieldVersions,
   deleted: link.deleted,
 });
@@ -239,6 +257,7 @@ export const linkAsEntry = (link: ReceiptLinkRow): ReceiptEntry => ({
   linkId: link.id,
   txId: link.txId,
   txIds: linkedTxIds(link),
+  picks: link.picks,
 });
 
 export const globalAsEntry = (row: ReceiptRow): ReceiptEntry => ({ kind: 'global', data: row });

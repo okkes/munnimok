@@ -9,7 +9,7 @@ import { useBudgetOps, useBudgets } from '@/application/budgets';
 import { usePushState } from '@/application/pushState';
 import type { PushState } from '@/application/pushState';
 import { localToday } from '@/application/recurring';
-import { budgetFamily, categoryConflicts } from '@/domain/budgets';
+import { budgetFamily, carryCapFor, categoryConflicts, periodMaxOf } from '@/domain/budgets';
 import { LOCKED_MAIN_IDS } from '@/domain/categories';
 import type { BudgetCarryMode, BudgetEvery, BudgetRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -97,7 +97,8 @@ export function BudgetFormScreen() {
     setCarryMode(editing.carryMode ?? 'periods');
     setCarryPeriods(editing.carryPeriods ?? 1);
     setCarryPeriodsText(String(editing.carryPeriods ?? 1));
-    setCarryCap(editing.carryCapCents ? (editing.carryCapCents / 100).toFixed(2) : '');
+    const periodMax = periodMaxOf(editing);
+    setCarryCap(periodMax === null ? '' : (periodMax / 100).toFixed(2));
     setNotifyAtPct(editing.notifyAtPct ?? 0);
     setLoaded(true);
   }, [editing, loaded]);
@@ -146,7 +147,11 @@ export function BudgetFormScreen() {
   };
 
   const amountCents = Math.round(Number.parseFloat(amount.replace(',', '.')) * 100);
-  const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor;
+  // #534: the maximum is the most a period may hold — one that leaves nothing above the amount would pile nothing up
+  const periodMaxCents = Math.round(Number.parseFloat(carryCap.replace(',', '.')) * 100);
+  const capped = carryOver && carryMode === 'cap';
+  const maxFits = !capped || (Number.isFinite(periodMaxCents) && periodMaxCents > amountCents);
+  const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor && maxFits;
   // #195: the save stays tappable — an invalid tap names the blocker.
   // r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
@@ -156,7 +161,8 @@ export function BudgetFormScreen() {
     if (!name.trim()) return ['name', t('form.needName')];
     if (!Number.isFinite(amountCents) || amountCents <= 0) return ['amount', t('form.needAmount')];
     if (catIds.length === 0) return ['cats', t('form.needCategory')];
-    return ['anchor', t('form.needFields')]; // only the anchor is left to miss
+    if (!anchor) return ['anchor', t('form.needFields')];
+    return ['carrycap', t('budgets.carryCapNeedsRoom')]; // only the maximum is left to miss
   })();
   // #164: edits guard the back arrow — the draft is dirty once any field
   // moved away from the seeded state (creation counts from blank)
@@ -168,7 +174,6 @@ export function BudgetFormScreen() {
 
   const save = async () => {
     if (!valid) return;
-    const capCents = Math.round(Number.parseFloat(carryCap.replace(',', '.')) * 100);
     const resetDay = Math.min(28, Math.max(1, Number(resetDayText) || 0));
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
@@ -176,13 +181,14 @@ export function BudgetFormScreen() {
       amountCents,
       every,
       anchor,
-      resetDay: every === 'month' && resetDayText.trim() ? resetDay : undefined,
+      // null, never undefined: JSON drops an undefined field, so a choice taken back would not reach the other devices
+      resetDay: every === 'month' && resetDayText.trim() ? resetDay : null,
       catIds,
       carryOver: carryOver ? 1 : 0,
-      carryMode: carryOver ? carryMode : undefined,
-      carryPeriods: carryOver && carryMode === 'periods' ? Math.max(1, carryPeriods) : undefined,
-      carryCapCents: carryOver && carryMode === 'cap' && Number.isFinite(capCents) && capCents > 0 ? capCents : undefined,
-      notifyAtPct: notifyAtPct || undefined,
+      carryMode: carryOver ? carryMode : null,
+      carryPeriods: carryOver && carryMode === 'periods' ? Math.max(1, carryPeriods) : null,
+      carryCapCents: capped ? carryCapFor(periodMaxCents, amountCents) : null,
+      notifyAtPct: notifyAtPct || null,
       active: editing?.active ?? 1,
     });
     if (editing) await navigate({ to: '/budgets/$budgetId', params: { budgetId: editing.id }, replace: true });
@@ -438,6 +444,7 @@ export function BudgetFormScreen() {
                   className="h-10 w-28 rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                 />
               )}
+              <FormBlockerNote show={blockerField === 'carrycap'} text={blockerText} testId="budgetform-carrycap-blocker" />
               {/* #372 (user): the number needed a sentence, not a technical label */}
               <p className="w-full text-[11px] text-ink-4" data-testid="budgetform-carry-explain">
                 {carryMode === 'periods' ? t('budgets.carryPeriodsExplain', { n: Math.max(1, Number(carryPeriodsText) || 1) }) : t('budgets.carryCapExplain')}

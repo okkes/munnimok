@@ -18,6 +18,7 @@ import { SearchField } from '@/ui/SearchField';
 import type { ReactNode } from 'react';
 import { ReceiptProposalCard } from './ReceiptPickSheet';
 import { useLeavingRows } from './leavingRows';
+import { useFileByReceipt } from './useFileByReceipt';
 
 const sourceIcon = (source: string): string => (source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
@@ -68,6 +69,7 @@ export function ReceiptsScreen() {
   const proposals = useProposedMatches();
   const txs = useSpaceTransactions();
   const receiptOps = useReceiptOps();
+  const fileByReceipt = useFileByReceipt();
   const canEdit = useCanEdit(); // #505
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
@@ -219,7 +221,12 @@ export function ReceiptsScreen() {
                   busy={leaving}
                   onOpenReceipt={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: link.receiptId ?? link.id } })}
                   onOpenTx={(txId) => void navigate({ to: '/transactions/$txId', params: { txId } })}
-                  onAccept={(answered) => leave(answered, index, () => receiptOps.acceptMatch(answered))}
+                  onAccept={(answered) =>
+                    leave(answered, index, async () => {
+                      await receiptOps.acceptMatch(answered);
+                      if (answered.proposedTxId) await fileByReceipt(answered.proposedTxId);
+                    })
+                  }
                   onReject={(answered) => leave(answered, index, () => receiptOps.rejectMatch(answered))}
                 />
               </ExitRow>

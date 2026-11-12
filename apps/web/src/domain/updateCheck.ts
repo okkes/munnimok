@@ -1,9 +1,5 @@
-/**
- * Native update detection. Web deploys and store
- * binaries are stamped with the SAME git commit count, so the hosted
- * /version.json build being newer than the shell's own build means an
- * update sits on the store. Pure logic here; IO lives in the caller.
- */
+// The hosted web and the bundle inside a shell both carry the git commit count of their build: hosted above
+// bundled means an update sits on the store. The store's own build number is a timestamp — never compare it.
 
 export interface UpdateCheckState {
   lastCheckedAt?: number;
@@ -16,18 +12,23 @@ export function shouldCheckForUpdate(state: UpdateCheckState, now: number): bool
   return now - (state.lastCheckedAt ?? 0) >= CHECK_INTERVAL_MS;
 }
 
-export function updateAvailable(appBuild: number, remoteBuild: number, dismissedBuild?: number): boolean {
-  if (!Number.isFinite(appBuild) || !Number.isFinite(remoteBuild)) return false;
-  return remoteBuild > appBuild && remoteBuild !== dismissedBuild;
+export function updateAvailable(bundledBuild: number, remoteBuild: number, dismissedBuild?: number): boolean {
+  // a bundle built without git carries 0: no count to compare, not "older than every release"
+  if (!Number.isFinite(bundledBuild) || bundledBuild <= 0 || !Number.isFinite(remoteBuild)) return false;
+  return remoteBuild > bundledBuild && remoteBuild !== dismissedBuild;
 }
 
-/** the store page for this shell — null when there is none to link (staging iOS lives in TestFlight) */
-export function nativeStoreUrl(platform: string | undefined, channel: string): string | null {
-  const appId = channel === 'staging' ? 'app.munni.dev' : 'app.munni';
-  if (platform === 'android') return `market://details?id=${appId}`;
+// every environment is its own app in the stores: the page is the shell's own id, and without one no page beats another app's
+export function storeUrlOf(platform: string | undefined, appId: string | null): string | null {
+  if (platform === 'android') return appId ? `market://details?id=${appId}` : null;
   // both iOS channels ship via TestFlight today — the deep link opens the
   // TestFlight app where the update sits. Swap the production branch to
   // https://apps.apple.com/app/id6791102793 at public App Store launch.
   if (platform === 'ios') return 'itms-beta://';
   return null;
+}
+
+/** the store page for this shell — null when there is none to link (staging iOS lives in TestFlight) */
+export function nativeStoreUrl(platform: string | undefined, channel: string): string | null {
+  return storeUrlOf(platform, channel === 'staging' ? 'app.munni.dev' : 'app.munni');
 }

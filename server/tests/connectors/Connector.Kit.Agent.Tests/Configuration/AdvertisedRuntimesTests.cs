@@ -105,6 +105,9 @@ public sealed class AdvertisedRuntimesTests
     {
         var capabilities = Options(AgentClass.Byo).BuildCapabilities(BankImage());
 
+        // #562: and the browser it drives, so the control plane can say when that one is behind
+        Assert.Equal(AgentBrowser.Version, capabilities.BrowserVersion);
+
         Assert.Equal(
             [ProviderRuntime.Http, ProviderRuntime.BrowserInteractive, ProviderRuntime.BrowserPersistent],
             capabilities.Runtimes);

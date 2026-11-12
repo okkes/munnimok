@@ -131,9 +131,11 @@ public sealed class EnableBankingAdapterTests
         Assert.Equal(ReturnUrl, auth.RootElement.GetProperty("redirect_url").GetString());
         Assert.Equal("personal", auth.RootElement.GetProperty("psu_type").GetString());
         Assert.StartsWith("ebr_", auth.RootElement.GetProperty("state").GetString());
-        // the bank grants half a year (#491): the consent is asked for that long, and the session lives as long
-        Assert.Equal(Now.AddDays(180).ToString("o"), auth.RootElement.GetProperty("access").GetProperty("valid_until").GetString());
-        Assert.Equal(Now.AddDays(180), result.ExpiresAt);
+        // the bank grants half a year (#491) and the party refuses anything past its own now + that maximum:
+        // the ask stays under it with room for a host clock that runs ahead, and the session ends when the consent does
+        var validUntil = auth.RootElement.GetProperty("access").GetProperty("valid_until").GetDateTimeOffset();
+        Assert.InRange(validUntil, Now.AddDays(179), Now.AddSeconds(15_552_000) - TimeSpan.FromMinutes(1));
+        Assert.Equal(validUntil, result.ExpiresAt);
 
         var challenge = Assert.Single(ctx.Asked);
         Assert.Equal("https://eb.test/consent/xyz", challenge.Url);
@@ -271,6 +273,55 @@ public sealed class EnableBankingAdapterTests
         var whole = await Adapter().FetchAsync(ctx2, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 10) }, CancellationToken.None);
         Assert.DoesNotContain(regular, q => q.Contains("date_to", StringComparison.Ordinal));
         Assert.True(whole.Complete);
+    }
+
+    /// <summary>
+    /// An account with no rows in an older window is the ordinary end of a backfill, and Enable Banking
+    /// refuses an end without a start (DATE_TO_WITHOUT_DATE_FROM): the empty-window retry has no place there.
+    /// </summary>
+    [Fact]
+    public async Task An_older_pass_that_finds_nothing_ends_there_and_never_asks_an_end_without_a_start()
+    {
+        var queries = new List<string>();
+        var wire = Wire(req =>
+        {
+            if (req.Path != "/accounts/u1/transactions") return null;
+            queries.Add(req.Query);
+            return req.Query.Contains("date_from", StringComparison.Ordinal)
+                ? Stub.Json("""{"transactions":[],"continuation_key":null}""")
+                : Stub.Status(HttpStatusCode.UnprocessableEntity, """{"error":"DATE_TO_WITHOUT_DATE_FROM"}""");
+        });
+        using var ctx = new FakeJobContext(wire) { Material = Consent() };
+        var request = new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 8, 1), Until = new DateOnly(2026, 9, 1) };
+
+        var result = await Adapter().FetchAsync(ctx, request, CancellationToken.None);
+
+        Assert.Contains("date_from=", Assert.Single(queries), StringComparison.Ordinal);
+        Assert.Empty(result.Transactions);
+        Assert.True(result.Complete);
+    }
+
+    /// <summary>
+    /// A bank allows a handful of balance reads per account per day, and an older pass is after transactions
+    /// only: it leaves the balance to the regular pass, which would otherwise be refused it.
+    /// </summary>
+    [Fact]
+    public async Task An_older_pass_spends_no_balance_read()
+    {
+        var wire = Wire();
+        using var ctx = new FakeJobContext(wire) { Material = Consent() };
+        var request = new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 1), Until = new DateOnly(2026, 9, 25) };
+
+        var older = await Adapter().FetchAsync(ctx, request, CancellationToken.None);
+
+        Assert.Equal(0, wire.Count("GET", "/accounts/u1/balances"));
+        Assert.Null(Assert.Single(older.Accounts).Balance);
+        Assert.NotEmpty(older.Transactions);
+
+        using var regular = new FakeJobContext(wire) { Material = Consent() };
+        var current = await Adapter().FetchAsync(regular, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 10) }, CancellationToken.None);
+        Assert.Equal(1, wire.Count("GET", "/accounts/u1/balances"));
+        Assert.Equal(25_010, Assert.Single(current.Accounts).Balance?.Amount.Value);
     }
 
     [Fact]

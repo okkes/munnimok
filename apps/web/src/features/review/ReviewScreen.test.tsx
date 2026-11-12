@@ -476,15 +476,17 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click((await screen.findAllByTestId('counter-pick-demo_save')).at(-1)!);
     await waitFor(() => expect(screen.queryByTestId('review-counter-required')).toBeNull());
 
-    // the confirm carries the picked pot: the row lands linked and reviewed
+    // the confirm carries the picked pot: THIS card's row lands linked and reviewed, its leg on the pot
+    // (the seed's own savings transfers already name the pot, so only the card's row can tell)
+    const cardId = screen.getByTestId('review-card').closest('[data-card-id]')!.getAttribute('data-card-id')!;
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
-      const row = await db.transactions
-        .filter((t) => t.catId === 'savingDeposit' && t.linkedAccountId === 'demo_save' && t.needsReview === 0)
-        .first();
-      expect(row).toBeTruthy();
+      const row = await db.transactions.get(cardId);
+      expect(row).toMatchObject({ catId: 'savingDeposit', linkedAccountId: 'demo_save', needsReview: 0 });
+      const leg = row?.transferPeerId ? await db.transactions.get(row.transferPeerId) : undefined;
+      expect(leg?.accountId).toBe('demo_save');
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
@@ -1550,19 +1552,22 @@ describe('ReviewScreen (user identity, split settlements)', () => {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [
-          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
+          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', state: 'active', memberCount: 2, entryCount: 1 },
         ],
         'GET /splits/split-1': () => ({
-          id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner',
+          split: { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', state: 'active' },
           members: [
-            { userId: ME, role: 'owner', displayName: 'Me', isMe: true },
-            { userId: ANNA, role: 'member', displayName: 'Anna', isMe: false },
+            { userId: ME, role: 'owner', state: 'active', displayName: 'Me', isMe: true },
+            { userId: ANNA, role: 'contributor', state: 'active', displayName: 'Anna', isMe: false },
           ],
           entries: [{
-            id: 'e-settle', kind: 'settlement', paidByUserId: ANNA, description: 'Settlement',
-            amountCents: 1500, date: '2026-07-16',
+            id: 'e-settle', kind: 'settlement', paidByUserId: ANNA, description: 'settlement',
+            amountCents: 1500, date: '2026-07-16', shareMode: 'exact',
             shares: [{ userId: ME, cents: 1500 }], createdBy: ANNA,
           }],
+          payments: [],
+          requests: null,
+          friendInvites: null,
         }),
       },
     });
@@ -1752,6 +1757,66 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
       expect(links.find((l) => l.txId === 'ra1')?.receiptId).toBe('rcpt:amazon-nl:demo_conn_amz:a1');
     }, { timeout: 8000 });
     db.close();
+  }, 25_000);
+
+  it('a receipt that says the card’s own amount files it by its lines (#567): the card shows the split before the confirm, the confirm writes it and keeps the lines with the receipt', async () => {
+    await seedShopsAndCard();
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfile'), { trackOutbox: false });
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    const { receiptLinkId } = await import('@/domain/feedIds');
+    // the Amazon receipt's lines — and an older receipt whose coffee beans the person filed under Coffee
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, {
+      items: [
+        { name: 'Koffiebonen 1 kg', totalCents: 4000 },
+        { name: 'USB-C kabel', totalCents: 1956 },
+      ],
+    });
+    await seedRepo.upsert('receiptLink', DEMO_SPACE_ID, 'older_receipt', {
+      source: 'photo', date: '2025-12-01', totalCents: 4000, txId: 'dm101', auto: 0,
+      items: [{ name: 'koffiebonen 1 KG', totalCents: 4000 }],
+      picks: { dm101: [{ line: 0, catId: 'coffee', amountCents: 4000 }] },
+    });
+    seed.close();
+
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('suggested'), { timeout: 5000 });
+    // the beans as the person filed beans before, the cable under what the card suggested anyway
+    await waitFor(() => expect(screen.getByTestId('review-cats').textContent).toMatch(/Coffee/));
+    expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('ra1');
+      expect(tx?.needsReview).toBe(0);
+      expect(tx?.cats?.map(({ catId, amountCents }) => ({ catId, amountCents }))).toEqual([
+        { catId: 'coffee', amountCents: 4000 },
+        { catId: 'groceries', amountCents: 1956 },
+      ]);
+      const link = await db.receiptLinks.get(receiptLinkId(DEMO_SPACE_ID, AMAZON));
+      expect(link?.txId).toBe('ra1');
+      expect(link?.picks).toEqual({ ra1: [{ line: 0, catId: 'coffee', amountCents: 4000 }] });
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
+  it('"No receipt" on such a card leaves the filing out with the receipt (#567): the card’s own category is confirmed', async () => {
+    await seedShopsAndCard();
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfile2'), { trackOutbox: false });
+    const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+    await seedRepo.upsert('receipt', DEMO_STORE_FEED_ID, AMAZON, { items: [{ name: 'Koffiebonen 1 kg', totalCents: 5956, catId: 'coffee' }] });
+    seed.close();
+
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-cats').textContent).toMatch(/Coffee/), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('review-receipt-row'));
+    fireEvent.click(await screen.findByTestId('review-receipt-none'));
+    await waitFor(() => expect(screen.getByTestId('review-cats').textContent).not.toMatch(/Coffee/));
+    expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
   }, 25_000);
 
   /** the card's Amazon receipt, attached already */

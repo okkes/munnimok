@@ -112,6 +112,35 @@ describe('Planning (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
   }, 20_000);
 
+  it('#455: what a cashed-out goal bought sits under Goals as the goal itself — its category is not asked to answer for it', async () => {
+    await seedDemo(async (repo) => {
+      await repo.upsert('transaction', DEMO_SPACE_ID, 'bike_buy', {
+        accountId: 'demo_main',
+        date: thisMonth(new Date().getDate()),
+        amountCents: -77_700,
+        currency: 'EUR',
+        merchant: 'Fietsenwinkel',
+        catId: 'housingRent',
+        needsReview: 0,
+      });
+      await repo.upsert('goal', DEMO_SPACE_ID, 'g_bike', {
+        name: 'Bike',
+        targetCents: 80_000,
+        allocatedCents: 0,
+        archived: 1,
+        cashOut: { date: thisMonth(1), txIds: [], purchaseTxIds: ['bike_buy'] },
+      });
+    });
+    await startEmptyPlan();
+    const row = await screen.findByTestId('plan-goal-bought-g_bike', {}, { timeout: 5000 });
+    expect(row.textContent).toContain('Bike');
+    expect(row.textContent).toMatch(/€777[.,]00/);
+    expect(screen.getByTestId('plan-segment-goals').contains(row)).toBe(true);
+    expect(screen.queryByTestId('plan-segment-empty-goals')).toBeNull();
+    // the month's other spending is still unplanned; the bike is not among it
+    expect((await screen.findByTestId('plan-segment-unplanned')).textContent).not.toMatch(/777/);
+  }, 20_000);
+
   // round 30 (user 2026-10-07 pm): one-tap funding, Fund all, beyond the pool once a day, the pick per segment, the Unplanned sheet
 
   it('a Needs chip funds its subject to the target with one tap; beyond the pool it asks once, then not again today', async () => {
@@ -269,6 +298,18 @@ describe('Planning (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toBe(before));
     expect(screen.getByTestId('plan-segment-empty-expenses')).toBeTruthy();
   }, 25_000);
+
+  it('Start over belongs to this period: a period planned ahead does not offer it', async () => {
+    await startEmptyPlan();
+    await addHousingSubject('100');
+    await screen.findByText('Housing');
+    fireEvent.click(screen.getByTestId('plan-next'));
+    fireEvent.click(await screen.findByTestId('plan-ahead-start'));
+    await screen.findByTestId('plan-header');
+    fireEvent.click(screen.getByTestId('plan-menu'));
+    await screen.findByTestId('plan-menu-blueprints');
+    expect(screen.queryByTestId('plan-menu-startOver')).toBeNull();
+  }, 20_000);
 
   it('a subject in the red is covered from one with room; the tab wears the dot', async () => {
     await startEmptyPlan();

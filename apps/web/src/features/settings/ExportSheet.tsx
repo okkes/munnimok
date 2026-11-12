@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { shareNativeFile } from '@/lib/platform';
 import { visibleAccounts, visibleTransactions } from '@/db/joined';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
-import { delimiterForLang, serializeCsv, toCsvRows } from '@/domain/exportCsv';
-import { periodHistory } from '@/domain/periods';
+import { delimiterForLang, exportWindow, serializeCsv, toCsvRows } from '@/domain/exportCsv';
+import type { ExportRange } from '@/domain/exportCsv';
 import { catName } from '@/features/categories/useCategories';
 import { localToday } from '@/application/recurring';
 import { Button } from '@/ui/Button';
@@ -14,34 +15,35 @@ import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
-type Scope = 'space' | 'all';
-type Range = 'period' | 'year' | 'all' | 'custom';
 type Format = 'csv' | 'json';
 
 /** Blob download without leaving the page — nothing is uploaded anywhere.
  * Native shell (§5): the OS share sheet instead, so the export can go
  * straight to Files/mail; the download stays the web/PWA path. */
-async function download(name: string, content: string, mime: string): Promise<void> {
-  if (await shareNativeFile(name, content)) return;
+async function deliver(name: string, content: string, mime: string): Promise<'saved' | 'dismissed' | 'failed'> {
+  const native = await shareNativeFile(name, content);
+  if (native === 'shared') return 'saved';
+  if (native !== 'unavailable') return native;
   const url = URL.createObjectURL(new Blob([content], { type: mime }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
   a.click();
   URL.revokeObjectURL(url);
+  return 'saved';
 }
 
 /** Global settings → Export data (csv-export design): fully client-side. */
 export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
-  const [scope, setScope] = useState<Scope>('space');
-  const [range, setRange] = useState<Range>('year');
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set([spaceId]));
+  const [range, setRange] = useState<ExportRange>('year');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [format, setFormat] = useState<Format>('csv');
-  const [technical, setTechnical] = useState(false);
   const [empty, setEmpty] = useState(false);
+  const [failed, setFailed] = useState(false);
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const dateBad = range === 'custom' && (!from || !to);
@@ -50,77 +52,77 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
     onOpenChange(next);
   };
 
-  const bounds = async (): Promise<{ from: string; to: string } | null> => {
-    const today = localToday();
-    if (range === 'all') return null;
-    if (range === 'year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
-    if (range === 'custom') return from && to ? { from, to } : null;
-    const space = await store.get('space', spaceId);
-    const period = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0];
-    return { from: period.start, to: period.end };
+  const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), [], []);
+  const everySpace = spaces.length > 0 && spaces.every((s) => picked.has(s.id));
+
+  const toggleSpace = (id: string) => {
+    const next = new Set(picked);
+    if (!next.delete(id)) next.add(id);
+    // an export of no space is nothing: the last tick stays
+    if (next.size > 0) setPicked(next);
   };
 
   const run = async () => {
     setEmpty(false);
-    const spaces = scope === 'all'
-      ? (await store.allRows('space')).filter((s) => s.deleted === 0)
-      : [(await store.get('space', spaceId))!].filter(Boolean);
-    const window = await bounds();
+    setFailed(false);
     const today = localToday();
-    const rangeLabel = window ? `${window.from}--${window.to}` : 'all';
-
-    const allSpaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
     const allCats = (await store.allRows('category')).filter((c) => c.deleted === 0);
+    const chosen = spaces.filter((s) => picked.has(s.id));
 
     const perSpace = await Promise.all(
-      spaces.map(async (space) => {
+      chosen.map(async (space) => {
+        const window = exportWindow(range, space, today, { from, to });
         const txs = (await visibleTransactions(store, space.id)).filter(
           (item) => !window || (item.date >= window.from && item.date <= window.to),
         );
         const accounts = await visibleAccounts(store, space.id);
         const recurrings = (await store.bySpace('recurring', space.id)).filter((r) => r.deleted === 0);
         const events = (await store.bySpace('event', space.id)).filter((e) => e.deleted === 0);
-        return { space, txs, accounts, recurrings, events };
+        return { space, window, txs, accounts, recurrings, events };
       }),
     );
     if (perSpace.every((entry) => entry.txs.length === 0)) {
       setEmpty(true);
       return;
     }
+    // spaces with different periods share no single window to name the file after
+    const windows = new Set(perSpace.map(({ window }) => (window ? `${window.from}--${window.to}` : 'all')));
+    const rangeLabel = windows.size === 1 ? [...windows][0] : 'period';
 
+    let outcome: Awaited<ReturnType<typeof deliver>>;
     if (format === 'json') {
       const payload = perSpace.map(({ space, txs, accounts }) => ({
         space: { id: space.id, name: space.name, currency: space.currency },
         accounts,
         transactions: txs,
       }));
-      await download(`munni-${rangeLabel}-${today}.json`, JSON.stringify(payload, null, 2), 'application/json');
-      close(false);
-      return;
+      outcome = await deliver(`munni-${rangeLabel}-${today}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    } else {
+      const rows: string[][] = [];
+      for (const { space, txs, accounts, recurrings, events } of perSpace) {
+        const visible = visibleCategoryRows(spaces, allCats, space.id);
+        const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains);
+        const spaceRows = toCsvRows(txs, {
+          accounts,
+          catalog,
+          catName: (cat) => catName(cat, t),
+          typeName: (type) => t(`tx.type.${type}`),
+          recurrings,
+          events,
+          spaceId: space.id,
+          spaceName: chosen.length > 1 ? space.name : undefined,
+        });
+        // one shared header row for the whole file
+        rows.push(...(rows.length === 0 ? spaceRows : spaceRows.slice(1)));
+      }
+      outcome = await deliver(`munni-${rangeLabel}-${today}.csv`, serializeCsv(rows, delimiterForLang(lang)), 'text/csv;charset=utf-8');
     }
-
-    const rows: string[][] = [];
-    for (const { space, txs, accounts, recurrings, events } of perSpace) {
-      const visible = visibleCategoryRows(allSpaces, allCats, space.id);
-      const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains);
-      const spaceRows = toCsvRows(txs, {
-        accounts,
-        catalog,
-        catName: (cat) => catName(cat, t),
-        typeName: (type) => t(`tx.type.${type}`),
-        recurrings,
-        events,
-        technical,
-        spaceName: scope === 'all' ? space.name : undefined,
-      });
-      // one shared header row for the whole file
-      rows.push(...(rows.length === 0 ? spaceRows : spaceRows.slice(1)));
-    }
-    await download(`munni-${rangeLabel}-${today}.csv`, serializeCsv(rows, delimiterForLang(lang)), 'text/csv;charset=utf-8');
-    close(false);
+    // a share sheet that was closed saved nothing: the export stays open
+    if (outcome === 'saved') close(false);
+    else setFailed(outcome === 'failed');
   };
 
-  const rangeChip = (value: Range, label: string) => (
+  const rangeChip = (value: ExportRange, label: string) => (
     <Chip key={value} testId={`export-range-${value}`} selected={range === value} onClick={() => setRange(value)}>
       {label}
     </Chip>
@@ -135,13 +137,21 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
           {t('export.scope')}
           <InfoHint text={t('export.note')} testId="export-hint" />
         </div>
-        <div className="flex gap-2">
-          <Chip testId="export-scope-space" selected={scope === 'space'} onClick={() => setScope('space')}>
-            {t('export.scopeSpace')}
-          </Chip>
-          <Chip testId="export-scope-all" selected={scope === 'all'} onClick={() => setScope('all')}>
-            {t('export.scopeAll')}
-          </Chip>
+        <div className="flex flex-wrap gap-2">
+          {spaces.length > 1 && (
+            <Chip
+              testId="export-scope-all"
+              selected={everySpace}
+              onClick={() => setPicked(new Set(everySpace ? [spaceId] : spaces.map((s) => s.id)))}
+            >
+              {t('export.scopeAll')}
+            </Chip>
+          )}
+          {spaces.map((space) => (
+            <Chip key={space.id} testId={`export-space-${space.id}`} selected={picked.has(space.id)} onClick={() => toggleSpace(space.id)}>
+              {space.name}
+            </Chip>
+          ))}
         </div>
 
         <div className="m-cap px-1">{t('export.range')}</div>
@@ -182,30 +192,18 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
             CSV
           </Chip>
           <Chip testId="export-format-json" selected={format === 'json'} onClick={() => setFormat('json')}>
-            {t('export.formatJson')}
+            JSON
           </Chip>
         </div>
-
-        {format === 'csv' && (
-          <button
-            data-testid="export-technical"
-            onClick={() => setTechnical((v) => !v)}
-            className="m-tap flex items-center gap-2 border-none bg-transparent px-1 text-left text-[13px] text-ink-2"
-          >
-            <span
-              className={`flex h-5 w-5 items-center justify-center rounded-md border-2 ${
-                technical ? 'border-accent bg-accent text-on-brand' : 'border-line bg-surface'
-              }`}
-            >
-              {technical ? '✓' : ''}
-            </span>
-            {t('export.technical')}
-          </button>
-        )}
 
         {empty && (
           <p className="text-[12px] text-warning" data-testid="export-empty">
             {t('export.empty')}
+          </p>
+        )}
+        {failed && (
+          <p className="text-[12px] text-warning" data-testid="export-failed">
+            {t('export.failed')}
           </p>
         )}
         <Button

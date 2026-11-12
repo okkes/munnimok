@@ -3,7 +3,12 @@ import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser, renderWithData } from '@/test/harness';
-import { useNavTabs } from './useNavTabs';
+import { destroyIdentityData, useData } from '@/app/data';
+import { addOfflineProfile, deleteOfflineProfile } from '@/features/auth/offlineProfiles';
+import type { StorageBackend } from '@/db/backend';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { useNavOps, useNavTabs } from './useNavTabs';
+import type { NavOps } from './useNavTabs';
 
 /** the phone bar's entries, left to right */
 const barIds = () =>
@@ -47,13 +52,13 @@ describe('navigation (demo identity)', () => {
     expect(screen.queryByTestId('home-shortcuts')).toBeNull();
   });
 
-  it('#523: the side panel lists every feature; splits wait for a signed-in account', async () => {
+  it('#523: the side panel lists every feature — splits too in the demo, which shows examples of them (#538)', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     for (const id of ['home', 'transactions', 'planning', 'portfolio', 'budgets', 'goals', 'debts', 'upcoming', 'recurring', 'events', 'receipts', 'insights', 'trends', 'settings']) {
       expect(screen.getByTestId(`side-tab-${id}`)).toBeTruthy();
     }
-    expect(screen.queryByTestId('side-tab-splits')).toBeNull();
+    expect(screen.getByTestId('side-tab-splits')).toBeTruthy();
     fireEvent.click(screen.getByTestId('side-tab-goals'));
     expect(await screen.findByTestId('screen-goals')).toBeTruthy();
     expect(screen.getByTestId('side-tab-goals').className).toContain('bg-accent-soft');
@@ -168,6 +173,27 @@ describe('navigation (demo identity)', () => {
     expect(JSON.parse(localStorage.getItem('munni_nav_tabs')!).demo.demo_space).toEqual(['transactions', 'planning', 'portfolio', 'settings']);
   });
 
+  it('a reader\'s edits change nothing: the bar the space stored stays as it was', async () => {
+    const probe: { store?: StorageBackend; member?: NavOps; reader?: NavOps } = {};
+    function Probe() {
+      probe.store = useData().store;
+      probe.member = useNavOps(DEMO_SPACE_ID, false);
+      probe.reader = useNavOps(DEMO_SPACE_ID, true);
+      return null;
+    }
+    renderWithData(<Probe />);
+    await waitFor(() => expect(probe.reader).toBeDefined());
+    const stored = async () => (await probe.store!.get('space', DEMO_SPACE_ID))?.navTabs;
+    await probe.member!.add('goals');
+    expect(await stored()).toEqual(['transactions', 'planning', 'portfolio', 'goals', 'settings']);
+
+    await probe.reader!.add('budgets');
+    await probe.reader!.remove('goals');
+    await probe.reader!.move('goals', 0);
+    await probe.reader!.reset();
+    expect(await stored()).toEqual(['transactions', 'planning', 'portfolio', 'goals', 'settings']);
+  });
+
   it('the Settings screen keeps a door to every feature the bar may drop', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
@@ -177,6 +203,26 @@ describe('navigation (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('settings-portfolio-row'));
     expect(await screen.findByTestId('screen-portfolio')).toBeTruthy();
   }, 15_000);
+});
+
+describe('the bar a device drew goes with the identity', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('a wiped identity leaves no bar behind — another identity on the device keeps its own', async () => {
+    localStorage.setItem('munni_nav_tabs', JSON.stringify({ demo: { demo_space: ['goals'] }, user_other: { 's-1': ['budgets'] } }));
+    await destroyIdentityData({ kind: 'demo' });
+    expect(JSON.parse(localStorage.getItem('munni_nav_tabs')!)).toEqual({ user_other: { 's-1': ['budgets'] } });
+  });
+
+  it('a deleted offline profile leaves none either, and the last one takes the record with it', async () => {
+    const profile = addOfflineProfile('Okkes');
+    localStorage.setItem('munni_nav_tabs', JSON.stringify({ [`offline_${profile.id}`]: { 's-1': ['goals'] } }));
+    await deleteOfflineProfile(profile.id);
+    expect(localStorage.getItem('munni_nav_tabs')).toBeNull();
+  });
 });
 
 describe('names or icons in the phone bar', () => {
@@ -271,7 +317,7 @@ describe('navigation (signed-in user)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
   });
 
-  it('splits join the side panel; a reader sees the bar but cannot change it', async () => {
+  it('splits join the side panel; a reader sees the bar and is told it is not theirs to change', async () => {
     renderAppAsUser('/spaces/s-user/navigation', {
       spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
       api: {
@@ -282,9 +328,6 @@ describe('navigation (signed-in user)', () => {
     await screen.findByTestId('nav-reader-note', {}, { timeout: 5000 });
     expect(screen.getByTestId('side-tab-splits')).toBeTruthy();
     expect(screen.getByTestId('nav-more-row-splits')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('nav-add-goals'));
-    // nothing changes: the write never leaves a reader's device
-    await new Promise((resolve) => setTimeout(resolve, 200));
     expect(barIds()).toEqual(['home', 'transactions', 'planning', 'portfolio', 'settings']);
   }, 15_000);
 });

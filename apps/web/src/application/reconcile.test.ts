@@ -142,4 +142,44 @@ describe('applyReconcile (linked is the truth)', () => {
     expect((await store.get('account', 'IA'))?.deleted).toBe(1);
     expect((await store.get('account', 'BA'))?.deleted).toBe(0);
   });
+
+  it('#505: a space the person only reads is left as it is — the merge finishes for the spaces they may write', async () => {
+    const READ = 'space-read';
+    const store = new DexieBackend(new MunniDB(`munni_rec_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const seed = new Repo(store, new HlcClock('rec4'), { trackOutbox: false });
+    for (const id of [SPACE, READ, FEED]) await seed.upsert('space', id, id, { name: id, kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await seed.upsert('account', FEED, 'BA', { name: 'Bank', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
+    await seed.upsert('account', FEED, 'IA', { name: 'Import', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
+    const bank = { accountId: 'BA', currency: 'EUR', needsReview: 0 as const };
+    const imp = { ...bank, accountId: 'IA' };
+    await seed.upsert('transaction', FEED, 'ML0', { ...bank, date: '2026-06-01', amountCents: -100, merchant: 'X', importRef: 'REF-M0' });
+    await seed.upsert('transaction', FEED, 'ML1', { ...bank, date: '2026-06-10', amountCents: -1200, merchant: 'SHELL', importRef: 'REF-M1' });
+    await seed.upsert('transaction', FEED, 'ML9', { ...bank, date: '2026-06-20', amountCents: -200, merchant: 'Y', importRef: 'REF-M9' });
+    await seed.upsert('transaction', FEED, 'MI1', { ...imp, date: '2026-06-10', amountCents: -1200, merchant: 'Shell station', importRef: 'ing:m:1' });
+    await seed.upsert('transaction', FEED, 'MI2', { ...imp, date: '2026-06-12', amountCents: -999, merchant: 'GHOST', importRef: 'ing:m:2' });
+    await seed.upsert('transaction', FEED, 'MI3', { ...imp, date: '2023-01-05', amountCents: -700, merchant: 'OLD', importRef: 'ing:m:3' });
+    // both spaces attached the imported account and filed its row; the read-only one holds a receipt and a refund link on it too
+    for (const space of [SPACE, READ]) {
+      await seed.upsert('txMeta', space, txMetaId(space, 'MI1'), { txId: 'MI1', catId: 'transport', needsReview: 0 });
+      await seed.upsert('accountLink', space, `link-${space}`, { feedSpaceId: FEED, accountId: 'IA', historyFrom: '2020-01-01' });
+    }
+    await seed.upsert('receiptLink', READ, 'rcpt-read', { txId: 'MI1', source: 'photo', date: '2026-06-10', totalCents: 1200, merchant: 'Shell' });
+    await seed.upsert('txMeta', READ, txMetaId(READ, 'ML9'), { txId: 'ML9', catId: 'salary', needsReview: 0, reimbursements: [{ txId: 'MI2', amountCents: 500 }] });
+
+    // the app's repo: writes into a space this identity only reads are refused
+    const repo = new Repo(store, new HlcClock('rec4-device'), { trackOutbox: true, readOnly: (id) => id === READ });
+    const plan = (await buildMergePlan(store, 'IA', 'BA'))!;
+    const result = await applyMerge(store, repo, SPACE, { importedAccountId: 'IA', bankAccountId: 'BA' }, plan, new Set());
+
+    expect(result).toMatchObject({ migrated: 1, removed: 2, moved: 1 });
+    expect((await store.get('txMeta', txMetaId(SPACE, 'ML1')))?.catId).toBe('transport');
+    expect((await store.get('accountLink', `link-${SPACE}`))?.accountId).toBe('BA');
+    expect((await store.get('account', 'IA'))?.deleted).toBe(1);
+    // nothing was written where the person only reads: its rows are its writers' to move
+    expect(await store.get('txMeta', txMetaId(READ, 'ML1'))).toBeUndefined();
+    expect((await store.get('accountLink', `link-${READ}`))?.accountId).toBe('IA');
+    expect((await store.get('receiptLink', 'rcpt-read'))?.txId).toBe('MI1');
+    expect((await store.outboxAll()).some((op) => op.spaceId === READ)).toBe(false);
+  });
 });

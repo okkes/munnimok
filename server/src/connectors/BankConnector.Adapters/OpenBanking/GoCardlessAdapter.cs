@@ -59,7 +59,7 @@ public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
 
     private static int? DaysOf(string? text) => int.TryParse(text, out var days) ? days : null;
 
-    protected override async Task<(string Url, string PendingId, int ConsentDays)> StartConsentAsync(
+    protected override async Task<(string Url, string PendingId, DateTimeOffset ExpiresAt)> StartConsentAsync(
         HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct)
     {
         // deep history and a long consent are an agreement the institution may
@@ -69,7 +69,7 @@ public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
             ? await _client.AgreementAsync(http, institution.Id, wanted, consentDays, ct).ConfigureAwait(false)
             : null;
         var created = await _client.CreateRequisitionAsync(http, institution.Id, returnUrl, reference, agreement, ct).ConfigureAwait(false);
-        return (created.Link, created.Id, agreement is null ? OpenBankingManifests.ConsentDays : consentDays);
+        return (created.Link, created.Id, Time.GetUtcNow().AddDays(agreement is null ? OpenBankingManifests.ConsentDays : consentDays));
     }
 
     protected override async Task<(string ConsentId, IReadOnlyList<string> AccountIds)> CompleteConsentAsync(

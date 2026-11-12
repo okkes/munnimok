@@ -54,7 +54,7 @@ describe('#522: the backdrop a see-through picture needs', () => {
 describe('#522: <Picture>', () => {
   /** happy-dom decodes nothing: the stub "loads" as soon as it has a source, and the canvas hands out these pixels */
   function stubDecoding(pixels: Uint8ClampedArray) {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn(), getImageData: () => ({ data: pixels }) } as never);
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn(), getImageData: () => ({ data: pixels }) } as never);
     class LoadingImage {
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
@@ -66,6 +66,7 @@ describe('#522: <Picture>', () => {
       }
     }
     vi.stubGlobal('Image', LoadingImage);
+    return getContext;
   }
 
   it('wears the plate the theme needs, and follows a theme change', async () => {
@@ -80,12 +81,19 @@ describe('#522: <Picture>', () => {
     await waitFor(() => expect(screen.getByTestId('pic').dataset.plate).toBeUndefined());
   });
 
-  it('a picture that cannot be measured stays bare', async () => {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  it('a picture that cannot be measured stays bare, beside one that gets its plate', async () => {
+    // the first canvas asked for hands out no context — that picture cannot be read; the next one can
+    stubDecoding(picture([20, 20, 20], 0.4)).mockReturnValueOnce(null);
     document.documentElement.dataset.theme = 'dark';
-    render(<Picture src="data:image/png;base64,unreadable" data-testid="pic" className="h-6 w-6" />);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(screen.getByTestId('pic').dataset.plate).toBeUndefined();
-    expect(screen.getByTestId('pic').className).toBe('h-6 w-6');
+    render(
+      <>
+        <Picture src="data:image/png;base64,unreadable" data-testid="bare" className="h-6 w-6" />
+        <Picture src="data:image/png;base64,dark-logo-beside" data-testid="plated" />
+      </>,
+    );
+    // pictures are measured in order: once the second wears its plate, the first one's answer is in as well
+    await waitFor(() => expect(screen.getByTestId('plated').dataset.plate).toBe('light'));
+    expect(screen.getByTestId('bare').dataset.plate).toBeUndefined();
+    expect(screen.getByTestId('bare').className).toBe('h-6 w-6');
   });
 });

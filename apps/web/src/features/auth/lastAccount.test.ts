@@ -34,6 +34,16 @@ describe('the account step: who signed in last, and how they get back in (#559)'
     expect(readLastAccount()).toBeNull();
   });
 
+  it('a sign-in without a name to show takes the previous person’s record off the login screen', () => {
+    rememberLastAccount('Okkes', { social: 'google' });
+    // another account signs in on this device — one that carries no name, username or e-mail to display
+    rememberLastAccount(undefined, { social: 'apple' });
+    expect(readLastAccount()).toBeNull();
+    rememberLastAccount('Okkes', { social: 'google' });
+    rememberLastAccount('   ');
+    expect(readLastAccount()).toBeNull();
+  });
+
   it('the way in: the one social identity first, else the username, else unknown', () => {
     expect(signInWayOf({ username: null, identities: { google: { userId: 'g1' } } })).toEqual({ social: 'google' });
     // a username account that linked Google gets back in through Google — the quicker door

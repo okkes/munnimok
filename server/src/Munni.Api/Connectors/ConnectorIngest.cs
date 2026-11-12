@@ -215,12 +215,16 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var name = line.Text(NameField);
         var total = Money(line["total"]);
         if (name is null || total is null) return null;
+        var discount = line["discount"] as JsonObject;
         return new
         {
             name,
             qty = line["quantity"]?.GetValue<decimal>(),
             unitCents = Money(line["unit_price"])?.Value,
             totalCents = total.Value.Value,
+            // what came off this very line: without it the lines add up to more than the receipt charged
+            discountCents = Money(discount?["amount"])?.Value,
+            discountLabel = discount?.Text("label"),
             kind = line.Text("kind") is { } kind && kind != "product" ? kind : null,
         };
     }
@@ -255,12 +259,12 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     {
         var written = 0;
         var dropped = 0;
-        var now = time.GetUtcNow();
+        var pass = new AccountPass(user, provider, connectionId, time.GetUtcNow(), records.Count(IsNamedWallet) == 1);
         var reached = new List<string>(records.Count);
 
         foreach (var account in records)
         {
-            var landed = await AccountAsync(user, provider, connectionId, account, now, touched, ct);
+            var landed = await AccountAsync(pass, account, touched, ct);
             if (landed is null)
             {
                 dropped++;
@@ -286,15 +290,21 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     /// </summary>
     private sealed record AccountLanding(int Accepted, string? AccountRef, bool NamesTheAccount = false);
 
+    /// <summary>One accounts pass: whose it is, and whether it lists a single wallet that states its identity.</summary>
+    private sealed record AccountPass(User User, string Provider, string ConnectionId, DateTimeOffset Now, bool OneWallet);
+
+    private static bool IsNamedWallet(JsonObject account) =>
+        string.IsNullOrWhiteSpace(account.Text("iban")) && account.Text("identity") is { Length: > 0 };
+
     /// <summary>
     /// One account: its feed, its row, and the reference the transactions
     /// will resolve it by. Null when the record lacks an id; otherwise how
     /// many ops landed — zero when this minute already wrote the same row,
     /// which is what a transactions pass carrying its accounts does.
     /// </summary>
-    private async Task<AccountLanding?> AccountAsync(
-        User user, string provider, string connectionId, JsonObject account, DateTimeOffset now, HashSet<string> touched, CancellationToken ct)
+    private async Task<AccountLanding?> AccountAsync(AccountPass pass, JsonObject account, HashSet<string> touched, CancellationToken ct)
     {
+        var (user, provider, connectionId, now, _) = pass;
         var id = account.Text("id");
         var externalId = account.Text(ExternalIdField);
         if (id is null || externalId is null) return null;
@@ -304,7 +314,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var iban = account.Text("iban");
         var identity = account.Text("identity") is { Length: > 0 } stated ? stated : null;
         var accountRef = string.IsNullOrWhiteSpace(iban)
-            ? await CardRefAsync(user.Id, provider, id, externalId, identity, ct)
+            ? await CardRefAsync(pass, id, externalId, identity, ct)
             : ImportIds.Normalize(iban);
         var isIban = !accountRef.StartsWith("CONN:", StringComparison.Ordinal);
         var feed = isIban
@@ -345,17 +355,38 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     /// reference (a consent from before identities were read), and otherwise
     /// an earlier consent's ref with the same identity lends its own.
     /// </summary>
-    private async Task<string> CardRefAsync(Guid userId, string provider, string id, string externalId, string? identity, CancellationToken ct)
+    private async Task<string> CardRefAsync(AccountPass pass, string id, string externalId, string? identity, CancellationToken ct)
     {
+        var (user, provider, _, _, _) = pass;
         var perSession = $"CONN:{provider}:{externalId}";
         if (identity is null) return perSession;
         var known = await db.ConnectorAccountRefs
-            .Where(a => a.UserId == userId && a.Provider == provider && (a.Id == id || a.Identity == identity))
+            .Where(a => a.UserId == user.Id && a.Provider == provider && (a.Id == id || a.Identity == identity))
             .Select(a => new { a.Id, a.AccountRef, a.SeenAt })
             .ToListAsync(ct);
         var own = known.Find(a => a.Id == id);
         if (own is not null) return own.AccountRef;
-        return known.OrderByDescending(a => a.SeenAt).Select(a => a.AccountRef).FirstOrDefault() ?? $"CONN:{provider}:{identity}";
+        return known.OrderByDescending(a => a.SeenAt).Select(a => a.AccountRef).FirstOrDefault()
+               ?? await ContinuedWalletAsync(pass, identity, ct)
+               ?? $"CONN:{provider}:{identity}";
+    }
+
+    /// <summary>
+    /// A consent that ended before identities were read never states its wallet's, so a sign-in of the same
+    /// connection cannot find it by identity. One wallet behind the connection and one in the pass is the
+    /// same wallet; anything else cannot be told apart. It is named from here on, so no later wallet lands on it too.
+    /// </summary>
+    private async Task<string?> ContinuedWalletAsync(AccountPass pass, string identity, CancellationToken ct)
+    {
+        if (!pass.OneWallet) return null;
+        var unnamed = await db.ConnectorAccountRefs
+            .Where(a => a.UserId == pass.User.Id && a.Provider == pass.Provider && a.ConnectionId == pass.ConnectionId
+                        && a.Identity == null && a.AccountRef.StartsWith("CONN:"))
+            .ToListAsync(ct);
+        if (unnamed is not [{ Excluded: false } earlier]) return null;
+        earlier.Identity = identity;
+        await db.SaveChangesAsync(ct);
+        return earlier.AccountRef;
     }
 
     /// <summary>The feed account row's fields: the party's facts, the seed-only name and type, the balance when stated.</summary>
@@ -590,18 +621,27 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             .Distinct()
             .ToListAsync(ct);
 
+    /// <summary>The account records a page carries, by the id their references are kept under.</summary>
+    internal static List<string> AccountIdsOf(JsonArray? records) =>
+        [.. (records ?? []).OfType<JsonObject>().Where(r => ShapeOf(r, string.Empty) == AccountEntity).Select(r => r.Text("id")).OfType<string>()];
+
     /// <summary>
     /// A complete fetch settles the pending mirror (§15): every pending row
     /// the connection's accounts carried that the party no longer reports
     /// is tombstoned — booked under a new reference, or withdrawn — and the
     /// ones it reported now are remembered for the next time.
     /// </summary>
+    /// <param name="carried">The account records the pass itself carried; only their accounts are judged.</param>
     public async Task<int> SettlePendingAsync(
-        Guid userId, string provider, string connectionId, IReadOnlyList<ConnectorPendingTx> seen, CancellationToken ct)
+        Guid userId, string provider, string connectionId, IReadOnlyCollection<string> carried, IReadOnlyList<ConnectorPendingTx> seen, CancellationToken ct)
     {
-        var accounts = await db.ConnectorAccountRefs
+        var reached = await db.ConnectorAccountRefs
             .Where(a => a.UserId == userId && a.Provider == provider && a.ConnectionId == connectionId)
             .ToListAsync(ct);
+        // A page that is gone carries no account and says nothing about what the party reports.
+        // Judged by account, not by reference: an earlier session of this connection may still track the account's rows.
+        var judged = reached.Where(a => carried.Contains(a.Id)).Select(a => (a.FeedSpaceId, a.AccountEntityId)).ToHashSet();
+        var accounts = reached.Where(a => judged.Contains((a.FeedSpaceId, a.AccountEntityId))).ToList();
         if (accounts.Count == 0) return 0;
         var accountIds = accounts.Select(a => a.Id).ToList();
         var tracked = await db.ConnectorPendingTxs.Where(p => accountIds.Contains(p.AccountRefId)).ToListAsync(ct);

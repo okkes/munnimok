@@ -294,9 +294,27 @@ describe('Settings screens (user identity, scripted server)', () => {
     expect(switches).toHaveLength(0);
   }, 15_000);
 
-  it('#549: switching a space off keeps the device registered and tells the server — and back on', async () => {
+  it('a device that already holds its subscription files it with the server again when the card opens', async () => {
+    installPushEnv(true);
+    const registrations: unknown[] = [];
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: [] }),
+        'POST /me/push-subscriptions': (body) => {
+          registrations.push(body);
+          return {};
+        },
+      },
+    });
+    // the server may have lost the device, or still know it under the account that used it before
+    await waitFor(() => expect(registrations[0]).toMatchObject({ endpoint: 'https://push.example/settings' }), { timeout: 5000 });
+  }, 15_000);
+
+  it('#549: switching a space off keeps the device registered and tells the server — and back on files the device again', async () => {
     const pushManager = installPushEnv(true);
     const switches: unknown[] = [];
+    const registrations: unknown[] = [];
     renderAppAsUser('/settings', {
       api: {
         'GET /health': pushHealth,
@@ -305,19 +323,28 @@ describe('Settings screens (user identity, scripted server)', () => {
           switches.push(body);
           return body;
         },
+        'POST /me/push-subscriptions': (body) => {
+          registrations.push(body);
+          return {};
+        },
       },
     });
 
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'), { timeout: 5000 });
+    await waitFor(() => expect(registrations).toHaveLength(1)); // the card's own
     fireEvent.click(screen.getByTestId('settings-push-toggle'));
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'));
     expect(switches).toEqual([{ on: false }]);
     // the device stays registered: the person's other spaces may still want it
     expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(registrations).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId('settings-push-toggle'));
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'));
     expect(switches).toEqual([{ on: false }, { on: true }]);
+    // every switch-on is the moment the server hears about this device
+    expect(registrations).toHaveLength(2);
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
   }, 15_000);
 
   it('#549: a space switched off on another device reads off here', async () => {
@@ -330,6 +357,74 @@ describe('Settings screens (user identity, scripted server)', () => {
     });
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'), { timeout: 5000 });
     expect(screen.queryByTestId('settings-push-test')).toBeNull();
+  }, 15_000);
+
+  it('closing the browser’s permission question is no failure: the switch stays off and nothing claims it could not save', async () => {
+    installPushEnv();
+    const requestPermission = vi.fn().mockResolvedValue('default');
+    Object.defineProperty(window, 'Notification', { configurable: true, value: { permission: 'default', requestPermission } });
+    renderAppAsUser('/settings', {
+      api: { 'GET /health': pushHealth, 'GET /me/space-notifications': () => ({ off: [] }) },
+    });
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'), { timeout: 5000 });
+    const toggle = screen.getByTestId<HTMLButtonElement>('settings-push-toggle');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(requestPermission).toHaveBeenCalled());
+    await waitFor(() => expect(toggle.disabled).toBe(false));
+    expect(toggle.textContent).not.toContain('Could not save');
+    expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF');
+  }, 15_000);
+
+  it('a phone that refuses notifications is told so in the phone’s words — not that saving failed', async () => {
+    const shell = globalThis as { Capacitor?: unknown };
+    shell.Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        PushNotifications: {
+          requestPermissions: () => Promise.resolve({ receive: 'denied' }),
+          register: () => Promise.resolve(),
+          addListener: () => undefined,
+        },
+      },
+    };
+    try {
+      renderAppAsUser('/settings', {
+        api: { 'GET /health': pushHealth, 'GET /me/space-notifications': () => ({ off: [] }) },
+      });
+      await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'), { timeout: 5000 });
+      fireEvent.click(screen.getByTestId('settings-push-toggle'));
+      await waitFor(() => expect(screen.getByTestId('settings-push-toggle').textContent).toContain('phone settings'), { timeout: 5000 });
+      expect(screen.getByTestId('settings-push-toggle').textContent).not.toContain('Could not save');
+    } finally {
+      delete shell.Capacitor;
+    }
+  }, 15_000);
+
+  it('a switch-on the server cannot hear says so, and the next try files the device', async () => {
+    installPushEnv();
+    let reachable = false;
+    const registrations: unknown[] = [];
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: [] }),
+        'POST /me/push-subscriptions': (body) => {
+          if (!reachable) throw new TypeError('Failed to fetch');
+          registrations.push(body);
+          return {};
+        },
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('settings-push-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-push-toggle').textContent).toContain('Could not save'), { timeout: 5000 });
+    expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF');
+
+    reachable = true;
+    fireEvent.click(screen.getByTestId('settings-push-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'));
+    expect(registrations).toHaveLength(1);
   }, 15_000);
 
   it('a registered device can be sent a test notification naming the space, from the row under its switch', async () => {
@@ -348,6 +443,30 @@ describe('Settings screens (user identity, scripted server)', () => {
     fireEvent.click(await screen.findByTestId('settings-push-test', {}, { timeout: 5000 }));
     await waitFor(() => expect(tests).toEqual(['s-user']));
     await waitFor(() => expect(screen.getByTestId('settings-push-test').textContent).toContain('Sent to 1'));
+  }, 15_000);
+
+  it('a test that reaches no device while the switch reads on files this device again and asks once more', async () => {
+    installPushEnv(true);
+    const calls: string[] = [];
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': pushHealth,
+        'GET /me/space-notifications': () => ({ off: [] }),
+        'POST /me/push-subscriptions': () => {
+          calls.push('register');
+          return {};
+        },
+        // the server knows no device until it is told after the first test
+        'POST /me/push-subscriptions/test': () => {
+          calls.push('test');
+          return { sent: calls.filter((call) => call === 'test').length > 1 ? 1 : 0 };
+        },
+      },
+    });
+    fireEvent.click(await screen.findByTestId('settings-push-test', {}, { timeout: 5000 }));
+    await waitFor(() => expect(screen.getByTestId('settings-push-test').textContent).toContain('Sent to 1'), { timeout: 5000 });
+    expect(calls.filter((call) => call === 'test')).toHaveLength(2);
+    expect(calls.slice(calls.indexOf('test'), calls.lastIndexOf('test'))).toContain('register');
   }, 15_000);
 
   it('#549: signing out lets go of this device’s notifications', async () => {
@@ -412,6 +531,29 @@ describe('Settings screens (user identity, scripted server)', () => {
       const dbs = await indexedDB.databases();
       expect(dbs.some((d) => d.name === USER_TEST_DB)).toBe(false);
     });
+  }, 15_000);
+
+  it('deleting the account lets go of this device’s notifications — the server, which erased everything, is not asked', async () => {
+    const pushManager = installPushEnv(true);
+    const subscription = (await pushManager.getSubscription()) as { unsubscribe: ReturnType<typeof vi.fn> };
+    const asked: string[] = [];
+    renderAppAsUser('/profile', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'DELETE /me': () => ({ deleted: true }),
+        'DELETE /me/push-subscriptions': (_body, url) => {
+          asked.push(url.search);
+          return {};
+        },
+      },
+    });
+    await screen.findByTestId('screen-profile');
+    fireEvent.click(await screen.findByTestId('settings-delete-account'));
+    fireEvent.change(await screen.findByTestId('delete-account-input'), { target: { value: 'delete' } });
+    fireEvent.click(screen.getByTestId('delete-account-confirm'));
+    expect(await screen.findByTestId('screen-login')).toBeTruthy();
+    await waitFor(() => expect(subscription.unsubscribe).toHaveBeenCalled());
+    expect(asked).toEqual([]);
   }, 15_000);
 
   it('#307: deletion in flight narrates the stage and refuses dismissal', async () => {

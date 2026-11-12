@@ -1,5 +1,6 @@
 import type { StorageBackend } from '@/db/backend';
 import { apiFetch } from '@/lib/api';
+import { forgetPendingClear } from './inboxClear';
 
 /**
  * #549: notifications are chosen per space — the person's own choice (not
@@ -31,6 +32,15 @@ export async function refreshSpacesNotifyOff(store: MetaStore): Promise<string[]
   const off = body.off.filter((id): id is string => typeof id === 'string');
   await store.metaPut(OFF_KEY, off);
   return off;
+}
+
+/**
+ * Going offline keeps this store for the new profile: what the account's
+ * server said would mute spaces there that no switch reaches any more.
+ */
+export async function forgetSpacesNotifyOff(store: Pick<StorageBackend, 'metaDelete'>): Promise<void> {
+  await store.metaDelete(OFF_KEY);
+  await forgetPendingClear(store);
 }
 
 /** switches one space's notifications; false when the server did not take it — nothing changes then */

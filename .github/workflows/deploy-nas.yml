@@ -56,6 +56,17 @@ jobs:
         env:
           MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
           MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
+      # #587: production follows a green Web CI only. The dev channel deploys regardless, and a dispatch is the operator's own word.
+      - name: Web CI passed? (production)
+        if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'master' }}
+        run: |
+          VERDICT=$(node infra/ci/ci-passed.mjs --sha "${{ github.event.workflow_run.head_sha }}" --wait-minutes 30)
+          if [ "$VERDICT" != "passed" ]; then
+            echo "::error::production is not deployed: Web CI for ${{ github.event.workflow_run.head_sha }} is '$VERDICT'. Re-run Web CI; once it is green, re-run this run."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Which stacks
         id: m
         # a stack rides in its GitHub environment; without one it was never bootstrapped — an image build skips it (a dispatch names its stack: the Bootstrap chain created the environment)
@@ -104,7 +115,7 @@ jobs:
           MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
           MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       # the environment holds the platform's domain once its Bootstrap ran — before that there is nothing to deploy (the Bootstrap chains this Deploy when it is done).
-      # #434: an image-triggered deploy steps aside when a newer one of the same channel already waits in this stack's concurrency group — both deploy the branch head on the channel tag, so this run would only repeat it
+      # an image-triggered deploy steps aside only on the exact answer "superseded" (a newer run deploys the stack anyway) — an error or no answer deploys
       - name: Bootstrapped?
         id: ready
         run: |
@@ -113,21 +124,15 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            NEWER=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-nas.yml/runs?event=workflow_run&per_page=30" \
-              --jq '[.workflow_runs[] | select(.id > ($ENV.RUN_ID | tonumber) and .status != "completed" and .display_title == $ENV.TITLE)] | length' || echo 0)
-            if [ "${NEWER:-0}" != "0" ]; then
-              echo "::notice::${{ matrix.stack }}: a newer deploy of the same image channel is waiting — it deploys the same branch head, so this run steps aside"
-              echo "ok=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "$(node infra/ci/superseded.mjs --stack "${{ matrix.stack }}" --title "$TITLE")" = "superseded" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "ok=true" >> "$GITHUB_OUTPUT"
         env:
           PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.run_id }}
           TITLE: Deploy after images (${{ github.event.workflow_run.head_branch }})
       - name: Render + assemble the bundle
         id: bundle
@@ -179,6 +184,8 @@ jobs:
           FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
           LOGODEV_SECRET_KEY: ${{ secrets.LOGODEV_SECRET_KEY }}
           LOGODEV_PUBLIC_TOKEN: ${{ secrets.LOGODEV_PUBLIC_TOKEN }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
+          RECEIPT_AI_API_KEY: ${{ secrets.RECEIPT_AI_API_KEY }}
           # the connector control plane and the relay (#367)
           CONNECTOR_SEAL_KEY_K1: ${{ secrets.CONNECTOR_SEAL_KEY_K1 }}
           CONNECTOR_ENROLLMENT_HMAC: ${{ secrets.CONNECTOR_ENROLLMENT_HMAC }}

@@ -51,9 +51,12 @@ export interface GoalOps {
   /**
    * #455: the goal was spent — the rows that paid for it leave the
    * saving of their period and the goal is archived; archived goals hold
-   * no allocation, so whatever it held beyond them is back in the pool
+   * no allocation, so whatever it held beyond them is back in the pool.
+   * `purchaseTxIds` names what the money bought.
    */
-  cashOut: (goal: GoalRow, txIds: readonly string[]) => Promise<void>;
+  cashOut: (goal: GoalRow, txIds: readonly string[], purchaseTxIds?: readonly string[]) => Promise<void>;
+  /** a cashed-out goal names (or renames) what its money bought; the money that paid for it stays as picked */
+  namePurchases: (goal: GoalRow, purchaseTxIds: readonly string[]) => Promise<void>;
   /** the goal comes back as it was; its rows count as saving again */
   undoCashOut: (goal: GoalRow) => Promise<void>;
 }
@@ -86,9 +89,15 @@ export function useGoalOps(): GoalOps {
       await repo.upsert('goal', spaceId, goalId, { allocatedCents: total });
       void logRowActivity(store, repo, spaceId, 'goal', goalId, 'goalEdit');
     },
-    cashOut: async (goal, txIds) => {
-      await repo.upsert('goal', spaceId, goal.id, { archived: 1, cashOut: { date: localToday(), txIds: [...txIds] } });
+    cashOut: async (goal, txIds, purchaseTxIds = []) => {
+      const cashOut = { date: localToday(), txIds: [...txIds], ...(purchaseTxIds.length > 0 ? { purchaseTxIds: [...purchaseTxIds] } : {}) };
+      await repo.upsert('goal', spaceId, goal.id, { archived: 1, cashOut });
       void logRowActivity(store, repo, spaceId, 'goal', goal.id, 'goalCashOut', goal.name);
+    },
+    namePurchases: async (goal, purchaseTxIds) => {
+      if (!goal.cashOut) return;
+      await repo.upsert('goal', spaceId, goal.id, { cashOut: { date: goal.cashOut.date, txIds: [...goal.cashOut.txIds], purchaseTxIds: [...purchaseTxIds] } });
+      void logRowActivity(store, repo, spaceId, 'goal', goal.id, 'goalPurchase', goal.name);
     },
     undoCashOut: async (goal) => {
       await repo.upsert('goal', spaceId, goal.id, { archived: 0, cashOut: null });

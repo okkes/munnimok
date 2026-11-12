@@ -47,7 +47,11 @@ export function readLastAccount(): LastAccount | null {
 
 export function rememberLastAccount(name: string | null | undefined, way: SignInWay = {}): void {
   try {
-    if (!name?.trim()) return;
+    if (!name?.trim()) {
+      // nothing to show for this account: the previous person's record must not stand in for it
+      localStorage.removeItem(KEY);
+      return;
+    }
     localStorage.setItem(KEY, JSON.stringify({ name: name.trim(), at: Date.now(), ...way } satisfies LastAccount));
   } catch {
     // storage blocked: the next sign-in simply asks without a name

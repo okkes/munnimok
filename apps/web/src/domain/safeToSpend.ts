@@ -2,7 +2,7 @@ import type { AccountRow, AccountType, RecurringRow, SpaceRow, SpendSetAside, Tx
 import { debtPaymentCadence, isDebtTracked } from './debts';
 import { periodAt, periodLengthDays } from './planning';
 import type { Period } from './periods';
-import { occurrencesBetween } from './recurring';
+import { addDays, cycleMonths, occurrencesBetween } from './recurring';
 import { txSliceViews } from './txSlices';
 
 /**
@@ -53,42 +53,73 @@ export interface SpendDue {
   cents: number;
 }
 
-const addTo = (map: Map<string, number>, key: string, cents: number) => map.set(key, (map.get(key) ?? 0) + cents);
+type Cadence = Pick<RecurringRow, 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>;
 
-/** what went out this period towards each recurring cost and each account it was linked to */
-function paidInPeriod(txs: readonly TxView[], period: Period): { byRecurring: Map<string, number>; byAccount: Map<string, number> } {
-  const byRecurring = new Map<string, number>();
-  const byAccount = new Map<string, number>();
-  for (const tx of txs) {
-    if (tx.deleted !== 0 || tx.date < period.start || tx.date > period.end) continue;
-    for (const slice of txSliceViews(tx)) {
-      if (slice.amountCents >= 0) continue;
-      if (slice.recurringId) addTo(byRecurring, slice.recurringId, -slice.amountCents);
-      if (slice.linkedAccountId) addTo(byAccount, slice.linkedAccountId, -slice.amountCents);
-    }
+const DAY_MS = 86_400_000;
+const daysApart = (a: string, b: string): number => Math.abs(Date.parse(a) - Date.parse(b)) / DAY_MS;
+
+const addDay = (map: Map<string, string[]>, key: string, day: string) => {
+  const days = map.get(key);
+  if (days) days.push(day);
+  else map.set(key, [day]);
+};
+
+// only a row's own links or its parts can point at a cost — the rest of the history is skipped unread
+const mayPay = (tx: TxView): boolean => !!tx.recurringId || !!tx.linkedAccountId || !!tx.splits?.length;
+
+/** the costs and the accounts one row's outgoing slices point at */
+function paidTowards(tx: TxView): { costs: Set<string>; accounts: Set<string> } {
+  const costs = new Set<string>();
+  const accounts = new Set<string>();
+  for (const slice of txSliceViews(tx)) {
+    if (slice.amountCents >= 0) continue;
+    if (slice.recurringId) costs.add(slice.recurringId);
+    if (slice.linkedAccountId) accounts.add(slice.linkedAccountId);
   }
+  return { costs, accounts };
+}
+
+/** the days money left towards each recurring cost and each account it was linked to, oldest first */
+function paymentDays(txs: readonly TxView[], until: string): { byRecurring: Map<string, string[]>; byAccount: Map<string, string[]> } {
+  const byRecurring = new Map<string, string[]>();
+  const byAccount = new Map<string, string[]>();
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || tx.date > until || !mayPay(tx)) continue;
+    const { costs, accounts } = paidTowards(tx);
+    for (const id of costs) addDay(byRecurring, id, tx.date);
+    for (const id of accounts) addDay(byAccount, id, tx.date);
+  }
+  for (const days of [...byRecurring.values(), ...byAccount.values()]) days.sort((a, b) => a.localeCompare(b));
   return { byRecurring, byAccount };
 }
 
 /**
- * What is still open of a cost falling due on `dates` this period: what the
- * period expects minus what it paid — never more than the occurrences still
- * ahead, so a payment that went by without a link does not count twice. An
- * early payment covers the nearest occurrence first.
+ * A payment pays the occurrence nearest its day, whatever period it books in and whatever it came to.
+ * A past occurrence without a linked payment is not asked for again: an unlinked payment would count twice.
  */
-function stillOpen(dates: readonly string[], amountCents: number, paidCents: number, today: string): Pick<SpendDue, 'dates' | 'cents'> | null {
+function stillOpen(cadence: Cadence, amountCents: number, paidOn: readonly string[], period: Period, today: string): Pick<SpendDue, 'dates' | 'cents'> | null {
   if (amountCents <= 0) return null;
-  const ahead = dates.filter((date) => date >= today);
-  const cents = Math.min(ahead.length * amountCents, Math.max(0, dates.length * amountCents - paidCents));
-  if (cents <= 0) return null;
-  return { dates: ahead.slice(ahead.length - Math.ceil(cents / amountCents)), cents };
+  const from = addDays(period.start, -Math.ceil(cycleMonths(cadence) * 31));
+  const occurrences = occurrencesBetween(cadence, from, period.end);
+  const covered = new Set<string>();
+  for (const paid of paidOn) {
+    if (paid < from) continue;
+    let nearest: string | null = null;
+    for (const date of occurrences) {
+      // a tie goes to the later occurrence: paid ahead rather than paid late
+      if (!covered.has(date) && (nearest === null || daysApart(paid, date) <= daysApart(paid, nearest))) nearest = date;
+    }
+    if (nearest) covered.add(nearest);
+  }
+  const dates = occurrences.filter((date) => date >= period.start && date >= today && !covered.has(date));
+  return dates.length > 0 ? { dates, cents: dates.length * amountCents } : null;
 }
 
 /** every live loan with a payment plan, the ones still due this period among them (a loan among the picked accounts is none) */
 function loanDues(
   accounts: readonly AccountRow[],
   spendIds: ReadonlySet<string>,
-  paidByAccount: ReadonlyMap<string, number>,
+  paidByAccount: ReadonlyMap<string, readonly string[]>,
   period: Period,
   today: string,
 ): { dues: SpendDue[]; loanIds: Set<string> } {
@@ -100,7 +131,7 @@ function loanDues(
     if (!cadence) continue;
     loanIds.add(loan.id);
     if (spendIds.has(loan.id)) continue;
-    const open = stillOpen(occurrencesBetween(cadence, period.start, period.end), Math.abs(loan.paymentCents ?? 0), paidByAccount.get(loan.id) ?? 0, today);
+    const open = stillOpen(cadence, Math.abs(loan.paymentCents ?? 0), paidByAccount.get(loan.id) ?? [], period, today);
     if (open) dues.push({ kind: 'loan', id: loan.id, name: loan.name, ...open });
   }
   return { dues, loanIds };
@@ -110,7 +141,7 @@ function loanDues(
 function recurringDues(
   recurrings: readonly RecurringRow[],
   noDueIds: ReadonlySet<string>,
-  paidByRecurring: ReadonlyMap<string, number>,
+  paidByRecurring: ReadonlyMap<string, readonly string[]>,
   period: Period,
   today: string,
 ): SpendDue[] {
@@ -118,7 +149,7 @@ function recurringDues(
   for (const rec of recurrings) {
     if (rec.deleted !== 0 || rec.active !== 1) continue;
     if (rec.linkedAccountId && noDueIds.has(rec.linkedAccountId)) continue;
-    const open = stillOpen(occurrencesBetween(rec, period.start, period.end), Math.abs(rec.amountCents), paidByRecurring.get(rec.id) ?? 0, today);
+    const open = stillOpen(rec, Math.abs(rec.amountCents), paidByRecurring.get(rec.id) ?? [], period, today);
     if (open) dues.push({ kind: 'recurring', id: rec.id, name: rec.name, ...open });
   }
   return dues;
@@ -140,7 +171,7 @@ export function spendDues(input: {
   today: string;
 }): SpendDue[] {
   const { period, today, spendIds } = input;
-  const paid = paidInPeriod(input.txs, period);
+  const paid = paymentDays(input.txs, period.end);
   const loans = loanDues(input.accounts, spendIds, paid.byAccount, period, today);
   const noDueIds = new Set([...spendIds, ...loans.loanIds]);
   const dues = [...loans.dues, ...recurringDues(input.recurrings, noDueIds, paid.byRecurring, period, today)];

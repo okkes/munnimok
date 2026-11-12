@@ -217,8 +217,9 @@ public sealed class FetchRunner(
         // one ran for half an hour while the other three waited behind the
         // per-session lease and died as agent_unavailable). The handle is
         // the same contract as a fresh 202, and whichever device collects
-        // it first collects it.
-        if (await InFlightAsync(session.Id, resource.Id, ct) is { } inFlight)
+        // it first collects it. Only when it asks the party the same: a pass
+        // over older history is not answered with the newest rows, nor the reverse.
+        if (await InFlightAsync(session.Id, request, ct) is { } inFlight)
         {
             return ConnectorResults.Json(await views.AcceptedAsync(inFlight, ct), StatusCodes.Status202Accepted);
         }
@@ -282,21 +283,36 @@ public sealed class FetchRunner(
     }
 
     /// <summary>
-    /// The newest fetch of a resource that is still queued, leased, running
-    /// or waiting for an answer, for this session; null when none is.
+    /// The newest fetch that asks the same of this resource and is still
+    /// queued, leased, running or waiting for an answer, for this session;
+    /// null when none is.
     /// </summary>
-    private Task<JobRow?> InFlightAsync(string sessionId, string resourceId, CancellationToken ct) =>
-        db.Jobs.AsNoTracking()
+    private async Task<JobRow?> InFlightAsync(string sessionId, ResourceRequest request, CancellationToken ct)
+    {
+        var running = await db.Jobs.AsNoTracking()
             .Where(j => j.SessionId == sessionId
                         && j.Kind == JobKind.Fetch
-                        && j.ResourceId == resourceId
+                        && j.ResourceId == request.ResourceId
                         && (j.State == JobState.Queued
                             || j.State == JobState.Leased
                             || j.State == JobState.Running
                             || j.State == JobState.AwaitingInput))
             .OrderByDescending(j => j.CreatedAt)
             .ThenByDescending(j => j.Id)
-            .FirstOrDefaultAsync(ct);
+            .ToListAsync(ct);
+        return running.Find(j => SameAsk(j.ParamsJson, request));
+    }
+
+    /// <summary>Whether a job's recorded request is this one: the same window and the same selections.</summary>
+    internal static bool SameAsk(string paramsJson, ResourceRequest request)
+    {
+        var asked = Infrastructure.ConnectorJson.DeserializeOr<ResourceRequest?>(paramsJson, null);
+        return asked is not null
+               && asked.Since == request.Since
+               && asked.Until == request.Until
+               && asked.Selections.Count == request.Selections.Count
+               && asked.Selections.All(s => request.Selections.TryGetValue(s.Key, out var values) && values.ToHashSet(StringComparer.Ordinal).SetEquals(s.Value));
+    }
 
     /// <summary>
     /// Refuses, now, a fetch that nobody could ever take.

@@ -68,6 +68,14 @@ describe('a bill that grew', () => {
     expect(hits[0].params.to).toEqual({ money: 18_400, currency: 'EUR' });
   });
 
+  it('next month’s bill paid ahead lands in this month: two bills, not one that doubled', () => {
+    const rent = rec({ id: 'rent', name: 'Rent', kind: 'fixed', catId: 'housingUtility', amountCents: 100_000, dueDay: 1 });
+    const paid = (date: string) => tx({ date, amountCents: -100_000, merchant: 'Landlord', catId: 'housingUtility', recurringId: 'rent' });
+    // November's rent left on Friday 30 October, before the weekend
+    const txs = [paid('2026-08-01'), paid('2026-09-01'), paid('2026-10-01'), paid('2026-10-30')];
+    expect(billChanged(inputs({ recurrings: [rent], txs }, '2026-11-09'))).toHaveLength(0);
+  });
+
   it('small changes, old news and subscriptions stay quiet', () => {
     expect(billChanged(inputs({ recurrings: [energy], txs: [...history, bill('2026-07-05', 15_600)] }))).toHaveLength(0);
     // the last bill is from April: nothing new in the last two periods

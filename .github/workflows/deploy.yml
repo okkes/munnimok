@@ -59,13 +59,16 @@ jobs:
       - run: npx vitest run --coverage
         working-directory: apps/web
 
-      # Sync API for the two-device e2e specs (they skip if this is down)
+      # Sync API for the two-device e2e specs (on CI they fail when it does not answer)
       - name: Start sync test stack
         run: docker compose -f deploy/docker-compose.test.yml up --build -d --wait
 
-      # Build the app (catches build-only breakage: SW, defines, chunks)
+      # Build the app (catches build-only breakage: SW, defines, chunks) — and the build the
+      # end-to-end gate below serves (#587), so it names the test API
       - run: npm run build
         working-directory: apps/web
+        env:
+          VITE_API_URL: http://localhost:8181
 
       - name: Run Playwright tests
         run: npx playwright test

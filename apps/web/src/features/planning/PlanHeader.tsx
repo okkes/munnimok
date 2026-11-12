@@ -48,7 +48,7 @@ export function PlanHeader({
     color = 'var(--m-negative)';
     line = t('plan.overGiven');
   }
-  const hasFunding = model.subjectsOf(plan).some((s) => s.fundedCents > 0) || (plan.oneOffs ?? []).some((o) => o.fundedCents > 0);
+  const hasFunding = model.viewsOf(plan).some((v) => v.fundedCents > 0) || (plan.oneOffs ?? []).some((o) => o.fundedCents > 0);
   const started = model.startedWithOf(plan);
   const spent = started - model.poolCents;
   const poolLine =

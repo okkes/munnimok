@@ -16,7 +16,7 @@ import {
   periodLabel,
   recurringsOnAccounts,
 } from '@/domain/trends';
-import type { BalanceRange } from '@/domain/trends';
+import type { BalanceRange, InSpaceCurrency } from '@/domain/trends';
 import { AutoHeight } from '@/ui/AutoHeight';
 import { AreaLine } from '@/ui/charts/AreaLine';
 import type { AreaScrub } from '@/ui/charts/AreaLine';
@@ -49,6 +49,7 @@ interface CardShared {
   recurrings: readonly RecurringRow[];
   today: string;
   fmt: (cents: number, opts?: { sign?: boolean }) => string;
+  inSpace: InSpaceCurrency;
 }
 
 /**
@@ -71,6 +72,7 @@ function CashflowCard({
   recurrings: allRecurrings,
   today,
   fmt,
+  inSpace,
 }: Readonly<CardShared & { graphId: string; accountIds: string[] | null; header: ReactNode }>) {
   const { t, lang } = useLang();
   const [mode, setMode] = useState<Mode>('balance');
@@ -89,14 +91,20 @@ function CashflowCard({
     return allTxs.filter((tx) => picked.has(tx.accountId));
   }, [allTxs, accountIds]);
   const recurrings = useMemo(() => (accountIds ? recurringsOnAccounts(allRecurrings, allTxs, accountIds) : allRecurrings), [allRecurrings, allTxs, accountIds]);
-  const daily = useMemo(() => dailyBalanceSeries(accounts, txs, from, to, accountIds), [accounts, txs, from, to, accountIds]);
-  const spikes = useMemo(() => incomeSpikes(txs, from, to), [txs, from, to]);
+  const daily = useMemo(() => dailyBalanceSeries(accounts, txs, from, to, accountIds, inSpace), [accounts, txs, from, to, accountIds, inSpace]);
+  const spikes = useMemo(() => incomeSpikes(txs, from, to, undefined, inSpace), [txs, from, to, inSpace]);
   const projection = useMemo(() => {
     const last = daily.at(-1);
-    return last ? balanceProjection(last.cents, to, current.end, recurrings, nextPayday(txs, today)) : [];
-  }, [daily, to, current.end, recurrings, txs, today]);
+    if (!last) return [];
+    // the pay day reads a row's whole amount only, so restating that is enough for it
+    const rows = txs.map((tx) => {
+      const cents = inSpace(tx.amountCents, tx.currency);
+      return cents === tx.amountCents ? tx : { ...tx, amountCents: cents };
+    });
+    return balanceProjection(last.cents, to, current.end, recurrings, nextPayday(rows, today));
+  }, [daily, to, current.end, recurrings, txs, today, inSpace]);
   const ranges = useMemo(() => periodBalanceRange(daily, window), [daily, window]);
-  const net = useMemo(() => cashflowSeries(txs, [current])[0]?.netCents ?? 0, [txs, current]);
+  const net = useMemo(() => cashflowSeries(txs, [current], inSpace)[0]?.netCents ?? 0, [txs, current, inSpace]);
   const labelOf = (period: Period) => periodLabel(period, periodType, periodDay, LOCALES[lang]);
 
   // the typical shape: medians over the FINISHED periods — the running one is still moving

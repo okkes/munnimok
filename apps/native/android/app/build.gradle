@@ -7,7 +7,7 @@ android {
         applicationId "app.munni"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // CI feeds these (git commit count / package.json version) so every
+        // CI feeds these (seconds since 2026 / package.json version) so every
         // Play upload has a strictly increasing versionCode
         versionCode Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')
         versionName System.getenv('ANDROID_VERSION_NAME') ?: '1.0'

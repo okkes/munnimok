@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from 'uuid';
+import { forgetNavCache } from '@/features/navigation/navCache';
 
 /**
  * Registry of offline profiles on this device (localStorage). Offline
@@ -53,6 +54,11 @@ export function adoptOfflineProfile(name: string, picture: string | undefined, s
   return profile;
 }
 
+/** the stores "Go offline" handed to a profile: no signed-in identity opens one again */
+export function adoptedStoreKeys(): Set<string> {
+  return new Set(listOfflineProfiles().flatMap((p) => (p.storeKey ? [p.storeKey] : [])));
+}
+
 export function offlineProfileName(id: string): string | undefined {
   return listOfflineProfiles().find((p) => p.id === id)?.name;
 }
@@ -79,5 +85,6 @@ export async function deleteOfflineProfile(id: string): Promise<void> {
   const key = getOfflineProfile(id)?.storeKey ?? `offline_${id}`;
   await destroyStorage(identityDbName(key)).catch(() => undefined);
   localStorage.removeItem(`munni_lock_${key}`);
+  forgetNavCache(key);
   localStorage.setItem(KEY, JSON.stringify(listOfflineProfiles().filter((p) => p.id !== id)));
 }

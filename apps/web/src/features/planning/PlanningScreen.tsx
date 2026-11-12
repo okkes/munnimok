@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useOfflineReason } from '@/app/OfflineBanner';
 import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { usePlanning, usePlanningOps } from '@/application/planning';
@@ -11,6 +13,7 @@ import { periodsAhead, shortfallCents } from '@/domain/planning';
 import type { SubjectView, UnplannedRow } from '@/domain/planning';
 import type { Period } from '@/domain/periods';
 import { parseLocalDate } from '@/application/planningModel';
+import type { GoalPurchase } from '@/application/planningModel';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -25,6 +28,7 @@ import { Sheet } from '@/ui/Sheet';
 import { AddSourceSheet } from './AddSourceSheet';
 import { AheadSheet, aheadDiffers, periodLabel } from './AheadSheet';
 import { BlueprintsSheet } from './BlueprintsSheet';
+import { useCarryGate, useCarryOver } from './carryGate';
 import { InsightsSheet } from './InsightsSheet';
 import { OverspentReview } from './OverspentReview';
 import { PlanHeader } from './PlanHeader';
@@ -148,6 +152,35 @@ function UnplannedSourceRow({
         </span>
         <span className="mt-0.5 block truncate text-[11px] text-ink-4">{t(UNPLANNED_KIND_KEY[row.kind])}</span>
         <OneOffLine row={row} fmt={fmt} currency={currency} />
+      </span>
+      <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
+/**
+ * #455 (user 2026-11-12): what a cashed-out goal bought sits under Goals as
+ * the goal itself, not under its category — the whole purchase, which its
+ * savings paid. Nothing to fund; the row opens the goal.
+ */
+function GoalBoughtRow({ purchase, model, fmt, currency }: Readonly<{ purchase: GoalPurchase; model: PlanningModel; fmt: MoneyFmt; currency: string }>) {
+  const { t } = useLang();
+  const navigate = useNavigate();
+  const { goal, cents } = purchase;
+  return (
+    <button
+      type="button"
+      onClick={() => void navigate({ to: '/goals/$goalId', params: { goalId: goal.id } })}
+      className={UNPLANNED_ROW_CLASS}
+      data-testid={`plan-goal-bought-${goal.id}`}
+    >
+      <SourceTile segment="goals" sourceId={goal.id} icon={goal.icon} color={goal.color} model={model} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{goal.name}</span>
+          <Pill tone="neutral">{t('plan.spentShort', { amount: fmt(cents, currency) })}</Pill>
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] text-ink-4">{t('plan.goalBought')}</span>
       </span>
       <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
     </button>
@@ -286,7 +319,7 @@ function PeriodPager({ model, viewBack, onViewBack }: Readonly<{ model: Planning
  */
 export function PlanningScreen() {
   const { t } = useLang();
-  const { store, spaceId } = useData();
+  const { store, spaceId, engine } = useData();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const { fmt } = useDisplayMoney();
   const currency = space?.currency ?? 'EUR';
@@ -311,21 +344,15 @@ export function PlanningScreen() {
 
   // #557 (user 2026-10-23): a new period carries the last plan over by itself instead of showing the
   // start screen — once per period here; while it runs the start screen stays away
-  const carried = useRef<string | null>(null);
-  const [carry, setCarry] = useState<'idle' | 'running' | 'done' | 'failed'>('idle');
-  const continuable = !!model?.continuable;
-  const carryKey = model ? `${spaceId}:${model.period.start}` : null;
-  useEffect(() => {
-    // #505: the carry-over writes the plan — the devices of those who may write it carry it
-    if (!canEdit || !continuable || !carryKey || carried.current === carryKey) return;
-    carried.current = carryKey;
-    setCarry('running');
-    ops
-      .continuePlan()
-      .then((done) => setCarry(done ? 'done' : 'failed'))
-      .catch(() => setCarry('failed'));
-  }, [canEdit, continuable, carryKey, ops]);
-  const carrying = carry === 'running' || (carry === 'done' && continuable);
+  const unreachable = useOfflineReason() !== null;
+  const synced = useCarryGate(engine, unreachable);
+  const carrying = useCarryOver({
+    canEdit,
+    continuable: !!model?.continuable,
+    carryKey: model ? `${spaceId}:${model.period.start}` : null,
+    synced,
+    carry: ops.continuePlan,
+  });
   // which segments are folded: this device remembers (user 2026-10-07)
   const [folds, setFolds] = useState<Set<PlanSegmentKind>>(() => readFolds(spaceId));
   const toggleSegmentFold = (kind: PlanSegmentKind) =>
@@ -372,13 +399,20 @@ export function PlanningScreen() {
 
   const segmentBlocks = () => {
     if (!model || !plan) return null;
+    // a blueprint and a period ahead bought nothing; a hidden Goals segment still shows what a goal bought
+    const bought = plan.kind !== 'blueprint' && viewBack >= 0 ? model.goalPurchasesOf(plan) : [];
     return model
       .segmentsOf(plan)
-      .filter((s) => s.hidden !== 1)
+      .filter((s) => s.hidden !== 1 || (s.kind === 'goals' && bought.length > 0))
       .map((s) => (
         <SegmentSection
           key={s.kind}
           kind={s.kind}
+          extra={
+            s.kind === 'goals' && bought.length > 0
+              ? bought.map((purchase) => <GoalBoughtRow key={purchase.goal.id} purchase={purchase} model={model} fmt={fmt} currency={currency} />)
+              : undefined
+          }
           views={views.filter((v) => v.subject.segment === s.kind)}
           model={model}
           editable={editable}
@@ -516,8 +550,9 @@ export function PlanningScreen() {
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen} title={t('plan.menu.title')} size="form">
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="plan-menu-sheet">
-          {/* #505: a reader's menu keeps what only shows */}
-          {MENU.filter((item) => (item.id !== 'startOver' || editable) && (canEdit || item.id === 'insights')).map((item) => (
+          {/* #505: a reader's menu keeps what only shows. Start over stays with this period: a period ahead started
+              over keeps the mark of it, and would not continue the plan once it arrives */}
+          {MENU.filter((item) => (item.id !== 'startOver' || (editable && viewBack >= 0)) && (canEdit || item.id === 'insights')).map((item) => (
             <Row key={item.id} icon={item.icon} title={t(item.key)} testId={`plan-menu-${item.id}`} onClick={() => pick(item.id)} />
           ))}
         </div>

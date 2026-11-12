@@ -323,17 +323,34 @@ public class ConnectorUnitTests
         Assert.Equal("?include=ledger", ConnectorSyncService.QueryFor(debt, manifest, null));
     }
 
+    /// <summary>
+    /// A party caps each account by itself, so one partial page stops on a different day per account:
+    /// asking the next pass below the deepest account's oldest day would skip what the cut account still misses.
+    /// </summary>
     [Fact]
-    public void The_oldest_day_a_page_brought_is_a_booking_day_or_a_purchase_day_as_its_own_clock_dates_it()
+    public void A_partial_page_is_whole_down_to_the_newest_of_its_accounts_oldest_days()
     {
         var page = (JsonArray)JsonNode.Parse("""
-            [{"id":"acc_1"},
-             {"id":"txn_1","booked_at":"2026-03-12"},
-             {"id":"txn_2","booked_at":"2026-03-10"},
-             {"id":"rcp_1","purchased_at":"2026-03-11T00:30:00+01:00"},
+            [{"id":"acc_busy"},
+             {"id":"acc_quiet"},
+             {"id":"txn_1","account_id":"acc_busy","external_id":"b1","booked_at":"2026-10-12"},
+             {"id":"txn_2","account_id":"acc_busy","external_id":"b2","booked_at":"2026-10-03"},
+             {"id":"txn_3","account_id":"acc_quiet","external_id":"q1","booked_at":"2026-09-01"},
+             {"id":"txn_4","account_id":"acc_quiet","external_id":"q2","booked_at":"2026-03-10"},
+             {"id":"txn_5","account_id":"acc_busy","external_id":"pending:b3","booked_at":"2026-09-20"}]
+            """)!;
+        // the busy account was cut on 3 October; a reservation is kept whatever its day and says nothing about the cut
+        Assert.Equal(new DateOnly(2026, 10, 3), ConnectorSyncService.OldestOf(page));
+        // on an older pass an account that brought nothing below the day asked no longer holds the frontier up
+        Assert.Equal(new DateOnly(2026, 3, 10), ConnectorSyncService.OldestOf(page, new DateOnly(2026, 10, 3)));
+        Assert.Null(ConnectorSyncService.OldestOf(page, new DateOnly(2026, 3, 10)));
+
+        // receipts have no account: the purchase day as the receipt's own clock dates it
+        var receipts = (JsonArray)JsonNode.Parse("""
+            [{"id":"rcp_1","purchased_at":"2026-03-11T00:30:00+01:00"},
              {"id":"rcp_2","purchased_at":"2026-03-09T23:30:00+01:00"}]
             """)!;
-        Assert.Equal(new DateOnly(2026, 3, 9), ConnectorSyncService.OldestOf(page));
+        Assert.Equal(new DateOnly(2026, 3, 9), ConnectorSyncService.OldestOf(receipts));
         Assert.Null(ConnectorSyncService.OldestOf((JsonArray)JsonNode.Parse("""[{"id":"acc_1"}]""")!));
         Assert.Null(ConnectorSyncService.OldestOf(null));
     }

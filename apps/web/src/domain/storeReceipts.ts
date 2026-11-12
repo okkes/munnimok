@@ -1,3 +1,4 @@
+import { titleLikeness } from './entryMatch';
 import type { ReceiptItem, ReceiptPayment, TxView } from '@/db/types';
 
 /**
@@ -46,6 +47,8 @@ export interface MatchableReceipt {
   totalCents: number;
   /** how it was paid, when the store exposes it (R5) */
   payment?: ReceiptPayment;
+  /** the shop's name — what a photo is recognised by, once someone read or typed it */
+  merchant?: string;
 }
 
 /** resolves a transaction's paying-account IBAN/PAN tail, when known */
@@ -113,11 +116,19 @@ export function expensesByCost(txs: readonly TxView[]): (totalCents: number) => 
   };
 }
 
-const merchantHit = (source: string, tx: TxView): boolean =>
-  (catalogStorePatterns[source] ?? STORE_MERCHANT[source])?.test(tx.merchant ?? '') ?? false;
+/**
+ * The payment looks like the receipt's shop: a connector's by the shop's
+ * fingerprint. #567: a photo has no fingerprint — it is told by its shop's
+ * name against the payment's title, and a photo nobody named by amount and
+ * day alone.
+ */
+const merchantHit = (receipt: Pick<MatchableReceipt, 'source' | 'merchant'>, tx: TxView): boolean => {
+  if (receipt.source === 'photo') return !receipt.merchant || titleLikeness(receipt.merchant, tx.merchant) > 0;
+  return (catalogStorePatterns[receipt.source] ?? STORE_MERCHANT[receipt.source])?.test(tx.merchant ?? '') ?? false;
+};
 
 function scoreOf(receipt: MatchableReceipt, tx: TxView): number {
-  const merchant = merchantHit(receipt.source, tx) ? 2 : 0;
+  const merchant = merchantHit(receipt, tx) ? 2 : 0;
   const exact = -tx.amountCents === receipt.totalCents ? 1 : 0;
   return merchant + exact + (2 - dayDiff(tx.date, receipt.date)) * 0.1;
 }
@@ -134,7 +145,7 @@ export function bestMatch(
   tailOf?: AccountTailOf,
 ): string | null {
   const rung1 = matchCandidates(receipt, txs, tailOf).filter(
-    (tx) => !takenTxIds.has(tx.id) && -tx.amountCents === receipt.totalCents && merchantHit(receipt.source, tx),
+    (tx) => !takenTxIds.has(tx.id) && -tx.amountCents === receipt.totalCents && merchantHit(receipt, tx),
   );
   return rung1.length === 1 ? rung1[0].id : null;
 }

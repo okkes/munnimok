@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from '@/app/session';
 import type { Identity } from '@/app/session';
-import { apiFetch } from '@/lib/api';
-import { netPositions } from '@/domain/splitLedger';
+import { useSplitsApi } from './splitsCore';
 
 export interface TopSplit {
   id: string;
@@ -31,6 +30,7 @@ const identityKeyOf = (identity: Identity | null): string => {
 
 export function useTopSplit(): TopSplit | null | undefined {
   const { identity } = useSession();
+  const api = useSplitsApi();
   const identityKey = identityKeyOf(identity);
   const [top, setTop] = useState<TopSplit | null | undefined>(() => (lastTop?.key === identityKey ? lastTop.value : undefined));
   // the settled answer is remembered for the next mount under this identity
@@ -39,52 +39,21 @@ export function useTopSplit(): TopSplit | null | undefined {
   }, [top, identityKey]);
 
   useEffect(() => {
-    if (identity?.kind !== 'user') {
+    if (!api) {
       setTop(null);
       return;
     }
     let stale = false;
-    void (async () => {
-      const list = await apiFetch('/splits').catch(() => null);
-      if (!list?.ok) {
-        if (!stale) setTop(null);
-        return;
-      }
-      const splits = (await list.json()) as { id: string; name: string; status: string; currency: string; memberCount: number; entryCount: number }[];
-      const open = splits.find((s) => s.status === 'open'); // server orders newest first
-      if (!open) {
-        if (!stale) setTop(null);
-        return;
-      }
-      const res = await apiFetch(`/splits/${open.id}`).catch(() => null);
-      if (!res?.ok) {
-        if (!stale) setTop(null);
-        return;
-      }
-      const detail = (await res.json()) as {
-        members: { userId: string; isMe: boolean }[];
-        entries: { paidByUserId: string; amountCents: number; shares: { userId: string; cents: number }[] }[];
-      };
-      const nets = netPositions(
-        detail.entries.map((e) => ({ paidByUserId: e.paidByUserId, amountCents: e.amountCents, shares: e.shares })),
-        detail.members.map((m) => m.userId),
-      );
-      const me = detail.members.find((m) => m.isMe);
-      if (!stale) {
-        setTop({
-          id: open.id,
-          name: open.name,
-          memberCount: open.memberCount,
-          entryCount: open.entryCount,
-          currency: open.currency,
-          net: (me && nets.get(me.userId)) ?? 0,
-        });
-      }
-    })();
+    void api.list().then((splits) => {
+      if (stale) return;
+      // the server orders newest first; the list already says where I stand
+      const open = splits?.find((split) => split.status === 'open' && split.state === 'active');
+      setTop(open ? { id: open.id, name: open.name, memberCount: open.memberCount, entryCount: open.entryCount, currency: open.currency, net: open.myBalanceCents } : null);
+    });
     return () => {
       stale = true;
     };
-  }, [identity]);
+  }, [api]);
 
   return top;
 }

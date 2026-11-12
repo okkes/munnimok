@@ -266,6 +266,38 @@ describe('dailyBalanceSeries (the balance line, user 2026-10-08)', () => {
   });
 });
 
+describe('another currency in a sum: restated in the space’s own first', () => {
+  // two dollars to the euro
+  const halve = (cents: number, currency: string | undefined) => (currency === 'USD' ? Math.round(cents / 2) : cents);
+
+  it('a balance line and the net worth restate each account and each of its rows', () => {
+    const accounts = [
+      { id: 'eur', type: 'checking' as const, currency: 'EUR', balanceCents: 50_000, archived: 0 as const, deleted: 0 as const },
+      { id: 'usd', type: 'savings' as const, currency: 'USD', balanceCents: 100_000, archived: 0 as const, deleted: 0 as const },
+    ];
+    const txs = [tx({ date: '2026-06-03', accountId: 'usd', currency: 'USD', amountCents: 20_000, txType: 'saving' })];
+    // $1,000 is €500 beside the €500; the day before, $200 (€100) had not come in yet
+    expect(dailyBalanceSeries(accounts, txs, '2026-06-02', '2026-06-03', null, halve).map((p) => p.cents)).toEqual([90_000, 100_000]);
+    expect(dailyBalanceSeries(accounts, txs, '2026-06-03', '2026-06-03', ['usd'], halve).map((p) => p.cents)).toEqual([50_000]);
+    expect(netWorthSeries(accounts, txs, ['2026-06-02', '2026-06-03'], halve).map((p) => p.cents)).toEqual([90_000, 100_000]);
+  });
+
+  it('spending, the net and a pay day count a row of another currency at its restated worth', () => {
+    const txs = [
+      tx({ date: '2026-06-05', amountCents: -1000 }),
+      tx({ date: '2026-06-05', amountCents: -3000, currency: 'USD', catId: 'groceries' }),
+      tx({ date: '2026-06-06', amountCents: 100_000, currency: 'USD', txType: 'income' }),
+    ];
+    expect(expenseSeries(txs, periods, null, halve)).toEqual([0, 2500]);
+    expect(cumulativeByDay(txs, periods[1], null, catalog, halve)[4]).toBe(2500);
+    expect(scopedBreakdown(txs, periods[1], null, halve).find((row) => row.catId === 'groceries')?.cents).toBe(1500);
+    expect(cashflowSeries(txs, [periods[1]], halve)[0]).toEqual({ incomeCents: 50_000, expenseCents: 2500, netCents: 47_500 });
+    // $1,000 in is €500 — exactly the mark a pay day is named from
+    expect(incomeSpikes(txs, '2026-06-01', '2026-06-30', 50_000, halve).map((spike) => spike.cents)).toEqual([50_000]);
+    expect(incomeSpikes(txs, '2026-06-01', '2026-06-30', 60_000, halve)).toEqual([]);
+  });
+});
+
 describe('recurringsOnAccounts (#531)', () => {
   it('a recurring counts on the account its latest payment landed on; one never paid belongs nowhere', () => {
     const gym = rec({ id: 'gym' });

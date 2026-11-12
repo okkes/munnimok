@@ -12,6 +12,7 @@ import type { RouterHistory } from '@tanstack/react-router';
 import { MasterDetailLayout } from '@/ui/SplitPane';
 import { AppLayout } from './AppLayout';
 import { readSessionIdentity } from './session';
+import { rememberAfterLogin } from './afterLogin';
 import { ScreenPending, lazyScreen, withScreens } from './lazyScreen';
 import type { LazyScreen } from './lazyScreen';
 import { LoginScreen } from '@/features/auth/LoginScreen';
@@ -43,7 +44,7 @@ const AccountsScreen = lazyScreen(() => import('@/features/accounts/AccountsScre
 const ManageCategoriesScreen = lazyScreen(() => import('@/features/categories/ManageCategoriesScreen'), 'ManageCategoriesScreen');
 const FriendsScreen = lazyScreen(() => import('@/features/friends/FriendsScreen'), 'FriendsScreen');
 const SplitsScreen = lazyScreen(() => import('@/features/splits/SplitsScreen'), 'SplitsScreen');
-const SplitDetailScreen = lazyScreen(() => import('@/features/splits/SplitsScreen'), 'SplitDetailScreen');
+const SplitDetailScreen = lazyScreen(() => import('@/features/splits/SplitDetailScreen'), 'SplitDetailScreen');
 const SplitJoinScreen = lazyScreen(() => import('@/features/splits/SplitJoinScreen'), 'SplitJoinScreen');
 const OverviewScreen = lazyScreen(() => import('@/features/overview/OverviewScreen'), 'OverviewScreen');
 const CategoryDrillScreen = lazyScreen(() => import('@/features/overview/CategoryDrillScreen'), 'CategoryDrillScreen');
@@ -126,8 +127,10 @@ const inviteRoute = createRoute({
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'app',
-  beforeLoad: () => {
-    if (!readSessionIdentity()) throw redirect({ to: '/login' });
+  beforeLoad: ({ location }) => {
+    if (readSessionIdentity()) return;
+    rememberAfterLogin(location.pathname);
+    throw redirect({ to: '/login' });
   },
   component: AppLayout,
 });

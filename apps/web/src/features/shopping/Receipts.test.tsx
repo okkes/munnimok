@@ -132,6 +132,178 @@ describe('Receipts (demo identity)', () => {
     expect(screen.queryByTestId('receipt-linked-tx')).toBeNull();
   }, 15_000);
 
+  it('where the environment has a vision model read receipts (#567), a photo’s screen offers that reading: the lines land on the receipt and can be read again', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('./receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue({
+      state: 'ok',
+      until: null,
+      receipt: {
+        merchant: 'Albert Heijn',
+        date: '2026-11-12',
+        currency: 'EUR',
+        totalCents: 328,
+        reconciled: true,
+        lines: [
+          { name: 'Halfvolle melk', quantity: 1, unitCents: 129, totalCents: 129, kind: 'item', categoryId: 'groceries' },
+          { name: 'Volkoren brood', quantity: 1, unitCents: 199, totalCents: 199, kind: 'item', categoryId: null },
+        ],
+      },
+    });
+    try {
+      await openFirstTx();
+      fireEvent.click(await attachPhoto());
+      await screen.findByTestId('screen-receipt');
+      const door = await screen.findByTestId('receipt-ai-read');
+      expect(door.textContent).toBe('Read this receipt');
+      // the old text reading does not stand beside it
+      expect(screen.queryByTestId('receipt-read-items')).toBeNull();
+
+      fireEvent.click(door);
+      fireEvent.click(await screen.findByTestId('receipt-ai-yes'));
+      await screen.findByText('Halfvolle melk');
+      expect(screen.getByText('Volkoren brood')).toBeTruthy();
+      expect(screen.getByText(/^Suggested: .*Grocery/)).toBeTruthy();
+      expect(read.mock.calls[0][0]).toEqual([FAKE_PHOTO]);
+      await waitFor(() => expect(screen.getByTestId('receipt-ai-read').textContent).toBe('Read again'));
+    } finally {
+      caps.mockRestore();
+      read.mockRestore();
+    }
+  }, 15_000);
+
+  it('a photo read to the payment’s own amount files the payment by its lines at once (#567); the receipt carries its own total from then on', async () => {
+    const api = await import('@/lib/api');
+    const receiptAi = await import('./receiptAi');
+    const caps = vi.spyOn(api, 'getApiCapabilities').mockResolvedValue({ receiptAi: true });
+    const read = vi.spyOn(receiptAi, 'readReceiptPhotos').mockResolvedValue({
+      state: 'ok',
+      until: null,
+      receipt: {
+        merchant: 'Albert Heijn',
+        date: '2026-11-12',
+        currency: 'EUR',
+        totalCents: 2310,
+        reconciled: true,
+        lines: [
+          { name: 'Halfvolle melk', quantity: 1, unitCents: 1000, totalCents: 1000, kind: 'item', categoryId: null },
+          { name: 'Chocolade', quantity: 1, unitCents: 800, totalCents: 800, kind: 'item', categoryId: 'sweets' },
+          { name: 'Brood', quantity: 1, unitCents: 760, totalCents: 760, kind: 'item', categoryId: null },
+          { name: 'Bonus', quantity: 1, unitCents: 250, totalCents: -250, kind: 'discount', categoryId: null },
+        ],
+      },
+    });
+    receiptAi.setReceiptAiChoice('yes');
+    try {
+      renderApp('/transactions/dm101');
+      await screen.findByTestId('receipt-empty');
+      fireEvent.click(await attachPhoto());
+      await screen.findByTestId('screen-receipt');
+      fireEvent.click(await screen.findByTestId('receipt-ai-read'));
+      await screen.findByText('Chocolade');
+
+      const { db, repo } = await demoRepo();
+      await waitFor(async () => {
+        const tx = await repo.store.get('transaction', 'dm101');
+        expect(tx?.cats?.map(({ catId, amountCents }) => ({ catId, amountCents }))).toEqual([
+          { catId: 'sweets', amountCents: 722 },
+          { catId: 'groceries', amountCents: 1588 },
+        ]);
+      });
+      const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0);
+      expect(link?.totalCents).toBe(2310);
+      expect(link?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
+      db.close();
+    } finally {
+      caps.mockRestore();
+      read.mockRestore();
+    }
+  }, 20_000);
+
+  it('a payment is categorised by its receipt’s lines (#567): a ticked line takes a category and its paid share, the rest stays where it was, and the sheet reopens on it', async () => {
+    renderApp('/transactions/dm101');
+    await screen.findByTestId('receipt-empty');
+    await attachPhoto();
+    // a photo nobody read yet has no lines to categorise by
+    expect(screen.queryByTestId('receipt-categorise')).toBeNull();
+
+    // the lines a reader would hand back: 25.60 printed, 2.50 off, 23.10 paid — the payment's own amount
+    const { db, repo } = await demoRepo();
+    const link = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.txId === 'dm101' && l.deleted === 0)!;
+    await repo.upsert('receiptLink', 'demo_space', link.id, {
+      totalCents: 2310,
+      items: [
+        { name: 'Halfvolle melk', totalCents: 1000 },
+        { name: 'Chocolade', totalCents: 800 },
+        { name: 'Brood', totalCents: 760 },
+        { name: 'Bonus', totalCents: -250, kind: 'discount' },
+      ],
+    });
+
+    fireEvent.click(await screen.findByTestId('receipt-categorise'));
+    await screen.findByTestId('receiptcats-sheet');
+    expect(screen.getByTestId('receiptcats-left').textContent).toContain('23.10');
+    fireEvent.click(screen.getByTestId('receiptcats-tick-1'));
+    fireEvent.click(screen.getByTestId('receiptcats-categorise'));
+    fireEvent.click(await screen.findByTestId('catpicker-sweets'));
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect(screen.getByTestId('receiptcats-left').textContent).toContain('15.88');
+    expect(screen.getByTestId('receiptcats-rest').textContent).toContain('Grocery');
+    fireEvent.click(screen.getByTestId('receiptcats-apply'));
+
+    // the payment carries the spread: the chocolate apart, the rest still groceries
+    await waitFor(() => expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Sweets & Treats.*7\.22/));
+    expect(screen.getByTestId('tx-detail-categories').textContent).toMatch(/Grocery.*15\.88/);
+    await waitFor(async () => {
+      const stored = await repo.store.get('receiptLink', link.id);
+      expect(stored?.picks).toEqual({ dm101: [{ line: 1, catId: 'sweets', amountCents: 722 }] });
+    });
+    db.close();
+
+    fireEvent.click(screen.getByTestId('receipt-categorise'));
+    expect((await screen.findByTestId('receiptcats-cat-1')).textContent).toBe('Sweets & Treats');
+    expect(screen.getByTestId('receiptcats-placed').textContent).toContain('7.22');
+  }, 20_000);
+
+  it('a receipt kept from Home before its transaction exists (#567): its facts are typed on its own screen, and the payment it fits is asked about it', async () => {
+    renderApp('/home');
+    fireEvent.click(await screen.findByTestId('home-fab'));
+    fireEvent.click(await screen.findByTestId('home-quick-receipt'));
+    await screen.findByTestId('receipt-quick-sheet');
+    fireEvent.change(await screen.findByTestId('receipt-quick-file'), { target: { files: [new File(['x'], 'bon.jpg', { type: 'image/jpeg' })] } });
+
+    // its screen opens at once: no amount yet, so nothing to recognise a payment by
+    await screen.findByTestId('screen-receipt', {}, { timeout: 5000 });
+    await screen.findByTestId('receipt-facts');
+    expect(screen.queryByTestId('receipt-waiting')).toBeNull();
+    expect((screen.getByTestId('receipt-facts-save') as HTMLButtonElement).disabled).toBe(true);
+
+    // the demo's Albert Heijn payment of 23.10 was yesterday — and is reviewed, so the fit asks instead of attaching
+    fireEvent.change(screen.getByTestId('receipt-facts-shop'), { target: { value: 'Albert Heijn' } });
+    fireEvent.change(screen.getByTestId('receipt-facts-amount'), { target: { value: '23,10' } });
+    fireEvent.click(screen.getByTestId('receipt-facts-save'));
+
+    const { db, repo } = await demoRepo();
+    let photoId = '';
+    await waitFor(async () => {
+      const proposal = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.proposedTxId === 'dm101' && l.deleted === 0);
+      expect(proposal?.source).toBe('photo');
+      expect(proposal?.totalCents).toBe(2310);
+      expect(proposal?.image).toBe(FAKE_PHOTO);
+      photoId = proposal!.receiptId!;
+    });
+    // the person's own receipt stays theirs, whatever a space copied of it
+    expect((await repo.store.get('receipt', photoId))?.merchant).toBe('Albert Heijn');
+    db.close();
+
+    cleanup();
+    renderApp('/transactions/dm101');
+    fireEvent.click(await screen.findByTestId('receipt-proposal-accept'));
+    const card = await screen.findByTestId('receipt-card');
+    expect(card.textContent).toContain('23.10');
+  }, 25_000);
+
   it('the receipts browser lists receipts and opens the full view', async () => {
     await openFirstTx();
     await attachPhoto();

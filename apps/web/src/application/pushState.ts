@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSession } from '@/app/session';
 import type { StorageBackend } from '@/db/backend';
-import { getApiCapabilities } from '@/lib/api';
+import { apiCapabilitiesKnown, getApiCapabilities } from '@/lib/api';
 import { pushEnabled, pushSupported } from '@/lib/push';
 import { spaceNotifyOn } from './spaceNotifications';
 
@@ -28,12 +28,18 @@ export function usePushState(store: Pick<StorageBackend, 'metaGet' | 'metaPut'>,
       if (live) setState(next);
     };
     void (async () => {
-      const caps = await getApiCapabilities();
-      if (!caps.push || !caps.vapidPublicKey || !pushSupported()) {
+      if (!pushSupported()) {
         settle('unsupported');
         return;
       }
-      settle((await pushEnabled()) && (await spaceNotifyOn(store, spaceId)) ? 'on' : 'off');
+      // a registered device answers from its own facts — the server need not be reachable for that
+      if (await pushEnabled()) {
+        settle((await spaceNotifyOn(store, spaceId)) ? 'on' : 'off');
+        return;
+      }
+      const caps = await getApiCapabilities();
+      // a server that could not be asked says nothing about what it offers: the device is not registered, no more
+      settle(apiCapabilitiesKnown() && (!caps.push || !caps.vapidPublicKey) ? 'unsupported' : 'off');
     })().catch(() => settle('unsupported'));
     return () => {
       live = false;

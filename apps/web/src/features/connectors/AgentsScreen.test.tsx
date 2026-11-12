@@ -31,7 +31,14 @@ describe('Your own computer — the household agents (§10.4)', () => {
     renderAppAsUser('/connections/agents', {
       api: {
         'GET /connectors': () => info(true),
-        'GET /connectors/agents': () => ({ agents: revoked ? [] : [agent(), agent({ id: 'agt_2', name: 'the old desktop', online: false, stale: true, profiles: [] })] }),
+        'GET /connectors/agents': () => ({
+          agents: revoked
+            ? []
+            : [
+                agent({ browserVersion: '1.64.1', platformBrowserVersion: '1.64.1' }),
+                agent({ id: 'agt_2', name: 'the old desktop', online: false, stale: true, profiles: [], browserBehind: true, browserVersion: '1.61.0', platformBrowserVersion: '1.64.1' }),
+              ],
+        }),
         'POST /connectors/agents/enrollment': (body) => {
           enrolledName = (body as { name: string }).name;
           return {
@@ -50,6 +57,12 @@ describe('Your own computer — the household agents (§10.4)', () => {
     await screen.findByTestId('screen-agents');
     expect(screen.getByTestId('agents-what')).toBeTruthy();
     const laptop = await screen.findByTestId('agent-agt_1', {}, { timeout: 5000 });
+    // #562: an agent on an older browser says so, with both versions and how to renew it; a current one says nothing
+    const behind = screen.getByTestId('agent-browser-agt_2');
+    expect(behind.textContent).toContain('1.61.0');
+    expect(behind.textContent).toContain('1.64.1');
+    expect(behind.textContent).toContain('docker compose');
+    expect(screen.queryByTestId('agent-browser-agt_1')).toBeNull();
     expect(laptop.textContent).toContain('the kitchen laptop');
     expect(screen.getByTestId('agent-health-agt_1').textContent).toBe('Online');
     expect(screen.getByTestId('agent-profiles-agt_1').textContent).toContain('asn-persistent');

@@ -334,6 +334,27 @@ describe('#460 — older history after a partial pass', () => {
     expect((await backend.connectorConnGet(CONN))?.state).toBe('needs_reauth');
   });
 
+  it('an older pass whose job failed is not remembered: the next sync starts with its regular pass and tries that window again', async () => {
+    const sync = vi.spyOn(connectorApi, 'sync')
+      .mockResolvedValueOnce(outcome({ transactions: 200, complete: false, oldest: '2026-03-10' }))
+      .mockResolvedValueOnce({
+        accepted: true,
+        job: job({ jobId: 'job_old', state: 'failed', error: envelope('provider_unavailable', { retriable: true, userAction: 'retry' }) }),
+      });
+
+    expect(await syncConnection(backend, repo, CONN)).toMatchObject({ status: 'ok', transactions: 200, olderPending: true });
+    const row = await backend.connectorConnGet(CONN);
+    expect(row?.pendingJob).toBeUndefined();
+    expect(row?.backfill).toEqual({ until: '2026-03-10' });
+
+    sync.mockReset();
+    sync.mockResolvedValueOnce(outcome({ complete: true })).mockResolvedValue(outcome({ transactions: 80, complete: true }));
+    const resumed = vi.spyOn(connectorApi, 'job');
+    expect(await syncConnection(backend, repo, CONN)).toMatchObject({ status: 'ok', transactions: 80, olderPending: false });
+    expect(resumed).not.toHaveBeenCalled();
+    expect(sync.mock.calls.map((c) => c[1].until)).toEqual([undefined, '2026-03-10']);
+  });
+
   it('a pass over older history that became a job is collected with its window — and remembered with it', async () => {
     vi.spyOn(connectorApi, 'sync')
       .mockResolvedValueOnce(outcome({ transactions: 200, complete: false, oldest: '2026-03-10' }))

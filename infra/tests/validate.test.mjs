@@ -152,6 +152,43 @@ test('ascstore: ES256 App Store Connect jwt against /v1/apps; the team\'s iOS de
   assert.equal(rawPaste.ok, true);
 });
 
+test('brave (#521): one real search proves the key — a month already used up still does, a refusal does not', async () => {
+  assert.equal((await validate('brave', {}, { fetchImpl: capture(200).fetchImpl })).ok, false);
+
+  const { calls, fetchImpl } = capture(200);
+  const good = await validate('brave', { BRAVE_SEARCH_API_KEY: 'BSA-key' }, { fetchImpl });
+  assert.equal(good.ok, true);
+  assert.equal(calls[0].url, 'https://api.search.brave.com/res/v1/images/search?q=logo&count=1');
+  assert.equal(calls[0].init.headers['x-subscription-token'], 'BSA-key');
+
+  const counted = await validate('brave', { BRAVE_SEARCH_API_KEY: 'k' }, {
+    fetchImpl: async () => ({ ok: true, status: 200, headers: new Headers({ 'x-ratelimit-remaining': '0, 1873' }), json: async () => ({}) }),
+  });
+  assert.match(counted.detail, /1873 left this month/);
+
+  const usedUp = await validate('brave', { BRAVE_SEARCH_API_KEY: 'k' }, { fetchImpl: capture(429).fetchImpl });
+  assert.equal(usedUp.ok, true);
+  assert.match(usedUp.detail, /used up/);
+  const refused = await validate('brave', { BRAVE_SEARCH_API_KEY: 'wrong' }, { fetchImpl: capture(401).fetchImpl });
+  assert.equal(refused.ok, false);
+  assert.match(refused.detail, /rejected the key \(401\)/);
+  assert.equal((await validate('brave', { BRAVE_SEARCH_API_KEY: 'k' }, { fetchImpl: capture(500).fetchImpl })).ok, false);
+});
+
+test('anthropic (#567): listing models proves the receipt reader’s key and spends nothing', async () => {
+  assert.equal((await validate('anthropic', {}, { fetchImpl: capture(200).fetchImpl })).ok, false);
+  const { calls, fetchImpl } = capture(200);
+  const good = await validate('anthropic', { RECEIPT_AI_API_KEY: 'sk-ant-key' }, { fetchImpl });
+  assert.equal(good.ok, true);
+  assert.equal(calls[0].url, 'https://api.anthropic.com/v1/models?limit=1');
+  assert.equal(calls[0].init.headers['x-api-key'], 'sk-ant-key');
+  assert.equal(calls[0].init.headers['anthropic-version'], '2023-06-01');
+  const refused = await validate('anthropic', { RECEIPT_AI_API_KEY: 'a claude.ai password' }, { fetchImpl: capture(401).fetchImpl });
+  assert.equal(refused.ok, false);
+  assert.match(refused.detail, /not a claude\.ai login/);
+  assert.equal((await validate('anthropic', { RECEIPT_AI_API_KEY: 'k' }, { fetchImpl: capture(529).fetchImpl })).ok, false);
+});
+
 test('logodev: swap detection first, then search (sk) + image (pk)', async () => {
   const swapped = await validate('logodev', { LOGODEV_SECRET_KEY: 'pk_x', LOGODEV_PUBLIC_TOKEN: 'sk_y' }, { fetchImpl: capture(200).fetchImpl });
   assert.equal(swapped.ok, false);

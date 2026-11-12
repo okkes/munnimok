@@ -1,11 +1,26 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Repo } from '@/db/repo';
+import type { MunniDB } from '@/db/schema';
 import { USER_TEST_DB, USER_TEST_SUB, renderAppAsUser } from '@/test/harness';
 import { useSession, identityKey } from '@/app/session';
 import { listOfflineProfiles } from './offlineProfiles';
+
+// the device's profile registry can refuse a write (storage full, or blocked by the browser)
+const registry = vi.hoisted(() => ({ refuses: false }));
+vi.mock('./offlineProfiles', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./offlineProfiles')>();
+  return {
+    ...real,
+    adoptOfflineProfile: (...args: Parameters<typeof real.adoptOfflineProfile>) => {
+      if (registry.refuses) throw new DOMException('quota', 'QuotaExceededError');
+      return real.adoptOfflineProfile(...args);
+    },
+  };
+});
 
 /** online → offline conversion (OO1-OO3): identity rebind adopting the
  *  existing store, per-space triage, bank accounts → manual */
@@ -16,7 +31,7 @@ describe('Go offline (user identity, scripted server)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
   });
 
-  const seedStore = async () => {
+  const seedStore = async (more?: (repo: Repo, db: MunniDB) => Promise<void>) => {
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -33,8 +48,32 @@ describe('Go offline (user identity, scripted server)', () => {
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
     });
+    await more?.(repo, db);
     db.close();
   };
+
+  /** the roles the server names: own space, a shared space, the own bank feed, and a partner's feed reached only through the shared space */
+  const ROLES = { 's-user': 'owner', 'sh-1': 'contributor', 'feed-1': 'owner', 'feed-partner': 'reader' } as const;
+
+  /** the partner's connected account attached to the shared space, with the roles the device learned on its last round */
+  const seedPartnerAccount = () =>
+    seedStore(async (repo, db) => {
+      await repo.upsert('account', 'feed-partner', 'partneracct-1', {
+        name: 'Partner ING',
+        type: 'checking',
+        source: 'connector',
+        currency: 'EUR',
+        balanceCents: 900,
+      });
+      await repo.upsert('accountLink', 'sh-1', 'link-partner', { feedSpaceId: 'feed-partner', accountId: 'partneracct-1' });
+      await db.meta.put({ key: 'spaceRoles', value: ROLES });
+    });
+
+  const withPartnerFeed = (calls: string[]) => ({
+    spaces: [{ id: 's-user', name: 'Personal' }],
+    roles: ROLES,
+    api: { ...api(calls), 'GET /me/spaces': () => Object.keys(ROLES) },
+  });
 
   const api = (calls: string[]) => ({
     'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
@@ -48,7 +87,9 @@ describe('Go offline (user identity, scripted server)', () => {
   });
 
   it('converts: rebinds the store, flips bank accounts to manual, purges dropped spaces, deletes server data', async () => {
-    await seedStore();
+    await seedStore(async (_repo, db) => {
+      await db.meta.put({ key: 'notifyOffSpaces', value: ['s-user'] });
+    });
     const calls: string[] = [];
     renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api(calls) });
 
@@ -68,6 +109,10 @@ describe('Go offline (user identity, scripted server)', () => {
     // server: clean exit
     await waitFor(() => expect(calls).toContain('delete-me'));
 
+    // the worker keeps no session of the account to sync the adopted store with
+    const { readSwSession } = await import('@/sync/swSync');
+    await waitFor(async () => expect(await readSwSession()).toBeNull());
+
     // registry: ONE profile, adopting the user store
     const profile = listOfflineProfiles()[0];
     expect(profile?.storeKey).toBe(`user_${USER_TEST_SUB}`);
@@ -81,6 +126,8 @@ describe('Go offline (user identity, scripted server)', () => {
         expect((await db.accounts.get('feedacct-1'))?.source).toBe('manual');
         expect(await db.spaces.get('sh-1')).toBeUndefined();
         expect(await db.transactions.get('tx-sh')).toBeUndefined();
+        // the account's muted spaces are not the profile's: no switch reaches them offline
+        expect(await db.meta.get('notifyOffSpaces')).toBeUndefined();
       },
       { timeout: 5000 },
     );
@@ -111,6 +158,139 @@ describe('Go offline (user identity, scripted server)', () => {
     });
     db.close();
   }, 20_000);
+
+  it('converts with another member’s connected account on the device: it continues by hand too, and the kept space stays whole', async () => {
+    await seedPartnerAccount();
+    const calls: string[] = [];
+    renderAppAsUser('/settings/go-offline', withPartnerFeed(calls));
+
+    await screen.findByTestId('screen-go-offline');
+    await screen.findByTestId('gooffline-keep-sh-1', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+
+    await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
+    await waitFor(() => expect(calls).toContain('delete-me'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      expect((await db.accounts.get('feedacct-1'))?.source).toBe('manual');
+      expect((await db.accounts.get('partneracct-1'))?.source).toBe('manual');
+      expect((await db.spaces.get('sh-1'))?.name).toBe('Family');
+      expect((await db.transactions.get('tx-sh'))?.merchant).toBe('Bakery');
+    });
+    db.close();
+  }, 20_000);
+
+  it('a conversion that cannot finish on this device changes nothing on the server and says so: still signed in, no profile left behind', async () => {
+    await seedPartnerAccount();
+    const calls: string[] = [];
+    registry.refuses = true;
+    try {
+      const { fetchMock } = renderAppAsUser('/settings/go-offline', withPartnerFeed(calls));
+      const rounds = () => fetchMock.mock.calls.filter(([input]) => String(input).includes('/sync/heads')).length;
+
+      await screen.findByTestId('screen-go-offline');
+      await screen.findByTestId('gooffline-keep-sh-1', {}, { timeout: 5000 });
+      fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+      const before = rounds();
+      fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+
+      await screen.findByTestId('gooffline-failed', {}, { timeout: 8000 });
+      expect(useSession.getState().identity?.kind).toBe('user');
+      expect(calls).not.toContain('delete-me');
+      expect(listOfflineProfiles()).toHaveLength(0);
+      expect((screen.getByTestId('gooffline-open-confirm') as HTMLButtonElement).disabled).toBe(false);
+      // still a member everywhere: sync goes on
+      await waitFor(() => expect(rounds()).toBeGreaterThan(before));
+    } finally {
+      registry.refuses = false;
+    }
+  }, 20_000);
+
+  it('the same login signing in again leaves the profile’s data alone: the fresh account gets a store of its own', async () => {
+    await seedStore();
+    const calls: string[] = [];
+    renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api(calls) });
+    await screen.findByTestId('screen-go-offline');
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+    await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
+    await screen.findByTestId('screen-home', {}, { timeout: 8000 });
+    await waitFor(() => expect(calls).toContain('delete-me'));
+    cleanup();
+
+    // the server made the login a fresh account: another user id answers /me
+    renderAppAsUser('/home', {
+      spaces: [],
+      api: {
+        ...api(calls),
+        'GET /me/spaces': () => [],
+        'GET /me/feeds': () => [],
+        'GET /me': () => ({ userId: '00000000-0000-0000-0000-000000000002', displayName: 'Okkes', picture: null }),
+      },
+    });
+    const { MunniDB, identityDbName } = await import('@/db/schema');
+    const fresh = identityDbName(identityKey({ kind: 'user', sub: USER_TEST_SUB }));
+    expect(fresh).not.toBe(USER_TEST_DB);
+    // the binding check ran against the fresh account, on the fresh store
+    const own = new MunniDB(fresh);
+    await waitFor(async () => expect((await own.meta.get('boundUserId'))?.value).toBe('00000000-0000-0000-0000-000000000002'), { timeout: 8000 });
+    own.close();
+
+    const kept = new MunniDB(USER_TEST_DB);
+    expect((await kept.accounts.get('feedacct-1'))?.source).toBe('manual');
+    expect(await kept.spaces.get('s-user')).toBeTruthy();
+    kept.close();
+    expect(listOfflineProfiles()).toHaveLength(1);
+  }, 30_000);
+
+  it('fetches what the server holds before its copy is deleted: a space another device made is on this one first (#499)', async () => {
+    await seedStore();
+    const calls: string[] = [];
+    const server = [{ id: 's-user', name: 'Personal' }];
+    renderAppAsUser('/settings/go-offline', {
+      spaces: server,
+      api: { ...api(calls), 'GET /me/spaces': () => [...server.map((s) => s.id), 'sh-1', 'feed-1'] },
+    });
+    await screen.findByTestId('screen-go-offline');
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    // the device's own round is past asking the server what exists
+    await waitFor(async () => expect(await db.spaces.get('s-user')).toBeTruthy(), { timeout: 8000 });
+    server.push({ id: 's-late', name: 'Made on the phone' });
+
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+    await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
+    await waitFor(() => expect(calls).toContain('delete-me'));
+
+    expect((await db.spaces.get('s-late'))?.name).toBe('Made on the phone');
+    db.close();
+  }, 30_000);
+
+  it('a server that cannot be asked keeps the account as it is: nothing converted, nothing deleted, and the screen says why (#499)', async () => {
+    await seedStore();
+    const calls: string[] = [];
+    renderAppAsUser('/settings/go-offline', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        ...api(calls),
+        'GET /sync/heads': () => {
+          throw new TypeError('Failed to fetch');
+        },
+      },
+    });
+    await screen.findByTestId('screen-go-offline');
+    fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
+    fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
+
+    expect(await screen.findByTestId('gooffline-behind', {}, { timeout: 8000 })).toBeTruthy();
+    expect(useSession.getState().identity?.kind).toBe('user');
+    expect(calls).not.toContain('delete-me');
+    expect(listOfflineProfiles()).toHaveLength(0);
+  }, 30_000);
 
   it('converts happily next to an existing offline profile (arc 8)', async () => {
     await seedStore();

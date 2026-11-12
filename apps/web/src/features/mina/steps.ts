@@ -58,9 +58,8 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'goSettings', checkpoint: true, kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.goSettings.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
   { id: 'openSpaceCard', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openSpaceCard.b', anchor: ['settings-space-accounts-row'], gate: true, labelFrom: ['settings-space-accounts-row'] },
   { id: 'openAdd', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openAdd.b', anchor: ['space-accounts-add'], gate: true, labelFrom: ['space-accounts-add'] },
-  // (the old pickManual step died with the chooser's intent hop: "Add a
-  // manual account" opens the TYPE GRID directly since 2026-08-01 — its
-  // gate waited forever on a testid that never renders, user ss)
+  // the space's Add account opens on connect / import / manual: the type grid a gate can wait on exists only after Manual
+  { id: 'pickManual', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openAdd.b', anchor: ['chooser-manual'], gate: true, labelFrom: ['chooser-manual'] },
   { id: 'pickChecking', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTargetDo.b', anchor: ['chooser-accttype-checking'], gate: true, labelFrom: ['chooser-accttype-checking'] },
   { id: 'createAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.createAccount.b', act: { entity: 'account' }, suggestKey: 'mina.suggest.mainbank', labelFrom: ['chooser-acctform-save'] },
   { id: 'txConcept', checkpoint: true, kind: 'fullscreen', art: 'txAccount', titleKey: 'mina.txConcept.t', bodyKey: 'mina.txConcept.b' },
@@ -83,7 +82,8 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'goTransactions2', checkpoint: true, kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.goTransactions2.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
   { id: 'emptyList', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.emptyList.b' },
   { id: 'tryTxAdd', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.tryTxAdd.b', anchor: ['tx-add'], gate: true },
-  { id: 'noAccounts', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.noAccounts.b', anchor: ['txform-no-accounts'], info: true },
+  // a new space is born with its cash wallet, so the form opens: what it can still show is whose accounts it offers
+  { id: 'ownAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.ownAccount.b', anchor: ['txform-account'], info: true, labelFrom: ['txform-account'] },
   // the ACTIVE space cannot be deleted (user ss): hop back to the first
   // space, then reach Family's OWN settings through its cog
   { id: 'openSwitcherCleanup', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.openSwitcherCleanup.b', screen: '/home', anchor: ['home-space-switcher'], gate: true },

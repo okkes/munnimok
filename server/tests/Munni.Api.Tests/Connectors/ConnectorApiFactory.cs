@@ -236,6 +236,22 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
         return query(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
 
+    /// <summary>
+    /// A session's stored state once it reads <paramref name="wanted"/>. The row is written by whichever of the
+    /// app's poll and the event bridge sees a change first, so it settles a moment after the caller was answered:
+    /// read until it does, never straight away.
+    /// </summary>
+    public async Task<string> SessionStateAsync(string sessionId, string wanted)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            var seen = Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State);
+            if (seen == wanted || clock.Elapsed > TimeSpan.FromSeconds(10)) return seen;
+            await Task.Delay(100);
+        }
+    }
+
     /// <summary>Puts a row into a state only the relay's own scheduler would reach, through a fresh scope.</summary>
     public void Write(Action<AppDbContext> change)
     {

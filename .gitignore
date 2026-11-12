@@ -49,3 +49,6 @@ import-watch/
 # the platform config lives on GitHub as MUNNI_PLATFORM_* variables (#416); these are this computer's copy
 infra/platforms/nas/
 infra/platforms/rpi/
+
+# the TypeScript build cache: rewritten by every tsc -b
+*.tsbuildinfo

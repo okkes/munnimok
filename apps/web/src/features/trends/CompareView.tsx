@@ -4,6 +4,7 @@ import type { TxView } from '@/db/types';
 import type { Period } from '@/domain/periods';
 import { addDays } from '@/domain/recurring';
 import { cumulativeByDay, dayIndexOf, periodDays, reachedBy } from '@/domain/trends';
+import type { InSpaceCurrency } from '@/domain/trends';
 import { useCategories } from '@/features/categories/useCategories';
 import { MultiLine } from '@/ui/charts/MultiLine';
 import type { ChartScrubTip } from '@/ui/charts/MultiLine';
@@ -42,6 +43,7 @@ export function CompareView({
   today,
   color,
   fmt,
+  inSpace,
 }: Readonly<{
   graphId: string;
   periods: readonly Period[];
@@ -51,6 +53,7 @@ export function CompareView({
   today: string;
   color: string;
   fmt: (cents: number) => string;
+  inSpace: InSpaceCurrency;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -64,7 +67,7 @@ export function CompareView({
     if (!previous) return null;
     const window = periods.slice(Math.max(0, selected - 3), selected + 1);
     // every period of the list walked once — a scrub only looks values up
-    const cumulatives = window.map((p) => cumulativeByDay(txs, p, catIds, cats));
+    const cumulatives = window.map((p) => cumulativeByDay(txs, p, catIds, cats, inSpace));
     const current = cumulatives.at(-1) ?? [];
     const before = cumulatives.at(-2) ?? [];
     const days = Math.max(current.length, before.length);
@@ -76,7 +79,7 @@ export function CompareView({
       days,
       at: Math.max(0, Math.min(cut, current.length - 1, before.length - 1)),
     };
-  }, [previous, txs, period, catIds, cats, cut, periods, selected]);
+  }, [previous, txs, period, catIds, cats, cut, periods, selected, inSpace]);
 
   if (!model) {
     return (
@@ -140,7 +143,7 @@ export function CompareView({
             return (
               <div key={row.period.start} className="flex items-center gap-2 text-[11px]" data-testid={`trends-compare-row-${graphId}-${i}`}>
                 <span className={`w-14 shrink-0 ${current ? 'font-semibold text-ink' : 'text-ink-3'}`}>{fmtDay(row.period.start, lang)}</span>
-                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-bg-2">
+                <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-track">
                   <span
                     className="block h-full rounded-full"
                     style={{ width: `${(row.cents / max) * 100}%`, background: current ? color : 'var(--m-ink-4)' }}

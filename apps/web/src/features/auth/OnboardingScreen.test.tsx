@@ -2,7 +2,8 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { MunniDB } from '@/db/schema';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 describe('OnboardingScreen (demo identity)', () => {
   beforeEach(() => {
@@ -87,4 +88,59 @@ describe('OnboardingScreen (demo identity)', () => {
     // both tab bars carry the hidden class during the flow
     expect(screen.queryAllByTestId('tab-home').every((el) => el.closest('nav')?.className.includes('hidden'))).toBe(true);
   });
+});
+
+describe('OnboardingScreen (user identity, scripted server)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+
+  it('a profile the server refuses keeps the person on the form, told so — nothing moves on', async () => {
+    renderAppAsUser('/onboarding', { api: { 'PUT /me': () => new Response(JSON.stringify({ errors: { Picture: ['too long'] } }), { status: 400 }) } });
+    await screen.findByTestId('screen-onboarding');
+    fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: 'Okkes' } });
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+
+    expect(await screen.findByTestId('onboarding-save-refused')).toBeTruthy();
+    expect(screen.queryByTestId('onboarding-lock-step')).toBeNull();
+    const db = new MunniDB(USER_TEST_DB);
+    expect(await db.meta.get('profile')).toBeUndefined();
+    db.close();
+  }, 15_000);
+
+  it('a profile the server takes leads on to the lock offer', async () => {
+    const puts: unknown[] = [];
+    renderAppAsUser('/onboarding', {
+      api: {
+        'PUT /me': (body) => {
+          puts.push(body);
+          return { userId: 'uid-123', displayName: 'Okkes', picture: null };
+        },
+      },
+    });
+    await screen.findByTestId('screen-onboarding');
+    fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: 'Okkes' } });
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+
+    expect(await screen.findByTestId('onboarding-lock-step')).toBeTruthy();
+    expect(puts[0]).toMatchObject({ displayName: 'Okkes' });
+  }, 15_000);
+
+  it('a server that cannot be reached does not hold the flow up', async () => {
+    renderAppAsUser('/onboarding', {
+      api: {
+        'PUT /me': () => {
+          throw new TypeError('Failed to fetch');
+        },
+      },
+    });
+    await screen.findByTestId('screen-onboarding');
+    fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: 'Okkes' } });
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+
+    expect(await screen.findByTestId('onboarding-lock-step')).toBeTruthy();
+    expect(screen.queryByTestId('onboarding-save-refused')).toBeNull();
+  }, 15_000);
 });

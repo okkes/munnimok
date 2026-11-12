@@ -40,9 +40,9 @@ export function freshCamtFixture() {
 // id format: '{lang}-{theme}-{viewport}'
 // Single default variant: EN, light, mobile.
 // Dark / TR / desktop are evaluated manually when explicitly requested.
-export const VARIANTS = [
-  { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 },
-];
+const DEFAULT_VARIANT = { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 };
+// PW_VARIANT=en-dark-mobile: the same run in the dark theme, for a visual pass asked for by hand (#592)
+export const VARIANTS = [process.env.PW_VARIANT === 'en-dark-mobile' ? { ...DEFAULT_VARIANT, id: 'en-dark-mobile', dark: true } : DEFAULT_VARIANT];
 
 // The gallery's screenshots and videos are local artefacts (the guide, the
 // visual review); CI keeps neither, so it records no video and takes no shots.
@@ -218,6 +218,18 @@ export async function syncApiUp() {
   } catch {
     return false;
   }
+}
+
+// On CI the test stack is part of the job: a sync API that stays silent fails the flow, it never skips it.
+// It gets 15 s: one slow /health must not fail a deploy, and a test's own 30 s timeout must not hide the reason.
+export async function syncApiOrFail() {
+  if (await syncApiUp()) return true;
+  if (!process.env.CI) return false;
+  for (const until = Date.now() + 15_000; Date.now() < until; ) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (await syncApiUp()) return true;
+  }
+  throw new Error(`the sync test API at ${TEST_API_URL} does not answer on CI (deploy/docker-compose.test.yml) — its flows must run, not skip`);
 }
 
 // Wait for the m-fade animation (280ms) to finish before screenshotting.

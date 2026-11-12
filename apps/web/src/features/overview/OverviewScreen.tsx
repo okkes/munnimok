@@ -89,7 +89,7 @@ export function OverviewScreen() {
   const barValues = useMemo(
     () =>
       periods.map((period) =>
-        txsForKind(kind, txs ?? [], accountsById, period, cashedOut).reduce((sum, tx) => sum + contributionCents(kind, tx), 0),
+        txsForKind(kind, txs ?? [], accountsById, period, cashedOut).reduce((sum, tx) => sum + contributionCents(kind, tx, accountsById), 0),
       ),
     [periods, txs, accountsById, kind, cashedOut],
   );
@@ -228,7 +228,7 @@ export function OverviewScreen() {
                       </span>
                     </span>
                     <span className="mt-1.5 flex items-center gap-2">
-                      <span className="h-1 flex-1 overflow-hidden rounded-full bg-bg-2">
+                      <span className="h-1 flex-1 overflow-hidden rounded-full bg-track">
                         <span
                           key={periodIndex} /* replay the grow on period switches */
                           className="m-grow-x block h-full origin-left"

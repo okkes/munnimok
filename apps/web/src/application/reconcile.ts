@@ -157,6 +157,10 @@ export interface ReconcileResult {
   removed: number;
 }
 
+/** the live spaces whose rows this identity may move — one it only reads keeps its own, for its writers to settle */
+const writableSpaceIds = async (store: StorageBackend, repo: Repo): Promise<string[]> =>
+  (await store.allRows('space')).filter((s) => s.deleted === 0 && repo.canWrite(s.id)).map((s) => s.id);
+
 export async function applyReconcile(
   store: StorageBackend,
   repo: Repo,
@@ -166,7 +170,7 @@ export async function applyReconcile(
   // #311 r3 (user): long runs narrate — (done, total) after every step
   onProgress?: (done: number, total: number) => void,
 ): Promise<ReconcileResult> {
-  const spaceIds = (await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.id);
+  const spaceIds = await writableSpaceIds(store, repo);
   const toDelete = [...plan.matches.map((m) => m.imported), ...plan.mismatched];
   const total = plan.matches.length + 1 + toDelete.length;
   let done = 0;
@@ -227,12 +231,12 @@ export async function applyMerge(
   }
   // links share their id (spaceId+feedId) across the pair — only the
   // accountId fact changes hands
-  for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0)) {
-    const links = (await store.bySpace('accountLink', space.id)).filter(
+  for (const spaceId of await writableSpaceIds(store, repo)) {
+    const links = (await store.bySpace('accountLink', spaceId)).filter(
       (l) => l.deleted === 0 && l.accountId === pair.importedAccountId,
     );
     for (const link of links) {
-      await repo.upsert('accountLink', space.id, link.id, { accountId: pair.bankAccountId });
+      await repo.upsert('accountLink', spaceId, link.id, { accountId: pair.bankAccountId });
     }
   }
   const imported = await store.get('account', pair.importedAccountId);

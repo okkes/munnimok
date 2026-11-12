@@ -93,12 +93,12 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
     public async Task<IReadOnlyList<Aspsp>> AspspsAsync(HttpClient http, string country, CancellationToken ct) =>
         (await SendAsync<AspspList>(http, HttpMethod.Get, $"aspsps?country={Uri.EscapeDataString(country)}", null, "institutions", false, ct).ConfigureAwait(false)).Aspsps;
 
-    /// <summary>A consent of <paramref name="days"/>; the aggregator has no id for it until the bank has come back.</summary>
-    public async Task<string> AuthUrlAsync(HttpClient http, string name, string country, string state, string redirectUrl, int days, CancellationToken ct)
+    /// <summary>A consent until <paramref name="validUntil"/>; the aggregator has no id for it until the bank has come back.</summary>
+    public async Task<string> AuthUrlAsync(HttpClient http, string name, string country, string state, string redirectUrl, DateTimeOffset validUntil, CancellationToken ct)
     {
         var auth = await SendAsync<AuthResponse>(http, HttpMethod.Post, "auth", new
         {
-            access = new { valid_until = time.GetUtcNow().AddDays(days).ToString("o") },
+            access = new { valid_until = validUntil.ToString("o") },
             aspsp = new { name, country },
             state,
             redirect_url = redirectUrl,
@@ -162,7 +162,8 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         HttpClient http, string accountId, DateOnly? from, DateOnly? to, CancellationToken ct)
     {
         var walk = await PagesAsync(http, accountId, from, to, ct).ConfigureAwait(false);
-        if (from is not null && walk.Rows.Count == 0) walk = await PagesAsync(http, accountId, null, to, ct).ConfigureAwait(false);
+        // not with an end named: the party refuses date_to without date_from, and an empty older window is simply the end of the history
+        if (from is not null && to is null && walk.Rows.Count == 0) walk = await PagesAsync(http, accountId, null, null, ct).ConfigureAwait(false);
         return walk;
     }
 

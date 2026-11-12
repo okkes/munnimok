@@ -7,6 +7,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { MINA_STEPS } from './steps';
+import type { MinaEntity, MinaStep } from './steps';
 import { clipPads, rectSettled } from './MinaTutorial';
 import { revertMinaRun } from './revert';
 import { en } from '@/i18n/en';
@@ -111,7 +112,8 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
       const req = indexedDB.deleteDatabase(USER_TEST_DB);
       req.onsuccess = req.onerror = req.onblocked = () => resolve(undefined);
     });
-    renderAppAsUser('/home', { spaces: [] });
+    // onboarding moves on only after the server took the profile: an unscripted PUT /me is a refusal
+    renderAppAsUser('/home', { spaces: [], api: { 'PUT /me': () => ({ userId: 'uid-mina', displayName: 'Tester', picture: null }) } });
     // the REAL hand-off: bootstrap left zero spaces + the pending flag,
     // Home redirects into onboarding, finishing it auto-starts Mina
     const name = await screen.findByTestId('onboarding-name', {}, { timeout: 5000 });
@@ -162,6 +164,55 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
     expect(state.ledger.filter((e) => e.entity === 'space')).toHaveLength(1);
     db.close();
   }, 30_000);
+
+  it('the whole tour, tapped the way a user must: every lesson’s door is on screen and every gate lets its tap through', async () => {
+    const dbName = await freshUser();
+    await screen.findByTestId('mina-fullscreen', {}, { timeout: 5000 });
+    const db = new MunniDB(dbName);
+    const stepNow = () => screen.getByTestId('mina-tutorial').dataset.step ?? '';
+    const stepOf = (id: string): MinaStep => MINA_STEPS.find((s) => s.id === id)!;
+    // $s1/$s2 are the run's own spaces, in the order it made them
+    const doorOf = async (step: MinaStep): Promise<HTMLElement> => {
+      const state = (await db.meta.get('minaTutorialState'))?.value as { ledger: { entity: string; id: string }[] } | undefined;
+      const made = (state?.ledger ?? []).filter((e) => e.entity === 'space').map((e) => e.id);
+      const ids = (step.anchor ?? []).map((raw) => raw.replace('$s1', made[0] ?? '?').replace('$s2', made[1] ?? '?'));
+      return waitFor(
+        () => {
+          const door = ids.map((id) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)).find((el) => el !== null);
+          if (!door) throw new Error(`${step.id}: its door (${ids.join(' / ')}) is not on screen`);
+          return door;
+        },
+        { timeout: 10_000 },
+      );
+    };
+    // an act step is finished by the user's own form: the field Mina fills, then its save button
+    const forms: Record<MinaEntity, [field: string, save: string]> = {
+      space: ['space-create-name', 'space-create-save'],
+      account: ['chooser-acctform-name', 'chooser-acctform-save'],
+      transaction: ['txform-amount', 'txform-save'],
+    };
+
+    try {
+      for (let id = stepNow(); id !== 'deleteFamily'; id = stepNow()) {
+        const step = stepOf(id);
+        if (step.act) {
+          const [field, save] = forms[step.act.entity];
+          await waitFor(() => expect((screen.getByTestId(field) as HTMLInputElement).value).not.toBe(''), { timeout: 10_000 });
+          fireEvent.click(screen.getByTestId(save));
+        } else if (step.gate) {
+          // a gate advances only when the tap lands on the door the tutorial itself resolved
+          fireEvent.click(await doorOf(step));
+        } else {
+          if (step.anchor) await doorOf(step);
+          fireEvent.click(screen.getByTestId('mina-next'));
+        }
+        await waitFor(() => expect(stepNow()).not.toBe(id), { timeout: 10_000 });
+      }
+      await doorOf(stepOf('deleteFamily'));
+    } finally {
+      db.close();
+    }
+  }, 120_000);
 
   it('skip asks Mina-style; confirming reverts the run and re-asserts one space', async () => {
     const dbName = await freshUser();

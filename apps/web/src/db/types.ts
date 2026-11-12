@@ -73,7 +73,7 @@ export interface SpaceRow extends SyncEnvelope {
    *  edited, the whole list travels with every write. #531: `accountIds`
    *  narrows a graph to those financial accounts; absent = every account
    *  (the ones added later too) — every graph from before reads so. */
-  trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[] }[];
+  trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[]; /** #455: what goals bought stays out */ skipGoalSpending?: boolean }[];
   /** #531: the Cash flow tab's own graphs — a balance line over the
    *  accounts each one names; the same LWW list as trendGraphs */
   cashflowGraphs?: { id: string; name: string; accountIds: string[] }[];
@@ -299,13 +299,33 @@ export interface TransactionRow extends SyncEnvelope {
   recurringId?: string;
   /** the event this transaction belongs to (holiday, wedding, …) */
   eventId?: string;
+  /** #538: the split the payment was added to — a mark for everyone in the space, so the same payment is not
+   *  added twice; the split's members never learn which space it came from */
+  splitRef?: SplitRef | null;
   /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
    *  the linked manual loan's balance (one-shot marker) */
   loanCounted?: 1;
   /** #133 D (C3): the manual correction marker (manual rows only) — the
    *  view derives the adjustment type from it; no type is stored */
   adjustment?: 0 | 1;
+  /** #547: when this row was typed by hand on an account the bank or a
+   *  statement fills (ISO) — what makes it "your entry"; absent on every other row */
+  enteredAt?: string;
+  /** #547: your entry counts on top of the bank's balance, in this space only (the form's tick) */
+  inBalance?: 0 | 1;
+  /** #547: the bank's own transaction this entry is linked to — the two read
+   *  as one and the entry stays behind it; null once they are taken apart */
+  bankTxId?: string | null;
+  /** #547: what the bank's row held before the link — put back when the two are taken apart */
+  bankBefore?: EntryBankBefore | null;
+  /** #547: bank rows this entry was taken apart from: never linked to it again without asking */
+  noBankTxIds?: string[];
 }
+
+/** #547: a bank row's opinions as they were before an entry was linked to it */
+export type EntryBankBefore = Partial<
+  Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'notes' | 'titleOverride' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'reimbursements' | 'transferPeerId'>
+> & { needsReview?: 0 | 1 };
 
 /**
  * A transaction as the VIEW sees it: the stored row plus the type
@@ -341,6 +361,7 @@ export interface TxMetaRow extends SyncEnvelope {
   transferPeerId?: string;
   recurringId?: string;
   eventId?: string;
+  splitRef?: SplitRef | null;
   /** loans v2 (2026-08-01): this row predates the loan's known-true
    *  balance date but the user chose to count it in anyway (one-shot) */
   loanCounted?: 1;
@@ -437,18 +458,18 @@ export interface BudgetRow extends SyncEnvelope {
   every: BudgetEvery;
   /** yyyy-mm-dd the budget starts on: its first period opens here (and may be partial) */
   anchor: string;
-  /** #371: monthly budgets reset on this day of the month (1-28); absent = the start date's day */
-  resetDay?: number;
+  /** #371: monthly budgets reset on this day of the month (1-28); absent or null = the start date's day */
+  resetDay?: number | null;
   /** main and/or sub category ids; exclusive across a space's budgets */
   catIds: string[];
   carryOver?: 0 | 1;
-  carryMode?: BudgetCarryMode;
+  carryMode?: BudgetCarryMode | null;
   /** carry unused money at most N periods forward (carryMode 'periods') */
-  carryPeriods?: number;
-  /** or accumulate up to this cap (carryMode 'cap') */
-  carryCapCents?: number;
-  /** warn when spending crosses this percentage; absent = quiet */
-  notifyAtPct?: number;
+  carryPeriods?: number | null;
+  /** or pile up to this much ON TOP of the amount (carryMode 'cap') — the form shows amount + this, the most a period may hold (#534) */
+  carryCapCents?: number | null;
+  /** warn when spending crosses this percentage; absent or null = quiet */
+  notifyAtPct?: number | null;
   active: 0 | 1;
 }
 
@@ -475,6 +496,11 @@ export interface EventRow extends SyncEnvelope {
   /** optional planning number */
   budgetCents?: number;
   archived?: 0 | 1;
+  /** #538: the split this event belongs to — the event's own fact, so whoever shares the space shares the bond;
+   *  several events may name one split */
+  splitId?: string | null;
+  /** #538: payments the person said to ignore when munni compares the event with its split */
+  splitSkips?: string[];
 }
 
 /**
@@ -489,10 +515,11 @@ export interface GoalRow extends SyncEnvelope {
   name: string;
   icon?: string;
   color?: string;
-  /** cover image like events: bundled path or uploaded data url */
-  picture?: string;
+  /** cover image like events: bundled path or uploaded data url; null once taken off */
+  picture?: string | null;
   targetCents: number;
-  targetDate?: string;
+  /** null once the deadline is taken off */
+  targetDate?: string | null;
   /** running total, maintained by contributions */
   allocatedCents: number;
   archived?: 0 | 1;
@@ -511,6 +538,8 @@ export interface GoalCashOut {
   date: string;
   /** the rows that took the goal's money out of savings */
   txIds: string[];
+  /** what that money bought: real spending, which the plan files under the goal and a graph can leave out; absent = not named */
+  purchaseTxIds?: string[];
 }
 
 /** audit trail of goal funding — separate rows converge without LWW fights */
@@ -532,6 +561,26 @@ export interface ReceiptItem {
   totalCents: number;
   /** a line that is not a product (the connector says which) — absent = product */
   kind?: 'fee' | 'deposit' | 'discount' | 'adjustment' | 'unattributed';
+  /** #567: the category the reader suggests for the line — a suggestion, the transaction's own split is the truth */
+  catId?: string;
+  /** #567: what came off this very line (negative), as the shop states it — `totalCents` is the line before it */
+  discountCents?: number;
+  discountLabel?: string;
+}
+
+/** #538: the split a payment was added to, by the name it had then */
+export interface SplitRef {
+  splitId: string;
+  name: string;
+}
+
+/** #567: one receipt line filed under a category, for one transaction */
+export interface ReceiptPick {
+  /** the line's index among the receipt's items */
+  line: number;
+  catId: string;
+  /** what of the transaction the line stands for: its printed value, what was paid after the discount, or a typed amount */
+  amountCents: number;
 }
 
 /** a document the party issued for the purchase — an invoice, mostly
@@ -729,6 +778,12 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   totalCents: number;
   merchant?: string;
   items?: ReceiptItem[];
+  /** #567: false when the lines a reader found do not add up to the total */
+  reconciled?: boolean;
+  /** #567: the currency a reader found on the receipt; absent = the space's */
+  currency?: string;
+  /** #567: how each attached transaction's categories were built from the lines, by transaction id */
+  picks?: Record<string, ReceiptPick[]>;
   image?: string;
   payment?: ReceiptPayment;
   /** the invoices ride the snapshot like a photo does — members open them without the owner's feed */

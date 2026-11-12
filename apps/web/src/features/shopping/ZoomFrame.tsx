@@ -109,7 +109,11 @@ function useZoomGestures(frameRef: { readonly current: HTMLElement | null }, ges
         return;
       }
       press = { x: e.clientX, y: e.clientY };
-      if (e.pointerType === 'mouse' && e.button === 0) drag = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: false };
+      if (e.pointerType === 'mouse' && e.button === 0) {
+        drag = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moved: false };
+        // without the capture a button let go beyond the frame never reports here, and the drag follows the bare cursor
+        el.setPointerCapture?.(e.pointerId);
+      }
     };
     const move = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
@@ -167,6 +171,7 @@ function useZoomGestures(frameRef: { readonly current: HTMLElement | null }, ges
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
     el.addEventListener('gesturestart', gestureStart);
     el.addEventListener('gesturechange', gestureChange);
     el.addEventListener('gestureend', commit);
@@ -179,6 +184,7 @@ function useZoomGestures(frameRef: { readonly current: HTMLElement | null }, ges
       el.removeEventListener('pointermove', move);
       el.removeEventListener('pointerup', up);
       el.removeEventListener('pointercancel', up);
+      el.removeEventListener('lostpointercapture', up);
       el.removeEventListener('gesturestart', gestureStart);
       el.removeEventListener('gesturechange', gestureChange);
       el.removeEventListener('gestureend', commit);

@@ -115,6 +115,15 @@ describe('hide sensitive figures (#530)', () => {
     expect(screen.getByTestId('periods-delta-income').textContent).not.toMatch(/€/);
     expect(screen.getByTestId('periods-value-expense').textContent).toMatch(/€/);
   }, 20_000);
+
+  it('the change against the period before keeps its percentage to spending — beside a hidden amount it would be half the answer', async () => {
+    useHideSensitive.getState().set(true);
+    renderApp('/periods');
+    await waitFor(() => expect(screen.getByTestId('periods-value-income').textContent).toBe(MASK), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('periods-delta-expense').textContent).toMatch(/€[1-9].*%/));
+    expect(screen.getByTestId('periods-delta-income').textContent).toContain(MASK);
+    for (const kind of ['income', 'saving', 'investment']) expect(screen.getByTestId(`periods-delta-${kind}`).textContent).not.toMatch(/%/);
+  }, 20_000);
 });
 
 /** what owns a balance, wherever it shows — the lens decides once, every screen asks it */
@@ -186,6 +195,31 @@ describe('hide sensitive figures beyond Home (#530)', () => {
     await waitFor(() => expect(screen.getByTestId('goals-overview-saved').textContent).toContain(MASK), { timeout: 5000 });
     expect(screen.getByTestId('goals-overview-unallocated').textContent).toContain(MASK);
     expect(screen.getByTestId('goal-card-goal_trip').textContent).toContain(`${MASK} / €3,000.00`);
+  }, 20_000);
+
+  it('a goal’s progress hides with what it holds: beside the target a percentage or a filled bar would give the amount away', async () => {
+    await seed(async (repo) => {
+      await repo.upsert('goal', DEMO_SPACE_ID, 'goal_trip', { name: 'Trip', targetCents: 300_000, allocatedCents: 150_000 });
+      await repo.upsert('goalContribution', DEMO_SPACE_ID, 'gc_trip', { goalId: 'goal_trip', amountCents: 150_000, date: '2026-01-05' });
+    });
+    // the bar's own value, as assistive tech reads it
+    const bar = (testId: string) => screen.getByTestId(testId).querySelector('progress')?.getAttribute('value');
+    renderApp('/goals');
+    await waitFor(() => expect(bar('goal-card-goal_trip')).toBe('50'), { timeout: 5000 });
+    act(() => useHideSensitive.getState().set(true));
+    await waitFor(() => expect(bar('goal-card-goal_trip')).toBe('0'));
+    cleanup();
+
+    renderApp('/goals/goal_trip');
+    await waitFor(() => expect(screen.getByTestId('goaldetail-allocated').textContent).toBe(MASK), { timeout: 5000 });
+    expect(screen.getByTestId('goaldetail-hero').textContent).not.toMatch(/%/);
+    expect(bar('goaldetail-hero')).toBe('0');
+    cleanup();
+
+    renderApp('/home');
+    await screen.findByTestId('home-goal-goal_trip', {}, { timeout: 5000 });
+    expect(screen.getByTestId('home-goal-goal_trip').textContent).not.toMatch(/%/);
+    expect(bar('home-goal-goal_trip')).toBe('0');
   }, 20_000);
 
   it('planning hides what is left to give and the pool behind it, here and on Home', async () => {

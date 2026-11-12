@@ -1,6 +1,6 @@
 import { ScrollRow } from '@/ui/ScrollRow';
 import { downscaleImage } from '@/lib/image';
-import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { usePictureSource } from '@/ui/PictureSource';
 import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -10,6 +10,7 @@ import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useGoalOps, useGoals } from '@/application/goals';
+import { parseLocalDate } from '@/application/planningModel';
 import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { goalOverview, goalProgress, monthsLeft, paceCentsPerPeriod, periodUnitKey, poolAccounts } from '@/domain/goals';
@@ -80,16 +81,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     setPicture(await downscaleImage(file, 1080, 0.72));
   };
 
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
-      return;
-    }
-    uploadRef.current?.click();
-  };
+  const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onUpload(file), () => uploadRef.current?.click(), name.trim());
 
   const targetCents = parseCents(target);
   const nameMissing = name.trim().length === 0;
@@ -101,9 +93,10 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
       icon,
-      picture: picture ?? undefined,
+      // null, never undefined: JSON drops an undefined field, so a picture or deadline taken off would not reach the other devices
+      picture,
       targetCents,
-      targetDate: targetDate || undefined,
+      targetDate: targetDate || null,
       allocatedCents: editing?.allocatedCents ?? 0,
       archived: editing?.archived ?? 0,
     });
@@ -180,6 +173,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             <img src={picture} alt="" className="h-16 w-full object-cover" />
           </div>
         )}
+        {pictureSheet}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
         {/* #563 (user): the goal's suggestions lead, the whole icon font follows — to scroll or to search */}
@@ -335,7 +329,7 @@ export function GoalsScreen() {
   const [formInitial, setFormInitial] = useState<GoalRow | 'new' | null>(null);
   const canEdit = useCanEdit(); // #505
 
-  const { fmt, fmtSensitive } = useDisplayMoney();
+  const { fmt, fmtSensitive, hideSensitive } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
   // #530: the savings, what each goal holds and what is still to go hide with the sensitive figures; targets and paces stay
   const balance = (cents: number) => fmtSensitive(cents, currency);
@@ -426,7 +420,7 @@ export function GoalsScreen() {
             let subtitle = toGo;
             if (goal.cashOut) {
               // #455: a spent goal says when — it sits with the archived ones
-              const date = new Date(goal.cashOut.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
+              const date = parseLocalDate(goal.cashOut.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
               subtitle = t('goals.cashedOutOn', { date });
             } else if (reached) subtitle = t('goals.reached');
             else if (pace !== null) subtitle = `${toGo} · ${t('goals.pace', { amount: money(pace), unit: t(periodUnitKey(space?.periodType)) })}`;
@@ -453,9 +447,10 @@ export function GoalsScreen() {
                     <span className="block text-[11px] text-ink-4">{subtitle}</span>
                   </span>
                 </div>
+                {/* beside the visible target a filled bar would give the hidden amount away */}
                 <ProgressBar
                   className="mt-3"
-                  value={progress}
+                  value={hideSensitive ? 0 : progress}
                   color={reached ? 'var(--m-accent)' : 'var(--m-accent-deep)'}
                 />
               </button>

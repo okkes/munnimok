@@ -403,6 +403,7 @@ public sealed class ConnectorAgentOptions
             // once here so the claim this agent makes to the queue and the
             // condition its adapters meet at run time cannot drift apart.
             Headed = !Headless,
+            BrowserVersion = AgentBrowser.Version,
         };
     }
 

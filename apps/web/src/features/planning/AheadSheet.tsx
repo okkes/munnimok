@@ -1,7 +1,7 @@
 import { LOCALES, useLang } from '@/i18n';
 import type { PlanRow } from '@/db/types';
 import type { PlanningModel, PlanningOps } from '@/application/planning';
-import { sameSubjects } from '@/domain/planning';
+import { sameSubjects, stillRelevant } from '@/domain/planning';
 import type { Period } from '@/domain/periods';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -17,9 +17,12 @@ export const periodLabel = (period: Period, lang: keyof typeof LOCALES): string 
 
 const PERIOD_KEY = { week: 'plan.rhythm.week', biweekly: 'plan.rhythm.biweekly', month: 'plan.rhythm.month' } as const;
 
-/** do the periods ahead still mirror the current plan's shape? */
-export const aheadDiffers = (model: PlanningModel, plan: PlanRow): boolean =>
-  model.ahead.some((a) => !sameSubjects(model.subjectsOf(a.plan), model.subjectsOf(plan)));
+/** do the periods ahead still mirror the current plan's shape? — against what a copy would give them: a subject
+ *  over by then is left behind, so its absence is no difference and applying the plan could never settle it */
+export const aheadDiffers = (model: PlanningModel, plan: PlanRow): boolean => {
+  const subjects = model.subjectsOf(plan);
+  return model.ahead.some((a) => !sameSubjects(model.subjectsOf(a.plan), subjects.filter((s) => stillRelevant(s, a.period, model.relevance))));
+};
 
 /**
  * The periods ahead (#128): money set aside for the periods to come,

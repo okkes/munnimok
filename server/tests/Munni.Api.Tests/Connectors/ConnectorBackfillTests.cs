@@ -9,11 +9,12 @@ using Munni.Api.Connectors;
 namespace Munni.Api.Tests.Connectors;
 
 /// <summary>
-/// Every fetch a job (a zero window), and the mock banks capped at a quarter
-/// of the rows they hold in reach: their history takes several passes. (A
-/// quarter of what is in reach, not a number: the mock's ledger runs through
-/// today, and how many rows its history limit holds moves a little with the
-/// weekdays and month ends inside it.)
+/// Every fetch a job (a zero window), and the mock banks capped at a third
+/// of the rows they hold in reach, shared out per account: their history
+/// takes several passes and the accounts stop on different days. (A third of
+/// what is in reach, not a number: the mock's ledger runs through today, and
+/// how many rows its history limit holds moves a little with the weekdays
+/// and month ends inside it.)
 ///
 /// The day is pinned when the suite starts: the mock banks' clock stays on
 /// that instant, and the cap and every expected count are read for the same
@@ -27,7 +28,7 @@ public sealed class BackfillWalkApiFactory : ConnectorApiFactory
     /// <summary>The day the mock banks' window ends on, for the whole suite.</summary>
     public DateOnly Today => DateOnly.FromDateTime(_started.UtcDateTime);
 
-    public int Cap => Math.Max(1, BackfillFlows.LedgerRowsInReach(Today) / 4);
+    public int Cap => Math.Max(1, BackfillFlows.LedgerRowsInReach(Today) / 3);
 
     protected override int FetchWaitSeconds => 0;
 
@@ -59,7 +60,9 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
         var (_, bundle) = await BackfillFlows.LoginAsync(client, "conn-backfill");
 
         // the first sync: accounts, then the newest rows up to the cap - partial, and how far back they reach
-        var first = await BackfillFlows.SyncAsync(client, new { connectionId = "conn-backfill", bundle }, bundle);
+        var walked = new List<string>();
+        var first = await BackfillFlows.SyncAsync(client, new { connectionId = "conn-backfill", bundle }, bundle, asked: walked);
+        Assert.Equal(["accounts", "transactions"], walked);
         Assert.False(first["complete"]!.GetValue<bool>(), first.ToJsonString());
         var reached = first["oldest"]!.GetValue<string>();
         Assert.Equal(factory.Cap, BackfillFlows.Transactions(factory, sub));
@@ -70,8 +73,10 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
         do
         {
             passes++;
-            pass = await BackfillFlows.SyncAsync(client, new { connectionId = "conn-backfill", bundle, until = reached }, bundle, until: reached);
-            Assert.Equal(0, pass["ingested"]!["accounts"]!.GetValue<int>());
+            var asked = new List<string>();
+            pass = await BackfillFlows.SyncAsync(client, new { connectionId = "conn-backfill", bundle, until = reached }, bundle, until: reached, asked);
+            // an older pass walks the history only: the accounts are all of them already
+            Assert.Equal(["transactions"], asked);
             if (pass["complete"]!.GetValue<bool>()) break;
             var next = pass["oldest"]!.GetValue<string>();
             Assert.True(string.CompareOrdinal(next, reached) < 0, $"{next} did not reach below {reached}");
@@ -80,7 +85,7 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
         while (passes < 10);
 
         Assert.True(pass["complete"]!.GetValue<bool>(), pass.ToJsonString());
-        Assert.True(passes >= 2, "the history should take more than one older pass at a quarter of it each");
+        Assert.True(passes >= 2, "the history should take more than one older pass at a third of it each");
         // every row the party keeps in reach landed once
         Assert.Equal(BackfillFlows.LedgerRowsInReach(factory.Today), BackfillFlows.Transactions(factory, sub));
     }
@@ -123,8 +128,11 @@ internal static class BackfillFlows
         ["password"] = "hunter2",
     };
 
-    /// <summary>One sync followed through every job its walk becomes, collected with the same window; the finished view.</summary>
-    public static async Task<JsonObject> SyncAsync(HttpClient client, object body, string bundle, string? until = null)
+    /// <summary>
+    /// One sync followed through every job its walk becomes, collected with the same window; the finished view.
+    /// Every fetch is a job here, so <paramref name="asked"/> receives the resources the pass asked the party for.
+    /// </summary>
+    public static async Task<JsonObject> SyncAsync(HttpClient client, object body, string bundle, string? until = null, List<string>? asked = null)
     {
         using var sync = await client.PostAsJsonAsync($"/connectors/{MockBank}/sync", body);
         var view = (await sync.Content.ReadFromJsonAsync<JsonObject>())!;
@@ -132,7 +140,7 @@ internal static class BackfillFlows
         while (status == HttpStatusCode.Accepted)
         {
             var jobId = view["jobId"]!.GetValue<string>();
-            await AwaitJobAsync(client, jobId);
+            asked?.Add((await AwaitJobAsync(client, jobId))["resource"]!.GetValue<string>());
             using var collect = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{jobId}/collect", new { bundle, until });
             view = (await collect.Content.ReadFromJsonAsync<JsonObject>())!;
             status = collect.StatusCode;
@@ -175,7 +183,7 @@ internal static class BackfillFlows
         return (sessionId, bundle);
     }
 
-    private static async Task AwaitJobAsync(HttpClient client, string jobId)
+    private static async Task<JsonObject> AwaitJobAsync(HttpClient client, string jobId)
     {
         var clock = Stopwatch.StartNew();
         JsonObject? view = null;
@@ -185,7 +193,7 @@ internal static class BackfillFlows
             view = await response.Content.ReadFromJsonAsync<JsonObject>();
             Assert.True(response.IsSuccessStatusCode, view!.ToJsonString());
             var state = view["state"]!.GetValue<string>();
-            if (state == "succeeded") return;
+            if (state == "succeeded") return view;
             Assert.False(state is "failed" or "expired", view.ToJsonString());
             await Task.Delay(150);
         }

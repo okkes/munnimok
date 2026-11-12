@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getOfflineProfile } from '@/features/auth/offlineProfiles';
+import { adoptedStoreKeys, getOfflineProfile } from '@/features/auth/offlineProfiles';
 
 /**
  * Who is using the app on this device. Demo and offline identities never
@@ -42,9 +42,30 @@ export function identityKey(identity: Identity): string {
       return adopted ?? `offline_${identity.profileId}`;
     }
     case 'user':
-      // subs can contain chars unsafe for db names
-      return `user_${identity.sub.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      return userStoreKey(identity.sub);
   }
+}
+
+const USER_STORE_PREFIX = 'munni_user_store_';
+
+/**
+ * A login's store is the one it used last — unless "Go offline" handed that one to a profile: the server gave
+ * the login a fresh account, and opening the old store as that account would wipe the profile's data.
+ */
+function userStoreKey(sub: string): string {
+  // subs can contain chars unsafe for db names
+  const base = `user_${sub.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  const taken = adoptedStoreKeys();
+  let key = localStorage.getItem(USER_STORE_PREFIX + base) ?? base;
+  if (!taken.has(key)) return key;
+  let n = 2;
+  while (taken.has(key)) {
+    key = `${base}_${n}`;
+    n += 1;
+  }
+  // remembered: deleting the profile later must not send the login back to an empty first store
+  localStorage.setItem(USER_STORE_PREFIX + base, key);
+  return key;
 }
 
 interface SessionState {

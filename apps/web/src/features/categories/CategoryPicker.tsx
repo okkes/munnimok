@@ -8,6 +8,7 @@ import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
+import { useUserInk } from '@/ui/userInk';
 import { Chip, toneColor } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
@@ -82,6 +83,7 @@ function rewindScroller(el: HTMLElement | null): void {
 
 export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter, counterAccounts, onPickWithCounter, counterLinked }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
+  const ink = useUserInk();
   const cats = useCategories();
   const navigate = useNavigate();
   // #128: what the plan's subject answering for a category still holds
@@ -233,7 +235,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
       )}
       {groups.map(({ parent, children }) => (
         <div key={parent.id}>
-          <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
+          <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: ink(parent.color) }}>
             <Icon name={parent.icon} size={14} />
             {/* #187: Highlight emits <mark> fragments — inside a gapped flex
                 row they'd each become flex items and the gap would split the

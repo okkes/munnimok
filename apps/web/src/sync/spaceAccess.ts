@@ -27,6 +27,9 @@ export class SpaceReadOnlyError extends Error {
 export interface UnsavedUndone {
   spaceId: string;
   spaceName: string;
+  /** set where the changes sat in a feed — another member's account, which has no space row to name */
+  accountName?: string;
+  /** rows undone */
   count: number;
 }
 
@@ -45,7 +48,7 @@ export async function noteUnsavedUndone(store: StorageBackend, entry: UnsavedUnd
   const list = await readUnsavedUndone(store);
   const prior = list.find((e) => e.spaceId === entry.spaceId);
   const next = prior
-    ? list.map((e) => (e === prior ? { ...entry, count: prior.count + entry.count, spaceName: entry.spaceName || prior.spaceName } : e))
+    ? list.map((e) => (e === prior ? { ...prior, ...entry, count: prior.count + entry.count, spaceName: entry.spaceName || prior.spaceName } : e))
     : [...list, entry];
   await store.metaPut(UNSAVED_UNDONE_KEY, next);
 }

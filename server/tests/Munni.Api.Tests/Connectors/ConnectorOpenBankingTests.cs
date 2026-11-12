@@ -218,10 +218,13 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Empty(factory.Read(db => db.EntityRows.Where(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == ImportIds.TxMetaId(spaceId, pendingId)).ToList()));
 
         // the same pending row again: nothing to tombstone, and it is remembered
-        Assert.Equal(0, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", landed.PendingRows, ct));
+        Assert.Equal(0, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", ["acc_mirror"], landed.PendingRows, ct));
+        Assert.Equal(1, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
+        // a pass that did not carry the account says nothing about its reserved rows
+        Assert.Equal(0, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", [], [], ct));
         Assert.Equal(1, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
         // the bank stopped reporting it: tombstoned and forgotten
-        Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", [], ct));
+        Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", ["acc_mirror"], [], ct));
         Assert.True(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == pendingId).Deleted));
         Assert.Equal(0, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
     }
@@ -431,7 +434,7 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
 
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-a", "account", [Account("acc_res_a")], ct);
         var first = await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-a", "transaction", [Reserved("acc_res_a", "R-1")], ct);
-        await ingest.SettlePendingAsync(userId, Consent, "conn-res-a", first.PendingRows, ct);
+        await ingest.SettlePendingAsync(userId, Consent, "conn-res-a", ["acc_res_a"], first.PendingRows, ct);
         var reservedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:R-1");
         Assert.Equal(["acc_res_a"], TrackedBy(reservedId));
 
@@ -440,12 +443,12 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(["acc_res_b"], TrackedBy(reservedId));
         Assert.False(Deleted(reservedId));
         // the new connection's complete pass no longer reports it: settled
-        Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", [], ct));
+        Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", ["acc_res_b"], [], ct));
         Assert.True(Deleted(reservedId));
 
         // the last connection reaching the account is disconnected: its reserved row has nobody left to settle it
         var second = await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-b", "transaction", [Reserved("acc_res_b", "R-2")], ct);
-        await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", second.PendingRows, ct);
+        await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", ["acc_res_b"], second.PendingRows, ct);
         var lastId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:R-2");
         Assert.False(Deleted(lastId));
         var disconnector = scope.ServiceProvider.GetRequiredService<ConnectorDisconnector>();

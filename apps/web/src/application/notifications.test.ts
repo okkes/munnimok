@@ -89,6 +89,32 @@ describe('notification inbox (arc 6)', () => {
     expect((await readInbox(store)).map((e) => e.payload?.version)).toEqual(['5.21.0']);
   });
 
+  it('#580: a clear and a notification recorded at the same moment do not undo each other', async () => {
+    const seeded = async () => {
+      const store = fresh();
+      await store.metaPut('notifInbox', [
+        { id: 'old', kind: 'planOverspent', ts: '2026-01-01T08:00:00.000Z', payload: { names: 'Groceries', dedupe: 'plan_old' } },
+      ]);
+      return store;
+    };
+    const clearedElsewhere = '2026-01-02T08:00:00.000Z';
+
+    // the app opens: the clear made on another device lands while a reminder is being recorded
+    const first = await seeded();
+    await Promise.all([
+      clearInboxUpTo(first, clearedElsewhere),
+      appendNotification(first, 'recurringDue', { name: 'Rent', date: '12 Nov' }, 'rec_rent'),
+    ]);
+    expect((await readInbox(first)).map((e) => e.kind)).toEqual(['recurringDue']);
+
+    const second = await seeded();
+    await Promise.all([
+      appendNotification(second, 'recurringDue', { name: 'Rent', date: '12 Nov' }, 'rec_rent'),
+      clearInboxUpTo(second, clearedElsewhere),
+    ]);
+    expect((await readInbox(second)).map((e) => e.kind)).toEqual(['recurringDue']);
+  });
+
   it('#551: a notification about a space is titled with its name — munni without one', async () => {
     const store = fresh();
     const repo = new Repo(store, new HlcClock('t'), { trackOutbox: false });

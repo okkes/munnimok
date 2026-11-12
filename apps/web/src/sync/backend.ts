@@ -42,6 +42,18 @@ export interface SyncBackend {
 /** one `data:` line of `/sync/events`: a space changed, or a connector view moved */
 export type SyncEventFrame = { spaceId: string; kind?: undefined } | ({ kind: 'connector'; spaceId?: undefined } & Record<string, unknown>);
 
+/**
+ * #594: a connection that stalls (a phone changing networks, a proxy that accepts and never answers) kept
+ * its request, and with it the whole round, open for good — no later round could start. Past this limit the
+ * request fails like any lost connection. The event stream is exempt: it is meant to stay open.
+ */
+export const SYNC_REQUEST_LIMIT_MS = 30_000;
+const withinLimit = (): AbortSignal => AbortSignal.timeout(SYNC_REQUEST_LIMIT_MS);
+
+/** a request that ran into its limit, or was cut off: the network's business, like a refused connection */
+export const isLostConnection = (err: unknown): boolean =>
+  err instanceof TypeError || (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError'));
+
 interface ApiBackendOptions {
   baseUrl: string;
   /** returns the bearer token (Logto access token) or test-mode subject */
@@ -74,6 +86,7 @@ export class ApiSyncBackend implements SyncBackend {
       method: 'POST',
       headers: await this.headers(),
       body: JSON.stringify({ clientId, ops }),
+      signal: withinLimit(),
     });
     if (!res.ok) throw await this.failed(res);
     return (await res.json()) as PushResult;
@@ -82,19 +95,20 @@ export class ApiSyncBackend implements SyncBackend {
   async pull(spaceId: string, since: number): Promise<PullResult> {
     const res = await fetch(`${this.options.baseUrl}/sync/${spaceId}/pull?since=${since}`, {
       headers: await this.headers(),
+      signal: withinLimit(),
     });
     if (!res.ok) throw await this.failed(res);
     return (await res.json()) as PullResult;
   }
 
   async listSpaces(): Promise<string[]> {
-    const res = await fetch(`${this.options.baseUrl}/me/spaces`, { headers: await this.headers() });
+    const res = await fetch(`${this.options.baseUrl}/me/spaces`, { headers: await this.headers(), signal: withinLimit() });
     if (!res.ok) throw await this.failed(res);
     return (await res.json()) as string[];
   }
 
   async heads(): Promise<SpaceHead[]> {
-    const res = await fetch(`${this.options.baseUrl}/sync/heads`, { headers: await this.headers() });
+    const res = await fetch(`${this.options.baseUrl}/sync/heads`, { headers: await this.headers(), signal: withinLimit() });
     if (!res.ok) throw await this.failed(res);
     return (await res.json()) as SpaceHead[];
   }

@@ -165,7 +165,7 @@ describe('§5 niceties seam', () => {
     setCapacitor(undefined);
     const { hapticNotify, shareNativeFile } = await import('./platform');
     expect(() => hapticNotify('SUCCESS')).not.toThrow();
-    expect(await shareNativeFile('x.csv', 'a;b')).toBe(false);
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('unavailable');
   });
 
   it('native share writes to the cache and opens the OS sheet', async () => {
@@ -176,12 +176,16 @@ describe('§5 niceties seam', () => {
       Plugins: { Filesystem: { writeFile }, Share: { share } },
     });
     const { shareNativeFile } = await import('./platform');
-    expect(await shareNativeFile('x.csv', 'a;b')).toBe(true);
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('shared');
     expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'x.csv', directory: 'CACHE' }));
     expect(share).toHaveBeenCalledWith(expect.objectContaining({ files: ['file:///cache/x.csv'] }));
 
-    share.mockRejectedValue(new Error('dismissed'));
-    expect(await shareNativeFile('x.csv', 'a;b')).toBe(false); // closing the sheet degrades to download
+    // a closed sheet is not a saved file, and not a reason to try a download the shell cannot do
+    share.mockRejectedValue(new Error('Share canceled'));
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('dismissed');
+
+    writeFile.mockRejectedValue(new Error('no space left'));
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe('failed');
   });
 
   it('notification taps hand the PARSED payload to the bridge', async () => {
@@ -205,30 +209,36 @@ describe('§5 niceties seam', () => {
     expect(seen).toHaveLength(1); // malformed payloads are ignored
   });
 
-  it('the shell build number parses from App.getInfo and fails soft', async () => {
-    const { getNativeAppBuild, nativePlatform } = await import('./platform');
-    expect(await getNativeAppBuild()).toBeNull(); // web: no shell
+  it('the shell names its own store id through App.getInfo and fails soft', async () => {
+    const { getNativeAppId, nativePlatform } = await import('./platform');
+    expect(await getNativeAppId()).toBeNull(); // web: no shell
     expect(nativePlatform()).toBeUndefined();
 
     setCapacitor({
       isNativePlatform: () => true,
       getPlatform: () => 'ios',
-      Plugins: { App: { getInfo: () => Promise.resolve({ build: '412' }) } },
+      Plugins: { App: { getInfo: () => Promise.resolve({ id: 'app.munni.nas.prod', build: '26940909' }) } },
     } as never);
-    expect(await getNativeAppBuild()).toBe(412);
+    expect(await getNativeAppId()).toBe('app.munni.nas.prod');
     expect(nativePlatform()).toBe('ios');
 
     setCapacitor({
       isNativePlatform: () => true,
-      Plugins: { App: { getInfo: () => Promise.resolve({ build: 'not-a-number' }) } },
+      Plugins: { App: { getInfo: () => Promise.resolve({}) } },
     });
-    expect(await getNativeAppBuild()).toBeNull();
+    expect(await getNativeAppId()).toBeNull();
 
     setCapacitor({
       isNativePlatform: () => true,
       Plugins: { App: { getInfo: () => Promise.reject(new Error('boom')) } },
     });
-    expect(await getNativeAppBuild()).toBeNull();
+    expect(await getNativeAppId()).toBeNull();
+  });
+
+  it('a bundle built outside the pipeline carries no commit count — the update check then has nothing to compare', async () => {
+    const { bundledWebBuild } = await import('./platform');
+    const { updateAvailable } = await import('@/domain/updateCheck');
+    expect(updateAvailable(bundledWebBuild(), 1880)).toBe(false);
   });
 
   it('native photo capture returns a File and degrades to null', async () => {
@@ -258,20 +268,15 @@ describe('§5 niceties seam', () => {
     expect(await takeNativePhoto()).toBeNull(); // no bytes returned
   });
 
-  it('pickPhotoNative rides the OS chooser, receipts keep the direct camera (#166)', async () => {
-    const { pickPhotoNative, takeNativePhoto } = await import('./platform');
-    // web: callers fall back to the hidden file input instead
-    expect(await pickPhotoNative()).toBeNull();
-
+  it('the camera door asks the plugin for the camera; the library door of a receipt for the photos (#166, #496)', async () => {
+    const { takeNativePhoto } = await import('./platform');
     const getPhoto = vi.fn(() => Promise.resolve({ base64String: btoa('img-bytes'), format: 'jpeg' }));
     setCapacitor({ isNativePlatform: () => true, Plugins: { Camera: { getPhoto } } });
-    const file = await pickPhotoNative();
+    const file = await takeNativePhoto();
     expect(file?.type).toBe('image/jpeg');
-    expect(getPhoto).toHaveBeenCalledWith(expect.objectContaining({ source: 'PROMPT' }));
-
-    // the default stays CAMERA so the receipt flow is untouched
-    await takeNativePhoto();
     expect(getPhoto).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'CAMERA' }));
+    await takeNativePhoto('PHOTOS');
+    expect(getPhoto).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'PHOTOS' }));
   });
 
   it('biometric availability reflects the plugin and fails closed', async () => {

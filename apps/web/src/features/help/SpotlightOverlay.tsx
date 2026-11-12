@@ -30,6 +30,15 @@ function placeCardInFrame(card: HTMLElement): void {
   card.style.right = `${Math.round(Math.max(0, viewportWidth - frame.right) + CARD_GUTTER)}px`;
 }
 
+/** an anchor that is in the page but not drawn (hidden) or takes no area cannot be pointed at: it counts as missing */
+function isDrawn(el: Element): boolean {
+  if (el.getClientRects().length === 0) return false;
+  const box = el.getBoundingClientRect();
+  if (box.width > 0 || box.height > 0) return true;
+  // a DOM without layout measures the page itself as 0 × 0: there, no area says nothing about the anchor
+  return document.documentElement.getBoundingClientRect().height === 0;
+}
+
 /**
  * Layer 3: the "try it yourself" walkthrough — dims the screen, cuts a
  * hole around the real element and explains it. Steps whose anchor is
@@ -63,7 +72,7 @@ export function SpotlightOverlay({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const look = () => {
       const el = document.querySelector(`[data-testid="${current.anchor}"]`);
-      if (el) {
+      if (el && isDrawn(el)) {
         el.scrollIntoView?.({ block: 'center' });
         const r = el.getBoundingClientRect();
         setRect({ top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 });
@@ -164,7 +173,7 @@ export function SpotlightOverlay({
         <div className="mt-3 flex items-center gap-2">
           <div className="flex flex-1 gap-1.5" data-testid="spotlight-dots">
             {tour.steps.map((s, i) => (
-              <span key={s.titleKey} className={`h-1.5 w-1.5 rounded-full ${i === step ? 'bg-accent' : 'bg-bg-2'}`} />
+              <span key={s.titleKey} className={`h-1.5 w-1.5 rounded-full ${i === step ? 'bg-accent' : 'bg-track'}`} />
             ))}
           </div>
           <button data-testid="spotlight-end" onClick={onEnd} className="m-tap border-none bg-transparent text-[12px] text-ink-4">

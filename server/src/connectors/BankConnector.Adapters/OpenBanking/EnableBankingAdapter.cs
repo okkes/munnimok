@@ -63,14 +63,18 @@ public sealed class EnableBankingAdapter : OpenBankingAdapter
     /// <summary>The bank's maximum consent, which the aspsp list states in seconds.</summary>
     internal static int? ConsentDaysOf(long? seconds) => seconds is > 0 ? (int)Math.Min(seconds.Value / 86_400, int.MaxValue) : null;
 
-    protected override async Task<(string Url, string PendingId, int ConsentDays)> StartConsentAsync(
+    /// <summary>The party refuses a consent past its own now + the bank's maximum; this absorbs a host clock that runs ahead of it.</summary>
+    private static readonly TimeSpan ClockMargin = TimeSpan.FromHours(1);
+
+    protected override async Task<(string Url, string PendingId, DateTimeOffset ExpiresAt)> StartConsentAsync(
         HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct)
     {
         var separator = institution.Id.LastIndexOf('|');
         if (separator < 0) throw ConnectorException.InvalidRequest($"{ProviderId}: '{institution.Id}' is not a name|country institution id");
-        var url = await _client.AuthUrlAsync(http, institution.Id[..separator], institution.Id[(separator + 1)..], reference, returnUrl, consentDays, ct).ConfigureAwait(false);
+        var validUntil = Time.GetUtcNow().AddDays(consentDays) - ClockMargin;
+        var url = await _client.AuthUrlAsync(http, institution.Id[..separator], institution.Id[(separator + 1)..], reference, returnUrl, validUntil, ct).ConfigureAwait(false);
         // no id at the aggregator yet: the consent is born when the bank comes back
-        return (url, reference, consentDays);
+        return (url, reference, validUntil);
     }
 
     protected override async Task<(string ConsentId, IReadOnlyList<string> AccountIds)> CompleteConsentAsync(

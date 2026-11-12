@@ -1,8 +1,9 @@
 # @munni/native — the Capacitor shell
 
-Real installed Android/iOS apps around the one web codebase
-(`docs/native-apps-design.md`). The built `apps/web/dist` bundle ships
-INSIDE the binary; WebView storage is app-scoped and never evicted.
+Real installed Android/iOS apps around the one web codebase. The built
+`apps/web/dist` bundle ships INSIDE the binary; WebView storage is
+app-scoped and never evicted. From nothing to the stores — accounts,
+signing, push, builds — is [docs/native-setup.md](../../docs/native-setup.md).
 
 ## Build locally
 

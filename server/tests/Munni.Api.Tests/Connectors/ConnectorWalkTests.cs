@@ -79,7 +79,7 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
 
         // the session is active again, as after any finished sync
         var sessionId = accepted["sessionId"]!.GetValue<string>();
-        Assert.Equal("active", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
+        Assert.Equal("active", await factory.SessionStateAsync(sessionId, "active"));
     }
 
     /// <summary>
@@ -104,22 +104,7 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
         // the accounts landed; a row an earlier pass mirrored as reserved, which this bank no longer reports
         var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
         var reference = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id && !a.AccountRef.StartsWith("CONN:")));
-        var reservedId = ImportIds.TransactionId(reference.AccountRef, "pending:WALK-1");
-        using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var feed = (await db.Spaces.FindAsync(reference.FeedSpaceId))!;
-            var fields = new Dictionary<string, JsonElement>
-            {
-                ["accountId"] = JsonSerializer.SerializeToElement(reference.AccountEntityId),
-                ["date"] = JsonSerializer.SerializeToElement("2026-10-06"),
-                ["amountCents"] = JsonSerializer.SerializeToElement(-1300),
-                ["pending"] = JsonSerializer.SerializeToElement(1),
-            };
-            await new SyncWriter(db).ApplyAsync(feed, null, [new SyncOpDto(Guid.NewGuid().ToString("N"), feed.Id, "transaction", reservedId, fields, ServerHlc.Now())]);
-            db.ConnectorPendingTxs.Add(new ConnectorPendingTx { AccountRefId = reference.Id, EntityId = reservedId });
-            await db.SaveChangesAsync();
-        }
+        var reservedId = await ReserveAsync(reference, "pending:WALK-1");
 
         await AwaitJobAsync(client, second, "succeeded");
         using var last = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{second}/collect", new { bundle });
@@ -127,6 +112,38 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
 
         Assert.True(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == reservedId).Deleted));
         Assert.Equal(0, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.EntityId == reservedId)));
+    }
+
+    /// <summary>
+    /// A job's page is gone once it was acknowledged, swept or taken over by a later job: collecting the
+    /// job again (a lost answer, a second caller handed the same job) must not read that as "nothing reserved".
+    /// </summary>
+    [Fact]
+    public async Task Collecting_a_job_whose_page_is_gone_leaves_the_reserved_rows_alone()
+    {
+        const string sub = "walker-recollect";
+        using var client = factory.ClientFor(sub);
+        var (_, bundle) = await LoginAsync(client, "conn-walk-recollect");
+
+        using var sync = await client.PostAsJsonAsync($"/connectors/{MockBank}/sync", new { connectionId = "conn-walk-recollect", bundle });
+        var first = (await sync.Content.ReadFromJsonAsync<JsonObject>())!["jobId"]!.GetValue<string>();
+        await AwaitJobAsync(client, first, "succeeded");
+        using var collect = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{first}/collect", new { bundle });
+        var second = (await collect.Content.ReadFromJsonAsync<JsonObject>())!["jobId"]!.GetValue<string>();
+        await AwaitJobAsync(client, second, "succeeded");
+        using var last = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{second}/collect", new { bundle });
+        Assert.Equal(HttpStatusCode.OK, last.StatusCode);
+
+        // a reserved row another pass mirrors after this page was acknowledged
+        var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));
+        var reference = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == user.Id && !a.AccountRef.StartsWith("CONN:")));
+        var reservedId = await ReserveAsync(reference, "pending:WALK-2");
+
+        using var again = await client.PostAsJsonAsync($"/connectors/{MockBank}/jobs/{second}/collect", new { bundle });
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+
+        Assert.False(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == reservedId).Deleted));
+        Assert.Equal(1, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.EntityId == reservedId)));
     }
 
     [Fact]
@@ -159,6 +176,26 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>A reserved row in the account's feed, tracked by the reference as a pass that mirrored it leaves it; its entity id.</summary>
+    private async Task<string> ReserveAsync(ConnectorAccountRef reference, string externalId)
+    {
+        var reservedId = ImportIds.TransactionId(reference.AccountRef, externalId);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var feed = (await db.Spaces.FindAsync(reference.FeedSpaceId))!;
+        var fields = new Dictionary<string, JsonElement>
+        {
+            ["accountId"] = JsonSerializer.SerializeToElement(reference.AccountEntityId),
+            ["date"] = JsonSerializer.SerializeToElement("2026-10-06"),
+            ["amountCents"] = JsonSerializer.SerializeToElement(-1300),
+            ["pending"] = JsonSerializer.SerializeToElement(1),
+        };
+        await new SyncWriter(db).ApplyAsync(feed, null, [new SyncOpDto(Guid.NewGuid().ToString("N"), feed.Id, "transaction", reservedId, fields, ServerHlc.Now())]);
+        db.ConnectorPendingTxs.Add(new ConnectorPendingTx { AccountRefId = reference.Id, EntityId = reservedId });
+        await db.SaveChangesAsync();
+        return reservedId;
+    }
 
     private static async Task<(string SessionId, string Bundle)> LoginAsync(HttpClient client, string connectionId)
     {

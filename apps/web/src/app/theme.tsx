@@ -71,6 +71,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
+/** whether the dark theme is showing — false outside a provider, so a bare component still renders */
+export function useDark(): boolean {
+  return useContext(ThemeContext)?.theme === 'dark';
+}
+
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider');

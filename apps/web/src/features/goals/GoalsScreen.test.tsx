@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DexieBackend } from '@/db/backend';
+import { Repo } from '@/db/repo';
+import { MunniDB } from '@/db/schema';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 async function createGoal(name: string, target: string) {
   fireEvent.click(await screen.findByTestId('goals-add'));
@@ -90,9 +95,15 @@ describe('Goals (demo identity)', () => {
     await fund('goaldetail-fund', '100', /€100[.,]00/);
     await fund('goaldetail-withdraw', '40', /€60[.,]00/);
 
-    const history = screen.getByTestId('goaldetail-history');
-    expect(history.textContent).toContain('+€100.00');
-    expect(history.textContent).toMatch(/-€40[.,]00/);
+    // the amount and the history are two reads: a history line can land a moment after the amount it belongs to
+    await waitFor(
+      () => {
+        const history = screen.getByTestId('goaldetail-history');
+        expect(history.textContent).toContain('+€100.00');
+        expect(history.textContent).toMatch(/-€40[.,]00/);
+      },
+      { timeout: 5000 },
+    );
   }, 15_000);
 
   it('allocating more than the savings balance flags the rebalance note', async () => {
@@ -175,9 +186,11 @@ describe('Goals (demo identity)', () => {
     const card = await createGoal('Car', '1000');
     fireEvent.click(card);
     await screen.findByTestId('goaldetail-hero');
-    // not reached yet: no cash-out door
-    expect(screen.queryByTestId('goaldetail-cashout')).toBeNull();
+    // user 2026-11-12: cash out whenever you want — a quiet door until the goal is reached, the card once it is
+    expect(screen.getByTestId('goaldetail-cashout')).toBeTruthy();
+    expect(screen.queryByTestId('goaldetail-reached')).toBeNull();
     await fund('goaldetail-fund', '1000', /€1[.,]000[.,]00/);
+    expect(screen.getByTestId('goaldetail-reached')).toBeTruthy();
 
     // €900 left the savings account to pay for the car
     const { MunniDB } = await import('@/db/schema');
@@ -196,6 +209,16 @@ describe('Goals (demo identity)', () => {
       catId: 'savingWithdraw',
       needsReview: 0,
     });
+    // …and paid the dealer from the checking account
+    await repo.upsert('transaction', 'demo_space', 'car-purchase', {
+      accountId: 'demo_main',
+      date: localToday(),
+      amountCents: -90_000,
+      currency: 'EUR',
+      merchant: 'Autobedrijf Jansen',
+      catId: 'groceries',
+      needsReview: 0,
+    });
 
     fireEvent.click(await screen.findByTestId('goaldetail-cashout'));
     await screen.findByTestId('screen-goal-cashout');
@@ -204,6 +227,12 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('goalcashout-pick-car-withdrawal', {}, { timeout: 5000 }));
     expect(screen.getByTestId('goalcashout-fig-selected').textContent).toMatch(/€900[.,]00/);
     expect(screen.getByTestId('goalcashout-fig-back').textContent).toMatch(/€100[.,]00/);
+    expect(screen.queryByTestId('goalcashout-over')).toBeNull();
+    // what it bought is the second, optional pick: spending only — the move out of savings is not on offer there
+    expect(screen.queryByTestId('goalcashout-buy-car-withdrawal')).toBeNull();
+    expect(screen.queryByTestId('goalcashout-bought-total')).toBeNull();
+    fireEvent.click(await screen.findByTestId('goalcashout-buy-car-purchase'));
+    expect(screen.getByTestId('goalcashout-bought-total').textContent).toMatch(/€900[.,]00/);
     fireEvent.click(confirm);
 
     // the goal page says what paid for it and where the rest went
@@ -211,6 +240,7 @@ describe('Goals (demo identity)', () => {
     expect(screen.getByTestId('goaldetail-cashedout-sum').textContent).toMatch(/€900[.,]00/);
     expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€100[.,]00/);
     expect(done.textContent).toContain('Naar betaalrekening');
+    expect(screen.getByTestId('goaldetail-bought-txs').textContent).toContain('Autobedrijf Jansen');
     expect(screen.queryByTestId('goaldetail-fund')).toBeNull();
     const activity = (await db.activities.toArray()).map((row) => row.kind);
     expect(activity).toContain('goalCashOut');
@@ -239,6 +269,52 @@ describe('Goals (demo identity)', () => {
     db.close();
   }, 30_000);
 
+  it('user 2026-11-12: a goal cashes out before it is reached; more than it held says what that does to the unallocated savings; what it bought is named afterwards', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    const card = await createGoal('Bike', '1000');
+    fireEvent.click(card);
+    await screen.findByTestId('goaldetail-hero');
+    await fund('goaldetail-fund', '500', /€500[.,]00/);
+
+    const { localToday } = await import('@/application/recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    const row = { date: localToday(), amountCents: -90_000, currency: 'EUR', needsReview: 0 as const };
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'bike-withdrawal', { ...row, accountId: 'demo_save', merchant: 'Naar betaalrekening', catId: 'savingWithdraw' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'bike-purchase', { ...row, accountId: 'demo_main', merchant: 'Fietsenwinkel Zuid', catId: 'groceries' });
+
+    fireEvent.click(screen.getByTestId('goaldetail-cashout'));
+    await screen.findByTestId('screen-goal-cashout');
+    fireEvent.click(await screen.findByTestId('goalcashout-pick-bike-withdrawal', {}, { timeout: 5000 }));
+    // €400 more than the goal held: it comes out of the unallocated savings, which the demo's €8,150 cover
+    const over = screen.getByTestId('goalcashout-over');
+    expect(over.textContent).toMatch(/€400[.,]00/);
+    expect(over.textContent).toMatch(/unallocated savings/);
+    expect(over.getAttribute('data-negative')).toBe('false');
+    fireEvent.click(screen.getByTestId('goalcashout-confirm'));
+
+    await screen.findByTestId('goaldetail-cashedout', {}, { timeout: 5000 });
+    expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€400[.,]00.*unallocated savings/);
+    // nothing named yet — the goal page offers to; the screen opens on that pick alone
+    expect(screen.queryByTestId('goaldetail-bought-txs')).toBeNull();
+    fireEvent.click(screen.getByTestId('goaldetail-name-bought'));
+    await waitFor(() => expect(screen.getByTestId('screen-goal-cashout').getAttribute('data-mode')).toBe('bought'));
+    expect(screen.queryByTestId('goalcashout-list')).toBeNull();
+    // the search narrows the list; a pick made before stays
+    fireEvent.change(screen.getByTestId('goalcashout-search'), { target: { value: 'no such shop' } });
+    await screen.findByTestId('goalcashout-bought-empty');
+    fireEvent.change(screen.getByTestId('goalcashout-search'), { target: { value: 'Fietsenwinkel' } });
+    fireEvent.click(await screen.findByTestId('goalcashout-buy-bike-purchase'));
+    fireEvent.click(screen.getByTestId('goalcashout-confirm'));
+    const bought = await screen.findByTestId('goaldetail-bought-txs', {}, { timeout: 5000 });
+    expect(bought.textContent).toContain('Fietsenwinkel Zuid');
+    await waitFor(async () => expect((await db.activities.toArray()).map((a) => a.kind)).toContain('goalPurchase'));
+    const stored = await db.goals.toArray();
+    expect(stored[0].cashOut).toMatchObject({ txIds: ['bike-withdrawal'], purchaseTxIds: ['bike-purchase'] });
+    db.close();
+  }, 30_000);
+
   it('the home block surfaces progress; the settings row reaches goals', async () => {
     renderApp('/goals');
     await screen.findByTestId('screen-goals');
@@ -257,4 +333,80 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-goals-row'));
     await screen.findByTestId('screen-goals');
   }, 15_000);
+});
+
+describe('Goals, west of Greenwich', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('a cashed-out goal names the day it was cashed out, not the day before', async () => {
+    const first = renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    // the boot chain settles before the seed opens its own connection
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-cashout'), { trackOutbox: false });
+    await repo.upsert('goal', DEMO_SPACE_ID, 'goal_car', { name: 'Car', targetCents: 100_000, allocatedCents: 0, archived: 1, cashOut: { date: '2026-10-14', txIds: [] } });
+    db.close();
+    first.unmount();
+
+    // a day string parsed as UTC midnight is the evening before here
+    vi.stubEnv('TZ', 'America/New_York');
+    renderApp('/goals');
+    const card = await screen.findByTestId('goal-card-goal_car', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('Cashed out on 14 Oct 2026');
+    fireEvent.click(card);
+    expect((await screen.findByTestId('goaldetail-pace')).textContent).toContain('Cashed out on 14 Oct 2026');
+  }, 20_000);
+});
+
+describe('Goals, signed in', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('a deadline and a picture taken off a goal reach the server as null', async () => {
+    // what the server is sent for the goal, as the JSON it arrives in
+    const sent: Record<string, unknown>[] = [];
+    renderAppAsUser('/goals', {
+      api: {
+        'POST /sync/s-user/push': (body) => {
+          for (const op of (body as { ops: { entity: string; fields: Record<string, unknown> }[] }).ops) if (op.entity === 'goal') sent.push(op.fields);
+          return { lastSeq: 0 };
+        },
+      },
+    });
+    await screen.findByTestId('screen-goals');
+    fireEvent.click(await screen.findByTestId('goals-add'));
+    fireEvent.click(await screen.findByTestId('goalform-pic-bike'));
+    fireEvent.change(screen.getByTestId('goalform-name'), { target: { value: 'Bike' } });
+    fireEvent.change(screen.getByTestId('goalform-target'), { target: { value: '900' } });
+    fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: '2031-06-01' } });
+    fireEvent.click(screen.getByTestId('goalform-save'));
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ picture: '/goals/bike.jpg', targetDate: '2031-06-01' }));
+
+    const card = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="goal-card-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('goaldetail-edit'));
+    await waitFor(() => expect((screen.getByTestId('goalform-date') as HTMLInputElement).value).toBe('2031-06-01'));
+    fireEvent.click(screen.getByTestId('goalform-pic-none'));
+    fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('goalform-save'));
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ picture: null, targetDate: null }));
+  }, 20_000);
 });

@@ -91,7 +91,7 @@ describe('#389 iconConflict / #390 copyableUnits', () => {
         { id: 'c', icon: 'silverware-fork-knife' },
       ],
     } as never;
-    const faces = copyFaces(group, new Set(['dumbbell', 'silverware-fork-knife']));
+    const faces = copyFaces([group], () => ['dumbbell', 'silverware-fork-knife']);
     expect(faces.get('a')).toBe('coffee-outline');
     expect(faces.get('b')).toBe('tennis');
     expect(faces.get('c')).toBe('cart-outline');
@@ -107,7 +107,8 @@ describe('#389 iconConflict / #390 copyableUnits', () => {
     const swim = await createSubCategory(store, repo, 'other', { parentId: 'sport', name: 'Swim', icon: 'dumbbell' });
     const groups = copyGroups('here', spaces, await store.allRows('category'));
     const picked = new Set([mainId, court, swim]);
-    for (const group of groups) await copyGroupToSpace(store, repo, 'here', group, picked, copyFaces(group, new Set(group.intoId === 'sport' ? ['dumbbell'] : [])));
+    const faces = copyFaces(groups, (mainId) => (mainId === 'sport' ? ['dumbbell'] : []));
+    for (const group of groups) await copyGroupToSpace(repo, 'here', group, picked, faces);
 
     const here = (await store.allRows('category')).filter((r) => r.spaceId === 'here');
     const main = here.find((r) => r.isParent === 1)!;
@@ -115,5 +116,45 @@ describe('#389 iconConflict / #390 copyableUnits', () => {
     expect(here.filter((r) => r.parentId === main.id).map((r) => r.name).sort()).toEqual(['Court', 'Other']);
     expect(here.find((r) => r.name === 'Swim')).toMatchObject({ parentId: 'sport', icon: 'silverware-fork-knife' });
     db.close();
+  });
+
+  const three = [
+    { id: 'here', name: 'Holiday', kind: 'personal', deleted: 0 },
+    { id: 'fam', name: 'Family', kind: 'shared', deleted: 0 },
+    { id: 'own', name: 'Personal', kind: 'personal', deleted: 0 },
+  ] as never[];
+
+  it('a category two other spaces both hold is offered once — from the first space by name — and counted once', () => {
+    const rows = [
+      // the later space's rows come first: the offer follows the spaces' names, not the order the rows are stored in
+      { id: 'o-main', spaceId: 'own', isParent: 1, name: 'hobby', icon: 'palette', deleted: 0 },
+      { id: 'o-paint', spaceId: 'own', isParent: 0, parentId: 'o-main', name: 'Paint', icon: 'brush', deleted: 0 },
+      { id: 'o-wood', spaceId: 'own', isParent: 0, parentId: 'o-main', name: 'Wood', icon: 'saw-blade', deleted: 0 },
+      { id: 'o-padel', spaceId: 'own', isParent: 0, parentId: 'sport', name: 'padel', icon: 'tennis-ball', deleted: 0 },
+      { id: 'o-squash', spaceId: 'own', isParent: 0, parentId: 'sport', name: 'Squash', icon: 'tennis-ball', deleted: 0 },
+      { id: 'f-main', spaceId: 'fam', isParent: 1, name: 'Hobby', icon: 'palette', deleted: 0 },
+      { id: 'f-paint', spaceId: 'fam', isParent: 0, parentId: 'f-main', name: 'Paint', icon: 'brush', deleted: 0 },
+      { id: 'f-padel', spaceId: 'fam', isParent: 0, parentId: 'sport', name: 'Padel', icon: 'tennis-ball', deleted: 0 },
+    ] as never[];
+    const groups = copyGroups('here', three, rows);
+    expect(groups.map((g) => `${g.space.name}: ${g.main?.id ?? `into ${g.intoId}`} [${g.subs.map((s) => s.id).join()}]`)).toEqual([
+      'Family: f-main [f-paint]',
+      'Family: into sport [f-padel]',
+      'Personal: into sport [o-squash]',
+    ]);
+    expect(copyCount(groups)).toBe(3);
+  });
+
+  it('faces are handed out across the groups in order: two groups joining one main never share one, and a new main\'s Other is a sibling too', () => {
+    const groups = [
+      { space: three[1], intoId: 'sport', subs: [{ id: 'a', icon: 'tennis-ball' }] },
+      { space: three[2], intoId: 'sport', subs: [{ id: 'b', icon: 'tennis-ball' }] },
+      { space: three[1], main: { id: 'm', icon: 'palette' }, other: { id: 'm-other', icon: 'palette' }, subs: [{ id: 'c', icon: 'palette' }, { id: 'd', icon: 'brush' }] },
+    ] as never[];
+    const faces = copyFaces(groups, (mainId) => (mainId === 'sport' ? ['dumbbell'] : []));
+    expect(faces.get('a')).toBe('tennis-ball');
+    expect(faces.get('b')).toBe('silverware-fork-knife');
+    expect(faces.get('c')).toBe('silverware-fork-knife');
+    expect(faces.get('d')).toBe('brush');
   });
 });

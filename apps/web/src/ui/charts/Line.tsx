@@ -1,8 +1,10 @@
+import { useUserInk } from '@/ui/userInk';
+
 /** Minimal theme-aware SVG line chart (net worth). Fluid width. */
 export function Line({
   values,
   labels,
-  color = 'var(--m-accent)',
+  color: picked = 'var(--m-accent)',
   height = 140,
   testId,
 }: Readonly<{
@@ -13,6 +15,7 @@ export function Line({
   height?: number;
   testId?: string;
 }>) {
+  const color = useUserInk()(picked);
   const n = values.length;
   if (n === 0) return null;
   const width = 320;

@@ -11,6 +11,7 @@ import { monotonePath, monotonePointAt } from './monotone';
 import type { ChartPt } from './monotone';
 import { pointerFraction, scrubKeyTarget } from './scrub';
 import { useGlide } from './useGlide';
+import { useUserInk } from '@/ui/userInk';
 
 export interface AreaPoint {
   /** yyyy-mm-dd */
@@ -159,7 +160,7 @@ function Markers({
 export function AreaLine({
   points,
   projection = [],
-  color = 'var(--m-accent)',
+  color: picked = 'var(--m-accent)',
   height = 160,
   labels = [],
   markers = [],
@@ -191,6 +192,7 @@ export function AreaLine({
   ariaLabel?: string;
   testId?: string;
 }>) {
+  const color = useUserInk()(picked);
   const [scrub, setScrub] = useState<number | null>(null);
   // a landing finger glides the bead in from Today (#500); a drag follows directly
   const [dragging, setDragging] = useState(false);

@@ -6,8 +6,10 @@ import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactio
 import { localToday, useRecurrings } from '@/application/recurring';
 import { periodHistory } from '@/domain/periods';
 import { minIso, netWorthSeries, trendLabels } from '@/domain/trends';
+import type { InSpaceCurrency } from '@/domain/trends';
 import { HelpButton } from '@/features/help/HelpButton';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { convertCents } from '@/lib/rates';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Line } from '@/ui/charts/Line';
 import { Icon } from '@/ui/Icon';
@@ -43,14 +45,20 @@ export function TrendsScreen() {
   const periods = useMemo(() => periodHistory(periodType, periodDay, PERIOD_COUNT), [periodType, periodDay]);
   const labels = useMemo(() => trendLabels(periods, periodType, periodDay, LOCALES[lang]), [periods, periodType, periodDay, lang]);
 
+  const { fmt: fmtLens, fmtSensitive, display } = useDisplayMoney();
+  // the rate Home's sums use: the latest fixing, a manual pair without a server; as recorded while neither is known
+  const inSpace = useMemo<InSpaceCurrency>(() => {
+    const day = display?.cache.days.latest;
+    return (cents, from) => (from && from !== currency ? (convertCents(cents, from, currency, day, display?.manual) ?? cents) : cents);
+  }, [display, currency]);
+
   const worth = useMemo(() => {
     if (view !== 'networth') return [];
     // a running period samples "now", finished ones their end
     const dates = periods.map((p) => minIso(p.end, today));
-    return netWorthSeries(accounts ?? [], txs ?? [], dates);
-  }, [view, accounts, txs, periods, today]);
+    return netWorthSeries(accounts ?? [], txs ?? [], dates, inSpace);
+  }, [view, accounts, txs, periods, today, inSpace]);
 
-  const { fmt: fmtLens, fmtSensitive } = useDisplayMoney();
   const fmt = (cents: number, opts?: { sign?: boolean }) => fmtLens(cents, currency, opts);
   // #530: cash flow and net worth are balances day by day — every figure they print hides with the sensitive ones
   const fmtBalance = (cents: number, opts?: { sign?: boolean }) => fmtSensitive(cents, currency, opts);
@@ -101,6 +109,7 @@ export function TrendsScreen() {
             catId={catId}
             onCatId={setCatId}
             fmt={fmt}
+            inSpace={inSpace}
           />
         )}
 
@@ -115,6 +124,7 @@ export function TrendsScreen() {
             recurrings={recurrings ?? NONE}
             today={today}
             fmt={fmtBalance}
+            inSpace={inSpace}
           />
         )}
 

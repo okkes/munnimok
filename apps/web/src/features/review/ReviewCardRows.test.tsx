@@ -148,9 +148,6 @@ describe('the review card: prepared suggestions and every row standing', () => {
     expect(screen.getByTestId('counter-plan-loan-b').textContent).toContain('63.24');
     expect(screen.queryByTestId('counter-plan-fits-loan-a')).toBeNull();
     fireEvent.click(screen.getByTestId('counter-pick-loan-a'));
-    // a manual loan forks: the leg is created on confirm
-    const create = await screen.findByTestId('counter-fork-create', {}, { timeout: 3000 }).catch(() => null);
-    if (create) fireEvent.click(create);
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('ING Loan 1'));
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(async () => expect(await db.transactions.get('repay-1')).toMatchObject({ linkedAccountId: 'loan-a', needsReview: 0 }), { timeout: 8000 });
@@ -214,5 +211,22 @@ describe('the review card: prepared suggestions and every row standing', () => {
     await openReview('PM *Z2U HongKong');
     fireEvent.click(screen.getByTestId('review-search-web'));
     expect(open).toHaveBeenCalledWith('https://www.google.com/search?q=PM%20*Z2U%20HongKong', '_blank', 'noopener');
+  }, 30_000);
+
+  it('#537: a split part’s event picker lists an archived event too, labelled — and files the part under it', async () => {
+    await land(async (repo) => {
+      await repo.upsert('event', DEMO_SPACE_ID, 'ev-old', { name: 'Hotel Les Sorbiers', archived: 1 });
+      await repo.upsert('transaction', DEMO_SPACE_ID, 'split-1', {
+        ...flagged, date: '2026-01-01', amountCents: -1000, merchant: 'Gedeelde lunch', catId: 'restaurants',
+        splits: [{ id: 'p1', catId: 'restaurants', amountCents: 600 }, { id: 'p2', catId: 'groceries', amountCents: 400 }],
+      });
+    });
+    await openReview('Gedeelde lunch');
+    await screen.findByTestId('review-part-deck');
+    fireEvent.click(screen.getByTestId('deck-event-0'));
+    await screen.findByTestId('deck-event-list');
+    await screen.findByTestId('deck-event-ev-old-archived');
+    fireEvent.click(screen.getByTestId('deck-event-ev-old'));
+    await waitFor(() => expect(screen.getByTestId('deck-event-0').textContent).toContain('Hotel Les Sorbiers'));
   }, 30_000);
 });

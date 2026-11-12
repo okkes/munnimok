@@ -16,6 +16,7 @@ import {
   fillInOrder,
   goalTargetCents,
   isEventPast,
+  isLongCadence,
   mirroredSubjectId,
   overlapsOf,
   periodAt,
@@ -36,6 +37,7 @@ import {
   unplannedSources,
   reservationConflicts,
   sameSubjects,
+  shortfallCents,
   spreadTargetCents,
   subjectFamily,
   subjectStatus,
@@ -43,6 +45,7 @@ import {
   canSkipPeriod,
 } from './planning';
 import type { PeriodLedger, SliceOwners, SubjectContext, SubjectView } from './planning';
+import { eventTotals } from './events';
 import type { TxSliceView } from './txSlices';
 
 const space = { periodType: 'month' as const, periodDay: 1 };
@@ -182,6 +185,21 @@ describe('realization: one owner per slice (#557)', () => {
     expect(sliceOwner(slice({ effType: 'income' }), owners)).toBeNull();
   });
 
+  it('#455: what a goal bought answers to the goal — no category, no event counts it; the move out of savings stays a move', () => {
+    const withGoal: SliceOwners = { ...owners, goalByTx: new Map([['car', 'goal1'], ['out', 'goal1']]) };
+    expect(sliceOwner(slice({ eventId: 'ev' }), withGoal, 'car')).toEqual({ kind: 'goal', id: 'goal1' });
+    expect(sliceOwner(slice({ recurringId: 'rec' }), withGoal, 'car')).toEqual({ kind: 'recurring', id: 'rec' });
+    expect(sliceOwner(slice({ linkedAccountId: 'savings', effType: 'transfer' }), withGoal, 'out')).toBeNull();
+    expect(sliceOwner(slice({}), withGoal, 'other')).toEqual({ kind: 'category', catId: 'sub_food_a' });
+
+    const ledger = ledgerOf(
+      [tx({ id: 'car', catId: 'sub_food_a', amountCents: -18_000_00 }), tx({ id: 'refund', catId: 'sub_food_a', amountCents: 500_00 }), tx({ id: 'lunch', catId: 'sub_food_a', amountCents: -12_00 })],
+      { goalByTx: new Map([['car', 'goal1'], ['refund', 'goal1']]) },
+    );
+    expect(ledger.byGoal.get('goal1')).toBe(17_500_00);
+    expect(familySpentCents(new Set(['sub_food_a']), ledger)).toBe(12_00);
+  });
+
   it('the ledger sums each owner once: refunds take off a category, an event is what it cost net of what came in, never below zero', () => {
     const txs = [
       tx({ id: '1', catId: 'sub_food_a', amountCents: -1200 }),
@@ -203,6 +221,17 @@ describe('realization: one owner per slice (#557)', () => {
     expect(ledger.byEvent.get('ev2')).toBe(0);
     // what an event cost before a date, for its target
     expect(eventNetBefore([tx({ id: 'a', amountCents: -700, eventId: 'ev', date: '2026-09-20' }), ...txs], 'ev', period.start, { ...NO_OWNERS, eventIds: new Set(['ev']) })).toBe(700);
+  });
+
+  it('what was paid back and settled is no event spending: the plan reads an event as the event’s own screen does (#493)', () => {
+    const eventOwners = { ...NO_OWNERS, eventIds: new Set(['ev']) };
+    // a €100 dinner on the trip, €60 of it settled by a friend's transfer that is no part of the event
+    const dinner = tx({ id: 'd', amountCents: -100_00, catId: 'sub_food_a', eventId: 'ev', cats: [{ catId: 'sub_food_a', amountCents: 40_00 }, { catId: 'reimbursed', amountCents: 60_00 }] });
+    const settledEarlier = tx({ id: 'b', date: '2026-09-20', amountCents: -50_00, catId: 'sub_food_a', eventId: 'ev', cats: [{ catId: 'reimbursed', amountCents: 50_00 }] });
+    expect(sliceOwner(slice({ eventId: 'ev', catId: 'reimbursed' }), owners)).toBeNull();
+    expect(periodLedger([dinner], period, eventOwners).byEvent.get('ev')).toBe(40_00);
+    expect(eventNetBefore([dinner, settledEarlier], 'ev', period.start, eventOwners)).toBe(0);
+    expect(eventTotals([dinner], 'ev').netCents).toBe(40_00);
   });
 });
 
@@ -457,18 +486,44 @@ describe('the subject view', () => {
     expect(canSkipPeriod(subjectView(subject({ catIds: ['sub_food_a'], targetCents: 50_00 }), ctx()))).toBe(false);
   });
 
-  it('a recurring subject carries what earlier periods set aside; a goal counts its contributions; a vanished source is orphaned', () => {
+  it('#557: what rolled over reads as funding on top of the period’s share; a goal counts its contributions; a vanished source is orphaned', () => {
     const rec = { id: 'rec', name: 'Insurance', kind: 'fixed', amountCents: 1200_00, every: 'year', dueDay: 15, dueMonth: 2, active: 1, ...envelope } as RecurringRow;
     const recurring = subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: 0 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) }));
-    // February is five periods away from October, so (1200 − 600) / 5
-    expect(recurring.targetCents).toBe(120_00);
-    expect(recurring.carriedCents).toBe(600_00);
+    // February is five periods away from October: (1200 − 600) / 5 is this period's share, on top of the 600 it holds
+    expect(recurring).toMatchObject({ carriedCents: 600_00, fundedCents: 600_00, targetCents: 720_00, status: 'underfunded' });
+    expect(shortfallCents(recurring)).toBe(120_00);
+    // rolled-over money taken away again: the row goes below zero, the subject holds what is left — never less than nothing
+    const lighter = subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: -500_00 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) }));
+    expect(lighter.fundedCents).toBe(100_00);
+    expect(subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: -900_00 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) })).fundedCents).toBe(0);
+    // a yearly bill is long-cadence in a monthly plan, a monthly one is not; in a weekly plan the monthly one is
+    expect(isLongCadence(rec, period)).toBe(true);
+    expect(isLongCadence({ every: 'month' }, period)).toBe(false);
+    expect(isLongCadence({ every: 'month', everyN: 3 }, period)).toBe(true);
+    expect(isLongCadence({ every: 'month' }, { start: '2026-10-05', end: '2026-10-11' })).toBe(true);
+    expect(isLongCadence({ every: 'week' }, { start: '2026-10-05', end: '2026-10-11' })).toBe(false);
     const goal = { id: 'g', name: 'Car', targetCents: 1000_00, allocatedCents: 0, targetDate: '2026-12-31', ...envelope } as GoalRow;
     const contributions = [{ id: 'c1', goalId: 'g', amountCents: 100_00, date: '2026-10-05', ...envelope }] as GoalContributionRow[];
     const goalView = subjectView(subject({ segment: 'goals', sourceId: 'g', fundedCents: 100_00 }), ctx({ goalsById: new Map([['g', goal]]), contributions }));
     expect(goalView.realizedCents).toBe(100_00);
     expect(goalView.targetCents).toBe(Math.ceil(1000_00 / 3));
     expect(subjectView(subject({ segment: 'budgets', sourceId: 'gone' }), ctx()).orphaned).toBe(true);
+  });
+
+  it('a goal’s target is what the period needed when it began: the money the period itself puts in does not shrink it (#517)', () => {
+    // €1,200 by January, €200 saved before October: October, November, December, January take €250 each
+    const goalWith = (given: number) => ({ id: 'g', name: 'Car', targetCents: 1200_00, allocatedCents: 200_00 + given, targetDate: '2027-01-15', ...envelope }) as GoalRow;
+    const contributionsWith = (given: number) =>
+      [
+        { id: 'c0', goalId: 'g', amountCents: 200_00, date: '2026-09-10', ...envelope },
+        { id: 'c1', goalId: 'g', amountCents: given, date: '2026-10-10', ...envelope },
+      ] as GoalContributionRow[];
+    const viewWith = (given: number, fundedCents: number) =>
+      subjectView(subject({ segment: 'goals', sourceId: 'g', fundedCents }), ctx({ goalsById: new Map([['g', goalWith(given)]]), contributions: contributionsWith(given) }));
+    // exactly what was planned went in: funded, not "past target"
+    expect(viewWith(250_00, 250_00)).toMatchObject({ targetCents: 250_00, realizedCents: 250_00, status: 'funded' });
+    // more than the period needed, and covered: that is past the target
+    expect(viewWith(400_00, 400_00)).toMatchObject({ targetCents: 250_00, realizedCents: 400_00, status: 'overTarget' });
   });
 });
 
@@ -479,6 +534,7 @@ describe('ahead, cover, fill', () => {
     fundedCents: 0,
     realizedCents: 0,
     carriedCents: 0,
+    settledAhead: false,
     cycles: 1,
     status: 'neutral',
     orphaned: false,

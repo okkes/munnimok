@@ -45,7 +45,7 @@ export function BarChart({ values, labels, selected, onSelect, height = 90, acce
               className="m-bar-in w-full origin-bottom rounded-t-[4px]"
               style={{
                 height: barHeight,
-                background: active ? accent : 'var(--m-line)',
+                background: active ? accent : 'var(--m-bar-idle)',
                 opacity: active ? 1 : 0.9,
                 animationDelay: `${i * 45}ms`,
               }}

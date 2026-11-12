@@ -7,9 +7,11 @@ import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useGoalOps, useGoals } from '@/application/goals';
+import { parseLocalDate } from '@/application/planningModel';
 import { localToday } from '@/application/recurring';
 import { goalOverview, goalProgress, paceCentsPerPeriod, periodUnitKey, periodsLeft } from '@/domain/goals';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import type { GoalRow, SpaceRow } from '@/db/types';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -37,6 +39,121 @@ function paceLineOf(
   return state.periods > 1
     ? t('goals.paceLong', { amount: format.money(state.pace), unit, n: state.periods, date })
     : t('goals.paceLongOnce', { amount: format.money(state.pace), unit, date });
+}
+
+/** the rows a cash-out names — what paid for the goal, what it bought — each opening its transaction; nothing without rows */
+function CashOutRows({ rows, title, testId, onOpen }: Readonly<{ rows: readonly SpaceTx[]; title?: string; testId: string; onOpen: (txId: string) => void }>) {
+  if (rows.length === 0) return null;
+  return (
+    <>
+      {title && <div className="m-cap mt-3">{title}</div>}
+      <div className={`${title ? 'mt-1' : 'mt-2'} divide-y divide-line-2 border-t border-line-2`} data-testid={testId}>
+        {rows.map((tx) => (
+          <TxRow key={tx.id} tx={tx} showDate onClick={() => onOpen(tx.id)} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** what an open goal offers: fund and withdraw, and cashing out — a card once it is reached, a quieter row before */
+function GoalActions({ reached, onCashOut, onFund, onWithdraw }: Readonly<{ reached: boolean; onCashOut: () => void; onFund: () => void; onWithdraw: () => void }>) {
+  const { t } = useLang();
+  return (
+    <>
+      {reached && (
+        <div className="mt-3 flex flex-col gap-2 rounded-card bg-accent-soft p-4" data-testid="goaldetail-reached">
+          <p className="text-[13px] leading-snug text-ink-2">{t('goals.cashOutHint')}</p>
+          <Button data-testid="goaldetail-cashout" onClick={onCashOut}>
+            {t('goals.cashOut')}
+          </Button>
+        </div>
+      )}
+      <div className="mt-3 flex gap-2">
+        <Button className="flex-1" data-testid="goaldetail-fund" onClick={onFund}>
+          {t('goals.fund')}
+        </Button>
+        <Button variant="outline" className="flex-1" data-testid="goaldetail-withdraw" onClick={onWithdraw}>
+          {t('goals.withdraw')}
+        </Button>
+      </div>
+      {/* user 2026-11-12: "cash out whenever you want" — a quieter door until the goal is reached */}
+      {!reached && (
+        <button
+          type="button"
+          data-testid="goaldetail-cashout"
+          onClick={onCashOut}
+          className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <Icon name="flag-checkered" size={18} color="var(--m-accent-deep)" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-medium text-ink">{t('goals.cashOut')}</span>
+            <span className="block text-[12px] leading-snug text-ink-3">{t('goals.cashOutEarlyHint')}</span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      )}
+    </>
+  );
+}
+
+/** #455: the goal was spent — what paid for it, what it bought, where the rest went, and the way back */
+function CashedOutCard({
+  goal,
+  cashOut,
+  txs,
+  money,
+  balance,
+  canEdit,
+  onNameBought,
+  onUndo,
+  onOpenTx,
+}: Readonly<{
+  goal: GoalRow;
+  cashOut: NonNullable<GoalRow['cashOut']>;
+  txs: readonly SpaceTx[];
+  money: (cents: number) => string;
+  balance: (cents: number) => string;
+  canEdit: boolean;
+  onNameBought: () => void;
+  onUndo: () => void;
+  onOpenTx: (txId: string) => void;
+}>) {
+  const { t } = useLang();
+  // the rows still visible to the space, and the money they took out of savings
+  const live = txs.filter((tx) => tx.deleted === 0);
+  const cashedTxs = live.filter((tx) => cashOut.txIds.includes(tx.id));
+  const boughtTxs = live.filter((tx) => cashOut.purchaseTxIds?.includes(tx.id));
+  const cashedCents = cashedTxs.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
+  const leftover = goal.allocatedCents - cashedCents;
+  return (
+    <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="goaldetail-cashedout">
+      <div className="flex items-center gap-2">
+        <Icon name="flag-checkered" size={18} color="var(--m-accent-deep)" />
+        <span className="text-[14px] font-semibold text-ink">{t('goals.cashedOutTitle')}</span>
+      </div>
+      <p className="mt-1 text-[13px] leading-snug text-ink-2" data-testid="goaldetail-cashedout-sum">
+        {t('goals.cashedOutBody', { amount: money(cashedCents) })}
+      </p>
+      {leftover !== 0 && (
+        <p className="mt-1 text-[12px] leading-snug text-ink-3" data-testid="goaldetail-cashedout-rest">
+          {leftover > 0 ? t('goals.cashedOutBack', { amount: balance(leftover) }) : t('goals.cashedOutBeyond', { amount: balance(-leftover) })}
+        </p>
+      )}
+      <CashOutRows rows={cashedTxs} testId="goaldetail-cashedout-txs" onOpen={onOpenTx} />
+      <CashOutRows rows={boughtTxs} title={t('goals.boughtPick')} testId="goaldetail-bought-txs" onOpen={onOpenTx} />
+      {canEdit && (
+        <div className="mt-3 flex flex-col gap-2">
+          <Button variant="outline" className="w-full" data-testid="goaldetail-name-bought" onClick={onNameBought}>
+            {t(boughtTxs.length > 0 ? 'goals.boughtChange' : 'goals.boughtName')}
+          </Button>
+          <Button variant="outline" className="w-full" data-testid="goaldetail-undo-cashout" onClick={onUndo}>
+            {t('goals.cashOutUndo')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** One goal: progress, pace, and the funding audit trail. */
@@ -71,7 +188,7 @@ export function GoalDetailScreen() {
   useEffect(() => {
     if (goals && !goal) void navigate({ to: '/goals', replace: true });
   }, [goals, goal, navigate]);
-  const { fmt, fmtSensitive } = useDisplayMoney();
+  const { fmt, fmtSensitive, hideSensitive } = useDisplayMoney();
   if (!goal) return <div className="h-full" data-testid="screen-goal-detail" />;
 
   const currency = space?.currency ?? 'EUR';
@@ -102,13 +219,12 @@ export function GoalDetailScreen() {
     setAttempted(false);
   };
 
-  const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
+  const fmtDate = (iso: string) => parseLocalDate(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   // #455: what paid for the goal — the rows still visible to the space, the money they took out of savings
   const cashOut = goal.cashOut ?? null;
-  const cashedTxs = cashOut ? (txs ?? []).filter((tx) => tx.deleted === 0 && cashOut.txIds.includes(tx.id)) : [];
-  const cashedCents = cashedTxs.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
-  const leftover = goal.allocatedCents - cashedCents;
+  const openCashOut = () => void navigate({ to: '/goals/$goalId/cashout', params: { goalId: goal.id } });
+  const openTx = (txId: string) => void navigate({ to: '/transactions/$txId', params: { txId } });
 
   // #449 (user): the amount still to add, on the page itself - the bar alone said nothing
   const toGoLine = t('goals.toGo', { amount: balance(goal.targetCents - goal.allocatedCents) });
@@ -144,8 +260,9 @@ export function GoalDetailScreen() {
           }
           number={<span data-testid="goaldetail-allocated">{balance(goal.allocatedCents)}</span>}
           sub={t('budgets.of', { amount: money(goal.targetCents) })}
-          right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
-          progress={<ProgressBar value={progress} />}
+          // beside the visible target the percentage and a filled bar would give the hidden amount away
+          right={hideSensitive ? undefined : <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
+          progress={<ProgressBar value={hideSensitive ? 0 : progress} />}
           meta={
             <span className="flex flex-col">
               {!reached && <span data-testid="goaldetail-togo">{toGoLine}</span>}
@@ -155,57 +272,19 @@ export function GoalDetailScreen() {
         />
 
         {cashOut ? (
-          // #455: the goal was spent — what paid for it, where the rest went, and the way back
-          <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="goaldetail-cashedout">
-            <div className="flex items-center gap-2">
-              <Icon name="flag-checkered" size={18} color="var(--m-accent-deep)" />
-              <span className="text-[14px] font-semibold text-ink">{t('goals.cashedOutTitle')}</span>
-            </div>
-            <p className="mt-1 text-[13px] leading-snug text-ink-2" data-testid="goaldetail-cashedout-sum">
-              {t('goals.cashedOutBody', { amount: money(cashedCents) })}
-            </p>
-            {leftover !== 0 && (
-              <p className="mt-1 text-[12px] leading-snug text-ink-3" data-testid="goaldetail-cashedout-rest">
-                {leftover > 0 ? t('goals.cashedOutBack', { amount: balance(leftover) }) : t('goals.cashedOutBeyond', { amount: balance(-leftover) })}
-              </p>
-            )}
-            {cashedTxs.length > 0 && (
-              <div className="mt-2 divide-y divide-line-2 border-t border-line-2" data-testid="goaldetail-cashedout-txs">
-                {cashedTxs.map((tx) => (
-                  <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
-                ))}
-              </div>
-            )}
-            {canEdit && (
-              <Button variant="outline" className="mt-3 w-full" data-testid="goaldetail-undo-cashout" onClick={() => void ops.undoCashOut(goal)}>
-                {t('goals.cashOutUndo')}
-              </Button>
-            )}
-          </div>
+          <CashedOutCard
+            goal={goal}
+            cashOut={cashOut}
+            txs={txs ?? []}
+            money={money}
+            balance={balance}
+            canEdit={canEdit}
+            onNameBought={openCashOut}
+            onUndo={() => void ops.undoCashOut(goal)}
+            onOpenTx={openTx}
+          />
         ) : (
-          canEdit && (
-          <>
-            {reached && (
-              <div className="mt-3 flex flex-col gap-2 rounded-card bg-accent-soft p-4" data-testid="goaldetail-reached">
-                <p className="text-[13px] leading-snug text-ink-2">{t('goals.cashOutHint')}</p>
-                <Button
-                  data-testid="goaldetail-cashout"
-                  onClick={() => void navigate({ to: '/goals/$goalId/cashout', params: { goalId: goal.id } })}
-                >
-                  {t('goals.cashOut')}
-                </Button>
-              </div>
-            )}
-            <div className="mt-3 flex gap-2">
-              <Button className="flex-1" data-testid="goaldetail-fund" onClick={() => setFundOpen('fund')}>
-                {t('goals.fund')}
-              </Button>
-              <Button variant="outline" className="flex-1" data-testid="goaldetail-withdraw" onClick={() => setFundOpen('withdraw')}>
-                {t('goals.withdraw')}
-              </Button>
-            </div>
-          </>
-          )
+          canEdit && <GoalActions reached={reached} onCashOut={openCashOut} onFund={() => setFundOpen('fund')} onWithdraw={() => setFundOpen('withdraw')} />
         )}
 
         <div className="m-cap mt-5 mb-1 px-1">

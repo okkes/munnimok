@@ -54,13 +54,18 @@ export const usePendingLogins = create<PendingState>((set) => ({
     }),
 }));
 
+/** where a session view says the sign-in stands */
+export const pendingStateOf = (view: SessionView): Pick<PendingLogin, 'state' | 'asking' | 'error'> => ({
+  state: view.state,
+  asking: view.state === 'awaiting_input',
+  error: TERMINAL_STATES.has(view.state) ? (view.error ?? failedWith(view.state)) : undefined,
+});
+
 /** the pending entry a session view implies */
 export const pendingFromView = (login: Pick<PendingLogin, 'connectionId' | 'provider' | 'reconnect' | 'startedAt'>, view: SessionView): PendingLogin => ({
   ...login,
   sessionId: view.sessionId,
-  state: view.state,
-  asking: view.state === 'awaiting_input',
-  error: TERMINAL_STATES.has(view.state) ? (view.error ?? failedWith(view.state)) : undefined,
+  ...pendingStateOf(view),
 });
 
 const FOLLOW_MS = 2_500;
@@ -111,7 +116,7 @@ export function usePendingLoginFollower({
             remove(connectionId);
             return;
           }
-          patch(connectionId, { state: view.state, asking: view.state === 'awaiting_input', error: TERMINAL_STATES.has(view.state) ? (view.error ?? failedWith(view.state)) : undefined });
+          patch(connectionId, pendingStateOf(view));
         } catch {
           // the relay is away: the next tick reads again
         } finally {

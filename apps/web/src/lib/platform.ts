@@ -16,7 +16,7 @@ interface CapacitorGlobal {
   getPlatform?: () => string;
   Plugins?: {
     App?: CapacitorPluginListener & {
-      getInfo?: () => Promise<{ build?: string; version?: string }>;
+      getInfo?: () => Promise<{ id?: string; build?: string; version?: string }>;
     };
     /** the platform auth session (AppDelegate.swift): a sheet the app can end itself */
     AuthSession?: {
@@ -30,6 +30,7 @@ interface CapacitorGlobal {
     PushNotifications?: CapacitorPluginListener & {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
+      unregister?: () => Promise<void>;
       removeAllDeliveredNotifications?: () => Promise<void>;
     };
     StatusBar?: {
@@ -216,14 +217,15 @@ export function syncNativeStatusBar(theme: 'light' | 'dark'): void {
 export const nativePlatform = (): string | undefined =>
   isNativeApp() ? capacitor()?.getPlatform?.() : undefined;
 
-/** the shell binary's build number (git commit count), null on the web */
-export async function getNativeAppBuild(): Promise<number | null> {
+// the store numbers a binary by the clock: only the bundle's own commit count compares with the hosted version.json
+export const bundledWebBuild = (): number => Number(__BUILD_NUMBER__);
+
+// every environment is its own app in the stores, so the id comes from the shell — never from the channel
+export async function getNativeAppId(): Promise<string | null> {
   const app = capacitor()?.Plugins?.App;
   if (!isNativeApp() || !app?.getInfo) return null;
   try {
-    const info = await app.getInfo();
-    const build = Number.parseInt(info.build ?? '', 10);
-    return Number.isFinite(build) ? build : null;
+    return (await app.getInfo()).id ?? null;
   } catch {
     return null;
   }
@@ -233,12 +235,13 @@ export async function getNativeAppBuild(): Promise<number | null> {
  * Native camera capture: the webview's <input capture> path crashes on
  * iOS and offers gallery-only on Android (user report), so the shells
  * use the Camera plugin instead. 'CAMERA' opens the camera directly
- * (receipts); 'PHOTOS' the photo library (#496: a receipt picture already
- * taken); 'PROMPT' shows the OS Camera-or-Photos chooser (#166 — the
- * generic upload sites). Returns a File ready for the existing attach
- * pipeline, or null when cancelled/unavailable.
+ * (receipts, and the camera door of every picture upload — ui/PictureSource);
+ * 'PHOTOS' the photo library (#496: a receipt picture already taken). Every
+ * picture comes back as a JPEG, so a picture that may be see-through never
+ * takes the 'PHOTOS' door (#522). Returns a File ready for the existing
+ * attach pipeline, or null when cancelled/unavailable.
  */
-export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' | 'PROMPT' = 'CAMERA'): Promise<File | null> {
+export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' = 'CAMERA'): Promise<File | null> {
   const camera = capacitor()?.Plugins?.Camera;
   if (!isNativeApp() || !camera?.getPhoto) return null;
   try {
@@ -257,14 +260,12 @@ export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' | 'PROMPT' = '
   }
 }
 
-/** #166: native Android's file input is gallery-only — route the tap
- *  through the Camera plugin's chooser; the web input stays for browsers.
- *  Callers must treat null differently per platform: native null = the
- *  user cancelled the chooser (do nothing), web null = not native at
- *  all (fall back to clicking the hidden file input). */
-export async function pickPhotoNative(): Promise<File | null> {
-  if (!isNativeApp()) return null;
-  return takeNativePhoto('PROMPT');
+/** the phone's own yes to notifications — the OS asks once, afterwards only its settings change the answer */
+export async function nativePushPermitted(): Promise<boolean> {
+  const push = capacitor()?.Plugins?.PushNotifications;
+  if (!isNativeApp() || !push?.requestPermissions) return false;
+  const permission = await push.requestPermissions().catch(() => undefined);
+  return permission?.receive === 'granted';
 }
 
 /**
@@ -274,8 +275,7 @@ export async function pickPhotoNative(): Promise<File | null> {
 export async function getNativePushToken(): Promise<string | null> {
   const push = capacitor()?.Plugins?.PushNotifications;
   if (!isNativeApp() || !push?.register) return null;
-  const permission = await push.requestPermissions?.();
-  if (permission?.receive !== 'granted') return null;
+  if (!(await nativePushPermitted())) return null;
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 10_000); // registration never answered
     push.addListener?.('registration', (token: { value?: string }) => {
@@ -329,14 +329,17 @@ export function hapticNotify(type: 'SUCCESS' | 'WARNING' = 'SUCCESS'): void {
   void capacitor()?.Plugins?.Haptics?.notification?.({ type })?.catch(() => undefined);
 }
 
+/** `unavailable`: not a shell — only then does a caller download in the browser */
+export type NativeShare = 'shared' | 'dismissed' | 'failed' | 'unavailable';
+
 /**
  * Native share sheet for exports: writes the content to the app cache
- * and hands the file to the OS sheet (Files/mail/drive). false = not
- * native or share failed — callers fall back to the browser download.
+ * and hands the file to the OS sheet (Files/mail/drive).
  */
-export async function shareNativeFile(fileName: string, content: string): Promise<boolean> {
+export async function shareNativeFile(fileName: string, content: string): Promise<NativeShare> {
   const plugins = capacitor()?.Plugins;
-  if (!isNativeApp() || !plugins?.Filesystem?.writeFile || !plugins.Share?.share) return false;
+  if (!isNativeApp() || !plugins?.Filesystem?.writeFile || !plugins.Share?.share) return 'unavailable';
+  let uri: string;
   try {
     const written = await plugins.Filesystem.writeFile({
       path: fileName,
@@ -344,10 +347,16 @@ export async function shareNativeFile(fileName: string, content: string): Promis
       directory: 'CACHE',
       encoding: 'utf8',
     });
-    await plugins.Share.share({ title: fileName, files: [written.uri] });
-    return true;
+    uri = written.uri;
   } catch {
-    return false; // user closed the sheet or the OS refused — download instead
+    return 'failed';
+  }
+  try {
+    await plugins.Share.share({ title: fileName, files: [uri] });
+    return 'shared';
+  } catch {
+    // the plugin rejects a closed sheet: the file went nowhere, and a download does nothing in a webview
+    return 'dismissed';
   }
 }
 
@@ -387,6 +396,12 @@ export function onNativePushTap(callback: (payload: unknown) => void): void {
       }
     },
   );
+}
+
+/** the phone lets go of its push token by itself: an account can leave the device while the server is out of reach */
+export async function unregisterNativePush(): Promise<void> {
+  if (!isNativeApp()) return;
+  await capacitor()?.Plugins?.PushNotifications?.unregister?.().catch(() => undefined);
 }
 
 /** #580: takes munni's notifications off the phone's notification centre; false outside the shell (or an older one) */

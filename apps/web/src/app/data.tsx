@@ -19,9 +19,13 @@ import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
 import { measure, tagSpacePeriod } from '@/lib/perf';
 import { ensurePersistentStorage } from '@/lib/platform';
-import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
+import { disablePush } from '@/lib/push';
+import { authWaits, getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
+import { BOOT_STEPS, useBootStep } from './bootStep';
 import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
 import { clearQueryCache } from '@/db/useQuery';
+import { forgetNavCache } from '@/features/navigation/navCache';
+import { adoptedStoreKeys } from '@/features/auth/offlineProfiles';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 import { useEvicted } from './evicted';
@@ -107,12 +111,98 @@ async function restoreAndSync(
   isCancelled: () => boolean,
   onAttempts: (n: number) => void,
 ): Promise<void> {
+  const at = useBootStep.getState().set;
+  at({ step: 'signin' });
   await waitForAuthReady();
   if (isCancelled()) return;
-  await bootstrapUserSpaces(store, engine, isCancelled, undefined, onAttempts);
+  // only the first round says where it stands: later ones have a whole app to show for themselves
+  const off = engine.onProgress((p) => at(p.phase === 'server' ? { step: 'server' } : { step: 'spaces', done: p.done, total: p.total }));
+  try {
+    await bootstrapUserSpaces(store, engine, isCancelled, undefined, onAttempts);
+  } finally {
+    off();
+  }
   if (isCancelled()) return;
   onAttempts(0);
   engine.start();
+}
+
+/**
+ * Whether the first sync round of this boot reached its end. The boot heals wait for it: a one-way
+ * fold stamped on a copy older than the server's overwrites what another device did since.
+ */
+export function firstRoundOf(engine: SyncEngine): { finished: Promise<boolean>; release: () => void } {
+  let settle: (ok: boolean) => void = () => undefined;
+  const finished = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
+  const off = engine.onStatus((status) => {
+    if (status === 'syncing') return;
+    off();
+    // idle alone proves nothing: a refused token ends idle as well
+    settle(status === 'idle' && engine.lastRoundOk());
+  });
+  return {
+    finished,
+    release: () => {
+      off();
+      settle(false);
+    },
+  };
+}
+
+/** an identity that never syncs holds the only copy there is: confirmed at once */
+function copyConfirmedBy(engine: SyncEngine | null): { finished: Promise<boolean>; release: () => void } {
+  return engine ? firstRoundOf(engine) : { finished: Promise.resolve(true), release: () => undefined };
+}
+
+/** the heals as their own transaction (they outlive the boot span), once the copy's state is known; none after a cancelled boot */
+function healOnceKnown(copyConfirmed: Promise<boolean>, cancelled: () => boolean, store: StorageBackend, upkeep: Repo): Promise<unknown> {
+  return copyConfirmed
+    .then((confirmed) => (cancelled() ? undefined : measure('app.boot.heal', () => bootHeals(store, upkeep, confirmed), undefined, { parent: null })))
+    .catch(() => undefined);
+}
+
+/** the every-boot heals, in order; the one-way folds only on a copy the server confirmed in this boot */
+async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean): Promise<void> {
+  // #228: reimbursement on a SPLIT transaction stays on the split.
+  // Every boot: links name their parts (a row split after it was
+  // linked) and each side's settle bookkeeping is recomputed
+  const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
+  await normalizeReimbursements(store, upkeep);
+  // #546: the retired family defaults leave their spaces (every boot
+  // until none is left — a default pulled later retires next boot)
+  const { retireDefaultAccounts } = await import('@/application/defaultAccounts');
+  if (confirmed) await retireDefaultAccounts(store, upkeep);
+  // #544: rows still naming an account their space lost let go of it
+  const { repairDanglingCounterparties } = await import('@/application/accountRelease');
+  if (confirmed) await repairDanglingCounterparties(store, upkeep);
+  // #133 ruling 3 / #546: bare movement rows link the account their
+  // text names (the ATM pair: the cash wallet) — balances move via the
+  // mirror lifecycle. Every boot: the server keeps writing predicted
+  // movement categories with no counterparty, so this heals continuously.
+  // #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
+  const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
+  // its leg shares an id with the leg another device minted for the same row: on an old copy it moves a second balance
+  if (confirmed) await migrateBareSpecialRows(store, upkeep);
+  if (confirmed) await refileCashTransfers(store, upkeep);
+  // #509: a loan typed at its original amount counts every payment linked to it, its date's included
+  const { settlePristineLoans } = await import('@/application/loanBalance');
+  if (confirmed) await settlePristineLoans(store, upkeep);
+  // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
+  // a linked row a fetch's overlay re-filed takes it back every boot
+  const { realignRecurringCategories } = await import('@/application/recurring');
+  await realignRecurringCategories(store, upkeep);
+  // transfers are ONE event with two legs — pair them within each
+  // space's own books (never across: funding covers that case)
+  const { linkTransferPairs } = await import('@/application/transferMatch');
+  await linkTransferPairs(store, upkeep);
+  // #533: a reserved charge the bank booked hands its story to the booked row
+  const { carryReservedOpinions } = await import('@/application/reservedCarry');
+  await carryReservedOpinions(store, upkeep);
+  // #578: the keys recurrings, loans and dismissals stored follow the merchant key's new spelling, once
+  const { rekeyMerchantKeys } = await import('@/application/merchantKeyRekey');
+  await rekeyMerchantKeys(store, upkeep);
 }
 
 /** a user identity's first sync once the boot opened its store (S3776: out of the boot) */
@@ -163,7 +253,8 @@ function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: S
       return { bearer };
     },
   });
-  return new SyncEngine(store, repo, backend, getDeviceId(), { access });
+  // "Go offline" in another tab hands this store to a profile: from then on it is not this account's to sync or purge
+  return new SyncEngine(store, repo, backend, getDeviceId(), { access, frozen: () => adoptedStoreKeys().has(key) });
 }
 
 /** what the boot does with each engine status (S2004: out of the boot's nested callbacks) */
@@ -175,6 +266,9 @@ function onEngineStatus(status: SyncStatus, store: StorageBackend, upkeep: Repo)
   if (status === 'idle') {
     void import('@/application/reservedCarry')
       .then(({ carryReservedOpinionsWhenDue }) => carryReservedOpinionsWhenDue(store, upkeep))
+      // #547: then the bank's version of what was typed by hand — after the carry, which moves a link from a reserved row to its booking
+      .then(() => import('@/application/entryLink'))
+      .then(({ linkEntriesAfterSync }) => linkEntriesAfterSync(store, upkeep))
       .catch(() => undefined);
   }
 }
@@ -217,6 +311,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       clearSwSession(); // signed out: background sync stops immediately
       return;
     }
+    // an identity that never syncs leaves the worker nothing to do: the mirror of the account before it must go
+    if (identity.kind !== 'user') clearSwSession();
     let cancelled = false;
     const isCancelled = () => cancelled;
     const onAttempts = (n: number) => {
@@ -227,9 +323,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     let engine: SyncEngine | null = null;
     let openedStore: StorageBackend | null = null;
+    let releaseHeals: () => void = () => undefined;
     // #363: the remount cache is per identity — a sign-in after a wipe
     // must never seed a screen with the last user's rows
     clearQueryCache();
+    useBootStep.getState().set({ step: 'opening' });
 
     // the boot span (user 2026-10-09, docs/observability.md): the store
     // open, the demo seed, the first queries and — on a brand-new device —
@@ -299,45 +397,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // its own transaction (parent null), since it outlives the boot span.
       // #505: through the upkeep view — a space this identity only reads is
       // healed by the devices of those who may write it
-      const bootChain = measure('app.boot.heal', async () => {
-        // #228: reimbursement on a SPLIT transaction stays on the split.
-        // Every boot: links name their parts (a row split after it was
-        // linked) and each side's settle bookkeeping is recomputed
-        const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
-        await normalizeReimbursements(store, upkeep);
-        // #546: the retired family defaults leave their spaces (every boot
-        // until none is left — a default pulled later retires next boot)
-        const { retireDefaultAccounts } = await import('@/application/defaultAccounts');
-        await retireDefaultAccounts(store, upkeep);
-        // #544: rows still naming an account their space lost let go of it
-        const { repairDanglingCounterparties } = await import('@/application/accountRelease');
-        await repairDanglingCounterparties(store, upkeep);
-        // #133 ruling 3 / #546: bare movement rows link the account their
-        // text names (the ATM pair: the cash wallet) — balances move via the
-        // mirror lifecycle. Every boot: the server keeps writing predicted
-        // movement categories with no counterparty, so this heals continuously.
-        // #574: a "Transfer out/in" to a cash wallet re-files as the ATM pair
-        const { migrateBareSpecialRows, refileCashTransfers } = await import('@/application/categoryModel');
-        await migrateBareSpecialRows(store, upkeep);
-        await refileCashTransfers(store, upkeep);
-        // #509: a loan typed at its original amount counts every payment linked to it, its date's included
-        const { settlePristineLoans } = await import('@/application/loanBalance');
-        await settlePristineLoans(store, upkeep);
-        // user ss 2026-10-06 (Amazon Prime): the recurring OWNS the category —
-        // a linked row a fetch's overlay re-filed takes it back every boot
-        const { realignRecurringCategories } = await import('@/application/recurring');
-        await realignRecurringCategories(store, upkeep);
-        // transfers are ONE event with two legs — pair them within each
-        // space's own books (never across: funding covers that case)
-        const { linkTransferPairs } = await import('@/application/transferMatch');
-        await linkTransferPairs(store, upkeep);
-        // #533: a reserved charge the bank booked hands its story to the booked row
-        const { carryReservedOpinions } = await import('@/application/reservedCarry');
-        await carryReservedOpinions(store, upkeep);
-        // #578: the keys recurrings, loans and dismissals stored follow the merchant key's new spelling, once
-        const { rekeyMerchantKeys } = await import('@/application/merchantKeyRekey');
-        await rekeyMerchantKeys(store, upkeep);
-      }, undefined, { parent: null }).catch(() => undefined);
+      // The heals wait for the first round: a one-way fold on a copy the server did not confirm undoes
+      // what another device did since. An identity that never syncs holds the only copy there is.
+      const firstRound = copyConfirmedBy(engine);
+      releaseHeals = firstRound.release;
+      const bootChain = healOnceKnown(firstRound.finished, () => cancelled, store, upkeep);
       // test seam: the chain writes fire-and-forget, and a test that
       // deletes the database while a PREVIOUS boot's chain still holds
       // the connection boots the next app on a dying handle (its live
@@ -374,6 +438,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
     return () => {
       cancelled = true;
+      releaseHeals();
       engine?.stop();
       openedStore?.close();
       if (liveStore === openedStore) liveStore = null;
@@ -429,10 +494,51 @@ async function mirrorSpaceLinks(store: StorageBackend, repo: Repo): Promise<void
  */
 const REHEAL_KEY = 'munni_auth_reheal';
 
+/** how long the connecting screen stays calm, and how long its diagnosis waits for the server (a test seam) */
+export const connectTuning = { patienceMs: 20_000, probeMs: 10_000 };
+
+const STEP_LABEL = {
+  opening: 'sync.step.opening',
+  signin: 'sync.step.signin',
+  server: 'sync.step.server',
+  spaces: 'sync.step.spaces',
+} as const;
+
+/** the steps of a first start, the one under way marked — with the count while the spaces come in */
+function BootSteps() {
+  const { t } = useLang();
+  const at = useBootStep((s) => s.at);
+  const now = BOOT_STEPS.indexOf(at.step);
+  return (
+    <ol className="flex w-[260px] max-w-[80vw] list-none flex-col gap-1.5 p-0 text-left text-[12px]" data-testid="connect-steps">
+      {BOOT_STEPS.map((step, index) => {
+        let state: 'done' | 'now' | 'ahead' = 'ahead';
+        if (index < now) state = 'done';
+        else if (index === now) state = 'now';
+        const icons = { done: 'check-circle', now: 'progress-clock', ahead: 'circle-outline' } as const;
+        return (
+          <li key={step} data-step={step} data-state={state} className={`flex items-center gap-2 ${state === 'ahead' ? 'text-ink-4' : 'text-ink-2'}`}>
+            <Icon name={icons[state]} size={15} color={state === 'done' ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+            <span className={state === 'now' ? 'font-semibold' : ''}>
+              {t(STEP_LABEL[step])}
+              {step === 'spaces' && at.step === 'spaces' && at.total > 0 && ` — ${t('sync.step.count', { done: at.done, total: at.total })}`}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?: number; errorDetail?: string | null }) {
   const { t } = useLang();
   const logout = useSession((s) => s.logout);
   const identity = useSession((s) => s.identity);
+  const signOut = () => {
+    // this screen means the server is out of reach or refuses: only the device can let go of its notifications
+    if (identity?.kind === 'user') void disablePush({ server: false }).catch(() => undefined);
+    logout();
+  };
   // SELF-HEAL (iOS field 401, 2026-07-29): signed-in user + 401s + NO
   // mintable token = the client-side Logto keys are gone while the IdP
   // session cookie usually survives — a silent re-sign-in round-trip
@@ -466,11 +572,14 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
   // (user ss 2026-07-28) — past 20s the truth beats the calm.
   const [patienceOver, setPatienceOver] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setPatienceOver(true), 20_000);
+    const timer = setTimeout(() => setPatienceOver(true), connectTuning.patienceMs);
     return () => clearTimeout(timer);
   }, []);
   const authSettling = (errorDetail ?? '').includes('401') && !patienceOver;
   const unreachable = (failedAttempts >= 2 && !authSettling) || (patienceOver && failedAttempts >= 1);
+  // #594: nothing failed because nothing ever answered — the exits are owed all the same
+  const waiting = patienceOver && failedAttempts === 0;
+  const exits = unreachable || waiting;
   // the stuck platform is iOS-only, where DevTools are out of reach — a
   // built-in probe produces a copyable report instead (user: "I don't
   // know how to provide you info")
@@ -499,6 +608,8 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
       `lastLogtoWipe: ${localStorage.getItem(LOGTO_WIPE_KEY) ?? '-'}`,
       `rehealAttempts: ${sessionStorage.getItem(REHEAL_KEY) ?? '0'}`,
       `lastError: ${errorDetail ?? '-'}`,
+      `waitingAt: ${useBootStep.getState().at.step}`,
+      `restore: ${authWaits().restore} tokenMint: ${authWaits().mint}`,
     ];
     try {
       localStorage.setItem('munni_probe', '1');
@@ -521,8 +632,10 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
     }
     try {
       const { apiFetch } = await import('@/lib/api');
-      const res = await apiFetch('/me');
-      lines.push(`GET /me: ${res.status}`, `www-authenticate: ${res.headers.get('www-authenticate') ?? '-'}`);
+      // a server that never answers is a finding too: the report does not wait for it
+      const res = await Promise.race([apiFetch('/me'), new Promise<null>((resolve) => setTimeout(() => resolve(null), connectTuning.probeMs))]);
+      if (res) lines.push(`GET /me: ${res.status}`, `www-authenticate: ${res.headers.get('www-authenticate') ?? '-'}`);
+      else lines.push(`GET /me: no answer in ${connectTuning.probeMs / 1000} s`);
     } catch (err) {
       const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       lines.push(`GET /me threw: ${detail}`);
@@ -537,15 +650,21 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
           <p className="max-w-[280px] text-center text-[13px]" data-testid={unreachable ? 'connect-error' : undefined}>
             {unreachable ? t('sync.serverUnreachable') : t('sync.connecting')}
           </p>
+          <BootSteps />
+          {waiting && (
+            <p className="max-w-[280px] text-center text-[12px] text-warning" data-testid="connect-waiting">
+              {t('sync.stillWaiting')}
+            </p>
+          )}
           {unreachable && errorDetail && (
             <p className="max-w-[280px] text-center font-mono text-[10px] break-words text-ink-4" data-testid="connect-error-detail">
               {errorDetail}
             </p>
           )}
-          {unreachable && (
+          {exits && (
             <div className="flex items-center gap-2">
               <button
-                onClick={() => void logout()}
+                onClick={signOut}
                 data-testid="connect-signout"
                 className="m-tap mt-2 rounded-full border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink"
               >
@@ -592,6 +711,8 @@ let revokedWipeIdentity: Identity | null = null;
 
 async function wipeRevokedDevice(identity: Identity): Promise<void> {
   const { useSession } = await import('./session');
+  // the server refuses this device already: asking it again would raise the disconnect once more
+  void disablePush({ server: false }).catch(() => undefined);
   useSession.getState().logout();
   await destroyIdentityData(identity);
   globalThis.location.assign('/#/login');
@@ -605,6 +726,8 @@ async function enforceAccountBinding(store: StorageBackend, identity: Identity):
   const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
   await verifyAccountBinding(store, identity, async () => {
     const { useSession } = await import('./session');
+    // the account is gone from the server: its notifications end on the device alone
+    void disablePush({ server: false }).catch(() => undefined);
     useSession.getState().logout();
     await destroyIdentityData(identity);
     globalThis.location.assign('/#/login');
@@ -633,4 +756,5 @@ export async function destroyIdentityData(identity: Identity): Promise<void> {
   } catch {
     // storage may be unavailable mid-wipe; the stale key is harmless
   }
+  forgetNavCache(identityKey(identity));
 }

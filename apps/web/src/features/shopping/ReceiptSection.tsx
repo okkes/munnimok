@@ -2,17 +2,22 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useReceiptOps } from '@/application/receipts';
-import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
+import { useItemMemory, useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
 import { useAttachableReceipts } from '@/application/connections';
 import { useSpaceTransactions } from '@/application/transactions';
+import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { picksSpread, picksStand, receiptLines, suggestedPicks, txMoneyOf } from '@/domain/receiptCats';
+import { useCategories } from '@/features/categories/useCategories';
 import { partyName } from '@/features/connectors/logos';
-import type { ReceiptRow } from '@/db/types';
+import type { ReceiptPick, ReceiptRow, TxSplitCat } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
 import { ReceiptCaptureRungs } from './ReceiptCapture';
+import { ReceiptCatsSheet } from './ReceiptCatsSheet';
 import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
 import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, dropAttached, suggestionsFor } from './receiptPick';
+import { useFileByReceipt } from './useFileByReceipt';
 
 // the ranking lives in receiptPick.ts (user 2026-10-07: the review's helpers
 // share it without importing this component); its old door stays open
@@ -25,7 +30,8 @@ function AttachedReceiptCard({
   currency,
   onOpen,
   onChange,
-}: Readonly<{ receipt: ReceiptRow; currency: string; onOpen: () => void; onChange: () => void }>) {
+  onCategorise,
+}: Readonly<{ receipt: ReceiptRow; currency: string; onOpen: () => void; onChange: () => void; onCategorise?: () => void }>) {
   const { t, lang } = useLang();
   const photo = receipt.source === 'photo';
   const who = photo ? t('receipt.sourcePhoto') : (receipt.merchant ?? partyName(receipt.source));
@@ -48,6 +54,16 @@ function AttachedReceiptCard({
         <Icon name="swap-horizontal" size={14} />
         {t('receipt.change')}
       </button>
+      {onCategorise && (
+        <button
+          data-testid="receipt-categorise"
+          onClick={onCategorise}
+          className="m-tap flex w-full items-center justify-center gap-1.5 border-0 border-t border-line-2 bg-transparent py-2 text-[12px] font-medium text-accent-deep"
+        >
+          <Icon name="shape-outline" size={14} />
+          {t('receiptcats.door')}
+        </button>
+      )}
     </div>
   );
 }
@@ -60,7 +76,14 @@ function AttachedReceiptCard({
  * the review's picker, shared) — and an attached receipt leads that
  * same sheet, marked, so it can be changed.
  */
-export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
+export function ReceiptSection({
+  tx,
+  onCategorise,
+}: Readonly<{
+  tx: SpaceTx;
+  /** #567: the transaction can be categorised by its receipt's lines — absent where its categories are not the person's to edit */
+  onCategorise?: (entries: TxSplitCat[]) => void;
+}>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const entry = useTxReceiptEntry(tx.id);
@@ -70,8 +93,28 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const receiptOps = useReceiptOps();
   const [attachOpen, setAttachOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [catsOpen, setCatsOpen] = useState(false);
+  const memory = useItemMemory();
+  const cats = useCategories();
+  const fileByReceipt = useFileByReceipt();
+  /** #567: a receipt that lands on the payment files it by its lines where both say the same amount */
+  const attached = (write: Promise<unknown>) => void write.then(() => fileByReceipt(tx.id));
 
   const receipt = entry?.data ?? null;
+  const money = useMemo(() => txMoneyOf(tx), [tx]);
+  const suggestions = useMemo(() => {
+    const known = (catId: string) => catId !== UNCATEGORIZED_ID && cats.byId(catId).id === catId;
+    return new Map(suggestedPicks(receipt?.items, memory, known).map((pick) => [pick.line, pick.catId]));
+  }, [receipt?.items, memory, cats]);
+  const storedPicks = entry?.picks?.[tx.id];
+  const standingPicks = picksStand(storedPicks, receipt?.items, money.held) ? (storedPicks ?? []) : [];
+  const categorisable = !!onCategorise && !!entry?.linkId && receiptLines(receipt?.items).length > 0 && money.netCents > 0;
+
+  const applyPicks = (picks: ReceiptPick[]) => {
+    if (!entry?.linkId || !onCategorise) return;
+    void receiptOps.setPicks(entry.linkId, tx.id, picks);
+    onCategorise(picksSpread(picks, money.netCents, money.restCatId));
+  };
   // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
   const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
   // the receipts on offer: every receipt of the included shops, the attached one never twice (it leads the lists,
@@ -112,7 +155,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           link={proposal}
           currency={tx.currency}
           ids={{ card: 'receipt-proposal', accept: 'receipt-proposal-accept', reject: 'receipt-proposal-reject' }}
-          onAccept={(link) => void receiptOps.acceptMatch(link)}
+          onAccept={(link) => attached(receiptOps.acceptMatch(link))}
           onReject={(link) => void receiptOps.rejectMatch(link)}
         />
       )}
@@ -131,8 +174,26 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           )}
         </button>
       ) : (
-        <AttachedReceiptCard receipt={receipt} currency={tx.currency} onOpen={() => openReceipt(receipt.id)} onChange={() => setAttachOpen(true)} />
+        <AttachedReceiptCard
+          receipt={receipt}
+          currency={tx.currency}
+          onOpen={() => openReceipt(receipt.id)}
+          onChange={() => setAttachOpen(true)}
+          onCategorise={categorisable ? () => setCatsOpen(true) : undefined}
+        />
       )}
+      <ReceiptCatsSheet
+        open={catsOpen}
+        onOpenChange={setCatsOpen}
+        items={receipt?.items}
+        currency={tx.currency}
+        netCents={money.netCents}
+        settledCents={money.settledCents}
+        restCatId={money.restCatId}
+        initial={standingPicks}
+        suggestions={suggestions}
+        onApply={applyPicks}
+      />
 
       {/* ONE attach flow (user: the old scatter felt odd): the attached receipt and the
           suggestions lead, capture and the stores door follow, every receipt sits behind
@@ -154,7 +215,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         attachedTo={elsewhere}
         describeTx={describeTx}
         onAccept={(link) => {
-          void receiptOps.acceptMatch(link);
+          attached(receiptOps.acceptMatch(link));
           setAttachOpen(false);
         }}
         onReject={(link) => {
@@ -163,7 +224,8 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         }}
         onPick={(row) => {
           setAttachOpen(false);
-          void applyPick(receiptOps, tx.id, entry, row);
+          if (row) attached(applyPick(receiptOps, tx.id, entry, row));
+          else void applyPick(receiptOps, tx.id, entry, row);
         }}
       >
         <ReceiptCaptureRungs testIdPrefix="receipt" busy={busy} onFile={(file) => void onFile(file)} onConnections={() => void navigate({ to: '/connections' })} />

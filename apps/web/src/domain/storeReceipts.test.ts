@@ -80,6 +80,20 @@ describe('receipt ↔ transaction matching', () => {
     expect(bestMatch(receipt, [tx({ id: 'foreign', merchant: 'Snackbar' })], new Set())).toBeNull();
   });
 
+  it('a photo is told by its shop’s name — and by amount and day alone while nobody named it (#567)', () => {
+    const photo: MatchableReceipt = { id: 'p1', source: 'photo', date: '2026-07-05', totalCents: 2350 };
+    // unnamed: the one payment of that amount in those days is it; two of them are a question for the person
+    expect(bestMatch(photo, [tx({ id: 'only', merchant: 'Snackbar' })], new Set())).toBe('only');
+    expect(bestMatch(photo, [tx({ id: 'a', merchant: 'Snackbar' }), tx({ id: 'b', merchant: 'Bakker' })], new Set())).toBeNull();
+    // a name tells two payments apart and keeps a stranger out
+    const named = { ...photo, merchant: 'Bakker Bart' };
+    expect(bestMatch(named, [tx({ id: 'a', merchant: 'Snackbar' }), tx({ id: 'b', merchant: 'BAKKER BART UTRECHT' })], new Set())).toBe('b');
+    expect(bestMatch(named, [tx({ id: 'a', merchant: 'Snackbar' })], new Set())).toBeNull();
+    // the amount stays exact, the day within two
+    expect(bestMatch(photo, [tx({ id: 'near', amountCents: -2351 })], new Set())).toBeNull();
+    expect(bestMatch(photo, [tx({ id: 'late', date: '2026-07-09' })], new Set())).toBeNull();
+  });
+
   it('payment tails constrain matching when a candidate account matches (R5)', () => {
     const paid: MatchableReceipt = { ...receipt, payment: { method: 'PINNEN', accountTail: '4321' } };
     const txs = [tx({ id: 'right-card' }), tx({ id: 'other-card' })];

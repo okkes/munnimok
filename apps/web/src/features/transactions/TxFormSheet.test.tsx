@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 /** #348: the category first — a movement picked in the editor, its ask
  *  answered with `pot` (or walked away from with null) */
@@ -108,6 +108,43 @@ describe('TxFormSheet (demo identity)', () => {
     );
     expect(screen.queryByTestId('screen-tx-create')).toBeNull();
     // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
+
+  it('a new entry just after midnight is dated the person’s own day — east of Greenwich the UTC day is still yesterday', async () => {
+    const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
+    const zone = env.TZ;
+    env.TZ = 'Europe/Amsterdam';
+    // 00:30 on 10 November in Amsterdam
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-09T23:30:00Z') });
+    try {
+      await openForm();
+      expect((screen.getByTestId('txform-date') as HTMLInputElement).value).toBe('2026-11-10');
+    } finally {
+      vi.useRealTimers();
+      if (zone === undefined) delete env.TZ;
+      else env.TZ = zone;
+    }
+  }, 15_000);
+
+  it('Add tapped twice writes the transaction once', async () => {
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Double Tap Bakery' } });
+    const add = screen.getByTestId('txform-save');
+    // the screen stays up until the saved row's page is there: a second tap lands on the same button
+    fireEvent.click(add);
+    fireEvent.click(add);
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const written = await waitFor(async () => {
+      const rows = (await db.transactions.toArray()).filter((row) => row.merchant === 'Double Tap Bakery');
+      expect(rows.length).toBeGreaterThan(0);
+      return rows;
+    }, { timeout: 5000 });
+    expect(written).toHaveLength(1);
+    await screen.findByTestId('screen-tx-detail', {}, { timeout: 5000 });
+    db.close();
   }, 15_000);
 
   it('#348 (user): the counterparty waits for the category — an ordinary filing leaves it shut, a movement opens it', async () => {
@@ -314,33 +351,91 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('a fully synced (open banking) account is never offered for manual rows', async () => {
+  /** the demo checking account as a bank-filled one: its rows are the bank's from then on */
+  const openFormOnBankAccount = async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
-    // make the demo checking account look bank-synced
-    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }, { localToday }] = await Promise.all([
       import('@/db/schema'),
       import('@/db/backend'),
       import('@/db/repo'),
       import('@/sync/hlc'),
+      import('@/application/recurring'),
     ]);
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('gc'), { trackOutbox: false });
-    await repo.upsert('account', 'demo_space', 'demo_main', { source: 'connector' });
-    db.close();
-
+    await repo.upsert('account', 'demo_space', 'demo_main', { source: 'connector', balanceAsOf: localToday() });
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-save');
-    fireEvent.click(screen.getByTestId('txform-account'));
-    // #348: the cash wallet counts as writable too now, so two manual
-    // targets remain; the bank-synced account is still never offered
-    await screen.findByTestId('txform-account-demo_save');
-    await screen.findByTestId('txform-account-defaultacct_cash_demo_space');
-    // the synced flag was written through a SECOND db handle: the live
-    // query may still hold the pre-write row for a tick, so the absence
-    // is awaited like the presences above (flaked once in CI, 2026-09-09)
-    await waitFor(() => expect(screen.queryByTestId('txform-account-demo_main')).toBeNull());
-  });
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    // the flag was written through a second db handle: the note shows once the live query has it
+    await screen.findByTestId('txform-bank-note', {}, { timeout: 5000 });
+    return { db, today: localToday() };
+  };
+
+  it('#547: a bank account takes a hand entry — the form says what that means, it counts in the balance here, and tomorrow is refused', async () => {
+    const { db, today } = await openFormOnBankAccount();
+    // "?" explains reconciling; a bank's balance is not corrected by hand
+    fireEvent.click(screen.getByTestId('txform-bank-help-toggle'));
+    expect(screen.getByTestId('txform-bank-help').textContent).toContain('reconciling');
+    expect(screen.queryByTestId('txform-adjustment')).toBeNull();
+    // dated today: it may be news to the bank's balance — the tick is on, and the person may take it off
+    const tick = screen.getByTestId('txform-in-balance') as HTMLInputElement;
+    expect(tick.checked).toBe(true);
+    expect(tick.disabled).toBe(false);
+
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '7,77' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Market stall' } });
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    fireEvent.change(screen.getByTestId('txform-date'), { target: { value: tomorrow > today ? tomorrow : '2999-01-01' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    expect((await screen.findByTestId('txform-save-blocker')).textContent).toContain('today or an earlier date');
+
+    // an entry dated before the bank's balance is in that number already: the tick is off and stays off
+    fireEvent.change(screen.getByTestId('txform-date'), { target: { value: '2020-01-01' } });
+    await waitFor(() => expect((screen.getByTestId('txform-in-balance') as HTMLInputElement).disabled).toBe(true));
+    expect(screen.getByTestId('txform-in-balance-note').textContent).toContain(today);
+
+    fireEvent.change(screen.getByTestId('txform-date'), { target: { value: today } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Market stall');
+      expect(row).toMatchObject({ accountId: 'demo_main', amountCents: -777, inBalance: 1 });
+      expect(row?.enteredAt).toBeTruthy();
+    });
+    db.close();
+  }, 20_000);
+
+  it('#547: the bank already has a transaction like the one being typed — the form asks before it counts twice', async () => {
+    const { db } = await openFormOnBankAccount();
+    // the demo's coffee of today (dm102, €4.20) is the bank's row now
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '4,20' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Coffee' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    const ask = await screen.findByTestId('txform-link-ask', {}, { timeout: 5000 });
+    expect(ask.textContent).toContain('Koffie');
+    fireEvent.click(screen.getByTestId('txform-link-yes'));
+    await waitFor(async () => {
+      const entry = (await db.transactions.toArray()).find((r) => r.merchant === 'Coffee');
+      expect(entry).toMatchObject({ bankTxId: 'dm102', deleted: 0 });
+    });
+    db.close();
+  }, 20_000);
+
+  it('#547: kept separate, the two stay two — and are not linked behind the person’s back later', async () => {
+    const { db } = await openFormOnBankAccount();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '4,20' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Second coffee' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    fireEvent.click(await screen.findByTestId('txform-link-no', {}, { timeout: 5000 }));
+    await waitFor(async () => {
+      const entry = (await db.transactions.toArray()).find((r) => r.merchant === 'Second coffee');
+      expect(entry).toMatchObject({ noBankTxIds: ['dm102'] });
+      expect(entry?.bankTxId ?? null).toBeNull();
+    });
+    db.close();
+  }, 20_000);
 
   it('a manual-counter transfer writes the mirror; the list collapses the pair', async () => {
     await openForm();
@@ -499,4 +594,36 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-amount').textContent).toContain('+€50.00'), { timeout: 5000 });
   }, 15_000);
+});
+
+describe('the create screen in a space this member only reads (#505)', () => {
+  const SPACE = 's-shared';
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+
+  it('has no door that saves: neither Add nor the reimbursement link that saves first', async () => {
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB(USER_TEST_DB);
+    await db.meta.put({ key: 'activeSpaceId', value: SPACE });
+    await db.meta.put({ key: 'spaceRoles', value: { [SPACE]: 'reader' } });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-reader'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'Eukesh', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('account', SPACE, 'acc-joint', { name: 'Joint', type: 'checking', source: 'manual', balanceCents: 0, currency: 'EUR' });
+    db.close();
+
+    renderAppAsUser('/transactions/new', { spaces: [{ id: SPACE, name: 'Eukesh', kind: 'shared', role: 'reader' }] });
+    await screen.findByTestId('txform-readonly-note', {}, { timeout: 8000 });
+    expect(screen.getByTestId('txform-event')).toBeTruthy();
+    expect(screen.queryByTestId('txform-save')).toBeNull();
+    expect(screen.queryByTestId('txform-link-reimb')).toBeNull();
+  }, 20_000);
 });

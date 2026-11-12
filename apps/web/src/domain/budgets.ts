@@ -172,6 +172,16 @@ export function budgetPayments(
 }
 
 /**
+ * #534: a budget's maximum is the most ONE period may hold — its own amount and what piled up. The row
+ * keeps what may pile up on top of the amount, so a budget made before the change keeps its numbers.
+ */
+export const carryCapFor = (periodMaxCents: number, amountCents: number): number => Math.max(0, periodMaxCents - amountCents);
+
+/** the most one period of the budget may hold; null when nothing limits it that way */
+export const periodMaxOf = (budget: Pick<BudgetRow, 'amountCents' | 'carryMode' | 'carryCapCents'>): number | null =>
+  budget.carryMode === 'cap' && budget.carryCapCents ? budget.amountCents + budget.carryCapCents : null;
+
+/**
  * Unused money rolled into the current period. Replayed from history:
  * mode 'periods' looks back at most N cycles; mode 'cap' replays the
  * whole (bounded) history but never accumulates beyond the cap.

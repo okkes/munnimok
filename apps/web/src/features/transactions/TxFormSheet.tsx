@@ -6,6 +6,7 @@ import { EventPickList } from '@/features/events/EventPickList';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, isMovementCat, specialCatType, stampMovementSub } from '@/domain/categories';
+import { canCountInBalance } from '@/domain/entryMatch';
 import { scaleCatsTo } from '@/domain/txSlices';
 import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
@@ -14,22 +15,27 @@ import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { bankFitFor, linkEntry } from '@/application/entryLink';
+import type { BankRowRef } from '@/application/entryLink';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { useRecurrings } from '@/application/recurring';
+import { localToday, useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Chip } from '@/ui/primitives';
 import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
+import type { StorageBackend } from '@/db/backend';
+import type { Repo } from '@/db/repo';
 import type { AccountRow, RecurringRow, TransactionRow, TxSplitCat, TxType } from '@/db/types';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
 import { CatsSheet } from './PartCatsSheet';
 import { minaSuggestedTx } from '@/features/mina/steps';
@@ -44,8 +50,6 @@ interface TxFormSheetProps {
    *  door): the form opens as a transfer onto this counterparty */
   prefill?: { linkedAccountId: string; merchant?: string };
 }
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** one string per form state — the dirty guard compares it to the
  *  seeded baseline (order fixed; JSON keeps null/undefined distinct) */
@@ -90,7 +94,7 @@ function applyManualBalanceDeltas(
   entries: ReturnType<typeof manualBalanceDeltas>,
 ): void {
   for (const { account, delta } of entries) {
-    void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta });
+    void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta }).catch(() => undefined);
   }
 }
 
@@ -105,7 +109,10 @@ function CounterAdjustRows({
   counterBlocker,
   onCounter,
   onToggleAdjustment,
+  noAdjustment = false,
 }: Readonly<{
+  /** #547: a bank fills the account — its balance is the bank's, there is nothing to correct by hand */
+  noAdjustment?: boolean;
   counterName: string | undefined;
   /** R1: a stamped account owns its rows' meaning */
   locked?: boolean;
@@ -135,15 +142,17 @@ function CounterAdjustRows({
       </button>
       <FormBlockerNote show={!!counterBlocker} text={counterBlocker ?? ''} testId="txform-save-blocker" />
       {/* C3: corrections stay a manual-row tool — a quiet toggle */}
-      <button
-        data-testid="txform-adjustment"
-        onClick={onToggleAdjustment}
-        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
-      >
-        <Icon name="tune-variant" size={18} color="var(--m-ink-3)" />
-        <span className="flex-1">{t('txform.adjustment')}</span>
-        <Icon name={adjustment ? 'checkbox-marked' : 'checkbox-blank-outline'} size={18} color={adjustment ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
-      </button>
+      {!noAdjustment && (
+        <button
+          data-testid="txform-adjustment"
+          onClick={onToggleAdjustment}
+          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
+        >
+          <Icon name="tune-variant" size={18} color="var(--m-ink-3)" />
+          <span className="flex-1">{t('txform.adjustment')}</span>
+          <Icon name={adjustment ? 'checkbox-marked' : 'checkbox-blank-outline'} size={18} color={adjustment ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+        </button>
+      )}
     </>
   );
 }
@@ -160,7 +169,7 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
       amount: suggested?.amount ?? '',
       isExpense: true,
       merchant: prefill?.merchant ?? suggested?.merchant ?? '',
-      date: todayIso(),
+      date: localToday(),
       accountId: null,
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
       adjustment: false,
@@ -254,8 +263,17 @@ const isValidManualTx = (args: {
   date: string;
   counterMissing: boolean;
   beforeStart: boolean;
+  /** #547 (user 2026-11-11): an entry on a bank account is today's or older */
+  futureOnBank: boolean;
 }): boolean =>
-  !!args.merchant.trim() && args.cents !== null && args.cents > 0 && !!args.account && !!args.date && !args.counterMissing && !args.beforeStart;
+  !!args.merchant.trim() &&
+  args.cents !== null &&
+  args.cents > 0 &&
+  !!args.account &&
+  !!args.date &&
+  !args.counterMissing &&
+  !args.beforeStart &&
+  !args.futureOnBank;
 
 /** the row the manual form writes (S3776: field assembly out of the
  *  component). Explicit nulls clear previously set links on edit —
@@ -515,6 +533,7 @@ function manualBlockerFor(args: {
   effectiveAccount: string | null;
   counterMissing: boolean;
   startGateBlocking: string | undefined;
+  futureOnBank: boolean;
   t: ReturnType<typeof useLang>['t'];
 }): [string, string] {
   const { t } = args;
@@ -523,6 +542,7 @@ function manualBlockerFor(args: {
   if (args.cents === null || args.cents === 0) return ['amount', t('form.needAmount')];
   if (args.adjustNoop) return ['amount', t('txform.adjustNoop')];
   if (!args.effectiveAccount) return ['account', t('form.needAccount')];
+  if (args.futureOnBank) return ['date', t('txform.futureDate')];
   // #309 (user): a movement category refuses to save without its counter
   if (args.counterMissing) return ['counter', t('review.counterRequired')];
   // the start-gate card already explains itself — just point at it
@@ -651,10 +671,96 @@ interface TxFormHost {
 }
 
 /** the manual transaction form, shared by the edit sheet and the create screen */
+/** #547: what choosing an account a bank fills means for the row being typed */
+function bankEntryFacts(account: AccountRow | undefined, date: string): { onBank: boolean; futureOnBank: boolean; canCount: boolean } {
+  if (!account || account.source === 'manual') return { onBank: false, futureOnBank: false, canCount: false };
+  return { onBank: true, futureOnBank: !!date && date > localToday(), canCount: canCountInBalance(date, account) };
+}
+
+/** #547: on a bank account the row is "your entry" — when it was typed, whether it counts in the balance here, and a bank row it was deliberately kept apart from */
+function entryFieldsFor(onBank: boolean, tx: TransactionRow | undefined, counts: boolean, apart: string | undefined): Partial<TransactionRow> {
+  if (!onBank) return {};
+  return { enteredAt: tx?.enteredAt ?? new Date().toISOString(), inBalance: counts ? 1 : 0, ...(apart ? { noBankTxIds: [apart] } : {}) };
+}
+
+/** #547: the person chose "Link them" — the saved entry goes behind the bank's row */
+async function linkSavedEntry(store: StorageBackend, repo: Repo, spaceId: string, rowId: string, link: BankRowRef | undefined): Promise<void> {
+  if (!link) return;
+  const row = await store.get('transaction', rowId);
+  if (row) await linkEntry(store, repo, spaceId, row, link, false);
+}
+
+/** #547: a NEW entry on a bank account as the pairing rule reads it; null for every other save */
+function newEntryDraft(isNewEntry: boolean, accountId: string | null, date: string, isExpense: boolean, cents: number | null, merchant: string) {
+  if (!isNewEntry || !accountId || cents === null) return null;
+  return { accountId, date, amountCents: isExpense ? -cents : cents, merchant: merchant.trim() };
+}
+
+/** #547 (user): choosing a bank account says what that means — "?" explains reconciling — and offers the balance tick */
+function BankEntryNote({
+  canCount,
+  balanceAsOf,
+  countIn,
+  onCountIn,
+}: Readonly<{ canCount: boolean; balanceAsOf: string | undefined; countIn: boolean; onCountIn: (on: boolean) => void }>) {
+  const { t } = useLang();
+  return (
+    <div className="flex flex-col gap-2 rounded-card bg-bg-2 px-3 py-2.5" data-testid="txform-bank-note">
+      <p className="flex flex-wrap items-start gap-1.5 text-[12px] leading-snug text-ink-2">
+        <span className="min-w-0 flex-1">{t('txform.bankNote')}</span>
+        <InfoHint text={t('txform.bankHelp')} testId="txform-bank-help" />
+      </p>
+      <div className={`flex items-start gap-2 text-[12px] leading-snug ${canCount ? 'text-ink-2' : 'text-ink-4'}`}>
+        <input
+          id="txform-in-balance"
+          type="checkbox"
+          data-testid="txform-in-balance"
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--m-accent)]"
+          checked={canCount && countIn}
+          disabled={!canCount}
+          aria-describedby="txform-in-balance-note"
+          onChange={(e) => onCountIn(e.target.checked)}
+        />
+        <span className="min-w-0 flex-1">
+          <label htmlFor="txform-in-balance" className="block">
+            {t('txform.inBalance')}
+          </label>
+          <span id="txform-in-balance-note" className="block text-[11px] text-ink-4" data-testid="txform-in-balance-note">
+            {canCount ? t('txform.inBalanceSub') : t('txform.inBalanceLocked', { date: balanceAsOf ?? '' })}
+          </span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** #547: the bank already holds a row like the one being typed — one transaction or two? */
+function LinkAskSheet({ bank, onAnswer, onClose }: Readonly<{ bank: BankRowRef | null; onAnswer: (link: boolean) => void; onClose: () => void }>) {
+  const { t, lang } = useLang();
+  return (
+    <Sheet open={bank !== null} onOpenChange={(next) => !next && onClose()} title={t('txform.linkAskTitle')} size="form">
+      {bank && (
+        <div className="flex flex-col gap-3 pt-1" data-testid="txform-link-ask">
+          <p className="text-[13px] leading-snug text-ink-2">
+            {t('txform.linkAskBody', { amount: fmtCents(bank.raw.amountCents, bank.raw.currency, lang), date: bank.raw.date, title: bank.raw.merchant })}
+          </p>
+          <Button data-testid="txform-link-yes" onClick={() => onAnswer(true)}>
+            {t('txform.linkAskYes')}
+          </Button>
+          <Button variant="outline" data-testid="txform-link-no" onClick={() => onAnswer(false)}>
+            {t('txform.linkAskNo')}
+          </Button>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: TxFormHost) {
   const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
+  const canEdit = useCanEdit();
   const cats = useCategories();
   const events = useEvents();
   // #348: the story fields the detail offers, on the create screen too
@@ -666,7 +772,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const [amountEntryMode, setAmountEntryMode] = useState<AmountEntryMode>('register');
   const [isExpense, setIsExpense] = useState(true);
   const [merchant, setMerchant] = useState('');
-  const [date, setDate] = useState(todayIso());
+  const [date, setDate] = useState(localToday());
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
   // #211: the split-CATEGORIES editor (the same sheet as review/detail) —
@@ -684,23 +790,28 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // #547: an entry on a bank account — the balance tick, and the bank row a new entry already fits
+  const [countIn, setCountIn] = useState(true);
+  const [linkAsk, setLinkAsk] = useState<{ bank: BankRowRef; next?: 'reimb' } | null>(null);
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const baselineRef = useRef('');
+  // the host stays up until the saved row's page is there: a second tap must not write the row again
+  const saving = useRef(false);
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
   // manual rows before the space's history start are refused (arc 5) —
   // they would vanish behind the display gate the moment they saved
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  // tier rule: hand-typed rows belong on MANUAL accounts only — linked
-  // feeds are the bank's and imported (camt/csv) accounts are the next
-  // upload's; manual entries there would duplicate or contradict them.
-  // #221: the DEFAULT accounts' ledgers are system-managed (mirror legs
-  // + balance adjustments) — never a hand-entry target. #348 exception:
-  // the CASH WALLET is the user's own pocket — hand entries welcome.
+  // #547 (user 2026-11-09: "the users should have that choice"): an account
+  // the bank or a statement fills takes hand entries too — they live in this
+  // space, pair with the bank's own rows and count once. #221: the DEFAULT
+  // accounts' ledgers are system-managed (mirror legs + balance
+  // adjustments) — never a hand-entry target. #348 exception: the CASH
+  // WALLET is the user's own pocket — hand entries welcome.
   const writable = useMemo(
-    () => (accounts ?? []).filter((a) => a.source === 'manual' && (!a.defaultFor || a.defaultFor === 'cash')),
+    () => (accounts ?? []).filter((a) => (a.source === 'manual' ? !a.defaultFor || a.defaultFor === 'cash' : a.type !== 'funding')),
     [accounts],
   );
   const recurrings = useRecurrings();
@@ -725,6 +836,9 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
     setNotes(tx?.notes ?? '');
     setEventId(tx?.eventId ?? null);
     setAttempted(false);
+    setCountIn(tx ? tx.inBalance !== 0 : true);
+    setLinkAsk(null);
+    saving.current = false;
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
@@ -737,8 +851,10 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   }, [open, tx?.id]);
 
   const cat = cats.byId(catId);
-  const effectiveAccount = accountId ?? soleAccountId(writable);
+  // the account that picks itself is a hand-kept one: a bank account is a choice, never a default
+  const effectiveAccount = accountId ?? soleAccountId(writable.filter((a) => a.source === 'manual'));
   const selectedAccount = writable.find((a) => a.id === effectiveAccount);
+  const { onBank, futureOnBank, canCount } = bankEntryFacts(selectedAccount, date);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
   // R1: a stamped account types every one of its rows; R3: a marked
@@ -756,18 +872,19 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   // the validator always had the gate, the form just never fed it
   const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
   const valid =
-    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking }) &&
+    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking, futureOnBank }) &&
     !adjustNoop;
   // #195 r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
   const [blockerField, blockerText] = manualBlockerFor({
-    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, t,
+    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, futureOnBank, t,
   });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
-  const save = (next?: 'reimb') => {
-    if (!valid || !effectiveAccount || cents === null) return;
+  const save = (next?: 'reimb', bank?: { link?: BankRowRef; apart?: string }) => {
+    if (!valid || !effectiveAccount || cents === null || saving.current) return;
+    saving.current = true;
     // #269: target mode writes the DIFFERENCE to the named balance
     const signed = signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
     const rowId = tx?.id ?? repo.newId();
@@ -801,7 +918,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
         recurringId: adjustment ? null : recurringId,
         ...(extended ? { story: { notes, eventId: adjustment ? null : eventId } } : {}),
       });
-      await repo.upsert('transaction', spaceId, rowId, fields);
+      await repo.upsert('transaction', spaceId, rowId, { ...fields, ...entryFieldsFor(onBank, tx, canCount && countIn, bank?.apart) });
+      await linkSavedEntry(store, repo, spaceId, rowId, bank?.link);
       // the reimbursement flow reads the row: it goes on once the row is there
       if (next) onSaved(rowId, next);
       if (prevLinked !== nextLinked) {
@@ -827,7 +945,9 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
         }
         await plan.execute(repo);
       }
-    })().catch(() => undefined);
+    })().catch(() => {
+      saving.current = false;
+    });
     if (!next) onSaved(rowId);
   };
 
@@ -845,11 +965,26 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const empty = writable.length === 0 && !tx;
   const pickedEvent = events?.find((e) => e.id === eventId);
   const trySave = (next?: 'reimb') => {
+    if (!canEdit) return;
     if (!valid) {
       setAttempted(true);
       return;
     }
-    save(next);
+    // #547: the bank may already hold what is being typed — ask before it counts twice
+    const draft = newEntryDraft(onBank && !tx, effectiveAccount, date, isExpense, cents, merchant);
+    if (!draft) {
+      save(next);
+      return;
+    }
+    void bankFitFor(store, spaceId, draft)
+      .catch(() => null)
+      .then((fit) => (fit ? setLinkAsk({ bank: fit, next }) : save(next)));
+  };
+  const answerLinkAsk = (link: boolean) => {
+    const asked = linkAsk;
+    if (!asked) return;
+    setLinkAsk(null);
+    save(asked.next, link ? { link: asked.bank } : { apart: asked.bank.raw.id });
   };
 
   const saveButton = (
@@ -948,6 +1083,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
               <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
             </span>
           </div>
+          <FormBlockerNote show={blockerField === 'date'} text={blockerText} testId="txform-save-blocker" />
           {/* before the space starts (arc 5): refuse with the way out —
               one tap moves the start back to this very date */}
           {startGateBlocking && (
@@ -974,6 +1110,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
             <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} bad={attempted && !effectiveAccount} />
           )}
           <FormBlockerNote show={blockerField === 'account'} text={blockerText} testId="txform-save-blocker" />
+          {/* #547 (user): choosing a bank account says what that means — and "?" explains reconciling */}
+          {onBank && <BankEntryNote canCount={canCount} balanceAsOf={selectedAccount?.balanceAsOf} countIn={countIn} onCountIn={setCountIn} />}
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
@@ -995,6 +1133,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
             disabled={!counterRelevant && !ownStamp && !adjustment}
             adjustment={adjustment}
             counterBlocker={fieldBlocker('counter', blockerField, blockerText)}
+            noAdjustment={onBank}
             onCounter={() => setCounterOpen(true)}
             onToggleAdjustment={() => {
               setAdjustment((v) => !v);
@@ -1023,6 +1162,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
               notes={notes}
               onNotes={setNotes}
               credit={!isExpense}
+              canLinkReimb={canEdit}
               onLinkReimb={() => trySave('reimb')}
             />
           )}
@@ -1056,6 +1196,9 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
           setCatId(detachedCatFor(catId));
         }}
       />
+
+      {/* #547: the bank already holds a row like the one being typed — one transaction or two? */}
+      <LinkAskSheet bank={linkAsk?.bank ?? null} onAnswer={answerLinkAsk} onClose={() => setLinkAsk(null)} />
 
       {/* stacked: account picker */}
       <AccountPickSheet
@@ -1160,6 +1303,7 @@ function StoryRows({
   notes,
   onNotes,
   credit,
+  canLinkReimb,
   onLinkReimb,
 }: Readonly<{
   eventName: string | undefined;
@@ -1168,6 +1312,8 @@ function StoryRows({
   onNotes: (notes: string) => void;
   /** a credit pays an expense back; an expense gets paid back */
   credit: boolean;
+  /** false where nothing may be saved: the door saves the row first */
+  canLinkReimb: boolean;
   onLinkReimb: () => void;
 }>) {
   const { t } = useLang();
@@ -1191,18 +1337,20 @@ function StoryRows({
         rows={3}
         className="w-full resize-none rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-4"
       />
-      <button
-        data-testid="txform-link-reimb"
-        onClick={onLinkReimb}
-        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-      >
-        <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
-          <span className="block truncate text-[11px] text-ink-4">{t('txform.reimbAfterSave')}</span>
-        </span>
-        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-      </button>
+      {canLinkReimb && (
+        <button
+          data-testid="txform-link-reimb"
+          onClick={onLinkReimb}
+          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+        >
+          <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
+            <span className="block truncate text-[11px] text-ink-4">{t('txform.reimbAfterSave')}</span>
+          </span>
+          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+        </button>
+      )}
     </>
   );
 }

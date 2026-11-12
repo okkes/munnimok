@@ -17,6 +17,7 @@ export interface EditableGraph {
   name: string;
   catIds?: string[];
   accountIds?: string[];
+  skipGoalSpending?: boolean;
 }
 
 const sameSet = (a: ReadonlySet<string> | null, b: readonly string[] | null): boolean =>
@@ -171,6 +172,7 @@ export function GraphEditorSheet({
   const [name, setName] = useState('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [accountPick, setAccountPick] = useState<Set<string> | null>(null);
+  const [skipGoals, setSkipGoals] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const spending = kind === 'spending';
 
@@ -183,6 +185,7 @@ export function GraphEditorSheet({
     setPicked(new Set(initial?.catIds ?? []));
     const start = startAccounts();
     setAccountPick(start ? new Set(start) : null);
+    setSkipGoals(initial?.skipGoalSpending === true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the opening is the moment
   }, [open, initial]);
 
@@ -191,6 +194,7 @@ export function GraphEditorSheet({
     name !== (initial?.name ?? '') ||
     picked.size !== initialCats.length ||
     initialCats.some((id) => !picked.has(id)) ||
+    skipGoals !== (initial?.skipGoalSpending === true) ||
     !sameSet(accountPick, initial ? (initial.accountIds ?? null) : startAccounts());
   const canSave = name.trim().length > 0 && (!spending || picked.size > 0) && (accountPick === null || accountPick.size > 0);
 
@@ -214,7 +218,13 @@ export function GraphEditorSheet({
               data-testid="trends-graph-save"
               disabled={!canSave}
               onClick={() =>
-                onSave({ id: initial?.id, name: name.trim(), catIds: spending ? [...picked] : [], accountIds: accountPick ? [...accountPick] : null })
+                onSave({
+                  id: initial?.id,
+                  name: name.trim(),
+                  catIds: spending ? [...picked] : [],
+                  accountIds: accountPick ? [...accountPick] : null,
+                  skipGoalSpending: spending && skipGoals,
+                })
               }
             >
               {t('action.save')}
@@ -245,6 +255,23 @@ export function GraphEditorSheet({
             <p className="px-1 text-[11px] text-ink-4">{t(spending ? 'trends.graphAccountsHint' : 'trends.flowAccountsHint')}</p>
             <AccountTicks accounts={accounts} picked={accountPick} onChange={setAccountPick} allowAll={spending} testId="trends-graph-accounts" />
           </div>
+          {/* #455 (user 2026-11-12): buying what a goal saved for is real spending, and a graph may still leave it out */}
+          {spending && (
+            <label className="m-tap flex w-full cursor-pointer items-start gap-3 rounded-card border border-line bg-surface px-3 py-2.5 text-left">
+              <input
+                type="checkbox"
+                data-testid="trends-graph-skip-goals"
+                checked={skipGoals}
+                onChange={(e) => setSkipGoals(e.target.checked)}
+                className="sr-only"
+              />
+              <TickBox tick={skipGoals ? 'checked' : 'off'} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] text-ink">{t('trends.graphSkipGoals')}</span>
+                <span className="block text-[11px] leading-snug text-ink-4">{t('trends.graphSkipGoalsHint')}</span>
+              </span>
+            </label>
+          )}
         </div>
       </Sheet>
       {initial && (

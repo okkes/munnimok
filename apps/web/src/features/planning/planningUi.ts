@@ -25,6 +25,7 @@ export const STATUS_TONE: Record<SubjectStatus, Tone> = {
   overTarget: 'accent',
   overspent: 'negative',
   snoozed: 'accent',
+  settled: 'neutral',
 };
 
 /** the bar's fill per status — the subject's own colour stays on its tile only */
@@ -35,6 +36,7 @@ export const STATUS_BAR: Record<SubjectStatus, string> = {
   overTarget: 'var(--m-accent)',
   overspent: 'var(--m-negative)',
   snoozed: 'var(--m-accent)',
+  settled: 'var(--m-ink-4)',
 };
 
 /** the orange stripes over a bar whose spending went past the target while the funding covers it */
@@ -47,6 +49,7 @@ export const STATUS_KEY: Record<SubjectStatus, TranslationKey> = {
   overTarget: 'plan.status.overTarget',
   overspent: 'plan.status.overspent',
   snoozed: 'plan.status.snoozed',
+  settled: 'plan.status.settled',
 };
 
 /** the colours of the circle as it fills (domain/planning aheadColor) */

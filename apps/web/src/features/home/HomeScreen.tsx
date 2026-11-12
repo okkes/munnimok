@@ -74,6 +74,8 @@ import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { presetTxFilters } from '@/features/transactions/txFilters';
 import { StatementImportFlow } from '@/features/accounts/StatementImportFlow';
+import { ReceiptQuickAdd } from '@/features/shopping/ReceiptQuickAdd';
+import { myStoreFeedId } from '@/application/storeFeed';
 import { setCategoriesCreateIntent } from '@/features/categories/categoriesHandoff';
 import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { setFriendsAddIntent } from '@/features/friends/friendsHandoff';
@@ -238,6 +240,9 @@ export function HomeScreen() {
   // #180: the quick-add speed dial + its two in-place hosts
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickImportOpen, setQuickImportOpen] = useState(false);
+  const [quickReceiptOpen, setQuickReceiptOpen] = useState(false);
+  // #567: a receipt without a transaction lives among the person's own receipts — a profile without an account has none
+  const ownReceipts = myStoreFeedId() !== null;
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
@@ -499,6 +504,7 @@ export function HomeScreen() {
               // #348: adding a transaction is a screen of its own
               ['tx', 'receipt-text-plus-outline', () => void navigate({ to: '/transactions/new' })],
               ['import', 'file-upload-outline', () => setQuickImportOpen(true)],
+              ...(ownReceipts ? ([['receipt', 'camera-plus-outline', () => setQuickReceiptOpen(true)]] as const) : []),
               ['category', 'shape-plus-outline', () => {
                 setCategoriesCreateIntent();
                 void navigate({ to: '/categories' });
@@ -534,6 +540,7 @@ export function HomeScreen() {
       </Sheet>
       {/* the FAB's in-place host — sheets are siblings (#241 rule) */}
       <StatementImportFlow open={quickImportOpen} onOpenChange={setQuickImportOpen} />
+      <ReceiptQuickAdd open={quickReceiptOpen} onOpenChange={setQuickReceiptOpen} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* desktop ruling (§4.4) + D4: strict two-column split — the
             balance heads the left column (a 1040px band saying one number
@@ -621,7 +628,15 @@ export function HomeScreen() {
                               className="h-4 w-4 shrink-0 accent-[var(--m-bg)]"
                             />
                           )}
-                          <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{a.name}</span>
+                            {/* #547: the balance in two parts where entries count on top of the bank's number */}
+                            {a.entriesCents !== undefined && a.bankBalanceCents !== undefined && (
+                              <span className="block truncate text-[11px] opacity-80" data-testid={`band-entries-${a.id}`}>
+                                {t('acct.balanceParts', { bank: fmtSensitive(a.bankBalanceCents, a.currency), entries: fmtSensitive(a.entriesCents, a.currency) })}
+                              </span>
+                            )}
+                          </span>
                           <span className="m-num">{fmtSensitive(a.balanceCents, a.currency)}</span>
                         </div>
                       );
@@ -1106,10 +1121,9 @@ export function HomeScreen() {
   }
 
   function renderSplitsBlock() {
-    // online-only, signed-in feature: loading and every degraded state
-    // renders nothing; no open split shows the teaser (user request:
-    // reach the current split from Home, or all of them via see-all)
-    if (identity?.kind !== 'user') return null;
+    // an account's feature (the demo shows examples): loading and every
+    // degraded state renders nothing; no open split shows the teaser (user
+    // request: reach the current split from Home, or all of them via see-all)
     if (topSplit === undefined) return null;
     if (topSplit === null) return null; // Explore carries the door (#121 v2)
     const netLine = () => {
@@ -1212,11 +1226,14 @@ export function HomeScreen() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{goal.name}</span>
-                    <span className="m-num shrink-0 text-[12px] font-semibold text-accent-deep">
-                      {Math.round(progress * 100)}%
-                    </span>
+                    {/* the goal's page shows its target: a percentage or a filled bar here would give the hidden amount away */}
+                    {!hideSensitive && (
+                      <span className="m-num shrink-0 text-[12px] font-semibold text-accent-deep">
+                        {Math.round(progress * 100)}%
+                      </span>
+                    )}
                   </span>
-                  <ProgressBar className="mt-1" size="sm" value={progress} />
+                  <ProgressBar className="mt-1" size="sm" value={hideSensitive ? 0 : progress} />
                 </span>
               </button>
             );

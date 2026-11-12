@@ -40,6 +40,7 @@ import { BulkReceiptQueue } from '@/features/shopping/BulkReceiptQueue';
 import { receiptsToVerify } from '@/features/shopping/receiptWalk';
 import { useAttachableReceipts } from '@/application/connections';
 import { useProposedMatches } from '@/application/receiptLinks';
+import { EntryLinkSection } from './EntryLinkSection';
 import { ReimburseSection } from './ReimburseSection';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useCanEdit } from '@/app/useCanEdit';
@@ -2493,6 +2494,13 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
   const savePartLabel = (raw: string): void => writePartLabel(transform, tx, partView, partDefault, raw);
   const renameProps = renameSheetProps(tx, partView, partDefault, savePartLabel, renameTitle);
   const screenTitle = detailScreenTitle(tx, parts, partView, t);
+  // #567: an ordinary payment whose categories are the person's to edit can be filed by its receipt's lines; the
+  // offer to repeat a spread on similar payments stays out — their receipts are other receipts
+  const byReceipt =
+    canEdit && !partView && !multiPart && !categoryLocked && tx.amountCents < 0 && tx.txType === 'expense'
+      ? (entries: TxSplitCat[]) =>
+          applyRowCats({ tx, settledCents: settledPartitionCents, transform, applySingle: applySingleEntry, armCatsBulk: () => undefined }, entries)
+      : undefined;
   const trailingAction = canEdit ? detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true)) : null;
   // the values editor edits the STAGE when one exists, else the stored
   // parts; classic mode stays uncontrolled
@@ -2596,6 +2604,22 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           readOnly={!canEdit}
         />
 
+        {/* #547: a hand-typed entry and the bank's own transaction — linked, or still waiting */}
+        {!partView && <EntryLinkSection tx={tx} account={account} readOnly={!canEdit} />}
+
+        {/* #538: the payment sits in a split — said to everyone in the space, so nobody adds it twice */}
+        {!partView && tx.splitRef && (
+          <button
+            data-testid="tx-detail-split"
+            onClick={() => void navigate({ to: '/splits/$splitId', params: { splitId: tx.splitRef?.splitId ?? '' } })}
+            className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left text-[13px] text-ink-2"
+          >
+            <Icon name="account-cash-outline" size={18} color="var(--m-accent-deep)" />
+            <span className="min-w-0 flex-1 truncate">{t('tx.inSplit', { name: tx.splitRef.name })}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        )}
+
         {/* block: categories — ONE edit affordance for the whole block
             (user: a pencil per slice read wrong); rows stay tappable.
             r9: on a container the block lists PARTS, and says so */}
@@ -2681,7 +2705,7 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
                 />
               ),
               reimburse: attachable ? <ReimburseSection tx={tx} /> : null,
-              receipts: attachable ? <ReceiptSection tx={tx} /> : null,
+              receipts: attachable ? <ReceiptSection tx={tx} onCategorise={byReceipt} /> : null,
               notes: attachable ? (
                 <>
                   <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>

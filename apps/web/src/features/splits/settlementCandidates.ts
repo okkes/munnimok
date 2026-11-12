@@ -1,4 +1,5 @@
-import { apiFetch } from '@/lib/api';
+import { serverSplits } from '@/application/splitsApi';
+import type { SplitDetail } from '@/application/splitsApi';
 
 export interface SettlementCandidate {
   cents: number;
@@ -9,37 +10,34 @@ export interface SettlementCandidate {
 }
 
 /**
- * Open settlements where I am the RECEIVER (SP5, design: "when the
- * actual bank transfer shows up in B's feed, review suggests linking
- * it"). Splits are online-only — any failure returns [] and review
- * simply shows no suggestion.
+ * Money a split says is coming MY way (SP5, design: "when the actual bank
+ * transfer shows up in B's feed, review suggests linking it"): a payment
+ * a member recorded to me while the split runs, and — once it is settled —
+ * every payment of the plan that names me as its receiver and is not
+ * marked paid yet. Splits are online-only — any failure returns [] and
+ * review simply shows no suggestion.
  */
 export async function fetchSettlementCandidates(): Promise<SettlementCandidate[]> {
-  const list = await apiFetch('/splits').catch(() => null);
-  if (!list?.ok) return [];
-  const splits = (await list.json()) as { id: string; name: string; status: string }[];
+  const splits = (await serverSplits.list()) ?? [];
   const candidates: SettlementCandidate[] = [];
-  for (const split of splits.filter((s) => s.status === 'open')) {
-    const res = await apiFetch(`/splits/${split.id}`).catch(() => null);
-    if (!res?.ok) continue;
-    const detail = (await res.json()) as {
-      members: { userId: string; displayName: string | null; isMe: boolean }[];
-      entries: { kind: string; paidByUserId: string; amountCents: number; shares: { userId: string; cents: number }[] }[];
-    };
-    const me = detail.members.find((m) => m.isMe);
-    if (!me) continue;
-    for (const entry of detail.entries) {
-      // a settlement to me: I'm the sole share holder and not the payer
-      if (entry.kind !== 'settlement' || entry.paidByUserId === me.userId) continue;
-      if (entry.shares.length !== 1 || entry.shares[0].userId !== me.userId) continue;
-      const payer = detail.members.find((m) => m.userId === entry.paidByUserId);
-      candidates.push({
-        cents: entry.amountCents,
-        splitId: split.id,
-        splitName: split.name,
-        fromName: payer?.displayName ?? null,
-      });
-    }
+  for (const split of splits.filter((s) => s.status !== 'archived')) {
+    const detail = await serverSplits.get(split.id);
+    if (detail && detail !== 'gone') candidates.push(...comingMyWay(detail));
   }
   return candidates;
+}
+
+function comingMyWay(detail: SplitDetail): SettlementCandidate[] {
+  const me = detail.members.find((member) => member.isMe)?.userId;
+  if (!me) return [];
+  const from = (userId: string, cents: number): SettlementCandidate => ({
+    cents,
+    splitId: detail.split.id,
+    splitName: detail.split.name,
+    fromName: detail.members.find((member) => member.userId === userId)?.displayName ?? null,
+  });
+  // a payment to me: I'm the sole share holder and not the payer
+  const recorded = detail.entries.filter((entry) => entry.kind === 'settlement' && entry.paidByUserId !== me && entry.shares.length === 1 && entry.shares[0].userId === me);
+  const planned = detail.payments.filter((payment) => payment.toUserId === me && !payment.paidAt);
+  return [...recorded.map((entry) => from(entry.paidByUserId, entry.amountCents)), ...planned.map((payment) => from(payment.fromUserId, payment.amountCents))];
 }

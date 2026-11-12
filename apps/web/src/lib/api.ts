@@ -138,6 +138,10 @@ export interface ApiCapabilities {
   vapidPublicKey?: string;
   /** logo.dev brand search proxy configured server-side */
   logos?: boolean;
+  /** #521: the API searches the web for pictures (Brave Search key configured) */
+  imageSearch?: boolean;
+  /** #567: the API has a vision model read receipt photos (the reader's key configured) */
+  receiptAi?: boolean;
   /** sign-up is closed: accounts come from invitation links (Logto's magic link, /invite) */
   inviteOnly?: boolean;
 }
@@ -153,6 +157,9 @@ export function resetApiCapabilitiesCache(): void {
 
 /** the last /health handshake verdict — null while unknown or compatible */
 export const getProtocolIssue = (): ProtocolIssue | null => protocolIssue;
+
+/** false until /health has answered: an empty answer from getApiCapabilities then means "could not ask", not "offers nothing" */
+export const apiCapabilitiesKnown = (): boolean => capabilities !== null;
 
 /** Server feature flags from /health (cached per page load). */
 export async function getApiCapabilities(): Promise<ApiCapabilities> {
