@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.21.1](https://github.com/okkes/munnimok/compare/v5.21.0...v5.21.1) (2026-11-12)
+
+
+### 🐞 Bug Fixes
+
+* **infra:** GlitchTip 7 runs as one container, and a service that left a stack leaves the NAS ([8e15de3](https://github.com/okkes/munnimok/commit/8e15de39df88015230eba0fcd7bb866d7a0237c1))
+
 ## [5.21.0](https://github.com/okkes/munnimok/compare/v5.20.0...v5.21.0) (2026-11-12)
 
 
