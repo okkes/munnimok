@@ -639,6 +639,10 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
 
             if (first == sending) return await sending.ConfigureAwait(false);
 
+            // The caller walking away ends the wait too, and HttpClient reports
+            // that as the caller's cancellation: no bound bit, nothing was given up on.
+            ct.ThrowIfCancellationRequested();
+
             var path = request.RequestUri!.AbsolutePath;
             control.GaveUpOn(path, timeout, time.GetUtcNow() - sentAt);
 
