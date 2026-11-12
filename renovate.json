@@ -47,6 +47,10 @@
     }
   ],
   "vulnerabilityAlerts": { "enabled": true },
+  "html": {
+    "description": "the pages under Fixtures are captures of a shop's or a registry's own site for the adapters' tests: nothing in them is ours to update, and they keep the bytes the party sent — the no-break spaces Renovate reports as hidden characters included. The list is the preset's own plus that folder: a manager's ignorePaths replaces the inherited one",
+    "ignorePaths": ["**/node_modules/**", "**/bower_components/**", "**/vendor/**", "**/examples/**", "**/__tests__/**", "**/test/**", "**/tests/**", "**/__fixtures__/**", "**/Fixtures/**"]
+  },
   "customManagers": [
     {
       "customType": "regex",
