@@ -257,7 +257,7 @@ public static class ImageSearchEndpoints
             while ((read = await body.ReadAsync(buffer, ct)) > 0)
             {
                 if (picture.Length + read > MaxPictureBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-                picture.Write(buffer, 0, read);
+                await picture.WriteAsync(buffer.AsMemory(0, read), ct);
             }
             return Results.File(picture.ToArray(), type);
         }

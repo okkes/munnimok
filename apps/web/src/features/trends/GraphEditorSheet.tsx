@@ -257,20 +257,20 @@ export function GraphEditorSheet({
           </div>
           {/* #455 (user 2026-11-12): buying what a goal saved for is real spending, and a graph may still leave it out */}
           {spending && (
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={skipGoals}
-              data-testid="trends-graph-skip-goals"
-              onClick={() => setSkipGoals((on) => !on)}
-              className="m-tap flex w-full items-start gap-3 rounded-card border border-line bg-surface px-3 py-2.5 text-left"
-            >
+            <label className="m-tap flex w-full cursor-pointer items-start gap-3 rounded-card border border-line bg-surface px-3 py-2.5 text-left">
+              <input
+                type="checkbox"
+                data-testid="trends-graph-skip-goals"
+                checked={skipGoals}
+                onChange={(e) => setSkipGoals(e.target.checked)}
+                className="sr-only"
+              />
               <TickBox tick={skipGoals ? 'checked' : 'off'} />
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] text-ink">{t('trends.graphSkipGoals')}</span>
                 <span className="block text-[11px] leading-snug text-ink-4">{t('trends.graphSkipGoalsHint')}</span>
               </span>
-            </button>
+            </label>
           )}
         </div>
       </Sheet>

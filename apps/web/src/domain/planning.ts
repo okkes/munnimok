@@ -297,11 +297,17 @@ export function sliceOwner(slice: TxSliceView, owners: SliceOwners, txId?: strin
   if (linked && owners.loanIds.has(linked)) return slice.amountCents < 0 ? { kind: 'debt', id: linked } : null;
   if (slice.recurringId && owners.recurringIds.has(slice.recurringId)) return { kind: 'recurring', id: slice.recurringId };
   if (linked) return null;
+  return spendingOwner(slice, owners, txId);
+}
+
+/** money that went nowhere of the person's own: the goal that bought it, else its event, else its category */
+function spendingOwner(slice: TxSliceView, owners: SliceOwners, txId: string | undefined): SliceOwner | null {
   const goalId = txId ? owners.goalByTx?.get(txId) : undefined;
-  if (goalId && slice.effType === 'expense') return slice.catId === REIMBURSED_ID ? null : { kind: 'goal', id: goalId };
+  // the settled part of a paid-back expense is bookkeeping on both rows: a goal's or an event's own total leaves it out too
+  const settled = slice.catId === REIMBURSED_ID;
+  if (goalId && slice.effType === 'expense') return settled ? null : { kind: 'goal', id: goalId };
   if (slice.eventId && owners.eventIds.has(slice.eventId) && isEventMoney(slice.effType)) {
-    // the settled part of a paid-back expense is bookkeeping on both rows: the event's own total leaves it out too
-    return slice.catId === REIMBURSED_ID ? null : { kind: 'event', id: slice.eventId };
+    return settled ? null : { kind: 'event', id: slice.eventId };
   }
   return slice.effType === 'expense' ? { kind: 'category', catId: slice.catId ?? '' } : null;
 }

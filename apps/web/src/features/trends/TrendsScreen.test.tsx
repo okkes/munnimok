@@ -194,10 +194,10 @@ describe('TrendsScreen (demo identity)', () => {
       await waitFor(() => expect((field as HTMLInputElement).value).toBe(''));
       fireEvent.change(field, { target: { value: name } });
       fireEvent.click(screen.getByTestId('trends-graph-cat-consumption'));
-      const skip = screen.getByTestId('trends-graph-skip-goals');
-      expect(skip.getAttribute('aria-checked')).toBe('false');
+      const skip = screen.getByTestId('trends-graph-skip-goals') as HTMLInputElement;
+      expect(skip.checked).toBe(false);
       if (skipGoals) fireEvent.click(skip);
-      expect(skip.getAttribute('aria-checked')).toBe(String(skipGoals));
+      expect(skip.checked).toBe(skipGoals);
       fireEvent.click(screen.getByTestId('trends-graph-save'));
       const card = (await screen.findByText(name, {}, { timeout: 5000 })).closest('section')!;
       return card.dataset.testid!.replace('trends-graph-', '');
@@ -221,8 +221,8 @@ describe('TrendsScreen (demo identity)', () => {
 
     // the option taken off again: the coffee counts, the note is gone
     fireEvent.click(screen.getByTestId(`trends-graph-edit-${lean}`));
-    const again = await screen.findByTestId('trends-graph-skip-goals');
-    await waitFor(() => expect(again.getAttribute('aria-checked')).toBe('true'));
+    const again = (await screen.findByTestId('trends-graph-skip-goals')) as HTMLInputElement;
+    await waitFor(() => expect(again.checked).toBe(true));
     fireEvent.click(again);
     fireEvent.click(screen.getByTestId('trends-graph-save'));
     await waitFor(() => expect(rowsCounted(lean)).toBe(rowsCounted(whole)), { timeout: 5000 });
