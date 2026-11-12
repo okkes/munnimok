@@ -1,3 +1,4 @@
+import { reportError } from '@/lib/report';
 import type { SqlExecutor } from './sqlBackend';
 
 /**
@@ -28,6 +29,7 @@ interface CapacitorSqlitePlugin {
   }): Promise<void>;
   open(options: { database: string }): Promise<void>;
   run(options: { database: string; statement: string; values: unknown[]; transaction: boolean }): Promise<unknown>;
+  executeSet(options: { database: string; set: { statement: string; values: unknown[] }[]; transaction: boolean }): Promise<unknown>;
   query(options: { database: string; statement: string; values: unknown[] }): Promise<SqliteQueryResult>;
   beginTransaction(options: { database: string }): Promise<void>;
   commitTransaction(options: { database: string }): Promise<void>;
@@ -83,10 +85,27 @@ export async function openEncryptedExecutor(database: string): Promise<SqlExecut
     cipherVersion = null;
   }
 
+  let batchRefused = false;
   return {
     async run(statement, params = []) {
       // transaction:false — explicit BEGIN/COMMIT drives batches instead
       await plugin.run({ database, statement, values: params, transaction: false });
+    },
+    async batch(statements) {
+      if (statements.length === 0) return;
+      if (!batchRefused) {
+        try {
+          // one flat value list per statement: a list of lists makes the plugin paste the values into the SQL text itself
+          await plugin.executeSet({ database, set: statements.map((s) => ({ statement: s.sql, values: s.params })), transaction: false });
+          return;
+        } catch (err) {
+          // a plugin build that refuses the batch costs the speed, never the sync: the statements go one by one,
+          // the way every device ran them before — said once, so it is known which devices do
+          batchRefused = true;
+          reportError('sqlite-batch', err);
+        }
+      }
+      for (const s of statements) await plugin.run({ database, statement: s.sql, values: s.params, transaction: false });
     },
     async query(statement, params = []) {
       const result = await plugin.query({ database, statement, values: params });

@@ -197,16 +197,25 @@ export class Repo {
     if (ops.length === 0) return;
     const entities = [...new Set(ops.map((op) => op.entity as EntityName))];
     await this.store.transact(entities, async () => {
-      for (const op of ops) {
-        const local = ((await this.store.get(op.entity as EntityName, op.entityId)) ?? null) as
-          | (Record<string, unknown> & SyncEnvelope)
-          | null;
-        const { row, changed } = applyOp(local, op);
-        if (changed) {
-          await this.store.put(op.entity as EntityName, { ...row, id: op.entityId, spaceId: op.spaceId });
-        }
-      }
+      // one read and one write per KIND of row, whatever the page holds: every store call is a trip into
+      // native code on a phone, and a page is a thousand changes (#594)
+      for (const entity of entities) await this.mergeInto(entity, ops.filter((op) => op.entity === entity));
     });
     for (const op of ops) this.clock.observe(op.hlc);
+  }
+
+  /** the ops of one entity, in their order, merged over what the store holds; rows no op changed are not written */
+  private async mergeInto(entity: EntityName, ops: Op[]): Promise<void> {
+    type Row = Record<string, unknown> & SyncEnvelope & { id: string };
+    const ids = [...new Set(ops.map((op) => op.entityId))];
+    const rows = new Map(((await this.store.getMany(entity, ids)) as unknown as Row[]).map((row) => [row.id, row]));
+    const written = new Set<string>();
+    for (const op of ops) {
+      const { row, changed } = applyOp(rows.get(op.entityId) ?? null, op);
+      if (!changed) continue;
+      rows.set(op.entityId, { ...row, id: op.entityId, spaceId: op.spaceId });
+      written.add(op.entityId);
+    }
+    await this.store.putMany(entity, [...written].map((id) => rows.get(id) as Row));
   }
 }
