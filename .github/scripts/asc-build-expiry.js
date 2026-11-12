@@ -28,7 +28,9 @@ function jwt() {
   return `${header}.${payload}.${b64url(sig)}`;
 }
 
-const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${v}\n`); };
+// one line per value: a line break inside one would write a second output, or a second table row, of its own
+const oneLine = (v) => String(v).replace(/[\r\n]+/g, ' ');
+const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${oneLine(v)}\n`); };
 
 /** whole days until an ISO date — negative once it passed, null without a date */
 function daysLeft(expirationDate, now = Date.now()) {
@@ -68,7 +70,7 @@ async function latestBuild(bundleId, { fetchImpl = fetch, token = null } = {}) {
 function row(bundleId, app, build, verdict) {
   const a = build?.attributes ?? {};
   const day = (iso) => (iso ? String(iso).slice(0, 10) : '-');
-  return [bundleId, app?.attributes?.name ?? '(no record)', a.version ?? '-', day(a.uploadedDate), day(a.expirationDate), verdict.daysLeft ?? '-', verdict.renew ? 'RENEW' : 'ok'].join(' | ');
+  return oneLine([bundleId, app?.attributes?.name ?? '(no record)', a.version ?? '-', day(a.uploadedDate), day(a.expirationDate), verdict.daysLeft ?? '-', verdict.renew ? 'RENEW' : 'ok'].join(' | '));
 }
 
 // exitCode instead of process.exit(): exiting while the fetch socket is

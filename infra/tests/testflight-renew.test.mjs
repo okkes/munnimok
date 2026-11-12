@@ -77,6 +77,9 @@ test('row: the table line a person reads — bundle id, app, version, uploaded, 
   const app = { id: 'app-1', attributes: { name: 'munni' } };
   assert.equal(row('app.munni.nas.prod', app, build(), { renew: false, daysLeft: 52 }), 'app.munni.nas.prod | munni | 812 | 2026-09-01 | 2026-11-30 | 52 | ok');
   assert.equal(row('app.munni.nas.dev', app, null, { renew: true, daysLeft: null }), 'app.munni.nas.dev | munni | - | - | - | - | RENEW');
+  // what Apple answers is written into the run's table: a name with a line break stays one row
+  const broken = { id: 'app-1', attributes: { name: 'munni\r\n| injected | row' } };
+  assert.equal(row('app.munni.nas.dev', broken, null, { renew: true, daysLeft: null }).includes('\n'), false);
 });
 
 test('the workflow: weekly on Mondays + by hand, one check per iOS environment in its GitHub environment, actions: write to dispatch native-ios.yml for the stack on its own branch, the Android remark, no Android job', () => {

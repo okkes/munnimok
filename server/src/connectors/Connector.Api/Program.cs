@@ -24,7 +24,7 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     options.TracesSampler = context => ConnectorTracing.Sample(context.TransactionContext, tracesSampleRate);
     options.TracePropagationTargets.Clear();
     options.Release = builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } tag ? $"munni-connector@{tag}" : null;
-    options.SetBeforeSend((e, _) => { e.SetTag("role", "control-plane"); return e; });
+    options.SetBeforeSend((e, _) => ConnectorNoise.Quiet(e));
 });
 
 // The one control plane of a munni environment hosts every provider pack —

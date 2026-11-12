@@ -103,7 +103,7 @@ public static class MoneyParser
             throw ConnectorException.ProviderChanged($"{field}: empty money value");
         }
 
-        var cleaned = raw.Trim().Replace(" ", string.Empty, StringComparison.Ordinal)
+        var cleaned = raw.Trim().Replace("\u00A0", string.Empty, StringComparison.Ordinal)
             .Replace(" ", string.Empty, StringComparison.Ordinal)
             .Replace("€", string.Empty, StringComparison.Ordinal);
 

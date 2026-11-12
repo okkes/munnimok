@@ -125,9 +125,9 @@ public sealed class ConnectorDisconnector(ConnectorRelay relay, ILogger<Connecto
                 }
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            // the party being away is no reason to keep a row the person asked to be rid of
+            // the party being away — or too slow, which arrives as a cancelled call — is no reason to keep a row the person asked to be rid of
             logger.LogWarning(ex, "could not end connector session {Session} of {Provider} at the party", session.Id, session.Provider);
             outcome = (SessionDisconnectOutcome.Unreachable, null);
         }

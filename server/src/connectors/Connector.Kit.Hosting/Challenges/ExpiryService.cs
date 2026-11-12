@@ -48,7 +48,9 @@ public sealed class ExpiryService(
             {
                 await SweepAsync(stoppingToken);
             }
-            catch (OperationCanceledException)
+            // A call that timed out is an OperationCanceledException too: only
+            // the host's own stop ends the sweeps.
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }

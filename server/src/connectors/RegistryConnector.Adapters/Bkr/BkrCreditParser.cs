@@ -209,7 +209,7 @@ internal static partial class BkrCreditParser
 
         var cleaned = raw
             .Replace("€", string.Empty, StringComparison.Ordinal)
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("\u00A0", string.Empty, StringComparison.Ordinal)
             .Replace(" ", string.Empty, StringComparison.Ordinal)
             .Trim();
 

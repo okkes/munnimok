@@ -102,6 +102,58 @@ public class SentryNoiseTests
         Assert.False(SentryNoise.IsHandledRace(unrelated));
     }
 
+    private static SentryEvent Thrown(params (string Type, string Value)[] chain)
+    {
+        var ev = new SentryEvent();
+        ev.SentryExceptions = chain.Select(c => new SentryException { Type = c.Type, Value = c.Value }).ToArray();
+        return ev;
+    }
+
+    [Fact]
+    public void ADatabaseThatDidNotAnswerIsOneIssueWhoeverNoticed()
+    {
+        // the schedule's cycle and a request of the same minutes: different words, one outage
+        var cycle = Thrown(
+            ("System.Net.Sockets.SocketException", "Name does not resolve"),
+            ("Npgsql.NpgsqlException", "Name does not resolve"),
+            ("System.InvalidOperationException", "An exception has been raised that is likely due to a transient failure."));
+        var request = Thrown(
+            ("System.TimeoutException", "Timeout during connection attempt"),
+            ("Npgsql.NpgsqlException", "Failed to connect to 172.31.0.9:5432"));
+
+        Assert.Equal([SentryNoise.UnreachableFingerprint], SentryNoise.Quiet(cycle)!.Fingerprint);
+        Assert.Equal([SentryNoise.UnreachableFingerprint], SentryNoise.Quiet(request)!.Fingerprint);
+    }
+
+    [Fact]
+    public void EfsOwnConnectionLineNeverReportsBesideItsException()
+    {
+        var line = LogEvent(
+            "Microsoft.EntityFrameworkCore.Database.Connection",
+            "An error occurred using the connection to database 'munni' on server 'tcp://postgres:5432'.");
+        Assert.Null(SentryNoise.Quiet(line));
+    }
+
+    [Fact]
+    public void AStatementTheServerRefusedKeepsItsOwnIssue()
+    {
+        var refused = Thrown(("Npgsql.PostgresException", "42703: column \"Nope\" does not exist"));
+        Assert.Empty(SentryNoise.Quiet(refused)!.Fingerprint);
+
+        // a query that ran past its time is a slow query, not an outage
+        var slow = Thrown(
+            ("System.TimeoutException", "Timeout during reading attempt"),
+            ("Npgsql.NpgsqlException", "Exception while reading from stream"),
+            ("System.InvalidOperationException", "An exception has been raised that is likely due to a transient failure."));
+        Assert.Empty(SentryNoise.Quiet(slow)!.Fingerprint);
+
+        var command = LogEvent("Microsoft.EntityFrameworkCore.Database.Command", "Failed executing DbCommand (100ms)\nSELECT * FROM \"Spaces\";");
+        Assert.Empty(SentryNoise.Quiet(command)!.Fingerprint);
+
+        var race = LogEvent("Microsoft.EntityFrameworkCore.Database.Command", "Failed executing DbCommand (5ms)\nINSERT INTO \"UserDevices\" (\"Id\") VALUES (@p0);");
+        Assert.Null(SentryNoise.Quiet(race));
+    }
+
     // performance tracing (user 2026-10-09): the environment's share, read invariantly; nonsense is the default, 0 is errors only
     [Theory]
     [InlineData(null, 0.2)]

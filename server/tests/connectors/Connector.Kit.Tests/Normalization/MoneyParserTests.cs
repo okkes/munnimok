@@ -48,7 +48,7 @@ public sealed class MoneyParserTests
     [InlineData("1,234,567.89", 123_456_789L)]
     [InlineData("-1.234,56", -123_456L)]
     [InlineData("1 234,56", 123_456L)]           // space as the thousands group
-    [InlineData("1 234,56", 123_456L)]      // no-break space, as an export writes it
+    [InlineData("1\u00A0234,56", 123_456L)]      // no-break space, as an export writes it
     public void A_mixed_pair_resolves_by_whichever_separator_comes_last(string raw, long expected)
     {
         Assert.Equal(expected, MoneyParser.ToMinor(raw, MoneyUnit.MajorString));
@@ -59,7 +59,7 @@ public sealed class MoneyParserTests
     [InlineData("€ 12,34")]
     [InlineData("12,34 €")]
     [InlineData("  12,34  ")]
-    [InlineData(" 12,34 ")]
+    [InlineData("\u00A012,34\u00A0")]
     public void Currency_symbols_and_whitespace_are_stripped(string raw)
     {
         Assert.Equal(1234L, MoneyParser.ToMinor(raw, MoneyUnit.MajorString));

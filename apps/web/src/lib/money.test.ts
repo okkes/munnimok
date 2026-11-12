@@ -55,7 +55,7 @@ describe('parseCents (user input -> integer cents)', () => {
 describe('fmtCents (integer cents -> localized string)', () => {
   it('formats per language locale', () => {
     expect(fmtCents(123456, 'EUR', 'en')).toBe('€1,234.56');
-    expect(fmtCents(123456, 'EUR', 'nl')).toBe('€ 1.234,56');
+    expect(fmtCents(123456, 'EUR', 'nl')).toBe('€\u00A01.234,56');
     expect(fmtCents(-2899, 'EUR', 'en')).toBe('-€28.99');
   });
 

@@ -19,6 +19,8 @@ builder.Logging.AddSentry(options =>
 {
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
     options.SendDefaultPii = false;
+    // a 5xx of the control plane is retried by the host's own loops, which report what did not land in the end
+    options.CaptureFailedRequests = false;
     // performance tracing (user 2026-10-09, docs/observability.md): a generic
     // host starts no transaction of its own, so the rate only governs the
     // spans a job transaction would carry once one exists; the control

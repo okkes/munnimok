@@ -307,7 +307,9 @@ public sealed class InlineJobPump(
                 job = await queue.TryLeaseAsync(
                     InlineJobRunner.AgentId, null, capabilities, AllKinds, ttl, stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // A call that timed out is an OperationCanceledException too, and
+            // one that leaves this loop stops the whole control plane.
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "inline lease attempt failed");
             }
