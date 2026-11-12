@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.21.3',
+    date: '2026-11-12',
+    items: [
+      {
+        en: 'Signing in on a new phone: your data arrives many times faster, and while it comes in the waiting screen counts what it has fetched instead of standing still.',
+        nl: 'Aanmelden op een nieuwe telefoon: je gegevens komen vele malen sneller binnen, en terwijl ze binnenkomen telt het wachtscherm wat het heeft opgehaald in plaats van stil te staan.',
+        tr: 'Yeni bir telefonda oturum açma: verilerin çok daha hızlı geliyor ve gelirken bekleme ekranı yerinde durmak yerine getirdiklerini sayıyor.',
+      },
+    ],
+  },
+  {
     version: '5.21.2',
     date: '2026-11-12',
     items: [
