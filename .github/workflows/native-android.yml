@@ -97,9 +97,10 @@ jobs:
           CATALOG_URL: ${{ vars.NATIVE_API_URL }}/catalog
 
       - name: Build web bundle and sync the shell
+        # #596: the shell's own downloads (CocoaPods, Gradle) fail on a CDN's bad minute — one more try after a pause
         run: |
           npm ci
-          npm run sync -w @munni/native
+          npm run sync -w @munni/native || { echo "::warning::the shell sync failed — one more try in 30 s"; sleep 30; npm run sync -w @munni/native; }
         env:
           VITE_API_URL: ${{ vars.NATIVE_API_URL }}
           VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
