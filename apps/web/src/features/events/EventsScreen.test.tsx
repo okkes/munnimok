@@ -181,8 +181,9 @@ describe('Events (demo identity)', () => {
     // "find more" — the excluded transaction keeps it alive with exactly one
     await waitFor(() => expect(screen.getByTestId('eventdetail-find-more').textContent).toMatch(/1/), { timeout: 8000 });
     expect(screen.queryByTestId('eventdetail-suggest')).toBeNull();
-    expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
-    expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
+    // the boot's background passes may still re-type a row for a moment: the blocks are waited for, not read once
+    await screen.findByTestId('eventdetail-cats', {}, { timeout: 8000 });
+    await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
     // the quiet door opens the same picker
     fireEvent.click(screen.getByTestId('eventdetail-find-more'));
     await screen.findByTestId('eventpick-list');
@@ -266,7 +267,7 @@ describe('Events (demo identity)', () => {
     expect(flows).toMatch(/4[.,]50/);
     expect(flows).toMatch(/2[.,]200/);
     // the breakdown stays about spending: the coffee, never the salary
-    expect(screen.getByTestId('eventdetail-cats').textContent).toMatch(/4[.,]50/);
+    await waitFor(() => expect(screen.getByTestId('eventdetail-cats').textContent).toMatch(/4[.,]50/), { timeout: 8000 });
     expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/2[.,]200/);
     // the credit’s own detail offers the event row (it was gated to expenses)
     fireEvent.click(await screen.findByTestId('tx-row-dm1'));
@@ -445,7 +446,7 @@ describe('Events (demo identity)', () => {
     expect(credit.textContent).toMatch(/€0[.,]00/);
     // the event cost only the fuel: no Reimbursement line, nothing received
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/9[.,]76/));
-    expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/101/);
+    await waitFor(() => expect(screen.getByTestId('eventdetail-cats').textContent).not.toMatch(/101/), { timeout: 8000 });
     expect(screen.queryByTestId('eventdetail-flows')).toBeNull();
     // the settled expense no longer reads "expected"
     expect(txs.querySelector('[data-testid="tx-row-hotel493"]')?.textContent).toContain('Reimbursed');
