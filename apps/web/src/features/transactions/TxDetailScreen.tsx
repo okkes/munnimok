@@ -40,6 +40,7 @@ import { BulkReceiptQueue } from '@/features/shopping/BulkReceiptQueue';
 import { receiptsToVerify } from '@/features/shopping/receiptWalk';
 import { useAttachableReceipts } from '@/application/connections';
 import { useProposedMatches } from '@/application/receiptLinks';
+import { EntryLinkSection } from './EntryLinkSection';
 import { ReimburseSection } from './ReimburseSection';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
 import { useCanEdit } from '@/app/useCanEdit';
@@ -2595,6 +2596,9 @@ export function TxDetailScreen({ backTo = '/transactions', openTx }: Readonly<{ 
           onPickCounterpart={canEdit ? () => setMatchOpen(true) : undefined}
           readOnly={!canEdit}
         />
+
+        {/* #547: a hand-typed entry and the bank's own transaction — linked, or still waiting */}
+        {!partView && <EntryLinkSection tx={tx} account={account} readOnly={!canEdit} />}
 
         {/* block: categories — ONE edit affordance for the whole block
             (user: a pencil per slice read wrong); rows stay tappable.

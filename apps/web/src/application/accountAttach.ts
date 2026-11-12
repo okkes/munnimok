@@ -87,6 +87,10 @@ export async function detachFeedFromSpace(
     (l) => l.deleted === 0 && l.accountId === accountId && l.feedSpaceId === feedSpaceId,
   );
   if (local) await repo.remove('accountLink', spaceId, local.id);
+  // #547 (user 2026-11-11): "when you detach an account, you lose all your manual entries" — they were this space's alone
+  for (const row of await store.bySpace('transaction', spaceId)) {
+    if (row.deleted === 0 && row.accountId === accountId && !!row.enteredAt) await repo.remove('transaction', spaceId, row.id);
+  }
   // #544: nothing in the space keeps pointing at the account it let go
   await releaseAccountReferences(store, repo, spaceId, accountId);
   void logActivity(store, repo, spaceId, 'detach', (await store.get('account', accountId))?.name);

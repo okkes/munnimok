@@ -65,6 +65,8 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   goalCashOut: { key: 'act.goalCashOut', icon: 'flag-checkered' },
   goalCashOutUndo: { key: 'act.goalCashOutUndo', icon: 'flag-outline' },
   goalPurchase: { key: 'act.goalPurchase', icon: 'flag-checkered' },
+  entryLink: { key: 'act.entryLink', icon: 'link-variant' },
+  entryUnlink: { key: 'act.entryUnlink', icon: 'link-variant-off' },
   debtAdd: { key: 'act.debtAdd', icon: 'scale-balance' },
   debtEdit: { key: 'act.debtEdit', icon: 'scale-balance' },
   debtRemove: { key: 'act.debtRemove', icon: 'scale-balance' },

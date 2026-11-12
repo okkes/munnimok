@@ -5,7 +5,7 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { accountLinkId } from '@/domain/feedIds';
-import { reconcileSpaceLinks } from './accountAttach';
+import { detachFeedFromSpace, reconcileSpaceLinks } from './accountAttach';
 import { fetchSpaceLinks } from '@/features/accounts/feedGateway';
 
 vi.mock('@/features/accounts/feedGateway', () => ({
@@ -68,6 +68,24 @@ describe('reconcileSpaceLinks', () => {
   it('an empty server answer changes nothing', async () => {
     const { store, repo } = await makeStore();
     expect(await reconcileSpaceLinks(store, repo, SPACE)).toBe(0);
+    expect((await store.bySpace('accountLink', SPACE)).filter((l) => l.deleted === 0)).toHaveLength(0);
+  });
+
+  it('#547 (user 2026-11-11): detaching an account takes the entries typed on it in this space — and nothing else', async () => {
+    const { store, repo } = await makeStore();
+    await repo.upsert('account', 'feedA', 'accA', { name: 'Bank', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'wallet', { name: 'Wallet', type: 'cash', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feedA'), { feedSpaceId: 'feedA', accountId: 'accA', archived: 0 });
+    const row = { date: '2026-11-10', amountCents: -500, currency: 'EUR', merchant: 'x', needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'entry', { ...row, accountId: 'accA', enteredAt: '2026-11-10T09:00:00.000Z', inBalance: 1 });
+    await repo.upsert('transaction', SPACE, 'cash', { ...row, accountId: 'wallet' });
+    await repo.upsert('transaction', 'feedA', 'bank', { ...row, accountId: 'accA' });
+
+    await detachFeedFromSpace(store, repo, SPACE, 'feedA', 'accA');
+    expect((await store.get('transaction', 'entry'))?.deleted).toBe(1);
+    expect((await store.get('transaction', 'cash'))?.deleted).toBe(0);
+    // the bank's own row is the feed's: every other space that attaches the account still has it
+    expect((await store.get('transaction', 'bank'))?.deleted).toBe(0);
     expect((await store.bySpace('accountLink', SPACE)).filter((l) => l.deleted === 0)).toHaveLength(0);
   });
 });

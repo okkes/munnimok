@@ -3,7 +3,7 @@ import type { Repo } from '@/db/repo';
 import { spaceAccountLinks, visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { TxTransformFields } from '@/db/joined';
 import type { AccountRow, EntryBankBefore, TransactionRow, TxMetaRow } from '@/db/types';
-import { autoLinks, isEntry } from '@/domain/entryMatch';
+import { autoLinks, countsInBalance, isEntry } from '@/domain/entryMatch';
 import { mirrorTxId, txMetaId } from '@/domain/feedIds';
 import { GIVE_UP_MS, carriedFields, repointReferences, tombstoneMs } from './reservedCarry';
 
@@ -124,6 +124,38 @@ export async function bankRowsOf(store: StorageBackend, spaceId: string, account
     }
   }
   return rows;
+}
+
+/**
+ * The bank row a new entry fits exactly, when there is one and only one —
+ * asked about before the entry is saved (user: saving asks "link them?"
+ * instead of linking silently).
+ */
+export async function bankFitFor(
+  store: StorageBackend,
+  spaceId: string,
+  draft: Pick<TransactionRow, 'accountId' | 'date' | 'amountCents' | 'merchant'>,
+): Promise<BankRowRef | null> {
+  const rows = await bankRowsOf(store, spaceId, await spaceAccounts(store, spaceId));
+  const taken = new Set((await store.bySpace('transaction', spaceId)).filter((row) => row.deleted === 0 && !!row.bankTxId).map((row) => row.bankTxId!));
+  const bankId = autoLinks([{ ...draft, id: 'draft', deleted: 0 }], [...rows.values()].map((row) => row.raw), taken).get('draft');
+  return bankId ? (rows.get(bankId) ?? null) : null;
+}
+
+/**
+ * What the entries typed by hand still add on top of a bank account's
+ * balance, over every space on this device — folded into the balance the
+ * moment the account becomes hand-kept (going offline): from then on no
+ * bank number is coming that could contain them.
+ */
+export async function entriesOnTopOf(store: StorageBackend, account: AccountRow): Promise<number> {
+  let cents = 0;
+  for (const row of await store.allRows('transaction')) {
+    if (row.deleted !== 0 || row.accountId !== account.id || row.inBalance !== 1 || !row.enteredAt) continue;
+    const linked = row.bankTxId ? await store.get('transaction', row.bankTxId) : undefined;
+    if (countsInBalance(row, account, linked?.deleted === 0 ? linked : null)) cents += row.amountCents;
+  }
+  return cents;
 }
 
 /** the accounts a space can type entries on, by id: its own and the attached ones */

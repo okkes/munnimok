@@ -621,7 +621,15 @@ export function HomeScreen() {
                               className="h-4 w-4 shrink-0 accent-[var(--m-bg)]"
                             />
                           )}
-                          <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{a.name}</span>
+                            {/* #547: the balance in two parts where entries count on top of the bank's number */}
+                            {a.entriesCents !== undefined && a.bankBalanceCents !== undefined && (
+                              <span className="block truncate text-[11px] opacity-80" data-testid={`band-entries-${a.id}`}>
+                                {t('acct.balanceParts', { bank: fmtSensitive(a.bankBalanceCents, a.currency), entries: fmtSensitive(a.entriesCents, a.currency) })}
+                              </span>
+                            )}
+                          </span>
                           <span className="m-num">{fmtSensitive(a.balanceCents, a.currency)}</span>
                         </div>
                       );

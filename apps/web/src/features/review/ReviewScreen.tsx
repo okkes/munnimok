@@ -54,6 +54,7 @@ import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { EntryReviewRow } from '@/features/transactions/EntryLinkSection';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
 import { TitleSearchButton } from '@/features/transactions/TitleSearch';
@@ -2527,6 +2528,8 @@ export function ReviewScreen() {
                     onAsk={() => setReceiptPickOpen(true)}
                   />
                 )}
+                {/* #547: this bank row was linked to something typed by hand — said here, and undone here */}
+                <EntryReviewRow tx={tx} />
 
                 {/* #324 (user): the note joins the review card — staged
                     like every other field, written on Confirm, and the

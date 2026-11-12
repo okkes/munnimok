@@ -1,3 +1,4 @@
+import { entriesOnTopOf } from '@/application/entryLink';
 import { forgetSpacesNotifyOff } from '@/application/spaceNotifications';
 import { apiFetch } from '@/lib/api';
 import { reportError } from '@/lib/report';
@@ -90,7 +91,12 @@ export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOpt
   // guard and no outbox — every space is the profile's own now and nothing syncs any more
   const local = new Repo(ctx.store, getClock(), { trackOutbox: false });
   for (const account of bankFed) {
-    await local.upsert('account', account.spaceId, account.id, { source: 'manual' }).catch((err: unknown) => reportError('goOffline', err));
+    // #547: entries typed by hand that still counted on top of the bank's number become part of the balance —
+    // no bank number is coming any more that could contain them
+    const onTop = await entriesOnTopOf(ctx.store, account).catch(() => 0);
+    await local
+      .upsert('account', account.spaceId, account.id, { source: 'manual', ...(onTop === 0 ? {} : { balanceCents: account.balanceCents + onTop }) })
+      .catch((err: unknown) => reportError('goOffline', err));
   }
   // the account's muted spaces would stay muted in the profile, where no switch reaches them
   await forgetSpacesNotifyOff(ctx.store).catch((err: unknown) => reportError('goOffline', err));

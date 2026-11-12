@@ -7,7 +7,7 @@ import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 import { visibleAccounts, visibleTransactions } from '@/db/joined';
 import { accountLinkId, mirrorTxId, txMetaId } from '@/domain/feedIds';
-import { bankRowsOf, linkEntries, linkEntry, unlinkEntry } from './entryLink';
+import { bankRowsOf, entriesOnTopOf, linkEntries, linkEntry, unlinkEntry } from './entryLink';
 import { carryReservedOpinions } from './reservedCarry';
 
 const SPACE = 'space_entry';
@@ -179,9 +179,13 @@ describe('your entry and the bank’s transaction read as one', () => {
     expect(await linkEntries(store, repo)).toBe(2);
     expect(await balances(SPACE)).toEqual([105_000, 100_000, 5000]);
 
+    // going offline folds what still counts into the balance: the account is hand-kept from then on
+    expect(await entriesOnTopOf(store, (await store.get('account', ACCOUNT))!)).toBe(5000);
+
     // the bank's balance moved on three days past the entry: it has clearly passed it
     await repo.upsert('account', FEED, ACCOUNT, { balanceCents: 105_000, balanceAsOf: '2026-11-14' });
     expect(await balances(SPACE)).toEqual([105_000, undefined, undefined]);
+    expect(await entriesOnTopOf(store, (await store.get('account', ACCOUNT))!)).toBe(0);
   });
 
   it('bank rows are the feed’s and the ones imported into the space — never another hand-typed entry', async () => {

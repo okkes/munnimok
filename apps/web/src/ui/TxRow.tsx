@@ -182,6 +182,17 @@ export function TxRow({
           {tx.pending === 1 && (
             <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>
           )}
+          {/* #547 (user): "an icon … indicating that manual and auto transactions are merged" — and an entry still waiting for its bank row says so */}
+          {(tx as { entry?: unknown }).entry !== undefined && (
+            <span className="ml-1.5 inline-flex align-middle" title={t('entry.linkedTitle')} data-testid={`tx-row-entry-${tx.id}`}>
+              <Icon name="link-variant" size={12} color="var(--m-accent-deep)" />
+            </span>
+          )}
+          {!!tx.enteredAt && !tx.bankTxId && (
+            <Pill className="ml-1.5" testId={`tx-row-waiting-${tx.id}`}>
+              {t('entry.waitingBadge')}
+            </Pill>
+          )}
           {tx.needsReview === 1 && !hideUnreviewed && (
             <Pill tone="warning" className={hideCategory && !showDate ? '' : 'ml-1.5'}>
               {t('tx.unreviewed')}
