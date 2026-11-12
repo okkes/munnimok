@@ -30,7 +30,7 @@ function colorOf(cats: Catalog, catId: string): string {
 /** a custom graph wears its one category's face; several share the chart glyph */
 function graphDef(cats: Catalog, graph: TrendGraph): GraphDef {
   const face = graph.catIds.length === 1 ? { icon: cats.byId(graph.catIds[0]).icon, color: colorOf(cats, graph.catIds[0]) } : { icon: 'chart-bar', color: ACCENT };
-  return { id: graph.id, name: graph.name, catIds: graph.catIds, accountIds: graph.accountIds ?? null, ...face };
+  return { id: graph.id, name: graph.name, catIds: graph.catIds, accountIds: graph.accountIds ?? null, skipGoalSpending: graph.skipGoalSpending === true, ...face };
 }
 
 /**
@@ -117,6 +117,11 @@ export function SpendingTab({
                   {graph.accountIds && (
                     <span className="block truncate text-[11px] text-ink-4" data-testid={`trends-graph-accounts-${graph.id}`}>
                       {accountsText(accounts, graph.accountIds)}
+                    </span>
+                  )}
+                  {graph.skipGoalSpending && (
+                    <span className="block truncate text-[11px] text-ink-4" data-testid={`trends-graph-skipgoals-${graph.id}`}>
+                      {t('trends.graphSkipGoalsNote')}
                     </span>
                   )}
                 </span>

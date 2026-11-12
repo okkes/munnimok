@@ -169,6 +169,67 @@ describe('TrendsScreen (demo identity)', () => {
     await waitFor(async () => expect((await readSpace())?.trendGraphs).toEqual([{ id, name: 'Savings spend', catIds: ['consumption'], accountIds: ['demo_save'] }]));
   }, 20_000);
 
+  it('#455: a graph can leave out what cashed-out goals bought — the card says so and those rows stop counting', async () => {
+    // a goal that names today's coffee (dm102) as what it bought, written once the boot chain has settled
+    const first = renderApp('/trends');
+    await screen.findByTestId('trends-cat-chart');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    await new Repo(new DexieBackend(db), new HlcClock('seed-goal'), { trackOutbox: false }).upsert('goal', DEMO_SPACE_ID, 'g_machine', {
+      name: 'Espresso machine',
+      targetCents: 1000,
+      allocatedCents: 0,
+      archived: 1,
+      cashOut: { date: '2026-01-01', txIds: [], purchaseTxIds: ['dm102'] },
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/trends');
+    await screen.findByTestId('trends-cat-chart');
+    // two graphs over the same categories: one leaves the goal's purchase out, the other counts everything
+    const makeGraph = async (name: string, skipGoals: boolean) => {
+      fireEvent.click(screen.getByTestId('trends-graph-new'));
+      const field = await screen.findByTestId('trends-graph-name');
+      await waitFor(() => expect((field as HTMLInputElement).value).toBe(''));
+      fireEvent.change(field, { target: { value: name } });
+      fireEvent.click(screen.getByTestId('trends-graph-cat-consumption'));
+      const skip = screen.getByTestId('trends-graph-skip-goals');
+      expect(skip.getAttribute('aria-checked')).toBe('false');
+      if (skipGoals) fireEvent.click(skip);
+      expect(skip.getAttribute('aria-checked')).toBe(String(skipGoals));
+      fireEvent.click(screen.getByTestId('trends-graph-save'));
+      const card = (await screen.findByText(name, {}, { timeout: 5000 })).closest('section')!;
+      return card.dataset.testid!.replace('trends-graph-', '');
+    };
+    const lean = await makeGraph('Day to day', true);
+    const whole = await makeGraph('Everything', false);
+    expect(screen.getByTestId(`trends-graph-skipgoals-${lean}`).textContent).toBe('Without goal purchases');
+    expect(screen.queryByTestId(`trends-graph-skipgoals-${whole}`)).toBeNull();
+    await waitFor(async () =>
+      expect((await readSpace())?.trendGraphs).toEqual([
+        { id: lean, name: 'Day to day', catIds: ['consumption'], skipGoalSpending: true },
+        { id: whole, name: 'Everything', catIds: ['consumption'] },
+      ]),
+    );
+    // the door's own span: the period's dates follow it in the button
+    const rowsCounted = (id: string) => Number(/· (\d+)$/.exec(screen.getByTestId(`trends-graph-txs-${id}`).querySelector('span')?.textContent ?? '')?.[1] ?? 0);
+    await waitFor(() => {
+      expect(rowsCounted(whole)).toBeGreaterThan(1);
+      expect(rowsCounted(lean)).toBe(rowsCounted(whole) - 1);
+    });
+
+    // the option taken off again: the coffee counts, the note is gone
+    fireEvent.click(screen.getByTestId(`trends-graph-edit-${lean}`));
+    const again = await screen.findByTestId('trends-graph-skip-goals');
+    await waitFor(() => expect(again.getAttribute('aria-checked')).toBe('true'));
+    fireEvent.click(again);
+    fireEvent.click(screen.getByTestId('trends-graph-save'));
+    await waitFor(() => expect(rowsCounted(lean)).toBe(rowsCounted(whole)), { timeout: 5000 });
+    expect(screen.queryByTestId(`trends-graph-skipgoals-${lean}`)).toBeNull();
+    await waitFor(async () => expect((await readSpace())?.trendGraphs?.[0]).toEqual({ id: lean, name: 'Day to day', catIds: ['consumption'] }));
+  }, 30_000);
+
   it('#531: the Cash flow tab composes its own balance lines — the money in hand ticked to start with, any accounts picked — edited and deleted on the space row', async () => {
     renderApp('/trends');
     await screen.findByTestId('trends-cat-chart');

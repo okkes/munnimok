@@ -6,6 +6,9 @@ import {
   cashOutSet,
   goalCashOutsIn,
   goalOverview,
+  goalPaidTxs,
+  poolAfterCashOut,
+  purchaseCandidates,
   monthsLeft,
   paceCentsPerPeriod,
   periodUnitKey,
@@ -130,5 +133,37 @@ describe('#455: cashing out a reached goal', () => {
     expect(cashOutCandidates(all, accounts, undefined, [cashed], '2026-10-20').map((t) => t.id)).toEqual(['direct', 'bare']);
     // the pool is the ticked set: an unticked savings account is not the goals' money
     expect(cashOutCandidates(all, accounts, { goalPoolAccountIds: [] }, [], '2026-10-20').map((t) => t.id)).toEqual(['bare']);
+  });
+
+  it('what the money bought is picked from the spending outside the pool — newest first; moves, income, reserved rows and another goal’s purchase stay out', () => {
+    const car = row({ id: 'car', amountCents: -1_800_000, catId: 'transport', date: '2026-10-13' });
+    const lunch = row({ id: 'lunch', amountCents: -1_500, catId: 'food', date: '2026-10-14' });
+    const reserved = row({ id: 'res', amountCents: -9_000, pending: 1 });
+    const salary = row({ id: 'sal', amountCents: 300_000, txType: 'income' });
+    const toLoan = row({ id: 'loan', amountCents: -20_000, txType: 'debtPayment', linkedAccountId: 'mortgage' });
+    const fromSavings = row({ id: 'direct', accountId: 'savings', amountCents: -40_000, catId: 'electronics' });
+    const ancient = row({ id: 'old', amountCents: -5_000, date: '2025-08-01' });
+    const all = [car, lunch, reserved, salary, toLoan, fromSavings, ancient, out, inLeg];
+    expect(purchaseCandidates(all, accounts, undefined, [], '2026-10-20').map((t) => t.id)).toEqual(['lunch', 'car']);
+    // another goal already named the car; the goal being edited keeps its own picks in the list
+    const bought = goal({ id: 'car', archived: 1, cashOut: { date: '2026-10-14', txIds: ['out'], purchaseTxIds: ['car'] } });
+    expect(purchaseCandidates(all, accounts, undefined, [bought], '2026-10-20').map((t) => t.id)).toEqual(['lunch']);
+    expect(purchaseCandidates(all, accounts, undefined, [bought], '2026-10-20', 'car').map((t) => t.id)).toEqual(['lunch', 'car']);
+  });
+
+  it('every row a goal answers for names its goal: what left savings and what that bought', () => {
+    const bought = goal({ archived: 1, cashOut: { date: '2026-10-14', txIds: ['out'], purchaseTxIds: ['car'] } });
+    const paid = goalPaidTxs([bought, goal({ id: 'trip' }), goal({ id: 'gone', deleted: 1, cashOut: { date: '2026-10-14', txIds: ['x'] } })]);
+    expect([...paid]).toEqual([['out', 'car'], ['car', 'car']]);
+  });
+
+  it('the pool after a cash-out: the goal lets go of what it held — more than that comes out of the unallocated savings, below zero when they run out', () => {
+    // €2,000 in savings after the withdrawal; this goal held 20,000, another holds 1,500
+    const others = [goal({}), goal({ id: 'trip', allocatedCents: 150_000 })];
+    const pool = [account({ id: 'savings', balanceCents: 200_000 })];
+    expect(goalOverview(others, pool).unallocatedCents).toBe(-1_950_000);
+    expect(poolAfterCashOut(others[0], others, pool)).toBe(50_000);
+    // €1,000 left: the other goal's 1,500 no longer fits — the pool reads −500 and the other goal keeps its money
+    expect(poolAfterCashOut(others[0], others, [account({ id: 'savings', balanceCents: 100_000 })])).toBe(-50_000);
   });
 });

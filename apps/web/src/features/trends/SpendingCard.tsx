@@ -3,7 +3,9 @@ import type { ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
+import { useGoals } from '@/application/goals';
 import type { SpaceTx } from '@/application/transactions';
+import { goalPaidTxs } from '@/domain/goals';
 import type { Period } from '@/domain/periods';
 import { netAmountCents } from '@/domain/reimbursement';
 import { expenseSeries, finishedAverage, localDate, scopeIds, scopedContribution } from '@/domain/trends';
@@ -27,6 +29,8 @@ export interface GraphDef {
   catIds: string[] | null;
   /** #531: the financial accounts it reads; null = every account */
   accountIds: string[] | null;
+  /** #455: what cashed-out goals bought stays out */
+  skipGoalSpending?: boolean;
   icon: string;
   color: string;
 }
@@ -114,12 +118,15 @@ export function SpendingCard({
   const [selected, setSelected] = useState(periods.length - 1);
   const [sheet, setSheet] = useState<{ open: boolean; subId: string | null }>({ open: false, subId: null });
 
-  // #531: a graph narrowed to some accounts reads only their rows — every view and the door alike
+  // #531: a graph narrowed to some accounts reads only their rows — every view and the door alike;
+  // #455: one that leaves out what goals bought drops those rows the same way
+  const goals = useGoals();
+  const goalPaid = useMemo(() => (graph.skipGoalSpending ? goalPaidTxs(goals ?? []) : null), [graph.skipGoalSpending, goals]);
   const txs = useMemo(() => {
-    if (!graph.accountIds) return allTxs;
-    const picked = new Set(graph.accountIds);
-    return allTxs.filter((tx) => picked.has(tx.accountId));
-  }, [allTxs, graph.accountIds]);
+    const picked = graph.accountIds ? new Set(graph.accountIds) : null;
+    if (!picked && !goalPaid) return allTxs;
+    return allTxs.filter((tx) => (!picked || picked.has(tx.accountId)) && !goalPaid?.has(tx.id));
+  }, [allTxs, graph.accountIds, goalPaid]);
   const ids = useMemo(() => scopeIds(cats, graph.catIds), [cats, graph.catIds]);
   const values = useMemo(() => expenseSeries(txs, periods, ids, inSpace), [txs, periods, ids, inSpace]);
   const average = useMemo(() => finishedAverage(values), [values]);

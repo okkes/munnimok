@@ -186,9 +186,11 @@ describe('Goals (demo identity)', () => {
     const card = await createGoal('Car', '1000');
     fireEvent.click(card);
     await screen.findByTestId('goaldetail-hero');
-    // not reached yet: no cash-out door
-    expect(screen.queryByTestId('goaldetail-cashout')).toBeNull();
+    // user 2026-11-12: cash out whenever you want — a quiet door until the goal is reached, the card once it is
+    expect(screen.getByTestId('goaldetail-cashout')).toBeTruthy();
+    expect(screen.queryByTestId('goaldetail-reached')).toBeNull();
     await fund('goaldetail-fund', '1000', /€1[.,]000[.,]00/);
+    expect(screen.getByTestId('goaldetail-reached')).toBeTruthy();
 
     // €900 left the savings account to pay for the car
     const { MunniDB } = await import('@/db/schema');
@@ -207,6 +209,16 @@ describe('Goals (demo identity)', () => {
       catId: 'savingWithdraw',
       needsReview: 0,
     });
+    // …and paid the dealer from the checking account
+    await repo.upsert('transaction', 'demo_space', 'car-purchase', {
+      accountId: 'demo_main',
+      date: localToday(),
+      amountCents: -90_000,
+      currency: 'EUR',
+      merchant: 'Autobedrijf Jansen',
+      catId: 'groceries',
+      needsReview: 0,
+    });
 
     fireEvent.click(await screen.findByTestId('goaldetail-cashout'));
     await screen.findByTestId('screen-goal-cashout');
@@ -215,6 +227,12 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('goalcashout-pick-car-withdrawal', {}, { timeout: 5000 }));
     expect(screen.getByTestId('goalcashout-fig-selected').textContent).toMatch(/€900[.,]00/);
     expect(screen.getByTestId('goalcashout-fig-back').textContent).toMatch(/€100[.,]00/);
+    expect(screen.queryByTestId('goalcashout-over')).toBeNull();
+    // what it bought is the second, optional pick: spending only — the move out of savings is not on offer there
+    expect(screen.queryByTestId('goalcashout-buy-car-withdrawal')).toBeNull();
+    expect(screen.queryByTestId('goalcashout-bought-total')).toBeNull();
+    fireEvent.click(await screen.findByTestId('goalcashout-buy-car-purchase'));
+    expect(screen.getByTestId('goalcashout-bought-total').textContent).toMatch(/€900[.,]00/);
     fireEvent.click(confirm);
 
     // the goal page says what paid for it and where the rest went
@@ -222,6 +240,7 @@ describe('Goals (demo identity)', () => {
     expect(screen.getByTestId('goaldetail-cashedout-sum').textContent).toMatch(/€900[.,]00/);
     expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€100[.,]00/);
     expect(done.textContent).toContain('Naar betaalrekening');
+    expect(screen.getByTestId('goaldetail-bought-txs').textContent).toContain('Autobedrijf Jansen');
     expect(screen.queryByTestId('goaldetail-fund')).toBeNull();
     const activity = (await db.activities.toArray()).map((row) => row.kind);
     expect(activity).toContain('goalCashOut');
@@ -247,6 +266,52 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(await screen.findByTestId(card.getAttribute('data-testid')!, {}, { timeout: 5000 }));
     fireEvent.click(await screen.findByTestId('goaldetail-undo-cashout'));
     await screen.findByTestId('goaldetail-cashout', {}, { timeout: 5000 });
+    db.close();
+  }, 30_000);
+
+  it('user 2026-11-12: a goal cashes out before it is reached; more than it held says what that does to the unallocated savings; what it bought is named afterwards', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    const card = await createGoal('Bike', '1000');
+    fireEvent.click(card);
+    await screen.findByTestId('goaldetail-hero');
+    await fund('goaldetail-fund', '500', /€500[.,]00/);
+
+    const { localToday } = await import('@/application/recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    const row = { date: localToday(), amountCents: -90_000, currency: 'EUR', needsReview: 0 as const };
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'bike-withdrawal', { ...row, accountId: 'demo_save', merchant: 'Naar betaalrekening', catId: 'savingWithdraw' });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'bike-purchase', { ...row, accountId: 'demo_main', merchant: 'Fietsenwinkel Zuid', catId: 'groceries' });
+
+    fireEvent.click(screen.getByTestId('goaldetail-cashout'));
+    await screen.findByTestId('screen-goal-cashout');
+    fireEvent.click(await screen.findByTestId('goalcashout-pick-bike-withdrawal', {}, { timeout: 5000 }));
+    // €400 more than the goal held: it comes out of the unallocated savings, which the demo's €8,150 cover
+    const over = screen.getByTestId('goalcashout-over');
+    expect(over.textContent).toMatch(/€400[.,]00/);
+    expect(over.textContent).toMatch(/unallocated savings/);
+    expect(over.getAttribute('data-negative')).toBe('false');
+    fireEvent.click(screen.getByTestId('goalcashout-confirm'));
+
+    await screen.findByTestId('goaldetail-cashedout', {}, { timeout: 5000 });
+    expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€400[.,]00.*unallocated savings/);
+    // nothing named yet — the goal page offers to; the screen opens on that pick alone
+    expect(screen.queryByTestId('goaldetail-bought-txs')).toBeNull();
+    fireEvent.click(screen.getByTestId('goaldetail-name-bought'));
+    await waitFor(() => expect(screen.getByTestId('screen-goal-cashout').getAttribute('data-mode')).toBe('bought'));
+    expect(screen.queryByTestId('goalcashout-list')).toBeNull();
+    // the search narrows the list; a pick made before stays
+    fireEvent.change(screen.getByTestId('goalcashout-search'), { target: { value: 'no such shop' } });
+    await screen.findByTestId('goalcashout-bought-empty');
+    fireEvent.change(screen.getByTestId('goalcashout-search'), { target: { value: 'Fietsenwinkel' } });
+    fireEvent.click(await screen.findByTestId('goalcashout-buy-bike-purchase'));
+    fireEvent.click(screen.getByTestId('goalcashout-confirm'));
+    const bought = await screen.findByTestId('goaldetail-bought-txs', {}, { timeout: 5000 });
+    expect(bought.textContent).toContain('Fietsenwinkel Zuid');
+    await waitFor(async () => expect((await db.activities.toArray()).map((a) => a.kind)).toContain('goalPurchase'));
+    const stored = await db.goals.toArray();
+    expect(stored[0].cashOut).toMatchObject({ txIds: ['bike-withdrawal'], purchaseTxIds: ['bike-purchase'] });
     db.close();
   }, 30_000);
 

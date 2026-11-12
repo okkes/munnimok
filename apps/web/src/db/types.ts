@@ -73,7 +73,7 @@ export interface SpaceRow extends SyncEnvelope {
    *  edited, the whole list travels with every write. #531: `accountIds`
    *  narrows a graph to those financial accounts; absent = every account
    *  (the ones added later too) — every graph from before reads so. */
-  trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[] }[];
+  trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[]; /** #455: what goals bought stays out */ skipGoalSpending?: boolean }[];
   /** #531: the Cash flow tab's own graphs — a balance line over the
    *  accounts each one names; the same LWW list as trendGraphs */
   cashflowGraphs?: { id: string; name: string; accountIds: string[] }[];
@@ -512,6 +512,8 @@ export interface GoalCashOut {
   date: string;
   /** the rows that took the goal's money out of savings */
   txIds: string[];
+  /** what that money bought: real spending, which the plan files under the goal and a graph can leave out; absent = not named */
+  purchaseTxIds?: string[];
 }
 
 /** audit trail of goal funding — separate rows converge without LWW fights */

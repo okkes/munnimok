@@ -143,6 +143,31 @@ export function goalCashOutsIn<G extends CashOutGoal>(
   return out.sort((a, b) => b.cents - a.cents);
 }
 
+/**
+ * The unallocated savings once this goal is cashed out: an archived goal
+ * holds nothing, so the pool gains what it held — the money that paid for
+ * it already left the balance. Below zero means more left than the goal
+ * and the free savings held together; the other goals keep theirs.
+ */
+export function poolAfterCashOut(
+  goal: Pick<GoalRow, 'allocatedCents' | 'archived'>,
+  goals: readonly GoalRow[],
+  accounts: readonly AccountRow[],
+  space?: PoolSpace,
+): number {
+  return goalOverview(goals, accounts, space).unallocatedCents + (goal.archived === 1 ? 0 : goal.allocatedCents);
+}
+
+/** every row a goal answers for, by the goal's id: what took its money out of savings and what that money bought */
+export function goalPaidTxs(goals: readonly CashOutGoal[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const goal of goals) {
+    if (goal.deleted !== 0 || !goal.cashOut) continue;
+    for (const id of [...goal.cashOut.txIds, ...(goal.cashOut.purchaseTxIds ?? [])]) out.set(id, goal.id);
+  }
+  return out;
+}
+
 /** how far back the picker looks for the money that paid for a goal */
 const CASH_OUT_DAYS = 400;
 
@@ -182,4 +207,40 @@ export function cashOutCandidates<T extends TxView>(
       !pairedWithPool(tx),
   );
   return [...fromPool, ...withdrawals].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+}
+
+/**
+ * What the goal's money can have bought — the second pick of a cash-out,
+ * newest first: booked spending outside the pool (a payment straight from
+ * a pool account is in the first pick already) that no other goal names.
+ * `forGoalId` keeps a cashed-out goal's own picks in the list.
+ */
+export function purchaseCandidates<T extends TxView>(
+  txs: readonly T[],
+  accounts: readonly AccountRow[],
+  space: PoolSpace,
+  goals: readonly CashOutGoal[],
+  today: string,
+  forGoalId?: string,
+): T[] {
+  const pool = new Set(poolAccounts(accounts, space).map((a) => a.id));
+  const paid = goalPaidTxs(goals);
+  const since = addDays(today, -CASH_OUT_DAYS);
+  const free = (tx: T) => {
+    const owner = paid.get(tx.id);
+    return owner === undefined || owner === forGoalId;
+  };
+  return txs
+    .filter(
+      (tx) =>
+        tx.deleted === 0 &&
+        tx.pending !== 1 &&
+        tx.date >= since &&
+        tx.date <= today &&
+        tx.amountCents < 0 &&
+        !pool.has(tx.accountId) &&
+        free(tx) &&
+        txSliceViews(tx).some((v) => v.effType === 'expense' && !v.linkedAccountId),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 }

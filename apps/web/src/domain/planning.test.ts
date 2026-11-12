@@ -183,6 +183,21 @@ describe('realization: one owner per slice (#557)', () => {
     expect(sliceOwner(slice({ effType: 'income' }), owners)).toBeNull();
   });
 
+  it('#455: what a goal bought answers to the goal — no category, no event counts it; the move out of savings stays a move', () => {
+    const withGoal: SliceOwners = { ...owners, goalByTx: new Map([['car', 'goal1'], ['out', 'goal1']]) };
+    expect(sliceOwner(slice({ eventId: 'ev' }), withGoal, 'car')).toEqual({ kind: 'goal', id: 'goal1' });
+    expect(sliceOwner(slice({ recurringId: 'rec' }), withGoal, 'car')).toEqual({ kind: 'recurring', id: 'rec' });
+    expect(sliceOwner(slice({ linkedAccountId: 'savings', effType: 'transfer' }), withGoal, 'out')).toBeNull();
+    expect(sliceOwner(slice({}), withGoal, 'other')).toEqual({ kind: 'category', catId: 'sub_food_a' });
+
+    const ledger = ledgerOf(
+      [tx({ id: 'car', catId: 'sub_food_a', amountCents: -18_000_00 }), tx({ id: 'refund', catId: 'sub_food_a', amountCents: 500_00 }), tx({ id: 'lunch', catId: 'sub_food_a', amountCents: -12_00 })],
+      { goalByTx: new Map([['car', 'goal1'], ['refund', 'goal1']]) },
+    );
+    expect(ledger.byGoal.get('goal1')).toBe(17_500_00);
+    expect(familySpentCents(new Set(['sub_food_a']), ledger)).toBe(12_00);
+  });
+
   it('the ledger sums each owner once: refunds take off a category, an event is what it cost net of what came in, never below zero', () => {
     const txs = [
       tx({ id: '1', catId: 'sub_food_a', amountCents: -1200 }),

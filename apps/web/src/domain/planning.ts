@@ -269,11 +269,14 @@ export interface SliceOwners {
   eventIds: ReadonlySet<string>;
   /** the pool's own accounts (#532): money moved to one of them never left the pool */
   poolIds: ReadonlySet<string>;
+  /** #455: the rows a cashed-out goal answers for, by the goal's id */
+  goalByTx?: ReadonlyMap<string, string>;
 }
 
 export type SliceOwner =
   | { kind: 'debt'; id: string }
   | { kind: 'recurring'; id: string }
+  | { kind: 'goal'; id: string }
   | { kind: 'event'; id: string }
   | { kind: 'category'; catId: string };
 
@@ -284,14 +287,18 @@ export type SliceOwner =
  * money leaves the expense segment), else its category. Money moved to an
  * account of the person's own — the pool's own (#532), a savings account —
  * left nothing behind. So no two subjects, and no subject and an Unplanned
- * row, ever count the same slice.
+ * row, ever count the same slice. #455 (user 2026-11-12): what a cashed-out
+ * goal bought is the goal's — named by hand, so it wins over the event and
+ * the category; `txId` is the row the slice came from.
  */
-export function sliceOwner(slice: TxSliceView, owners: SliceOwners): SliceOwner | null {
+export function sliceOwner(slice: TxSliceView, owners: SliceOwners, txId?: string): SliceOwner | null {
   const linked = slice.linkedAccountId;
   if (linked && owners.poolIds.has(linked)) return null;
   if (linked && owners.loanIds.has(linked)) return slice.amountCents < 0 ? { kind: 'debt', id: linked } : null;
   if (slice.recurringId && owners.recurringIds.has(slice.recurringId)) return { kind: 'recurring', id: slice.recurringId };
   if (linked) return null;
+  const goalId = txId ? owners.goalByTx?.get(txId) : undefined;
+  if (goalId && slice.effType === 'expense') return slice.catId === REIMBURSED_ID ? null : { kind: 'goal', id: goalId };
   if (slice.eventId && owners.eventIds.has(slice.eventId) && isEventMoney(slice.effType)) {
     // the settled part of a paid-back expense is bookkeeping on both rows: the event's own total leaves it out too
     return slice.catId === REIMBURSED_ID ? null : { kind: 'event', id: slice.eventId };
@@ -313,6 +320,8 @@ export interface PeriodLedger {
   byDebt: ReadonlyMap<string, number>;
   /** what an event cost net of what came in for it, never below zero */
   byEvent: ReadonlyMap<string, number>;
+  /** #455: what a cashed-out goal bought, signed like category spending — its savings paid, so no subject and no Unplanned row counts it */
+  byGoal: ReadonlyMap<string, number>;
 }
 
 const addTo = (map: Map<string, number>, key: string, cents: number) => map.set(key, (map.get(key) ?? 0) + cents);
@@ -322,18 +331,20 @@ export function periodLedger(txs: readonly TxView[], period: Period, owners: Sli
   const byRecurring = new Map<string, number>();
   const byDebt = new Map<string, number>();
   const eventNet = new Map<string, number>();
+  const byGoal = new Map<string, number>();
   for (const tx of txs) {
     if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
     for (const slice of txSliceViews(tx)) {
-      const owner = sliceOwner(slice, owners);
+      const owner = sliceOwner(slice, owners, tx.id);
       if (owner?.kind === 'category') addTo(byCategory, owner.catId, spentOf(slice));
       else if (owner?.kind === 'recurring') addTo(byRecurring, owner.id, Math.abs(slice.amountCents));
       else if (owner?.kind === 'debt') addTo(byDebt, owner.id, Math.abs(slice.amountCents));
       else if (owner?.kind === 'event') addTo(eventNet, owner.id, eventNetOf(slice));
+      else if (owner?.kind === 'goal') addTo(byGoal, owner.id, spentOf(slice));
     }
   }
   const byEvent = new Map([...eventNet].map(([id, net]): [string, number] => [id, Math.max(0, net)]));
-  return { byCategory, byRecurring, byDebt, byEvent };
+  return { byCategory, byRecurring, byDebt, byEvent, byGoal };
 }
 
 /** what an event cost before `before` (yyyy-mm-dd), net of what came in for it — never below zero */
@@ -342,7 +353,7 @@ export function eventNetBefore(txs: readonly TxView[], eventId: string, before: 
   for (const tx of txs) {
     if (tx.deleted !== 0 || tx.date >= before) continue;
     for (const slice of txSliceViews(tx)) {
-      const owner = sliceOwner(slice, owners);
+      const owner = sliceOwner(slice, owners, tx.id);
       if (owner?.kind === 'event' && owner.id === eventId) net += eventNetOf(slice);
     }
   }

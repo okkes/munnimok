@@ -91,6 +91,26 @@ describe('planning model (#128)', () => {
     expect(model.estimate(new Set(['groceries'])).lastCents).toBe(9_000);
   });
 
+  it('#455: what a cashed-out goal bought sits under the goal — no Unplanned row, no part of what the period started with', async () => {
+    const { store, repo } = await bareFixture();
+    stores.push(store);
+    await repo.upsert('plan', SPACE, march, { kind: 'actual', periodStart: '2026-03-01' });
+    // €1,000 came out of savings and bought the bike (the fixture's c1): the balance is where it was
+    await repo.upsert('account', SPACE, 'save', { name: 'Savings', type: 'savings', currency: 'EUR', balanceCents: 0, source: 'manual' });
+    await repo.upsert('transaction', SPACE, 'out', { accountId: 'save', date: '2026-03-04', amountCents: -100_000, currency: 'EUR', merchant: 'To main', catId: 'savingWithdraw', linkedAccountId: 'main', needsReview: 0 });
+    await repo.upsert('goal', SPACE, 'bike', { name: 'Bike', targetCents: 100_000, allocatedCents: 0, archived: 1, cashOut: { date: '2026-03-05', txIds: ['out'], purchaseTxIds: ['c1'] } });
+    let model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.unplannedOf(model.plan!)).toEqual([]);
+    expect(model.goalPurchasesOf(model.plan!).map((p) => [p.goal.name, p.cents])).toEqual([['Bike', 100_000]]);
+    expect(model.startedWithOf(model.plan!)).toBe(150_000);
+    expect(model.toAllocateOf(model.plan!)).toBe(150_000);
+    // undone, the purchase is plain category spending again
+    await repo.upsert('goal', SPACE, 'bike', { archived: 0, cashOut: null });
+    model = buildPlanning(await loadPlanningData(store, SPACE), TODAY);
+    expect(model.goalPurchasesOf(model.plan!)).toEqual([]);
+    expect(model.unplannedOf(model.plan!).map((m) => m.cents)).toEqual([100_000]);
+  });
+
   it('the pool reads as what the period started with (user 2026-10-08): the balance plus what already left, assigned by hand', async () => {
     const { store, repo } = await bareFixture();
     stores.push(store);

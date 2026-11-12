@@ -18,6 +18,7 @@ import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import type { Catalog } from '@/domain/catalog';
 import type { CatalogDoc } from '@/domain/catalogDoc';
 import { isDebtTracked } from '@/domain/debts';
+import { goalPaidTxs } from '@/domain/goals';
 import { periodHistory } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
 import { slackCents,
@@ -193,6 +194,13 @@ export interface PlanningModel {
    * one-off whose row spent nothing (yet, or any more) still shows.
    */
   unplannedOf: (plan: PlanRow) => UnplannedRow[];
+  /**
+   * #455 (user 2026-11-12): what cashed-out goals bought inside the plan's
+   * period, largest first — shown under Goals as the goal itself. Its
+   * savings paid, so it is no part of what the period started with and asks
+   * for no funding.
+   */
+  goalPurchasesOf: (plan: PlanRow) => GoalPurchase[];
   estimate: (family: ReadonlySet<string>) => TargetEstimate;
   contextFor: (period: Period) => SubjectContext;
   /** the current actual plan's subjects in the red */
@@ -266,6 +274,12 @@ function carriedBySource(
     if (carried > 0) out.set(sourceId, carried);
   }
   return out;
+}
+
+/** a cashed-out goal and what it bought in one period */
+export interface GoalPurchase {
+  goal: GoalRow;
+  cents: number;
 }
 
 /** the segment an Unplanned row's kind belongs to — where its one-off funding is held */
@@ -347,6 +361,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     loanIds: new Set([...loansById.keys()].filter((id) => !poolIds.has(id))),
     eventIds: new Set(eventsById.keys()),
     poolIds,
+    goalByTx: goalPaidTxs(data.goals),
   };
 
   const ledgers = new Map<string, PeriodLedger>();
@@ -454,6 +469,13 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     unplanned.set(p.id, list);
     return list;
   };
+  const goalPurchasesOf = (p: PlanRow): GoalPurchase[] =>
+    [...ledgerFor(periodOf(p)).byGoal]
+      .flatMap(([id, cents]): GoalPurchase[] => {
+        const goal = goalsById.get(id);
+        return goal && cents > 0 ? [{ goal, cents }] : [];
+      })
+      .sort((a, b) => b.cents - a.cents);
   const oneOffsFunded = (p: PlanRow): number => [...oneOffMap(p).values()].reduce((sum, cents) => sum + cents, 0);
 
   // THE POOL RULE (user 2026-10-08): the pool reads as what the period STARTED
@@ -526,6 +548,7 @@ export function buildPlanning(data: PlanningData, today = localIsoToday()): Plan
     toAllocateOf: (p) => startedWithOf(p) - fundedOf(p) - aheadHeldExcept(p),
     reservationsOf,
     unplannedOf,
+    goalPurchasesOf,
     estimate: (family) => estimateTarget(family, pastPeriods.map(ledgerFor)),
     contextFor,
     attention: currentViews.filter((v) => v.status === 'overspent'),

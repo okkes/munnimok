@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import type { PlanSegmentKind } from '@/db/types';
@@ -144,9 +145,12 @@ export function SegmentSection({
   onOpen,
   folded = false,
   onToggleFold,
+  extra,
 }: Readonly<{
   kind: PlanSegmentKind;
   views: SubjectView[];
+  /** rows of the segment that are no subjects, under them (#455: what a cashed-out goal bought) */
+  extra?: ReactNode;
   /** the source rows behind the mirrored subjects — their logos */
   model?: PlanningModel;
   /** adding and editing subjects is allowed */
@@ -226,9 +230,11 @@ export function SegmentSection({
       <Collapse open={!folded}>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {views.length === 0 ? (
-            <p className="px-4 py-3 text-[12px] text-ink-4" data-testid={`plan-segment-empty-${kind}`}>
-              {t('plan.segmentEmpty')}
-            </p>
+            !extra && (
+              <p className="px-4 py-3 text-[12px] text-ink-4" data-testid={`plan-segment-empty-${kind}`}>
+                {t('plan.segmentEmpty')}
+              </p>
+            )
           ) : (
             views.map((view) => (
               <SubjectRow
@@ -242,6 +248,7 @@ export function SegmentSection({
               />
             ))
           )}
+          {extra}
         </div>
       </Collapse>
     </section>
