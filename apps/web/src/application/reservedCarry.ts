@@ -29,7 +29,7 @@ import { removeMirrorForDeletedSource } from './mirrorMint';
 
 const DAY_MS = 86_400_000;
 /** a reserved row gone longer than a booking may follow was released, not booked */
-const GIVE_UP_MS = TWIN_DAYS_AFTER * DAY_MS;
+export const GIVE_UP_MS = TWIN_DAYS_AFTER * DAY_MS;
 /** how far apart two reservations can lie and still claim the same booking */
 const REACH_MS = (TWIN_DAYS_BEFORE + TWIN_DAYS_AFTER) * DAY_MS;
 const FINGERPRINT_KEY = 'reservedCarryFingerprint';
@@ -48,7 +48,7 @@ const holdsOpinion = (meta: TxMetaRow): boolean =>
   !!meta.transferPeerId;
 
 /** the wall-clock ms of a row's tombstone */
-const tombstoneMs = (row: TransactionRow): number => {
+export const tombstoneMs = (row: TransactionRow): number => {
   const stamp = row.fieldVersions[DELETED_FIELD];
   return stamp ? decodeHlc(stamp).wallMs : 0;
 };
@@ -137,8 +137,15 @@ async function retireHoldLegs(store: StorageBackend, repo: Repo, raw: Transactio
   }
 }
 
-/** the rows of this space that pointed at the reserved row now point at its twin */
-async function repointReferences(store: StorageBackend, repo: Repo, spaceId: string, viewed: readonly SpaceTx[], fromId: string, toId: string) {
+/** #547: the entries linked to a row follow it to the row that took its place */
+async function repointEntries(store: StorageBackend, repo: Repo, spaceId: string, fromId: string, toId: string): Promise<void> {
+  for (const row of await store.bySpace('transaction', spaceId)) {
+    if (row.deleted === 0 && row.bankTxId === fromId) await repo.upsert('transaction', spaceId, row.id, { bankTxId: toId });
+  }
+}
+
+/** the rows of this space that pointed at one row now point at the row that took its place (a reserved row's booked twin; #547: an entry's bank row) */
+export async function repointReferences(store: StorageBackend, repo: Repo, spaceId: string, viewed: readonly SpaceTx[], fromId: string, toId: string) {
   for (const row of viewed) {
     // the hold's own minted leg is retired, never re-pointed
     if (row.id === fromId || row.id === mirrorTxId(fromId) || row.deleted !== 0) continue;
@@ -152,6 +159,7 @@ async function repointReferences(store: StorageBackend, repo: Repo, spaceId: str
     });
   }
   await repointReceiptLinks(store, repo, spaceId, fromId, toId);
+  await repointEntries(store, repo, spaceId, fromId, toId);
 }
 
 /** the receipts linked to the reserved row, or asked about on it, now name its twin; how many did (S3776) */
@@ -272,9 +280,11 @@ async function carryInSpace(store: StorageBackend, repo: Repo, spaceId: string, 
       .filter((link) => link.deleted === 0)
       .flatMap((link) => [link.txId, ...(link.alsoTxIds ?? []), link.proposedTxId]),
   );
+  // #547: an entry linked to a reserved row is a story too — the link must reach the booking
+  const withEntry = new Set((await store.bySpace('transaction', spaceId)).filter((row) => row.deleted === 0 && !!row.bankTxId).map((row) => row.bankTxId!));
   const stories = [...gone.values()].filter(({ raw }) => {
     const meta = metas.get(raw.id);
-    return (!!meta && holdsOpinion(meta)) || withReceipt.has(raw.id);
+    return (!!meta && holdsOpinion(meta)) || withReceipt.has(raw.id) || withEntry.has(raw.id);
   });
   if (stories.length === 0) return 0;
 
@@ -321,6 +331,7 @@ async function carryHold({ store, repo, spaceId, metas }: CarryAt, { raw, feedSp
   // a booking the review already filed is the person's own decision: only the receipt follows it there
   if (twinMeta?.needsReview === 0) {
     const moved = await repointReceiptLinks(store, repo, spaceId, raw.id, twin.id);
+    await repointEntries(store, repo, spaceId, raw.id, twin.id);
     await retire(store, repo, spaceId, raw, meta);
     return moved > 0;
   }

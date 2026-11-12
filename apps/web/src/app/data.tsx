@@ -266,6 +266,9 @@ function onEngineStatus(status: SyncStatus, store: StorageBackend, upkeep: Repo)
   if (status === 'idle') {
     void import('@/application/reservedCarry')
       .then(({ carryReservedOpinionsWhenDue }) => carryReservedOpinionsWhenDue(store, upkeep))
+      // #547: then the bank's version of what was typed by hand — after the carry, which moves a link from a reserved row to its booking
+      .then(() => import('@/application/entryLink'))
+      .then(({ linkEntriesAfterSync }) => linkEntriesAfterSync(store, upkeep))
       .catch(() => undefined);
   }
 }

@@ -1,3 +1,4 @@
+import { countsInBalance } from '@/domain/entryMatch';
 import { txMetaId } from '@/domain/feedIds';
 import { accountStamp } from '@/domain/txType';
 import { deriveTxType } from '@/domain/txDerive';
@@ -20,6 +21,37 @@ import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow
 export interface SpaceTx extends TxView {
   /** present when the row is a joined feed transaction (not one of the space's own rows) */
   feedSpaceId?: string;
+  /** #547: the hand-typed entry linked to this bank row — the two read as one, and this is what was typed */
+  entry?: LinkedEntry;
+}
+
+/** #547: what a person typed before the bank's own transaction arrived */
+export interface LinkedEntry {
+  id: string;
+  amountCents: number;
+  date: string;
+  title: string;
+}
+
+/**
+ * #547: an entry linked to a bank row in view IS that row — the row says
+ * what was typed, and the entry itself stays out of every list and total.
+ * An entry whose bank row is not in view (replaced, gated, detached) shows
+ * as itself until the link is repaired.
+ */
+function foldEntries(rows: SpaceTx[]): SpaceTx[] {
+  const linked = rows.filter((row) => !row.feedSpaceId && !!row.bankTxId);
+  if (linked.length === 0) return rows;
+  const inView = new Set(rows.map((row) => row.id));
+  const behind = new Map<string, SpaceTx>();
+  for (const entry of linked) if (inView.has(entry.bankTxId!) && !behind.has(entry.bankTxId!)) behind.set(entry.bankTxId!, entry);
+  const hidden = new Set([...behind.values()].map((entry) => entry.id));
+  return rows
+    .filter((row) => !hidden.has(row.id))
+    .map((row) => {
+      const entry = behind.get(row.id);
+      return entry ? { ...row, entry: { id: entry.id, amountCents: entry.amountCents, date: entry.date, title: entry.titleOverride || entry.merchant } } : row;
+    });
 }
 
 /** a row as the space stores or joins it, before the view types derive */
@@ -171,7 +203,7 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
     );
     for (const raw of feedTxs) out.push(deriveViewTypes(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId), facts));
   }
-  return out;
+  return foldEntries(out);
 }
 
 /**
@@ -203,12 +235,34 @@ export async function historyTransactions(store: StorageBackend, spaceId: string
     );
     for (const raw of feedTxs) out.push(deriveViewTypes(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId), facts));
   }
-  return out;
+  return foldEntries(out);
 }
 
 export interface SpaceAccount extends AccountRow {
   /** present when the account arrives via an attachment */
   link?: AccountLinkRow;
+  /** #547: what this space's own entries add on top of the bank's balance; absent when none count */
+  entriesCents?: number;
+  /** #547: the balance as the bank (or the statement) gives it, when entries count on top of it */
+  bankBalanceCents?: number;
+}
+
+/**
+ * #547 (user 2026-11-11): "the manual entries should only impact the
+ * balance of the account within that space" — the bank's number plus the
+ * entries that still count, here in the join and nowhere in storage, so
+ * every other space and the global overview keep the bank's number.
+ */
+async function withEntries(store: StorageBackend, account: SpaceAccount, entries: readonly TransactionRow[]): Promise<SpaceAccount> {
+  if (account.source === 'manual') return account;
+  let cents = 0;
+  for (const entry of entries) {
+    if (entry.accountId !== account.id) continue;
+    const linked = entry.bankTxId ? await store.get('transaction', entry.bankTxId) : undefined;
+    // a link to a row that is gone is no link
+    if (countsInBalance(entry, account, linked?.deleted === 0 ? linked : null)) cents += entry.amountCents;
+  }
+  return cents === 0 ? account : { ...account, balanceCents: account.balanceCents + cents, bankBalanceCents: account.balanceCents, entriesCents: cents };
 }
 
 /** every account the space sees: its own in-space rows + attached feed
@@ -224,7 +278,9 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
       out.push({ ...account, name: link.displayName || account.name, type: linkEffectiveType(link, account), link });
     }
   }
-  return out;
+  const entries = (await store.bySpace('transaction', spaceId)).filter((row) => row.deleted === 0 && row.inBalance === 1 && !!row.enteredAt);
+  if (entries.length === 0) return out;
+  return Promise.all(out.map((account) => withEntries(store, account, entries)));
 }
 
 /** #545: one account as a space sees it — visibleAccounts' name and type

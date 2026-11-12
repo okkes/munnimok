@@ -305,7 +305,24 @@ export interface TransactionRow extends SyncEnvelope {
   /** #133 D (C3): the manual correction marker (manual rows only) — the
    *  view derives the adjustment type from it; no type is stored */
   adjustment?: 0 | 1;
+  /** #547: when this row was typed by hand on an account the bank or a
+   *  statement fills (ISO) — what makes it "your entry"; absent on every other row */
+  enteredAt?: string;
+  /** #547: your entry counts on top of the bank's balance, in this space only (the form's tick) */
+  inBalance?: 0 | 1;
+  /** #547: the bank's own transaction this entry is linked to — the two read
+   *  as one and the entry stays behind it; null once they are taken apart */
+  bankTxId?: string | null;
+  /** #547: what the bank's row held before the link — put back when the two are taken apart */
+  bankBefore?: EntryBankBefore | null;
+  /** #547: bank rows this entry was taken apart from: never linked to it again without asking */
+  noBankTxIds?: string[];
 }
+
+/** #547: a bank row's opinions as they were before an entry was linked to it */
+export type EntryBankBefore = Partial<
+  Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'notes' | 'titleOverride' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'reimbursements' | 'transferPeerId'>
+> & { needsReview?: 0 | 1 };
 
 /**
  * A transaction as the VIEW sees it: the stored row plus the type
