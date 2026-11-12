@@ -69,6 +69,8 @@ for (const V of VARIANTS) {
     await host.page.click('[data-testid="split-create"]');
     await host.page.waitForSelector('[data-testid="screen-split-detail"]');
     await host.page.click('[data-testid="split-invite"]');
+    // #538: a split has no link until its owner makes one
+    await host.page.click('[data-testid="split-invite-create"]');
     const linkBox = host.page.locator('[data-testid="split-invite-link"]');
     // real path (no #): OS app links can only match real paths; the web
     // shell bounces /splits/join/* into the hash router
