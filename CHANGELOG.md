@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.21.2](https://github.com/okkes/munnimok/compare/v5.21.1...v5.21.2) (2026-11-12)
+
+
+### 🐞 Bug Fixes
+
+* **api:** a call that times out no longer stops the server ([e2f4da8](https://github.com/okkes/munnimok/commit/e2f4da8ed781e4c63bd6a4afd71a2b4794c525f0))
+* **api:** a party that answers too slowly is away, not an error ([3751cac](https://github.com/okkes/munnimok/commit/3751cacd8d05625c1f8b4b0c325186441871f67a))
+* **ci:** the TestFlight probe writes one line per value ([f666820](https://github.com/okkes/munnimok/commit/f666820c5e4657ecc35ab451bc2c7687448c06d1))
+* **connectors:** the control plane's loops survive a call that times out ([012c1c1](https://github.com/okkes/munnimok/commit/012c1c137622c2d175cc79d89d7db946ec50241d))
+* **observability:** a database that did not answer is one issue, and waits by design are not timings ([3afb12d](https://github.com/okkes/munnimok/commit/3afb12d252147aa59b47a4bc761ae05a7ccd6ad2))
+
+
+### ⚡ Performance
+
+* **api:** the catalog is answered from memory between publishes ([440ce77](https://github.com/okkes/munnimok/commit/440ce77c6986ad1daed43f5c40707b7217268f1e))
+
 ## [5.21.1](https://github.com/okkes/munnimok/compare/v5.21.0...v5.21.1) (2026-11-12)
 
 
