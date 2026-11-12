@@ -214,7 +214,9 @@ describe('the carry-over between devices (#557)', () => {
   it('a period funded ahead and a late carry-over into it are the same rows — what was funded ahead stands', async () => {
     const { a, b } = await twoDevices();
     devices.push(a, b);
-    // still February on the first device: March is funded ahead from what is left
+    // still February on the first device: March is funded ahead from what is left —
+    // enough for the rent's own month first (#557: a monthly bill's funding does not roll over)
+    await a.repo.upsert('account', SPACE, 'main', { balanceCents: 400_000 });
     const inFebruary = buildOps(a.store, a.repo, SPACE, '2026-02-15');
     a.wall.now = NOON - 14 * 24 * HOUR;
     await inFebruary.fundAhead(MARCH);

@@ -320,13 +320,23 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     await removeSubjects(existing.filter((s) => !kept.has(s.id)));
   };
 
+  // THE ROW RULE (#557): a subject's row holds the period's OWN funding; what rolled over from earlier periods is
+  // derived on top of it (the view's carriedCents). The screens speak in what the subject holds in all, so every
+  // write here turns that into the row's part — below zero once rolled-over money is taken away again.
   const giveTo = async (views: readonly SubjectView[], availableCents: number): Promise<boolean> => {
     const gifts = fillInOrder(views, availableCents);
     for (const [id, give] of gifts) {
       const view = views.find((v) => v.subject.id === id);
-      if (view) await write(id, { fundedCents: view.fundedCents + give });
+      if (view) await write(id, { fundedCents: view.subject.fundedCents + give });
     }
     return gifts.size > 0;
+  };
+
+  /** a subject as its own plan reads it right now */
+  const viewOf = (model: PlanningModel, subjectId: string): SubjectView | undefined => {
+    const subject = model.data.subjects.find((s) => s.id === subjectId);
+    const plan = subject && model.data.plans.find((p) => p.id === subject.planId);
+    return plan ? model.viewsOf(plan).find((v) => v.subject.id === subjectId) : undefined;
   };
 
   const fillViews = async (plan: PlanRow, pick: (views: SubjectView[]) => SubjectView[]) => {
@@ -335,10 +345,12 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     if (await giveTo(pick(model.viewsOf(target)), model.toAllocateOf(target))) act('planFund');
   };
 
-  const zeroAll = async (plan: PlanRow) => {
+  /** every subject back to nothing; `rolledToo` lets go of what rolled over as well (a period ahead keeps it: that money is the plans' before it) */
+  const zeroAll = async (plan: PlanRow, rolledToo: boolean) => {
     const model = await fresh();
-    for (const subject of model.subjectsOf(planIn(model, plan))) {
-      if (subject.fundedCents !== 0) await write(subject.id, { fundedCents: 0 });
+    for (const view of model.viewsOf(planIn(model, plan))) {
+      const want = rolledToo && view.carriedCents > 0 ? -view.carriedCents : 0;
+      if (view.subject.fundedCents !== want) await write(view.subject.id, { fundedCents: want });
     }
   };
 
@@ -461,7 +473,8 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     },
 
     fund: async (subjectId, cents) => {
-      await write(subjectId, { fundedCents: Math.max(0, Math.round(cents)) });
+      const rolled = viewOf(await fresh(), subjectId)?.carriedCents ?? 0;
+      await write(subjectId, { fundedCents: Math.max(0, Math.round(cents)) - rolled });
       act('planFund');
     },
 
@@ -483,7 +496,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
       for (const view of model.viewsOf(planIn(model, plan))) {
         if (view.subject.segment !== segment || view.subject.snoozed === 1) continue;
         const need = shortfallCents(view);
-        if (need > 0) await write(view.subject.id, { fundedCents: view.fundedCents + need });
+        if (need > 0) await write(view.subject.id, { fundedCents: view.subject.fundedCents + need });
       }
       act('planFund');
     },
@@ -491,7 +504,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     fillAll: (plan) => fillViews(plan, (views) => views),
 
     withdrawAll: async (plan) => {
-      await zeroAll(plan);
+      await zeroAll(plan, true);
       // every subject back to zero — and what the period gave its Unplanned rows (#494)
       const model = await fresh();
       if (planIn(model, plan).oneOffs?.length) await repo.upsert('plan', spaceId, plan.id, { oneOffs: [] });
@@ -499,13 +512,15 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     },
 
     cover: async (fromId, toId, cents) => {
-      const from = await store.get('planSubject', fromId);
-      const to = await store.get('planSubject', toId);
-      if (!from || !to || from.deleted !== 0 || to.deleted !== 0) return;
+      const model = await fresh();
+      const from = viewOf(model, fromId);
+      const to = viewOf(model, toId);
+      if (!from || !to) return;
+      // up to all it holds — what rolled over into it can be moved like any funding
       const moved = Math.max(0, Math.min(Math.round(cents), from.fundedCents));
       if (moved === 0) return;
-      await write(from.id, { fundedCents: from.fundedCents - moved });
-      await write(to.id, { fundedCents: to.fundedCents + moved });
+      await write(fromId, { fundedCents: from.subject.fundedCents - moved });
+      await write(toId, { fundedCents: to.subject.fundedCents + moved });
       act('planFund');
     },
 
@@ -569,7 +584,7 @@ export function buildOps(store: StorageBackend, repo: Repo, spaceId: string, tod
     },
 
     withdrawAhead: async (plan) => {
-      await zeroAll(plan);
+      await zeroAll(plan, false);
       act('planAhead');
     },
 

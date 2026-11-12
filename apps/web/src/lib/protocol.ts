@@ -16,7 +16,10 @@
 // them every boot and links bare movements onto them, undoing the retire;
 // v3 (#494/#504) too: a v2 client leaves the plan's one-offs out of its sums
 // and breaks on an event subject in the cover list
-export const CLIENT_PROTOCOL = 3;
+// v4 (#557): a plan subject's row holds the period's own funding, what rolled
+// over is derived on top — a v3 client reads the row as the whole and hands
+// the rolled-over money out a second time
+export const CLIENT_PROTOCOL = 4;
 /** oldest server protocol this client can safely talk to — v3 (#569): the
  *  sync round asks GET /sync/heads, which a v2 server does not answer */
 export const MIN_SERVER_PROTOCOL = 3;

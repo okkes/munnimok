@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useLang } from '@/i18n';
-import type { TFunc } from '@/i18n';
+import type { TFunc, TranslationKey } from '@/i18n';
 import type { PlanSegmentKind } from '@/db/types';
 import type { PlanningModel } from '@/application/planning';
 import type { SubjectView } from '@/domain/planning';
@@ -12,6 +12,13 @@ import { SourceTile } from './SourceTile';
 import { OVER_TARGET_STRIPES, SEGMENT_META, STATUS_BAR, STATUS_KEY, STATUS_TONE } from './planningUi';
 
 export type MoneyFmt = (cents: number, currency: string) => string;
+
+/** why a subject of a period ahead needs nothing (#557) */
+export const SETTLED_KEY: Partial<Record<PlanSegmentKind, TranslationKey>> = {
+  debts: 'plan.settled.debts',
+  goals: 'plan.settled.goals',
+  events: 'plan.settled.events',
+};
 
 /** the status chip's text: the shortfall or the overspend when the status carries an amount */
 export function statusLine(view: SubjectView, t: TFunc, fmt: MoneyFmt, currency: string): string {
@@ -77,7 +84,8 @@ export function SubjectRow({
         else onClick();
       }}
       data-skipped={subject.snoozed === 1}
-      className={`m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0${subject.snoozed === 1 ? ' opacity-55' : ''}`}
+      data-settled={view.settledAhead}
+      className={`m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0${subject.snoozed === 1 || view.settledAhead ? ' opacity-55' : ''}`}
     >
       {/* a mirrored source wears its logo here too (user 2026-10-09), so the plan reads like the recurring list */}
       <SourceTile segment={subject.segment} sourceId={subject.sourceId} icon={subject.icon} color={subject.color} model={model} testId={`plan-subject-logo-${subject.id}`} />
@@ -108,6 +116,12 @@ export function SubjectRow({
             {view.carriedCents > 0 && ` · ${t('plan.carried', { amount: fmt(view.carriedCents, currency) })}`}
           </span>
         </span>
+        {/* #557: ahead, funding before this period already settles it — it stays in the list and asks for nothing */}
+        {view.settledAhead && (
+          <span className="mt-1 block text-[11px] text-ink-4" data-testid={`plan-subject-settled-${subject.id}`}>
+            {t(SETTLED_KEY[subject.segment] ?? 'plan.settled.events')}
+          </span>
+        )}
         {view.orphaned && (
           <span className="mt-1 block text-[11px] text-negative" data-testid={`plan-subject-orphan-${subject.id}`}>
             {t('plan.orphaned')}

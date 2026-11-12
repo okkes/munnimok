@@ -16,6 +16,7 @@ import {
   fillInOrder,
   goalTargetCents,
   isEventPast,
+  isLongCadence,
   mirroredSubjectId,
   overlapsOf,
   periodAt,
@@ -36,6 +37,7 @@ import {
   unplannedSources,
   reservationConflicts,
   sameSubjects,
+  shortfallCents,
   spreadTargetCents,
   subjectFamily,
   subjectStatus,
@@ -484,12 +486,22 @@ describe('the subject view', () => {
     expect(canSkipPeriod(subjectView(subject({ catIds: ['sub_food_a'], targetCents: 50_00 }), ctx()))).toBe(false);
   });
 
-  it('a recurring subject carries what earlier periods set aside; a goal counts its contributions; a vanished source is orphaned', () => {
+  it('#557: what rolled over reads as funding on top of the period’s share; a goal counts its contributions; a vanished source is orphaned', () => {
     const rec = { id: 'rec', name: 'Insurance', kind: 'fixed', amountCents: 1200_00, every: 'year', dueDay: 15, dueMonth: 2, active: 1, ...envelope } as RecurringRow;
     const recurring = subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: 0 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) }));
-    // February is five periods away from October, so (1200 − 600) / 5
-    expect(recurring.targetCents).toBe(120_00);
-    expect(recurring.carriedCents).toBe(600_00);
+    // February is five periods away from October: (1200 − 600) / 5 is this period's share, on top of the 600 it holds
+    expect(recurring).toMatchObject({ carriedCents: 600_00, fundedCents: 600_00, targetCents: 720_00, status: 'underfunded' });
+    expect(shortfallCents(recurring)).toBe(120_00);
+    // rolled-over money taken away again: the row goes below zero, the subject holds what is left — never less than nothing
+    const lighter = subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: -500_00 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) }));
+    expect(lighter.fundedCents).toBe(100_00);
+    expect(subjectView(subject({ segment: 'recurring', sourceId: 'rec', fundedCents: -900_00 }), ctx({ recurringsById: new Map([['rec', rec]]), carriedBySource: new Map([['rec', 600_00]]) })).fundedCents).toBe(0);
+    // a yearly bill is long-cadence in a monthly plan, a monthly one is not; in a weekly plan the monthly one is
+    expect(isLongCadence(rec, period)).toBe(true);
+    expect(isLongCadence({ every: 'month' }, period)).toBe(false);
+    expect(isLongCadence({ every: 'month', everyN: 3 }, period)).toBe(true);
+    expect(isLongCadence({ every: 'month' }, { start: '2026-10-05', end: '2026-10-11' })).toBe(true);
+    expect(isLongCadence({ every: 'week' }, { start: '2026-10-05', end: '2026-10-11' })).toBe(false);
     const goal = { id: 'g', name: 'Car', targetCents: 1000_00, allocatedCents: 0, targetDate: '2026-12-31', ...envelope } as GoalRow;
     const contributions = [{ id: 'c1', goalId: 'g', amountCents: 100_00, date: '2026-10-05', ...envelope }] as GoalContributionRow[];
     const goalView = subjectView(subject({ segment: 'goals', sourceId: 'g', fundedCents: 100_00 }), ctx({ goalsById: new Map([['g', goal]]), contributions }));
@@ -522,6 +534,7 @@ describe('ahead, cover, fill', () => {
     fundedCents: 0,
     realizedCents: 0,
     carriedCents: 0,
+    settledAhead: false,
     cycles: 1,
     status: 'neutral',
     orphaned: false,

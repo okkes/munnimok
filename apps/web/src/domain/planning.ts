@@ -38,7 +38,7 @@ import type { TxSliceView } from './txSlices';
  */
 
 /** overTarget (#517): spent past the target, the funding still covers it */
-export type SubjectStatus = 'neutral' | 'underfunded' | 'funded' | 'overTarget' | 'overspent' | 'snoozed';
+export type SubjectStatus = 'neutral' | 'underfunded' | 'funded' | 'overTarget' | 'overspent' | 'snoozed' | 'settled';
 
 /** the default order of the segments: what must be paid comes first */
 export const SEGMENT_ORDER: readonly PlanSegmentKind[] = ['recurring', 'debts', 'expenses', 'budgets', 'events', 'goals'];
@@ -591,6 +591,17 @@ export function spreadTargetCents(amountCents: number, carriedCents: number, per
   return Math.max(0, Math.round((amountCents - carriedCents) / left));
 }
 
+const RECURRING_CYCLE_DAYS: Record<RecurringRow['every'], number> = { week: 7, month: 30.44, year: 365.25 };
+
+/**
+ * #557 (user 2026-11-11, option B): a cost that does not fall due in every
+ * period — a yearly bill in a monthly plan, a monthly one in a weekly plan.
+ * Its funding is set aside to be spent later, so what a period leaves
+ * unspent stays with it; a cost due every period hands its leftover back.
+ */
+export const isLongCadence = (rec: Pick<RecurringRow, 'every' | 'everyN'>, period: Period): boolean =>
+  RECURRING_CYCLE_DAYS[rec.every] * Math.max(1, rec.everyN ?? 1) > periodLengthDays(period) + 3;
+
 /** the recurring cost's next due date on or after the period's start; null once it is over */
 export function recurringDueFrom(rec: Pick<RecurringRow, 'active' | 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>, period: Period): string | null {
   return nextDueDate(rec, period.start);
@@ -676,7 +687,8 @@ export function eventTargetCents(
 
 /**
  * The colour a subject wears (user 2026-10-21, #517: three colours and a
- * stripe). Overspent — more left than was funded, so money is missing — is
+ * stripe). Settled (#557) — a period ahead that earlier funding already
+ * covers — comes first: there is nothing to say about money. Overspent — more left than was funded, so money is missing — is
  * red. Spent past the target while the funding still covers it is green
  * with orange stripes. Budgets are green from nought funded up — a budget
  * is a ceiling, funding it is optional. The others are orange while a
@@ -689,7 +701,9 @@ export function subjectStatus(
   fundedCents: number,
   realizedCents: number,
   snoozed: boolean,
+  settled = false,
 ): SubjectStatus {
+  if (settled) return 'settled';
   if (snoozed) return 'snoozed';
   if (realizedCents > fundedCents) return 'overspent';
   if (targetCents !== null && targetCents > 0 && realizedCents > targetCents) return 'overTarget';
@@ -700,10 +714,24 @@ export function subjectStatus(
 
 export interface SubjectView {
   subject: PlanSubjectRow;
+  /** what the subject should hold by the end of the period: this period's share on top of what rolled over */
   targetCents: number | null;
+  /** what it holds: the period's own funding (the row's `fundedCents`) and what rolled over, never below zero */
   fundedCents: number;
   realizedCents: number;
+  /**
+   * #557 (user 2026-11-11): what earlier periods set aside for it and never
+   * spent — a long-cadence recurring cost, an event or a goal keeps that
+   * money, and it reads as funding. Part of `fundedCents` and `targetCents`.
+   */
   carriedCents: number;
+  /**
+   * #557: in a period ahead, the funding before it already pays the loan
+   * off, reaches the goal or covers the event — nothing to fund here. Only
+   * ever true ahead: once the period starts the subject reads on what
+   * really happened.
+   */
+  settledAhead: boolean;
   /** budgets: how many of the budget's cycles the period holds */
   cycles: number;
   status: SubjectStatus;
@@ -744,8 +772,12 @@ export interface SubjectContext {
   poolIds: ReadonlySet<string>;
   /** what an event cost before this period began (#504) */
   eventSpentBefore: (eventId: string) => number;
-  /** per source id: what earlier periods set aside and never spent (recurring costs, debts and events roll over) */
+  /** per source id: what earlier periods set aside and never spent — only the sources that keep it (#557) */
   carriedBySource: ReadonlyMap<string, number>;
+  /** the period lies after the current one: nothing happened in it yet, and funding before it can settle a subject (#557) */
+  ahead?: boolean;
+  /** ahead: what the periods before it, from the current one on, hold for a loan and have not paid yet */
+  debtFundedBefore?: (loanId: string) => number;
   budgetOpts: BudgetPeriodOpts;
 }
 
@@ -771,7 +803,11 @@ interface Measured {
   dueThisPeriod?: boolean;
   overlaps?: Overlap[];
   inPool?: boolean;
+  settled?: boolean;
 }
+
+/** a share on top of what rolled over; no target stays no target */
+const withCarried = (share: number | null, carried: number): number | null => (share === null ? null : share + carried);
 
 type Measure = (subject: PlanSubjectRow, ctx: SubjectContext, carried: number, reservations: ReadonlyMap<string, Reservation> | undefined) => Measured | null;
 
@@ -793,35 +829,46 @@ const MEASURE: Record<PlanSegmentKind, Measure> = {
     const rec = source(ctx.recurringsById, subject);
     if (!rec) return null;
     return {
-      target: recurringTargetCents(rec, ctx.space, ctx.period, carried),
+      target: recurringTargetCents(rec, ctx.space, ctx.period, carried) + carried,
       realized: ctx.ledger.byRecurring.get(rec.id) ?? 0,
       dueThisPeriod: rec.active === 1 && occurrencesBetween(rec, ctx.period.start, ctx.period.end).length > 0,
     };
   },
-  debts: (subject, ctx, carried) => {
+  debts: (subject, ctx) => {
     const loan = source(ctx.loansById, subject);
     if (!loan) return null;
     const inPool = ctx.poolIds.has(loan.id);
-    return { target: inPool ? 0 : debtTargetCents(loan, ctx.space, ctx.period, carried), realized: ctx.ledger.byDebt.get(loan.id) ?? 0, inPool };
+    const share = inPool ? 0 : debtTargetCents(loan, ctx.space, ctx.period, 0);
+    const realized = ctx.ledger.byDebt.get(loan.id) ?? 0;
+    if (!ctx.ahead || !ctx.debtFundedBefore || share === 0) return { target: share, realized, inPool };
+    // ahead (#557): what the periods before this one hold already pays part of the loan, or all of it
+    const open = Math.max(0, loanRemainingCents(loan) - ctx.debtFundedBefore(loan.id));
+    return { target: Math.min(share, open), realized, inPool, settled: open === 0 };
   },
   events: (subject, ctx, carried) => {
     const event = source(ctx.eventsById, subject);
     if (!event) return null;
+    const share = eventTargetCents(event, subject.targetCents, ctx.space, ctx.period, carried, ctx.eventSpentBefore(event.id));
     return {
-      target: eventTargetCents(event, subject.targetCents, ctx.space, ctx.period, carried, ctx.eventSpentBefore(event.id)),
+      target: withCarried(share, carried),
       realized: ctx.ledger.byEvent.get(event.id) ?? 0,
       dueThisPeriod: eventInPeriod(event, ctx.period),
+      // #557 (user 2026-11-11): a fully funded event that is still to come needs nothing ahead
+      settled: ctx.ahead === true && share === 0 && carried > 0 && !isEventPast(event, ctx.period),
     };
   },
-  goals: (subject, ctx) => {
+  goals: (subject, ctx, carried) => {
     const goal = source(ctx.goalsById, subject);
     if (!goal) return null;
-    // from what the goal held when the period began: a target that shrinks with the period's own contributions reads them as past it
+    // from what the goal held when the period began: a target that shrinks with the period's own contributions reads them as past it;
+    // what the plan set aside for it and has not moved to savings yet counts as on its way (#557)
     const heldBefore = goalHeldBefore(goal.id, ctx.contributions, ctx.period);
+    const share = goalTargetCents({ ...goal, allocatedCents: heldBefore + carried }, ctx.space, ctx.period);
     return {
-      target: goalTargetCents({ ...goal, allocatedCents: heldBefore }, ctx.space, ctx.period),
+      target: withCarried(share, carried),
       realized: goalRealizedCents(goal.id, ctx.contributions, ctx.period),
       dueThisPeriod: !!goal.targetDate && goal.targetDate <= ctx.period.end,
+      settled: ctx.ahead === true && carried > 0 && heldBefore + carried >= goal.targetCents,
     };
   },
 };
@@ -835,8 +882,9 @@ const UNKNOWN: Measured = { target: null, realized: 0 };
  * counts — a later subject counts none of an older one's (#535).
  */
 export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext, reservations?: ReadonlyMap<string, Reservation>): SubjectView {
-  const funded = subject.fundedCents;
   const carried = ctx.carriedBySource.get(subject.sourceId ?? '') ?? 0;
+  // the row holds the period's own funding — below zero once rolled-over money was taken away again
+  const funded = Math.max(0, subject.fundedCents + carried);
   const measure = MEASURE[subject.segment] as Measure | undefined;
   const measured = measure ? measure(subject, ctx, carried, reservations) : UNKNOWN;
   const m = measured ?? UNKNOWN;
@@ -847,7 +895,8 @@ export function subjectView(subject: PlanSubjectRow, ctx: SubjectContext, reserv
     realizedCents: m.realized,
     carriedCents: carried,
     cycles: m.cycles ?? 1,
-    status: subjectStatus(subject.segment, m.target, funded, m.realized, subject.snoozed === 1),
+    status: subjectStatus(subject.segment, m.target, funded, m.realized, subject.snoozed === 1, m.settled),
+    settledAhead: m.settled ?? false,
     orphaned: measured === null,
     dueThisPeriod: m.dueThisPeriod ?? true,
     overlaps: m.overlaps ?? NO_OVERLAPS,
@@ -868,16 +917,19 @@ export const slackCents = (view: Pick<SubjectView, 'fundedCents' | 'realizedCent
 /**
  * How much of a plan's mandatory targets are funded, 0..1: every subject
  * outside the optional segments with a target, weighted by the target.
- * A plan with nothing mandatory to fund counts for nothing.
+ * A plan with nothing mandatory to fund counts for nothing. Counted on the
+ * period's own share and funding (#557): money that rolled over is no
+ * funding ahead, and a settled subject asks for none.
  */
-export function planFundedFraction(views: readonly Pick<SubjectView, 'subject' | 'targetCents' | 'fundedCents'>[]): number {
+export function planFundedFraction(views: readonly Pick<SubjectView, 'subject' | 'targetCents' | 'fundedCents' | 'carriedCents'>[]): number {
   let need = 0;
   let got = 0;
   for (const view of views) {
     if (OPTIONAL_SEGMENTS.has(view.subject.segment) || view.subject.snoozed === 1) continue;
-    if (view.targetCents === null || view.targetCents <= 0) continue;
-    need += view.targetCents;
-    got += Math.min(view.targetCents, view.fundedCents);
+    const share = (view.targetCents ?? 0) - view.carriedCents;
+    if (share <= 0) continue;
+    need += share;
+    got += Math.min(share, Math.max(0, view.fundedCents - view.carriedCents));
   }
   return need > 0 ? got / need : 0;
 }

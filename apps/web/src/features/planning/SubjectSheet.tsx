@@ -15,7 +15,7 @@ import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { STATUS_TONE } from './planningUi';
-import { statusLine } from './SegmentSection';
+import { SETTLED_KEY, statusLine } from './SegmentSection';
 import { SourceTile } from './SourceTile';
 import { AmountSuggestions } from './AmountSuggestions';
 import type { AmountSuggestion } from './AmountSuggestions';
@@ -274,6 +274,11 @@ export function SubjectSheet({
                 {t('plan.spentShort', { amount: fmt(view.realizedCents, currency) })}
               </div>
               {view.carriedCents > 0 && <div className="text-[11px] text-ink-4">{t('plan.carriedNote', { amount: fmt(view.carriedCents, currency) })}</div>}
+              {view.settledAhead && (
+                <div className="text-[11px] text-ink-4" data-testid="plan-sheet-settled">
+                  {t(SETTLED_KEY[subject.segment] ?? 'plan.settled.events')}
+                </div>
+              )}
               {view.cycles > 1 && <div className="text-[11px] text-ink-4">{t('plan.cycles', { n: view.cycles })}</div>}
             </div>
           </div>

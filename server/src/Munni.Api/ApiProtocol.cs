@@ -13,9 +13,10 @@ public static class ApiProtocol
     // v3 (#546): the family default accounts retire on the client
     // v3 (#569): GET /sync/heads — a v3 client's round asks it instead of pulling every space
     // v3 (#494/#504): plan one-offs and the events segment — a v2 client misreads both
-    public const int Version = 3;
-    /// <summary>oldest client protocol this server still speaks — v3: a v2
-    /// client re-mints the retired family default accounts on every boot and
-    /// links bare movements onto them, undoing the v3 client's retire pass</summary>
-    public const int MinClient = 3;
+    // v4 (#557): a plan subject's row holds the period's own funding, what rolled over is derived on the client
+    public const int Version = 4;
+    /// <summary>oldest client protocol this server still speaks — v4: a v3
+    /// client reads a plan subject's row as all it holds, so the money that
+    /// rolled over from earlier periods is handed out a second time</summary>
+    public const int MinClient = 4;
 }
