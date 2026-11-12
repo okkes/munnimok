@@ -11,7 +11,7 @@
 # touches a provider, and an image without Chromium cannot start one by
 # accident on the wrong egress.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-alpine AS build
 WORKDIR /src
 
 # Restore from project files alone, so editing a .cs file does not
@@ -30,7 +30,7 @@ COPY src/connectors/ src/connectors/
 RUN dotnet publish src/connectors/Connector.Api/Connector.Api.csproj \
     -c Release -o /app --no-restore -p:ContinuousIntegrationBuild=true
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-alpine
 
 # icu-libs: money and dates are formatted and parsed server-side, and
 # invariant mode silently changes both.

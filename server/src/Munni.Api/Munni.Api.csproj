@@ -9,8 +9,8 @@
   <ItemGroup>
     <PackageReference Include="Anthropic" Version="13.8.0" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.2.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.15" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="11.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
     <!-- GHSA-v5pm-xwqc-g5wc flags every OpenApi 2.x, but the fixed 3.x
          line breaks AspNetCore.OpenApi's source generator (built against
          2.x, incl. 10.0.10). The vulnerable path is PARSING untrusted
@@ -18,7 +18,7 @@
          Pinned to the newest 2.x, suppressed until Microsoft ships a
          3.x-compatible generator — dependabot will surface that bump. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.13.0" NoWarn="NU1903" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="11.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
