@@ -79,7 +79,7 @@ public class ConnectorWalkTests(JobWalkApiFactory factory) : IClassFixture<JobWa
 
         // the session is active again, as after any finished sync
         var sessionId = accepted["sessionId"]!.GetValue<string>();
-        Assert.Equal("active", factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).State));
+        Assert.Equal("active", await factory.SessionStateAsync(sessionId, "active"));
     }
 
     /// <summary>
