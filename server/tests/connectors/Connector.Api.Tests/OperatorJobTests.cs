@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -122,7 +123,7 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
                 Assert.NotEqual(HttpStatusCode.OK, fetch.StatusCode);
             }
 
-            var report = await HealthAsync(http, broken);
+            var report = await HealthOnceAsync(http, broken, "degraded");
             var day = report.GetProperty("windows").GetProperty("24h");
 
             Assert.True(day.GetProperty("failed").GetInt32() >= 1);
@@ -194,6 +195,21 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
         Assert.True(response.StatusCode == HttpStatusCode.OK, body);
         using var parsed = JsonDocument.Parse(body);
         return (body, [.. parsed.RootElement.GetProperty("jobs").EnumerateArray().Select(j => j.Clone())]);
+    }
+
+    /// <summary>
+    /// The provider's health once its status reads <paramref name="state"/>. The job that failed writes the
+    /// status a moment after the fetch returns, so the report is read until it settles.
+    /// </summary>
+    private static async Task<JsonElement> HealthOnceAsync(HttpClient http, string providerId, string state)
+    {
+        var clock = Stopwatch.StartNew();
+        while (true)
+        {
+            var report = await HealthAsync(http, providerId);
+            if (report.GetProperty("status").Text("state") == state || clock.Elapsed > TimeSpan.FromSeconds(10)) return report;
+            await Task.Delay(100);
+        }
     }
 
     private static async Task<JsonElement> HealthAsync(HttpClient http, string providerId)
