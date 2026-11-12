@@ -158,7 +158,7 @@ test('brave (#521): one real search proves the key — a month already used up s
   const { calls, fetchImpl } = capture(200);
   const good = await validate('brave', { BRAVE_SEARCH_API_KEY: 'BSA-key' }, { fetchImpl });
   assert.equal(good.ok, true);
-  assert.match(calls[0].url, /api\.search\.brave\.com\/res\/v1\/images\/search\?q=logo&count=1/);
+  assert.equal(calls[0].url, 'https://api.search.brave.com/res/v1/images/search?q=logo&count=1');
   assert.equal(calls[0].init.headers['x-subscription-token'], 'BSA-key');
 
   const counted = await validate('brave', { BRAVE_SEARCH_API_KEY: 'k' }, {
@@ -180,7 +180,7 @@ test('anthropic (#567): listing models proves the receipt reader’s key and spe
   const { calls, fetchImpl } = capture(200);
   const good = await validate('anthropic', { RECEIPT_AI_API_KEY: 'sk-ant-key' }, { fetchImpl });
   assert.equal(good.ok, true);
-  assert.match(calls[0].url, /api\.anthropic\.com\/v1\/models/);
+  assert.equal(calls[0].url, 'https://api.anthropic.com/v1/models?limit=1');
   assert.equal(calls[0].init.headers['x-api-key'], 'sk-ant-key');
   assert.equal(calls[0].init.headers['anthropic-version'], '2023-06-01');
   const refused = await validate('anthropic', { RECEIPT_AI_API_KEY: 'a claude.ai password' }, { fetchImpl: capture(401).fetchImpl });
