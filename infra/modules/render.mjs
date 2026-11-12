@@ -82,34 +82,23 @@ services:
       retries: 10
     networks: [shared]
 
-  # migrations run INSIDE the web service; the worker waits until they are applied
+  # GlitchTip 7 is ONE process: it serves the site, runs the task worker and the scheduler, and migrates at its own start.
+  # The major is pinned — 7 arrived with a deploy under "latest" and its retired worker restarted without end; the next one comes as a Renovate PR.
   glitchtip:
-    image: glitchtip/glitchtip:latest
+    image: glitchtip/glitchtip:7
     restart: unless-stopped
-    command: sh -c "./manage.py migrate && ./bin/start.sh"
-    environment: &glitchtip_env
+    environment:
       DATABASE_URL: postgres://munni:\${POSTGRES_PASSWORD}@glitchtip-db:5432/glitchtip
-      REDIS_URL: redis://valkey:6379/0
+      VALKEY_URL: redis://valkey:6379/0
       SECRET_KEY: \${GLITCHTIP_SECRET_KEY}
       GLITCHTIP_DOMAIN: ${s.urls.glitchtip}
       EMAIL_URL: \${GLITCHTIP_EMAIL_URL:-consolemail://}
-      CELERY_WORKER_AUTOSCALE: "1,3"
 ${publish(p.glitchtip)}
     depends_on:
       glitchtip-db:
         condition: service_healthy
       valkey:
         condition: service_started
-    networks: [shared]
-
-  glitchtip-worker:
-    image: glitchtip/glitchtip:latest
-    restart: unless-stopped
-    command: sh -c "until ./manage.py migrate --check >/dev/null 2>&1; do sleep 3; done; ./bin/run-celery-with-beat.sh"
-    environment: *glitchtip_env
-    depends_on:
-      glitchtip-db:
-        condition: service_healthy
     networks: [shared]
 
   valkey:

@@ -50,9 +50,9 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "the platform stacks' Logto image is pinned in a JS template the docker-compose manager cannot see — same depName as the dev-source compose, so both bump in one PR",
+      "description": "the platform stacks' Logto and GlitchTip images are pinned in a JS template the docker-compose manager cannot see — Logto has the same depName as the dev-source compose, so both bump in one PR; GlitchTip names its major only, so the next major is a PR that waits for approval instead of arriving with a deploy",
       "managerFilePatterns": ["infra/modules/render.mjs"],
-      "matchStrings": ["image: (?<depName>svhd/logto):(?<currentValue>[0-9.]+)"],
+      "matchStrings": ["image: (?<depName>svhd/logto):(?<currentValue>[0-9.]+)", "image: (?<depName>glitchtip/glitchtip):(?<currentValue>[0-9.]+)"],
       "datasourceTemplate": "docker"
     }
   ]
