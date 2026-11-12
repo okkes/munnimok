@@ -21,7 +21,7 @@ machine catches, and which spans still have to be added.
 | web | **custom spans** through `measure()` (`lib/perf.ts`) — the sites in §7, and `review.suggest` (op `munni.review`): the background pass that prepares every row waiting in the review (#565) | nested `measure()` calls and the fetches under them | a root `measure` becomes a transaction; a nested one a row in the parent's waterfall. `review.suggest` carries `review.spaces` (asked), `review.prepared` (spaces prepared again) and `review.rows`; a pass that found nothing to prepare reads 0 |
 | web | **INP** — a *poor* interaction (> 500 ms from the tap to the next frame) | — | not a transaction: one **warning event** per element (`scope: web-vitals`, message `INP poor: button[data-testid="review-confirm"]`) with the value, the three phases (input delay / processing / presentation), the load state and the longest script's function and invoker, once per page life, reported when the page hides. GlitchTip has no Web Vitals page and does not render the SDK's standalone INP spans, so the event is how the number reaches an issue list |
 | **api** (`Munni.Api`) | every sampled request, named by its **route template** (`POST /sync/{spaceId}/push`, `GET /receipts/{id}`, `POST /connectors/...`) — Sentry.AspNetCore's tracing middleware | EF Core queries (`db.query`, the parameterised SQL — no values) and every `IHttpClientFactory` call (`http.client`: Logto, the connector relay, logo.dev, OCR, FCM, the quote providers) — the SDK's DiagnosticSource listener and `SentryHttpMessageHandler`, both bundled in `Sentry` 6.x | health probes and the SSE stream are never a transaction (`SentryNoise.IsHeartbeat`); a trace the web app started keeps its sampling decision (`SentryNoise.SampleTrace`) so a sampled `sync.round` shows its push on the api under the same trace id |
-| **connector control plane** (`Connector.Api`) | every sampled request of the relay (`/v1/...`) | its database and party calls | `/v1/health` (docker every 10 s), the operator's `/health` and the agents' `/heartbeat` never count; **no trace header leaves the process** — a bank's or a shop's site is nobody's tracing peer |
+| **connector control plane** (`Connector.Api`) | every sampled request of the relay (`/v1/...`) | its database and party calls | `/v1/health` (docker every 10 s), the operator's `/health` and the agents' `/heartbeat` never count, and neither do the routes that wait by design (`ConnectorTracing.IsNeverTraced`): the agents' lease poll, the event streams, an agent's `GET …/answer` and `GET …/live/input` held open until the person answers or taps; **no trace header leaves the process** — a bank's or a shop's site is nobody's tracing peer |
 | **browser agents** (`Connector.Agent`) | none automatically (a generic host) | — | the rate is wired so a future job-level transaction (Connector.Kit.Hosting `Jobs/*`) works without a config change; trace headers may reach the control plane only |
 | admin, lab | errors only (unchanged) | | |
 
@@ -80,6 +80,18 @@ is sent; the dev server traces at 1 when `VITE_GLITCHTIP_DSN` is set.
   plane to nobody; an agent to its control plane only.
 * **Heartbeats are not transactions**: `/health`, `/v1/health`,
   `/sync/events`, `/heartbeat`.
+* **One outage, one issue.** When the database does not answer (it
+  restarts, a deploy recreates it, the host is out of breath) every
+  loop and every request of those minutes notices in its own words.
+  The api and the control plane send all of them under the fingerprint
+  `database-unreachable` (`SentryNoise.Quiet`, `ConnectorNoise.Quiet`):
+  one issue per project whose count is the size of the outage. EF's own
+  "An error occurred using the connection" line never reports beside
+  the exception it announces, and an agent does not report a 5xx of its
+  control plane by itself — its retry loops say what did not land in the
+  end. A statement the server refused (a `PostgresException`) keeps its
+  own issue, and so does one that ran past its command timeout — a slow
+  query is a fault of its own.
 
 ## 4. Reading a slow Confirm in GlitchTip
 

@@ -28,5 +28,12 @@ public static class ConnectorTracing
         || name.Contains("/heartbeat", StringComparison.OrdinalIgnoreCase)
         || name.Contains("/live/stream", StringComparison.OrdinalIgnoreCase)
         || name.Contains("/jobs/lease", StringComparison.OrdinalIgnoreCase)
-        || name.EndsWith("/events", StringComparison.OrdinalIgnoreCase);
+        || name.EndsWith("/events", StringComparison.OrdinalIgnoreCase)
+        || IsAgentWaitingOnAPerson(name);
+
+    // An agent asking for the person's answer, or for their next tap in the live view, is held open until there is one.
+    // What the person sends to the same path is an ordinary request.
+    private static bool IsAgentWaitingOnAPerson(string name) =>
+        name.StartsWith("GET ", StringComparison.OrdinalIgnoreCase)
+        && (name.EndsWith("/answer", StringComparison.OrdinalIgnoreCase) || name.EndsWith("/live/input", StringComparison.OrdinalIgnoreCase));
 }

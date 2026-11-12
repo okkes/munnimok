@@ -32,8 +32,8 @@ public static class SentryNoise
         // trace headers travel only to the connector control plane, never to a third party
         options.TracePropagationTargets.Clear();
         if (configuration["Connectors:BaseUrl"] is { Length: > 0 } relay) options.TracePropagationTargets.Add(relay);
-        // deliberate insert races are handled, not incidents (GlitchTip 66–74)
-        options.SetBeforeSend((sentryEvent, _) => IsHandledRace(sentryEvent) ? null : sentryEvent);
+        // deliberate insert races are handled, not incidents (GlitchTip 66–74); a database that did not answer is one incident
+        options.SetBeforeSend((sentryEvent, _) => Quiet(sentryEvent));
         // upstream 5xx are retried by the fetch loop; real failures still surface as exceptions and LogError
         options.CaptureFailedRequests = false;
     }
@@ -76,6 +76,46 @@ public static class SentryNoise
         }
 
         return false;
+    }
+
+    /// <summary>What an event becomes before it leaves: nothing, one of the outage's events, or itself.</summary>
+    public static SentryEvent? Quiet(SentryEvent sentryEvent)
+    {
+        ArgumentNullException.ThrowIfNull(sentryEvent);
+        if (IsHandledRace(sentryEvent) || IsConnectionLogLine(sentryEvent)) return null;
+        if (IsDatabaseUnreachable(sentryEvent)) sentryEvent.SetFingerprint(UnreachableFingerprint);
+        return sentryEvent;
+    }
+
+    internal const string UnreachableFingerprint = "database-unreachable";
+
+    /// <summary>
+    /// The database did not answer (it restarts, a deploy recreates it, the
+    /// host is out of breath): every loop and every request of those minutes
+    /// notices in its own words, and each wording used to open an issue of its
+    /// own. Under one fingerprint they are one issue whose count is the size
+    /// of the outage. A statement the server refused (a
+    /// <c>PostgresException</c>) is not this, and neither is one that ran
+    /// past its time: a slow query is a fault of its own.
+    /// </summary>
+    public static bool IsDatabaseUnreachable(SentryEvent sentryEvent)
+    {
+        ArgumentNullException.ThrowIfNull(sentryEvent);
+        var chain = sentryEvent.SentryExceptions?.ToList() ?? [];
+        if (chain.Exists(ex => ex.Value?.Contains(SlowStatement, StringComparison.Ordinal) == true)) return false;
+        return chain.Exists(ex =>
+            ex.Type == "Npgsql.NpgsqlException" ||
+            ex.Value?.Contains("likely due to a transient failure", StringComparison.Ordinal) == true);
+    }
+
+    /// <summary>Npgsql's words for a statement that was sent and did not come back within its command timeout.</summary>
+    private const string SlowStatement = "Timeout during reading attempt";
+
+    /// <summary>EF's own "An error occurred using the connection" line: the exception it announces reports by itself.</summary>
+    public static bool IsConnectionLogLine(SentryEvent sentryEvent)
+    {
+        ArgumentNullException.ThrowIfNull(sentryEvent);
+        return sentryEvent.Logger?.StartsWith("Microsoft.EntityFrameworkCore.Database.Connection", StringComparison.Ordinal) == true;
     }
 
     /// <summary>
