@@ -177,9 +177,34 @@ describe('SyncEngine', () => {
     const off = a.engine.onProgress((p) => seen.push(p.phase === 'server' ? 'server' : `${p.done}/${p.total}`));
     await a.engine.syncAll();
     off();
-    expect(seen).toEqual(['server', '0/2', '1/2', '2/2']);
+    // each space once more as its page lands: the round also says how much it fetched (below)
+    expect([...new Set(seen)]).toEqual(['server', '0/2', '1/2', '2/2']);
+    const told = seen.length;
     await a.engine.syncAll();
-    expect(seen).toHaveLength(4);
+    expect(seen).toHaveLength(told);
+  });
+
+  it('a long first pull says how far it is, page by page — one large space no longer reads as a standstill (#594)', async () => {
+    let w = 3_500_000;
+    const writer = device('devWriter', () => ++w, server);
+    dbs.push(writer.db);
+    await writer.repo.upsert('space', 'big', 'big', { name: 'Big', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    for (let i = 0; i < 9; i++) await writer.repo.upsert('category', 'big', `c${i}`, { name: `Category ${i}` });
+    await writer.engine.syncAll();
+
+    // a new device: nothing local, ten changes to fetch, four to a page
+    server.pageSize = 4;
+    const fresh = device('devFresh', () => ++w, server);
+    dbs.push(fresh.db);
+    const seen: string[] = [];
+    const off = fresh.engine.onProgress((p) => {
+      if (p.phase === 'spaces') seen.push(`${p.done}/${p.total} ${p.changes}`);
+    });
+    await fresh.engine.syncAll();
+    off();
+
+    expect(seen).toEqual(['0/1 0', '0/1 4', '0/1 8', '0/1 10', '1/1 10']);
+    expect(await fresh.db.categories.count()).toBe(9);
   });
 
   it('a refused token (401) leaves the engine idle — the session\'s business, never an outage (user ss 2026-10-07: "Offline" right after a sign-in)', async () => {

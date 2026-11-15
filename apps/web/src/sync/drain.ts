@@ -14,6 +14,8 @@ export interface DrainOptions {
    */
   deadline?: number;
   now?: () => number;
+  /** told after each page is applied, with that page's count: a long first pull shows it is moving */
+  onPage?: (applied: number) => void;
 }
 
 /**
@@ -49,6 +51,7 @@ export async function drainPull(
     }
     await repo.applyRemoteOps(ops);
     applied += ops.length;
+    options.onPage?.(ops.length);
     const next = nextSince ?? since + ops.length;
     if (next <= since) return applied; // defensive: never spin without progress
     await store.metaPut(cursorKey(spaceId), next);

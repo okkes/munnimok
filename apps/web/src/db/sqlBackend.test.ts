@@ -4,6 +4,7 @@ import initSqlJs from 'sql.js';
 import type { Database } from 'sql.js';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
+import type { Op } from '@/sync/merge';
 import { DexieBackend, LIVE_QUERY_QUIET_MS } from './backend';
 import type { StorageBackend } from './backend';
 import { visibleTransactions, writeTxTransform } from './joined';
@@ -30,6 +31,9 @@ function sqlJsExecutor(db: Database): SqlExecutor {
   return {
     async run(sql, params = []) {
       db.run(sql, params);
+    },
+    async batch(statements) {
+      for (const statement of statements) db.run(statement.sql, statement.params);
     },
     async query(sql, params = []) {
       const stmt = db.prepare(sql);
@@ -350,5 +354,56 @@ describe('transaction serialization (SQLCipher regression)', () => {
       await backend.put('account', { id: 'after', spaceId: 's1', name: 'After', deleted: 0, fieldVersions: {} } as never);
     });
     expect((await backend.bySpace('account', 's1')).map((r) => r.id)).toContain('after');
+  });
+});
+
+describe('what a pulled page costs the native store (#594)', () => {
+  /** every executor call is one round trip into native code on a phone */
+  function counted(executor: SqlExecutor): { executor: SqlExecutor; calls: () => number } {
+    let n = 0;
+    const count = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) => (...args: A) => {
+      n += 1;
+      return fn(...args);
+    };
+    return {
+      calls: () => n,
+      executor: {
+        ...executor,
+        run: count(executor.run),
+        batch: count(executor.batch),
+        query: count(executor.query),
+        transaction: count(executor.transaction),
+      },
+    };
+  }
+
+  /** a page as the server hands it out: a thousand changes over six hundred rows of two kinds, some rows written twice */
+  function page(): Op[] {
+    const server = new HlcClock('server', undefined, () => 1_800_000_000_000);
+    return Array.from({ length: 1000 }, (_, i) => {
+      const row = i % 600;
+      return row % 2 === 0
+        ? { opId: `op-${i}`, spaceId: SPACE, entity: 'transaction', entityId: `t-${row}`, fields: { accountId: 'a1', date: '2026-07-01', amountCents: -100 - i, currency: 'EUR', merchant: `Shop ${i}`, needsReview: 0 }, hlc: server.now() }
+        : { opId: `op-${i}`, spaceId: SPACE, entity: 'txMeta', entityId: `m-${row}`, fields: { txId: `t-${row - 1}`, note: `note ${i}` }, hlc: server.now() };
+    });
+  }
+
+  it('a thousand changes reach the store in a handful of native calls, not two each', async () => {
+    const base = sqlJsExecutor(new SQL.Database());
+    await initSqlSchema(base);
+    const { executor, calls } = counted(base);
+    const store = new SqlStorageBackend(executor);
+    cleanups.push(() => store.close());
+    const repo = new Repo(store, new HlcClock('phone'), { trackOutbox: false });
+
+    await repo.applyRemoteOps(page());
+
+    // two per change kept a new phone on "Fetching your spaces — 0 of 24" for minutes
+    expect(calls()).toBeLessThanOrEqual(12);
+    // and it is the same store a change-by-change apply leaves: the later write of a row wins
+    expect(await store.countBySpace('transaction', SPACE)).toBe(300);
+    expect(await store.countBySpace('txMeta', SPACE)).toBe(300);
+    expect((await store.get('transaction', 't-0'))?.merchant).toBe('Shop 600');
+    expect((await store.get('txMeta', 'm-599') as { note?: string } | undefined)?.note).toBe('note 599');
   });
 });

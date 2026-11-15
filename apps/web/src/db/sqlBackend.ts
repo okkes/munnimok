@@ -22,12 +22,30 @@ import type {
  * contract the interface already promises.
  */
 
+/** a value bound to a `?` */
+export type SqlParam = string | number | null;
+
+export interface SqlStatement {
+  sql: string;
+  params: SqlParam[];
+}
+
+/** ids per SELECT … IN (the oldest SQLite builds bind at most 999 values) and rows per batched write (one message to native code) */
+const READ_CHUNK = 500;
+const WRITE_CHUNK = 200;
+
 /** the SQL the backend needs — tiny on purpose, so any engine fits */
 export interface SqlExecutor {
   /** DML/DDL, no result rows */
-  run(sql: string, params?: (string | number | null)[]): Promise<void>;
+  run(sql: string, params?: SqlParam[]): Promise<void>;
+  /**
+   * many `run`s in ONE call: on a phone each call crosses into native code, which is what a pulled page cannot
+   * afford per row. Only statements that may run twice (INSERT OR REPLACE): an engine that refuses the batch
+   * replays them one by one
+   */
+  batch(statements: SqlStatement[]): Promise<void>;
   /** SELECT returning rows as plain objects */
-  query(sql: string, params?: (string | number | null)[]): Promise<Record<string, unknown>[]>;
+  query(sql: string, params?: SqlParam[]): Promise<Record<string, unknown>[]>;
   /** BEGIN/COMMIT/ROLLBACK wrapper around `fn` */
   transaction(fn: () => Promise<void>): Promise<void>;
   close(): Promise<void>;
@@ -231,6 +249,26 @@ export class SqlStorageBackend implements StorageBackend {
       (row.spaceId as string) ?? null,
       JSON.stringify(row),
     ]);
+    this.emit(entityDep(entity));
+  }
+
+  async getMany<E extends EntityName>(entity: E, ids: string[]) {
+    const rows: EntityRowMap[E][] = [];
+    for (let i = 0; i < ids.length; i += READ_CHUNK) {
+      const chunk = ids.slice(i, i + READ_CHUNK);
+      rows.push(...(await this.rowsOf(entity, `WHERE id IN (${chunk.map(() => '?').join(',')})`, chunk)));
+    }
+    return rows;
+  }
+
+  async putMany(entity: EntityName, rows: (Record<string, unknown> & { id: string })[]) {
+    if (rows.length === 0) return;
+    const sql = `INSERT OR REPLACE INTO ${entityTable(entity)} (id, spaceId, json) VALUES (?, ?, ?)`;
+    for (let i = 0; i < rows.length; i += WRITE_CHUNK) {
+      await this.sql.batch(
+        rows.slice(i, i + WRITE_CHUNK).map((row) => ({ sql, params: [row.id, (row.spaceId as string) ?? null, JSON.stringify(row)] })),
+      );
+    }
     this.emit(entityDep(entity));
   }
 

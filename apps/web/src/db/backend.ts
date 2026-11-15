@@ -1,4 +1,5 @@
 import Dexie, { liveQuery } from 'dexie';
+import type { Table } from 'dexie';
 import type { MunniDB } from './schema';
 import type {
   ConnectorConnRow,
@@ -37,6 +38,13 @@ export interface StorageBackend {
    * Loosely typed on purpose: merged rows are built field-by-field.
    */
   put(entity: EntityName, row: Record<string, unknown> & { id: string }): Promise<void>;
+  /**
+   * `get` and `put` for many rows of one entity at once. A pulled page goes
+   * through these: on a phone every call is a trip into native code, and a
+   * page is a thousand changes (#594).
+   */
+  getMany<E extends EntityName>(entity: E, ids: string[]): Promise<EntityRowMap[E][]>;
+  putMany(entity: EntityName, rows: (Record<string, unknown> & { id: string })[]): Promise<void>;
   deleteBySpace(entity: SpaceScopedEntity, spaceId: string): Promise<void>;
   deleteRow(entity: EntityName, id: string): Promise<void>;
 
@@ -147,6 +155,16 @@ export class DexieBackend implements StorageBackend {
   async put(entity: EntityName, row: Record<string, unknown> & { id: string }) {
     // dexie's union table intersects all row types — the cast is required
     await this.db.tableFor(entity).put(row as never); // NOSONAR(S4325)
+  }
+
+  async getMany<E extends EntityName>(entity: E, ids: string[]) {
+    const rows = (await this.db.tableFor(entity).bulkGet(ids)) as unknown as (EntityRowMap[E] | undefined)[];
+    return rows.filter((row): row is EntityRowMap[E] => row !== undefined);
+  }
+
+  async putMany(entity: EntityName, rows: (Record<string, unknown> & { id: string })[]) {
+    // dexie's union table has no common bulkPut signature at all — one table's shape stands in for it
+    await (this.db.tableFor(entity) as unknown as Table<Record<string, unknown>, string>).bulkPut(rows);
   }
 
   async deleteBySpace(entity: SpaceScopedEntity, spaceId: string) {
