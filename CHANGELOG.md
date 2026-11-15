@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.21.3](https://github.com/okkes/munnimok/compare/v5.21.2...v5.21.3) (2026-11-15)
+
+
+### 🐞 Bug Fixes
+
+* **app:** the first sync says how much it has fetched ([#594](https://github.com/okkes/munnimok/issues/594)) ([097374d](https://github.com/okkes/munnimok/commit/097374d1f5703bfe886eb4fedbf3b7628f79f679))
+* **sync:** a pulled page reaches the phone's store in a handful of native calls ([#594](https://github.com/okkes/munnimok/issues/594)) ([e9bd723](https://github.com/okkes/munnimok/commit/e9bd723f77c47726a3542604979fb8d94171a6c4))
+
 ## [5.21.2](https://github.com/okkes/munnimok/compare/v5.21.1...v5.21.2) (2026-11-12)
 
 
