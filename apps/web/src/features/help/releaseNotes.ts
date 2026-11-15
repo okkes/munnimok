@@ -19,7 +19,7 @@ export interface WhatsNewEntry {
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
     version: '5.21.3',
-    date: '2026-11-12',
+    date: '2026-11-15',
     items: [
       {
         en: 'Signing in on a new phone: your data arrives many times faster, and while it comes in the waiting screen counts what it has fetched instead of standing still.',
