@@ -260,6 +260,9 @@ const fieldBlocker = (field: string, current: string, text: string): string | un
 
 const amountMissing = (cents: number | null, zeroCounts: boolean): boolean => cents === null || (cents === 0 && !zeroCounts);
 
+/** #619: a correction that names the balance to land on — the one amount that may be 0 */
+const landsOnBalance = (adjustment: boolean, adjustTarget: boolean): boolean => adjustment && adjustTarget;
+
 /** save gate: real merchant, positive amount, an account, a date not
  *  before the space starts (arc 5), and — for transfers — a decided
  *  other side */
@@ -809,8 +812,11 @@ function reimbAnchorFor(active: boolean, spaceId: string, typed: TypedTx, fallba
  * flipped drops them, an amount lowered under them blocks the save.
  */
 function useStagedReimbursements(args: {
-  /** the create screen, and no balance correction */
-  active: boolean;
+  /** the create screen */
+  extended: boolean;
+  /** a balance correction is reimbursed by nothing */
+  adjustment: boolean;
+  canEdit: boolean;
   /** a new form (opened again, or another row) starts without picks */
   resetKey: string;
   spaceId: string;
@@ -820,16 +826,19 @@ function useStagedReimbursements(args: {
   const { t, lang } = useLang();
   const [staged, setStaged] = useState<PickedLink[]>([]);
   const [asked, setAsked] = useState(false);
-  const allTxs = useSpaceTransactions(args.active);
+  const active = args.extended && !args.adjustment;
+  const allTxs = useSpaceTransactions(active);
   const { linkMany } = useReimburseLinks(allTxs);
   useEffect(() => {
     setStaged([]);
     setAsked(false);
   }, [args.resetKey]);
-  const held = args.active ? staged : [];
+  const held = active ? staged : [];
   const cents = held.reduce((sum, link) => sum + link.cents, 0);
-  const anchor = reimbAnchorFor(args.active, args.spaceId, args.typed, t('txform.addTitle'));
+  const anchor = reimbAnchorFor(active, args.spaceId, args.typed, t('txform.addTitle'));
   return {
+    /** false where nothing may be saved, and where no host opens the picker (the edit sheet) */
+    offered: args.canEdit && !!args.onOpen,
     staged: held,
     setStaged,
     allTxs,
@@ -976,11 +985,13 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   // #309 (user): a movement category REQUIRES its counterparty here too —
   // the validator always had the gate, the form just never fed it
   const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
-  const zeroCounts = adjustment && adjustTarget;
+  const zeroCounts = landsOnBalance(adjustment, adjustTarget);
   const noAmount = amountMissing(cents, zeroCounts);
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
   const reimb = useStagedReimbursements({
-    active: extended && !adjustment,
+    extended,
+    adjustment,
+    canEdit,
     resetKey: `${open}:${tx?.id ?? ''}`,
     spaceId,
     typed: { accountId: effectiveAccount, date, cents, isExpense, currency: formCurrency, merchant, catId, cats: stagedCats },
@@ -996,7 +1007,6 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
     attempted, valid, merchant, amountMissing: noAmount, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, futureOnBank, t,
     stagedOver: reimb.over,
   });
-  const reimbNote = blockerField === 'reimb' ? blockerText : reimb.needsAmount;
 
   const save = (bank?: { link?: BankRowRef; apart?: string }) => {
     if (!valid || !effectiveAccount || cents === null || saving.current) return;
@@ -1283,12 +1293,13 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
               notes={notes}
               onNotes={setNotes}
               credit={!isExpense}
-              canLinkReimb={canEdit && !!onLinkReimb}
+              canLinkReimb={reimb.offered}
               onLinkReimb={reimb.open}
               staged={reimb.staged}
               onUnstage={reimb.unstage}
               currency={formCurrency}
-              note={reimbNote}
+              blocker={[blockerField, blockerText]}
+              needsAmount={reimb.needsAmount}
             />
           )}
         </>
@@ -1433,7 +1444,8 @@ function StoryRows({
   staged,
   onUnstage,
   currency,
-  note,
+  blocker,
+  needsAmount,
 }: Readonly<{
   eventName: string | undefined;
   onEvent: () => void;
@@ -1448,11 +1460,14 @@ function StoryRows({
   staged: readonly PickedLink[];
   onUnstage: (key: string) => void;
   currency: string;
-  /** what keeps the door shut, or the links from being written */
-  note: string;
+  /** the form's blocker (field, text): shown here when it is about the links */
+  blocker: readonly [string, string];
+  /** what keeps the door shut */
+  needsAmount: string;
 }>) {
   const { t, lang } = useLang();
   const stagedCents = staged.reduce((sum, link) => sum + link.cents, 0);
+  const note = blocker[0] === 'reimb' ? blocker[1] : needsAmount;
   return (
     <>
       <button
