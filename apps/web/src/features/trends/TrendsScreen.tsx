@@ -16,7 +16,7 @@ import { Icon } from '@/ui/Icon';
 import { CashflowTab } from './CashflowTab';
 import { SpendingTab } from './SpendingTab';
 
-/** the tab ids double as testids (`trends-view-<id>`) — the gallery and the tour anchor on them */
+/** the tab ids double as testids (`trends-view-<id>`): the tour and the guide captures anchor on them */
 type View = 'categories' | 'cashflow' | 'networth';
 const PERIOD_COUNT = 12;
 const NONE: never[] = [];

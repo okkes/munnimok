@@ -53,7 +53,7 @@ describe('AreaLine (user 2026-10-08: the filled balance line)', () => {
     expect(screen.queryByTestId('al-tip')).toBeNull();
   });
 
-  it('two paydays close together keep both dots but only the first word (gallery 2026-10-08: the words printed on top of each other)', () => {
+  it('two paydays close together keep both dots but only the first word (the words printed on top of each other)', () => {
     // ten days on 320 units: a day is ~36 units, under the 48 a word needs
     const dense = Array.from({ length: 10 }, (_, i) => ({ date: `2026-06-${String(i + 1).padStart(2, '0')}`, cents: 100_000 + i * 1_000 }));
     render(

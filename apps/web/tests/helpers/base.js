@@ -36,8 +36,7 @@ const DEFAULT_VARIANT = { id: 'en-light-mobile', lang: 'en', dark: false, vp: { 
 // PW_VARIANT=en-dark-mobile: the same run in the dark theme, for a visual pass asked for by hand (#592)
 export const VARIANTS = [process.env.PW_VARIANT === 'en-dark-mobile' ? { ...DEFAULT_VARIANT, id: 'en-dark-mobile', dark: true } : DEFAULT_VARIANT];
 
-// The gallery's screenshots and videos are local artefacts (the guide, the
-// visual review); CI keeps neither, so it records no video and takes no shots.
+// screenshots (the guide is built from them) and videos are local artefacts: CI records no video and takes no shots
 const LOCAL_ARTEFACTS = !process.env.CI;
 
 export async function createPage(browser, variant) {

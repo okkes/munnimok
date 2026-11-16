@@ -12,9 +12,6 @@
     "perf": "vitest bench --run",
     "test": "playwright test",
     "shots": "playwright test -c playwright.shots.config.ts",
-    "gallery": "playwright test && playwright test -c playwright.shots.config.ts && node tests/generate-gallery.mjs && node tests/generate-failures.mjs",
-    "gallery:html": "node tests/generate-gallery.mjs",
-    "failures:html": "node tests/generate-failures.mjs",
     "guide": "node tests/generate-guide.mjs"
   },
   "dependencies": {
