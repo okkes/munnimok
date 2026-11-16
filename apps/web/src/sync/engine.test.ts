@@ -5,7 +5,7 @@ import { HlcClock } from './hlc';
 import { applyOp } from './merge';
 import type { Op, SyncEnvelope } from './merge';
 import type { PullResult, PushResult, SnapshotPage, SpaceHead, SyncBackend } from './backend';
-import { SyncHttpError } from './backend';
+import { SPACE_DELETED, SyncHttpError } from './backend';
 import { reportError } from '@/lib/report';
 
 vi.mock('@/lib/report', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
@@ -40,6 +40,12 @@ class InMemoryServer implements SyncBackend {
   private seenOpIds = new Set<string>();
   private lastSeq = 0;
   forbiddenSpaces = new Set<string>();
+  /** #615: erased by their owner's delete — every door answers 403 with the reason, and no list names them */
+  erasedSpaces = new Set<string>();
+  private denied(spaceId: string): void {
+    if (this.erasedSpaces.has(spaceId)) throw new SyncHttpError(403, undefined, SPACE_DELETED);
+    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+  }
   /** #306: reader role — push 403s while pull/list stay granted */
   readerSpaces = new Set<string>();
   rejectedSpaces = new Set<string>(); // 400s (a poisoned op) — never 403
@@ -58,7 +64,8 @@ class InMemoryServer implements SyncBackend {
 
   async push(spaceId: string, _clientId: string, ops: Op[]): Promise<PushResult> {
     this.pushAttempts.push(spaceId);
-    if (this.forbiddenSpaces.has(spaceId) || this.readerSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.denied(spaceId);
+    if (this.readerSpaces.has(spaceId)) throw new SyncHttpError(403);
     if (this.rejectedSpaces.has(spaceId)) throw new SyncHttpError(400);
     if (this.maxOpsPerPush !== null && ops.length > this.maxOpsPerPush) throw new SyncHttpError(413);
     this.pushCalls.push(ops.length);
@@ -81,7 +88,7 @@ class InMemoryServer implements SyncBackend {
   pullCalls = 0;
 
   async pull(spaceId: string, since: number): Promise<PullResult> {
-    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.denied(spaceId);
     if (this.pullStatus !== null) throw new SyncHttpError(this.pullStatus, this.retryAfterMs);
     this.pullCalls++;
     this.pulledSpaces.push(spaceId);
@@ -107,7 +114,7 @@ class InMemoryServer implements SyncBackend {
   private readonly rowSpace = new Map<string, string>();
 
   async snapshot(spaceId: string, after?: string): Promise<SnapshotPage | null> {
-    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.denied(spaceId);
     if (this.snapshotPage === null) return null;
     this.snapshotCalls.push(after);
     if (this.snapshotCalls.length === this.snapshotFailsAt) {
@@ -128,7 +135,7 @@ class InMemoryServer implements SyncBackend {
   }
 
   async listSpaces(): Promise<string[]> {
-    return [...new Set(this.ops.map((o) => o.spaceId))].filter((id) => !this.forbiddenSpaces.has(id));
+    return [...new Set(this.ops.map((o) => o.spaceId))].filter((id) => !this.forbiddenSpaces.has(id) && !this.erasedSpaces.has(id));
   }
 
   /** #569: every granted space with its head — the seq of its newest op; #505: and the caller's role */
@@ -836,6 +843,37 @@ describe('SyncEngine', () => {
     expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts);
     expect(await a.db.outbox.count()).toBe(0);
     expect(await a.db.accounts.get('acc2')).toBeUndefined();
+  });
+
+  it('#615: a space its owner deleted leaves every device — the others are told it was deleted, the one that deleted it is told nothing', async () => {
+    const owner = await sharedSpace();
+    let wb = 2_000_000;
+    const member = device('member', () => ++wb, server);
+    dbs.push(member.db);
+    await member.engine.syncAll();
+    expect((await member.db.spaces.get('s1'))?.name).toBe('Shared');
+    expect(await member.db.accounts.get('acc1')).toBeTruthy();
+
+    // the delete is still queued: the space waits, hidden, until the server has it
+    await owner.repo.remove('space', 's1', 's1');
+    expect((await owner.db.spaces.get('s1'))?.deleted).toBe(1);
+    await owner.engine.syncAll();
+    expect(await owner.db.outbox.count()).toBe(0);
+    server.erasedSpaces.add('s1');
+
+    // the owner's next round finds it gone from the server's list: the rows leave, without a word
+    await owner.engine.syncAll();
+    expect(await owner.db.spaces.get('s1')).toBeUndefined();
+    expect(await owner.db.accounts.get('acc1')).toBeUndefined();
+    expect(useEvicted.getState().evicted).toBeNull();
+
+    // the member still held it, with a change of their own on the way
+    await member.repo.upsert('account', 's1', 'acc1', { name: 'Late edit' });
+    await member.engine.syncAll();
+    expect(useEvicted.getState().evicted).toMatchObject({ spaceId: 's1', spaceName: 'Shared', deleted: true });
+    expect(await member.db.spaces.get('s1')).toBeUndefined();
+    expect(await member.db.accounts.get('acc1')).toBeUndefined();
+    expect(await member.db.outbox.count()).toBe(0);
   });
 
   it('#306: a re-grant clears the tombstone — sync resumes and a LATER eviction reports again', async () => {

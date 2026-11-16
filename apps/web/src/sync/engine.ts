@@ -8,7 +8,7 @@ import { ENTITY_NAMES } from '@/db/types';
 import type { EntityName, OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
-import { SyncHttpError, isLostConnection } from './backend';
+import { SPACE_DELETED, SyncHttpError, isLostConnection } from './backend';
 import { cursorKey, drainPull, snapshotKey } from './drain';
 import { dropUnstamped, unstampWrites } from './merge';
 import type { SyncEnvelope } from './merge';
@@ -323,6 +323,7 @@ export class SyncEngine {
       round.setAttribute('sync.spaces', spaceIds.length);
       const firstError = await this.syncEach(spaceIds, new Set(serverSpaces), headOf, round);
       if (this.stopped) return;
+      await this.purgeDeletedSpaces(new Set(serverSpaces));
       await this.purgeOrphanFeeds(serverSpaces);
       if (firstError) throw firstError;
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
@@ -495,7 +496,7 @@ export class SyncEngine {
       if (err instanceof SyncHttpError && err.status === 403 && !this.stopped) {
         // #173: a 403 on a MEMBER space is an eviction (feed sweeps stay
         // silent: they route through purgeOrphanFeeds, not this catch)
-        await this.evictSpace(spaceId);
+        await this.evictSpace(spaceId, err.reason === SPACE_DELETED);
         return;
       }
       throw err;
@@ -603,15 +604,28 @@ export class SyncEngine {
    *  The tombstone survives boots/logins, so late straggler ops or a
    *  half-done purge can never re-raise the sheet; syncAll clears it
    *  when the server lists the space again (re-invite). */
-  private async evictSpace(spaceId: string): Promise<void> {
+  private async evictSpace(spaceId: string, deleted = false): Promise<void> {
     const seen = await this.store.metaGet(evictedKey(spaceId));
     await this.store.metaPut(evictedKey(spaceId), Date.now());
     if (!seen) {
-      // tell the app before the purge erases the name
-      const name = (await this.store.get('space', spaceId))?.name;
-      if (name) reportEviction({ spaceId, spaceName: name });
+      // tell the app before the purge erases the name — unless this person deleted the space (#615): they know
+      const space = await this.store.get('space', spaceId);
+      if (space?.name && space.deleted === 0) reportEviction({ spaceId, spaceName: space.name, ...(deleted ? { deleted } : {}) });
     }
     await this.purgeSpace(spaceId);
+  }
+
+  /**
+   * #615: a space this device holds as deleted, that the server no longer
+   * lists and that has nothing left to send, was erased there — its rows
+   * leave this device too. While the delete itself is still queued the
+   * space stays: the queue is what tells the server.
+   */
+  private async purgeDeletedSpaces(serverSpaces: ReadonlySet<string>): Promise<void> {
+    const queued = new Set((await this.store.outboxAll()).map((o) => o.spaceId));
+    for (const space of await this.store.allRows('space')) {
+      if (space.deleted === 1 && !serverSpaces.has(space.id) && !queued.has(space.id)) await this.purgeSpace(space.id);
+    }
   }
 
   /** #306: evicted tombstone gate — while the server does not grant the

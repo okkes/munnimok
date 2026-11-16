@@ -880,6 +880,8 @@ export const en = {
   'space.kickedTitle': 'Removed from space',
   'space.kickedBody': 'You are no longer a member of "{space}" — its data left this device.',
   'space.kickedSwitched': 'You are now looking at "{to}".',
+  'space.goneTitle': 'Space deleted',
+  'space.goneBody': '"{space}" was deleted by its owner — its data left this device.',
   'space.memberPerm': 'Permission',
   'space.sharedAcct': 'Shared via',
   'space.addedBy': 'Added by',

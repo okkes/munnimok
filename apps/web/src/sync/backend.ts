@@ -93,7 +93,7 @@ export class ApiSyncBackend implements SyncBackend {
    *  pause the server asked for carries how long */
   private async failed(res: Response): Promise<SyncHttpError> {
     await noticeDeviceRevoked(res);
-    return new SyncHttpError(res.status, retryAfterMs(res.headers.get('Retry-After')));
+    return new SyncHttpError(res.status, retryAfterMs(res.headers.get('Retry-After')), await deniedReason(res));
   }
 
   async push(spaceId: string, clientId: string, ops: Op[]): Promise<PushResult> {
@@ -186,13 +186,31 @@ function emitSseChunk(chunk: string, onEvent: (frame: SyncEventFrame) => void): 
   }
 }
 
+/** #615: the 403 of a space its owner deleted — the server erased it; nobody was taken out of it */
+export const SPACE_DELETED = 'space-deleted';
+
 export class SyncHttpError extends Error {
-  /** `retryAfterMs`: the pause the server asked for (Retry-After), when it named one */
+  /**
+   * `retryAfterMs`: the pause the server asked for (Retry-After), when it named one;
+   * `reason`: what a 403 says about itself in its body, when it says anything
+   */
   constructor(
     readonly status: number,
     readonly retryAfterMs?: number,
+    readonly reason?: string,
   ) {
     super(`sync request failed: ${status}`);
+  }
+}
+
+/** the `error` word of a 403's body; a refusal without a body (or with another shape) has none */
+async function deniedReason(res: Response): Promise<string | undefined> {
+  if (res.status !== 403) return undefined;
+  try {
+    const body = (await res.clone().json()) as { error?: unknown };
+    return typeof body.error === 'string' ? body.error : undefined;
+  } catch {
+    return undefined;
   }
 }
 

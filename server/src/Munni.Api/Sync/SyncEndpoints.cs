@@ -109,12 +109,15 @@ public static class SyncEndpoints
     private static async Task<IResult> PushOnce(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, Guid userId)
     {
         var space = await db.Spaces.FindAsync(spaceId);
+        var owner = true;
         if (space is null)
         {
             // deterministic (uuidv5) feed ids are guessable from an IBAN —
             // feeds are born only via POST /feeds (security review S1)
             if (Accounts.FeedAccess.IsFeedShaped(spaceId))
                 return Results.Forbid();
+            // #615: a space that was erased is never born again from a device that still held it
+            if (await SpaceErasure.IsErasedAsync(db, spaceId)) return SpaceErasure.Gone();
             // first push creates the space with the pusher as owner (a
             // lost create race lands in the member check on the retry)
             space = new Space { Id = spaceId };
@@ -127,11 +130,18 @@ public static class SyncEndpoints
             if (membership is null) return Results.Forbid();
             // readers may pull but never push
             if (!Social.SpaceRoles.CanWrite(membership.Role)) return Social.SpaceRoles.ReadOnly();
+            owner = Social.SpaceRoles.IsOwner(membership.Role);
         }
 
+        // #615: deleting the space is its owner's to do — it erases the space for everyone; anybody else's is not applied
+        var ops = owner ? request.Ops : request.Ops.Where(o => !SpaceErasure.Deletes(o, spaceId)).ToList();
         var writer = new SyncWriter(db);
-        var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, request.Ops);
+        var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, ops);
+        var erase = owner && ops.Exists(o => SpaceErasure.Deletes(o, spaceId)) && await SpaceErasure.IsDeletedAsync(db, spaceId);
+        // out of reach in the same save as the delete itself; the rows go right after it
+        if (erase) await SpaceErasure.SealAsync(db, spaceId);
         await db.SaveChangesAsync();
+        if (erase) await SpaceErasure.EraseRowsAsync(db, spaceId);
         if (accepted > 0) events.Publish(spaceId); // wake the other devices/members
         return Results.Ok(new PushResponse(lastSeq, accepted, request.Ops.Count - accepted));
     }
@@ -145,7 +155,7 @@ public static class SyncEndpoints
             // not a member — attachments may still derive (possibly
             // archive-capped) read access to a feed space
             var feedCap = await Accounts.FeedAccess.ReadCapAsync(db, http.GetUserId(), spaceId);
-            if (feedCap is null) return member;
+            if (feedCap is null) return await DeniedAsync(spaceId, db, member);
             cap = feedCap.Value;
         }
 
@@ -196,7 +206,7 @@ public static class SyncEndpoints
         if (member is not null)
         {
             var feedCap = await Accounts.FeedAccess.ReadCapAsync(db, http.GetUserId(), spaceId);
-            if (feedCap is null) return member;
+            if (feedCap is null) return await DeniedAsync(spaceId, db, member);
             // rows as they stand cannot be cut off at the point an archived attachment reads up to: that
             // reader is told there is no snapshot for them, and pulls the capped history from its start
             if (feedCap != long.MaxValue) return Results.NoContent();
@@ -228,6 +238,10 @@ public static class SyncEndpoints
         var next = page.Count < rows.Count ? $"{page[^1].Entity}:{page[^1].EntityId}" : null;
         return Results.Ok(new BootstrapResponse(page, head, next));
     }
+
+    /// <summary>#615: no access — and whether that is because the space was erased, which a device answers by dropping its copy without a word of "removed"</summary>
+    private static async Task<IResult> DeniedAsync(string spaceId, AppDbContext db, IResult denied) =>
+        await SpaceErasure.IsErasedAsync(db, spaceId) ? SpaceErasure.Gone() : denied;
 
     private static async Task<IResult?> RequireMember(string spaceId, AppDbContext db, HttpContext http)
     {

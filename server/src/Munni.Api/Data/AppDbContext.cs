@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceMember> SpaceMembers => Set<SpaceMember>();
     public DbSet<SyncOpRow> SyncOps => Set<SyncOpRow>();
     public DbSet<EntityRow> EntityRows => Set<EntityRow>();
+    public DbSet<ErasedSpace> ErasedSpaces => Set<ErasedSpace>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
     public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
@@ -83,6 +84,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SpaceId, x.OpId }).IsUnique();
         });
         modelBuilder.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
+        modelBuilder.Entity<ErasedSpace>(e => e.HasKey(x => x.SpaceId));
         modelBuilder.Entity<UserDevice>(e =>
         {
             // the same physical device can serve several accounts
@@ -418,6 +420,16 @@ public class SyncOpRow
     public required string PayloadJson { get; set; }
     public bool Deleted { get; set; }
     public DateTimeOffset ReceivedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// What is left of a space its owner deleted (#615): the id and the moment. It keeps a device that still
+/// holds the space from giving birth to an empty one of the same id with its next push.
+/// </summary>
+public class ErasedSpace
+{
+    public required string SpaceId { get; set; }
+    public DateTimeOffset ErasedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>

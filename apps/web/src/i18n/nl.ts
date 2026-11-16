@@ -881,6 +881,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.kickedTitle': 'Verwijderd uit space',
   'space.kickedBody': 'Je bent geen lid meer van "{space}" — de gegevens zijn van dit apparaat verdwenen.',
   'space.kickedSwitched': 'Je kijkt nu naar "{to}".',
+  'space.goneTitle': 'Space verwijderd',
+  'space.goneBody': '"{space}" is door de eigenaar verwijderd — de gegevens zijn van dit apparaat verdwenen.',
   'space.memberPerm': 'Toegangsniveau',
   'space.sharedAcct': 'Gedeeld via',
   'space.addedBy': 'Toegevoegd door',

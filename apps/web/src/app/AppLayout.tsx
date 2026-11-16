@@ -223,11 +223,11 @@ function EvictedNotice() {
   const evicted = useEvicted((s) => s.evicted);
   const clear = useEvicted((s) => s.clear);
   return (
-    <Sheet open={evicted !== null} onOpenChange={(next) => !next && clear()} title={t('space.kickedTitle')} size="compact">
+    <Sheet open={evicted !== null} onOpenChange={(next) => !next && clear()} title={t(evicted?.deleted ? 'space.goneTitle' : 'space.kickedTitle')} size="compact">
       {evicted && (
         <div className="flex flex-col gap-3 pt-1" data-testid="space-kicked-sheet">
           <p className="text-[14px] leading-relaxed text-ink-2">
-            {t('space.kickedBody', { space: evicted.spaceName })}
+            {t(evicted.deleted ? 'space.goneBody' : 'space.kickedBody', { space: evicted.spaceName })}
             {evicted.switchedToName ? ` ${t('space.kickedSwitched', { to: evicted.switchedToName })}` : ''}
           </p>
           <Button data-testid="space-kicked-ok" onClick={clear}>

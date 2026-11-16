@@ -9,6 +9,8 @@ import { create } from 'zustand';
 export interface EvictedInfo {
   spaceId: string;
   spaceName: string;
+  /** #615: its owner deleted the space — nobody was taken out of it */
+  deleted?: boolean;
   /** filled by the data provider when it had to switch the active space */
   switchedToName?: string;
 }

@@ -881,6 +881,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.kickedTitle': 'Space üyeliği sonlandı',
   'space.kickedBody': 'Artık "{space}" üyesi değilsin — verileri bu cihazdan kaldırıldı.',
   'space.kickedSwitched': 'Şimdi "{to}" görüntüleniyor.',
+  'space.goneTitle': 'Alan silindi',
+  'space.goneBody': '"{space}" sahibi tarafından silindi — verileri bu cihazdan kaldırıldı.',
   'space.memberPerm': 'İzin düzeyi',
   'space.sharedAcct': 'Şu alan aracılığıyla paylaşıldı',
   'space.addedBy': 'Ekleyen',
