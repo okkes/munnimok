@@ -1,3 +1,4 @@
+import { HaloText } from '@/ui/charts/HaloText';
 import { monotonePath } from '@/ui/charts/monotone';
 import { useUserInk } from '@/ui/userInk';
 import { axisFraction, hasTail } from '@/domain/debtPlan';
@@ -61,23 +62,9 @@ function anchorFor(x: number): 'start' | 'middle' | 'end' {
   return 'middle';
 }
 
-/** one amount cue on the scale, haloed in the surface colour so a line under it never swallows it */
+/** one amount cue on the scale */
 function AmountCue({ x, y, anchor, text, testId }: Readonly<{ x: number; y: number; anchor: 'start' | 'end'; text: string; testId?: string }>) {
-  return (
-    <text
-      x={x}
-      y={y}
-      textAnchor={anchor}
-      fontSize={CUE_FONT}
-      fill="var(--m-ink-4)"
-      stroke="var(--m-surface)"
-      strokeWidth={3}
-      paintOrder="stroke"
-      data-testid={testId}
-    >
-      {text}
-    </text>
-  );
+  return <HaloText x={x} y={y} anchor={anchor} size={CUE_FONT} fill="var(--m-ink-4)" text={text} testId={testId} />;
 }
 
 export function PayoffChart({

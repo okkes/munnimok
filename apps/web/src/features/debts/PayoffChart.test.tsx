@@ -111,12 +111,14 @@ describe('PayoffChart (user 2026-10-08)', () => {
     // zero sits just above the zero line (height − pad = 93), the top cue just under the top of the scale (pad = 7)
     expect(Number(zero.getAttribute('y'))).toBe(90);
     expect(Number(top.getAttribute('y'))).toBe(17);
-    expect(top.getAttribute('paint-order')).toBe('stroke');
+    // haloed by a copy underneath, never by an outline of its own (WebKit eats the letters)
+    expect(top.getAttribute('stroke')).toBeNull();
+    expect(top.previousElementSibling?.getAttribute('stroke')).toBe('var(--m-surface)');
     // over the lines: the cues come after the paths in the document
     const order = [...svg.querySelectorAll('path, text')].map((el) => el.tagName.toLowerCase());
     expect(order.indexOf('text')).toBeGreaterThan(order.lastIndexOf('path'));
     // the year tick still labels the axis beside them
-    expect([...svg.querySelectorAll('text')].map((el) => el.textContent)).toEqual(['€2500', '€0', '2026']);
+    expect([...svg.querySelectorAll('text:not([aria-hidden])')].map((el) => el.textContent)).toEqual(['€2500', '€0', '2026']);
     // without a formatter there are no cues
     render(<PayoffChart testId="pc4" height={100} axis={{ focusMonths: 2, totalMonths: 2 }} ticks={[]} series={[{ points: walk([100, 50, 0]), landed: true, color: 'green' }]} />);
     expect(screen.queryByTestId('pc4-top')).toBeNull();

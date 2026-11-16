@@ -44,6 +44,17 @@ describe('Bars (user 2026-10-08: numbers on top, a pick with a ring)', () => {
     expect(Number(screen.getByTestId('top-average-label').getAttribute('y'))).toBeGreaterThan(Number(screen.getByTestId('top-average').getAttribute('y1')));
   });
 
+  it('#375 r3: the words of the line label carry no outline of their own — the halo is a copy drawn under them', () => {
+    render(<Bars testId="halo" values={[500, 1500]} average={1000} averageLabel="Budget €10.00" />);
+    const label = screen.getByTestId('halo-average-label');
+    expect(label.getAttribute('stroke')).toBeNull();
+    const halo = label.previousElementSibling;
+    expect(halo?.textContent).toBe('Budget €10.00');
+    expect(halo?.getAttribute('stroke')).toBe('var(--m-surface)');
+    expect(halo?.getAttribute('aria-hidden')).toBe('true');
+    expect([halo?.getAttribute('x'), halo?.getAttribute('y')]).toEqual([label.getAttribute('x'), label.getAttribute('y')]);
+  });
+
   it('without value labels the chart keeps its old shape', () => {
     render(<Bars testId="plain" values={[5, 10]} />);
     expect(screen.getByTestId('plain').querySelectorAll('text')).toHaveLength(0);

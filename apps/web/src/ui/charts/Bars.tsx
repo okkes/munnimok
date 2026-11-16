@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import { HaloText } from './HaloText';
 /**
  * Minimal theme-aware SVG bar chart (trends design) — no library, the
  * bundle stays local-first-small. Bars are focusable for screen readers.
@@ -34,26 +35,6 @@ function ValueLabel({ x, y, text, selected }: Readonly<{ x: number; y: number; t
       fontWeight={selected ? 600 : 400}
       fill={selected ? 'var(--m-ink)' : 'var(--m-ink-3)'}
       className="m-num"
-    >
-      {text}
-    </text>
-  );
-}
-
-/** #375 (user: "the gray dotted line … is that the average?"): the reference line names itself at its right end, haloed so a bar under it never swallows the words */
-function LineLabel({ x, y, text, testId }: Readonly<{ x: number; y: number; text: string; testId?: string }>) {
-  return (
-    <text
-      x={x}
-      y={y}
-      textAnchor="end"
-      fontSize={8.5}
-      fill="var(--m-ink-3)"
-      stroke="var(--m-surface)"
-      strokeWidth={3}
-      paintOrder="stroke"
-      className="m-num"
-      data-testid={testId}
     >
       {text}
     </text>
@@ -214,10 +195,13 @@ export function Bars({
         />
       )}
       {average !== undefined && average > 0 && averageLabel && (
-        // above the line, or under it when the line runs along the top
-        <LineLabel
+        // #375 (user: "is that the average?"): the line names itself at its right end — above it, or under it when it runs along the top
+        <HaloText
           x={width - 2}
           y={zeroY - average * upScale > 12 ? zeroY - average * upScale - 3 : zeroY - average * upScale + 10}
+          anchor="end"
+          size={9}
+          fill="var(--m-ink-2)"
           text={averageLabel}
           testId={suffixed(testId, 'average-label')}
         />
