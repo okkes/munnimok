@@ -48,8 +48,9 @@ function OneOffFunding({
   ops,
   fmt,
   currency,
+  name,
   onDone,
-}: Readonly<{ row: UnplannedRow; model: PlanningModel; plan: PlanRow; ops: PlanningOps; fmt: MoneyFmt; currency: string; onDone: () => void }>) {
+}: Readonly<{ row: UnplannedRow; model: PlanningModel; plan: PlanRow; ops: PlanningOps; fmt: MoneyFmt; currency: string; name: string; onDone: () => void }>) {
   const { t } = useLang();
   const { spaceId } = useData();
   const overBudget = useOverBudgetGuard(spaceId);
@@ -61,7 +62,7 @@ function OneOffFunding({
   const save = () => {
     if (typed === null) return;
     // beyond the pool asks once a day, as every funding door does
-    overBudget.guard(model.toAllocateOf(plan), typed - funded, () => void ops.fundOneOff(plan, unplannedKey(row), typed).then(onDone));
+    overBudget.guard(model.toAllocateOf(plan), typed - funded, () => void ops.fundOneOff(plan, unplannedKey(row), typed, name).then(onDone));
   };
   return (
     <div className="flex flex-col gap-2" data-testid="plan-oneoff">
@@ -219,7 +220,7 @@ export function UnplannedSheet({
   const cats = useCategories();
   if (!row) return null;
   const title = row.kind === 'category' ? catName(cats.byId(row.mainId), t) : row.name;
-  const funding = <OneOffFunding row={row} model={model} plan={plan} ops={ops} fmt={fmt} currency={currency} onDone={onClose} />;
+  const funding = <OneOffFunding row={row} model={model} plan={plan} ops={ops} fmt={fmt} currency={currency} name={title} onDone={onClose} />;
   return (
     <Sheet open onOpenChange={(next) => !next && onClose()} title={title} size="tall">
       <div className="flex flex-col gap-3" data-testid="plan-unplanned-sheet">

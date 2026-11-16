@@ -16,6 +16,7 @@ import type { SplitInvitation } from '@/application/splitsApi';
 import { refreshPushRegistrationOnce } from '@/lib/push';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { fmtTimeAgo } from '@/lib/text';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -75,6 +76,25 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   planStart: { key: 'act.planStart', icon: 'clipboard-text-outline' },
   planFund: { key: 'act.planFund', icon: 'clipboard-text-outline' },
   planEdit: { key: 'act.planEdit', icon: 'clipboard-text-outline' },
+  // #618: one kind per plan command, so a line can say which subject and how much
+  planSet: { key: 'act.planSet', icon: 'clipboard-arrow-down-outline' },
+  planEmpty: { key: 'act.planEmpty', icon: 'clipboard-arrow-up-outline' },
+  planFill: { key: 'act.planFill', icon: 'clipboard-arrow-down-outline' },
+  planFillMany: { key: 'act.planFillMany', icon: 'clipboard-arrow-down-outline' },
+  planCover: { key: 'act.planCover', icon: 'swap-horizontal' },
+  planWithdraw: { key: 'act.planWithdraw', icon: 'clipboard-arrow-up-outline' },
+  planSubjectAdd: { key: 'act.planSubjectAdd', icon: 'clipboard-plus-outline' },
+  planSubjectEdit: { key: 'act.planSubjectEdit', icon: 'clipboard-edit-outline' },
+  planSubjectRemove: { key: 'act.planSubjectRemove', icon: 'clipboard-remove-outline' },
+  planTarget: { key: 'act.planTarget', icon: 'clipboard-edit-outline' },
+  planSkip: { key: 'act.planSkip', icon: 'clipboard-clock-outline' },
+  planUnskip: { key: 'act.planUnskip', icon: 'clipboard-clock-outline' },
+  planClear: { key: 'act.planClear', icon: 'clipboard-off-outline' },
+  planSegments: { key: 'act.planSegments', icon: 'clipboard-list-outline' },
+  planPool: { key: 'act.planPool', icon: 'bank-outline' },
+  planToAhead: { key: 'act.planToAhead', icon: 'calendar-sync-outline' },
+  planAheadBack: { key: 'act.planAheadBack', icon: 'calendar-sync-outline' },
+  planAheadFund: { key: 'act.planAheadFund', icon: 'calendar-sync-outline' },
   planAhead: { key: 'act.planAhead', icon: 'calendar-sync-outline' },
   planBlueprint: { key: 'act.planBlueprint', icon: 'content-copy' },
   planSandbox: { key: 'act.planSandbox', icon: 'flask-outline' },
@@ -138,6 +158,9 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
   const { store, spaceId } = useData();
   const identity = useSession((s) => s.identity);
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+  const { fmt } = useDisplayMoney();
+  const currency = useQuery(store, async () => (await store.get('space', spaceId))?.currency, [spaceId]) ?? 'EUR';
+  const money = (cents: number | undefined) => (cents === undefined ? '' : fmt(cents, currency));
   const rows = useQuery(
     store,
     async () =>
@@ -165,7 +188,13 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
         const actor = mine ? t('act.you') : (row.actorName ?? t('act.someone'));
         // the actor sits mid-sentence in some languages (TR) — split on a
         // marker so the highlighted name lands wherever {actor} does
-        const [before, after] = t(visual.key, { actor: '\u0000', detail: row.detail ?? '' }).split('\u0000');
+        const [before, after] = t(visual.key, {
+          actor: '\u0000',
+          detail: row.detail ?? '',
+          detail2: row.detail2 ?? '',
+          amount: money(row.amountCents),
+          from: money(row.fromCents),
+        }).split('\u0000');
         return (
           <div
             key={row.id}

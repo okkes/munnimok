@@ -991,6 +991,11 @@ export interface ActivityRow extends SyncEnvelope {
   actorSub?: string;
   /** free-form context: tx title, account name, budget name … */
   detail?: string;
+  /** #618: a second name — where moved money came from */
+  detail2?: string;
+  /** #618: the figures a line names, in the space's minor units: the reader's device formats them in its own language */
+  amountCents?: number;
+  fromCents?: number;
   /** ISO datetime of the action */
   at: string;
 }

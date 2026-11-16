@@ -117,6 +117,40 @@ describe('planning ops (#128)', () => {
     expect(emptied.views.find((v) => v.subject.sourceId === 'ins')?.fundedCents).toBe(35_000);
   });
 
+  it('#618: the history says which subject a command touched and how much money moved', async () => {
+    const { store, ops } = await fixture();
+    stores.push(store);
+    await ops.startPlan(MARCH, { kind: 'empty' });
+    const rent = await ops.addMirrored(march, 'recurring', { id: 'rent', name: 'Rent' });
+    const fun = await ops.addExpense(march, { name: 'Fun', catIds: ['entertainment'], targetCents: 5_000 });
+    const history = async () => {
+      // the commands log without waiting for the write
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const rows = (await store.bySpace('activity', SPACE)).filter((r) => r.deleted === 0).sort((a, b) => a.at.localeCompare(b.at));
+      return rows.map((r) => ({ kind: r.kind, detail: r.detail, detail2: r.detail2, amountCents: r.amountCents, fromCents: r.fromCents }));
+    };
+    const last = async () => (await history()).at(-1);
+    expect(await history()).toMatchObject([{ kind: 'planStart' }, { kind: 'planSubjectAdd', detail: 'Rent' }, { kind: 'planSubjectAdd', detail: 'Fun' }]);
+
+    await ops.fund(rent, 60_000);
+    expect(await last()).toMatchObject({ kind: 'planSet', detail: 'Rent', amountCents: 60_000, fromCents: 0 });
+    await ops.fund(rent, 80_000);
+    expect(await last()).toMatchObject({ kind: 'planSet', detail: 'Rent', amountCents: 80_000, fromCents: 60_000 });
+    await ops.cover(rent, fun, 5_000);
+    expect(await last()).toMatchObject({ kind: 'planCover', detail: 'Fun', detail2: 'Rent', amountCents: 5_000 });
+    // #613: everything a subject holds goes back in one command
+    await ops.fund(fun, 0);
+    expect(await last()).toMatchObject({ kind: 'planEmpty', detail: 'Fun', amountCents: 5_000 });
+    await ops.fillSubject((await modelOf(store)).plan!, rent);
+    expect(await last()).toMatchObject({ kind: 'planFill', detail: 'Rent', amountCents: 25_000 });
+    await ops.snooze(fun, true);
+    expect(await last()).toMatchObject({ kind: 'planSkip', detail: 'Fun' });
+    await ops.withdrawAll((await modelOf(store)).plan!);
+    expect(await last()).toMatchObject({ kind: 'planWithdraw', amountCents: 100_000 });
+    await ops.removeSubject(fun);
+    expect(await last()).toMatchObject({ kind: 'planSubjectRemove', detail: 'Fun' });
+  });
+
   it('a plan started again from a blueprint revives a tombstoned twin clean too', async () => {
     const { store, ops } = await fixture();
     stores.push(store);

@@ -16,12 +16,19 @@ export const ACTIVITY_MAX_AGE_DAYS = 90;
  * every member's device can render it offline. Writes ride the normal
  * Repo/outbox path — history syncs like any other space data.
  */
+export interface ActivityFigures {
+  detail2?: string;
+  amountCents?: number;
+  fromCents?: number;
+}
+
 export async function logActivity(
   store: StorageBackend,
   repo: Repo,
   spaceId: string,
   kind: string,
   detail?: string,
+  figures?: ActivityFigures,
 ): Promise<void> {
   try {
     const profile = (await store.metaGet('profile'))?.value as { name?: string } | undefined;
@@ -35,6 +42,7 @@ export async function logActivity(
       ...(actorName ? { actorName } : {}),
       ...(identity?.kind === 'user' ? { actorSub: identity.sub } : {}),
       ...(detail ? { detail } : {}),
+      ...figures,
       at: new Date().toISOString(),
     });
     await pruneActivity(store, repo, spaceId);
