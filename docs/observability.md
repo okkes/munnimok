@@ -93,6 +93,34 @@ is sent; the dev server traces at 1 when `VITE_GLITCHTIP_DSN` is set.
   own issue, and so does one that ran past its command timeout — a slow
   query is a fault of its own.
 
+### When the Android app itself ends (#594)
+
+Everything above is reported by the web layer, and the web layer dies
+with the app's process: a crash of the Android app left no trace in
+GlitchTip at all. The shell now notes how it ended and the next start
+reports it, under the scope `android-exit`:
+
+- **Android's own record** (`ApplicationExitInfo`, Android 11 and up):
+  the reason, its description, how important the process was held and
+  the memory it had. Reported: a crash, a native crash, "not
+  responding", a failed start and excessive resource use always; low
+  memory, a kill by signal and a dependency that died only while the
+  app was on screen — Android clears a resting app away as it pleases,
+  and a person swiping the app away is not a fault.
+- **The stack trace** of an exception nothing caught, written to the
+  app's files as the app goes down (`LastExit.java`).
+- **The web view's own process** dying (crashed or killed): Capacitor
+  leaves that unhandled, so Android ends the app with it.
+
+Each is told once (`lib/nativeExit.ts`), at the start of the app and
+only once a signed-in identity is known: nobody and a chosen-offline
+identity send nothing. An exit that reads "low memory" or a trace
+that says `OutOfMemoryError` points at how much the encrypted store
+hands across to the web layer at once. Two things keep that small: a
+whole table or a whole space is read 2,000 rows at a time
+(`READ_PAGE` in `db/sqlBackend.ts`), and the app asks Android for the
+large heap.
+
 ## 4. Reading a slow Confirm in GlitchTip
 
 GlitchTip (the shared stack runs `glitchtip/glitchtip:7` as one

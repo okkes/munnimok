@@ -36,6 +36,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         nl: 'Aanmelden op een nieuw apparaat haalt je gegevens op zoals ze nu zijn, niet elke wijziging die er ooit in is gemaakt: de eerste aanmelding duurt zo lang als je gegevens groot zijn, hoe lang je de app ook gebruikt.',
         tr: 'Yeni bir cihazda oturum açmak verilerini bugünkü haliyle getirir, şimdiye kadar yapılmış her değişikliği değil: ilk oturum açma, uygulamayı ne kadar süredir kullanırsan kullan, verilerinin büyüklüğü kadar sürer.',
       },
+      {
+        en: 'Android: if the app stops by itself, its next start reports why, so a crash no longer goes unseen. The app also gets more memory to work with on the phone.',
+        nl: 'Android: als de app uit zichzelf stopt, meldt de volgende start waarom, zodat een crash niet meer ongezien blijft. De app krijgt op de telefoon ook meer geheugen om mee te werken.',
+        tr: 'Android: uygulama kendiliğinden kapanırsa bir sonraki açılış nedenini bildirir; böylece bir çökme artık fark edilmeden kalmaz. Uygulama telefonda çalışmak için daha fazla bellek de alır.',
+      },
     ],
   },
   {

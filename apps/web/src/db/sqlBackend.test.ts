@@ -10,7 +10,7 @@ import type { StorageBackend } from './backend';
 import { visibleTransactions, writeTxTransform } from './joined';
 import { Repo } from './repo';
 import { MunniDB } from './schema';
-import { SqlStorageBackend, initSqlSchema } from './sqlBackend';
+import { READ_PAGE, SqlStorageBackend, initSqlSchema } from './sqlBackend';
 import type { SqlExecutor } from './sqlBackend';
 
 /**
@@ -405,5 +405,71 @@ describe('what a pulled page costs the native store (#594)', () => {
     expect(await store.countBySpace('txMeta', SPACE)).toBe(300);
     expect((await store.get('transaction', 't-0'))?.merchant).toBe('Shop 600');
     expect((await store.get('txMeta', 'm-599') as { note?: string } | undefined)?.note).toBe('note 599');
+  });
+});
+
+describe('a whole table never crosses to the web layer in one piece (#594)', () => {
+  /** rows of the transaction table, as the bulk write lays them down */
+  const rowsFor = (count: number, space = SPACE) =>
+    Array.from({ length: count }, (_, i) => ({ id: `t-${String(i).padStart(5, '0')}`, spaceId: space, merchant: `Shop ${i}`, fieldVersions: {}, deleted: 0 as const }));
+
+  /** the executor, telling how many rows each read handed over and running `between` once after the first read of a table */
+  function watched(executor: SqlExecutor, between?: () => Promise<void>): { executor: SqlExecutor; reads: number[] } {
+    const reads: number[] = [];
+    let pending = between;
+    return {
+      reads,
+      executor: {
+        ...executor,
+        async query(sql, params) {
+          const rows = await executor.query(sql, params);
+          if (!sql.includes('FROM e_transaction')) return rows;
+          reads.push(rows.length);
+          const run = pending;
+          pending = undefined;
+          if (run) await run();
+          return rows;
+        },
+      },
+    };
+  }
+
+  it('a table and a space are read a page at a time, and nothing is lost or doubled on the way', async () => {
+    const base = sqlJsExecutor(new SQL.Database());
+    await initSqlSchema(base);
+    const { executor, reads } = watched(base);
+    const store = new SqlStorageBackend(executor);
+    cleanups.push(() => store.close());
+    const total = READ_PAGE * 2 + 500;
+    await store.putMany('transaction', rowsFor(total));
+    await store.putMany('transaction', rowsFor(3, 'other').map((row) => ({ ...row, id: `o-${row.id}` })));
+
+    const all = await store.allRows('transaction');
+    expect(all).toHaveLength(total + 3);
+    expect(new Set(all.map((row) => row.id)).size).toBe(total + 3);
+    expect(Math.max(...reads)).toBe(READ_PAGE);
+
+    reads.length = 0;
+    const space = await store.bySpace('transaction', SPACE);
+    expect(space).toHaveLength(total);
+    expect(space.every((row) => row.spaceId === SPACE)).toBe(true);
+    expect(reads).toEqual([READ_PAGE, READ_PAGE, 500]);
+  });
+
+  it('a row rewritten while the pages are read comes out once, as it stands', async () => {
+    const base = sqlJsExecutor(new SQL.Database());
+    await initSqlSchema(base);
+    const plain = new SqlStorageBackend(base);
+    cleanups.push(() => plain.close());
+    await plain.putMany('transaction', rowsFor(READ_PAGE + 10));
+    // the first page is out; a sync page rewrites one of its rows before the next is read
+    const { executor } = watched(base, () => plain.put('transaction', { ...rowsFor(1)[0], merchant: 'Rewritten' }));
+    const store = new SqlStorageBackend(executor);
+    cleanups.push(() => store.close());
+
+    const all = await store.allRows('transaction');
+
+    expect(all).toHaveLength(READ_PAGE + 10);
+    expect(all.filter((row) => row.id === 't-00000').map((row) => row.merchant)).toEqual(['Rewritten']);
   });
 });
