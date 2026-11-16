@@ -1,8 +1,4 @@
-/**
- * Generates tests/gallery/failures.html from failed-test screenshots + error info.
- * Scans tests/results/ for test-failed-1.png + error-context.md pairs.
- * Run: node tests/generate-failures.mjs
- */
+/** run: node tests/generate-failures.mjs — reads the test-failed-1.png + error-context.md pairs in tests/results/ */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,21 +10,15 @@ const GALLERY_DIR = path.join(__dirname, 'gallery');
 const DEPLOY = process.argv.includes('--deploy');
 const BASE   = DEPLOY ? '.' : '..';
 
-// ---------------------------------------------------------------------------
-// Parse error-context.md into { specFile, testName, location, error, snapshot }
-// ---------------------------------------------------------------------------
 function parseErrorContext(mdPath) {
   if (!fs.existsSync(mdPath)) return null;
   const text = fs.readFileSync(mdPath, 'utf8');
 
-  // Extract test name + location
   const nameMatch  = text.match(/- Name:\s*(.+)/);
   const locMatch   = text.match(/- Location:\s*(.+)/);
 
-  // Extract error block (between ```  after # Error details and next ```)
   const errBlock = text.match(/# Error details[\s\S]*?```\n([\s\S]*?)```/);
 
-  // Spec file is the part before " >> "
   let specFile = '', testName = '';
   if (nameMatch) {
     const parts = nameMatch[1].split(' >> ');
@@ -44,9 +34,6 @@ function parseErrorContext(mdPath) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Scan results dir
-// ---------------------------------------------------------------------------
 if (!fs.existsSync(RESULTS_DIR)) {
   console.log('No tests/results directory found — run tests first.');
   process.exit(0);
@@ -82,7 +69,6 @@ for (const dir of dirs) {
   });
 }
 
-// Group by spec file
 const bySpec = {};
 for (const f of failures) {
   (bySpec[f.specFile] = bySpec[f.specFile] || []).push(f);
@@ -91,15 +77,11 @@ for (const f of failures) {
 const specCount = Object.keys(bySpec).length;
 const totalCount = failures.length;
 
-// ---------------------------------------------------------------------------
-// Card HTML
-// ---------------------------------------------------------------------------
 function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function failureCard(f) {
-  // Shorten error to first meaningful line (skip "Error: " prefix variants)
   const firstLine = f.error.split('\n')[0].replace(/^Error:\s*/i, '').trim();
   const errorLines = f.error.split('\n').slice(0, 8).join('\n');
 
@@ -126,9 +108,6 @@ function failureCard(f) {
     </div>`;
 }
 
-// ---------------------------------------------------------------------------
-// HTML
-// ---------------------------------------------------------------------------
 const specSections = Object.entries(bySpec).map(([spec, items]) => `
   <section class="spec-section">
     <h2 class="spec-heading">${escHtml(spec)} <span class="spec-count">${items.length} failed</span></h2>

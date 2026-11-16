@@ -4,23 +4,16 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Sync;
 
-/// <summary>
-/// The single write path into a space: merge + materialize + record ops.
-/// Used by the push endpoint and by server-side producers (GoCardless
-/// ingest) — the server is just another device emitting ops.
-/// </summary>
+/// the single write path into a space (merge, materialize, record ops), also for server-side producers:
+/// the server is just another device emitting ops
 public sealed class SyncWriter(AppDbContext db)
 {
-    /// <summary>
-    /// Two writers pushing the same brand-new row (or a push racing the
-    /// bank ingest) both pass the FindAsync miss and collide on a primary
-    /// key at save (Postgres 23505). The LWW merge makes a clean re-read
-    /// converge, so callers retry on exactly this signal.
-    /// </summary>
+    /// two writers pushing the same new row (or a push racing the bank ingest) collide on a primary key at save
+    /// (Postgres 23505); the LWW merge makes a clean re-read converge, so callers retry on exactly this signal
     public static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
 
-    /// <summary>Applies ops (idempotent by opId). Caller saves changes.</summary>
+    /// idempotent by opId; the caller saves changes
     public async Task<(long LastSeq, int Accepted)> ApplyAsync(Space space, Guid? userId, IReadOnlyList<SyncOpDto> ops)
     {
         var incomingIds = ops.Select(o => o.OpId).ToList();
@@ -33,7 +26,7 @@ public sealed class SyncWriter(AppDbContext db)
         var accepted = 0;
         foreach (var op in ops)
         {
-            if (!knownSet.Add(op.OpId)) continue; // idempotent retry
+            if (!knownSet.Add(op.OpId)) continue;
 
             var row = await db.EntityRows.FindAsync(space.Id, op.Entity, op.EntityId);
             var local = row is null
@@ -85,18 +78,14 @@ public sealed class SyncWriter(AppDbContext db)
     }
 }
 
-/// <summary>Server-side HLC stamps, same encoding as the clients (sortable base36).</summary>
 public static class ServerHlc
 {
     public const string DeviceId = "server";
 
     public static string Now(int counter = 0) => Encode(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), counter);
 
-    /// <summary>
-    /// The stamp that loses to every other: a value written with it fills a
-    /// field nobody set yet and never outranks an opinion a device holds or
-    /// forms later (the connector ingest's prediction overlay, 2026-10-05).
-    /// </summary>
+    /// the stamp that loses to every other: fills a field nobody set yet and never outranks an opinion
+    /// a device holds or forms later
     public static readonly string Floor = Encode(0, 0);
 
     public static string Encode(long wallMs, int counter) =>
@@ -106,7 +95,7 @@ public static class ServerHlc
     {
         const string chars = "0123456789abcdefghijklmnopqrstuvwxyz";
         if (value == 0) return "0";
-        var buffer = new System.Text.StringBuilder(13); // enough for long.MaxValue
+        var buffer = new System.Text.StringBuilder(13);
         while (value > 0)
         {
             buffer.Insert(0, chars[(int)(value % 36)]);

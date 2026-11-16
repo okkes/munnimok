@@ -3,20 +3,12 @@ using Connector.Kit.Normalization;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// Minimal valid fixtures, built so a test can express exactly one defect
-/// with a single <c>with</c>. A test that hand-rolls a whole manifest to
-/// check one rule ends up asserting the builder, not the rule.
-/// </summary>
+// minimal valid fixtures, so one `with` expresses exactly one defect
 internal static class Make
 {
     public const string SessionId = "ses_0123456789abcdef0123456789abcdef";
     public const string AccountId = "acc_0123456789abcdef0123456789abcdef";
 
-    /// <summary>
-    /// The simplest manifest that passes every rule: T1, inline, client
-    /// custody, attended, one password step, one resource.
-    /// </summary>
     public static ProviderManifest Manifest() => new()
     {
         Id = "mock-provider",
@@ -67,7 +59,6 @@ internal static class Make
         ],
     };
 
-    /// <summary>Replaces the single auth step's fields, leaving the rest intact.</summary>
     public static ProviderManifest WithFields(this ProviderManifest manifest, params FieldSpec[] fields) =>
         manifest with
         {

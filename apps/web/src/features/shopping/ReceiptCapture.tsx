@@ -8,20 +8,14 @@ import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 /** a phone (or the native shell) opens its own camera for "take a photo"; a desktop has the webcam rung instead */
 const touchFirst = (): boolean => isNativeApp() || (typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)')?.matches);
 
-/**
- * The picker's ways to add a receipt of one's own, under its suggestions —
- * on the transaction detail, the review card (#542) and the bulk walk
- * alike: take a photo and upload a picture on a phone (#496: the upload was
- * desktop-only), upload and the webcam (#160) on a desktop, and the
- * connections door where the host can afford to leave.
- */
+// #496: a phone offers take photo + upload, a desktop upload + webcam (#160)
+// the connections door only where leaving is affordable
 export function ReceiptCaptureRungs({
   testIdPrefix,
   busy,
   onFile,
   onConnections,
 }: Readonly<{
-  /** `receipt` on the detail (`receipt-file`, `receipt-take-photo`, …), the host's own prefix elsewhere */
   testIdPrefix: string;
   busy: boolean;
   onFile: (file: File) => void;
@@ -59,7 +53,6 @@ export function ReceiptCaptureRungs({
           <Icon name="upload-outline" size={16} />
           {t('receipt.upload')}
         </Button>
-        {/* #160: a desktop's webcam snapshot — the same attach path as a file */}
         {!phone && webcam && (
           <Button variant="outline" className="min-w-0 flex-1" data-testid={id('webcam')} disabled={busy} onClick={() => setWebcamOpen(true)}>
             <Icon name="camera-outline" size={16} />

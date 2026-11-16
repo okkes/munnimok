@@ -1,12 +1,5 @@
-/**
- * Control cockpit configuration: runtime overlay first, baked Vite env
- * second — the same contract as the other apps (apps/admin/src/config.ts).
- * /runtime-config.js is rewritten per deployment by the nginx entrypoint
- * (deploy/nginx/40-runtime-config.sh) so one public image serves every
- * stack; the committed stub sets nothing and the baked config applies.
- * API_URL points at the DESIGNATED environment's API — the one that
- * exposes /control/* (admin split LS6).
- */
+// same contract as apps/admin/src/config.ts (runtime overlay beats the baked env)
+// API_URL points at the DESIGNATED environment's API, the one exposing /control/* (admin split LS6)
 type RuntimeKey = 'API_URL' | 'LOGTO_ENDPOINT' | 'LOGTO_APP_ID' | 'LOGTO_RESOURCE' | 'GLITCHTIP_DSN' | 'LAB_URL';
 
 const runtime = (key: RuntimeKey): string | undefined => {
@@ -25,5 +18,4 @@ export const config = {
 };
 export type ControlConfig = typeof config;
 
-/** cockpit errors land in their own GlitchTip project (no-op when unset) */
 export const glitchtipDsn = runtime('GLITCHTIP_DSN') ?? (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '';

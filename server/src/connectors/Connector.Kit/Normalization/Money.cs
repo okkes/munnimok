@@ -4,10 +4,7 @@ using Connector.Kit.Errors;
 
 namespace Connector.Kit.Normalization;
 
-/// <summary>
-/// Money is always minor units plus an ISO-4217 code. Never a float, never
-/// a decimal that has been through a locale.
-/// </summary>
+// minor units plus an ISO-4217 code; never a float, never a decimal that went through a locale
 public readonly record struct Money
 {
     [JsonConstructor]
@@ -55,16 +52,8 @@ public readonly record struct Money
         string.Create(CultureInfo.InvariantCulture, $"{Value / 100m:0.00} {Currency}");
 }
 
-/// <summary>
-/// How a provider represents an amount in a given field.
-///
-/// There is deliberately no "guess it" option. Every one of these APIs
-/// represents money differently, and some are inconsistent between their
-/// own endpoints. A heuristic that guesses wrong corrupts financial data
-/// silently, which is the one failure mode worse than crashing - so each
-/// adapter declares the unit per field and the result is checked against a
-/// stated total (see <see cref="Reconciliation"/>).
-/// </summary>
+// no "guess it" option: a wrong guess corrupts money silently, so each adapter declares the unit per field and the
+// result is checked against a stated total (Reconciliation)
 public enum MoneyUnit
 {
     /// <summary>Already minor units: <c>1234</c> is 12.34.</summary>
@@ -79,10 +68,6 @@ public enum MoneyUnit
 
 public static class MoneyParser
 {
-    /// <summary>
-    /// Converts a provider value to minor units under a declared unit. The
-    /// unit is never inferred from the value's shape.
-    /// </summary>
     public static long ToMinor(decimal raw, MoneyUnit unit) => unit switch
     {
         MoneyUnit.Minor => checked((long)decimal.Truncate(raw)),
@@ -90,12 +75,7 @@ public static class MoneyParser
         _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, null),
     };
 
-    /// <summary>
-    /// Parses a provider string under a declared unit. Accepts both '.' and
-    /// ',' as the decimal separator because Dutch providers use both, often
-    /// within the same account, but refuses anything genuinely ambiguous
-    /// rather than picking a reading.
-    /// </summary>
+    // accepts '.' and ',' as the decimal separator (Dutch providers use both, even within one account); refuses the ambiguous
     public static long ToMinor(string? raw, MoneyUnit unit, string field = "amount")
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -107,15 +87,8 @@ public static class MoneyParser
             .Replace(" ", string.Empty, StringComparison.Ordinal)
             .Replace("€", string.Empty, StringComparison.Ordinal);
 
-        // "463,-" and "463.-" both mean 463 and no cents. See the remarks:
-        // leaving the hyphen to the parser read it as a trailing MINUS and
-        // returned negative 463.
-        //
-        // The hyphen becomes "00" rather than being deleted, because that
-        // separator is still carrying information. Deleting it turns
-        // "1.234,-" into "1.234", where the dot has silently changed from a
-        // thousands group into a decimal point and 1234 euros becomes 1.23 -
-        // which is the same class of quiet corruption in a smaller coat.
+        // "463,-" and "463.-" mean 463, no cents; the hyphen becomes "00", not deleted: deleting turns "1.234,-" into "1.234",
+        // where the dot becomes a decimal point and 1234 euros reads as 1.23
         if (cleaned.EndsWith(",-", StringComparison.Ordinal)
             || cleaned.EndsWith(".-", StringComparison.Ordinal))
         {
@@ -139,14 +112,8 @@ public static class MoneyParser
             cleaned = cleaned.Replace(',', '.');
         }
 
-        // NumberStyles.Number spelled out, MINUS AllowTrailingSign.
-        //
-        // Number includes it, and that inclusion is what turned "463,-" into
-        // negative 463 after the comma became a dot. A leading sign stays -
-        // a refund really is "-5,00" - but a hyphen at the END is not notation
-        // this parser recognises now that the Dutch whole-euro suffix has been
-        // taken off above, and the honest answer to something unrecognised is
-        // to refuse it rather than to read it as arithmetic.
+        // NumberStyles.Number minus AllowTrailingSign: it read "463,-" as negative 463; a leading sign stays (a refund is
+        // "-5,00"), but a trailing hyphen is refused rather than read as arithmetic
         const NumberStyles Money =
             NumberStyles.AllowLeadingWhite | NumberStyles.AllowTrailingWhite
             | NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint
@@ -154,13 +121,8 @@ public static class MoneyParser
 
         if (!decimal.TryParse(cleaned, Money, CultureInfo.InvariantCulture, out var parsed))
         {
-            // THE SHAPE, NOT THE FIGURE. This used to quote `raw`, which is a
-            // balance or an amount straight out of somebody's bank - and the
-            // detail on a ConnectorException is not a private thing: adapters
-            // interpolate it into notes, which are now logged, written to the
-            // job row and returned to the caller. A parse failure is diagnosed
-            // from the shape anyway ("eight characters, not a number"), and the
-            // one thing the shape cannot do is carry the amount out.
+            // the shape, not the figure: adapters interpolate exception detail into notes that are logged, stored on the job row
+            // and returned to the caller, so it must not carry an amount out of somebody's bank
             throw ConnectorException.ProviderChanged(
                 $"{field}: cannot parse a money value of {raw?.Length ?? 0} character(s) under {unit}");
         }

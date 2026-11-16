@@ -9,16 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// The recordings (#441 L3): one per job, kept gzipped with the digest an
-/// adapter author reads first rendered once at arrival, readable by the
-/// operator for the retention a failure report gets, then swept.
-///
-/// Only a lab run's is kept. The record flag cannot be set without the lab
-/// trigger, so this is defence in depth rather than the gate itself - but a
-/// trace that arrived for a person's job, however it got there, is dropped
-/// here and logged, never stored.
-/// </summary>
+// recordings (#441 L3): one per job, gzipped, operator-readable for the failure-report retention, then swept
+// only a lab run's is kept: a trace for a person's job is dropped and logged, as defence in depth
 public sealed class JobTraceService(
     ConnectorDbContext db,
     IOptions<ConnectorOptions> options,
@@ -27,7 +19,6 @@ public sealed class JobTraceService(
 {
     private readonly ConnectorOptions _options = options.Value;
 
-    /// <summary>Keeps a recording for the job, replacing whatever it held. Null when it was refused.</summary>
     public async Task<JobTraceRow?> KeepAsync(string jobId, JobTrace trace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -108,7 +99,6 @@ public sealed class JobTraceService(
         return swept;
     }
 
-    /// <summary>The trace as JSON bytes, unpacked.</summary>
     public static byte[] Unpack(JobTraceRow row)
     {
         ArgumentNullException.ThrowIfNull(row);

@@ -9,20 +9,13 @@ export interface TopSplit {
   memberCount: number;
   entryCount: number;
   currency: string;
-  /** my net position (settlement plan sign: + = owed to me) */
   net: number;
 }
 
-/**
- * The Home block's data: my most recently created OPEN split with my
- * net position. Splits are online-only — offline, signed-out and
- * "no open splits" all resolve to null and the block falls back to
- * its teaser. undefined = still loading (render nothing yet).
- */
+/** null: offline, signed out or no open split (the block shows its teaser); undefined: still loading */
 /** #361: the last answer per identity — a tab return shows the block at once, the fetch refreshes it */
 let lastTop: { key: string; value: TopSplit | null } | null = null;
 
-/** the identity's cache key — the sub for a user, the kind alone otherwise */
 const identityKeyOf = (identity: Identity | null): string => {
   if (!identity) return '';
   return `${identity.kind}:${'sub' in identity ? identity.sub : ''}`;
@@ -33,7 +26,6 @@ export function useTopSplit(): TopSplit | null | undefined {
   const api = useSplitsApi();
   const identityKey = identityKeyOf(identity);
   const [top, setTop] = useState<TopSplit | null | undefined>(() => (lastTop?.key === identityKey ? lastTop.value : undefined));
-  // the settled answer is remembered for the next mount under this identity
   useEffect(() => {
     if (top !== undefined) lastTop = { key: identityKey, value: top };
   }, [top, identityKey]);

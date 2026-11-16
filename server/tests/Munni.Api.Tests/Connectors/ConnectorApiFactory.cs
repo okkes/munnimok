@@ -16,14 +16,8 @@ using ShopConnector.Adapters;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The real connector control plane, in-process: <c>Connector.Kit.Hosting</c>
-/// composed the way <c>Connector.Api/Program.cs</c> composes it, every pack
-/// registered so the catalogue is the shipped one, Sqlite under a temp
-/// directory, development auth. The relay under test reaches it through a
-/// TestServer handler — the same code path a socket would take, minus the
-/// socket.
-/// </summary>
+/// <summary>The real control plane in-process, every pack registered so the catalogue is the shipped one;
+/// reached through a TestServer handler.</summary>
 public sealed class ControlPlaneHost : IAsyncDisposable
 {
     public const string DevKey = "test-connector-key";
@@ -39,11 +33,6 @@ public sealed class ControlPlaneHost : IAsyncDisposable
 
     public TestServer Server => _app.GetTestServer();
 
-    /// <summary>
-    /// A hosted private slot (#420 A2) dialling in: a private-slot code
-    /// seeded the way the platform's start-up seeds it, redeemed over the
-    /// agent wire as a rendered slot container does. Returns the agent id.
-    /// </summary>
     public async Task<string> EnrollPrivateSlotAsync(string name)
     {
         var code = $"AGNT-SLOT-{Guid.NewGuid():N}"[..24];
@@ -65,12 +54,8 @@ public sealed class ControlPlaneHost : IAsyncDisposable
         return body!["agent_id"]!.GetValue<string>();
     }
 
-    /// <summary>
-    /// What a failed run would have left behind (#441 L1), written straight
-    /// into the control plane as the outcome service writes it: a picture
-    /// held pending the person's word. The relay under test never writes
-    /// these - an agent does - so the row is seeded.
-    /// </summary>
+    /// <summary>A failed run's pending picture (#441 L1), seeded: the relay under test never writes these,
+    /// an agent does.</summary>
     public async Task KeepPendingArtifactsAsync(string jobId, string sessionId, string providerId, byte[] png)
     {
         using var scope = _app.Services.CreateScope();
@@ -90,7 +75,6 @@ public sealed class ControlPlaneHost : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
-    /// <summary>The control plane's own word on a session, for what the relay did to it on its own (a supersede, 2026-10-08).</summary>
     public async Task<Connector.Kit.Sessions.SessionState> SessionStateAsync(string sessionId)
     {
         using var scope = _app.Services.CreateScope();
@@ -114,9 +98,8 @@ public sealed class ControlPlaneHost : IAsyncDisposable
             ["Connector:Auth:SharedSecret"] = DevKey,
             // a loaded CI agent: the wait only makes a 202 deterministic
             ["Connector:Timeouts:LoginWaitSeconds"] = "15",
-            // one second, so the slow mock's fetch outruns the window and
-            // the job path — poll, answer, collect — is exercised for real;
-            // zero for the walk suite, where EVERY fetch becomes a job
+            // one second, so the slow mock outruns the window and the job path is exercised;
+            // zero for the walk suite, where every fetch becomes a job
             ["Connector:Timeouts:FetchWaitSeconds"] = fetchWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
         });
         builder.WebHost.UseTestServer();
@@ -155,7 +138,6 @@ public sealed class ControlPlaneHost : IAsyncDisposable
     }
 }
 
-/// <summary>The push transport of the connector suites: it delivers nothing and remembers what it was handed.</summary>
 public sealed class RecordingPushSender : Munni.Api.Push.IPushSender
 {
     private readonly System.Collections.Concurrent.ConcurrentQueue<(string Endpoint, string Payload)> _sent = new();
@@ -169,11 +151,6 @@ public sealed class RecordingPushSender : Munni.Api.Push.IPushSender
     }
 }
 
-/// <summary>
-/// munni's API with the relay configured against the in-process control
-/// plane: test auth, an in-memory database of its own, the development key
-/// as the transport, a public agent address so enrollment renders a command.
-/// </summary>
 public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
     public const string SubjectSalt = "relay-test-salt";
@@ -183,7 +160,6 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
 
     public ControlPlaneHost ControlPlane { get; private set; } = null!;
 
-    /// <summary>Every push the api sent, by the endpoint it went to.</summary>
     public RecordingPushSender Pushes { get; } = new();
 
     /// <summary>How long the control plane waits for a fetch before it answers 202; a suite overrides it to force the job path.</summary>
@@ -230,13 +206,11 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
             services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_databaseName));
             services.AddSingleton<Munni.Api.Push.IPushSender>(Pushes);
 
-            // the relay's client talks to the in-process control plane
             services.AddHttpClient<ConnectorClient>()
                 .ConfigurePrimaryHttpMessageHandler(() => ControlPlane.Server.CreateHandler());
         });
     }
 
-    /// <summary>A signed-in client for a subject, on a named device.</summary>
     public HttpClient ClientFor(string sub, string? platform = null, string? scope = null)
     {
         var client = CreateClient();
@@ -247,7 +221,6 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
         return client;
     }
 
-    /// <summary>Reads through a fresh scope, so a test sees what the handlers committed.</summary>
     public T Read<T>(Func<AppDbContext, T> query)
     {
         using var scope = Services.CreateScope();

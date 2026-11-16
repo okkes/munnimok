@@ -10,13 +10,10 @@ interface ColorPickerProps {
   disabled?: boolean;
   /** swatches render as `${testIdPrefix}-<hex-without-#>`, the wheel as `${testIdPrefix}-custom` */
   testIdPrefix: string;
-  /** localized label for the custom-color wheel */
   customLabel: string;
 }
 
 const HEX_RE = /^#[0-9a-f]{6}$/i;
-
-// ── color math (pure, exported for tests) ────────────────────────────────
 
 export function hslToHex(h: number, s: number, l: number): string {
   const sat = s / 100;
@@ -53,11 +50,9 @@ export function hexToHsl(hex: string): { h: number; s: number; l: number } | nul
   return { h, s: s * 100, l: l * 100 };
 }
 
-// ── the wheel sheet ──────────────────────────────────────────────────────
-
-const WHEEL = 216; // px
-const RING = 30; // ring thickness
-const KNOB_R = (WHEEL - RING) / 2; // knob track radius
+const WHEEL = 216;
+const RING = 30;
+const KNOB_R = (WHEEL - RING) / 2;
 
 interface ColorWheelSheetProps {
   open: boolean;
@@ -66,12 +61,7 @@ interface ColorWheelSheetProps {
   onApply: (hex: string) => void;
 }
 
-/**
- * Custom color: a draggable hue ring with live preview, saturation and
- * lightness sliders, and a hex field for precision. Fully self-drawn —
- * the native color input never opened on iOS and its palette dialog on
- * desktop was a detour anyway.
- */
+// fully self-drawn: the native color input never opened on iOS
 function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<ColorWheelSheetProps>) {
   const { t } = useLang();
   const [h, setH] = useState(150);
@@ -80,7 +70,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
   const [hexDraft, setHexDraft] = useState('');
   const wheelRef = useRef<HTMLDivElement>(null);
 
-  // load the incoming color every time the sheet opens
   useEffect(() => {
     if (!open) return;
     const hsl = hexToHsl(HEX_RE.test(initial) ? initial : '#08372B');
@@ -107,16 +96,8 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
   const hueRef = useRef(hueFromEvent);
   hueRef.current = hueFromEvent;
 
-  // The wheel owns its gesture — with NATIVE target-phase listeners.
-  // React synthetic stopPropagation was a no-op here (second user ss
-  // 2026-08-01): React handles events at the ROOT, so by the time the
-  // synthetic handler ran, the sheet library's native pointerdown on
-  // its container (an ancestor between wheel and root) had ALREADY
-  // armed the drag — downward ring drags kept dismissing the sheet.
-  // Stopping at the target phase runs before any ancestor bubble
-  // listener, pointer and touch families both. Keyed on the ELEMENT
-  // (state via callback ref), not `open`: the sheet's content mounts a
-  // render after `open` flips, and an open-keyed effect ran too early.
+  // native target-phase listeners: React handles events at the root, so a synthetic stopPropagation ran after the sheet
+  // library's pointerdown had armed the drag; keyed on the element, not `open` (the content mounts a render after it flips)
   const [wheelEl, setWheelEl] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = wheelEl;
@@ -167,7 +148,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('color.custom')} size="tall">
       <div className="flex flex-col items-center gap-4 pt-2">
-        {/* hue ring with live preview in the middle */}
         <div
           ref={(el) => {
             wheelRef.current = el;
@@ -197,7 +177,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
           />
         </div>
 
-        {/* saturation + lightness for the exact shade */}
         <label className="w-full text-[12px] text-ink-3">
           {t('color.saturation')}
           <input
@@ -231,7 +210,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
           />
         </label>
 
-        {/* precise entry */}
         <div className="flex w-full items-center gap-2">
           <span
             className="h-10 w-10 shrink-0 rounded-xl border border-line"
@@ -261,10 +239,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
   );
 }
 
-/**
- * Preset swatches plus a rainbow wheel opening the custom-color sheet.
- * A custom pick shows as the wheel swatch filled with that color.
- */
 export function ColorPicker({ colors, value, onChange, disabled, testIdPrefix, customLabel }: Readonly<ColorPickerProps>) {
   const [wheelOpen, setWheelOpen] = useState(false);
   const customActive = !colors.includes(value);
@@ -278,8 +252,7 @@ export function ColorPicker({ colors, value, onChange, disabled, testIdPrefix, c
           data-testid={`${testIdPrefix}-${c.slice(1)}`}
           disabled={disabled}
           onClick={() => onChange(c)}
-          // #444 (user): a swatch that refuses taps looks refused — faded, no
-          // hand cursor — instead of wearing the live palette face
+          // #444: a disabled swatch looks refused — faded, no hand cursor
           className={`m-tap h-8 w-8 rounded-full border-2 disabled:cursor-not-allowed disabled:opacity-45 ${value === c ? 'border-ink' : 'border-transparent'}`}
           style={{ background: c }}
         />

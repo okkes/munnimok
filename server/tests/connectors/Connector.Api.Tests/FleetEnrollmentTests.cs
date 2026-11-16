@@ -5,15 +5,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// <c>Connector:FleetEnrollmentCode</c> is the development code's grown-up
-/// sibling: a standing, reusable code that enrolls the operator's own pooled
-/// agent — in production too, because it is a platform secret minted and
-/// rotated like every other, not a line in a checked-in compose file. The
-/// properties worth testing are the ones the platform relies on: it survives
-/// a restart and a wiped state, it enrolls the fleet subject and nobody else,
-/// that subject IS the fleet without being listed, and production accepts it.
-/// </summary>
+// Connector:FleetEnrollmentCode: a standing, reusable code for the operator's pooled agent, allowed in production
+// because it is a platform secret, not a line in a checked-in compose file
 [Collection(ShopApiCollection.Name)]
 public sealed class FleetEnrollmentTests(ShopApiFactory factory)
 {
@@ -25,9 +18,8 @@ public sealed class FleetEnrollmentTests(ShopApiFactory factory)
         await SeedAsync(code);
         var first = await RedeemAsync(code);
 
-        // the agent's state volume and the control plane's database are two
-        // volumes; re-arming on every start is what lets a pooled agent with
-        // a wiped state file come back with the same platform secret
+        // the agent's state volume and the control plane's database are two volumes: re-arming on every start lets an agent
+        // with a wiped state file come back with the same platform secret
         await SeedAsync(code);
         var second = await RedeemAsync(code);
 
@@ -60,13 +52,11 @@ public sealed class FleetEnrollmentTests(ShopApiFactory factory)
         Assert.False(withCode.IsFleet(null));
         Assert.Equal([ConnectorOptions.FleetSubject], withCode.EffectiveFleetSubjects);
 
-        // a listed subject stays; the fleet subject is not listed twice
         var listed = new ConnectorOptions { FleetEnrollmentCode = "AGNT-FLEE-T000", FleetSubjects = ["ops", ConnectorOptions.FleetSubject] };
         Assert.Equal(["ops", ConnectorOptions.FleetSubject], listed.EffectiveFleetSubjects);
         Assert.True(listed.IsFleet("ops"));
     }
 
-    /// <summary>The production floor accepts it — the whole point of it existing beside the development code.</summary>
     [Fact]
     public void A_production_configuration_may_carry_a_fleet_enrollment_code()
     {
@@ -81,7 +71,7 @@ public sealed class FleetEnrollmentTests(ShopApiFactory factory)
         ConnectorPlatform.Validate(options);
     }
 
-    /// <summary>A private slot (#420 A2) enrolled with the fleet's code would be the fleet; the start-up refuses the contradiction in every mode.</summary>
+    // a private slot (#420 A2) enrolled with the fleet's code would be the fleet: start-up refuses it in every mode
     [Fact]
     public void The_private_slot_code_may_not_be_the_fleet_code()
     {

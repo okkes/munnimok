@@ -10,12 +10,10 @@ import { MultiLine } from '@/ui/charts/MultiLine';
 import type { ChartScrubTip } from '@/ui/charts/MultiLine';
 import { fmtDay } from './format';
 
-/** day-of-period axis: the first day and every seventh after it */
 const dayLabels = (days: number): string[] => Array.from({ length: days }, (_, i) => (i === 0 || (i + 1) % 7 === 0 ? String(i + 1) : ''));
 
 type Translate = ReturnType<typeof useLang>['t'];
 
-/** the line under the chart: the two periods at one day, or the one that has that day */
 function calloutText(t: Translate, fmt: (cents: number) => string, now: number | null, before: number | null, day: number): string {
   if (now === null) return before === null ? '' : t('trends.prevOnly', { amount: fmt(before), day });
   if (before === null) return t('trends.thisOnly', { amount: fmt(now), day });
@@ -25,15 +23,6 @@ function calloutText(t: Translate, fmt: (cents: number) => string, now: number |
   return t('trends.levelWith', { day });
 }
 
-/**
- * "How am I doing against last period" (user 2026-10-08): the picked
- * period's cumulative spend solid up to today, the period before dashed
- * across its whole length, the difference at the same day called out, and
- * a compact list of what the last four periods had reached by that day.
- * #510 (user: "look through each day … the old vs new values"): a finger,
- * a mouse or the arrow keys read any day — the tip names both periods'
- * amounts, and the callout and the list follow the day under the guide.
- */
 export function CompareView({
   graphId,
   periods,

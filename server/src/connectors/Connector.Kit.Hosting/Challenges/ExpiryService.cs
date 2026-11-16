@@ -17,15 +17,7 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Challenges;
 
-/// <summary>
-/// The sweeper.
-///
-/// Everything in this service has a deadline, and a deadline nobody enforces
-/// is a comment. A challenge left pending holds a live browser and an agent
-/// hostage; a lease left dangling means a user waits forever for a machine
-/// that is switched off; a staged row left unacked is data we promised to
-/// forget. One loop, run often, closes all of them.
-/// </summary>
+/// one loop closes every deadline: pending challenges, dangling leases, unacked staged rows
 public sealed class ExpiryService(
     IServiceScopeFactory scopes,
     ITicketStore tickets,
@@ -56,8 +48,7 @@ public sealed class ExpiryService(
             }
             catch (Exception ex)
             {
-                // A failed sweep must never take the service down: the next
-                // one is fifteen seconds away and will find the same rows.
+                // a failed sweep must not stop the service: the next one finds the same rows
                 logger.LogError(ex, "expiry sweep failed");
             }
 
@@ -79,10 +70,7 @@ public sealed class ExpiryService(
         await challenges.SweepAsync(ct);
         await queue.RequeueExpiredLeasesAsync(ct);
 
-        // Before the reconcile below, so a session whose only run was never
-        // taken is told the same way as one whose run died: this fails jobs,
-        // and that is what turns a failed job into a session saying something
-        // true instead of "running" until its TTL runs out.
+        // before the reconcile: failing never-taken jobs is what makes their session say something true
         await queue.ExpireAbandonedAsync(ct);
 
         await ReconcileStrandedSessionsAsync(db, provider.GetRequiredService<SessionService>(), ct);
@@ -95,21 +83,12 @@ public sealed class ExpiryService(
         tickets.Sweep();
         idempotency.Sweep();
 
-        // A login abandoned mid-stream leaves a photograph of a half-filled
-        // login form in memory with nobody coming for it. The job outcome
-        // drops the channel on the paths that end a job cleanly; this is the
-        // one that closes the tab nobody told us about, and the reason the
-        // frame slot cannot be leaked by forgetting a call.
+        // a login abandoned mid-stream leaves a frame in memory; this closes the channel the job-outcome paths did not
         live.Sweep();
     }
 
-    /// <summary>
-    /// A lease that expires fails its job inside the queue, in bulk, without
-    /// ever loading a session. That is the right shape for the queue and the
-    /// wrong outcome for the user: a connection whose only run died would sit
-    /// on "running" until its TTL ran out days later. This closes the gap, so
-    /// every terminal job leaves the session saying something true.
-    /// </summary>
+    /// a lease expiry fails its job in bulk without loading the session; this makes the session say something true
+    /// instead of "running" until its TTL
     private static async Task ReconcileStrandedSessionsAsync(ConnectorDbContext db, SessionService sessions, CancellationToken ct)
     {
         var stranded = await db.Sessions
@@ -122,9 +101,7 @@ public sealed class ExpiryService(
                                                  || j.State == JobState.Leased
                                                  || j.State == JobState.Running
                                                  || j.State == JobState.AwaitingInput)))
-            // Oldest first, with a deterministic tiebreak. A batched sweep
-            // without an order is free to return the same rows every pass, so
-            // anything it cannot settle would starve the rest forever.
+            // oldest first with a tiebreak: an unordered batch could return the same unsettled rows and starve the rest
             .OrderBy(s => s.UpdatedAt)
             .ThenBy(s => s.Id)
             .Take(64)
@@ -147,11 +124,6 @@ public sealed class ExpiryService(
         }
     }
 
-    /// <summary>
-    /// A challenge that ran out of time fails its job cleanly and releases the
-    /// agent, rather than pinning a browser for the whole job timeout while
-    /// nobody is coming.
-    /// </summary>
     private async Task FailJobsOnExpiredChallengesAsync(ConnectorDbContext db, JobOutcomeService outcomes, CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -159,9 +131,7 @@ public sealed class ExpiryService(
         var stranded = await db.Jobs
             .Where(j => j.State == JobState.AwaitingInput
                         && !db.Challenges.Any(c => c.JobId == j.Id && c.AnsweredAt == null && c.ExpiresAt > now))
-            // Ordered for the same reason as the session sweep: an unordered
-            // batch can revisit the same rows indefinitely and never reach
-            // the ones behind them.
+            // ordered so a batch cannot revisit the same rows forever
             .OrderBy(j => j.UpdatedAt)
             .ThenBy(j => j.Id)
             .Select(j => j.Id)
@@ -182,9 +152,7 @@ public sealed class ExpiryService(
     {
         var now = time.GetUtcNow();
 
-        // Only non-terminal states move; a disabled session stays disabled,
-        // because "the user turned this off" and "this ran out" are different
-        // things to say to them.
+        // a disabled session stays disabled: "the user turned this off" and "this ran out" are different things to say
         await db.Sessions
             .Where(s => s.ExpiresAt < now
                         && (s.State == SessionState.Queued
@@ -195,11 +163,7 @@ public sealed class ExpiryService(
             .ExecuteUpdateAsync(u => u
                 .SetProperty(s => s.State, SessionState.Expired)
                 .SetProperty(s => s.PendingBundle, (string?)null)
-                // Both, not just the session one. A credential bundle is only
-                // cleared when it is collected, so a login whose bundle nobody
-                // ever came back for would leave the user's sealed credentials
-                // sitting on an expired row - the one row guaranteed never to
-                // be read again.
+                // both bundles: a credential bundle clears only when collected, so an uncollected one would sit on an expired row
                 .SetProperty(s => s.PendingCredentialBundle, (string?)null)
                 .SetProperty(s => s.UpdatedAt, now), ct);
     }

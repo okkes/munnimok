@@ -4,8 +4,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
-/** #348: the category first — a movement picked in the editor, its ask
- *  answered with `pot` (or walked away from with null) */
+/** the ask is answered with `pot`, or walked away from with null (#348) */
 const pickMovement = async (catId: string, pot: string | null) => {
   fireEvent.click(screen.getByTestId('txform-category'));
   fireEvent.click(await screen.findByTestId('part-cat-0'));
@@ -19,8 +18,7 @@ const pickMovement = async (catId: string, pot: string | null) => {
   await waitFor(() => expect((screen.getByTestId('txform-counter') as HTMLButtonElement).disabled).toBe(false));
 };
 
-/** the form's own counterparty sheet: once the category editor's ask has
- *  been open its rows stay mounted too, and the form's sheet renders first */
+/** once the category editor's ask has been open its rows stay mounted: the form's own sheet renders first */
 const formCounterSheet = (testId: string): HTMLElement => screen.getAllByTestId(testId)[0];
 
 const openForm = async () => {
@@ -28,8 +26,7 @@ const openForm = async () => {
   await screen.findByTestId('tx-list');
   fireEvent.click(screen.getByTestId('tx-add'));
   await screen.findByTestId('txform-save');
-  // two demo manual accounts → nothing pre-selects (user redesign
-  // 2026-07-31): pick the main one through the account field + sheet
+  // two demo manual accounts: nothing pre-selects
   fireEvent.click(await screen.findByTestId('txform-account'));
   fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
 };
@@ -44,14 +41,13 @@ describe('TxFormSheet (demo identity)', () => {
   it('save stays tappable — an invalid tap names the blocker until the form is whole (#195)', async () => {
     await openForm();
     const save = screen.getByTestId('txform-save') as HTMLButtonElement;
-    expect(save.disabled).toBe(false); // never disabled for validity
+    expect(save.disabled).toBe(false);
     fireEvent.click(save);
-    // first failing requirement: the merchant name
     expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
     expect(screen.getByTestId('txform-merchant').getAttribute('aria-invalid')).toBe('true');
 
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker' } });
-    expect(screen.getByTestId('txform-save-blocker')).toBeTruthy(); // still no amount
+    expect(screen.getByTestId('txform-save-blocker')).toBeTruthy();
     expect(screen.getByTestId('txform-merchant').getAttribute('aria-invalid')).toBe('false');
 
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '0' } });
@@ -59,8 +55,7 @@ describe('TxFormSheet (demo identity)', () => {
 
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '4,50' } });
     await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
-    // 15s cap: first coverage-load flake 2026-08-25 (5s default in a
-    // 70s file) — a second flake means reworking, not re-timing
+    // 15s cap: a coverage-load flake at the 5s default; a second flake means reworking, not re-timing
   }, 15_000);
 
   it('register-style amount entry: bare digits fill cents from the right (user request)', async () => {
@@ -73,7 +68,6 @@ describe('TxFormSheet (demo identity)', () => {
     expect(amount.value).toBe('0,55');
     fireEvent.change(amount, { target: { value: '0,550' } });
     expect(amount.value).toBe('5,50');
-    // the comma path stays: it promotes the digits to euros
     fireEvent.change(amount, { target: { value: '5,50,' } });
     expect(amount.value).toBe('550,');
     fireEvent.change(amount, { target: { value: '550,7' } });
@@ -86,8 +80,6 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker Bart' } });
 
-    // the category row opens the split-categories editor (#211) —
-    // pick through its per-entry picker, Done stages the single category
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
@@ -95,8 +87,7 @@ describe('TxFormSheet (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Grocery'));
 
     fireEvent.click(screen.getByTestId('txform-save'));
-    // the new row's own page replaces the form — every other door is there
-    // (generous timeout: coverage instrumentation slows the liveQuery round-trip)
+    // generous timeout: coverage instrumentation slows the liveQuery round-trip
     await waitFor(
       () => {
         const detail = screen.getByTestId('screen-tx-detail');
@@ -150,11 +141,9 @@ describe('TxFormSheet (demo identity)', () => {
   it('#348 (user): the counterparty waits for the category — an ordinary filing leaves it shut, a movement opens it', async () => {
     await openForm();
     const counter = () => screen.getByTestId('txform-counter') as HTMLButtonElement;
-    // category first: nothing picked yet, so there is no other side to name
     expect(counter().disabled).toBe(true);
     fireEvent.click(counter());
     expect(screen.queryByTestId('counter-accounts')).toBeNull();
-    // a movement category asks its counterparty (in the editor) and the row opens
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
@@ -190,7 +179,6 @@ describe('TxFormSheet (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     const saved = async () => (await db.transactions.toArray()).find((r) => r.merchant === 'Flowers for Anna');
 
-    // r5 (user 2026-11-16): the door opens the picker over the form — Back returns to what was typed, and nothing was saved
     fireEvent.click(screen.getByTestId('txform-link-reimb'));
     await screen.findByTestId('screen-reimb-link', {}, { timeout: 5000 });
     expect((await screen.findByTestId('reimb-link-anchor', {}, { timeout: 5000 })).textContent).toContain('Flowers for Anna');
@@ -201,7 +189,6 @@ describe('TxFormSheet (demo identity)', () => {
     expect(screen.getByTestId('txform-reimb-sub').textContent).toContain('linked when you add');
     expect(await saved()).toBeUndefined();
 
-    // picked this time: it waits on the form, still unsaved
     fireEvent.click(screen.getByTestId('txform-link-reimb'));
     await screen.findByTestId('reimb-link-list', {}, { timeout: 5000 });
     fireEvent.click((await screen.findAllByTestId(/^reimb-(pick|suggest)-pay348-check$/, {}, { timeout: 5000 }))[0]);
@@ -212,13 +199,11 @@ describe('TxFormSheet (demo identity)', () => {
     expect(await saved()).toBeUndefined();
     expect((await db.transactions.get('pay348'))?.cats ?? null).toBeNull();
 
-    // an amount under what was picked refuses to save and says why
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '30,00' } });
     fireEvent.click(screen.getByTestId('txform-save'));
     expect((await screen.findByTestId('txform-reimb-note')).textContent).toContain('€40.00');
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '80,00' } });
 
-    // Add writes the row and its link, and both sides settle
     fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(async () => {
       const row = await saved();
@@ -236,19 +221,14 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Mixed Save' } });
 
     fireEvent.click(screen.getByTestId('txform-category'));
-    // the ◆ pick asks its counterparty on the spot; the pot answers —
-    // the single entry spans the whole, so the ADD door shuts
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    // a loaded CI runner (coverage on) can take longer than RTL's 1 s
-    // default to settle the pick — the file's other waits allow 5 s too
-    // (flaked once in CI, 2026-09-09)
+    // a loaded CI runner with coverage can exceed RTL's 1 s default
     await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'), { timeout: 5000 });
     expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId('part-cat-one-special')).toBeTruthy();
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    // the answer landed at the FORM level — the counterparty row says so
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('txform-save'));
 
@@ -279,12 +259,9 @@ describe('TxFormSheet (demo identity)', () => {
     renderAppAsUser('/transactions', { spaces: [{ id: 's-user', name: 'Personal' }] });
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    // #179 (user): the CTA lands on the SPACE's own accounts screen with
-    // the add chooser opening on arrival — not the global overview
     expect(await screen.findByTestId('txform-no-accounts')).toBeTruthy();
     fireEvent.click(screen.getByTestId('txform-add-account'));
     expect(await screen.findByTestId('screen-space-accounts')).toBeTruthy();
-    // the add chooser is open on arrival (whichever of its steps leads)
     await waitFor(() => expect(document.querySelector('[data-testid^="chooser-manual"]')).toBeTruthy(), { timeout: 5000 });
   }, 15_000);
 
@@ -311,15 +288,12 @@ describe('TxFormSheet (demo identity)', () => {
     const before = (await db.accounts.get('demo_main'))!.balanceCents;
 
     fireEvent.click(screen.getByTestId('txform-adjustment'));
-    // the panel arrives; the category is munni's own, locked
     await screen.findByTestId('txform-adjust-panel');
     expect(screen.getByTestId('txform-adjust-cat').textContent).toContain('Balance Adjustment');
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Fix saldo' } });
     expect(screen.getByTestId('txform-adjust-impact').textContent).toContain('→');
 
-    // target mode: the typed 50,00 is the balance to LAND ON — the row
-    // gets the difference and the account ends exactly there
     fireEvent.click(screen.getByTestId('txform-adjust-mode-target'));
     fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(async () => {
@@ -362,10 +336,8 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
 
-    // #348: the category first — Set aside, its pot named on the spot
     await pickMovement('savingDeposit', 'demo_save');
-    // the counterparty row re-picks the pot (the editor's ask, closed,
-    // keeps its rows mounted — the form's own sheet renders first)
+    // the editor's closed ask keeps its rows mounted: the form's own sheet renders first
     fireEvent.click(screen.getByTestId('txform-counter'));
     await waitFor(() => expect(screen.getAllByTestId('counter-accounts')).toHaveLength(2));
     fireEvent.click(formCounterSheet('counter-pick-demo_save'));
@@ -373,7 +345,6 @@ describe('TxFormSheet (demo identity)', () => {
     expect(screen.getByTestId('txform-category').textContent).toContain('Set aside');
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
 
-    // the Adjustment toggle marks a correction; save writes the marker
     fireEvent.click(screen.getByTestId('txform-adjustment'));
     fireEvent.click(screen.getByTestId('txform-save'));
     const { MunniDB } = await import('@/db/schema');
@@ -387,13 +358,10 @@ describe('TxFormSheet (demo identity)', () => {
 
   it('the Create door builds a missing counterparty through the full chooser', async () => {
     await openForm();
-    // #348: a movement category first (its ask walked away from) opens the counterparty row
     await pickMovement('savingDeposit', null);
     fireEvent.click(screen.getByTestId('txform-counter'));
     await waitFor(() => expect(screen.getAllByTestId('counter-accounts')).toHaveLength(2));
 
-    // one creation door now (user redesign 2026-08-01): the chooser's
-    // manual path, built in place and handed straight back
     fireEvent.click(formCounterSheet('counter-full-setup'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-savings'));
@@ -437,11 +405,9 @@ describe('TxFormSheet (demo identity)', () => {
 
   it('#547: a bank account takes a hand entry — the form says what that means, it counts in the balance here, and tomorrow is refused', async () => {
     const { db, today } = await openFormOnBankAccount();
-    // "?" explains reconciling; a bank's balance is not corrected by hand
     fireEvent.click(screen.getByTestId('txform-bank-help-toggle'));
     expect(screen.getByTestId('txform-bank-help').textContent).toContain('reconciling');
     expect(screen.queryByTestId('txform-adjustment')).toBeNull();
-    // dated today: it may be news to the bank's balance — the tick is on, and the person may take it off
     const tick = screen.getByTestId('txform-in-balance') as HTMLInputElement;
     expect(tick.checked).toBe(true);
     expect(tick.disabled).toBe(false);
@@ -453,7 +419,6 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('txform-save'));
     expect((await screen.findByTestId('txform-save-blocker')).textContent).toContain('today or an earlier date');
 
-    // an entry dated before the bank's balance is in that number already: the tick is off and stays off
     fireEvent.change(screen.getByTestId('txform-date'), { target: { value: '2020-01-01' } });
     await waitFor(() => expect((screen.getByTestId('txform-in-balance') as HTMLInputElement).disabled).toBe(true));
     expect(screen.getByTestId('txform-in-balance-note').textContent).toContain(today);
@@ -502,10 +467,8 @@ describe('TxFormSheet (demo identity)', () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '100,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
-    // #348: the category first, its pot named on the spot
     await pickMovement('savingDeposit', 'demo_save');
-    // the mirror checkbox retired (typed-splits v2): a MANUAL counter's
-    // leg is ALWAYS minted — the pot's own ledger is the record
+    // a MANUAL counter's leg is always minted: the mirror checkbox is retired
     expect(screen.queryByTestId('txform-mirror')).toBeNull();
     fireEvent.click(screen.getByTestId('txform-save'));
 
@@ -514,19 +477,16 @@ describe('TxFormSheet (demo identity)', () => {
     let outId = '';
     await waitFor(async () => {
       const rows = await db.transactions.filter((r) => r.merchant === 'Naar spaarpot' && r.deleted === 0).toArray();
-      expect(rows).toHaveLength(2); // both legs exist…
+      expect(rows).toHaveLength(2);
       const out = rows.find((r) => r.amountCents < 0)!;
       const inc = rows.find((r) => r.amountCents > 0)!;
-      expect(out.transferPeerId).toBe(inc.id); // …peered both ways
+      expect(out.transferPeerId).toBe(inc.id);
       expect(inc.transferPeerId).toBe(out.id);
       // the mirror wears the pot's R1 stamp + the Q8 movement sub
       expect(inc).toMatchObject({ accountId: 'demo_save', catId: 'savingDeposit', linkedAccountId: 'demo_main', needsReview: 0 });
       outId = out.id;
     }, { timeout: 5000 });
 
-    // the LIST shows the pair as ONE row: the outgoing leg with the
-    // "From → To" note; the incoming leg stays hidden (the save landed
-    // on the new row's page — the list is a tab away)
     await screen.findByTestId('screen-tx-detail');
     cleanup();
     renderApp('/transactions');
@@ -542,29 +502,22 @@ describe('TxFormSheet (demo identity)', () => {
   }, 15_000);
 
   it('#309: a movement category refuses to SAVE bare — red counter field; the ask’s Default answers it', async () => {
-    // savingDeposit: the ask is NOT mandatory (unlike the transfer
-    // family, whose editor rolls a dismissed pick back), so a bare
-    // movement could reach save — and used to land silently default-
-    // linked by the boot fold. Now the save itself refuses.
+    // savingDeposit's ask is not mandatory: a bare movement used to land default-linked by the boot fold (#309)
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Spaarpot' } });
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    // the ask opens on the pick — walking away keeps the bare story
     await screen.findByTestId('counter-accounts');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Set aside'));
-    // #309 (user): "we should not be able to continue" — the save
-    // refuses and names the field instead of writing a silent default
     fireEvent.click(await screen.findByTestId('txform-save'));
     expect((await screen.findByTestId('txform-save-blocker')).textContent).toContain('Counterparty required');
     expect(screen.getByTestId('txform-counter').className).toContain('ring-negative');
 
-    // answering through the field: the pot is one tap away (the editor's
-    // closed ask keeps its rows mounted — the form's own sheet is the last)
+    // the editor's closed ask keeps its rows mounted: the form's own sheet is the last
     fireEvent.click(screen.getByTestId('txform-counter'));
     await waitFor(() => expect(screen.getAllByTestId('counter-pick-demo_save')).toHaveLength(2));
     fireEvent.click(formCounterSheet('counter-pick-demo_save'));
@@ -589,7 +542,6 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker' } });
     const save = screen.getByTestId('txform-save') as HTMLButtonElement;
     expect((await screen.findByTestId('txform-account')).textContent).toContain('Pick an account');
-    // valid amount+merchant, but no account: the tap names it (#195)
     fireEvent.click(save);
     expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
     // S6811: a button carries data-invalid (aria-invalid is inputs-only)
@@ -626,19 +578,15 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Oud bonnetje' } });
     fireEvent.change(screen.getByTestId('txform-date'), { target: { value: '2026-05-15' } });
 
-    // refused with the way out, not a dead end — the save tap points at
-    // the start-gate card's own explanation (#195)
     await screen.findByTestId('txform-before-start');
     fireEvent.click(screen.getByTestId('txform-save'));
     expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
     fireEvent.click(screen.getByTestId('txform-move-start'));
 
-    // the space start moved to the row's date — the error clears, save arms
     await waitFor(async () => {
       expect((await db.spaces.get('demo_space'))?.historyStartDate).toBe('2026-05-15');
     }, { timeout: 5000 });
-    // …and the attachment's own gate moved WITH it (the bare space write
-    // used to leave links behind — the other-device leak)
+    // the bare space write used to leave account links behind (other-device leak)
     await waitFor(async () => {
       expect((await db.accountLinks.get(linkId))?.historyFrom).toBe('2026-05-15');
     }, { timeout: 5000 });

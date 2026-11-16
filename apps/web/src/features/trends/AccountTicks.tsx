@@ -7,7 +7,6 @@ import { LIQUID_TYPES } from '@/domain/balanceBand';
 import { Icon } from '@/ui/Icon';
 import { Picture } from '@/ui/Picture';
 
-/** money in hand first, then what is owed */
 const TYPE_ORDER: readonly AccountType[] = ['checking', 'savings', 'cash', 'credit', 'brokerage', 'loan', 'mortgage'];
 
 /** the accounts a graph can read: the live ones — never the shared pot, someone else's money (#152) — by kind */
@@ -23,7 +22,6 @@ export const liquidAccountIds = (accounts: readonly SpaceAccount[]): string[] =>
     .filter((account) => LIQUID_TYPES.has(account.type))
     .map((account) => account.id);
 
-/** the picked accounts in words for a card's subtitle: their names, or nothing for every account */
 export function accountsText(accounts: readonly SpaceAccount[], ids: readonly string[] | null | undefined): string {
   if (!ids) return '';
   return accounts
@@ -40,19 +38,14 @@ function Tick({ on }: Readonly<{ on: boolean }>) {
   );
 }
 
-/** the bank's logo where one exists, else the type icon in the account's colour */
 function AccountFace({ account }: Readonly<{ account: SpaceAccount }>) {
   const logo = account.logo ?? institutionLogoUrl(account);
   if (logo) return <Picture src={logo} className="h-[18px] w-[18px] shrink-0 rounded object-contain" loading="lazy" />;
   return <Icon name={typeDef(account.type).icon} size={18} color={account.color ?? 'var(--m-ink-3)'} />;
 }
 
-/**
- * #531 (user: "specify which financial accounts to include"): a tick per
- * account. With `allowAll` the first row stands for every account — the
- * ones added later too — and `null` is that choice; a balance line names
- * its accounts outright.
- */
+/** #531: with `allowAll` the first row stands for every account, later ones too, and `null` is that choice;
+ *  a balance line names its accounts outright */
 export function AccountTicks({
   accounts,
   picked,
@@ -71,7 +64,6 @@ export function AccountTicks({
     const next = new Set(picked ?? accounts.map((account) => account.id));
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    // ticking the last one back in is "every account" again
     onChange(allowAll && accounts.every((account) => next.has(account.id)) ? null : next);
   };
   return (

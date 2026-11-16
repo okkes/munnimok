@@ -2,27 +2,8 @@ using Connector.Kit.Hosting;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The things a production connector refuses to start without - asserted to
-/// actually fire, rather than trusted to.
-///
-/// <para>
-/// <see cref="DevEnrollmentTests"/> opens by naming two properties worth
-/// testing about <c>Connector:DevEnrollmentCode</c>: that it survives a restart,
-/// and that <b>it cannot be present in production at all</b>. It tests the
-/// first. The second was a sentence in a doc comment and a line in a validator,
-/// with nothing anywhere establishing that the line runs - which is the same
-/// shape as a note explaining that an account list is short while the field
-/// beside it says complete.
-/// </para>
-///
-/// <para>
-/// This matters more than the average guard. A fixed, reusable, never-expiring
-/// enrollment code is a password, and the one this option exists for is written
-/// in a compose file in this repository. Anything holding it could enroll an
-/// agent that leases real jobs and is handed real credentials.
-/// </para>
-/// </summary>
+// DevEnrollmentCode must not exist in production: a fixed, never-expiring code written in a compose file is a
+// password that enrolls agents leasing real jobs; asserted to fire, not trusted
 public sealed class ProductionRefusalTests
 {
     /// <summary>
@@ -43,11 +24,7 @@ public sealed class ProductionRefusalTests
         return options;
     }
 
-    /// <summary>The control: the sound configuration is accepted.</summary>
-    /// <remarks>
-    /// Without this, every assertion below would be satisfied by a validator
-    /// that refuses everything - which passes a suite and fails a deploy.
-    /// </remarks>
+    // the control: without it a validator refusing everything would pass the suite and fail a deploy
     [Fact]
     public void A_production_configuration_with_everything_it_needs_starts()
     {
@@ -68,14 +45,7 @@ public sealed class ProductionRefusalTests
             StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// And it is refused on its own merits, not swept up by another problem.
-    /// </summary>
-    /// <remarks>
-    /// A validator that threw for some unrelated reason would satisfy the test
-    /// above while leaving the code perfectly usable in a deployment that got
-    /// everything else right - which is the deployment this guard is for.
-    /// </remarks>
+    // refused on its own merits: an unrelated throw would pass the test above
     [Fact]
     public void The_enrollment_code_is_the_only_thing_that_configuration_got_wrong()
     {
@@ -88,10 +58,6 @@ public sealed class ProductionRefusalTests
             refused.Message.Split(Environment.NewLine + "- ", StringSplitOptions.RemoveEmptyEntries).Skip(1));
     }
 
-    /// <summary>
-    /// The same code outside production is left alone, because that is what it
-    /// is for.
-    /// </summary>
     [Fact]
     public void A_development_enrollment_code_is_fine_in_development()
     {
@@ -102,15 +68,7 @@ public sealed class ProductionRefusalTests
         });
     }
 
-    /// <summary>
-    /// The rest of the production floor, each asserted to fire on its own.
-    /// </summary>
-    /// <remarks>
-    /// Every one of these is a service that would boot and look completely
-    /// healthy while being wrong: bundle keys that die with the process, an
-    /// agent endpoint with no client certificate to check, a token audience
-    /// nobody verifies, or a database that vanishes on restart.
-    /// </remarks>
+    // each is a service that would boot looking healthy while wrong
     [Theory]
     [InlineData("bundle", "Connector:Bundle:CurrentKid and Connector:Bundle:Keys are required in production")]
     [InlineData("authority", "Connector:Auth:Authority is required in production")]

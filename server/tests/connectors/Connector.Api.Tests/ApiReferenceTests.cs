@@ -8,16 +8,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The API reference is a development affordance, and the thing worth testing
-/// is not that it renders - it is that it is ABSENT in production.
-///
-/// It is absent rather than authenticated on purpose. Production /v1/* demands
-/// an allowlisted client certificate and an audience-checked M2M token, so a
-/// reference page reachable from a browser would describe an API that browser
-/// cannot call - and the login it would need in order to be useful is a second
-/// way in to a service whose entire design is that there is one.
-/// </summary>
+/// the reference is absent in production on purpose: /v1/* there demands a client certificate and an M2M token,
+/// so a browser-reachable page would describe an API the browser cannot call
 [Collection(ShopApiCollection.Name)]
 public sealed class ApiReferenceTests(ShopApiFactory factory)
 {
@@ -28,8 +20,7 @@ public sealed class ApiReferenceTests(ShopApiFactory factory)
     {
         using var http = factory.CreateClient();
 
-        // No X-Connector-Key: the reference is not behind the consumer filter,
-        // because a browser has no consumer credential to present.
+        // no X-Connector-Key: the reference is outside the consumer filter, a browser has no consumer credential
         using var response = await http.GetAsync(path);
 
         Assert.True(
@@ -37,11 +28,7 @@ public sealed class ApiReferenceTests(ShopApiFactory factory)
             $"expected {path} to be served in development, got {(int)response.StatusCode}");
     }
 
-    /// <summary>
-    /// The document has to describe THIS service, not an empty shell. A
-    /// generator that silently produced `{"paths":{}}` would pass a mere
-    /// status-code check while documenting nothing.
-    /// </summary>
+    /// a generator silently emitting `{"paths":{}}` would pass a status-code check while documenting nothing
     [Fact]
     public async Task The_document_describes_the_routes_this_service_actually_has()
     {
@@ -53,10 +40,7 @@ public sealed class ApiReferenceTests(ShopApiFactory factory)
         Assert.Contains("/v1/providers", document, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The one that matters. Built the same way the real host builds itself, so
-    /// this asserts the wiring rather than a copy of it.
-    /// </summary>
+    /// built the way the real host builds itself, so it asserts the wiring rather than a copy
     [Theory]
     [InlineData("/scalar")]
     [InlineData("/openapi/v1.json")]
@@ -71,11 +55,7 @@ public sealed class ApiReferenceTests(ShopApiFactory factory)
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    /// <summary>
-    /// A production host, minus the parts that need real infrastructure.
-    /// Sqlite and a bundle key are enough to get past ConnectorPlatform's
-    /// start-up refusals; nothing here reaches a database or a provider.
-    /// </summary>
+    /// a production host minus real infrastructure: enough config to pass ConnectorPlatform's start-up refusals
     private static WebApplication BuildProductionHost()
     {
         var builder = WebApplication.CreateBuilder();
@@ -98,9 +78,7 @@ public sealed class ApiReferenceTests(ShopApiFactory factory)
 
         var app = builder.Build();
 
-        // Deliberately NOT UseConnectorPlatform(): that migrates a database.
-        // The reference mapping is what is under test and it reads options
-        // only.
+        // deliberately NOT UseConnectorPlatform(): it migrates a database
         app.MapConnectorReference();
         app.MapConnectorApi();
 

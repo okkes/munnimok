@@ -11,7 +11,6 @@ import { ReconcileSheet } from './ReconcileSheet';
 
 const FEED = 'feed-ui';
 
-/** the imported/linked pair the sheet judges — a match and a mismatch */
 async function seedPair() {
   const db = new MunniDB('munni_demo');
   const repo = new Repo(new DexieBackend(db), new HlcClock('rec-ui'), { trackOutbox: false });
@@ -36,18 +35,14 @@ describe('ReconcileSheet (#311 r2)', () => {
   it('folded matches open to labeled PAIRS, and confirm actually deletes (the “nothing happens” walk)', async () => {
     const db = await seedPair();
     renderWithData(<ReconcileSheet open onOpenChange={() => undefined} accountIds={['acct-ui']} />);
-    // #311 r3: the QUESTION comes first — nothing auto-matches; the
-    // list only shows after an explicit yes
     fireEvent.click(await screen.findByTestId('reconcile-ask-go', {}, { timeout: 10_000 }));
     await screen.findByTestId('reconcile-review', {}, { timeout: 10_000 });
 
-    // #311 r2: the match list starts FOLDED — the mismatch section is
-    // in reach without scrolling; the toggle opens it
+    // the match list starts folded so the mismatch section is in reach
     expect(screen.queryByTestId('reconcile-match-IU1')).toBeNull();
     await screen.findByTestId('reconcile-mismatch-IU2');
     fireEvent.click(screen.getByTestId('reconcile-matches-toggle'));
     const match = await screen.findByTestId('reconcile-match-IU1');
-    // both halves of the pair, labeled — the import AND the bank row
     expect(match.textContent).toContain('Imported file');
     expect(match.textContent).toContain('From the bank');
     expect(match.textContent).toContain('Shell station');

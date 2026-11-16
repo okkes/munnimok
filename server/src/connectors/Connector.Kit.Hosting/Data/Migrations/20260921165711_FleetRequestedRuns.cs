@@ -4,10 +4,8 @@
 
 namespace Connector.Kit.Hosting.Data.Migrations
 {
-    /// <inheritdoc />
     public partial class FleetRequestedRuns : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<bool>(
@@ -25,7 +23,6 @@ namespace Connector.Kit.Hosting.Data.Migrations
                 defaultValue: false);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(

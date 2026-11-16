@@ -17,13 +17,7 @@ import {
 } from './insightModel';
 import { addDays } from './recurring';
 
-/**
- * #516: how the spending moves — the running period against the usual
- * curve, a category that creeps up period after period, the weekday that
- * costs the most, a record of days without a purchase. Day-to-day money
- * only: a recurring cost is an obligation and an event a one-off, so
- * neither makes a habit; sums read the space's own currency.
- */
+// #516: day-to-day money only: a recurring cost is an obligation and an event a one-off, so neither makes a habit
 
 const sumBetween = (days: ReadonlyMap<string, number>, from: string, to: string): number => {
   let sum = 0;
@@ -33,7 +27,6 @@ const sumBetween = (days: ReadonlyMap<string, number>, from: string, to: string)
 
 const unitOf = (inputs: InsightInputs): SpacePeriodType => inputs.space?.periodType ?? 'month';
 
-/** spending this period running ahead of the usual curve for this day of the period */
 export function spendingPace(inputs: InsightInputs): Insight[] {
   const current = inputs.periods.at(-1);
   const first = firstKnownDay(inputs.txs);
@@ -53,7 +46,6 @@ export function spendingPace(inputs: InsightInputs): Insight[] {
   const typicalBy = median(past.map((p) => sumBetween(days, p.start, sameDay(p))));
   const typicalTotal = median(past.map((p) => sumBetween(days, p.start, p.end)));
   if (typicalBy <= 0 || typicalTotal <= 0 || soFar < typicalBy * 1.2) return [];
-  // "at this pace": the rest of the period keeps the ratio it has now
   const projected = Math.round((typicalTotal * soFar) / typicalBy);
   const extra = projected - typicalTotal;
   if (extra < 5_000) return [];
@@ -85,14 +77,8 @@ export function spendingPace(inputs: InsightInputs): Insight[] {
 
 const DRIFT_PERIODS = 6;
 
-/**
- * A category that has been creeping up (user: "grocery spending has been
- * creeping up — 18% over the last 6 months"): spent in every one of the
- * last six complete periods, the last three averaging well above the
- * three before — and every one of the last three above the old level, so
- * one big purchase never reads as a trend.
- */
-/** day-to-day spending per category as filed, one value per period */
+// spent in every one of the last six periods, the last three each above the old level
+// one big purchase never reads as a trend
 function categorySeries(inputs: InsightInputs, periods: readonly Period[]): Map<string, number[]> {
   const series = new Map<string, number[]>();
   for (const tx of inputs.txs) {
@@ -164,12 +150,7 @@ export function categoryDrift(inputs: InsightInputs): Insight[] {
 
 const WEEKDAY_WEEKS = 12;
 
-/**
- * The weekday that costs the most (user: "Saturdays are your most
- * expensive day — 38% more than your daily average"), over the last twelve
- * whole weeks. Each weekday drops its single biggest day first: one sofa
- * or one concert is no habit.
- */
+// each weekday drops its single biggest day first: one sofa or one concert is no habit
 export function expensiveWeekday(inputs: InsightInputs): Insight[] {
   const from = addDays(inputs.today, -7 * WEEKDAY_WEEKS);
   const to = addDays(inputs.today, -1);
@@ -211,12 +192,8 @@ export function expensiveWeekday(inputs: InsightInputs): Insight[] {
   ];
 }
 
-/**
- * A record of days without a purchase (user: "9 no-spend days this month
- * — your highest number in the last 6 months"). A purchase is any spending
- * but what a recurring cost takes by itself; days after the newest row the
- * space knows are not counted — a feed that has not synced is no calm.
- */
+// a purchase is any spending but what a recurring cost takes by itself
+// days after the newest known row are not counted: a feed that has not synced is no calm
 export function noSpendDays(inputs: InsightInputs): Insight[] {
   const current = inputs.periods.at(-1);
   const first = firstKnownDay(inputs.txs);

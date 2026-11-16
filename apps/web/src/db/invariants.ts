@@ -1,16 +1,7 @@
 import type { EntityName } from './types';
 
-/**
- * Model-level data invariants, enforced at the ONE local write path
- * (Repo.write) so no screen can slip malformed rows past its own input
- * validation into the database (user request 2026-07-28, the
- * FluentValidation idea). A violation blocks the write and reaches
- * GlitchTip — it means a UI-level check is missing somewhere.
- *
- * Remote ops are deliberately NOT validated: LWW convergence must never
- * be refused client-side, and rows written before a rule existed keep
- * syncing. The rules run where the data is born.
- */
+// enforced at the one local write path (Repo.write): a violation blocks the write and reaches GlitchTip (UI check missing)
+// remote ops are never validated: LWW convergence must not be refused, older rows keep syncing
 export class InvariantViolation extends Error {
   constructor(entity: EntityName, entityId: string, problems: readonly string[]) {
     super(`${entity}/${entityId}: ${problems.join('; ')}`);
@@ -23,8 +14,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const isIntCents = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 
-/** the money itself: integer cents and an ISO day (a row stores no
- *  type — the view derives it, so there is no type to check here) */
+/** integer cents and an ISO day; a row stores no type (the view derives it) */
 function amountAndDateProblems(row: Record<string, unknown>): string[] {
   const problems: string[] = [];
   if (!isIntCents(row.amountCents)) problems.push('amountCents must be integer cents');
@@ -39,8 +29,7 @@ function splitProblems(
   for (const split of splits) {
     if (typeof split.catId !== 'string' || split.catId.length === 0) problems.push('split without a category');
     if (!isIntCents(split.amountCents) || split.amountCents < 0) problems.push('split amount must be non-negative integer cents');
-    // typed splits v2: a part's own type must be a known one — sign
-    // coherence stays UI-side (parts are magnitudes; the row signs them)
+    // a part's own type must be a known one; sign coherence stays UI-side (parts are magnitudes, the row signs them)
     if (split.txType !== undefined && !(typeof split.txType === 'string' && TX_TYPES.has(split.txType))) {
       problems.push('unknown split txType');
     }
@@ -49,10 +38,7 @@ function splitProblems(
   return problems;
 }
 
-/** v2.1 category spread: entries must be sound and sum to the part.
- *  #228: a lone entry is legal — the part settles inside its own cats
- *  (reimbursement stays ON the split), and a fully settled part carries
- *  only its `reimbursed` entry, exactly like a whole row. */
+/** entries must be sound and sum to the part; a lone entry is legal (#228: a settled part holds only `reimbursed`) */
 function splitCatProblems(split: { amountCents?: unknown; cats?: unknown }): string[] {
   if (!Array.isArray(split.cats) || split.cats.length === 0) return ['split cats must hold at least one entry'];
   const problems: string[] = [];
@@ -66,10 +52,7 @@ function splitCatProblems(split: { amountCents?: unknown; cats?: unknown }): str
   return problems;
 }
 
-/** #211 split categories: the ROW's partition must be sound and sum to
- *  the gross amount (settled `reimbursed` entries included — the gross
- *  invariant of the reimbursement redesign). A lone entry is legal: a
- *  fully settled row carries only its `reimbursed` entry. */
+/** #211: the row's partition must be sound and sum to the gross amount, `reimbursed` included; a lone entry is legal */
 function rowCatsProblems(row: Record<string, unknown>): string[] {
   if (row.cats === undefined || row.cats === null) return [];
   if (!Array.isArray(row.cats) || row.cats.length === 0) return ['row cats must hold at least one entry'];
@@ -112,11 +95,7 @@ function namedRowProblems(row: Record<string, unknown>): string[] {
   return typeof row.name === 'string' && row.name.trim().length > 0 ? [] : ['live row without a name'];
 }
 
-/**
- * Returns the violated rules for a merged row about to be written, empty
- * when the row is sound. Unknown entities always pass — rules are opt-in
- * per table, strongest where the money lives.
- */
+/** empty when the row is sound; unknown entities pass: rules are opt-in per table */
 export function rowProblems(entity: EntityName, row: Record<string, unknown>): string[] {
   if (typeof row.id !== 'string' || row.id.length === 0) return ['row without an id'];
   switch (entity) {

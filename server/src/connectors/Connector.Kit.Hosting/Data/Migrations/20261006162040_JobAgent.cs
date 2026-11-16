@@ -4,10 +4,8 @@
 
 namespace Connector.Kit.Hosting.Data.Migrations
 {
-    /// <inheritdoc />
     public partial class JobAgent : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
@@ -23,7 +21,6 @@ namespace Connector.Kit.Hosting.Data.Migrations
                 column: "AgentId");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(

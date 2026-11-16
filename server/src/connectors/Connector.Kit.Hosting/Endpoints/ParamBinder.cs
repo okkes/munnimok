@@ -5,15 +5,8 @@ using Connector.Kit.Manifests;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// Turns a caller's query string into a validated <see cref="ResourceRequest"/>.
-///
-/// Nothing an adapter sees has ever been unvalidated: the manifest declares
-/// every legal parameter and this is the only door. An unknown key is
-/// rejected rather than ignored, because a caller that misspells
-/// <c>since</c> and silently gets a full history has not been told anything
-/// went wrong.
-/// </summary>
+/// The only door to an adapter: the manifest declares every legal parameter. An unknown key is rejected, because a
+/// misspelled <c>since</c> would silently return a full history.
 public static class ParamBinder
 {
     public const string Since = "since";
@@ -34,9 +27,7 @@ public static class ParamBinder
             var spec = resource.Param(key)
                        ?? throw ConnectorException.InvalidRequest($"unknown parameter '{key}' for resource '{resource.Id}'");
 
-            // Internal params are documented for operators and rejected from a
-            // query string. A caller that could set one could reach past the
-            // manifest, which is exactly what the manifest exists to prevent.
+            // internal params are for operators: a caller that could set one would reach past the manifest
             if (spec.Internal)
             {
                 throw ConnectorException.InvalidRequest($"parameter '{key}' is not settable by a caller");
@@ -94,16 +85,8 @@ public static class ParamBinder
         };
     }
 
-    /// <summary>
-    /// Widens the window backwards by the provider's settlement lag, then
-    /// clamps it to the history the provider actually offers.
-    ///
-    /// The widening is not optional and not the caller's job. Fetching
-    /// strictly since the last sync loses rows that settle late -
-    /// permanently and invisibly, because nothing ever asks for that window
-    /// again. Overlap is free: <c>(session, external_id)</c> uniqueness and
-    /// the content hash mean a repeat never duplicates.
-    /// </summary>
+    /// Widens the window back by the settlement lag, then clamps to the provider's history: rows that settle late are
+    /// otherwise lost for good. Overlap is free: (session, external_id) uniqueness and the content hash stop duplicates.
     private static DateOnly? Widen(DateOnly? since, ProviderLimits limits, ResourceSpec resource, DateTimeOffset now)
     {
         var maxHistoryDays = resource.MaxHistoryDays ?? limits.MaxHistoryDays;
@@ -115,11 +98,7 @@ public static class ParamBinder
         return widened < earliest ? earliest : widened;
     }
 
-    /// <summary>
-    /// A multi-valued param may arrive as repeated keys or as one
-    /// comma-separated value; both are the user's requested shape
-    /// (<c>accounts=savings,credit_card</c>) and both mean the same thing.
-    /// </summary>
+    /// Repeated keys and one comma-separated value mean the same (<c>accounts=savings,credit_card</c>).
     private static List<string> Expand(ParamSpec spec, IReadOnlyList<string> raw)
     {
         var values = new List<string>();

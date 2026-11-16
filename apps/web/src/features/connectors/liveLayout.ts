@@ -1,17 +1,6 @@
-/**
- * The streamed login's geometry (user request 2026-10-01: the frame was
- * a postage stamp on the desktop and half a screen on the phone, and the
- * keyboard pushed it around).
- *
- * The frame is MEASURED, not styled: the sheet library's flex chain gives
- * a child no definite height to fill (WebKit resolves it to nothing), and
- * on iOS the keyboard changes what is left on screen without any layout
- * at all. So the view asks how much room its scroller has, takes off what
- * sits above and below the frame, takes off the keyboard, and sizes the
- * frame to the largest box with the page's own aspect that fits — the
- * box IS the image, so a tap's fraction of the box is a tap's fraction of
- * the page, with no letterbox to mis-map it.
- */
+// the frame is MEASURED, not styled: the sheet's flex chain gives a child no definite height (WebKit resolves it
+// to nothing), and on iOS the keyboard changes what is left on screen without any layout
+// the box IS the image, so a tap's fraction of the box is a tap's fraction of the page, with no letterbox to mis-map
 
 export interface FitInput {
   availW: number;
@@ -28,19 +17,14 @@ export function fitFrame({ availW, availH, frameW, frameH }: FitInput): { width:
   return { width: Math.floor(frameW * scale), height: Math.floor(frameH * scale) };
 }
 
-/**
- * How much of the layout viewport an on-screen keyboard covers. Where the
- * viewport resizes for the keyboard (Android, the native shells) this is
- * nought — the layout already shrank; on iOS Safari and the PWA only the
- * visual viewport shrinks, and this is the difference.
- */
+// 0 where the viewport resizes for the keyboard (Android, the native shells); on iOS Safari and the PWA only the
+// visual viewport shrinks, and this is the difference
 export function keyboardInset(win: Pick<Window, 'innerHeight' | 'visualViewport'>): number {
   const vv = win.visualViewport;
   if (!vv) return 0;
   return Math.max(0, Math.round(win.innerHeight - vv.height - vv.offsetTop));
 }
 
-/** the nearest ancestor that scrolls vertically — the sheet's own scroller — or null outside one */
 export function nearestScroller(el: HTMLElement): HTMLElement | null {
   for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
     const overflowY = getComputedStyle(node).overflowY;

@@ -4,36 +4,11 @@ import { visibleTransactions, writeTxTransform, type SpaceTx } from '@/db/joined
 import { accountStamp, movementCatFor } from '@/domain/txType';
 import { autoSubFor, stampMovementSub } from '@/domain/categories';
 
-/**
- * #133 step B — the pick-existing door's SECOND half: the source row's
- * own write already carried `transferPeerId = picked` (so the mirror
- * engine minted nothing); this writes the reciprocal onto the picked
- * row — link back, peer back, and the category its own account's stamp
- * dictates. Both writes carry their peer in the SAME write, so neither
- * side ever mints. Balances stay untouched: the picked row was already
- * part of its account's declared reality ("nothing is minted, nothing
- * moves").
- *
- * #237 (user decision "a"): a SAME-SIGN pick is the wallet story — the
- * source (the bank top-up) is the transfer leg, the picked row IS the
- * real purchase and keeps its own category and type. Only the pairing
- * rides onto it; the overviews keep counting the purchase, once.
- *
- * #237 r2: the picked row MUST be resolved as the space sees it (the
- * joined view). A bare `store.get` returns the RAW feed-space row,
- * and writeTxTransform then writes the reciprocal onto the raw row —
- * which every reader ignores (the overlay owns transferPeerId on feed
- * rows). That silent void made every bank-fed pick a one-way pair:
- * the source pointed at the purchase, the purchase knew nothing, and
- * the match sheet kept offering it (user screenshots, 2026-08-16).
- */
-/**
- * The inverse of a pair: the peer leg forgets this row. A minted part-leg's
- * back-pointer is the part-mirror SOURCE key ("rowId:partId", #255 r4), so
- * releasing from the leg's side reaches the PART's own pointer. The row's
- * own `transferPeerId` is the caller's write (it rides the same transform
- * as the rest of the change).
- */
+// pick-existing door, second half (#133): both rows carry their peer in the SAME write, so neither mints; balances stay
+// #237: a same-sign pick is the wallet story: the picked row is the real purchase and keeps its category
+// #237 r2: resolve the picked row through the joined view: a raw feed row's reciprocal lands where no reader looks
+// a minted part-leg's back-pointer is the part-mirror source key "rowId:partId" (#255 r4); the row's own transferPeerId
+// is the caller's write
 export async function releasePeerLeg(
   store: StorageBackend,
   repo: Repo,
@@ -82,12 +57,8 @@ export async function pairWithExistingRow(
   }
   const account = await store.get('account', picked.accountId);
   const stamp = account?.deleted === 0 ? accountStamp(account.type) : undefined;
-  // #133 r5: an unstamped picked row files by ITS counter's kind (the
-  // source account) — the bijection holds on both sides of the pair.
-  // The picked row leaves the review (user 2026-10-09 rule kept here):
-  // every caller is the PERSON pointing at this exact row — the review
-  // card's and the detail's counter-transaction pick, the recurring
-  // match sheet — so its category is their decision, not a machine's.
+  // #133 r5: an unstamped picked row files by its counter's kind (the source account)
+  // it leaves the review: every caller is the person pointing at this exact row, so the category is their decision
   const sourceType = (await store.get('account', source.accountId))?.type;
   await writeTxTransform(repo, picked, {
     linkedAccountId: source.accountId,

@@ -11,13 +11,8 @@ for (const d of [SHOTS_DIR, VIDEOS_DIR]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
-/** The CAMT fixture must not age: the attach flow's default history
- * window is DEFAULT_HISTORY_MONTHS back from TODAY, and a static file
- * silently falls out of it (found 2026-09-06: the newest booking, Jul 5,
- * left the two-month window overnight — sync-a6's shared feed came up
- * empty while the app behaved correctly). Every ISO date in the file is
- * shifted by one common delta so the newest lands 3 days ago — spacing,
- * ordering and dedupe identity within a run stay intact. */
+// the attach flow's history window counts DEFAULT_HISTORY_MONTHS back from today, so a static CAMT file ages out of it;
+// every date shifts by one delta so the newest lands 3 days ago, keeping spacing and dedupe identity
 export function freshCamtFixture() {
   const xml = fs.readFileSync(path.join(ROOT, 'fixtures', 'camt053-sample.xml'), 'utf8');
   const dates = [...xml.matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]);
@@ -36,10 +31,7 @@ export function freshCamtFixture() {
   return out;
 }
 
-// All test variants: language × theme × viewport.
-// id format: '{lang}-{theme}-{viewport}'
-// Single default variant: EN, light, mobile.
-// Dark / TR / desktop are evaluated manually when explicitly requested.
+// single default variant (EN, light, mobile); dark/TR/desktop are evaluated manually on request
 const DEFAULT_VARIANT = { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 };
 // PW_VARIANT=en-dark-mobile: the same run in the dark theme, for a visual pass asked for by hand (#592)
 export const VARIANTS = [process.env.PW_VARIANT === 'en-dark-mobile' ? { ...DEFAULT_VARIANT, id: 'en-dark-mobile', dark: true } : DEFAULT_VARIANT];
@@ -48,8 +40,6 @@ export const VARIANTS = [process.env.PW_VARIANT === 'en-dark-mobile' ? { ...DEFA
 // visual review); CI keeps neither, so it records no video and takes no shots.
 const LOCAL_ARTEFACTS = !process.env.CI;
 
-// Create a browser context + page configured for the given variant.
-// Records a video locally — call teardown() after the test to finalize.
 export async function createPage(browser, variant) {
   const ctx = await browser.newContext({
     viewport:          variant.vp,
@@ -64,10 +54,7 @@ export async function createPage(browser, variant) {
   return { page, ctx };
 }
 
-// Inject language + theme into localStorage before page load, then navigate.
-// opts.demo: pre-authenticated demo session (skips the login screen).
-// opts.userSub: pre-authenticated syncing user via test auth (needs the
-//               docker-compose.test.yml API on localhost:8180).
+// opts.demo: pre-authenticated demo session; opts.userSub: syncing user via test auth (needs the test compose API)
 export async function base(page, variant, opts = {}) {
   await page.addInitScript((v) => {
     localStorage.clear();
@@ -92,26 +79,18 @@ export async function base(page, variant, opts = {}) {
 }
 
 async function completeOnboardingIfShown(page, userSub) {
-  // a brand-new user's FIRST paint can exceed a short fixed wait on a
-  // cold CI stack — the old 3s timeout then declared "no onboarding"
-  // and the spec waited forever for a tab bar onboarding keeps hidden.
-  // Race the two possible outcomes instead of guessing.
+  // a new user's first paint can exceed a short fixed wait on a cold CI stack: race the two outcomes instead of guessing
   const onboarding = page.locator('[data-testid="screen-onboarding"]');
   // screen-home, not tab-home: Home only renders once state is ready,
   // which is exactly when the needsOnboarding meta is final
   const home = page.locator('[data-testid="screen-home"]');
-  // as patient as the spec budget itself: under FULL-suite load a brand
-  // new user's first paint has been observed beyond 30s — a shorter cap
-  // here just converts slowness into a guaranteed timeout later
+  // a new user's first paint has been seen beyond 30s under full-suite load: a shorter cap only delays the timeout
   let winner = await Promise.race([
     onboarding.waitFor({ timeout: 120000 }).then(() => 'onboarding').catch(() => null),
     home.waitFor({ state: 'visible', timeout: 120000 }).then(() => 'home').catch(() => null),
   ]);
   if (winner === 'home') {
-    // the tab bar can paint a beat BEFORE Home's needsOnboarding query
-    // navigates away — the meta itself is already final (the fail-closed
-    // bootstrap wrote it before rendering), so read it directly instead
-    // of guessing: races here ambushed specs with a late onboarding
+    // the tab bar can paint before Home's needsOnboarding query navigates away; the meta is already final, so read it directly
     const needs = await page.evaluate(
       (dbName) =>
         new Promise((resolve) => {
@@ -137,16 +116,13 @@ async function completeOnboardingIfShown(page, userSub) {
         }),
       `munni_user_${userSub}`,
     );
-    if (!needs) return; // truly a returning user
-    await onboarding.waitFor({ timeout: 30000 }); // the redirect is coming
+    if (!needs) return;
+    await onboarding.waitFor({ timeout: 30000 });
     winner = 'onboarding';
   }
   if (winner !== 'onboarding') return;
-  // something can remount the tree once during a cold boot and wipe the
-  // typed name (CI snapshots showed the field empty AFTER a successful
-  // fill) — so fill until the FIELD HOLDS the value (#195 keeps the
-  // Continue button always enabled, so its state says nothing anymore),
-  // then walk the steps, retrying the passage if the screen snaps back
+  // a remount during cold boot can wipe the typed name (#195: Continue is always enabled): fill until the field holds it,
+  // then walk the steps, retrying if the screen snaps back
   const name = page.locator('[data-testid="onboarding-name"]');
   const save = page.locator('[data-testid="onboarding-save"]');
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -161,7 +137,6 @@ async function completeOnboardingIfShown(page, userSub) {
       await skipMinaTutorial(page);
       return;
     } catch {
-      // snapped back to an earlier step (or home already arrived) — loop
       if (await page.locator('[data-testid="screen-home"]').isVisible().catch(() => false)) {
         await skipMinaTutorial(page);
         return;
@@ -171,10 +146,8 @@ async function completeOnboardingIfShown(page, userSub) {
   throw new Error('onboarding never completed — see the page snapshot');
 }
 
-// Brand-new identities auto-start the Mina tutorial right after the
-// onboarding form (no space exists yet!). Specs that don't test Mina
-// skip it — the skip path creates the default "Private" space, which is
-// what every downstream assertion needs to exist.
+// a brand-new identity auto-starts the Mina tutorial before any space exists; skipping it creates the default "Private"
+// space every downstream assertion needs
 async function skipMinaTutorial(page) {
   const skip = page.locator('[data-testid="mina-skip"]');
   if (!(await skip.isVisible().catch(() => false))) {
@@ -196,8 +169,6 @@ export async function gotoGlobalSettings(page) {
   await page.waitForSelector('[data-testid="screen-settings-global"]');
 }
 
-// Spaces left the tab bar (the Home avatar switches, Settings manages):
-// canonical route to the Spaces screen for tests.
 export async function gotoSpaces(page) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-spaces-row"]');
@@ -240,7 +211,6 @@ export async function shot(page, name) {
   await page.screenshot({ path: path.join(SHOTS_DIR, `${name}.png`), fullPage: false });
 }
 
-// Close context and rename the recorded video to match the screenshot name.
 export async function teardown(page, ctx, finalShotName) {
   const video = page.video();
   let videoPath;

@@ -1,22 +1,17 @@
 import { defineConfig } from '@playwright/test';
 
-// Set by the dockerized WebKit guard (deploy/webkit-e2e.ps1): the app is
-// served externally (its own static server inside the container), so the
-// vite webServer must not start.
+// set by the dockerized WebKit guard (deploy/webkit-e2e.ps1): the app is served externally, so no vite webServer
 const externalBaseUrl = process.env.PW_BASE_URL;
 
-// The CI gate (user 2026-11-08): the critical features' happy flows only —
-// tests/e2e. The user guide's other screenshots are captured by
-// playwright.shots.config.ts (tests/shots), which never gates a deploy.
+// the CI gate: critical features' happy flows only (tests/e2e); the other guide screenshots live in
+// playwright.shots.config.ts and never gate a deploy
 export default defineConfig({
   testDir: 'tests/e2e',
   workers: process.env.CI ? 3 : 2,
   outputDir: 'tests/results',
   projects: [
     { name: 'e2e', testMatch: '**/*.e2e.spec.js', use: { browserName: 'chromium' as const } },
-    // WebKit engine guard (all of iOS is WebKit; Blink hides its layout
-    // bugs). Only defined where the browser actually exists — CI and the
-    // dockerized runner — so host runs never trip over a missing binary.
+    // WebKit engine guard (all of iOS is WebKit; Blink hides its layout bugs); only where the browser exists
     ...(process.env.CI || process.env.PW_WEBKIT
       ? [{ name: 'webkit', testMatch: '**/*.webkit.spec.js', use: { browserName: 'webkit' as const } }]
       : []),
@@ -30,9 +25,8 @@ export default defineConfig({
   ...(externalBaseUrl
     ? {}
     : {
-        // #587: the gate runs what ships — the production build behind an index.html fallback. The dev
-        // server answers absolute paths and transforms on the fly, which is how a blank /splits/join page
-        // passed here. CI built it in its own step; a local run builds first.
+        // #587: the gate runs what ships, the production build behind an index.html fallback;
+        // the dev server hid a blank /splits/join
         webServer: {
           command: process.env.CI ? 'npx vite preview --port 5174 --strictPort' : 'npx vite build && npx vite preview --port 5174 --strictPort',
           url: 'http://localhost:5174',

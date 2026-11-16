@@ -1,10 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Critical flow: the daily review — Home's banner opens the queue, confirming
-// and recategorising drain it through the category editor's sheet stack, and
-// an empty queue takes the banner off Home.
-
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
 
@@ -19,13 +15,11 @@ for (const V of VARIANTS) {
     await expect(card).toBeVisible();
     await shot(page, k('13-review-banner'));
 
-    // confirm the first card; the next one takes its place
     const first = (await card.textContent()) ?? '';
     await page.click('[data-testid="review-confirm-btn"]');
     await expect(card).not.toHaveText(first);
     await shot(page, k('14-review-flow') + '--s1');
 
-    // recategorise the next one — the pick is staged, Confirm writes it
     await page.click('[data-testid="review-category-chip"]');
     await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
@@ -36,10 +30,8 @@ for (const V of VARIANTS) {
     await shot(page, k('14-review-flow') + '--s2');
     await page.click('[data-testid="review-confirm-btn"]');
 
-    // the rest of the queue: re-confirming a card that has not swapped yet is
-    // idempotent, and a genuinely unconfirmable card still fails the drain; a
-    // confirm that updated similar rows walks their receipts first (#495) —
-    // the deck waits for that walk, which this flow skips
+    // re-confirming a card that has not swapped yet is idempotent; a confirm that updated similar rows walks their
+    // receipts first (#495) and the deck waits for it — this flow skips the walk
     await expect(async () => {
       if (await page.locator('[data-testid="review-empty"]').count()) return;
       const skipReceipt = page.locator('[data-testid="receipt-queue-skip"]');

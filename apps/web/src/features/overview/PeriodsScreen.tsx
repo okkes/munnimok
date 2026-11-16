@@ -25,8 +25,7 @@ import { TILE_META, TONE_CLASS, deltaTone, tileValueClass } from './tileMeta';
 /** how far back the history reaches at most: three years of monthly periods */
 export const MAX_PERIODS = 36;
 
-/** the drill-down walks this many periods (OverviewScreen's PERIOD_COUNT) —
- *  a card opens it on the same period whenever that period is in its window */
+/** the drill-down walks this many periods (OverviewScreen's PERIOD_COUNT) */
 const DRILL_PERIODS = 6;
 
 export interface PeriodDelta {
@@ -35,7 +34,6 @@ export interface PeriodDelta {
   pct: number | null;
 }
 
-/** the change against the period before — null for the first period on record */
 export function periodDelta(values: readonly number[], index: number): PeriodDelta | null {
   if (index <= 0 || index >= values.length) return null;
   const previous = values[index - 1];
@@ -43,13 +41,7 @@ export function periodDelta(values: readonly number[], index: number): PeriodDel
   return { cents, pct: previous === 0 ? null : Math.round((cents / Math.abs(previous)) * 100) };
 }
 
-/**
- * Sparse x labels: the newest period is always labelled and every k-th one
- * before it, so twelve periods read Jan · Mar · May … the way the recurring
- * chart does. Monthly periods are named by their months (#511: 21 Jul –
- * 20 Aug is "Jul–Aug", a period from the 1st just "Jul"); weekly ones by
- * the day they start.
- */
+// the newest period is always labelled, then every k-th; #511: 21 Jul – 20 Aug reads "Jul–Aug", from the 1st just "Jul"
 export function periodLabels(periods: readonly Period[], periodType: SpacePeriodType, lang: Lang): string[] {
   const n = periods.length;
   const every = Math.max(1, Math.ceil(n / 6));
@@ -72,13 +64,6 @@ function deltaText(delta: PeriodDelta | null, money: (cents: number) => string, 
   return `${arrow} ${money(Math.abs(delta.cents))}${pct} ${t('periods.vsPrevious')}`;
 }
 
-/**
- * Every period side by side (user request 2026-10-06): Home's six tiles for
- * any period on record, a pager to walk back, and one chart per tile over
- * the whole history — closed periods solid, the running one dashed as
- * "so far", the recurring chart's language. A dot on any chart selects
- * that period everywhere; a tile opens the drill-down behind it.
- */
 export function PeriodsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -241,9 +226,6 @@ function MetricCard({
   const { t } = useLang();
   const last = values.length - 1;
   const color = TILE_META[kind].color;
-  // closed periods draw solid; the running one hangs off the last closed
-  // point as a dashed "so far" that owns the newest dot (the recurring
-  // chart's estimate trick, with the roles the other way round)
   const series = useMemo(
     () => [
       { values: values.map((c, i) => (i < last ? c / 100 : null)), color },

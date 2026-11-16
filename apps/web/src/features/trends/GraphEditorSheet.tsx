@@ -11,7 +11,6 @@ import { Sheet } from '@/ui/Sheet';
 import { AccountTicks, graphAccounts, liquidAccountIds } from './AccountTicks';
 import type { TrendGraphDraft } from './useTrendGraphs';
 
-/** what the sheet edits: a spending graph (categories + accounts) or a balance line (accounts) */
 export interface EditableGraph {
   id: string;
   name: string;
@@ -30,7 +29,6 @@ const TICK_BOX: Record<Tick, string> = {
   off: 'border-line bg-transparent',
 };
 
-/** a main's tick: chosen itself, half when only some of its subs are */
 const mainTick = (picked: ReadonlySet<string>, main: Cat, subs: readonly Cat[]): Tick => {
   if (picked.has(main.id)) return 'checked';
   return subs.some((sub) => picked.has(sub.id)) ? 'half' : 'off';
@@ -72,7 +70,6 @@ function TickBox({ tick }: Readonly<{ tick: Tick }>) {
   );
 }
 
-/** the expense mains with their subs, each a tick */
 function CategoryTree({ picked, onChange }: Readonly<{ picked: ReadonlySet<string>; onChange: (next: Set<string>) => void }>) {
   const { t } = useLang();
   const cats = useCategories();
@@ -80,7 +77,6 @@ function CategoryTree({ picked, onChange }: Readonly<{ picked: ReadonlySet<strin
     () => cats.parents.filter((parent) => parent.txTypes.includes('expense') && !LOCKED_MAIN_IDS.has(parent.id)),
     [cats],
   );
-  // a ticked main, or one with a ticked sub, starts unfolded — an edit shows what it covers
   const [open, setOpen] = useState<ReadonlySet<string>>(
     () =>
       new Set(
@@ -144,13 +140,8 @@ function CategoryTree({ picked, onChange }: Readonly<{ picked: ReadonlySet<strin
   );
 }
 
-/**
- * A custom graph's shape (user 2026-10-08): a name and one or more
- * (sub)categories — and since #531 the financial accounts it reads (every
- * account until ticked otherwise). A balance line (`kind` cashflow) is a
- * name and its accounts, the money in hand ticked to start with. New and
- * edit share the sheet; delete asks once through the shared danger confirm.
- */
+/** #531: a spending graph reads every account until ticked otherwise;
+ *  a balance line (`kind` cashflow) starts with the money in hand ticked */
 export function GraphEditorSheet({
   open,
   onOpenChange,
@@ -255,7 +246,7 @@ export function GraphEditorSheet({
             <p className="px-1 text-[11px] text-ink-4">{t(spending ? 'trends.graphAccountsHint' : 'trends.flowAccountsHint')}</p>
             <AccountTicks accounts={accounts} picked={accountPick} onChange={setAccountPick} allowAll={spending} testId="trends-graph-accounts" />
           </div>
-          {/* #455 (user 2026-11-12): buying what a goal saved for is real spending, and a graph may still leave it out */}
+          {/* #455: buying what a goal saved for is real spending, and a graph may still leave it out */}
           {spending && (
             <label className="m-tap flex w-full cursor-pointer items-start gap-3 rounded-card border border-line bg-surface px-3 py-2.5 text-left">
               <input

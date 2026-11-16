@@ -10,17 +10,9 @@ import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
 import type { ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 
-/**
- * Receipt actions in a space (receipts v3): a photo is a downscaled
- * image attached straight to the transaction as a photo-born
- * `receiptLink` row — no global receipt behind it, so removing the link
- * IS deleting the receipt; a fetched receipt lives in the owner's store
- * feed and its link is a snapshot — unlinking leaves the global row.
- * One receipt may prove several transactions (user 2026-10-08): a
- * remove or unlink that names a transaction lets go of that one only,
- * and the link survives while another transaction still holds it.
- */
-/** the facts of a receipt the person keeps themselves: typed on its screen, or found by a reader */
+// a photo is a photo-born receiptLink: removing it IS deleting the receipt
+// a fetched receipt's link is a snapshot: unlinking leaves the global row
+// a remove or unlink naming a transaction lets go of that one only (one receipt may prove several)
 export interface OwnReceiptFacts {
   date?: string;
   totalCents?: number;
@@ -31,42 +23,31 @@ export interface OwnReceiptFacts {
 }
 
 export interface ReceiptOps {
-  /** photo path: downscale on-device, attach to the transaction */
   attachPhoto: (tx: Pick<SpaceTx, 'id' | 'date' | 'merchant' | 'amountCents'>, file: Blob) => Promise<void>;
-  /** delete a photo receipt (its link id) — or, with a transaction named, detach it from that one alone */
   remove: (linkId: string, txId?: string) => Promise<void>;
-  /** OCR result: line items extracted from the photo (S2) */
   setItems: (linkId: string, items: ReceiptRow['items']) => Promise<void>;
   /** #567: what a reader made of the photo — its lines, whether they add up, the currency it saw */
   setRead: (linkId: string, read: { items: NonNullable<ReceiptRow['items']>; reconciled: boolean; totalCents: number; currency?: string }) => Promise<void>;
-  /** #567: the lines one transaction's categories were built from — kept so the sheet reopens as it was left and the next receipt learns from it */
+  /** #567: kept so the sheet reopens as it was left and the next receipt learns from it */
   setPicks: (linkId: string, txId: string, picks: ReceiptPick[]) => Promise<void>;
-  /** manual attach from the picker: snapshot-link a global receipt into the space — a receipt attached
-   *  elsewhere is attached here as well, the other transactions keep it */
+  /** a receipt attached elsewhere is attached here as well; the other transactions keep it */
   linkReceipt: (receipt: ReceiptRow, txId: string) => Promise<void>;
-  /** the whole link, or — with a transaction named — that transaction's hold on it alone */
   unlinkReceipt: (linkId: string, txId?: string) => Promise<void>;
-  /** user 2026-10-07 (Change on the transaction): another receipt takes the attached one's place — the new link
-   *  lands first so the transaction never shows empty in between; the old one lets go of THIS transaction the way
-   *  an unlink does (a photo nobody else holds is gone for good, a store receipt nobody else holds is unmatched again) */
+  /** the new link lands first so the transaction never shows empty; the old one lets go like an unlink does */
   swapReceipt: (currentLinkId: string, receipt: ReceiptRow, txId: string) => Promise<void>;
-  /** delete an unmatched receipt from the owner's global store feed */
   removeGlobalReceipt: (receiptId: string) => Promise<void>;
-  /** #567 (user): a receipt kept before its transaction exists — a photo among the person's own receipts, which
-   *  every space of theirs lists; null when their receipts cannot be reached yet (an account never online here) */
+  /** #567: a receipt kept before its transaction exists, among the person's own receipts that every space lists;
+   *  null when they cannot be reached yet (an account never online here) */
   addOwnPhoto: (file: Blob) => Promise<string | null>;
-  /** #567: what an own photo says, typed or read — with an amount it is proposed to the payment it fits, in
-   *  whichever space that is */
+  /** #567: with an amount an own photo is proposed to the payment it fits, in whichever space that is */
   setOwnFacts: (receiptId: string, facts: OwnReceiptFacts) => Promise<void>;
-  /** "Matches to check" (§5.7): the human's yes or no on a proposal */
   acceptMatch: (link: ReceiptLinkRow) => Promise<void>;
   rejectMatch: (link: ReceiptLinkRow) => Promise<void>;
 }
 
 export function useReceiptOps(): ReceiptOps {
   const { store, repo, spaceId } = useData();
-  /** the link lets go of one transaction (the others keep it), or of every one when none is named — a store
-   *  receipt remembers them (#496), a photo goes */
+  /** a store receipt remembers the released transactions (#496), a photo goes */
   const letGo = async (linkId: string, txId: string | undefined): Promise<ReceiptLinkRow | undefined> => {
     const row = await store.get('receiptLink', linkId);
     if (!row) await repo.remove('receiptLink', spaceId, linkId);
@@ -76,7 +57,7 @@ export function useReceiptOps(): ReceiptOps {
   };
   return {
     attachPhoto: async (tx, file) => {
-      // #567 (user): a reader can only read what is stored — small print on a long receipt needs these pixels
+      // a reader can only read what is stored: small print on a long receipt needs these pixels (#567)
       const image = await downscaleImage(file, 2048, 0.8);
       await repo.upsert('receiptLink', spaceId, repo.newId(), {
         txId: tx.id,
@@ -97,8 +78,8 @@ export function useReceiptOps(): ReceiptOps {
       await repo.upsert('receiptLink', spaceId, linkId, { items });
     },
     setRead: async (linkId, read) => {
-      // the lines are new: picks made on the old ones point at other lines now
-      // and the total is the receipt's own from here on — a photo starts with its transaction's amount as a stand-in
+      // the lines are new, so picks made on the old ones point at other lines now
+      // the total is the receipt's own from here on: a photo starts with its transaction's amount as a stand-in
       await repo.upsert('receiptLink', spaceId, linkId, {
         items: read.items,
         reconciled: read.reconciled,
@@ -113,7 +94,6 @@ export function useReceiptOps(): ReceiptOps {
       await repo.upsert('receiptLink', spaceId, linkId, { picks: { ...link.picks, [txId]: picks } });
     },
     linkReceipt: async (receipt, txId) => {
-      // a 'receipts.attach' span (2026-10-09): the tap on "Yes, attach" is measured, never guessed
       await measure('receipts.attach', () => attachReceiptTo(repo, spaceId, receipt, txId));
       void logActivity(store, repo, spaceId, 'receiptAdd', receipt.merchant);
     },

@@ -12,33 +12,17 @@ public sealed record BankStatementCsvOptions
 
     public required string ProviderId { get; init; }
 
-    /// <summary>
-    /// Used when the export has no account column - a single-account export
-    /// often does not repeat the account on every row. One of the two must
-    /// resolve or the transactions have nowhere to attach.
-    /// </summary>
+    // used when the export has no account column (a single-account export often does not repeat it)
     public string? AccountExternalId { get; init; }
 
-    /// <summary>
-    /// Dutch bank CSV exports carry no currency column at all; the account
-    /// is in euros and the bank does not say so. Declared rather than
-    /// assumed so a non-euro export is a one-line change, not a bug hunt.
-    /// </summary>
+    // Dutch bank CSV exports carry no currency column; declared so a non-euro export is a one-line change
     public string Currency { get; init; } = "EUR";
 
     public CsvDateOrder DateOrder { get; init; } = CsvDateOrder.DayFirst;
 }
 
-/// <summary>
-/// The Dutch bank statement export, in whichever language and dialect the
-/// user's online banking happened to produce.
-///
-/// The alias lists below are the whole point: they are the accumulated
-/// knowledge of how banks spell these columns, and extending one is the
-/// normal repair when a bank changes its export. Everything else about the
-/// file - delimiter, decimal separator, date format, quoting, signed
-/// amounts versus a separate Af/Bij column - is handled generically.
-/// </summary>
+// the alias lists are the accumulated knowledge of how banks spell columns; extending one is the normal repair
+// when a bank changes its export
 public static class BankStatementCsv
 {
     public const string ColumnDate = "date";
@@ -73,9 +57,7 @@ public static class BankStatementCsv
                 Key = ColumnAmount,
                 Aliases = ["bedrag (eur)", "bedrag eur", "bedrag", "transactiebedrag", "amount (eur)", "amount eur", "amount"],
             },
-            // Everything below is optional because at least one Dutch bank
-            // omits each of them, and a missing description is not a reason
-            // to refuse a statement.
+            // optional because at least one Dutch bank omits each; a missing description must not refuse a statement
             new CsvColumnSpec
             {
                 Key = ColumnDirection,
@@ -94,20 +76,8 @@ public static class BankStatementCsv
                 Required = false,
                 Aliases = ["rekening", "rekeningnummer", "iban/bban", "eigen rekening", "account", "account number", "own account"],
             },
-            // THE OWN ACCOUNT'S NAME, claimed here so that nothing else can.
-            //
-            // It is not emitted anywhere. It exists because ING's savings
-            // export carries a "Rekening naam" / "Account name" column, and
-            // without a spec of its own the containment pass handed it to
-            // counterparty_name - the alias "naam" is contained in "rekening
-            // naam", and it was the only unclaimed candidate. Every savings
-            // transaction then named the ACCOUNT HOLDER as its own
-            // counterparty, in both languages, which is data corruption that
-            // reads perfectly plausibly.
-            //
-            // An exact alias claims the header in the first pass, before
-            // containment runs at all. Confirmed against both language
-            // variants of a real export on 2026-08-12.
+            // never emitted: claims ING savings' "Rekening naam"/"Account name" in the exact pass, else containment handed it to
+            // counterparty_name ("naam") and every savings row named the account holder as its own counterparty
             new CsvColumnSpec
             {
                 Key = ColumnAccountName,
@@ -118,13 +88,7 @@ public static class BankStatementCsv
             {
                 Key = ColumnCounterpartyIban,
                 Required = false,
-                // "counterparty" bare is ING's ENGLISH header for the
-                // counterparty IBAN. Without it the same account exported in
-                // English lost all 564 of its counterparty IBANs while the
-                // Dutch export kept them - a difference of language, not of
-                // data. The account holder cannot be asked to bank in Dutch:
-                // switching the language in the web session changes it on
-                // their other devices too.
+                // bare "counterparty" is ING's English header for the counterparty IBAN; without it an English export lost every one
                 Aliases = ["tegenrekening", "tegenrekening iban/bban", "tegenrekening iban", "iban tegenpartij", "counterparty iban", "counterparty account", "counterparty", "opposing account", "contra account"],
             },
             new CsvColumnSpec
@@ -143,60 +107,28 @@ public static class BankStatementCsv
             {
                 Key = ColumnCode,
                 Required = false,
-                // "code" FIRST, and the order is the point.
-                //
-                // ING's current-account export carries both a two-letter
-                // `Code` column and a `Mutatiesoort` / `Transaction type` one.
-                // The codes - BA, DV, GM, GT, IC, ID, IW, OV, ST, VZ - are
-                // BYTE-IDENTICAL in the Dutch and English exports; the words
-                // beside them are not. Alias order decides which header gets
-                // claimed when both are present, so the language-independent
-                // column has to come first or a connector's transaction kinds
-                // silently depend on the language the account holder happens
-                // to bank in.
+                // "code" first: the two-letter codes are identical in the Dutch and English exports, the words beside them are not;
+                // alias order decides which header is claimed, so kinds must not depend on the export's language
                 Aliases = ["code", "mutatiesoort", "transactiesoort", "transaction type", "mutation type"],
             },
             new CsvColumnSpec
             {
                 Key = ColumnCurrency,
                 Required = false,
-                // Dutch retail exports were believed to carry no currency at
-                // all, and this file said so. ING's SAVINGS export states one -
-                // "Valuta" / "Currency" - while its current-account and
-                // credit-card exports do not. A stated currency is read; the
-                // rest still fall back to the adapter's declared default.
+                // ING's savings export states a currency ("Valuta"/"Currency"); its current-account and card exports do not
                 Aliases = ["valuta", "currency", "valutacode", "currency code", "munt"],
             },
             new CsvColumnSpec
             {
                 Key = ColumnBalanceAfter,
                 Required = false,
-                // "resulting balance" is ING's English for "Saldo na mutatie",
-                // and it is listed as a REDUNDANCY rather than a repair: the
-                // containment pass already claimed it, because it contains
-                // "balance" and was the only unclaimed candidate. Naming it
-                // outright means the English export resolves in the exact pass
-                // instead of depending on a fuzzy rule and on no other header
-                // happening to contain the same word.
-                //
-                // Stated plainly because the first version of this comment
-                // claimed it fixed a broken chain on English exports. It did
-                // not - that chain was never broken, and reverting this alias
-                // fails no test. The counterparty IBAN was the English defect.
+                // redundant with the containment pass (it already claims "resulting balance"); listed so the English export resolves exactly
                 Aliases = ["saldo na mutatie", "saldo na boeking", "saldo na transactie", "saldo", "resulting balance", "balance after mutation", "balance after", "balance"],
             },
         ],
     };
 
-    /// <summary>
-    /// Reads a statement export into normalised transactions, oldest-first
-    /// as the file states them.
-    ///
-    /// The order is deliberately preserved rather than sorted: where the
-    /// export carries a running balance the caller can hand the result
-    /// straight to <see cref="BalanceChain"/>, and sorting first would hide
-    /// the very reordering that check exists to catch.
-    /// </summary>
+    // order is preserved, not sorted: sorting would hide the reordering that BalanceChain exists to catch
     public static IReadOnlyList<Transaction> ReadTransactions(string text, BankStatementCsvOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -217,10 +149,7 @@ public static class BankStatementCsv
 
             var bookedAt = row.Date(ColumnDate);
 
-            // The export's own currency when it states one, and the adapter's
-            // declared default when it does not. ING states it on savings and
-            // omits it on current accounts and credit cards, so both paths are
-            // live on one provider.
+            // ING states a currency on savings and omits it on current accounts and cards: both paths are live
             var currency = row.Text(ColumnCurrency) is { Length: 3 } stated
                 ? stated.ToUpperInvariant()
                 : options.Currency;
@@ -237,10 +166,8 @@ public static class BankStatementCsv
 
             transactions.Add(BankRecords.NewTransaction(options.SessionId, accountId, new TransactionDraft
             {
-                // CSV exports carry no transaction reference at all, so the
-                // id is synthesized from the row's own content plus an
-                // occurrence counter - two identical purchases on one day
-                // are common and must not collapse into one record.
+                // CSV rows carry no reference: the id is a content hash plus an occurrence counter,
+                // so identical same-day purchases stay distinct
                 ExternalId = ExternalId(accountExternalId, bookedAt, amount, name, description, seen),
                 BookedAt = bookedAt,
                 Amount = amount,
@@ -276,14 +203,7 @@ public static class BankStatementCsv
         return "csv-" + Convert.ToHexStringLower(digest.AsSpan(0, 10));
     }
 
-    /// <summary>
-    /// The mutation code, read through the shared table.
-    /// </summary>
-    /// <remarks>
-    /// The table moved to <see cref="BankTransactionKinds"/> when ING gained a
-    /// second route: its web API states the same two-letter code as JSON, and
-    /// one bank classifying the same transaction two ways depending on which
-    /// door it came through would be a defect nobody could see.
-    /// </remarks>
+    // the table lives in BankTransactionKinds: ING's web API states the same codes,
+    // and classifying one row two ways would go unseen
     private static TransactionKind Kind(string? code) => BankTransactionKinds.FromCode(code);
 }

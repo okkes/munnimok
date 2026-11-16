@@ -1,8 +1,4 @@
-/**
- * #180: the home FAB's "new category" door — read-once, same shape as
- * accounts/openHandoff. Arriving on the manage screen with the intent
- * set opens the create-main sheet immediately.
- */
+// #180: the home FAB's "new category" intent, read once like accounts/openHandoff: the manage screen opens the create sheet
 let pending = false;
 
 export const setCategoriesCreateIntent = (): void => {

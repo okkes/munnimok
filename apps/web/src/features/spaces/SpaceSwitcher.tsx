@@ -13,8 +13,6 @@ function avatarIcon(space: SpaceRow): string {
   return space.icon ?? (space.kind === 'shared' ? 'account-group-outline' : 'leaf');
 }
 
-/** #277: the one "this space is shared" mark — a quiet people pill next
- *  to the space's name, everywhere spaces are listed */
 export function SharedSpaceBadge({ testId }: Readonly<{ testId?: string }>) {
   const { t } = useLang();
   return (
@@ -28,11 +26,6 @@ export function SharedSpaceBadge({ testId }: Readonly<{ testId?: string }>) {
   );
 }
 
-/**
- * Home app-bar entry point for quick space switching (the full Spaces
- * screen lives behind Settings): the active space's avatar opens a sheet
- * with one tap per space.
- */
 export function SpaceSwitcher() {
   const { t } = useLang();
   const { store, spaceId, setActiveSpace } = useData();
@@ -41,8 +34,7 @@ export function SpaceSwitcher() {
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const active = spaces?.find((s) => s.id === spaceId);
-  // attention (arc 7): counted lazily when the sheet opens; the avatar
-  // dot says "somewhere ELSE needs you" without opening anything
+  // the avatar dot says "somewhere ELSE needs you"; attention is counted lazily when the sheet opens
   const attention = useAttentionMap(open);
   const otherDot = useOtherSpacesDot();
 
@@ -107,7 +99,6 @@ export function SpaceSwitcher() {
                 </span>
                 {space.id === spaceId && <span className="block text-xs text-accent-deep">{t('space.active')}</span>}
               </span>
-              {/* what this space would ask of you (arc 7) */}
               {(attention?.get(space.id)?.reviewCount ?? 0) > 0 && (
                 <span
                   data-testid={`space-attn-${space.id}`}
@@ -123,8 +114,7 @@ export function SpaceSwitcher() {
             </button>
           ))}
           <div className="mt-1 flex flex-col border-t border-line-2 pt-2">
-            {/* #577: always here, so the bar may drop its Settings tab (not a
-                space-pick-* id: the tutorial reads those as space rows) */}
+            {/* #577: always here (the bar may drop Settings); not a space-pick-* id, the tutorial reads those as space rows */}
             <button
               data-testid="space-switcher-settings"
               onClick={() => {

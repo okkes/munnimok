@@ -32,7 +32,6 @@ describe('manifestForm — a manifest becomes a form', () => {
     expect(steps[0].labelKey).toBe('connect.step.settings');
     expect(steps[0].fields[0]).toMatchObject({ key: 'country', type: 'select', options: ['NL', 'DE'], labelKey: 'connect.lidl.country' });
     expect(steps[1].fields.map((f) => f.key)).toEqual(['username', 'password']);
-    // a remote-browser login asks nothing: the human signs in on the party's page
     expect(formSteps(manifestOf({ auth: { ...manifestOf().auth, flow: 'remote_browser', steps: [] } }))).toEqual([]);
   });
 
@@ -92,10 +91,8 @@ describe('manifestForm — a manifest becomes a form', () => {
     });
     const provided = appProvidedConfig('https://app.example');
     expect(provided).toEqual({ return_url: 'https://app.example/gc-callback' });
-    // the form asks the country only; without the app's answer it would ask the return address too
     expect(formSteps(manifest, provided)[0].fields.map((f) => f.key)).toEqual(['country']);
     expect(formSteps(manifest)[0].fields.map((f) => f.key)).toEqual(['return_url', 'country']);
-    // a manifest whose whole config is answered by the app has no settings step at all
     expect(formSteps(manifestOf({ auth: { ...manifestOf().auth, config: [manifest.auth.config[0]] } }), provided).map((s) => s.id)).toEqual(['credentials']);
     expect(splitValues(manifest, { username: 'a', password: 'b', country: ' NL ' }, provided)).toEqual({
       inputs: { username: 'a', password: 'b' },

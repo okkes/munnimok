@@ -70,14 +70,12 @@ function profileMetaCopy(me: {
   return {
     name: me.displayName ?? '',
     picture: me.picture ?? undefined,
-    // country and display currency ride along — the refresh used to
-    // overwrite the meta copy WITHOUT them, silently dropping both
+    // country and display currency ride along: the refresh once overwrote the copy without them
     country: me.country ?? undefined,
     displayCurrency: me.displayCurrency ?? undefined,
   };
 }
 
-/** /me → screen state, refreshing the local Settings-header copy on the way */
 async function fetchUserProfile(
   store: ReturnType<typeof useData>['store'],
 ): Promise<{ name: string; picture: string | null; userId: string; country: string | null; displayCurrency: string | null } | null> {
@@ -90,8 +88,7 @@ async function fetchUserProfile(
     country: string | null;
     displayCurrency: string | null;
   };
-  // keep the local copy in step with the server — an avatar changed on
-  // another device or a reinstall lands here
+  // keeps the local copy in step with the server: an avatar changed elsewhere lands here
   const copy = profileMetaCopy(me);
   if (copy) await store.metaPut(PROFILE_META_KEY, copy);
   return {
@@ -120,8 +117,6 @@ interface LoadedProfileState {
   displayCurrency: string | null;
 }
 
-/** the screen's initial values per identity kind: server truth for
- *  signed-in users, the device copy for offline/demo */
 async function loadProfileState(
   identity: { kind: string; profileId?: string } | null,
   store: ReturnType<typeof useData>['store'],
@@ -149,11 +144,7 @@ async function loadProfileState(
   };
 }
 
-/**
- * Who you are: display name + avatar (shared with friends/space members
- * for signed-in users), your user id and login email. Demo and offline
- * identities keep everything on the device.
- */
+// signed-in: name + avatar are shared with friends/space members; demo and offline identities stay on the device
 export function ProfileScreen() {
   const { t, lang } = useLang();
   const { store } = useData();
@@ -170,26 +161,20 @@ export function ProfileScreen() {
   const [saved, setSaved] = useState(false);
   const [refused, setRefused] = useState(false);
   const [copied, setCopied] = useState(false);
-  // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
-  // #307: which stage of the deletion runs (server erase → device wipe)
   const [deletePhase, setDeletePhase] = useState<'server' | 'local' | null>(null);
   const [deleteError, setDeleteError] = useState(false);
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  // #160: desktop-only webcam door beside the upload button
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
   const navigate = useNavigate();
   const logout = useSession((s) => s.logout);
 
-  // full account deletion (account-deletion design; Apple 5.1.1(v)):
-  // the server erases everything, then the device forgets the identity.
-  // #307 (user): the wait is narrated per stage — the server erase is
-  // the slow one — and the sheet refuses dismissal while it runs
+  // account deletion (Apple 5.1.1(v)): the server erases everything, then the device forgets the identity (#307)
   const deleteAccount = async () => {
     const current = identity;
     if (current?.kind !== 'user') return;
@@ -212,8 +197,7 @@ export function ProfileScreen() {
     try {
       await destroyIdentityData(current);
     } catch (err) {
-      // #363: the server side is gone; the device copy is not — say so
-      // (the next sign-in's binding check wipes it, but the user should know)
+      // #363: the server side is gone but the device copy is not: say so (the next sign-in's binding check wipes it)
       console.error('local wipe failed', err);
       setDeleteBusy(false);
       setDeletePhase(null);
@@ -223,10 +207,7 @@ export function ProfileScreen() {
     await navigate({ to: '/login' });
   };
 
-  // offline mirror of deleteAccount (user ruling 2026-07-29: the delete
-  // lives HERE, consistent with the online account — not on the chooser):
-  // sign out first so the DataProvider closes the store, then the
-  // profile helper erases the database, lock config and registry row
+  // offline mirror: the delete lives HERE, not on the chooser; sign out first so the DataProvider closes the store
   const deleteOfflineData = async () => {
     const current = identity;
     if (current?.kind !== 'offline') return;
@@ -246,7 +227,6 @@ export function ProfileScreen() {
 
   const { pick: pickPhoto, sheet: pictureSheet } = usePictureSource((file) => void onPhotoPicked(file), () => fileRef.current?.click());
 
-  // load current values per identity kind
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -257,7 +237,6 @@ export function ProfileScreen() {
       if (loaded.userId) setUserId(loaded.userId);
       if (loaded.country) setCountry(loaded.country);
       setDisplayCurrency(loaded.displayCurrency);
-      // #164: the loaded snapshot is the discard-guard baseline
       baselineRef.current = JSON.stringify([
         loaded.name,
         loaded.picture ?? null,
@@ -293,7 +272,6 @@ export function ProfileScreen() {
     } else if (identity?.kind === 'offline') {
       updateOfflineProfile(identity.profileId, { name: name.trim(), picture });
     }
-    // local copy for instant display everywhere (all identity kinds)
     await store.metaPut(PROFILE_META_KEY, {
       name: name.trim(),
       picture,
@@ -301,7 +279,6 @@ export function ProfileScreen() {
       displayCurrency: displayCurrency ?? undefined,
     } satisfies LocalProfile);
     setPredictionCountry(country);
-    // #164: a save makes the draft the new baseline — leaving is clean
     baselineRef.current = JSON.stringify([name, picture ?? null, country ?? null, displayCurrency ?? null]);
     setAttempted(false);
     setSaved(true);
@@ -329,7 +306,6 @@ export function ProfileScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col items-center gap-1.5 py-5">
           <Avatar picture={picture} size={72} />
-          {/* the name under the preview gives the selection context */}
           {name.trim() && (
             <span className="text-[14px] font-medium text-ink" data-testid="profile-preview-name">
               {name.trim()}
@@ -370,11 +346,9 @@ export function ProfileScreen() {
             data-testid="profile-photo-upload"
             onClick={pickPhoto}
           >
-            {/* #146 r2: upload wears the upload glyph — webcam keeps the camera */}
             <Icon name="upload-outline" size={16} />
             {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
           </Button>
-          {/* #160: desktop webcam snapshot beside the upload */}
           {webcamDoor && (
             <Button variant="outline" size="sm" data-testid="profile-photo-webcam" onClick={() => setWebcamOpen(true)}>
               <Icon name="camera-outline" size={16} />
@@ -392,11 +366,8 @@ export function ProfileScreen() {
           aria-invalid={attempted && !name.trim()}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
-        {/* #195 r2 (user): the blocker sits AT the field */}
         <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="profile-save-blocker" className="mt-1 px-1" />
 
-        {/* country of use — changeable later (user request); tunes the
-            category predictor, explained by the info line */}
         <div className="m-cap mt-5 mb-1 px-1">{t('onboarding.countryLabel')}</div>
         <button
           data-testid="profile-country"
@@ -427,8 +398,7 @@ export function ProfileScreen() {
           ))}
         </Sheet>
 
-        {/* display currency (currency plan CD3): a personal rendering
-            lens — every conversion shows ≈, the data never changes */}
+        {/* display currency is a rendering lens: every conversion shows ≈, the data never changes */}
         <div className="m-cap mt-5 mb-1 px-1">{t('profile.displayCurrency')}</div>
         <button
           data-testid="profile-display-currency"
@@ -511,10 +481,8 @@ export function ProfileScreen() {
         )}
         {identity?.kind === 'user' && <EmailLoader onEmail={setEmail} sub={identity.sub} />}
 
-        {/* identity-level danger zone (user request: these belong to the
-            PROFILE, not app settings) — always last on the screen */}
-        {/* logged-in devices moved to Global settings (#159): they are an
-            app-wide concern, not an identity act */}
+        {/* identity-level danger zone belongs to the PROFILE, not app settings; always last */}
+        {/* logged-in devices live in Global settings (#159) */}
         {identity?.kind === 'user' && (
           <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
             <Row
@@ -558,7 +526,6 @@ export function ProfileScreen() {
         )}
       </div>
 
-      {/* #160: snapshot feeds the same downscale path as the file input */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onPhotoPicked(file)} />
 
       <DangerConfirmSheet
@@ -570,10 +537,7 @@ export function ProfileScreen() {
         testId="offline-delete"
       />
 
-      {/* the point of no return: everything the design promises, spelled
-          out, then a typed confirmation — no accidental taps. #307: while
-          the deletion runs the sheet locks (busyNote) and narrates the
-          stage instead of leaving the user staring at a dimmed button */}
+      {/* typed confirmation; #307: while deleting, the sheet locks (busyNote) and narrates the stage */}
       <Sheet
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
@@ -620,11 +584,7 @@ export function ProfileScreen() {
   );
 }
 
-/**
- * Offline profiles have no rate feed (zero network by design) — they
- * pin a manual rate per currency pair instead (currency plan CD2). One
- * input per currency this device actually holds accounts in.
- */
+// offline profiles have no rate feed (zero network by design): they pin a manual rate per currency pair
 function ManualRatesEditor({ display }: Readonly<{ display: string }>) {
   const { t } = useLang();
   const { store } = useData();
@@ -664,7 +624,6 @@ function ManualRatesEditor({ display }: Readonly<{ display: string }>) {
   );
 }
 
-/** resolves the login email from the OIDC id token (or the test subject) */
 function EmailLoader({ onEmail, sub }: { onEmail: (email: string) => void; sub: string }) {
   useEffect(() => {
     if (!logtoConfigured) onEmail(sub);

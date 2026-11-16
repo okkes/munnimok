@@ -8,15 +8,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// What a failed job does to its session (prod 2026-10-08): a failure that
-/// is the session's — the provider no longer honours it — asks the person
-/// to sign in again; a block stops it; everything else is a fact about the
-/// run, not about the session, and a working session stays usable. Before
-/// this, a party's budget refusal ended a valid consent for good, the
-/// reconnect made a second session beside it, and the two burnt the budget
-/// between them night after night.
-/// </summary>
+// a failure that is the session's own asks for sign-in, a block stops it, anything else is about the run
+// a party's budget refusal once ended a valid consent, and the reconnect's second session burnt the budget nightly
 [Collection(ShopApiCollection.Name)]
 public sealed class SessionOutcomeTests(ShopApiFactory factory)
 {
@@ -83,13 +76,11 @@ public sealed class SessionOutcomeTests(ShopApiFactory factory)
         var connection = await Flows.ConnectAsync(http, Provider, Flows.NewSubject("budget"), Credentials);
         var ticket = await Flows.ResumeAsync(http, Provider, connection);
 
-        // the party's budget refuses the fetch: the caller hears rate_limited...
         await RefusedAsync(http, $"/v1/{Provider}/receipts?since=2026-01-01", ticket);
         var job = Db.LatestJob(factory, connection.SessionId);
         Assert.Equal(JobState.Failed, job.State);
         Assert.Equal(ErrorCode.RateLimited, job.ErrorCode);
 
-        // ...and the session is still the person's: active, and the same bundle opens it again
         var view = await Flows.ReadSessionAsync(http, Provider, connection.SessionId);
         Assert.Equal("active", view.Text("state"));
         var again = await Flows.ResumeAsync(http, Provider, connection);
@@ -97,7 +88,7 @@ public sealed class SessionOutcomeTests(ShopApiFactory factory)
         Assert.Single(page.GetProperty("data").EnumerateArray());
     }
 
-    /// <summary>A fetch refused inside its window answers 429 at once; one the window outran fails as a job the caller polls. Both are the same refusal.</summary>
+    /// a fetch refused inside its window answers 429 at once; one the window outran fails as a polled job: the same refusal
     private static async Task RefusedAsync(HttpClient http, string url, string ticket)
     {
         using var response = await Flows.FetchAsync(http, url, ticket);

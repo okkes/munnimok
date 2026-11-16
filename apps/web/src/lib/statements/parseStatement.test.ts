@@ -45,12 +45,12 @@ describe('parseStatement — ING current account', () => {
     expect(stmt.entries).toHaveLength(5);
 
     const salary = stmt.entries.find((e) => e.counterpartyName === 'Werkgever BV')!;
-    expect(salary.amountCents).toBe(220_000); // "Bij" = credit
+    expect(salary.amountCents).toBe(220_000);
     expect(salary.date).toBe('2026-06-30');
     expect(salary.counterpartyIban).toBe('NL00WERK0000000001');
 
     const flowers = stmt.entries.find((e) => e.counterpartyName === 'Mw A Voorbeeld')!;
-    expect(flowers.amountCents).toBe(-185); // "Af" = debit
+    expect(flowers.amountCents).toBe(-185);
     expect(flowers.description).toContain('Online bankieren');
   });
 
@@ -59,8 +59,8 @@ describe('parseStatement — ING current account', () => {
     const [b] = parseStatement(ING_CURRENT);
     const dupes = a.entries.filter((e) => e.counterpartyName === 'Albert Heijn');
     expect(dupes).toHaveLength(2);
-    expect(dupes[0].ref).not.toBe(dupes[1].ref); // ordinal disambiguates
-    expect(a.entries.map((e) => e.ref)).toEqual(b.entries.map((e) => e.ref)); // stable across parses
+    expect(dupes[0].ref).not.toBe(dupes[1].ref);
+    expect(a.entries.map((e) => e.ref)).toEqual(b.entries.map((e) => e.ref));
   });
 });
 
@@ -70,8 +70,8 @@ describe('parseStatement — ING savings', () => {
     expect(stmt.accountType).toBe('savings');
     expect(stmt.accountName).toBe('Oranje Spaarrekening');
     expect(stmt.iban).toBe('V 286-81505');
-    expect(stmt.closingBalanceCents).toBe(150_920); // newest row's saldo
-    expect(stmt.balanceAsOf).toBe('2026-01-01'); // …and the day it was true
+    expect(stmt.closingBalanceCents).toBe(150_920);
+    expect(stmt.balanceAsOf).toBe('2026-01-01');
     const withdrawal = stmt.entries.find((e) => e.amountCents < 0)!;
     expect(withdrawal.amountCents).toBe(-150_000);
     expect(withdrawal.counterpartyIban).toBe('NL74INGB0001029507');
@@ -103,7 +103,7 @@ describe('parseStatement — ING credit card', () => {
   it('keys the account on the masked card number; charges negative', () => {
     const [stmt] = parseStatement(ING_CREDIT, 'Creditcard_210034322508_x.csv');
     expect(stmt.accountType).toBe('credit');
-    expect(stmt.iban).toBe('52487201'); // normalized masked card
+    expect(stmt.iban).toBe('52487201');
     const charge = stmt.entries.find((e) => e.counterpartyName === 'IKEA s Gravenhage')!;
     expect(charge.amountCents).toBe(-24_918);
     const repayment = stmt.entries.find((e) => e.counterpartyName === 'AFLOSSING')!;
@@ -126,7 +126,6 @@ describe('parseStatement — detection', () => {
 
 describe('detectStatementKind (#226 r2)', () => {
   it('names every format family without parsing', () => {
-    // all three ING sub-shapes fold into one family
     expect(detectStatementKind(ING_CURRENT)).toBe('ing');
     expect(detectStatementKind(ING_SAVINGS)).toBe('ing');
     expect(detectStatementKind(ING_CREDIT, 'Creditcard_210034322508_x.csv')).toBe('ing');
@@ -242,13 +241,11 @@ describe('parseStatement — PayPal activity export', () => {
     row('19/06/2026', '', 'Bank Deposit to PP Account ', 'Pending', 'EUR', '43,67', '', '', 'TX5', '43,67', 'Credit'),
     row('19/06/2026', '', 'General Currency Conversion', 'Completed', 'EUR', '-43,67', '', '', 'TX6', '0,00', 'Debit'),
     row('19/06/2026', '', 'General Currency Conversion', 'Completed', 'USD', '48,00', '', '', 'TX7', '0,00', 'Credit'),
-    // money received stays positive and keeps its sender
     row('24/06/2026', 'A Friend', 'General Payment', 'Completed', 'EUR', '12,50', 'friend@example.com', ME, 'TX8', '12,50', 'Credit'),
   ].join('\n');
 
   it('imports only real payments, converts foreign charges, keys one synthetic account', () => {
     const [stmt] = parseStatement(PAYPAL);
-    // one stable IBAN-less account per PayPal login
     expect(stmt.iban).toBe('PAYPALMEEXAMPLECOM');
     expect(stmt.accountName).toBe(`PayPal ${ME}`);
     expect(stmt.currency).toBe('EUR');
@@ -258,14 +255,12 @@ describe('parseStatement — PayPal activity export', () => {
     expect(music.amountCents).toBe(-2300);
     expect(music.counterpartyName).toBe('Acme Music');
     expect(music.description).toContain('Music Plus');
-    // the USD charge imports at its EUR settlement cost, original noted
     expect(octo.amountCents).toBe(-4367);
     expect(octo.currency).toBe('EUR');
     expect(octo.description).toContain('48.00 USD');
     expect(friend.amountCents).toBe(1250);
     expect(friend.counterpartyName).toBe('A Friend');
 
-    // newest EUR running balance becomes the closing balance
     expect(stmt.closingBalanceCents).toBe(1250);
     expect(stmt.balanceAsOf).toBe('2026-06-24');
   });

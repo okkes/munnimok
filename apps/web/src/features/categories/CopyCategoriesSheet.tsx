@@ -16,7 +16,7 @@ import type { Cat } from './useCategories';
 
 const idsOf = (group: CopyGroup): string[] => [...(group.main ? [group.main.id] : []), ...group.subs.map((sub) => sub.id)];
 
-/** a group's tick: a main this space lacks reads full only with every sub along; a group joining a main here, by its subs */
+/** a main this space lacks reads full only with every sub along; a group joining a main here reads by its subs */
 function groupTick(group: CopyGroup, picked: ReadonlySet<string>): TickState {
   const subsIn = group.subs.filter((sub) => picked.has(sub.id)).length;
   if (group.main && !picked.has(group.main.id)) return 'off';
@@ -27,7 +27,6 @@ function groupTick(group: CopyGroup, picked: ReadonlySet<string>): TickState {
 /** a row labels a native checkbox that wears the house tick and lends the row its focus ring (m-focus-card) */
 const rowClass = 'm-tap m-focus-card relative flex w-full items-center gap-3 border-none bg-transparent py-2.5 pr-3 text-left';
 
-/** one main of one other space: its own row (a main this space lacks, or the main here its subs join) and every sub a pick of its own */
 function CopyGroupRows({
   group,
   into,
@@ -39,7 +38,6 @@ function CopyGroupRows({
   onDecline,
 }: Readonly<{
   group: CopyGroup;
-  /** the main here the subs join */
   into: Cat | null;
   first: boolean;
   picked: ReadonlySet<string>;
@@ -53,7 +51,7 @@ function CopyGroupRows({
   const tick = groupTick(group, picked);
   return (
     <div className={first ? '' : 'border-t border-line'}>
-      {/* #390 r4 (user): "no, I'm not interested" per main — beside the row, not inside its label */}
+      {/* #390 r4: "not interested" per main sits beside the row, not inside its label */}
       <div className="flex items-center">
         <label className={`${rowClass} min-w-0 flex-1 pl-3`}>
           <input
@@ -106,12 +104,7 @@ function CopyGroupRows({
   );
 }
 
-/**
- * #390 (user): copy custom categories from the person's other spaces — per
- * space and per main, every sub on its own row to tick (r2: "I would also
- * like to see the sub categories"). A main this space lacks comes along
- * when ticked (a sub needs it); subs whose main is here already join it.
- */
+// #390: a main this space lacks comes along when ticked (a sub needs it); subs whose main is here join it
 export function CopyCategoriesSheet({
   open,
   onOpenChange,

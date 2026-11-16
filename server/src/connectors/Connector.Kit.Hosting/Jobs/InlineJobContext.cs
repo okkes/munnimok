@@ -12,14 +12,7 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// The adapter's window onto an in-process run.
-///
-/// Every operation takes its own service scope. An adapter may report
-/// progress from anywhere and await a challenge for minutes, and a shared
-/// <c>DbContext</c> would be used concurrently the first time an adapter did
-/// something reasonable.
-/// </summary>
+// every operation takes its own service scope: a shared DbContext would be used concurrently by an adapter
 internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 {
     private readonly IServiceScopeFactory _scopes;
@@ -34,25 +27,10 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
     private int _found = -1;
     private JobStep _lastStep = JobStep.AgentAssigned;
 
-    /// <summary>One progress write: the step, and the count known when it was written.</summary>
     private readonly record struct ProgressTick(JobStep Step, int? Found);
 
-    /// <summary>
-    /// The adapter's own diagnostics, logged AND kept for the caller.
-    /// </summary>
-    /// <remarks>
-    /// This used to inherit the interface's do-nothing default, which meant an
-    /// adapter running inline - anything whose manifest does not require an
-    /// agent - had its notes dropped before they reached even a log. Same
-    /// bound and same order as the agent's; see
-    /// <c>AgentJobContext.Note</c>.
-    /// <para>
-    /// Nothing is scrubbed here because nothing has to be: the inline runner
-    /// is in-process with the control plane, the secret values never left it,
-    /// and the notes are stored beside inputs that are already sealed. The
-    /// agent scrubs because its notes cross a wire.
-    /// </para>
-    /// </remarks>
+    // notes are logged and kept for the caller; nothing scrubbed because inline secrets never leave the process
+    // (an agent scrubs: its notes cross a wire)
     public void Note(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return;
@@ -65,7 +43,6 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         }
     }
 
-    /// <summary>What the adapter said, in the order it said it.</summary>
     public IReadOnlyList<string> Notes
     {
         get
@@ -127,11 +104,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 
     public string WorkDirectory { get; }
 
-    // IJobContext.Attended is left at its false default on purpose, not by
-    // omission. An inline run has no browser at all - see NoBrowserLease - so
-    // there is no window for anyone to reach, whatever hardware the control
-    // plane happens to be on. An adapter that meets an interactive widget here
-    // has to fail with blocked_by_provider; there is nothing to hand over.
+    // Attended stays false on purpose: an inline run has no browser, so an interactive widget must fail with blocked_by_provider
 
     public void Progress(JobStep step) => _progress.Writer.TryWrite(new ProgressTick(step, Counted()));
 
@@ -149,15 +122,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         return found < 0 ? null : found;
     }
 
-    /// <summary>
-    /// Blocks until the latch is durable, and that is the point.
-    ///
-    /// An adapter calls this immediately around the moment a credential goes
-    /// upstream. If the write were fire-and-forget and the process died in
-    /// between, the job would look retryable and the retry would submit the
-    /// same credential a second time - which is how accounts get locked. A
-    /// few milliseconds on a thread is a cheap price for that not happening.
-    /// </summary>
+    // blocks until the latch is durable: fire-and-forget plus a crash would leave the job retryable and resubmit the credential
     public void CredentialSubmitted()
     {
         if (_credentialSubmitted) return;
@@ -173,11 +138,6 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         }, CancellationToken.None).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    /// The single call that implements the whole challenge protocol from an
-    /// adapter's point of view: hand over a typed question, get back the
-    /// human's answer, or a clean failure when nobody answered in time.
-    /// </summary>
     public async Task<ChallengeAnswer> AskAsync(Challenge challenge, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(challenge);
@@ -193,8 +153,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
             Image = challenge.Image,
         }, ct);
 
-        // Named, so this waits for the answer to ITS question rather than to
-        // whichever is newest.
+        // named, so it waits for the answer to ITS question, not the newest
         var window = challenge.ExpiresAt - DateTimeOffset.UtcNow;
         var answer = await challenges.AwaitAnswerAsync(JobId, window, ct, raised.Id);
 
@@ -204,15 +163,8 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 
     public IReadOnlyList<JobStep> StepsDone => Snapshot();
 
-    /// <summary>
-    /// Closes the progress channel and waits for every report already in it
-    /// to reach the row. The runner calls this before it records the outcome:
-    /// the queue discards a report that arrives after the job has gone
-    /// terminal - rightly, a straggler must not resurrect a finished job - so
-    /// an outcome recorded first erased the last steps of any run that
-    /// finished faster than its own reports. Safe to call more than once; the
-    /// agent runtime flushes the same way before it posts a result.
-    /// </summary>
+    // the runner calls this before recording the outcome: the queue discards progress arriving after terminal state,
+    // which erased the last steps of fast runs
     public async Task FlushProgressAsync()
     {
         _progress.Writer.TryComplete();
@@ -223,7 +175,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            // The run was cancelled; unreported progress is not worth a fuss.
+            // cancelled run: unreported progress is not worth a fuss
         }
     }
 
@@ -250,10 +202,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         lock (_stepsLock) return [.. _stepsDone];
     }
 
-    /// <summary>
-    /// Drains progress on one writer, so an adapter that reports from a loop
-    /// cannot turn typed progress into a write storm or a concurrent context.
-    /// </summary>
+    // one writer, so an adapter reporting from a loop cannot cause a write storm or a concurrent context
     private async Task PumpProgressAsync(CancellationToken ct)
     {
         await foreach (var tick in _progress.Reader.ReadAllAsync(ct).ConfigureAwait(false))
@@ -286,14 +235,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
     }
 }
 
-/// <summary>
-/// The browser an inline provider does not have.
-///
-/// Reaching for one is not a runtime accident to be recovered from - it means
-/// a manifest declares <c>http</c> while its adapter drives a page, which the
-/// validator would have caught if the manifest were honest. Failing loudly
-/// here is how that gets found.
-/// </summary>
+// reaching for a browser means a manifest declares http while its adapter drives a page; failing loudly is how that is found
 internal sealed class NoBrowserLease(string providerId) : IBrowserLease
 {
     public bool Started => false;

@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 import { gestureBelongsToContent } from './Sheet';
 
-/** a sheet body with one child, returns [body, child] */
 function bodyWith(html: string): [HTMLElement, HTMLElement] {
   const body = document.createElement('div');
   body.innerHTML = html;

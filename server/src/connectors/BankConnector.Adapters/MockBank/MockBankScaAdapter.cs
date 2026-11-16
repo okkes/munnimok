@@ -7,16 +7,8 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// T3: strong authentication on every login, in two challenges.
-///
-/// First a <see cref="ChallengeType.CodeDisplay"/> - the one case where the
-/// code travels OUTWARD, from us to the human, who keys it into a device
-/// and reads back what it returns. Then a passive
-/// <see cref="ChallengeType.AppApproval"/>, where nothing is typed and we
-/// simply wait for the human to act somewhere we cannot observe. Between
-/// them they cover both halves of the challenge protocol.
-/// </summary>
+// T3: strong authentication on every login, in two challenges: CodeDisplay (the code travels outward to the human),
+// then a passive AppApproval
 public sealed class MockBankScaAdapter : MockBankAdapter
 {
     public const string ProviderId = "mock-bank-sca";
@@ -33,10 +25,8 @@ public sealed class MockBankScaAdapter : MockBankAdapter
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserInteractive,
         Agent = MockBankManifests.ResidentialPooled,
-        // Strong authentication every login means a human is needed by
-        // definition, which in turn is why custody is client and the vault
-        // is not offered: storing a secret that cannot be used without a
-        // human present is pure risk for zero feature.
+        // a human is needed every login, so custody is client and no vault: storing a secret unusable without a human is
+        // risk for nothing
         UnattendedFetch = false,
         SecretCustody = SecretCustody.Client,
         WebSupport = WebSupport.Ephemeral,
@@ -83,13 +73,8 @@ public sealed class MockBankScaAdapter : MockBankAdapter
         return Connected(ctx, new SessionMaterial { StorageState = MockBankCredentials.StorageState }, TtlSeconds);
     }
 
-    /// <summary>
-    /// A T3 provider re-authenticates whenever its session is stale, so a
-    /// fetch can stop to ask a question too. It only does so when the
-    /// material carries no browser session: reusing the stored storage state
-    /// is what turns T3 into T2-in-practice for most of a session's life,
-    /// and skipping the challenge when it is present is the point.
-    /// </summary>
+    // asks only when the material has no browser session: reusing the stored storage state makes T3 behave like T2
+    // for most of a session
     public override async Task<FetchResult> FetchAsync(IJobContext ctx, ResourceRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ctx);
@@ -115,9 +100,7 @@ public sealed class MockBankScaAdapter : MockBankAdapter
             Type = ChallengeType.CodeDisplay,
             PromptKey = "connect.mock_bank.challenge.code_display",
             Code = MockBankCredentials.DisplayedCode,
-            // Mandatory, and short. A challenge holds a live browser
-            // hostage; a stale one has to fail cleanly and release the agent
-            // rather than pinning it for the whole job timeout.
+            // short and mandatory: a challenge holds a live browser, so a stale one must fail cleanly and release the agent
             ExpiresAt = Time.GetUtcNow().AddMinutes(3),
         }, ct).ConfigureAwait(false);
 
@@ -128,8 +111,7 @@ public sealed class MockBankScaAdapter : MockBankAdapter
 
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // Passive: the human approves in an app and there is nothing to
-        // type, so the answer's value is empty by design.
+        // passive: nothing to type, so the answer's value is empty by design
         _ = await ctx.AskAsync(new Challenge
         {
             Type = ChallengeType.AppApproval,

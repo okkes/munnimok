@@ -1,22 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
-/**
- * Pointer-driven row reorder for the customize screens, v3. The pressed
- * row hides, a floating GHOST follows the finger, the other rows slide
- * out of the way, and on release the ghost SETTLES into its slot before
- * the move commits (user request — the instant snap left "did it land
- * where I wanted?" doubt).
- *
- * Engine notes (all three learned from device runs, user ss 2026-07-28):
- * - listeners live on WINDOW while a drag is live — element-scoped
- *   events died with pointer capture the moment the browser reclaimed
- *   the gesture, freezing the ghost mid-screen (iOS + Android);
- * - row rects are CACHED at drag start — a rect read per row per move
- *   forced layout on every event and melted mobile main threads;
- * - the ghost is positioned imperatively — React state changes only
- *   when the hovered slot changes, never per move.
- */
+// the ghost settles into its slot before the move commits: an instant snap left doubt whether it landed right
+// listeners live on window: element events died with pointer capture once the browser reclaimed the gesture (iOS, Android)
+// row rects are cached at drag start (a rect read per row per move melted mobile main threads); the ghost moves imperatively
 interface DragState {
   from: number;
   over: number;
@@ -27,22 +14,16 @@ type Rect = { top: number; bottom: number; left: number; width: number; height: 
 
 export interface DragReorder {
   drag: { from: number; over: number } | null;
-  /** mount-time rect for the floating clone; `top` is driven
-   *  imperatively afterwards (per-frame follow + settle) */
   ghostRect: { left: number; width: number; height: number } | null;
   setRowRef: (index: number) => (el: HTMLElement | null) => void;
   setGhostRef: (el: HTMLDivElement | null) => void;
-  /** slide/fade styling for row `index` while a drag is live */
   rowStyle: (index: number) => CSSProperties;
-  /** spread onto the drag handle of row `index` */
   handleProps: (index: number) => {
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
     style: { touchAction: 'none' };
   };
 }
 
-/** keep long lists draggable end-to-end: nudge the nearest scrollable
- *  ancestor while the pointer rides the viewport edges */
 function findScrollParent(anchor: HTMLElement | null): HTMLElement | null {
   let node: HTMLElement | null = anchor;
   while (node && node !== document.body) {
@@ -116,8 +97,6 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
       settling.current = true;
       const el = ghostEl.current;
       if (el) {
-        // the vacated slot's viewport top: rows between origin and the
-        // hovered slot are slid one row-height toward the hole
         let target = rects.current[current.from]?.top ?? 0;
         if (commit && current.over !== current.from) {
           target =
@@ -125,9 +104,7 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
               ? (rects.current[current.over]?.bottom ?? 0) - current.height
               : (rects.current[current.over]?.top ?? 0);
         }
-        // the ghost doesn't just land — it DRESSES DOWN into a plain row
-        // while settling, so the accent border/shadow never pops off
-        // abruptly at the end (user request)
+        // the ghost dresses down into a plain row while settling, so its accent border/shadow never pops off
         el.style.transition = `top ${SETTLE_MS}ms ease, background-color ${SETTLE_MS}ms ease, border-color ${SETTLE_MS}ms ease, box-shadow ${SETTLE_MS}ms ease`;
         el.style.top = `${target}px`;
         el.style.backgroundColor = 'var(--m-bg)';
@@ -154,8 +131,7 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
       if (ev.cancelable) ev.preventDefault();
     };
 
-    // holding still near an edge must keep scrolling — hence a rAF loop;
-    // the cached rects shift WITH the content so slot math stays honest
+    // a rAF loop: holding still near an edge keeps scrolling; the cached rects shift with the content
     let raf = requestAnimationFrame(function tick() {
       if (scroller && !settling.current) {
         const rect = scroller.getBoundingClientRect();
@@ -211,10 +187,7 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
     style: { touchAction: 'none' as const },
   });
 
-  // rows between the origin and the hovered slot slide one row-height
-  // toward the hole; the origin row stays put but HIDES entirely — at
-  // 0.3 opacity its text shone through the row sliding over it and the
-  // list read as glitched (user ss)
+  // the origin row hides entirely: at 0.3 opacity its text shone through the row sliding over it
   const rowStyle = (index: number): CSSProperties => {
     if (!drag) return { transition: 'transform 160ms ease' };
     const base: CSSProperties = { transition: 'transform 160ms ease' };

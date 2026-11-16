@@ -10,14 +10,8 @@ import type { Lang } from '@/i18n';
 
 const LANGS: readonly Lang[] = ['en', 'nl', 'tr'];
 
-/**
- * Low-budget alerts (budgets design P4). The server never learns about
- * budgets, so the evaluation runs on the device: the service worker
- * calls this right after a bank-push pre-sync, and the app calls it once
- * per open for manually typed spending. One notification per budget per
- * period, marked in the shared meta table so the two paths never
- * double-fire.
- */
+// the server never learns about budgets, so evaluation runs on the device: the service worker after a bank-push
+// pre-sync, the app once per open for typed spending; one alert per budget per period, marked in shared meta
 
 interface BudgetTexts {
   title: string;
@@ -50,7 +44,6 @@ export interface BudgetAlert {
   body: string;
   /** coalescing tag, unique per budget+period */
   tag: string;
-  /** hash route of the budget's detail screen */
   url: string;
 }
 
@@ -62,10 +55,6 @@ const localToday = (): string => {
 
 const markerKey = (budgetId: string, periodStart: string) => `budgetNotified_${budgetId}_${periodStart}`;
 
-/**
- * Budgets in `spaceId` that crossed their warn threshold and were not
- * announced this period yet. Stamps the marker for everything returned.
- */
 export async function collectBudgetAlerts(
   store: StorageBackend,
   spaceId: string,
@@ -79,8 +68,7 @@ export async function collectBudgetAlerts(
   );
   if (budgets.length === 0) return [];
 
-  // the space's VIEW (own rows + attached feeds, derived types) — the
-  // same rows the budgets screen counts
+  // the space's VIEW (own rows + attached feeds), the same rows the budgets screen counts
   const [allSpaces, allCategories, txs, space] = await Promise.all([
     store.allRows('space'),
     store.allRows('category'),
@@ -99,14 +87,13 @@ export async function collectBudgetAlerts(
     const status = budgetStatus(budget, txs, catalog, today, budgetOptsFor(space));
     if (status.ratio * 100 < (budget.notifyAtPct ?? 0)) continue;
     const key = markerKey(budget.id, status.period.start);
-    if (await store.metaGet(key)) continue; // one alert per budget per period
+    if (await store.metaGet(key)) continue;
     await store.metaPut(key, Date.now());
     const over = status.ratio > 1;
     const body = over
       ? texts.over.replace('{name}', budget.name).replace('{amount}', fmtCents(-status.leftCents, currency, safeLang))
       : texts.warn.replace('{name}', budget.name).replace('{pct}', String(Math.round(status.ratio * 100)));
     alerts.push({
-      // #551: the space it happened in is the title, and the tap opens the budget in that space
       title: space?.name?.trim() || texts.title,
       body,
       tag: `budget-${budget.id}-${status.period.start}`,
@@ -116,7 +103,6 @@ export async function collectBudgetAlerts(
   return alerts;
 }
 
-/** worker entry: resolve the mirrored session's database, then collect */
 export async function evaluateBudgetAlertsFromWorker(spaceId: string | undefined, lang: string): Promise<BudgetAlert[]> {
   if (!spaceId) return [];
   const session = await readSwSession();

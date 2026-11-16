@@ -3,7 +3,6 @@ using System.Text;
 
 namespace BankConnector.Adapters.Tests.Support;
 
-/// <summary>One request as the adapter sent it, for the assertions to read.</summary>
 internal sealed record RecordedRequest(
     HttpMethod Method,
     Uri Uri,
@@ -63,7 +62,6 @@ internal static class Stub
     }
 }
 
-/// <summary>A clock that stands still, so tokens, consents and windows are asserted against known instants.</summary>
 internal sealed class FixedTime(DateTimeOffset now) : TimeProvider
 {
     public DateTimeOffset Now { get; set; } = now;

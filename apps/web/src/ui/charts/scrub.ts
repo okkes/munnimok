@@ -10,8 +10,7 @@ export function scrubKeyTarget(key: string, current: number, count: number): num
   return undefined;
 }
 
-/** how far across the chart the pointer is, 0…1 — happy-dom lays nothing
- *  out, so a zero-width box reads as the left edge */
+/** 0…1 across the chart; happy-dom lays nothing out, so a zero-width box reads as the left edge */
 export function pointerFraction(e: PointerEvent<SVGSVGElement>): number {
   const rect = e.currentTarget.getBoundingClientRect();
   const fraction = rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0;

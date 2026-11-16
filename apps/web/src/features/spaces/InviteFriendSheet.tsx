@@ -5,7 +5,7 @@ import type { SpaceRole } from './SpaceSharing';
 // picker order (#171): the default first, the powerful role last
 const PICKER_ROLES: SpaceRole[] = ['contributor', 'reader', 'owner'];
 
-/** #171: the shared three-role control (invite flow, member sheet, new-person block) */
+/** #171: shared by the invite flow, the member sheet and the new-person block */
 export function RolePicker({
   value,
   onChange,

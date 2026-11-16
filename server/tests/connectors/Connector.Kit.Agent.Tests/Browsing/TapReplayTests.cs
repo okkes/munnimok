@@ -4,13 +4,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// Where a relayed tap lands, and everything that must NOT be clicked.
-///
-/// These are the tests that stand between a human tapping a captcha tile on
-/// their phone and this agent clicking somewhere else on a live login page. The
-/// arithmetic is one line; every other test here is about a refusal.
-/// </summary>
+/// stands between a tap on a captcha tile and a click elsewhere on a live login page;
+/// the arithmetic is one line, the rest are refusals
 public class TapReplayTests
 {
     private static readonly byte[] Png = [0x89, (byte)'P', (byte)'N', (byte)'G'];
@@ -32,9 +27,7 @@ public class TapReplayTests
     [Fact]
     public async Task A_region_at_an_offset_carries_its_origin_into_every_tap()
     {
-        // The bug this exists to catch: a mapping that forgets the crop's
-        // origin produces perfectly valid coordinates that click the top-left
-        // of the viewport instead of the captcha.
+        // a mapping that forgets the crop origin gives valid coordinates that click the viewport's top-left
         var pointer = new RecordingPointer();
         var capture = RegionCapture.Of(Png, new CropRegion(120, 340, 300, 180));
 
@@ -62,8 +55,7 @@ public class TapReplayTests
     [Fact]
     public async Task Taps_are_replayed_in_the_order_the_human_made_them()
     {
-        // Some grids ask for tiles in sequence, and the order is information
-        // the client already had and cannot be recovered once dropped.
+        // some grids ask for tiles in sequence; the order is information that cannot be recovered once dropped
         var pointer = new RecordingPointer();
         var capture = RegionCapture.Of(Png, new CropRegion(0, 0, 100, 100));
 
@@ -102,8 +94,7 @@ public class TapReplayTests
     [Fact]
     public async Task An_answer_with_no_taps_clicks_nothing()
     {
-        // A legal answer: "tap.v1:" is an answer that contains no taps, not a
-        // missing one, and it must not be turned into a click somewhere.
+        // "tap.v1:" is a legal answer with no taps, not a missing one: it must not become a click
         Assert.True(TapAnswer.TryParse("tap.v1:", out var answer));
 
         var pointer = new RecordingPointer();
@@ -118,8 +109,7 @@ public class TapReplayTests
     [Fact]
     public async Task A_refused_capture_produces_no_clicks()
     {
-        // The redactor's refusal arriving at the mouse. No image ever left this
-        // machine, so nobody saw anything, so nothing here is an answer to it.
+        // the redactor's refusal at the mouse: no image left this machine, so nothing here answers it
         var pointer = new RecordingPointer();
 
         var clicks = await ReplayAsync(pointer, RegionCapture.Refused, [new Tap(0.5, 0.5)]);
@@ -131,9 +121,7 @@ public class TapReplayTests
     [Fact]
     public void A_refusal_is_not_a_black_image()
     {
-        // Masking and refusing are different outcomes and must not be confused:
-        // a masked capture is a real PNG with a real box that a human can still
-        // answer around, and a refusal has no bytes at all.
+        // masking and refusing differ: a masked capture is a real PNG with a box a human can answer around, a refusal has no bytes
         var refused = RegionCapture.Refused;
         Assert.False(refused.Captured);
         Assert.Empty(refused.Png);
@@ -148,18 +136,14 @@ public class TapReplayTests
     [Fact]
     public async Task A_coordinate_outside_the_image_never_becomes_a_tap()
     {
-        // Rejected at the two places it could arrive, both of them before any
-        // page pixel is computed: the type refuses to hold it, and the parser
-        // refuses to produce one. What reaches the mouse is only ever a
-        // fraction of the picture the human was actually shown.
+        // rejected before any page pixel is computed: the type refuses to hold it, the parser refuses to produce one
         Assert.Throws<ArgumentOutOfRangeException>(() => new Tap(1.5, 0.5));
         Assert.Throws<ArgumentOutOfRangeException>(() => new Tap(0.5, -0.01));
         Assert.Throws<ArgumentOutOfRangeException>(() => new Tap(double.NaN, 0.5));
 
         Assert.False(TapAnswer.TryParse("tap.v1:1.5,0.5", out _));
 
-        // And a consumer that ignored answer_kind and sent typed text is simply
-        // not a tap answer, so nothing is clicked.
+        // a consumer that ignored answer_kind and sent typed text is not a tap answer
         Assert.False(TapAnswer.TryParse("7Gk2p", out var typed));
         Assert.Null(typed);
 
@@ -171,9 +155,7 @@ public class TapReplayTests
     [Fact]
     public async Task A_box_that_no_longer_fits_the_viewport_is_refused_whole()
     {
-        // The page scrolled or re-laid itself since the capture. The taps are
-        // answers to a picture of somewhere else, and the coordinates now point
-        // at whatever has moved underneath them.
+        // the page scrolled or re-laid out since the capture: the taps answer a picture of somewhere else
         var pointer = new RecordingPointer();
         var capture = RegionCapture.Of(Png, new CropRegion(700, 10, 400, 200));
 
@@ -228,8 +210,7 @@ public class TapReplayTests
     [Fact]
     public async Task A_lease_with_no_browser_photographs_nothing_and_clicks_nothing()
     {
-        // The real class, on the path a job takes when no browser was ever
-        // started: every answer is a refusal, and none of them is an error.
+        // no browser was ever started: every answer is a refusal, none an error
         await using var lease = new BrowserLease(
             new BrowserLeaseOptions(),
             new ScreenshotRedactor(TestRig.Manifest, NullLogger.Instance),

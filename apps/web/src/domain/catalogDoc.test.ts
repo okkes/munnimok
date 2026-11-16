@@ -26,7 +26,6 @@ describe('catalog document overlay (admin-catalog AC1)', () => {
     const groceries = merged.find((c) => c.id === 'groceries')!;
     expect(groceries.names).toEqual({ en: 'Food shops', nl: 'Eten', tr: 'Gıda' });
     expect(groceries.icon).toBe('cart');
-    // an untouched sibling keeps its bundled identity
     expect(merged.find((c) => c.id === 'salary')!.names).toBeUndefined();
   });
 
@@ -48,7 +47,6 @@ describe('catalog document overlay (admin-catalog AC1)', () => {
     const catalog = buildCatalog([], false, [], d);
     // still resolvable (old transactions render their name) …
     expect(catalog.byId('gift').id).toBe('gift');
-    // … but no longer offered anywhere
     expect(catalog.childrenOf(catalog.byId('gift').parentId!).some((c) => c.id === 'gift')).toBe(false);
     expect(tombstonedIds(d)).toEqual(['gift']);
   });
@@ -57,7 +55,6 @@ describe('catalog document overlay (admin-catalog AC1)', () => {
     const rules = [{ catId: 'hobby', keywords: ['padelbaan'] }];
     const padel = predictTx({ merchant: 'PADELBAAN AMSTERDAM', amountCents: -1500, keywordRules: rules });
     expect(padel?.catId).toBe('hobby');
-    // the bundled rules keep working alongside
     const groceries = predictTx({ merchant: 'albert heijn', amountCents: -1500, keywordRules: rules });
     expect(groceries?.catId).toBeTruthy();
   });

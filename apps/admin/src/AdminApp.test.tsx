@@ -41,7 +41,6 @@ const CATALOG = {
   keywords: [{ catId: 'hobby', keywords: ['padel'] }],
 };
 
-/** the invitations out on this environment — the magic links sign their people up */
 const INVITATIONS = {
   inviteOnly: true,
   invitations: [
@@ -50,7 +49,7 @@ const INVITATIONS = {
   ],
 };
 
-/** one connector session as the API details it (2026-10-09): a GoCardless consent the bank ended */
+/** one connector session as the API details it: a GoCardless consent the bank ended */
 const SESSION = {
   sessionId: 'ses_1',
   provider: 'gocardless',
@@ -83,7 +82,6 @@ const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /admin/invitations': () => ({ body: INVITATIONS }),
 });
 
-/** the clipboard as a test wants it: granted, or refused (an insecure origin, a denied permission) */
 function stubClipboard(writeText: (text: string) => Promise<void>) {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 }
@@ -120,7 +118,6 @@ describe('AdminApp (test-auth mode)', () => {
     await screen.findByText(/no admin access/);
     fireEvent.click(screen.getByTestId('admin-signout'));
     expect(signOut).toHaveBeenCalledTimes(1);
-    // the denied note carries its own Sign out — the fix it names is one tap away
     fireEvent.click(screen.getByTestId('admin-denied-signout'));
     expect(signOut).toHaveBeenCalledTimes(2);
   });
@@ -162,7 +159,7 @@ describe('AdminApp (test-auth mode)', () => {
     renderAdmin();
     const tiles = await screen.findByTestId('overview-tiles');
     expect(tiles.textContent).toContain('Users');
-    expect(tiles.textContent).toContain('3'); // 3 users
+    expect(tiles.textContent).toContain('3');
     expect(tiles.textContent).toContain('6'); // 2+1+3 space memberships
     expect(tiles.textContent).toContain('Bank feeds');
     expect(tiles.textContent).not.toContain('Linked banks');
@@ -207,17 +204,15 @@ describe('AdminApp (test-auth mode)', () => {
 
     fireEvent.click(screen.getByTestId('diagnose-sub-bob'));
     const panel = await screen.findByTestId('user-diagnosis');
-    // an older API without names: the ids stand in, grouped the same way (2026-10-09)
+    // an older API without names: the ids stand in
     await waitFor(() => expect(panel.textContent).toContain('space-main'));
     expect(screen.getByTestId('user-diagnosis-feeds').textContent).toContain('42');
     expect(screen.getByTestId('user-diagnosis-feeds').textContent).toContain('not attached to a space');
     expect(screen.getByTestId('user-diagnosis-attachments').textContent).toContain('No attachments');
 
-    // a dead call must not spin forever — it says what went wrong
     fireEvent.click(screen.getByTestId('diagnose-sub-carol'));
     await waitFor(() => expect(screen.getByTestId('user-diagnosis').textContent).toContain('HTTP 500'));
 
-    // the active screen survives the page reload a Logto re-auth causes
     expect(sessionStorage.getItem('munni_admin_screen')).toBe('users');
     cleanup();
     renderAdmin();
@@ -232,7 +227,6 @@ describe('AdminApp (test-auth mode)', () => {
     renderAdmin();
     fireEvent.click(await screen.findByTestId('nav-catalog'));
     await screen.findByTestId('catalog-cat-groceries');
-    // the publish button arms only with unpublished changes
     fireEvent.change(screen.getByTestId('catalog-store-ah'), { target: { value: 'albert heijn' } });
     fireEvent.click(screen.getByTestId('catalog-publish'));
     await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('must be arrays'));
@@ -278,7 +272,6 @@ describe('AdminApp (test-auth mode)', () => {
     const spaces = await screen.findByTestId('user-diagnosis-spaces');
     expect(spaces.textContent).toContain('Household');
     expect(spaces.textContent).toContain('owner');
-    // a feed membership is not a space: it sits under Feeds, attached to its space
     expect(spaces.textContent).not.toContain('feed-1');
     expect(screen.getByTestId('user-diagnosis-feeds').textContent).toContain('Household');
     const attachments = screen.getByTestId('user-diagnosis-attachments');
@@ -291,11 +284,9 @@ describe('AdminApp (test-auth mode)', () => {
     expect(sessions.textContent).toContain('needs_reauth');
     expect(sessions.textContent).toContain('session_expired');
     expect(screen.getByTestId('session-stale-ses_1')).toBeTruthy();
-    // the id stays reachable: short in the cell, whole on the title
     expect(sessions.textContent).toContain('conn-12345…');
     expect(screen.getByTestId('session-connection-ses_1').getAttribute('title')).toContain('conn-1234567890abcdef');
 
-    // Disconnect asks once, DELETEs, says what the party did and reads the diagnosis again
     fireEvent.click(screen.getByTestId('session-disconnect-ses_1'));
     fireEvent.click(await screen.findByTestId('session-disconnect-ses_1-yes'));
     await waitFor(() => expect(deleted).toBe(1));
@@ -351,11 +342,9 @@ describe('AdminApp (OIDC token mode)', () => {
     scriptFetch(HAPPY_ROUTES());
     renderAdmin();
     fireEvent.click(await screen.findByTestId('nav-catalog'));
-    // the published overlay renders
     await screen.findByTestId('catalog-cat-groceries');
     expect(screen.getByTestId('catalog-categories').textContent).toContain('Food shops');
 
-    // retiring demands the exact id before the button arms
     fireEvent.click(screen.getByTestId('catalog-delete-groceries'));
     const confirmBtn = screen.getByTestId('catalog-delete-confirm') as HTMLButtonElement;
     expect(confirmBtn.disabled).toBe(true);
@@ -363,7 +352,6 @@ describe('AdminApp (OIDC token mode)', () => {
     expect((screen.getByTestId('catalog-delete-confirm') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByTestId('catalog-delete-typed'), { target: { value: 'groceries' } });
     fireEvent.click(screen.getByTestId('catalog-delete-confirm'));
-    // tombstoned: struck through with a restore action
     expect(screen.getByTestId('catalog-restore-groceries')).toBeTruthy();
   });
 
@@ -373,27 +361,22 @@ describe('AdminApp (OIDC token mode)', () => {
     fireEvent.click(await screen.findByTestId('nav-catalog'));
     await screen.findByTestId('catalog-cat-groceries');
 
-    // the merged tree shows bundled mains; search narrows it
     expect(screen.getByTestId('catalog-row-transport')).toBeTruthy();
     fireEvent.change(screen.getByTestId('catalog-search'), { target: { value: 'transport' } });
     expect(screen.queryByTestId('catalog-row-housing')).toBeNull();
     expect(screen.getByTestId('catalog-row-transport')).toBeTruthy();
     fireEvent.change(screen.getByTestId('catalog-search'), { target: { value: '' } });
 
-    // a bundled-only category retires through a synthesized tombstone…
     fireEvent.click(screen.getByTestId('catalog-delete-transport'));
     fireEvent.change(screen.getByTestId('catalog-delete-typed'), { target: { value: 'transport' } });
     fireEvent.click(screen.getByTestId('catalog-delete-confirm'));
-    // the tombstone exists as a document entry and offers the restore action
     expect(screen.getByTestId('catalog-cat-transport')).toBeTruthy();
     expect(screen.getByTestId('catalog-restore-transport')).toBeTruthy();
 
-    // …and restoring it removes the synthetic entry (back to bundled-only)
     fireEvent.click(screen.getByTestId('catalog-restore-transport'));
     expect(screen.queryByTestId('catalog-cat-transport')).toBeNull();
     expect(screen.getByTestId('catalog-row-transport')).toBeTruthy();
 
-    // "+ sub" pre-fills the editor with the parent; rename pre-fills the id
     fireEvent.click(screen.getByTestId('catalog-addsub-transport'));
     expect((screen.getByTestId('catalog-new-parent') as HTMLInputElement).value).toBe('transport');
     fireEvent.click(screen.getByTestId('catalog-editor-cancel'));
@@ -414,8 +397,6 @@ describe('AdminApp (OIDC token mode)', () => {
     fireEvent.click(await screen.findByTestId('nav-catalog'));
     await screen.findByTestId('catalog-cat-groceries');
 
-    // a new category entry (all three languages required) — the editor
-    // panel opens from the tree toolbar (catalog redesign)
     fireEvent.click(screen.getByTestId('catalog-add-main'));
     fireEvent.change(screen.getByTestId('catalog-new-id'), { target: { value: 'padelClub' } });
     fireEvent.change(screen.getByTestId('catalog-new-parent'), { target: { value: 'hobby' } });
@@ -426,12 +407,10 @@ describe('AdminApp (OIDC token mode)', () => {
     fireEvent.click(screen.getByTestId('catalog-add-category'));
     await screen.findByTestId('catalog-cat-padelClub');
 
-    // a keyword rule
     fireEvent.change(screen.getByTestId('catalog-kw-cat'), { target: { value: 'padelClub' } });
     fireEvent.change(screen.getByTestId('catalog-kw-words'), { target: { value: 'Padelbaan, PADEL CLUB' } });
     fireEvent.click(screen.getByTestId('catalog-add-keyword'));
 
-    // store merchant patterns (receipts v3 R9) publish alongside
     fireEvent.change(screen.getByTestId('catalog-store-ah'), { target: { value: 'albert heijn, AH to go' } });
 
     fireEvent.click(screen.getByTestId('catalog-publish'));
@@ -453,7 +432,6 @@ describe('AdminApp (invitations)', () => {
     sessionStorage.clear();
   });
 
-  /** the screen open — its list (and with it the mode line) lands on the first reload */
   const openInvitations = async () => {
     renderAdmin();
     fireEvent.click(await screen.findByTestId('nav-invitations'));
@@ -469,7 +447,6 @@ describe('AdminApp (invitations)', () => {
     expect((screen.getByTestId('invite-link-inv-1') as HTMLInputElement).value).toBe('https://app.test/invite/one');
     expect(screen.getByTestId('invite-mode').textContent).toContain('by invitation');
 
-    // an environment with open registration says so — the links still work there
     cleanup();
     scriptFetch({ ...HAPPY_ROUTES(), 'GET /admin/invitations': () => ({ body: { ...INVITATIONS, inviteOnly: false } }) });
     await openInvitations();
@@ -491,7 +468,6 @@ describe('AdminApp (invitations)', () => {
     await openInvitations();
     await screen.findByTestId('invite-row-inv-1');
 
-    // the button arms only for something that reads as an address
     fireEvent.change(screen.getByTestId('invite-email'), { target: { value: 'fay' } });
     expect((screen.getByTestId('invite-send') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByTestId('invite-email'), { target: { value: 'Fay@X.nl' } });
@@ -502,7 +478,6 @@ describe('AdminApp (invitations)', () => {
     expect(link.value).toBe('https://app.test/invite/three');
     expect(screen.getByText(/Send this link to the person yourself/)).toBeTruthy();
     expect((screen.getByTestId('invite-email') as HTMLInputElement).value).toBe('');
-    // the list reloads after the mint
     const post = calls.indexOf('POST /admin/invitations');
     expect(calls.indexOf('GET /admin/invitations', post)).toBeGreaterThan(post);
 
@@ -570,7 +545,6 @@ describe('AdminApp (invitations)', () => {
   });
 });
 
-/** the Bank connections dashboard (user 2026-10-09): every open-banking consent across users, with a disconnect */
 describe('AdminApp (bank connections)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -606,11 +580,9 @@ describe('AdminApp (bank connections)', () => {
     expect(screen.getByTestId('bank-connections-user-sub-bob').textContent).toContain('Enable Banking');
     expect(screen.getByTestId('bank-connections-tiles').textContent).toContain('Stale');
 
-    // every party: the list is asked again with ?all=true
     fireEvent.click(screen.getByTestId('bank-connections-all'));
     await waitFor(() => expect(asked).toContain('true'));
 
-    // the filter narrows by user or party
     fireEvent.change(await screen.findByTestId('bank-connections-search'), { target: { value: 'enable' } });
     await waitFor(() => expect(screen.queryByTestId('bank-connections-user-sub-alice')).toBeNull());
     expect(screen.getByTestId('bank-connections-user-sub-bob')).toBeTruthy();
@@ -635,7 +607,6 @@ describe('AdminApp (bank connections)', () => {
     fireEvent.click(await screen.findByTestId('nav-bank-connections'));
     await screen.findByTestId('bank-connections-user-sub-bob');
 
-    // one row: the question, a way back, then the call and the outcome in the strip
     fireEvent.click(screen.getByTestId('session-disconnect-ses_b1'));
     expect(screen.getByTestId('session-disconnect-ses_b1-confirm').textContent).toContain('End it at the party');
     fireEvent.click(screen.getByTestId('session-disconnect-ses_b1-no'));
@@ -647,7 +618,6 @@ describe('AdminApp (bank connections)', () => {
     expect((await screen.findByTestId('admin-notice')).textContent).toContain('Enable Banking');
     await waitFor(() => expect(screen.queryByTestId('bank-connections-user-sub-bob')).toBeNull());
 
-    // the stale rows of Alice in one go — the live one stays
     fireEvent.click(screen.getByTestId('bank-connections-cleanup-sub-alice'));
     fireEvent.click(await screen.findByTestId('bank-connections-cleanup-sub-alice-yes'));
     await waitFor(() => expect(deleted).toEqual(['ses_b1', 'ses_a2', 'ses_a3']));
@@ -698,7 +668,6 @@ describe('AdminApp (picture search, #521)', () => {
     const save = screen.getByTestId('image-search-save') as HTMLButtonElement;
     expect(save.disabled).toBe(true); // nothing changed yet
 
-    // not a number of searches: said at the field, and not sent
     fireEvent.change(screen.getByTestId('image-search-limit'), { target: { value: '0' } });
     expect(screen.getByTestId('image-search-invalid')).toBeTruthy();
     expect(save.disabled).toBe(true);
@@ -708,7 +677,6 @@ describe('AdminApp (picture search, #521)', () => {
     await waitFor(() => expect(screen.getByTestId('image-search-current').textContent).toContain('20 a day'));
     expect(bodies).toEqual(['{"dailyPerUser":20}']);
 
-    // emptied again: no limit
     fireEvent.change(screen.getByTestId('image-search-limit'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('image-search-save'));
     await waitFor(() => expect(screen.getByTestId('image-search-current').textContent).toContain('no limit'));
@@ -733,7 +701,6 @@ describe('AdminApp (picture search, #521)', () => {
     expect(screen.getByTestId('image-search-off').textContent).toContain('no Brave Search key');
     expect(screen.queryByTestId('image-search-month')).toBeNull();
 
-    // an older API: the screen says why instead of showing an empty form
     cleanup();
     scriptFetch(HAPPY_ROUTES());
     renderAdmin();
@@ -773,7 +740,6 @@ describe('AdminApp (receipt reading, #567)', () => {
     const save = screen.getByTestId('receipt-reading-save') as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
-    // the cheap model, five a day, no cap on the month
     fireEvent.change(screen.getByTestId('receipt-reading-model'), { target: { value: 'claude-haiku-5-5' } });
     fireEvent.change(screen.getByTestId('receipt-reading-daily'), { target: { value: 'many' } });
     expect(screen.getByTestId('receipt-reading-invalid')).toBeTruthy();

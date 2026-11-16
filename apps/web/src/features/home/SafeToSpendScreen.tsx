@@ -20,7 +20,6 @@ import { Sheet } from '@/ui/Sheet';
 import { TickBox, enterToggles } from '@/ui/TickBox';
 import { safeToSpendColor, useSafeToSpend } from './useSafeToSpend';
 
-/** the planner's own names for what it holds (#541: "segments from the planner tool") */
 const SET_ASIDE_LABEL: Record<SpendSetAside, TranslationKey> = {
   goals: 'plan.segment.goals',
   events: 'plan.segment.events',
@@ -33,13 +32,7 @@ const DUES_COLOR = 'var(--m-warning)';
 const SET_ASIDE_COLOR = 'var(--m-info)';
 const SAFE_COLOR = 'var(--m-accent)';
 
-/**
- * Safe to spend's own screen (#541, user 2026-11-16: "a dedicated screen",
- * the figure said once): nothing in the number is magic — the accounts
- * summed, every due that comes off with its date, the plan's set-asides as
- * switches. The accounts and the switches are space settings; every member
- * reads the same number.
- */
+// the accounts and the set-aside switches are space settings: every member reads the same number
 export function SafeToSpendScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -101,7 +94,6 @@ function Breakdown({
   fmtDate: (iso: string) => string;
   /** a balance-built figure: stars while the device hides them, a dash without accounts */
   safe: (cents: number) => string;
-  /** an amount that comes off */
   off: (cents: number) => string;
   hidden: boolean;
   canEdit: boolean;
@@ -215,7 +207,6 @@ function Breakdown({
   );
 }
 
-/** how the balance divides into what is due, what is kept aside and what is free */
 function ShareBar({ forecast }: Readonly<{ forecast: SafeToSpend }>) {
   const free = Math.max(0, forecast.cents);
   const total = Math.max(1, forecast.dueCents + forecast.setAsideCents + free);
@@ -238,7 +229,7 @@ function Legend({ color, text }: Readonly<{ color: string; text: string }>) {
   );
 }
 
-/** a captioned card, the way every list screen groups its rows; the dot ties a card to its share of the bar */
+/** the dot ties a card to its share of the bar */
 function Section({ caption, hint, dot, action, children }: Readonly<{ caption: string; hint?: string; dot?: string; action?: ReactNode; children: ReactNode }>) {
   return (
     <>
@@ -253,7 +244,6 @@ function Section({ caption, hint, dot, action, children }: Readonly<{ caption: s
   );
 }
 
-/** a card's own total */
 function SumRow({ label, amount, testId }: Readonly<{ label: string; amount: string; testId: string }>) {
   return (
     <div className="flex items-baseline justify-between gap-3 bg-bg-2 px-4 py-2.5 text-[13px]">
@@ -265,7 +255,6 @@ function SumRow({ label, amount, testId }: Readonly<{ label: string; amount: str
   );
 }
 
-/** one due and why it comes off: what it is and when — a tap opens its own screen */
 function DueRow({ due, currency, fmtDate }: Readonly<{ due: SpendDue; currency: string; fmtDate: (iso: string) => string }>) {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -288,7 +277,6 @@ function DueRow({ due, currency, fmtDate }: Readonly<{ due: SpendDue; currency: 
   );
 }
 
-/** the house switch at row density */
 function Switch({ on, label, testId, onToggle }: Readonly<{ on: boolean; label: string; testId: string; onToggle: () => void }>) {
   return (
     <button

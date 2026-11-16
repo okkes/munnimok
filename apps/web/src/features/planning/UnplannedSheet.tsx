@@ -22,17 +22,12 @@ import { SEGMENT_META, UNPLANNED_SEGMENT } from './planningUi';
 
 type UnplannedSource = Exclude<UnplannedRow, { kind: 'category' }>;
 
-/** the amount pill of an unplanned row: spent for money that left, put aside for what a goal was given (user 2026-10-09) */
 export function unplannedAmount(row: UnplannedRow, t: TFunc, fmt: MoneyFmt, currency: string): string {
   const amount = fmt(row.cents, currency);
   return row.kind === 'goal' ? t('plan.unplannedSaved', { amount }) : t('plan.unplannedSpent', { amount });
 }
 
-/**
- * A row funded for this period only (#494) reads like a subject: red while
- * the money given falls short of what it spent, green once it covers it.
- * Unfunded, it stays the plain red amount of money nothing answers for.
- */
+// funded for this period only (#494): red while the money given falls short of what it spent, green once it covers it
 export function unplannedPill(row: UnplannedRow, t: TFunc, fmt: MoneyFmt, currency: string): { tone: Tone; text: string } {
   const funded = row.fundedCents ?? 0;
   if (funded <= 0) return { tone: 'negative', text: unplannedAmount(row, t, fmt, currency) };
@@ -40,7 +35,7 @@ export function unplannedPill(row: UnplannedRow, t: TFunc, fmt: MoneyFmt, curren
   return { tone: 'accent', text: t('plan.oneOff.funded', { amount: fmt(funded, currency) }) };
 }
 
-/** #494 (user 2026-10-14): money for this row for this period only — it never becomes a subject, so next period it is gone */
+/** #494: money for this row for this period only; never becomes a subject, so next period it is gone */
 function OneOffFunding({
   row,
   model,
@@ -95,7 +90,6 @@ function OneOffFunding({
   );
 }
 
-/** the category kind: what it spent by sub, the funding for this period, and Plan it — the editor filled in with that spending as the target */
 function CategoryBody({
   row,
   fmt,
@@ -134,12 +128,7 @@ function CategoryBody({
   );
 }
 
-/**
- * A source kind (user 2026-10-09): what the recurring cost, loan or goal
- * took this period, and Plan it — the mirrored subject added as it is, no
- * editor; the hint says which segment takes it and that the money already
- * spent is counted there (the head does not move).
- */
+// the hint says which segment takes it and that the money already spent is counted there (the head does not move)
 function SourceBody({
   row,
   model,
@@ -184,14 +173,7 @@ function SourceBody({
   );
 }
 
-/**
- * An unplanned row opened: what it spent (a main by sub), the money for this
- * period only (#494, user 2026-10-14: "a one time payment I don't want in the
- * plan that impacts the future") and Plan it — the editor filled in with the
- * spending as the target for a main, the mirrored subject straight away for
- * a source (user 2026-10-09). Planning it takes the period's money along.
- * The previous period moves money only, so it funds but does not plan.
- */
+// the previous period moves money only, so it funds but does not plan; planning takes the period's money along
 export function UnplannedSheet({
   row,
   model,

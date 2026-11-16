@@ -12,7 +12,6 @@ describe('connectorReturn — what the return page needs, written down before th
     rememberReturn(pending);
     expect(pendingReturnFor('REF-1')).toMatchObject(pending);
     expect(pendingReturnFor('REF-1')?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    // another party's reference is not this return; a query without one gets the only return there is
     expect(pendingReturnFor('REF-2')).toBeNull();
     expect(pendingReturnFor(null)).toMatchObject(pending);
     forgetReturn();

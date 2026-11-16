@@ -2,15 +2,7 @@ using Connector.Kit.Errors;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// What an adapter SAYS, and where it ends up.
-///
-/// Notes used to go to the agent's logger and stop there. That put every
-/// explanation of an outcome - "this pass is partial", "your savings account
-/// could not be listed", "the provider states no balance for this card" - on
-/// whichever machine happened to run the job, while the person looking at the
-/// result saw a blank and had no way to ask why.
-/// </summary>
+// notes once stopped at the agent's logger: the person looking at the result saw a blank and could not ask why
 public class JobNoteTests
 {
     private static ScriptedAdapter Saying(params string[] notes) =>
@@ -30,16 +22,7 @@ public class JobNoteTests
         Assert.Equal(["first thing", "second thing"], rig.Control.Result!.Notes);
     }
 
-    /// <summary>
-    /// A note is free text an adapter assembled, and it is about to cross a
-    /// wire and land in a database.
-    /// </summary>
-    /// <remarks>
-    /// SCRUBBED ON THE WAY IN, exactly as failure detail already is. An
-    /// adapter that quotes what it sent, or a provider library that echoes a
-    /// request body into a message an adapter then notes, is an ordinary thing
-    /// - and before this the note went out whole.
-    /// </remarks>
+    // a note is free text about to cross a wire into a database: scrubbed like failure detail
     [Fact]
     public async Task A_note_that_carries_a_credential_loses_it_before_it_leaves()
     {
@@ -54,10 +37,7 @@ public class JobNoteTests
         Assert.Contains("the form was submitted with", note, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A FAILED run is where the notes matter most, and it is the path that
-    /// carries no records to explain themselves.
-    /// </summary>
+    // a failed run carries no records to explain itself, so its notes matter most
     [Fact]
     public async Task What_the_adapter_said_before_it_failed_travels_with_the_failure()
     {
@@ -75,15 +55,7 @@ public class JobNoteTests
         Assert.Equal(["the account list came back with one account on it"], failure.Notes);
     }
 
-    /// <summary>
-    /// Bounded, because an adapter that notes per row would otherwise post a
-    /// fetch's worth of prose into a database column.
-    /// </summary>
-    /// <remarks>
-    /// The cap is silent by design: a note saying notes were dropped is itself
-    /// a note, and an adapter noisy enough to reach this has already said
-    /// everything anybody is going to read.
-    /// </remarks>
+    // bounded: an adapter noting per row would post a fetch's worth of prose; the cap is silent (a "dropped" note is a note)
     [Fact]
     public async Task A_runaway_adapter_cannot_post_an_unbounded_amount_of_prose()
     {
@@ -95,17 +67,12 @@ public class JobNoteTests
 
         Assert.Equal(40, notes.Count);
 
-        // The FIRST forty rather than the last: an adapter says what it found
-        // as it finds it, so the early ones are the ones that explain the run.
+        // the first forty, not the last: adapters say what they find as they find it, so early notes explain the run
         Assert.Equal("note 0", notes[0]);
         Assert.Equal("note 39", notes[^1]);
     }
 
-    /// <summary>
-    /// Blank notes are not notes. An adapter building a sentence out of
-    /// optional pieces can produce an empty one, and a list of blanks in a
-    /// consumer's UI is worse than no list.
-    /// </summary>
+    // blank notes are dropped: a list of blanks in a consumer's UI is worse than none
     [Fact]
     public async Task Nothing_is_carried_for_an_adapter_that_said_nothing()
     {

@@ -5,26 +5,19 @@ import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, gotoS
 // two-month attach history window (2026-09-06 incident)
 const CAMT_FIXTURE = freshCamtFixture();
 
-// Guide capture (npm run shots — never in CI): a shared bank feed across two
-// users — import, invite, the overlay that diverges per space, the archive on
-// leave (61-feed-share, 62-feed-archive). Needs deploy/docker-compose.test.yml.
+// guide capture (npm run shots, never in CI): 61-feed-share and 62-feed-archive; needs deploy/docker-compose.test.yml
 
-// the space-settings doors are gone (user remark: Settings is the one
-// place) — the Settings members row targets the ACTIVE space, so the
-// target space is activated from the spaces list first
+// the Settings members row targets the ACTIVE space: activate the target from the spaces list first
 async function gotoMembersOf(page, spaceName, { unlock = false } = {}) {
   await gotoSpaces(page);
   await page.locator(`[data-testid="screen-spaces"] button:has-text("${spaceName}")`).first().click();
-  // the check-circle badge appearing on the row = the switch settled
   await page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}") .mdi-check-circle`).waitFor();
   await page.click('[data-testid="tab-settings"]');
   await page.click('[data-testid="settings-space-members-row"]');
   await page.waitForSelector('[data-testid="space-members"]');
   if (unlock) {
-    // arc 4: spaces are born closed to invitations — the OWNER opens them.
-    // #391: the switch lives on the members page (owner-only row), no
-    // Settings detour anymore. Retried: the members section can re-render
-    // mid-tap and swallow the click.
+    // spaces are born closed to invitations: the owner opens them on the members page (#391); retried because
+    // the members section can re-render mid-tap and swallow the click
     const toggle = page.locator('[data-testid="space-invite-toggle"]');
     await toggle.waitFor({ timeout: 10000 });
     for (let attempt = 0; attempt < 4 && (await toggle.getAttribute('aria-checked')) !== 'true'; attempt++) {
@@ -45,7 +38,6 @@ for (const V of VARIANTS) {
     test.setTimeout(300_000);
     const run = Date.now();
 
-    // alice: fresh user, creates the shared space (becomes active)
     const alice = await createPage(browser, V);
     await base(alice.page, V, { userSub: `e2e-feedowner-${run}` });
     await gotoSpaces(alice.page);
@@ -54,9 +46,7 @@ for (const V of VARIANTS) {
     await alice.page.click('[data-testid="space-create-save"]');
     await alice.page.waitForTimeout(3000); // push
 
-    // alice imports a statement — the feed registers on the server but
-    // #204: nothing attaches by itself; the result offers the explicit
-    // attach flow where alice picks the account, type and history
+    // the feed registers on the server, but nothing attaches by itself (#204): the result offers the explicit attach flow
     await gotoGlobalSettings(alice.page);
     await alice.page.click('[data-testid="settings-accounts-row"]');
     await alice.page.setInputFiles('[data-testid="accounts-import-input"]', CAMT_FIXTURE);
@@ -66,25 +56,20 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="import-unattached-note"]')).toBeVisible();
     await alice.page.click('[data-testid="import-goto-attach"]');
     await alice.page.waitForSelector('[data-testid="screen-space-accounts"]', { timeout: 10000 });
-    // #310: the attach sheet auto-opens on arrival. This CAMT fixture
-    // imports TWO accounts, so the door can't know which one — the
-    // sheet lands on the pick list (a single import would land on the
-    // final step, `space-attach-focus`, covered by unit specs)
+    // #310: the attach sheet auto-opens; this fixture imports TWO accounts, so it lands on the pick list
+    // (a single import lands on the final step `space-attach-focus`, unit-tested)
     await alice.page.waitForSelector('[data-testid="space-attach-candidates"]', { timeout: 10000 });
     await alice.page.locator('[data-testid^="space-attach-pick-"]').first().click({ timeout: 10000 });
     await alice.page.click('[data-testid="space-attach-save"]');
     await alice.page.waitForTimeout(1500); // server attach + link mirror
     await gotoGlobalSettings(alice.page);
     await alice.page.click('[data-testid="settings-accounts-row"]');
-    // #227: the "via <space>" subtitle is gone — the attachment now
-    // echoes as an inert row under the space's own card, which mounts
-    // COLLAPSED since #314 r2 — open it before looking for the echo
+    // #227: the attachment echoes as an inert row under the space's card, which mounts collapsed (#314) — open it first
     await alice.page.locator('[data-testid^="accounts-space-head-"]', { hasText: 'Feed Home' }).click({ timeout: 15000 });
     await expect(alice.page.locator('[data-testid^="account-echo-"]').first()).toBeVisible({ timeout: 10000 });
     await shot(alice.page, k('61-feed-share') + '--s1');
     await alice.page.waitForTimeout(4000); // push feed rows + overlay
 
-    // bob: fresh user; alice friends him inline from the members section
     const bob = await createPage(browser, V);
     await base(bob.page, V, { userSub: `e2e-feedmember-${run}` });
     await gotoGlobalSettings(bob.page);
@@ -93,25 +78,20 @@ for (const V of VARIANTS) {
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
     await gotoMembersOf(alice.page, 'Feed Home', { unlock: true });
-    // #304: the request field lives inside the one invite sheet now
     await alice.page.click('[data-testid="space-members-add"]');
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
     await alice.page.click('[data-testid="space-addfriend-send"]');
     await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
-    // #304: the request field lives inside the invite SHEET — close it
-    // first, or its backdrop swallows the back tap below
+    // #304: the request field lives in the invite SHEET — close it first, or its backdrop swallows the back tap
     await alice.page.keyboard.press('Escape');
     await alice.page.waitForTimeout(500);
-    // #169: the members-screen request CARRIES the space — bob's accept
-    // makes him a member on the spot (no second invite, no banner) and
-    // the accept handler pulls the fresh space immediately
+    // #169: the members-screen request carries the space: bob's accept makes him a member at once and pulls the space
     await bob.page.click('[data-testid="friends-back"]');
     await bob.page.click('[data-testid="settings-friends-row"]');
     await bob.page.locator('[data-testid^="friends-accept-"]').click({ timeout: 10000 });
     await alice.page.click('[data-testid="spacemembers-back"]');
 
-    // bob makes the shared space active — and sees the FEED's
-    // transactions through derived access (raw + alice's overlay joined)
+    // bob sees the feed's transactions through derived access (raw + alice's overlay joined)
     await gotoSpaces(bob.page);
     await expect(bob.page.locator('[data-testid="screen-spaces"]')).toContainText('Feed Home', { timeout: 20000 });
     await bob.page.locator('[data-testid="screen-spaces"] button:has-text("Feed Home")').first().click();
@@ -121,7 +101,6 @@ for (const V of VARIANTS) {
     await expect(bob.page.locator('[data-testid="tx-list"]')).toContainText('Jumbo Amsterdam', { timeout: 25000 });
     await shot(bob.page, k('61-feed-share') + '--s2');
 
-    // bob recategorizes a feed transaction; the shared overlay reaches alice
     await bob.page.locator('[data-testid="tx-list"] button:has-text("Jumbo Amsterdam")').first().click();
     await bob.page.click('[data-testid="tx-detail-category-row"]');
     await bob.page.waitForSelector('[data-testid="part-cats-editor"]');
@@ -136,13 +115,10 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game', { timeout: 20000 });
     await shot(alice.page, k('61-feed-share'));
 
-    // #305: bob meets the shared account inside ITS space section. The
-    // echo wears the shared badge and answers with the READ-ONLY info
-    // sheet (facts, no owner levers: no rename, no detach, no delete)
+    // #305: the shared account's echo wears the shared badge and opens a READ-ONLY info sheet (no rename, detach, delete)
     await bob.page.click('[data-testid="tx-detail-back"]');
     await gotoGlobalSettings(bob.page);
     await bob.page.click('[data-testid="settings-accounts-row"]');
-    // #314 r2: the space card mounts collapsed — open Feed Home's first
     await bob.page.locator('[data-testid^="accounts-space-head-"]', { hasText: 'Feed Home' }).click({ timeout: 15000 });
     // the badge doubles as the ready signal: it appears once /me/feeds
     // answered and the entry classified as shared-with-me
@@ -156,10 +132,8 @@ for (const V of VARIANTS) {
     await bob.page.keyboard.press('Escape');
     await bob.page.waitForTimeout(600);
 
-    // alice (feed owner + attacher) leaves the space: bob keeps the shared
-    // history but the account freezes — the synced mirror row delivers the
-    // archived state onto the space-level echo (#305: the pill moved here
-    // from the retired shared section; bob's open screen updates live)
+    // alice (feed owner + attacher) leaves: bob keeps the history but the account freezes — the synced mirror row
+    // delivers the archived state onto the space-level echo (#305)
     await alice.page.click('[data-testid="tx-detail-back"]');
     await gotoMembersOf(alice.page, 'Feed Home');
     await alice.page.waitForSelector('[data-testid="space-leave"]');

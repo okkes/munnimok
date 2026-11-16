@@ -6,16 +6,8 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.ImportWatch;
 
-/// <summary>
-/// Watch-folder importer (user request): drop CAMT.053 exports — manual
-/// downloads, or a personal scraper container's output — into the
-/// configured folder and they ingest as raw FEED rows for the configured
-/// owner, exactly like a device-side import of the same file would
-/// (identical deterministic ids, so both paths dedupe against each
-/// other and against GoCardless). Processed files move to `processed/`,
-/// broken ones to `failed/`. Spaces attach the resulting account through
-/// the normal accounts UI.
-/// </summary>
+// CAMT.053 files dropped in the folder ingest as raw feed rows for the configured owner;
+// ids match the device import, so both dedupe
 public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfiguration config, ILogger<WatchFolderService> logger) : BackgroundService
 {
     /// <summary>poll cadence; tests shrink it</summary>
@@ -25,7 +17,7 @@ public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfi
     {
         var path = config["ImportWatch:Path"];
         var ownerSub = config["ImportWatch:OwnerSub"];
-        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(ownerSub)) return; // feature off
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(ownerSub)) return;
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("watch-folder importer active on {Path} for {OwnerSub}", path, ownerSub);
 
@@ -76,7 +68,6 @@ public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfi
     private static void Move(string file, string targetDir)
     {
         var target = Path.Combine(targetDir, Path.GetFileName(file));
-        // a re-dropped duplicate name gets a timestamp instead of an exception
         if (File.Exists(target))
             target = Path.Combine(targetDir, $"{Path.GetFileNameWithoutExtension(file)}-{DateTime.UtcNow.Ticks}{Path.GetExtension(file)}");
         File.Move(file, target);

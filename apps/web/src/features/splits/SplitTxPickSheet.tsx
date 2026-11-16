@@ -18,14 +18,8 @@ interface Found {
   spaceName: string;
 }
 
-/**
- * #538 (user): a payment from any of the person's spaces becomes a split
- * expense — searched across all of them by what it was, what it cost or
- * its day, narrowed to one space on a tap. The space's own view is read
- * (bank-fed and imported payments included). Only the person sees this
- * list; what lands in the split is a copy of title, amount and day, and
- * the next sheet asks who paid and who shares.
- */
+// reads the space's own view (bank-fed and imported payments included);
+// the split gets a copy of title, amount and day (#538)
 export function SplitTxPickSheet({
   open,
   onOpenChange,
@@ -36,7 +30,6 @@ export function SplitTxPickSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   splitId: string;
-  /** the payments this person already added to the split */
   taken: ReadonlySet<string>;
   onPick: (seed: EntrySeed) => void;
 }>) {

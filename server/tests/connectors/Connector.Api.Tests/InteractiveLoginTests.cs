@@ -13,21 +13,13 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// api-spec §2.2 and §8 steps 2-3: a login that stops to ask a human, and
-/// everything that follows from it.
-///
-/// This is the case the platform exists for. A connector that can only serve
-/// providers which never ask a question cannot serve the providers people
-/// actually use.
-/// </summary>
+// api-spec §2.2 and §8 steps 2-3: a login that stops to ask a human
 [Collection(ShopApiCollection.Name)]
 public sealed class InteractiveLoginTests(ShopApiFactory factory)
 {
     private const string Provider = MockStoreAdapters.Captcha;
     private const string CorrectAnswer = "MOCK1";
 
-    /// <summary>PNG's magic number. Bytes that survive the relay are bytes a consumer can render.</summary>
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>The closed progress vocabulary of api-spec §2.2. Typed, never prose.</summary>
@@ -44,10 +36,7 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
     public async Task A_captcha_login_relays_the_challenge_answers_it_and_ends_with_a_bundle()
     
     {
-        // Wrapped so that an intermittent failure carries the run with
-        // it. This test failed twice on 2026-08-12 and neither message
-        // was ever seen; see Postmortem for why that is the problem
-        // rather than the flake itself.
+        // wrapped so an intermittent failure carries its run with it: two flakes left no message (see Postmortem)
         string? sessionId = null;
 
         await Postmortem.WatchAsync(factory, () => sessionId, async () =>
@@ -55,8 +44,6 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
             using var http = factory.CreateAuthorizedClient();
             var subject = Flows.NewSubject("captcha");
 
-            // 1. The run stopped to ask something, and says so with a 202 rather
-            //    than holding a socket open for as long as a human takes.
             http.ActAs(subject);
             http.ActAs(subject);
         using var request = Wire.Post($"/v1/{Provider}/login", new { Subject = subject, Inputs = Credentials });
@@ -65,28 +52,12 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
 
             Assert.Equal(HttpStatusCode.Accepted, login.StatusCode);
 
-            // Every response that touched a provider says which contract answered.
             Assert.NotEmpty(Assert.Single(login.RawHeader(RequestContext.ManifestVersionHeader)));
 
             sessionId = accepted.Text("session_id");
 
-            // SETTLED BY POLLING, not by hoping the endpoint won the race.
-            //
-            // /login answers as soon as the session reaches something worth
-            // reporting, but it only waits Timeouts.LoginWaitSeconds for that - a
-            // bounded window, deliberately, because holding a socket open for a
-            // two-minute bank login helps nobody. A machine busy with something
-            // else can miss it, and then this response is a perfectly correct
-            // `running` with no challenge on it yet, and every assertion below
-            // fails on a run where nothing is wrong.
-            //
-            // That is the shape of the intermittent failure seen on 2026-08-12,
-            // twice, on a machine that was building containers at the time. It was
-            // never reproduced afterwards in twelve consecutive runs, so this is a
-            // race removed on the evidence of the code rather than a diagnosis
-            // proven from a captured failure - but the claim being made here was
-            // never about the scheduler. It is that a captcha login relays its
-            // challenge, gets an answer, and ends with a bundle.
+            // settled by polling: /login waits only Timeouts.LoginWaitSeconds, so a busy machine can answer a correct
+            // `running` with no challenge yet
             var awaiting = string.Equals(accepted.Text("state"), "awaiting_input", StringComparison.Ordinal)
                 ? accepted
                 : await Flows.AwaitStateAsync(http, Provider, sessionId, "awaiting_input");
@@ -101,16 +72,13 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
             Assert.Equal("image", challenge.Text("type"));
             Assert.Equal("connect.challenge.captcha", challenge.Text("prompt_key"));
 
-            // Mandatory: a challenge holds a live run hostage, so a consumer has to
-            // know when the question stops being answerable.
+            // mandatory: a challenge holds a live run hostage, so a consumer must know when it stops being answerable
             Assert.True(challenge.GetProperty("expires_at").TryGetDateTimeOffset(out var expiresAt));
             Assert.True(expiresAt > DateTimeOffset.UtcNow, "a challenge is raised with a future deadline");
 
-            // Progress is a member of a closed enum, so it can be translated and
-            // rendered instead of string-matched.
             Assert.Contains(awaiting.GetProperty("progress").Text("step"), LegalSteps);
 
-            // 2. The image is a separate authenticated fetch; it never rides the JSON.
+            // the image is a separate authenticated fetch; it never rides the JSON
             var imageUrl = challenge.Text("image_url");
             Assert.Equal($"/v1/{Provider}/login/{sessionId}/challenges/{challengeId}/image", imageUrl);
 
@@ -123,14 +91,12 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
                 Assert.Equal(PngSignature, bytes.Take(PngSignature.Length).ToArray());
             }
 
-            // 3. An answer naming a challenge this run never raised is refused
-            //    outright, rather than being handed to a waiting adapter.
+            // an answer naming a challenge this run never raised is refused outright
             using (var stray = await AnswerAsync(http, sessionId, "chl_0123456789abcdef0123456789abcdef", CorrectAnswer))
             {
                 await ErrorEnvelope.AssertAsync(stray, HttpStatusCode.BadRequest, "unsupported_resource");
             }
 
-            // 4. The human answers, and the run continues from where it stopped.
             using (var answer = await AnswerAsync(http, sessionId, challengeId, CorrectAnswer))
             {
                 Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
@@ -143,32 +109,22 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
             var settled = await Flows.AwaitStateAsync(http, Provider, sessionId, "active");
             Assert.Equal("Mock Store (captcha)", settled.GetProperty("provider_account").Text("display_name"));
 
-            // The bundle is handed over exactly once: a copy kept here would be a
-            // credential at rest with no reason to exist.
+            // the bundle is handed over once: a kept copy would be a credential at rest
             Assert.Null(settled.TextOrNull("bundle"));
 
-            // 5. A second answer for the same challenge conflicts rather than
-            //    confusing a run that already acted on the first.
+            // a second answer for the same challenge conflicts: the run already acted on the first
             using (var replay = await AnswerAsync(http, sessionId, challengeId, CorrectAnswer))
             {
                 await ErrorEnvelope.AssertAsync(replay, HttpStatusCode.Conflict);
             }
 
-            // 6. The picture served its purpose the instant it was answered.
             using (var image = await http.GetAsync(imageUrl))
             {
                 await ErrorEnvelope.AssertAsync(image, HttpStatusCode.Gone, "challenge_expired");
             }
 
-            // 7. And so did the answer, which was being kept like a diagnostic
-            //    and is nothing of the kind. Here it is a captcha solution, but
-            //    the same column carries an SMS code, and it carries the callback
-            //    URL of an OAuth redirect - which Lidl Plus declares Secret in as
-            //    many words, "the pasted address carries a live authorization
-            //    code... it buys the same access". The login inputs are gone at
-            //    terminal state and the picture goes on answer; this outlived
-            //    both, sitting in the table until the row was deleted a day after
-            //    expiry.
+            // the answer is cleared too: it can be an SMS code or an OAuth callback URL carrying a live authorization
+            // code (Lidl Plus declares it Secret); it outlived the inputs and the picture until the row was deleted
             var answers = Db.Read(factory, db => db.Challenges
                 .Where(c => c.Id == challengeId)
                 .Select(c => c.AnswerValue)
@@ -210,31 +166,8 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
         Assert.Null(job.InputsJson);
     }
 
-    /// <summary>
-    /// A SESSION PARKED ON A QUESTION IS NOT PUT BACK TO RUNNING.
-    /// </summary>
-    /// <remarks>
-    /// The login endpoint enqueued the job and marked the session running
-    /// afterwards, so a job that started immediately could raise its challenge
-    /// - moving the session to <c>awaiting_input</c> - before that write
-    /// landed. <c>awaiting_input</c> to <c>running</c> is a legal edge, so the
-    /// endpoint's write went through and put the session back.
-    /// <para>
-    /// What that leaves is a session reporting <c>running</c> while holding an
-    /// unanswered challenge and a progress step reading <c>awaiting_human</c>:
-    /// a consumer polling for state never learns it has to ask anybody
-    /// anything, and the login sits there until it expires. This is not
-    /// hypothetical - it is what an intermittent failure of the test above
-    /// finally printed when it was reproduced under load, after sixteen clean
-    /// runs said nothing was wrong.
-    /// </para>
-    /// <para>
-    /// The endpoint marks the session running before the job exists now, so the
-    /// race cannot occur. This asserts the guard that keeps it gone: the
-    /// transition is a no-op on a session that has already moved on, whichever
-    /// order those two lines end up in.
-    /// </para>
-    /// </remarks>
+    // the endpoint once marked the session running after enqueueing, so a fast job's awaiting_input was put back;
+    // the transition is now a no-op on a session that has moved on, in whichever order the two writes land
     [Fact]
     public async Task A_session_waiting_on_a_challenge_is_not_marked_running_again()
     {
@@ -247,7 +180,6 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
 
         var sessionId = (await login.JsonAsync()).Text("session_id");
 
-        // Genuinely parked on the question, rather than merely started.
         await Flows.AwaitStateAsync(http, Provider, sessionId, "awaiting_input");
 
         using var scope = factory.Services.CreateScope();
@@ -259,13 +191,10 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
 
         Assert.Equal(SessionState.AwaitingInput, row.State);
 
-        // The endpoint's own call, arriving late. It must do nothing.
         await sessions.StartAsync(row, CancellationToken.None);
 
         Assert.Equal(SessionState.AwaitingInput, row.State);
 
-        // And the consumer still sees a session that needs answering, which is
-        // the only thing any of this is for.
         var seen = await Flows.ReadSessionAsync(http, Provider, sessionId);
         Assert.Equal("awaiting_input", seen.Text("state"));
     }

@@ -5,7 +5,6 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>Which of its two encodings the screencast runs at.</summary>
 internal enum LiveTier
 {
     /// <summary>The pointer is moving: softer frames, because motion hides what a lower quality costs.</summary>
@@ -15,54 +14,12 @@ internal enum LiveTier
     Settled,
 }
 
-/// <summary>
-/// One picture the browser composited, and the size it covers. The size is
-/// the viewport in CSS pixels, read off the frame's own metadata, because
-/// every fraction the human sends back is multiplied by it.
-/// </summary>
+// the size is the viewport in CSS pixels from the frame's metadata: every fraction the human sends back is multiplied by it
 internal readonly record struct CastFrame(byte[] Jpeg, int Width, int Height, DateTimeOffset CapturedAt);
 
-/// <summary>
-/// Chromium's own screencast as the live view's camera (#429): the browser
-/// pushes a JPEG only when its compositor drew something new, instead of the
-/// agent taking a full screenshot on a timer.
-///
-/// <b>Every frame is acknowledged the moment it arrives.</b> Chromium keeps at
-/// most three unacknowledged and drops whatever it composites past that for
-/// good - measured: a change drawn while three were in flight never arrived,
-/// even after all three were acknowledged. So nothing waits on the uplink
-/// here; the newest picture replaces an older one still waiting, and the
-/// session posts whichever is newest when it is ready for one.
-///
-/// <b>A tier switch is a restart.</b> Stopping the screencast and starting it
-/// at the other quality delivers a fresh frame of the page as it is - 15 ms
-/// median, 20 runs of 20, measured - which is what makes "one sharp frame when
-/// the pointer settles" cheap, and what the heartbeat uses for a picture of a
-/// page that has not changed. Re-issuing the start alone is NOT enough: right
-/// after a frame it brought no fresh one in 7 runs of 20, and on a still page
-/// that is a view stuck at the wrong quality.
-///
-/// <b>Nothing of a page off the allowed origins leaves.</b> The live view's
-/// guarantees are not a mask - see <see cref="LiveViewSession"/> for why a
-/// streamed login is photographed whole - but the origin latch, and the
-/// latch is held here, at the source, as well as above: from the moment the
-/// main frame starts loading a document until its commit has been checked,
-/// every frame is dropped. A new document cannot paint before it commits, and
-/// its loading starts before its request is even sent, so no frame of a page
-/// the stream may not show can be in hand while the check is pending.
-///
-/// <b>The caret is steadied, not hidden.</b> A blinking caret is a new
-/// compositor frame twice a second for as long as a field has focus; an
-/// inspector stylesheet - invisible to the page's own scripts, which is
-/// where a login page that hunts for automation looks - sets
-/// <c>caret-animation: manual</c>, so the human sees where they type and a
-/// focused field sends nothing until it changes. Where it cannot be applied
-/// (a cross-origin frame, an older browser) the caret blinks, which costs
-/// bandwidth and nothing else.
-///
-/// Not thread-safe by design beyond the slot: one capture loop drives it,
-/// and the browser's events fill the slot under a lock.
-/// </summary>
+// ack each frame at once: Chromium drops frames past 3 unacknowledged for good; the newest replaces a waiting one
+// a tier switch is stop+start (fresh frame, ~15 ms median); re-issuing start alone brought none in 7 of 20 runs
+// frames drop from a main-frame load start until its commit is checked: the origin latch is held at the source too
 internal sealed class LiveScreencast : IAsyncDisposable
 {
     private const string SteadyCaret = "*{caret-animation:manual !important}";
@@ -85,9 +42,6 @@ internal sealed class LiveScreencast : IAsyncDisposable
     private int _superseded;
     private int _withheld;
 
-    /// <param name="isAllowed">Whether a URL is one the stream may photograph.</param>
-    /// <param name="onLeft">The main frame committed a document the stream may not photograph.</param>
-    /// <param name="onArrived">A picture is waiting; wakes whoever takes them.</param>
     public LiveScreencast(
         IPage page,
         LiveViewOptions options,
@@ -106,13 +60,10 @@ internal sealed class LiveScreencast : IAsyncDisposable
         _time = time;
     }
 
-    /// <summary>The tier the browser is encoding at now.</summary>
     public LiveTier Tier { get; private set; }
 
-    /// <summary>True once the browser's side went away - the page closed, the session detached.</summary>
     public bool Closed { get; private set; }
 
-    /// <summary>Whether a picture is waiting to be taken.</summary>
     public bool HasFrame
     {
         get
@@ -128,7 +79,6 @@ internal sealed class LiveScreencast : IAsyncDisposable
         var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
         _cdp = cdp;
 
-        // Subscribed before anything is enabled, so not one event is missed.
         cdp.Event("Page.screencastFrame").OnEvent += OnFrame;
         cdp.Event("Page.frameStartedLoading").OnEvent += OnStartedLoading;
         cdp.Event("Page.frameNavigated").OnEvent += OnNavigated;
@@ -140,16 +90,15 @@ internal sealed class LiveScreencast : IAsyncDisposable
         var root = tree is { } found ? found.Child("frameTree") : default;
         lock (_gate) _mainFrameId = root.Child("frame").Text("id");
 
-        // Before the first picture, so it already shows a steady caret rather
-        // than drawing a second frame the moment the rule lands. A page that
-        // refuses the sheet only keeps its blink.
+        // before the first picture, so it already shows a steady caret; the inspector sheet is invisible to page scripts,
+        // and a blinking caret is a new frame twice a second
         await SteadyTheCaretAsync(root).ConfigureAwait(false);
 
         Tier = tier;
         await StartScreencastAsync(tier).ConfigureAwait(false);
     }
 
-    /// <summary>The newest picture not yet taken, if any. Decoded here rather than on arrival, so a superseded one costs nothing.</summary>
+    // decoded here, not on arrival, so a superseded frame costs nothing
     public bool TryTake(out CastFrame frame)
     {
         PendingFrame? pending;
@@ -174,15 +123,9 @@ internal sealed class LiveScreencast : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Frames the browser drew that will never leave: replaced by a newer one
-    /// before they were taken, and dropped while a navigation was being
-    /// checked. Read and reset, for the meter.
-    /// </summary>
     public (int Superseded, int Withheld) TakeCounts() =>
         (Interlocked.Exchange(ref _superseded, 0), Interlocked.Exchange(ref _withheld, 0));
 
-    /// <summary>Switches the encoding; the browser answers with a fresh frame at the new quality.</summary>
     public async Task SetTierAsync(LiveTier tier)
     {
         if (tier == Tier) return;
@@ -191,7 +134,6 @@ internal sealed class LiveScreencast : IAsyncDisposable
         await RestartAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Asks for a fresh picture of the page as it is, changed or not - the heartbeat's.</summary>
     public Task RefreshAsync() => RestartAsync();
 
     private async Task RestartAsync()
@@ -207,8 +149,7 @@ internal sealed class LiveScreencast : IAsyncDisposable
         if (Interlocked.Exchange(ref _stopped, 1) == 1) return;
         if (_cdp is not { } cdp) return;
 
-        // Teardown is best effort and never throws over the job's outcome: a
-        // closed page has already taken the screencast with it.
+        // best effort: a closed page has already taken the screencast with it
         try
         {
             await cdp.SendAsync("Page.stopScreencast").ConfigureAwait(false);
@@ -236,14 +177,11 @@ internal sealed class LiveScreencast : IAsyncDisposable
         {
             ["format"] = "jpeg",
             ["quality"] = tier == LiveTier.Moving ? _options.MovingQuality : _options.SettledQuality,
-            // Every composited frame, never every nth: a change that lands on a
-            // skipped one would not arrive until the page changed again.
+            // every composited frame, never every nth: a change on a skipped one would not arrive until the page changed again
             ["everyNthFrame"] = 1,
         };
 
-        // Encoded at CSS size, as the old shutter's Scale = Css was: a retina
-        // agent would otherwise encode, ship and decode three times the pixels
-        // for a picture drawn at the same size.
+        // encoded at CSS size: a retina agent would otherwise encode, ship and decode three times the pixels
         if (_page.ViewportSize is { Width: > 0, Height: > 0 } viewport)
         {
             args["maxWidth"] = viewport.Width;
@@ -304,8 +242,7 @@ internal sealed class LiveScreencast : IAsyncDisposable
     {
         if (args is not { } e) return;
 
-        // First, whatever happens next: an unacknowledged frame is one of the
-        // three the browser will stop at.
+        // first: an unacknowledged frame counts toward the three the browser stops at
         if (e.Int32("sessionId") is { } screencastId) _ = AcknowledgeAsync(screencastId);
 
         var metadata = e.Child("metadata");
@@ -331,8 +268,7 @@ internal sealed class LiveScreencast : IAsyncDisposable
             _newest = pending;
         }
 
-        // Once per waiting picture: a page that animates must not wake the
-        // loop sixty times a second while it waits out its gap.
+        // once per waiting picture: an animating page must not wake the loop sixty times a second
         if (first) _onArrived();
     }
 
@@ -367,8 +303,7 @@ internal sealed class LiveScreencast : IAsyncDisposable
         var frameId = frame.Text("id");
         if (frameId is null) return;
 
-        // A child frame's new document needs its own sheet; it changes nothing
-        // about what the stream may show, which the main frame alone decides.
+        // a child frame's new document needs its own sheet; only the main frame decides what the stream may show
         if (frame.Text("parentId") is not null)
         {
             _ = SteadyCaretInAsync(frameId);
@@ -406,9 +341,7 @@ internal sealed class LiveScreencast : IAsyncDisposable
     {
         if (args is not { } e) return;
 
-        // A load that never committed - a download, a 204, a navigation
-        // replaced by another - leaves the document where it was, and that one
-        // was already checked.
+        // a load that never committed (download, 204, replaced navigation) leaves the already-checked document in place
         lock (_gate)
         {
             if (!_left && string.Equals(e.Text("frameId"), _mainFrameId, StringComparison.Ordinal)) _held = false;
@@ -424,11 +357,7 @@ internal sealed class LiveScreencast : IAsyncDisposable
     private static int Pixels(decimal? css) =>
         css is { } value && value > 0 && value < 100_000 ? (int)Math.Round(value, MidpointRounding.AwayFromZero) : 0;
 
-    /// <summary>
-    /// When the compositor drew the frame: the metadata's wall-clock seconds,
-    /// or the moment it arrived when the browser did not say. Only ever used to
-    /// measure how old a picture is by the time it leaves.
-    /// </summary>
+    // the compositor's draw time from the metadata, else arrival; used only to measure a frame's age as it leaves
     private DateTimeOffset CapturedAt(decimal? seconds)
     {
         var now = _time.GetUtcNow();

@@ -5,7 +5,6 @@ import { openEncryptedExecutor, sqlCipherVersion, sqliteAvailable } from './capa
 
 vi.mock('@/lib/report', () => ({ reportError: vi.fn() }));
 
-/** a fake raw plugin, close enough for the executor's contract */
 const makePlugin = (queryValues: Record<string, unknown>[]) => ({
   isSecretStored: vi.fn().mockResolvedValue({ result: true }),
   setEncryptionSecret: vi.fn().mockResolvedValue(undefined),
@@ -36,9 +35,7 @@ describe('capacitorSql executor', () => {
   });
 
   it('strips the iOS ios_columns marker row from query results', async () => {
-    // the raw plugin (no JS wrapper) prefixes iOS results with a column
-    // descriptor — leaking it upstream made JSON.parse read undefined
-    // and broke the entire first sync (the E2 connect loop)
+    // the raw plugin prefixes iOS results with a column descriptor: leaked, JSON.parse read undefined and broke first sync
     const plugin = makePlugin([{ ios_columns: ['json'] }, { json: '{"a":1}' }]);
     setPlugin(plugin);
     const executor = await openEncryptedExecutor('munni-test');
@@ -53,7 +50,6 @@ describe('capacitorSql executor', () => {
     expect(await executor.query('SELECT json FROM meta')).toEqual([{ json: '{"b":2}' }]);
     expect(plugin.setEncryptionSecret).toHaveBeenCalledTimes(1);
 
-    // transactions commit on success and roll back on failure
     await executor.transaction(async () => undefined);
     expect(plugin.commitTransaction).toHaveBeenCalledTimes(1);
     await expect(executor.transaction(async () => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
@@ -83,7 +79,7 @@ describe('capacitorSql executor', () => {
       transaction: false,
     });
 
-    // nothing to write is no call at all: the plugin refuses an empty set
+    // the plugin refuses an empty set
     await executor.batch([]);
     expect(plugin.executeSet).toHaveBeenCalledTimes(1);
   });
@@ -103,7 +99,6 @@ describe('capacitorSql executor', () => {
     expect(plugin.run).toHaveBeenLastCalledWith({ database: 'munni-test', statement: sql, values: ['t2', 's1', '{}'], transaction: false });
     expect(reportError).toHaveBeenCalledTimes(1);
 
-    // it does not ask a second time
     await executor.batch([{ sql, params: ['t3', 's1', '{}'] }]);
     expect(plugin.executeSet).toHaveBeenCalledTimes(1);
     expect(plugin.run).toHaveBeenCalledTimes(3);
@@ -111,8 +106,7 @@ describe('capacitorSql executor', () => {
   });
 
   it('captures the cipher_version proof at open — an empty answer records null (E3a)', async () => {
-    // SQLCipher answers the PRAGMA with a version row; PLAIN SQLite
-    // answers empty — so the recorded value is engine-reported proof
+    // SQLCipher answers the PRAGMA with a version row, plain SQLite empty: the recorded value is engine-reported proof
     const plugin = makePlugin([]);
     plugin.query.mockImplementation(async ({ statement }: { statement: string }) =>
       statement.includes('cipher_version') ? { values: [{ cipher_version: '4.6.1 community' }] } : { values: [] },
@@ -121,7 +115,6 @@ describe('capacitorSql executor', () => {
     await openEncryptedExecutor('munni-test');
     expect(sqlCipherVersion()).toBe('4.6.1 community');
 
-    // an unencrypted engine (empty PRAGMA answer) must NOT claim proof
     const bare = makePlugin([]);
     setPlugin(bare);
     await openEncryptedExecutor('munni-test');

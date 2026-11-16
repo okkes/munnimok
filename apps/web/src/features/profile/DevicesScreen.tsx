@@ -26,10 +26,8 @@ const PLATFORM_ICONS: Record<string, string> = {
   web: 'laptop',
 };
 
-/** #158: best-effort browser name for THIS device only — the server keeps
- *  no UA column, so other rows stay apart via the twin numbering instead.
- *  Order matters: Edge/Opera UAs also carry "Chrome", Chrome carries
- *  "Safari". Brand names are proper nouns — never translated. */
+// #158: only this device's browser is known (the server keeps no UA)
+// order matters: Edge/Opera UAs also carry "Chrome", Chrome carries "Safari"
 export function browserLabel(): string | null {
   const ua = navigator.userAgent;
   if (ua.includes('Firefox/')) return 'Firefox';
@@ -40,12 +38,7 @@ export function browserLabel(): string | null {
   return null;
 }
 
-/**
- * Logged-in devices (user rulings 2026-07-24):
- * every device this account is signed in on — auto-named but renamable,
- * last seen, and a remote disconnect that WIPES the other device on its
- * next connection. This device itself signs out via the profile.
- */
+// a remote disconnect WIPES the other device on its next connection
 export function DevicesScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -70,8 +63,7 @@ export function DevicesScreen() {
     [t],
   );
 
-  // #158: twins ("Browser", "Browser") get " (2)", " (3)" by CreatedAt age —
-  // the oldest keeps the bare name, so labels stay put as devices arrive
+  // #158: twins get " (2)", " (3)" by createdAt age; the oldest keeps the bare name
   const displayNames = useMemo(() => {
     const counts = new Map<string, number>();
     const names = new Map<string, string>();
@@ -84,7 +76,6 @@ export function DevicesScreen() {
     return names;
   }, [devices, platformLabel]);
 
-  // computed once per render: the UA never changes mid-session
   const myBrowser = browserLabel();
 
   const saveRename = async () => {
@@ -136,8 +127,7 @@ export function DevicesScreen() {
                     )}
                   </span>
                   <span className="block text-[11px] text-ink-4">
-                    {/* #158: only this device knows its own browser — the
-                        server has no UA to say it for the others */}
+                    {/* #158: only this device knows its own browser; the server has no UA */}
                     {mine && (device.platform ?? 'web') === 'web' && myBrowser && (
                       <span data-testid="device-browser">{myBrowser} · </span>
                     )}

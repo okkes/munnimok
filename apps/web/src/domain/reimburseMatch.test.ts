@@ -124,7 +124,6 @@ describe('reimbursement earmarks, net of the settle (user ss 2026-10-06: the sec
     expect(reimbEarmarkCents(row)).toBe(2_500);
     expect(expenseNeedCents(row, 'p2')).toBe(2_500);
     expect(expenseNeedCents(row, 'p1')).toBe(6_000);
-    // a container filed as reimbursement whose parts say otherwise earmarks nothing
     expect(reimbEarmarkCents(tx({ amountCents: -9_000, catId: 'expenseReimburse', splits: [{ id: 'q', catId: 'groceries', amountCents: 9_000 }] }))).toBeNull();
   });
 });

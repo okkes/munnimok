@@ -4,10 +4,8 @@
 
 namespace Munni.Api.Migrations
 {
-    /// <inheritdoc />
     public partial class ConnectorSessionArtifacts : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
@@ -17,7 +15,6 @@ namespace Munni.Api.Migrations
                 nullable: true);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(

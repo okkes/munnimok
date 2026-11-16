@@ -20,11 +20,6 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 
-/**
- * One recurring cost, in full: what it is, when it hits next, and every
- * payment ever linked to it. A screen rather than a sheet — the payment
- * history deserves room, and each row leads on to the transaction.
- */
 export function RecurringDetailScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -33,8 +28,6 @@ export function RecurringDetailScreen() {
   const ops = useRecurringOps();
   const canEdit = useCanEdit(); // #505
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
-  // user 2026-10-06: a door to link a charge by hand, after the creation
-  // flow's one-time proposal list is long gone
   const [linking, setLinking] = useState(false);
 
   // 'loading' sentinel: Dexie's get() yields undefined both while loading
@@ -46,15 +39,13 @@ export function RecurringDetailScreen() {
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
 
-  // deleted elsewhere (other device, or via the edit sheet) — leave
   const gone = rec !== 'loading' && (rec?.deleted !== 0 || rec?.spaceId !== spaceId);
   useEffect(() => {
     if (gone) void navigate({ to: '/recurring', replace: true });
   }, [gone, navigate]);
 
   const payments = useMemo(
-    // slice-aware (#126 r7): a split's PART may carry the link — the
-    // whole row then counts as a payment of this recurring
+    // slice-aware (#126): a split's PART may carry the link, the whole row then counts as a payment
     () =>
       (txs ?? [])
         .filter((tx) => txSliceViews(tx).some((view) => view.recurringId === recId))
@@ -99,7 +90,6 @@ export function RecurringDetailScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <ReadOnlyNote className="mb-3" testId="recdetail-readonly-note" />
-        {/* hero: what this cost is */}
         <HeroCard
           className="mt-1"
           testId="recdetail-hero"
@@ -137,7 +127,6 @@ export function RecurringDetailScreen() {
           }
         />
 
-        {/* S2: a sustained price change tells its story + yearly impact */}
         {priceChange && (
           <div
             className="mt-3 flex items-center gap-2.5 rounded-card border border-warning bg-warning-soft px-4 py-3"
@@ -162,8 +151,7 @@ export function RecurringDetailScreen() {
                 })}
               </span>
             </span>
-            {/* one-tap adoption (2026-07-24 ruling): the system only
-                RECOMMENDS — the amount stays the user's until this tap */}
+            {/* the system only RECOMMENDS: the amount stays the user's until this tap */}
             {canEdit && priceChange.toCents !== rec.amountCents && (
               <button
                 data-testid="recdetail-price-apply"
@@ -176,7 +164,6 @@ export function RecurringDetailScreen() {
           </div>
         )}
 
-        {/* the numbers the payment history adds up to */}
         <div className="mt-3 grid grid-cols-3 gap-3 rounded-card border border-line bg-surface p-4" data-testid="recdetail-stats">
           {(
             [

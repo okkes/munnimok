@@ -1,5 +1,3 @@
-// DSM as code: the calls are shaped exactly like DSM's own UI's (captured by
-// open-source clients); a fetch stub reads the form body back.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -17,7 +15,6 @@ test.after(() => fx.cleanup());
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
 const noWait = async () => {};
 
-/** a DSM stub: routes by api+method, records every call's params (form body or multipart; _sid also from the query) */
 function dsm(routes) {
   const calls = [];
   const fetchImpl = async (url, init) => {
@@ -42,7 +39,6 @@ function dsm(routes) {
 const ok = (data = {}) => ({ success: true, data });
 const fail = (code, extra = {}) => ({ success: false, error: { code, ...extra } });
 const netErr = (code) => { const e = new Error('fetch failed'); e.cause = { code }; return e; };
-// a real environment stack of the nas platform: five hosts under the domain, ports from its slot
 const stack = loadStack('munni-nas-prod');
 const H = { web: 'munni-prod-nas.nas.example', admin: 'munni-prod-nas-admin.nas.example', api: 'munni-prod-nas-api.nas.example', lab: 'munni-prod-nas-lab.nas.example', logto: 'munni-prod-nas-logto.nas.example', logtoAdmin: 'munni-prod-nas-logto-admin.nas.example' };
 const NOT_COVERED = async () => ({ covers: false, code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
@@ -78,7 +74,7 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   const list = calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.list');
   assert.equal(list.params._sid, 'SID-DSM');
   assert.equal(list.params.SynoToken, 'TOK');
-  // DSM 7.3 reads the sid + CSRF token from the query string / the header, not the POST body (119 otherwise — found live 2026-09-16)
+  // DSM 7.3 reads the sid + CSRF token from the query string / header, not the POST body (119 otherwise)
   assert.match(list.url, /\/webapi\/entry\.cgi\?_sid=SID-DSM&SynoToken=TOK$/, 'the sid and the token ride the query string');
   assert.equal(list.init.headers['X-SYNO-TOKEN'], 'TOK', 'and the token the header');
   assert.match(calls.at(-1).url, /entry\.cgi\?_sid=SID-DSM$/, 'the logout carries the sid in the query too');
@@ -117,7 +113,6 @@ test('dsm transport: a login that gets no answer fails fast for the wizard check
   const s = await dsmSession(CREDS, flaky, { sleepImpl: noWait });
   assert.equal(s.sid, 'S');
   assert.equal(n, 2, 'a session retries the login once the NAS answers again');
-  // a DSM-answered error is never a transport error
   const refused = dsm({});
   await assert.rejects(dsmSession(CREDS, async () => ({ json: async () => fail(402) }), { sleepImpl: noWait }), (e) => !isTransport(e) && /"code":402/.test(e.message));
   assert.equal(refused.calls.length, 0);
@@ -141,14 +136,11 @@ test('dsm transport: a login that gets no answer fails fast for the wizard check
 });
 
 test('certificate: a covered host costs nothing; an uncovered one reuses a held wildcard (set default + bind the rules) or requests one the way the wizard does', async () => {
-  // covered → not even a login
   const a = dsm({});
   const covered = await ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', fetchImpl: a.fetchImpl, probeImpl: async () => ({ covers: true }) });
   assert.equal(covered.state, 'covered');
   assert.equal(a.calls.length, 0);
 
-  // uncovered, a wildcard exists but is not the default → CRT set as_default (JSON-quoted strings),
-  // then the rule the old certificate lists is moved onto it with the descriptor verbatim
   const b = dsm({
     'SYNO.Core.Certificate.CRT.list': ok({ certificates: [{ ...OLD, services: [RULE_U1] }, WILD] }),
     'SYNO.Core.Certificate.CRT.set': ok({}),
@@ -166,8 +158,6 @@ test('certificate: a covered host costs nothing; an uncovered one reuses a held 
   assert.match(reused.detail, /1 rule moved onto it \(web\.nas\.example\)/);
   assert.match(reused.detail, /no rule yet for api\.nas\.example/);
 
-  // uncovered, nothing held → LetsEncrypt create with "host;*.host" in domain_name (the wizard's shape),
-  // as default, with the six-minute wait; the new certificate is then bound to a rule DSM listed nowhere
   let listed = 0;
   const c = dsm({
     'SYNO.Core.Certificate.CRT.list': () => ok({ certificates: listed++ === 0 ? [OLD] : [OLD, { ...WILD, id: 'new', is_default: true }] }),
@@ -200,8 +190,7 @@ test('certificate: a covered host costs nothing; an uncovered one reuses a held 
   assert.equal(firstBind[0].service.service, 'u1');
   assert.equal(firstBind[0].service.subscriber, 'ReverseProxy');
 
-  // steady state: the rule already sits on the default wildcard → no binding
-  // call at all (every Service.set restarts DSM's web server) and an honest detail
+  // every Service.set restarts DSM's web server, so a rule already on the wildcard is not re-bound
   const st = dsm({
     'SYNO.Core.Certificate.CRT.list': ok({ certificates: [OLD, { ...WILD, is_default: true, services: [RULE_U1] }] }),
     'SYNO.Core.AppPortal.ReverseProxy.list': RULES,
@@ -224,7 +213,6 @@ test('certificate: a covered host costs nothing; an uncovered one reuses a held 
   assert.equal(imported.id, 'acme');
   assert.ok(!acme.calls.some((x) => x.key === 'SYNO.Core.Certificate.LetsEncrypt.create'), 'recognised by its SAN — no request');
 
-  // …and one DSM lists CN-only (7.2): our own request's desc names the wildcard
   const cn = dsm({
     'SYNO.Core.Certificate.CRT.list': ok({ certificates: [{ ...WILD, id: 'cn-only', is_default: true, subject: { common_name: 'nas.example' } }] }),
     'SYNO.Core.Certificate.LetsEncrypt.create': ok({}),
@@ -284,7 +272,6 @@ test('certificate: an expired wildcard counts as absent; a non-owner never reque
   assert.equal(certValid(WILD), true);
   assert.equal(certValid({ valid_till: 'not a date' }), true, 'unparseable stays valid');
 
-  // the staging twin: binds its rules to a wildcard it finds, never requests one
   const b = dsm({ 'SYNO.Core.Certificate.CRT.list': ok({ certificates: [OLD] }) });
   const absent = await ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', owner: false, fetchImpl: b.fetchImpl, probeImpl: NOT_COVERED });
   assert.equal(absent.state, 'absent');
@@ -369,8 +356,6 @@ test('certificate: an expired wildcard counts as absent; a non-owner never reque
   await assert.rejects(ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', fetchImpl: kk.fetchImpl, probeImpl: NOT_COVERED, sleepImpl: noWait }), /ECONNRESET/);
   assert.equal(kk.calls.filter((x) => x.key === 'SYNO.Core.Certificate.CRT.set').length, 1, 'a write is never retried');
 
-  // the binding write answers restart_httpd too: a lost answer the list
-  // confirms is success, one it cannot confirm is not
   let bindTried = false;
   const bindDrop = dsm({
     'SYNO.Core.Certificate.CRT.list': () => ok({ certificates: [{ ...OLD, services: bindTried ? [] : [RULE_U1] }, { ...WILD, is_default: true, services: bindTried ? [RULE_U1] : [] }] }),
@@ -436,7 +421,6 @@ test('poller task: created root-owned behind a password-confirm token, every 5 m
   const confirm = a.calls.find((c) => c.key === 'SYNO.Core.User.PasswordConfirm.auth');
   assert.equal(confirm.params.password, 'pw');
 
-  // present with the right script → no write at all
   const b = dsm({
     'SYNO.FileStation.List.list_share': shares,
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root', enable: true }] }),
@@ -446,8 +430,6 @@ test('poller task: created root-owned behind a password-confirm token, every 5 m
   assert.equal(present.state, 'present');
   assert.ok(!b.calls.some((c) => c.key.startsWith('SYNO.Core.TaskScheduler.Root')));
 
-  // the same script but switched off in DSM (maintenance, a failed run) → set
-  // again WITH enable, never reported as running
   const off = dsm({
     'SYNO.FileStation.List.list_share': shares,
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root', enable: false }] }),
@@ -461,7 +443,6 @@ test('poller task: created root-owned behind a password-confirm token, every 5 m
   assert.equal(reset.params.id, '42');
   assert.equal(reset.params.enable, 'true', 'a disabled poller is switched back on');
 
-  // present with a stale command → set
   const c = dsm({
     'SYNO.FileStation.List.list_share': shares,
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),
@@ -485,7 +466,6 @@ test('poller task: created root-owned behind a password-confirm token, every 5 m
   assert.equal(retried.state, 'created');
   assert.equal(attempts, 2);
 
-  // the share cannot be resolved (neither session) and a task exists → left alone, its own dir reported
   const e = dsm({
     'SYNO.FileStation.List.list_share': fail(119),
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),
@@ -497,7 +477,6 @@ test('poller task: created root-owned behind a password-confirm token, every 5 m
   assert.equal(kept.liveDir, '/volume1/docker/munni');
   assert.match(kept.detail, /left as it is/);
   assert.ok(!e.calls.some((x) => x.key.startsWith('SYNO.Core.TaskScheduler.Root')), 'never rewritten onto a guess');
-  // …and with no task at all the failure is loud
   const f = dsm({ 'SYNO.FileStation.List.list_share': fail(119), 'SYNO.Core.TaskScheduler.list': ok({ tasks: [] }) });
   await assert.rejects(ensurePollerTask(CREDS, { publishedPath: '/docker/munni/published', fetchImpl: f.fetchImpl, sleepImpl: noWait }), /could not resolve the real path/);
   await assert.rejects(ensurePollerTask(CREDS, { publishedPath: '', fetchImpl: f.fetchImpl, sleepImpl: noWait }), /inside a shared folder/);
@@ -628,9 +607,7 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
     const p = Object.fromEntries(new URLSearchParams(init.body));
     seen.push(p);
     if (p.method === 'logout') return { json: async () => ({ success: true }) };
-    // every v7 session is an administrator's here, the v6 one a plain user's
     if (p.api === 'SYNO.Core.Desktop.Initdata') return { json: async () => ok({ Session: { is_admin: String(p._sid).startsWith('S-7') } }) };
-    // this DSM refuses session=Core on v7 only
     if (p.version === '7' && p.session === 'Core') return { json: async () => fail(402) };
     return { json: async () => ({ success: true, data: { sid: `S-${p.version}-${p.session ?? 'none'}`, ...(new URL(url).searchParams.get('enable_syno_token') === 'yes' ? { synotoken: 'T' } : {}) } }) };
   };
@@ -679,7 +656,6 @@ test('call shapes: when a read is refused after an accepted login, sessions made
   const text = describeCallShapes(list);
   assert.match(text, /^entry\.cgi format=sid \(bootstrap\): login: ok \(token\); sid\+token in query \+ X-SYNO-TOKEN \(bootstrap\): ok; sid in body \+ X-SYNO-TOKEN \(acme\.sh\): refused 119; cookie id=sid \+ X-SYNO-TOKEN \(DSM UI\): ok\n/);
   assert.match(text, /auth\.cgi format=sid: login: ok \(token\); sid\+token in query \+ X-SYNO-TOKEN \(bootstrap\): refused 105/);
-  // the session the module hands out passes such a DSM
   const s = await dsmSession(CREDS, strict);
   assert.deepEqual(await s.read('SYNO.Core.Certificate.CRT', 1, 'list'), { certificates: [] });
 });

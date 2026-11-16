@@ -23,7 +23,6 @@ describe('matchTransferPairs (domain rules)', () => {
     const pairs = matchTransferPairs([
       leg('out1', 'A', -5000, '2026-07-10'),
       leg('in1', 'B', 5000, '2026-07-11'),
-      // ambiguous pair: two equal candidates on the SAME date
       leg('out2', 'A', -700, '2026-07-20'),
       leg('in2', 'B', 700, '2026-07-20'),
       leg('in3', 'C', 700, '2026-07-20'),
@@ -44,9 +43,9 @@ describe('matchTransferPairs (domain rules)', () => {
   it('never pairs same-account legs, out-of-window dates, or peered rows', () => {
     const pairs = matchTransferPairs([
       leg('outA', 'A', -100, '2026-07-01'),
-      leg('inA', 'A', 100, '2026-07-01'), // same account
-      leg('late', 'B', 100, '2026-07-05'), // 4 days out
-      leg('done', 'B', 100, '2026-07-01', { transferPeerId: 'x' }), // already peered
+      leg('inA', 'A', 100, '2026-07-01'),
+      leg('late', 'B', 100, '2026-07-05'),
+      leg('done', 'B', 100, '2026-07-01', { transferPeerId: 'x' }),
     ]);
     expect(pairs.size).toBe(0);
   });
@@ -75,7 +74,6 @@ describe('linkTransferPairs (application, per space)', () => {
   });
 
   it('pairs typed legs within one space; never ACROSS spaces (funding covers that)', async () => {
-    // same-space pair: checking → pot, both legs in 'priv'
     await repo.upsert('transaction', 'priv', 'out', {
       accountId: 'checking',
       date: '2026-07-25',
@@ -108,7 +106,6 @@ describe('linkTransferPairs (application, per space)', () => {
     expect((await db.transactions.get('out'))?.transferPeerId).toBe('in');
     expect((await db.transactions.get('in'))?.transferPeerId).toBe('out');
     expect((await db.transactions.get('famIn'))?.transferPeerId).toBeUndefined();
-    // idempotent: a second run finds nothing new
     expect(await linkTransferPairs(store, repo)).toBe(0);
   });
 
@@ -122,8 +119,7 @@ describe('linkTransferPairs (application, per space)', () => {
       merchant: 'From checking', needsReview: 0,
     });
     expect(await linkTransferPairs(store, repo)).toBe(1);
-    // the bijection holds on BOTH legs: the checking side wears the
-    // family movement sub by its counter's kind, the pot its stamp
+    // both legs: the checking side wears the movement sub by its counter's kind, the pot its stamp (bijection)
     expect(await db.transactions.get('out')).toMatchObject({ transferPeerId: 'in', catId: 'savingDeposit' });
     expect(await db.transactions.get('in')).toMatchObject({ catId: 'savingDeposit', linkedAccountId: 'checking' });
   });
@@ -140,7 +136,6 @@ describe('linkTransferPairs (application, per space)', () => {
       accountId: 'fsav', date: '2026-07-26', amountCents: 50000, currency: 'EUR', merchant: 'From checking', needsReview: 1,
     });
     expect(await linkTransferPairs(store, repo)).toBe(1);
-    // savings to this space: the checking leg files Set aside, the feed row its stamp — on the space's overlay
     expect(await db.transactions.get('out')).toMatchObject({ transferPeerId: 'fin', catId: 'savingDeposit' });
     const overlay = (await db.txMeta.toArray()).find((m) => m.txId === 'fin');
     expect(overlay).toMatchObject({ spaceId: 'priv', catId: 'savingDeposit', linkedAccountId: 'checking', transferPeerId: 'out' });
@@ -156,7 +151,6 @@ describe('linkTransferPairs (application, per space)', () => {
       linkedAccountId: 'pot',
       needsReview: 0,
     });
-    // the other side sits as plain income, untouched
     await repo.upsert('transaction', 'priv', 'twin', {
       accountId: 'pot',
       date: '2026-07-25',
@@ -169,8 +163,8 @@ describe('linkTransferPairs (application, per space)', () => {
     expect(await linkTransferPairs(store, repo)).toBe(1);
     const twin = await db.transactions.get('twin');
     expect(twin?.transferPeerId).toBe('out');
-    expect(twin?.linkedAccountId).toBe('checking'); // points back
-    // the machine paired it — the twin waits in the review with the pair prefilled (user 2026-10-09)
+    expect(twin?.linkedAccountId).toBe('checking');
+    // the machine paired it: the twin stays in review with the pair prefilled
     expect(twin?.needsReview).toBe(1);
   });
 
@@ -192,15 +186,12 @@ describe('linkTransferPairs (application, per space)', () => {
     expect(mirror).toMatchObject({
       accountId: 'pot',
       amountCents: 10000,
-      // the pot's R1 stamp
       catId: 'savingDeposit', // + on the pot = set aside (Q8 movement)
       linkedAccountId: 'checking',
       transferPeerId: 'out',
       needsReview: 0,
     });
-    // the manual pot's live balance moved by the mirror amount
     expect((await db.accounts.get('pot'))?.balanceCents).toBe(10000);
-    // a second call converges on the SAME mirror and never re-moves money
     expect(await mintMirrorForExistingLink(store, repo, { ...out }, 'pot', mirrorId!)).toBe(mirrorId);
     expect((await db.accounts.get('pot'))?.balanceCents).toBe(10000);
   });

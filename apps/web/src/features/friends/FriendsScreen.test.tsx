@@ -44,13 +44,10 @@ describe('FriendsScreen', () => {
       },
     });
 
-    // pending request from Cara is visible and acceptable
     fireEvent.click(await screen.findByTestId('friends-accept-r1'));
     await waitFor(() => expect(screen.queryByTestId('friends-received')).toBeNull());
     expect(screen.getByTestId('friends-list').textContent).toContain('Cara');
 
-    // #165: the row opens the profile sheet with the FULL id; removal
-    // moved there (the list has no trash button anymore)
     expect(screen.queryByTestId(`friends-remove-${BOB}`)).toBeNull();
     fireEvent.click(screen.getByTestId(`friends-row-${BOB}`));
     expect((await screen.findByTestId('friend-profile-id')).textContent).toBe(BOB);
@@ -80,7 +77,6 @@ describe('FriendsScreen', () => {
     fireEvent.click(await screen.findByTestId('friend-profile-copy'));
     expect(writeText).toHaveBeenCalledWith(BOB);
 
-    // tapping the avatar opens the fullscreen viewer; any click closes it
     fireEvent.click(screen.getByTestId('friend-profile-avatar'));
     fireEvent.click(await screen.findByTestId('friend-picture-viewer'));
     await waitFor(() => expect(screen.queryByTestId('friend-picture-viewer')).toBeNull());
@@ -119,19 +115,18 @@ describe('FriendsScreen', () => {
       },
     });
 
-    // #195: an empty click never disables the button — it says why
     const send = (await screen.findByTestId('friends-add-send')) as HTMLButtonElement;
     expect(send.disabled).toBe(false);
     fireEvent.click(send);
     expect(await screen.findByTestId('friends-add-blocker')).toBeTruthy();
-    expect(requests).toEqual([]); // nothing was sent
+    expect(requests).toEqual([]);
 
     fireEvent.change(await screen.findByTestId('friends-add-input'), { target: { value: ` ${BOB} ` } });
     fireEvent.click(screen.getByTestId('friends-add-send'));
     await screen.findByTestId('friends-sent');
     expect(requests).toEqual([{ toUserId: BOB }]); // trimmed, no space piggyback
     expect((screen.getByTestId('friends-add-input') as HTMLInputElement).value).toBe('');
-    expect(screen.queryByTestId('friends-add-blocker')).toBeNull(); // cleared on success
+    expect(screen.queryByTestId('friends-add-blocker')).toBeNull();
   }, 15_000);
 
   it('#291: a 404 send says "no such user" at the field and pends nothing', async () => {
@@ -151,11 +146,9 @@ describe('FriendsScreen', () => {
     fireEvent.click(screen.getByTestId('friends-add-send'));
     expect(await screen.findByTestId('friends-add-notfound')).toBeTruthy();
     expect(requests).toHaveLength(1);
-    // nothing pends and the typed id stays put for fixing
     expect(screen.queryByTestId('friends-sent')).toBeNull();
     expect((screen.getByTestId('friends-add-input') as HTMLInputElement).value).toBe('ghost-id');
 
-    // typing again clears the field error
     fireEvent.change(screen.getByTestId('friends-add-input'), { target: { value: 'ghost-i' } });
     await waitFor(() => expect(screen.queryByTestId('friends-add-notfound')).toBeNull());
   }, 15_000);
@@ -163,8 +156,7 @@ describe('FriendsScreen', () => {
   it('#277 r2: accepting a space-carrying request stamps the arriving space shared', async () => {
     let joined = false;
     renderAppAsUser('/friends', {
-      // Big Family exists server-side; /me/spaces admits it only after
-      // the accept — exactly how a joiner first meets the space
+      // /me/spaces admits Big Family only after the accept, as a joiner first meets a space
       spaces: [
         { id: 's-user', name: 'Personal' },
         { id: 's-fam', name: 'Big Family' },
@@ -188,9 +180,7 @@ describe('FriendsScreen', () => {
 
     fireEvent.click(await screen.findByTestId('friends-accept-r1'));
 
-    // the synced-in row got the shared fact + the sender as creator
-    // (the request names no space id — the stamp keys on what arrived NEW
-    // wearing the request's space name)
+    // the request names no space id: the stamp keys on what arrived NEW wearing the request's space name
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
     await waitFor(
@@ -201,7 +191,6 @@ describe('FriendsScreen', () => {
       },
       { timeout: 10_000 },
     );
-    // the personal space was never touched
     expect((await db.spaces.get('s-user'))?.kind).toBe('personal');
     db.close();
   }, 15_000);

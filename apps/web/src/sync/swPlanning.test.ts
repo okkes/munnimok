@@ -47,12 +47,10 @@ describe('collectPlanAlerts (#128)', () => {
     const first = await collectPlanAlerts(store, SPACE, 'en');
     expect(first).toHaveLength(1);
     expect(first[0].body).toContain('Groceries');
-    // #551: the space names the notification, and the tap opens the plan in it
     expect(first[0].title).toBe('P');
     expect(first[0].url).toBe(`./#/planning?space=${SPACE}`);
     const inbox = await readInbox(store);
     expect(inbox[0]).toMatchObject({ kind: 'planOverspent', payload: expect.objectContaining({ names: 'Groceries', n: '1', spaceId: SPACE }) });
-    // the same day never hears it twice
     expect(await collectPlanAlerts(store, SPACE, 'en')).toEqual([]);
     expect(await readInbox(store)).toHaveLength(1);
     db.close();

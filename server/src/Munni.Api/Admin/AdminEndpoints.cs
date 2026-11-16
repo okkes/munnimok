@@ -5,18 +5,11 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Admin;
 
-/// <summary>SpaceCount = the spaces the user is a member of; FeedCount = the IBAN-keyed feed spaces a bank connection
-/// adds — counted apart, or "3 spaces" reads as three duplicates of one personal space (user report 2026-09-28)</summary>
+// FeedCount (IBAN-keyed feed spaces from bank connections) is counted apart from SpaceCount:
+// "3 spaces" would read as three duplicates of one personal space
 public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount, int FeedCount = 0);
 
-/// <summary>
-/// Admin area: user overview, operator-initiated deletion, the per-user
-/// sync-chain diagnosis (<see cref="AdminDiagnosis"/>) and the Bank
-/// connections dashboard (<see cref="AdminBankConnectionEndpoints"/>).
-/// Every route requires the token's `admin` scope (AdminScope) — who is an
-/// admin is decided in Logto, never here. The parties (banks included,
-/// §15) are managed in the lab (/lab, #441).
-/// </summary>
+/// <summary>Every route requires the token's `admin` scope; who is an admin is decided in Logto, never here.</summary>
 public static class AdminEndpoints
 {
     public static void MapAdmin(this IEndpointRouteBuilder app)
@@ -27,14 +20,11 @@ public static class AdminEndpoints
         group.MapGet("/ping", () => Results.Ok(new { admin = true }));
 
         group.MapGet("/users", ListUsers);
-        // operator-initiated removal, same pipeline as the user's own
-        // DELETE /me (account-deletion design)
         group.MapDelete("/users/{sub}", DeleteUser);
         group.MapGet("/users/{sub}/diagnosis", UserDiagnosis);
 
-        // user 2026-10-07: invitation-only sign-up — the portal's invitations ride the group's scope gate and route guard
+        // invitation-only sign-up: the portal's invitations ride the group's scope gate and route guard
         AdminInvitationEndpoints.Map(group);
-        // user 2026-10-09: every open-banking consent across users, with a disconnect — the relay's bindings, read as a dashboard
         AdminBankConnectionEndpoints.Map(group);
     }
 
@@ -51,10 +41,6 @@ public static class AdminEndpoints
             .ToList());
     }
 
-    /// <summary>the whole account→app chain for one user: memberships,
-    /// owned feeds (+ op high-water mark), attachments, connector sessions —
-    /// diagnosing "the consent linked but the app shows nothing"; named for
-    /// the operator since 2026-10-09 (<see cref="AdminDiagnosis"/>)</summary>
     private static async Task<IResult> UserDiagnosis(string sub, AppDbContext db)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);

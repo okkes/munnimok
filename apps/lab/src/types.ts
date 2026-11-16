@@ -1,9 +1,4 @@
-/**
- * The relay's documents as the lab reads them (camelCase renderings of
- * the control plane's wire, docs/connectors/contract.md). Optional
- * fields are optional on the wire too: the lab renders what is there and
- * never invents a value.
- */
+/** camelCase renderings of the control plane's wire (docs/connectors/contract.md); optional here = optional on the wire */
 export interface ProviderQuota {
   limit?: number | null;
   remaining?: number | null;
@@ -59,7 +54,6 @@ export interface ResourceSpec {
   notesKey?: string | null;
 }
 
-/** a provider as the catalogue lists it: its manifest with its status beside it */
 export interface ProviderEntry {
   id: string;
   name: string;
@@ -121,7 +115,6 @@ export interface AgentView {
   browserVersion?: string | null;
   platformBrowserVersion?: string | null;
   resetting?: boolean;
-  /** what the agent claimed on its last heartbeat (#441 L4) */
   capabilities?: AgentCapabilities | null;
 }
 
@@ -135,7 +128,6 @@ export interface AgentCapabilities {
 
 export type RetentionStepState = 'running' | 'pass' | 'fail' | 'skip';
 
-/** one step of a retention run (#441 L4), as the lab wrote it */
 export interface RetentionStep {
   name: string;
   state: RetentionStepState;
@@ -145,7 +137,6 @@ export interface RetentionStep {
   at: string;
 }
 
-/** a retention bench run: the agent, the party, the steps' verdicts, how it ended */
 export interface RetentionRun {
   id: string;
   agentId?: string | null;
@@ -238,7 +229,6 @@ export interface OperatorJob {
   domDigest?: string | null;
   hasScreenshot: boolean;
   artifactsExpireAt?: string | null;
-  /** the run's recording, when one is kept (#441 L3) */
   trace?: TraceSummary | null;
 }
 
@@ -260,7 +250,6 @@ export interface TraceHeader {
   value: string;
 }
 
-/** one line of a recording: a navigation, a call, an answer, a console line, a document snapshot, a note */
 export interface TraceEntry {
   seq: number;
   atMs: number;
@@ -339,8 +328,6 @@ export interface HealthReport {
   providers: ProviderHealth[];
 }
 
-// ---- the test bench (#441 L2) ----------------------------------------------
-
 /** one of the operator's own connections, kept by the relay; never its bundle */
 export interface LabSessionRow {
   sessionId: string;
@@ -397,7 +384,6 @@ export interface SessionView {
   label?: string | null;
 }
 
-/** a fetch's answer: the page (200), or the job to follow (202) */
 export interface FetchView {
   accepted: boolean;
   resource?: string;
@@ -411,7 +397,6 @@ export interface FetchView {
   progress?: ProgressView | null;
 }
 
-/** a job as the bench follows it: the page once it succeeded */
 export interface JobView {
   jobId: string;
   sessionId: string;

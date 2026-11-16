@@ -4,11 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The navigation vocabulary on the agent (#441 L3): refused as a whole batch
-/// on a view that does not navigate, dispatched as a parsed address on one
-/// that does.
-/// </summary>
+/// the navigation vocabulary on the agent (#441 L3)
 public class LiveNavigationReplayTests
 {
     private static readonly (int Width, int Height) Frame = (390, 844);

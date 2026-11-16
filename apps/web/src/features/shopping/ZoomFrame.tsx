@@ -14,13 +14,11 @@ export const clampZoom = (zoom: number): number => Math.min(ZOOM_MAX, Math.max(Z
 
 /** the content's inset inside the frame (p-2) — it does not scale with the zoom */
 const PAD = 8;
-/** two taps within this long and this close are a double tap */
 const DOUBLE_TAP_MS = 320;
 const DOUBLE_TAP_PX = 32;
 /** a wheel run (a trackpad pinch is one) previews, then commits once it rests */
 const WHEEL_REST_MS = 160;
 
-/** a point in the frame's own box, from its top-left corner */
 interface FramePoint {
   x: number;
   y: number;
@@ -35,20 +33,11 @@ interface GestureEvent extends Event {
 
 interface ZoomGestures {
   zoomRef: { readonly current: number };
-  /** a live factor over the committed zoom around a point (a CSS preview), or null when the gesture ends */
   onPreview: (factor: number | null, at: FramePoint) => void;
-  /** the new zoom, around the point that must stay where it is */
   onCommit: (zoom: number, at: FramePoint) => void;
 }
 
-/**
- * The frame's own gestures: two fingers (or Safari's gesture events) pinch
- * a preview committed on lift, ctrl/⌘ + wheel — a trackpad pinch on a
- * desktop — zooms at the cursor, a double tap or double click zooms in at
- * that point and back out to the width, and a mouse drag pans. One finger
- * scrolls natively. The frame owns its pointers: the sheet never drags
- * under a pinch (`data-sheet-own-gesture` + the stop on pointerdown).
- */
+/** the frame owns its pointers: the sheet never drags under a pinch (`data-sheet-own-gesture` + the stop on pointerdown) */
 function useZoomGestures(frameRef: { readonly current: HTMLElement | null }, gestures: ZoomGestures): void {
   const latest = useRef(gestures);
   latest.current = gestures;
@@ -90,7 +79,6 @@ function useZoomGestures(frameRef: { readonly current: HTMLElement | null }, ges
       const now = performance.now();
       if (lastTap && now - lastTap.time <= DOUBLE_TAP_MS && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) <= DOUBLE_TAP_PX) {
         lastTap = null;
-        // in at the point, or back out to the width when already in
         latest.current.onCommit(latest.current.zoomRef.current > ZOOM_MIN ? ZOOM_MIN : ZOOM_TAP, at);
         return;
       }
@@ -195,22 +183,14 @@ function useZoomGestures(frameRef: { readonly current: HTMLElement | null }, ges
   }, [frameRef]);
 }
 
-/**
- * A zoomable frame (#568, the invoice viewer's since 2026-10-06): the
- * toolbar (status, −, the zoom that resets to the width, +) over a scroll
- * frame whose content is drawn at `width` — the frame's width × the zoom.
- * Every zoom keeps its point in place: the fingers' middle, the cursor, the
- * tapped spot, or the frame's centre for the buttons.
- */
+/** content is drawn at the frame's width × the zoom; every zoom keeps its point in place (the centre for the buttons) */
 export function ZoomFrame({
   testId,
   status,
   children,
 }: Readonly<{
   testId: string;
-  /** the line left of the buttons: the pages, or how to zoom */
   status: ReactNode;
-  /** the content at the given CSS width */
   children: (width: number) => ReactNode;
 }>) {
   const { t } = useLang();
@@ -218,7 +198,6 @@ export function ZoomFrame({
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
-  // the live preview: a factor around a point of the content (the scroll offset plus the frame point)
   const [pinch, setPinch] = useState<{ factor: number; origin: FramePoint } | null>(null);
   const [frameWidth, setFrameWidth] = useState(0);
   /** where the committed zoom must leave the scroll, applied once the content has its new size */

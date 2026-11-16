@@ -19,8 +19,7 @@ describe('ApiSyncBackend', () => {
     expect(url).toBe('http://api/sync/s1/push');
     const headers = new Headers(init!.headers);
     expect(headers.get('Authorization')).toBe('Bearer tok-123');
-    // the device pair every API call carries — the server refuses
-    // device-less requests
+    // every API call carries the device pair: the server refuses device-less requests
     expect(headers.get('X-Munni-Device')).toMatch(/^[0-9a-f]{12}$/);
     expect(headers.get('X-Munni-Platform')).toBe('web');
     expect(init!.method).toBe('POST');

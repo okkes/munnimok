@@ -1,12 +1,5 @@
-// Automatic signing archives against a DEVELOPMENT profile (the export re-signs
-// for the store), and Apple issues one only for a team with at least one
-// ENABLED registered device. Ask before archiving so a team without one is a
-// notice naming the one-click fix — never an "ARCHIVE FAILED" on every push
-// (nas-dev 2026-09-19: three iPhones registered, all disabled since the wipe).
-//
-// Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID. Writes enabled=<n>|unknown and
-// disabled=<n> to GITHUB_OUTPUT and never fails the build — a probe that cannot
-// answer leaves the archive to decide, as before.
+// automatic signing archives against a DEVELOPMENT profile, which Apple issues only for a team with an ENABLED device:
+// ask first so a team without one is a notice naming the fix, not an "ARCHIVE FAILED" on every push; never fails the build
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
@@ -23,8 +16,7 @@ function jwt() {
 // one line per output: a value with a line break in it would otherwise write a second output of its own
 const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v).replace(/[\r\n]+/g, ' ')}\n`); };
 
-// exitCode instead of process.exit(): exiting while the fetch socket is
-// still closing trips a libuv assertion on Windows (seen 2026-09-09)
+// exitCode, not process.exit(): exiting while the fetch socket is closing trips a libuv assertion on Windows
 async function main() {
   try {
     const res = await fetch('https://api.appstoreconnect.apple.com/v1/devices?filter%5Bplatform%5D=IOS&limit=200', { headers: { Authorization: `Bearer ${jwt()}` } });

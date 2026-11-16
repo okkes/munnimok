@@ -14,8 +14,7 @@ const setCapacitor = (stub: CapacitorStub | undefined) => {
 afterEach(() => setCapacitor(undefined));
 
 describe('platform seam', () => {
-  // universal-link host checks derive from publicOrigin now (the real
-  // domain is a secret) — pin it for the fixtures
+  // host checks derive from publicOrigin (the real domain is a secret): pin it for the fixtures
   beforeEach(() => vi.stubEnv('VITE_PUBLIC_ORIGIN', 'https://munni.munni.example'));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -23,7 +22,7 @@ describe('platform seam', () => {
     expect(isNativeApp()).toBe(false);
     setCapacitor({ isNativePlatform: () => true });
     expect(isNativeApp()).toBe(true);
-    setCapacitor({ isNativePlatform: () => false }); // capacitor serve (web)
+    setCapacitor({ isNativePlatform: () => false });
     expect(isNativeApp()).toBe(false);
   });
 
@@ -31,8 +30,7 @@ describe('platform seam', () => {
     expect(deepLinkToPath('munni://gc-callback?ref=r-1&code=c-1')).toBe('/gc-callback?ref=r-1&code=c-1');
     expect(deepLinkToPath('munni://auth-callback?code=x')).toBe('/auth-callback?code=x');
     expect(deepLinkToPath('munni-dev://auth-callback?code=x')).toBe('/auth-callback?code=x'); // staging app scheme
-    // the platform model's scheme carries two dashes (munni-<env>-<platform>): the sign-in's return and the
-    // bank's both arrive on it
+    // munni-<env>-<platform> scheme: the sign-in's return and the bank's both arrive on it
     expect(deepLinkToPath('munni-prod-nas://auth-callback?code=x&state=s')).toBe('/auth-callback?code=x&state=s');
     expect(deepLinkToPath('munni-dev-lcl://gc-callback?ref=r-1')).toBe('/gc-callback?ref=r-1');
     expect(deepLinkToPath('munni://')).toBe('/');
@@ -69,7 +67,6 @@ describe('platform seam', () => {
     initDeepLinks();
 
     listeners.appUrlOpen({ url: 'munni://auth-callback?code=abc&state=xyz' } as never);
-    // the localhost translation drives the webview…
     expect(assign).toHaveBeenCalledWith('/auth-callback?code=abc&state=xyz');
     // …but the original url is kept so the SDK sees the real redirect_uri
     expect(sessionStorage.getItem(NATIVE_CALLBACK_KEY)).toBe('munni://auth-callback?code=abc&state=xyz');
@@ -77,9 +74,7 @@ describe('platform seam', () => {
     // an auth callback leaves the session alone: it ended itself on the scheme
     expect(cancel).not.toHaveBeenCalled();
 
-    // a bank callback navigates but never stashes — and closes the sheet the
-    // consent was opened in, which the bank's app left behind on a page that
-    // will not finish (user ss 2026-10-03)
+    // a bank callback navigates but never stashes, and closes the sheet the consent opened in (the bank's app leaves it behind)
     listeners.appUrlOpen({ url: 'munni://gc-callback?ref=r1' } as never);
     expect(assign).toHaveBeenLastCalledWith('/gc-callback?ref=r1');
     expect(cancel).toHaveBeenCalledTimes(1);
@@ -98,7 +93,7 @@ describe('platform seam', () => {
 
     setCapacitor({ isNativePlatform: () => true });
     await ensurePersistentStorage();
-    expect(persist).toHaveBeenCalledTimes(1); // native: untouched
+    expect(persist).toHaveBeenCalledTimes(1);
   });
 
   it('resolves the native push token through the plugin events', async () => {
@@ -153,7 +148,7 @@ describe('isIOS (#134)', () => {
     expect(isIOS()).toBe(true);
     setNav('MacIntel', 5); // iPadOS masquerading as macOS
     expect(isIOS()).toBe(true);
-    setNav('MacIntel', 0); // real macOS
+    setNav('MacIntel', 0);
     expect(isIOS()).toBe(false);
     setNav('Win32');
     expect(isIOS()).toBe(false);
@@ -208,12 +203,12 @@ describe('§5 niceties seam', () => {
     expect(seen).toEqual([{ type: 'new-transactions', count: 3 }]);
 
     listeners.pushNotificationActionPerformed({ notification: { data: { payload: 'not-json' } } } as never);
-    expect(seen).toHaveLength(1); // malformed payloads are ignored
+    expect(seen).toHaveLength(1);
   });
 
   it('the shell names its own store id through App.getInfo and fails soft', async () => {
     const { getNativeAppId, nativePlatform } = await import('./platform');
-    expect(await getNativeAppId()).toBeNull(); // web: no shell
+    expect(await getNativeAppId()).toBeNull();
     expect(nativePlatform()).toBeUndefined();
 
     setCapacitor({
@@ -245,7 +240,7 @@ describe('§5 niceties seam', () => {
 
   it('native photo capture returns a File and degrades to null', async () => {
     const { takeNativePhoto } = await import('./platform');
-    expect(await takeNativePhoto()).toBeNull(); // web: input capture path
+    expect(await takeNativePhoto()).toBeNull();
 
     setCapacitor({
       isNativePlatform: () => true,
@@ -267,7 +262,7 @@ describe('§5 niceties seam', () => {
       isNativePlatform: () => true,
       Plugins: { Camera: { getPhoto: () => Promise.resolve({}) } },
     });
-    expect(await takeNativePhoto()).toBeNull(); // no bytes returned
+    expect(await takeNativePhoto()).toBeNull();
   });
 
   it('the camera door asks the plugin for the camera; the library door of a receipt for the photos (#166, #496)', async () => {
@@ -283,7 +278,7 @@ describe('§5 niceties seam', () => {
 
   it('biometric availability reflects the plugin and fails closed', async () => {
     const { nativeBiometricAvailable } = await import('./platform');
-    expect(await nativeBiometricAvailable()).toBe(false); // web
+    expect(await nativeBiometricAvailable()).toBe(false);
 
     setCapacitor({
       isNativePlatform: () => true,

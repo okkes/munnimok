@@ -4,17 +4,10 @@ import { useLang } from '@/i18n';
 import { Button } from './Button';
 import { Sheet } from './Sheet';
 
-/**
- * #164: screens with an explicit Save and a back button ask before
- * dropping edits — the screen hands over its real back function and
- * navigates only through the guarded one it gets back. Render `sheet`
- * once anywhere in the screen's tree.
- */
+/** #164: asks before a back button drops unsaved edits; render `sheet` once in the screen's tree */
 export function useDiscardGuard(dirty: boolean, back: () => void): { guardedBack: () => void; sheet: ReactNode } {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
-  // dirty is live screen STATE, not a behavior selector (S2301): the
-  // guarded function is picked per render from what the draft looks like
   const guardedBack = dirty ? () => setOpen(true) : back;
   const sheet = (
     <Sheet open={open} onOpenChange={setOpen} title={t('sheet.discardTitle')} size="compact">

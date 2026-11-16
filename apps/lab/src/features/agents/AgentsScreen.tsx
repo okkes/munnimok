@@ -24,7 +24,6 @@ export function slotHolder(slot: PrivateAgents['slots'][number]): { label: strin
   return { label: 'free', chip: null };
 }
 
-/** the fleet as the operator sees it: every agent whoever owns it, the private slots, and a door to enrol a browser for the lab */
 export function AgentsScreen({ call, busy, act }: Readonly<ScreenProps>) {
   const [agents, setAgents] = useState<AgentView[] | null | 'unreachable' | 'loading'>('loading');
   // null = the relay answers no private-agent routes; the section is for an environment that has them

@@ -9,7 +9,6 @@ import { tr } from './tr';
 export type Lang = 'en' | 'nl' | 'tr';
 export type { TranslationKey };
 
-/** BCP 47 locale per UI language, for Intl formatting */
 export const LOCALES: Record<Lang, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
 export const LANGS: Lang[] = ['en', 'nl', 'tr'];
@@ -26,7 +25,6 @@ interface LangContextValue {
   setLang: (lang: Lang) => void;
   /** true when the user pinned a language; false = following the device */
   langOverridden: boolean;
-  /** drop the pinned language and track the device again */
   followDeviceLang: () => void;
   t: TFunc;
 }
@@ -34,11 +32,8 @@ interface LangContextValue {
 const LangContext = createContext<LangContextValue | null>(null);
 
 function deviceLang(): Lang {
-  // scan the WHOLE system preference list, not just the primary (user
-  // request: match the device language at the login screen) — a Dutch
-  // system with English first still surfaces nl further down. No match →
-  // English. (IP-country guessing deliberately skipped: it would need an
-  // external lookup before login, against the zero-telemetry posture.)
+  // scan the whole system preference list, not just the primary: a Dutch system with English first still surfaces nl
+  // no IP-country guessing: it needs an external lookup before login, against the zero-telemetry posture
   for (const candidate of navigator.languages?.length ? navigator.languages : [navigator.language || '']) {
     const code = candidate.slice(0, 2).toLowerCase();
     if (code === 'nl' || code === 'tr' || code === 'en') return code as Lang;
@@ -52,24 +47,16 @@ function readStoredLang(): Lang {
   if (typeof localStorage === 'undefined') return typeof navigator === 'undefined' ? 'en' : deviceLang();
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'en' || stored === 'nl' || stored === 'tr') return stored;
-  // first launch: follow the device language when it maps to one we
-  // speak. A deliberate pick in Settings wins forever.
   return deviceLang();
 }
 
-/** the active language for non-React code (catalog names) — kept in
- *  sync by LangProvider; falls back to the stored/device pick */
+/** the active language for non-React code (catalog names), kept in sync by LangProvider */
 let currentLang: Lang | null = null;
 export function getCurrentLang(): Lang {
   return currentLang ?? readStoredLang();
 }
 
-/**
- * The template with its `{name}` slots filled. A template that is not a
- * string — a key a lookup table produced from a value this build no longer
- * lists — yields nothing rather than a TypeError that takes the whole
- * screen down (a space's accounts screen on prod, user ss 2026-10-04).
- */
+/** a non-string template (a key from a lookup table fed a value this build no longer lists) yields '', not a TypeError */
 export function interpolate(template: string, vars?: Record<string, string | number>): string {
   if (typeof template !== 'string') return '';
   if (!vars) return template;

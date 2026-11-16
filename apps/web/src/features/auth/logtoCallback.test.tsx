@@ -5,14 +5,8 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { rememberAfterLogin } from '@/app/afterLogin';
 
-/**
- * The 2026-07-29 iOS 401 regression: the Logto context error is SHARED —
- * a cancelled fetch AFTER a successful exchange (iOS kills the
- * display-name PUT during the /#/home navigation) set it, and the
- * callback screen's unconditional wipe then deleted the freshly
- * persisted tokens while munni_session survived → signed-in-but-
- * tokenless 401 loop. The wipe must only fire while NOT authenticated.
- */
+// the Logto context error is SHARED: a fetch cancelled after a successful exchange (iOS) must not wipe the fresh tokens;
+// the wipe fires only while NOT authenticated
 let mockError: Error | null = null;
 let mockAuthed = false;
 let mockClaims: { sub: string } | undefined;

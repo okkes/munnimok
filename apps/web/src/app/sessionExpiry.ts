@@ -1,13 +1,6 @@
-/**
- * #222: a dead refresh grant (Logto answers `invalid_grant` to the
- * refresh POST) is an IDENTITY state, not connectivity — every API
- * call 401s while the network is fine, and only a fresh sign-in can
- * cure it. The SDK swallows the failure into `undefined`, which used
- * to read as "no bearer sent — proves nothing" downstream, so the app
- * showed "server not available" forever. This flag names the state:
- * the UI says "sign in again", and the token bridge stops hammering
- * the dead grant.
- */
+// #222: a dead refresh grant (Logto `invalid_grant`) is an identity state, not connectivity: every call 401s while the
+// network is fine. The SDK swallows it into `undefined`, so this flag names it: UI says "sign in again", the token
+// bridge stops hammering the grant
 import { isNativeApp } from '@/lib/platform';
 
 let expired = false;
@@ -40,7 +33,6 @@ export function subscribeSessionExpiry(listener: () => void): () => void {
   };
 }
 
-/** Logto's verdict on a spent refresh grant, in either error shape */
 export function isInvalidGrantError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const rawCode = (err as { code?: unknown }).code;
@@ -55,9 +47,7 @@ const REENTRY_KEY = 'munni_grant_reheal';
 const REENTRY_AT_KEY = 'munni_grant_reheal_at';
 const REENTRY_COOLDOWN_MS = 10 * 60_000;
 
-// #272: the idle-return shape — expiry usually SURFACES the moment the
-// user comes back to a long-idle tab (the foreground refresh fails).
-// Nothing unsaved is at risk right then, so the redirect may fire.
+// #272: expiry usually surfaces on returning to a long-idle tab, when nothing unsaved is at risk, so the redirect may fire
 let lastBecameVisibleAt = 0;
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
@@ -71,18 +61,9 @@ const inQuietWindow = (): boolean => {
   return Date.now() - lastBecameVisibleAt <= 10_000; // just came back
 };
 
-/**
- * One silent redirect per expiry, only in QUIET windows (near app open,
- * backgrounded, or within seconds of returning to the tab — #272): the
- * IdP session cookie usually outlives the grant, so the round-trip
- * re-mints tokens without the user typing anything. Mid-use we show the
- * banner instead — a surprise redirect would eat unsaved sheet state.
- * A cross-tab cooldown keeps a dead IdP session from redirect-looping.
- * Never on the phone: the platform auth session is not silent — it pops
- * the OS "wants to use <domain> to sign in" prompt by itself (user ss
- * 2026-10-08, a dead grant's re-entry near app open); there the banner's
- * Sign in button is the door.
- */
+// one silent redirect per expiry, only in quiet windows (#272); mid-use a redirect would eat unsaved sheet state.
+// Never on the phone: the platform auth session pops an OS "wants to use <domain> to sign in" prompt by itself;
+// the banner's Sign in button is the door there
 export async function attemptSilentReentry(signIn: () => Promise<void>): Promise<boolean> {
   if (isNativeApp()) return false;
   if (!navigator.onLine) return false;
@@ -96,7 +77,6 @@ export async function attemptSilentReentry(signIn: () => Promise<void>): Promise
   return true;
 }
 
-/** a token minted again — the next expiry gets its own silent attempt */
 export function clearReentryMark(): void {
   sessionStorage.removeItem(REENTRY_KEY);
 }
@@ -104,14 +84,8 @@ export function clearReentryMark(): void {
 const REPROBE_EVERY_MS = 60_000;
 let lastProbeAt = 0;
 
-/**
- * The expired mark is sticky by design (a spent grant must not be hammered),
- * but a mark set by a passing refusal — the IdP restarting, a token refused
- * once — would otherwise stand until a sign-in. So whenever the device comes
- * back (online, visible) the SDK is asked ONCE a minute whether it still
- * mints: a token means the session lives and the mark is lifted; silence
- * keeps it (user 2026-10-07: "I would expect the refresh to just happen").
- */
+// the mark is sticky (a spent grant must not be hammered) but a passing refusal would keep it until a sign-in: when
+// the device returns, the SDK is asked once a minute whether it still mints; a token lifts the mark, silence keeps it
 export function watchForRevival(mint: () => Promise<string | undefined>): () => void {
   const probe = () => {
     if (!isSessionExpired() || !navigator.onLine) return;

@@ -1,6 +1,5 @@
 import { useUserInk } from '@/ui/userInk';
 
-/** Minimal theme-aware SVG line chart (net worth). Fluid width. */
 export function Line({
   values,
   labels,
@@ -9,7 +8,6 @@ export function Line({
   testId,
 }: Readonly<{
   values: number[];
-  /** sparse x labels aligned with values (empty strings skip) */
   labels?: string[];
   color?: string;
   height?: number;
@@ -38,7 +36,6 @@ export function Line({
       <circle cx={x(n - 1)} cy={y(values[n - 1])} r={3.5} fill={color} />
       {labels?.map((label, i) => {
         if (!label) return null;
-        // edge labels anchor inward so they never clip the viewBox
         let anchor: 'start' | 'middle' | 'end' = 'middle';
         if (i === 0) anchor = 'start';
         else if (i === n - 1) anchor = 'end';

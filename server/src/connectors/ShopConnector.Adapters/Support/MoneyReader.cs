@@ -4,17 +4,8 @@ using Connector.Kit.Normalization;
 
 namespace ShopConnector.Adapters.Support;
 
-/// <summary>
-/// Reads an amount under a unit the caller has already declared.
-///
-/// There is no overload that inspects the value and decides. Every provider
-/// in this service represents money differently and at least one is
-/// inconsistent between its own endpoints, so a heuristic would corrupt
-/// financial data silently - the one failure mode worse than crashing. The
-/// declared unit governs, the JSON type is only transport, and the result
-/// is checked against the receipt's stated total by
-/// <see cref="Reconciliation"/>.
-/// </summary>
+/// no overload inspects the value: providers differ (one is inconsistent between its own endpoints) and a heuristic
+/// corrupts money silently. The declared unit governs and Reconciliation checks the result.
 internal static class MoneyReader
 {
     public static Money Read(JsonElement element, MoneyUnit unit, string currency, string field) => element.ValueKind switch
@@ -24,12 +15,7 @@ internal static class MoneyReader
         _ => throw ConnectorException.ProviderChanged($"{field}: expected a money value, got {element.ValueKind}"),
     };
 
-    /// <summary>
-    /// Resolves a possibly-nested amount: providers wrap the same number as
-    /// <c>12.34</c>, <c>{"amount": 12.34}</c> and
-    /// <c>{"amount": {"amount": 12.34}}</c>, sometimes across two endpoints
-    /// of the same API.
-    /// </summary>
+    /// amounts arrive as 12.34, {"amount": 12.34} or nested twice, sometimes across endpoints of one API
     public static Money? Optional(JsonElement parent, MoneyUnit unit, string currency, string field, params string[] names)
     {
         if (!JsonAccess.TryProp(parent, out var value, names)) return null;
@@ -53,11 +39,7 @@ internal static class MoneyReader
             : null;
     }
 
-    /// <summary>
-    /// ISO-4217 code where the provider states one, otherwise the caller's
-    /// default. Never inferred from a symbol: "$" is at least four
-    /// different currencies.
-    /// </summary>
+    /// never inferred from a symbol: "$" is at least four currencies
     public static string Currency(JsonElement parent, string fallback)
     {
         if (!JsonAccess.TryProp(parent, out var value, "currency", "currencyCode", "isoCode")) return fallback;

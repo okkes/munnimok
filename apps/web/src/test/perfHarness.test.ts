@@ -3,8 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PERF_DEFAULT_SIZE, PERF_FEED_ID, PERF_SPACE_ID, buildPerfStore, timeIt } from './perfHarness';
 import type { PerfStore } from './perfHarness';
 
-/** the harness itself: the dataset it promises, the envelopes real code
- *  expects, and a timing a test can assert on */
 describe('perf harness', () => {
   let data: PerfStore | null = null;
   afterEach(() => {
@@ -24,7 +22,6 @@ describe('perf harness', () => {
     expect(txs.some((t) => t.recurringId)).toBe(true);
     const receipts = await data.store.allRows('receipt');
     expect(receipts.every((r) => r.spaceId === PERF_FEED_ID && r.items && r.items.length > 0)).toBe(true);
-    // deterministic: a second build yields the same first row
     const first = txs.find((t) => t.id === 'perf_tx_1');
     data.close();
     data = await buildPerfStore();

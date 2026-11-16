@@ -3,10 +3,9 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useLang } from '@/i18n';
 import { Icon } from './Icon';
 
-/** how far an edge with more content fades out */
 const FADE_PX = 40;
 
-/** the content fades out toward each edge that hides more of it — a mask on the strip itself, so it melts into whatever is behind (sheet, card, page) in either theme */
+/** a mask on the strip itself, so the fade melts into whatever is behind (sheet, card, page) in either theme */
 export function edgeMask(left: boolean, right: boolean): CSSProperties | undefined {
   if (!left && !right) return undefined;
   const from = left ? `transparent, #000 ${FADE_PX}px` : '#000';
@@ -15,15 +14,8 @@ export function edgeMask(left: boolean, right: boolean): CSSProperties | undefin
   return { maskImage: image, WebkitMaskImage: image };
 }
 
-/**
- * #376 (user): a horizontal strip that SAYS it scrolls. Scrollbars are
- * hidden app-wide, so a row of chips or tiles gave no hint that more sat
- * beyond the edge. Each edge that hides more fades the content out and
- * wears a round arrow button — r2 (user: "a bit hard to see"): a solid
- * surface disc with a hairline and a shadow, readable in both themes over
- * any background, and a tap pages the strip (mouse users have no swipe).
- * Both lift the moment that end is reached.
- */
+// #376: scrollbars are hidden app-wide; each edge that hides more fades and wears an arrow button,
+// and a tap pages the strip (mouse users have no swipe)
 export function ScrollRow({
   children,
   className = '',
@@ -33,7 +25,6 @@ export function ScrollRow({
   children: ReactNode;
   /** classes for the wrapper (margins, a backdrop that must not fade) */
   className?: string;
-  /** classes for the scroller itself, next to `flex overflow-x-auto` */
   scrollerClassName?: string;
   testId?: string;
 }>) {
@@ -58,7 +49,6 @@ export function ScrollRow({
   }, [update, children]);
   // the strip's bottom padding is shadow room, not content — the arrows centre on the chips
   const shadowRoom = /(^|\s)pb-1(\s|$)/.test(scrollerClassName);
-  /** a tap pages the strip by most of its width — the next chip lands where the arrow was */
   const page = (direction: 1 | -1) => {
     const el = ref.current;
     if (!el) return;

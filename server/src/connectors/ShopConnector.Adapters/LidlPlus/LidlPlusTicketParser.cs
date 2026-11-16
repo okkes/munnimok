@@ -5,7 +5,6 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.LidlPlus;
 
-/// <summary>One row of the v2 ticket list.</summary>
 internal sealed record LidlTicketSummary
 {
     public required string Id { get; init; }
@@ -17,14 +16,8 @@ internal sealed record LidlTicketSummary
     public string? StoreName { get; init; }
 }
 
-/// <summary>
-/// Parses the v2 list and the v3 detail.
-///
-/// The endpoints and headers are confirmed; the payload field names are not,
-/// so every read takes a candidate list. Amounts are the exception to
-/// tolerance: their unit comes from <see cref="LidlPlusOptions.AmountUnit"/>
-/// and is never inferred from the value's shape.
-/// </summary>
+/// payload field names are unconfirmed, so every read takes a candidate list;
+/// amount units come from AmountUnit, never a value's shape
 internal static class LidlPlusTicketParser
 {
     private const string ProviderId = LidlPlusAdapter.ProviderId;
@@ -64,12 +57,7 @@ internal static class LidlPlusTicketParser
         return summaries;
     }
 
-    /// <summary>
-    /// Line items from a v3 ticket detail. Lidl states its discounts as
-    /// their own collection per line, which is the shape reconciliation
-    /// wants: item totals plus (negative) discounts must equal the stated
-    /// total.
-    /// </summary>
+    /// discounts are their own collection per line: item totals plus (negative) discounts must equal the stated total
     public static IReadOnlyList<ReceiptItem> ParseItems(JsonElement detail, LidlPlusOptions options)
     {
         var lines = JsonAccess.Array(detail, "itemsLine", "itemsLines", "items", "lines");
@@ -125,11 +113,7 @@ internal static class LidlPlusTicketParser
         StoreName = storeName,
     };
 
-    /// <summary>
-    /// Sums a line's discounts into one negative amount. Without them a
-    /// receipt's items do not add up to its total, which fails
-    /// reconciliation and would mark every promotion-heavy shop as suspect.
-    /// </summary>
+    /// summed into one negative amount, else items do not add up to the total and promotion-heavy shops fail reconciliation
     private static ReceiptDiscount? ParseDiscount(
         JsonElement line, LidlPlusOptions options, string currency, string itemName)
     {

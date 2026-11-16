@@ -4,8 +4,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/harness';
 
-// Local-first law: demo mode must never touch the network. Any fetch is
-// both recorded (asserted below) and rejected (offline behavior).
+// local-first law: demo mode never touches the network; any fetch is recorded and rejected
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
 describe('app screens (demo identity)', () => {
@@ -65,7 +64,6 @@ describe('app screens (demo identity)', () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     expect(screen.queryByTestId('tab-spaces')).toBeNull();
-    // app-wide rows live behind the single Global settings door now
     fireEvent.click(screen.getByTestId('settings-global-row'));
     fireEvent.click(await screen.findByTestId('settings-spaces-row'));
     expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
@@ -79,13 +77,11 @@ describe('app screens (demo identity)', () => {
     fireEvent.click(screen.getByTestId('home-customize'));
     await screen.findByTestId('home-customize-list');
 
-    // hide the transactions block: its card leaves Home
     fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
     await waitFor(() => expect(screen.queryByText('Transactions', { selector: '.m-cap' })).toBeNull());
     fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
 
-    // move overview to the top by DRAGGING it there (arrows retired —
-    // user request). happy-dom rects are zero, so each row fakes its box
+    // drag, not arrows; happy-dom rects are zero, so each row fakes its box
     const domOrder = () =>
       [...document.querySelectorAll('[data-testid^="home-block-row-"]')].map((el) =>
         el.getAttribute('data-testid')!.replace('home-block-row-', ''),
@@ -99,8 +95,7 @@ describe('app screens (demo identity)', () => {
     const fromIndex = domOrder().indexOf('overview');
     const handle = screen.getByTestId('home-block-drag-overview');
     fireEvent.pointerDown(handle, { pointerId: 1, clientY: fromIndex * 40 + 20 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 5 }); // above row 0's midpoint
-    // the floating ghost follows the finger while dragging
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 5 });
     expect(screen.getByTestId('home-block-ghost')).toBeTruthy();
     fireEvent.pointerUp(handle, { pointerId: 1 });
     await waitFor(() => expect(domOrder()[0]).toBe('overview'));

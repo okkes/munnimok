@@ -4,14 +4,8 @@ using Connector.Kit.Manifests;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// Enable Banking as a bank party. Institutions are named by
-/// <c>name|country</c> (the aggregator has no ids), the consent is born only
-/// when the bank returns with a single-use code, and the session id that
-/// exchange mints is the consent. The redirect address must be registered
-/// with the aggregator beforehand — the wizard's registration step — which
-/// is why the return page keeps its path across the years.
-/// </summary>
+// institutions are name|country (no ids); the consent is born when the bank returns with a single-use code
+// the redirect address is registered with the aggregator beforehand (the wizard's step): the return page keeps its path
 public sealed class EnableBankingAdapter : OpenBankingAdapter
 {
     public const string ProviderId = "enablebanking";

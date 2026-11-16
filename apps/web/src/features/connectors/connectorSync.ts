@@ -9,19 +9,13 @@ import { subscribeConnectorFrames } from './events';
 import { useSyncActivity } from './syncActivity';
 import type { ErrorEnvelope, IngestedCounts, JobView } from './types';
 
-/**
- * One sync pass for one connection (docs/connectors/client.md, "Sync"):
- * the bundle goes to the relay, the relay resumes the session,
- * fetches, ingests into the feeds and acknowledges; the rows then arrive
- * through normal sync and the matcher runs per included space. A fetch
- * that outran its window comes back as a job this follows to its end.
- */
+// rows land through normal sync, then the matcher runs per included space;
+// a fetch that outran its window is a job, followed to its end
 
 export interface SyncReport {
   status: 'ok' | 'signin' | 'blocked' | 'wait' | 'error' | 'asking';
   /** receipts the relay filed this pass */
   added: number;
-  /** bank rows the relay filed this pass (M4) */
   accounts: number;
   transactions: number;
   linked: number;
@@ -38,9 +32,7 @@ export interface SyncReport {
 
 export interface SyncOptions {
   engine?: SyncEngine | null;
-  /** a human is present: answer a job's question (resolve with the value, or null to give up) */
   onChallenge?: (job: JobView) => Promise<string | null>;
-  /** a job's progress, for the state line */
   onProgress?: (job: JobView) => void;
 }
 
@@ -50,12 +42,8 @@ export const syncTuning = { pollMs: 2_000, pollMisses: 15 };
 const JOB_CEILING_MS = 45 * 60 * 1_000;
 const SIGN_IN_CODES = new Set(['session_expired', 'invalid_credentials', 'mfa_failed', 'consent_expired', 'unsupported_resource']);
 const TERMINAL_JOB = new Set(['succeeded', 'failed', 'expired']);
-/**
- * #460: passes over older history one sync makes at most. They run while the
- * person is here (attended: the party's unattended budget never sees them),
- * and the cap keeps one sync from spending the relay's hourly budget on
- * history alone — the rest follows on the next sync.
- */
+// #460: cap on older passes per sync; they run attended, and the cap spares the relay's hourly budget
+// (the rest follows on the next sync)
 export const MAX_OLDER_PASSES = 10;
 
 const isoDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
@@ -78,29 +66,19 @@ const lastErrorOf = (envelope: ErrorEnvelope, artifactsJobId?: string): Connecto
   ...(artifactsJobId ? { artifactsJobId } : {}),
 });
 
-/**
- * #441 L1: the picture a failed run left waits on the person's word — or
- * goes at once where they said "always" (user 2026-10-07: the standing
- * answer means never asked, wherever the failure lands). What comes back
- * is the question still open: the job id, or nothing once shared.
- */
+// #441 L1: a failed run's picture waits on the person's word, or goes at once where they said "always";
+// returns the job id still open, or nothing once shared
 async function shareOrLeave(row: ConnectorConnRow | undefined, artifactsJobId: string | undefined): Promise<string | undefined> {
   if (!artifactsJobId || !row?.reportFailures) return artifactsJobId;
   await connectorApi.shareArtifacts(row.provider, artifactsJobId).catch(() => undefined);
   return undefined;
 }
 
-/** what a failed sign-in left on the device row: its question shared by the standing answer, left open for the hub's card, or nothing to ask */
+/** shared by the standing answer, left open for the hub's card, or nothing to ask */
 export type FailureNoted = 'shared' | 'asked' | 'none';
 
-/**
- * A sign-in that failed in the sheet writes its word on the device row
- * too (user 2026-10-07: "the tab closes and I cannot report it any more"):
- * the question a picture waits on then survives the sheet, under the
- * hub's card — and a standing "always report" shares it right here. A
- * connection that has no row yet (its first sign-in) keeps the question
- * in the sheet alone.
- */
+// a sign-in that failed in the sheet also writes to the device row, so the question survives the sheet;
+// a connection with no row yet (first sign-in) keeps it in the sheet alone
 export async function noteSignInFailure(storage: StorageBackend, connectionId: string, envelope: ErrorEnvelope, artifactsJobId?: string): Promise<FailureNoted> {
   const row = await storage.connectorConnGet(connectionId);
   if (!row) return 'none';
@@ -110,7 +88,6 @@ export async function noteSignInFailure(storage: StorageBackend, connectionId: s
   return artifactsJobId ? 'shared' : 'none';
 }
 
-/** the question is answered (or lapsed): the job id leaves the row so no card asks it again */
 export async function settleQuestion(storage: StorageBackend, connectionId: string, jobId: string): Promise<void> {
   const row = await storage.connectorConnGet(connectionId);
   if (row?.lastError?.artifactsJobId !== jobId) return;
@@ -120,12 +97,10 @@ export async function settleQuestion(storage: StorageBackend, connectionId: stri
 
 const empty = (): SyncReport => ({ status: 'error', added: 0, accounts: 0, transactions: 0, linked: 0, proposed: 0 });
 
-/** pull the rows the relay filed, then match them into every included space */
 async function landAndMatch(storage: StorageBackend, repo: Repo, engine: SyncEngine | null | undefined, connectionId: string): Promise<Pick<SyncReport, 'linked' | 'proposed'>> {
   await engine?.syncAll().catch(() => undefined);
-  // a shop's receipts flow into the spaces that include it; a bank's (or a registry's) rows reach a space through
-  // its accounts instead, so every space with a shop re-reads its transactions against the shop's receipts — the
-  // proposals stand before the review opens (user 2026-10-09)
+  // a bank's or registry's rows reach a space through its accounts, so every space with a shop re-reads its
+  // transactions against the shop's receipts: proposals stand before the review opens
   const meta = (await storage.allRows('storeConn')).find((c) => c.id === connectionId && c.deleted === 0);
   if (meta?.kind === 'bank' || meta?.kind === 'registry') return rematchSpaces(storage, repo);
   let linked = 0;
@@ -140,18 +115,16 @@ async function landAndMatch(storage: StorageBackend, repo: Repo, engine: SyncEng
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** the job's view, freshest first: a frame when the stream carries one, the poll as the safety net */
 async function nextView(provider: string, job: JobView, waitMs: number): Promise<JobView | null> {
   let unsubscribe = () => {};
   const fromStream = new Promise<JobView | null>((resolve) => {
     unsubscribe = subscribeConnectorFrames(job.sessionId, () => resolve(null), job.jobId);
   });
-  // a frame says "something moved" — the view itself is read afresh, because
-  // frames never carry the bundle a rotation may have attached
+  // a frame only says "something moved": the view is read afresh, as frames never carry a rotated bundle
   await Promise.race([fromStream, sleep(waitMs)]);
   unsubscribe();
-  // a poll that dies on the network — a phone that slept mid-request, a
-  // tunnel — is a miss, not the end of the follow (prod 2026-10-06)
+  // a poll that dies on the network (a phone that slept, a tunnel) is a miss, not the end of the follow
+  // (prod 2026-10-06)
   return connectorApi.job(provider, job.jobId).catch((err: unknown) => {
     if (err instanceof ConnectorError) throw err;
     return null;
@@ -167,10 +140,6 @@ async function keepRotated(storage: StorageBackend, connectionId: string, job: J
 
 type Followed = { job: JobView; bundle: string } | { asked: JobView };
 
-/**
- * Follow a job to a terminal state, answering its questions through the
- * caller when a human is there.
- */
 async function followJob(storage: StorageBackend, connectionId: string, provider: string, first: JobView, bundle: string, options: SyncOptions): Promise<Followed> {
   let job = first;
   let current = bundle;
@@ -191,14 +160,12 @@ async function followJob(storage: StorageBackend, connectionId: string, provider
   }
 }
 
-/** a question mid-run, answered through the caller when a human is there; null when nobody is */
 async function answerIfPresent(provider: string, job: JobView, options: SyncOptions): Promise<JobView | null> {
   const value = options.onChallenge ? await options.onChallenge(job) : null;
   if (value === null || !job.challenge) return null;
   return connectorApi.answerJob(provider, job.jobId, job.challenge.id, value);
 }
 
-/** the next view, or the same one after a miss — and the end of the follow once the misses pile up */
 async function pollWithPatience(provider: string, job: JobView, misses: number): Promise<{ job: JobView; misses: number }> {
   const next = await nextView(provider, job, syncTuning.pollMs);
   if (next) return { job: next, misses: 0 };
@@ -206,7 +173,6 @@ async function pollWithPatience(provider: string, job: JobView, misses: number):
   return { job, misses: misses + 1 };
 }
 
-/** a job that ended without succeeding speaks the envelope it carried, or the one its state implies */
 function jobFailure(job: JobView): ConnectorError {
   const expired = job.state === 'expired';
   const envelope: ErrorEnvelope = job.error ?? {
@@ -218,7 +184,7 @@ function jobFailure(job: JobView): ConnectorError {
   return new ConnectorError(expired ? 410 : 500, envelope, job.artifactsJobId ?? undefined);
 }
 
-/** the window a pass asks for: since (absent: the party's floor), and until on a pass over older history (#460) */
+/** since absent: the party's floor; until only on a pass over older history (#460) */
 interface PassWindow {
   since?: string;
   until?: string;
@@ -226,14 +192,8 @@ interface PassWindow {
 
 type Landed = { ingested: IngestedCounts | undefined; partial: boolean; oldest?: string; window: PassWindow } | { asked: JobView };
 
-/**
- * The accepted-job path: follow, then collect the page with the latest
- * bundle. A collect may answer 202 again: the relay walks on to the
- * resources after the job's, and the next pass became a job of its own
- * (prod 2026-10-04: a bank's accounts pass outran its window and the
- * transactions were never asked for) — follow that one and collect
- * again, until the relay says the walk is done.
- */
+// a collect can answer 202 again: the next resource's pass became a job of its own (prod 2026-10-04: a bank's
+// accounts pass outran its window and the transactions were never asked for); follow it, collect until the walk is done
 async function collectJob(
   storage: StorageBackend,
   row: ConnectorConnRow,
@@ -245,8 +205,7 @@ async function collectJob(
   let job = first;
   let current = bundle;
   for (;;) {
-    // remembered on the row: a device that closes on it resumes it on the
-    // next sync instead of asking the party all over again (prod 2026-10-06)
+    // remembered on the row: a device closed on it resumes it next sync instead of asking the party again (prod 2026-10-06)
     await patchRow(storage, row.id, { pendingJob: { jobId: job.jobId, ...window, startedAt: new Date().toISOString() } });
     const followed = await followJob(storage, row.id, row.provider, job, current, options);
     if ('asked' in followed) return followed;
@@ -282,14 +241,8 @@ async function refused(storage: StorageBackend, connectionId: string, err: Conne
   return report;
 }
 
-/**
- * A job the relay accepted earlier and this device never collected — the
- * app was closed on it — is followed and collected before anything new is
- * asked for; one the relay has since forgotten (a day) is let go and the
- * sync starts afresh. Prod 2026-10-06: a phone that kept reopening the app
- * started a fresh half-hour Amazon fetch each time and collected none of
- * them, while the hub read "Fetching…" for ever.
- */
+// a job accepted earlier and never collected is resumed before any new fetch; one the relay forgot (a day) is let go
+// prod 2026-10-06: a phone that kept reopening the app started a fresh half-hour Amazon fetch each time, collected none
 async function resumePending(storage: StorageBackend, row: ConnectorConnRow, bundle: string, options: SyncOptions): Promise<Landed | null> {
   const pending = row.pendingJob;
   if (!pending) return null;
@@ -307,7 +260,6 @@ async function resumePending(storage: StorageBackend, row: ConnectorConnRow, bun
   return collectJob(storage, row, first, bundle, options, { since: pending.since, until: pending.until });
 }
 
-/** one relay sync over a window: the counts it ingested, or the question it stopped at */
 async function passOnce(storage: StorageBackend, row: ConnectorConnRow, bundle: string, window: PassWindow, options: SyncOptions): Promise<Landed> {
   const answer = await connectorApi.sync(row.provider, { connectionId: row.id, bundle, ...window });
   if (answer.accepted) return collectJob(storage, row, answer.job, bundle, options, window);
@@ -315,7 +267,6 @@ async function passOnce(storage: StorageBackend, row: ConnectorConnRow, bundle: 
   return { ingested: answer.outcome.ingested, partial: answer.outcome.complete === false, oldest: answer.outcome.oldest, window };
 }
 
-/** the relay's answer, landed: the counts it ingested, or the question it stopped at */
 async function land(storage: StorageBackend, row: ConnectorConnRow, bundle: string, options: SyncOptions): Promise<Landed> {
   const resumed = await resumePending(storage, row, bundle, options);
   if (resumed) return resumed;
@@ -326,16 +277,9 @@ const lowest = (a: string, b: string): string => (a < b ? a : b);
 
 const withSince = (since: string | undefined, until: string): ConnectorBackfill => (since ? { since, until } : { until });
 
-/**
- * #460 — what a finished pass says about older history. A regular pass that
- * came back partial leaves the days below the oldest one it brought, down to
- * its own since (joined with a backfill already pending); a whole one leaves
- * a pending backfill as it was. A pass over older history moves the frontier
- * down to the oldest day it brought, or ends the backfill when it came back
- * whole, brought nothing dated, or reached no further. The frontier day is
- * asked again: a pass's cap can cut a day in half, and the ingest absorbs the
- * overlap. The relay's scheduler keeps the same rule (ConnectorScheduleService).
- */
+// #460: a partial regular pass leaves the days below its oldest day as backfill; a pass over older history moves
+// the frontier down or ends it; the frontier day is asked again (a cap can cut a day in half, the ingest absorbs the
+// overlap); ConnectorScheduleService keeps the same rule
 export function nextBackfill(
   current: ConnectorBackfill | undefined,
   window: PassWindow,
@@ -356,9 +300,7 @@ const ENDS_SESSION = new Set([...SIGN_IN_CODES, 'blocked_by_provider']);
 
 interface Older {
   ingested: IngestedCounts[];
-  /** what is still to fetch once the passes stopped */
   remaining?: ConnectorBackfill;
-  /** a pass stopped for a question nobody answered */
   asked?: JobView;
 }
 
@@ -375,14 +317,8 @@ async function olderPass(storage: StorageBackend, row: ConnectorConnRow, bundle:
   }
 }
 
-/**
- * #460 — the older history a partial pass left, fetched right away while the
- * person is here: pass after pass, each one relay sync with `until`, until a
- * pass comes back whole or brings nothing older. The hub line follows how
- * far back it reached. A refusal of the party's budget or a passing fault
- * leaves the rest on the row for the next sync; only a refusal that ends the
- * session is the caller's to speak.
- */
+// #460: fetches the older history a partial pass left while the person is here; a budget refusal or passing fault
+// leaves the rest on the row, only a refusal that ends the session is the caller's to speak
 async function fetchOlder(storage: StorageBackend, row: ConnectorConnRow, start: ConnectorBackfill | undefined, options: SyncOptions): Promise<Older> {
   const ingested: IngestedCounts[] = [];
   let backfill = start;
@@ -403,7 +339,6 @@ async function fetchOlder(storage: StorageBackend, row: ConnectorConnRow, start:
 const sum = (counts: IngestedCounts[], key: 'receipts' | 'accounts' | 'transactions'): number =>
   counts.reduce((total, c) => total + c[key], 0);
 
-/** the pass itself: the relay's answer landed and matched, or its refusal spoken */
 async function run(storage: StorageBackend, repo: Repo, row: ConnectorConnRow, bundle: string, options: SyncOptions): Promise<SyncReport> {
   try {
     const landed = await land(storage, row, bundle, options);
@@ -434,11 +369,8 @@ async function run(storage: StorageBackend, repo: Repo, row: ConnectorConnRow, b
   }
 }
 
-/**
- * One sync per connection at a time: a second ask while one runs joins it
- * (prod 2026-10-06: the keep-alive, the auto-sync after a bank cycle and
- * Sync now each queued their own half-hour Amazon fetch).
- */
+// one sync per connection: a second ask joins it (prod 2026-10-06: the keep-alive, the auto-sync after a bank cycle
+// and Sync now each queued their own half-hour Amazon fetch)
 const inFlight = new Map<string, Promise<SyncReport>>();
 
 export function syncConnection(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions = {}): Promise<SyncReport> {
@@ -449,12 +381,7 @@ export function syncConnection(storage: StorageBackend, repo: Repo, connectionId
   return task;
 }
 
-/**
- * One sync, reported to the activity store from start to end whoever
- * started it (the connect, the app-open keep-alive, Sync now), so the
- * rows show it running — with the count the party's run has found so far
- * — and show what it brought once done (user request 2026-10-02).
- */
+// reported to the activity store from start to end whoever started it, so the rows show it running and what it brought
 async function syncOnce(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions): Promise<SyncReport> {
   const row = await storage.connectorConnGet(connectionId);
   if (!row) return empty();

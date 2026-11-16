@@ -5,12 +5,7 @@ using Munni.Api.Social;
 
 namespace Munni.Api.Push;
 
-/// <summary>
-/// Routes each subscription to its transport: browser rows (webpush) to
-/// the VAPID sender, native shell rows (fcm) to Firebase. A kind whose
-/// transport is not configured reports success so the row survives
-/// until the transport arrives.
-/// </summary>
+// a kind whose transport is not configured reports success, so the row survives until the transport arrives
 public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : IPushSender
 {
     public Task<bool> SendAsync(PushSubscriptionRow subscription, string payload, CancellationToken ct)
@@ -20,13 +15,8 @@ public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : 
     }
 }
 
-/// <summary>
-/// Visible notification text for native pushes, per device language —
-/// the server-side twin of sw.ts/swNotifications (iOS displays NOTHING
-/// for data-only messages while the app is closed, so unlike web push
-/// the localization cannot happen on-device; user report: friend
-/// requests never showed on iPhone).
-/// </summary>
+// server-side twin of sw.ts/swNotifications: iOS shows nothing for data-only messages while the app is closed,
+// so native text is localized here
 public static class FcmTexts
 {
     private sealed record Texts(
@@ -158,13 +148,9 @@ public static class FcmTexts
     }
 }
 
-/// <summary>
-/// FCM HTTP v1 (native-apps design N4): a service-account JWT buys a
-/// short-lived OAuth token. Messages carry the data payload for in-app
-/// handling PLUS a notification block localized per device (FcmTexts) —
-/// without it, closed iOS apps never display anything.
-/// Configured via Fcm:ServiceAccountJson (the downloaded key file).
-/// </summary>
+// FCM HTTP v1: a service-account JWT buys a short-lived OAuth token
+// the message carries data plus a notification block localized per device (FcmTexts):
+// closed iOS apps show nothing without it
 public sealed class FcmPushSender : IPushSender
 {
     // omit the notification field entirely when a payload type has no
@@ -200,10 +186,8 @@ public sealed class FcmPushSender : IPushSender
             message = new
             {
                 token = subscription.Endpoint,
-                // data for the in-app handlers (routing, refresh) …
                 data = new { payload },
-                // … and the OS-rendered notification: closed iOS apps show
-                // nothing for data-only messages (user report)
+                // the OS-rendered notification: closed iOS apps show nothing for data-only messages
                 notification = visible is null ? null : new { title = visible.Value.Title, body = visible.Value.Body },
                 android = new { priority = "high" },
                 apns = new { headers = new Dictionary<string, string> { ["apns-priority"] = "10" }, payload = new { aps = new { sound = "default" } } },

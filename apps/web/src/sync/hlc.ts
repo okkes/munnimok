@@ -1,11 +1,5 @@
-/**
- * Hybrid Logical Clock.
- *
- * Every edit is stamped with an HLC so that "most recent edit wins" stays
- * correct across devices with skewed clocks and long offline periods.
- * Encoded as a fixed-width sortable string: plain string comparison of two
- * encoded HLCs is equivalent to comparing (wallMs, counter, deviceId).
- */
+// "most recent edit wins" stays correct across skewed clocks and long offline periods
+// encoded fixed-width so plain string comparison equals comparing (wallMs, counter, deviceId)
 
 export interface Hlc {
   wallMs: number;
@@ -47,11 +41,6 @@ export interface HlcState {
   counter: number;
 }
 
-/**
- * Clock for one device. `now()` produces monotonically increasing stamps even
- * if the wall clock jumps backwards; `observe()` folds in stamps received
- * from other devices so local time never falls behind what we've seen.
- */
 export class HlcClock {
   private state: HlcState;
 
@@ -78,7 +67,6 @@ export class HlcClock {
     return encodeHlc({ wallMs: this.state.lastWallMs, counter: this.state.counter, deviceId: this.deviceId });
   }
 
-  /** Fold in a remote stamp so subsequent local stamps sort after it. */
   observe(remoteEncoded: string): void {
     const remote = decodeHlc(remoteEncoded);
     const wall = this.wallClock();

@@ -2,14 +2,8 @@ import { describe, test } from 'vitest';
 import { measure, scrubEvent } from './perf';
 import type { TransactionEvent } from './perf';
 
-/**
- * `npm run perf` (vitest bench): the instrumentation's own overhead must
- * stay invisible — a measure() around a hot path may not become the hot
- * path, and the scrub that runs on every sampled transaction must cost
- * less than the fetch it describes. Feature benches join this folder as
- * *.bench.ts with the perf harness (src/test/perfHarness.ts); vitest 5
- * hands `bench` to a regular test as a context fixture.
- */
+// `npm run perf`: measure() may not become the hot path it wraps; the per-transaction scrub must cost less than the fetch
+// vitest 5 hands `bench` to a regular test as a context fixture
 
 const id = '0191d9b0-7c2a-7b4e-9a1f-3c5d2e1f0a9b';
 const fiftySpans = (): TransactionEvent => ({

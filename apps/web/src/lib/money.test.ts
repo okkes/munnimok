@@ -47,7 +47,7 @@ describe('parseCents (user input -> integer cents)', () => {
   });
 
   it('never produces fractional cents', () => {
-    expect(parseCents('0,005')).toBe(1); // rounds, stays integer
+    expect(parseCents('0,005')).toBe(1);
     expect(Number.isInteger(parseCents('123,456')!)).toBe(true);
   });
 });

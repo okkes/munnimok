@@ -3,11 +3,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Execution;
 
-/// <summary>
-/// The work root is scratch space for one run: whatever a previous run left
-/// there (a crashed job's downloads, a half-written page) is swept once at
-/// start-up, and never again while this run's own jobs are writing into it.
-/// </summary>
 public sealed class WorkRootTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "work-root-tests", Guid.NewGuid().ToString("N"));

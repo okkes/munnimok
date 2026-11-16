@@ -16,12 +16,8 @@ import { callbackUri } from './logto';
 import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 import { MINA_EXPR } from '@/features/mina/assets';
 
-/**
- * Mina's fullscreen heads-up before a SECOND offline profile (arc 8, the
- * DebtHandoffInterstitial layout): profiles are fully separate worlds —
- * spaces INSIDE one profile are how family/business/private split.
- * Browser back = "go back" (standing rule).
- */
+// Mina's fullscreen heads-up before a SECOND offline profile: profiles are separate worlds, spaces inside one split
+// family/business/private; browser back = "go back"
 function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () => void; onBack: () => void }>) {
   const { t } = useLang();
   const backRef = useRef(onBack);
@@ -58,10 +54,9 @@ function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () 
 import { continueOptions, readLastAccount } from './lastAccount';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
-// re-encoded from the provided PNG (2.2MB) — the login screen is precached
+// re-encoded from a 2.2MB PNG: the login screen is precached
 import desktopBgUrl from '@/assets/desktop-login-bg.jpg';
 
-/** live navigator.onLine with event updates */
 function useOnLine(): boolean {
   const [onLine, setOnLine] = useState(() => navigator.onLine);
   useEffect(() => {
@@ -76,10 +71,7 @@ function useOnLine(): boolean {
   return onLine;
 }
 
-/** the server's sign-up policy: an invitation-only munni says so under the
- *  button (the /health capability, cached per page load). Asked only from
- *  the sign-in button, i.e. with Logto configured — demo/offline builds
- *  stay zero-network. */
+/** asked only from the sign-in button (Logto configured): demo/offline builds stay zero-network */
 function useInviteOnly(): boolean {
   const [inviteOnly, setInviteOnly] = useState(false);
   useEffect(() => {
@@ -96,33 +88,22 @@ function useInviteOnly(): boolean {
   return inviteOnly;
 }
 
-/** #559: the provider "Continue as" hands over to wears its mark — the next screen is theirs */
 const PROVIDER_ICONS: Partial<Record<string, string>> = { google: 'google', apple: 'apple' };
 
-/** real OIDC sign-in — only rendered when Logto is configured. Disabled
- *  without connectivity, with a line saying why (the silent dead button
- *  cost real head-scratching). */
 function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { t } = useLang();
   const { signIn } = useLogto();
   const [failed, setFailed] = useState<string | null>(null);
   const caUrl = localCaUrl();
   const inviteOnly = useInviteOnly();
-  // the account step (user 2026-10-07): the name this device signed in with
-  // last — continue as them, or ask for another. #559: only where the way
-  // back in is known — Logto's live session answers at once, a signed-out
-  // one goes straight to their provider (or their username is filled in);
-  // without it the plain sign-in, never a name that ends on an empty form
+  // #559: "Continue as" only where the way back in is known; otherwise the plain sign-in, never a name ending on an empty form
   const last = readLastAccount();
   const resume = continueOptions(last);
   const continuing = resume ? last : null;
   const providerIcon = continuing?.social ? PROVIDER_ICONS[continuing.social] : undefined;
   const start = (fresh: boolean) => {
     setFailed(null);
-    // a rejected signIn used to vanish (iOS report 2026-09-08:
-    // "nothing happens" — the in-webview OIDC discovery fetch died
-    // on the not-yet-trusted family certificate). Name it on
-    // screen AND report it — a native user has no devtools.
+    // a rejected signIn is named on screen AND reported: a native user has no devtools (discovery died on an untrusted cert)
     const started = fresh
       ? signIn({ redirectUri: callbackUri(), prompt: [Prompt.Login, Prompt.Consent] })
       : signIn({ redirectUri: callbackUri(), ...resume });
@@ -166,9 +147,6 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   );
 }
 
-/** compact top-right language pill (legacy parity); code badges, no flag
- *  emoji. The picker itself is the standard bottom Sheet now (user ss
- *  2026-08-01: this was the app's one remaining popover-style modal). */
 function LangPill() {
   const { lang, setLang, t } = useLang();
   const [open, setOpen] = useState(false);
@@ -207,25 +185,17 @@ function LangPill() {
   );
 }
 
-/**
- * Login gate. With Logto configured there is exactly one real sign-in
- * button; without it, unavailable providers are hidden entirely (a grey
- * disabled wall reads as broken) and demo/offline lead.
- */
+/** unavailable providers are hidden without Logto: a grey disabled wall reads as broken */
 export function LoginScreen() {
   const { t } = useLang();
   const { login } = useSession();
   const navigate = useNavigate();
   const onLine = useOnLine();
   const caUrl = localCaUrl();
-  // offline mode is two full sub-SCREENS now (user ruling: info first,
-  // then profile on its own screen); login modes must honor the browser
-  // back button — manual pushState + popstate, since /login is one route
+  // /login is one route: the offline sub-screens honor the browser back button by manual pushState + popstate
   const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
-  // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
-  // Mina's heads-up before minting a SECOND world (arc 8)
   const [profilesAsk, setProfilesAsk] = useState(false);
   const profiles = listOfflineProfiles();
 
@@ -259,8 +229,6 @@ export function LoginScreen() {
 
   const createOffline = () => {
     if (!profileName.trim()) return;
-    // the 2nd+ profile gets Mina's fullscreen heads-up first (arc 8):
-    // profiles are separate worlds — spaces split WITHIN one
     if (profiles.length > 0) {
       setProfilesAsk(true);
       return;
@@ -331,8 +299,7 @@ export function LoginScreen() {
             ))}
           </div>
 
-          {/* right below the trade-off cards — mt-auto floated it to the
-              bottom of tall desktop viewports (user ss 2026-08-01) */}
+          {/* right below the trade-off cards: mt-auto floated it to the bottom of tall desktop viewports */}
           <Button className="w-full" data-testid="offline-continue" onClick={openProfiles}>
             {t('offline.continueBtn')}
           </Button>
@@ -359,17 +326,12 @@ export function LoginScreen() {
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft">
               <Icon name="account-lock-outline" size={26} color="var(--m-accent-deep)" />
             </span>
-            {/* the headline follows reality (user ss): with no profile
-                yet there is nothing to "choose" */}
             <h1 className="m-h2 text-ink">{t(profiles.length ? 'offline.chooseProfile' : 'offline.createProfileTitle')}</h1>
-            {/* multiple worlds are allowed now (arc 8) — the hint says
-                what a profile IS instead of forbidding a second one */}
             <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.profilesHint' : 'offline.profileSub')}</p>
           </div>
           {profiles.length > 0 && (
             <div className="mb-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
-              {/* deleting a profile moved to Settings → Profile (user
-                  ruling 2026-07-29: consistent with the online account) */}
+              {/* deleting a profile lives in Settings → Profile, like the online account */}
               {profiles.map((p) => (
                 <button
                   key={p.id}
@@ -384,7 +346,6 @@ export function LoginScreen() {
               ))}
             </div>
           )}
-          {/* the add row stays available — "Add another profile" (arc 8) */}
           <FormBlockerNote show={attempted && !profileName.trim()} text={t('form.needName')} testId="offline-create-blocker" className="pb-2" />
           <div className="flex gap-2">
             <input
@@ -418,15 +379,12 @@ export function LoginScreen() {
 
   return (
     <div className="m-fade relative flex h-full flex-col overflow-y-auto bg-bg md:flex-row md:overflow-hidden" data-testid="screen-login">
-      {/* #122: in dark mode the OS status icons and the wordmark float
-          over LIGHT hero art and drown — a top scrim buys them contrast.
-          Light mode needs none: dark icons read on light art. */}
+      {/* #122: in dark mode the OS status icons and wordmark drown over LIGHT hero art, so a top scrim; light mode needs none */}
       <div
         aria-hidden="true"
         data-testid="login-top-scrim"
         className="pointer-events-none absolute inset-x-0 top-0 z-[5] hidden h-28 bg-gradient-to-b from-black/55 via-black/25 to-transparent dark:block"
       />
-      {/* logo + language: overlays the hero on mobile, spans both panes on desktop */}
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 pt-[max(12px,env(safe-area-inset-top))] md:px-8 md:pt-6">
         <div className="flex items-center gap-2.5">
           <img src={leafUrl} alt="" className="h-9 w-9 object-contain" />
@@ -435,15 +393,12 @@ export function LoginScreen() {
         <LangPill />
       </div>
 
-      {/* hero art: top band on mobile only — desktop gets the full-bleed backdrop */}
       <div className="relative flex max-h-[min(400px,44vh)] shrink-0 items-end overflow-hidden md:hidden">
         <img src={loginBgUrl} alt="" aria-hidden="true" className="block h-auto w-full" />
-        {/* blend the art's edge into the paper background */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg" />
       </div>
 
-      {/* desktop backdrop: the flat-lay is busy on the left and calm on the
-          right, so the form card floats over the calm side */}
+      {/* the flat-lay is busy on the left and calm on the right, so the form card floats over the calm side */}
       <img
         src={desktopBgUrl}
         alt=""
@@ -452,7 +407,6 @@ export function LoginScreen() {
         className="pointer-events-none absolute inset-0 hidden h-full w-full object-cover object-left md:block"
       />
 
-      {/* form pane */}
       <div className="relative flex flex-1 flex-col md:h-full md:items-end md:justify-center md:pr-[7vw]">
         <div className="flex flex-1 flex-col md:w-[440px] md:flex-none md:gap-2 md:rounded-3xl md:border md:border-line md:bg-surface/90 md:p-8 md:shadow-[0_16px_56px_rgba(0,0,0,0.14)] md:backdrop-blur-sm">
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center md:flex-none md:pb-6">
@@ -477,9 +431,7 @@ export function LoginScreen() {
               <Icon name="lock-outline" size={16} />
               {t('offline.loginBtn')}
             </Button>
-            {/* LOCAL builds only: sign-in opens the system browser, which
-                does not inherit the app's bundled trust anchor — one tap
-                fetches the family root instead of a remembered url */}
+            {/* LOCAL builds only: sign-in opens the system browser, which does not inherit the app's bundled trust anchor */}
             {caUrl && (
               <div className="pt-1 text-center">
                 <button

@@ -25,24 +25,20 @@ using Munni.Api.Sync;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// GlitchTip: every unhandled exception + explicit CaptureException calls (an empty DSN disables the SDK)
+// GlitchTip; an empty DSN disables the SDK
 builder.WebHost.UseSentry((SentryAspNetCoreOptions options) => SentryNoise.Configure(options, builder.Configuration));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Db")));
 
 builder.Services.AddMemoryCache();
-// request-body validators (Validation/Validators.cs) — UI input is never trusted
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
-// SSE fan-out for near-real-time sync
 builder.Services.AddSingleton<SpaceEventBroadcaster>();
 // the account's full cleanup, party-side consents first (its optional services resolve to null where absent)
 builder.Services.AddScoped<Munni.Api.Social.AccountDeletion>();
 
-// OpenAPI document + Scalar reference UI at /scalar
 builder.Services.AddOpenApi();
 
-// push transports (VAPID browsers + FCM native shells), routed per kind
 var pushCaps = PushSetup.Register(builder.Services, builder.Configuration);
 
 // the connector relay (#367): present only when this environment names
@@ -51,20 +47,15 @@ var pushCaps = PushSetup.Register(builder.Services, builder.Configuration);
 var connectors = ConnectorSetup.Register(builder.Services, builder.Configuration);
 var connectorsEnabled = connectors == ConnectorPresence.Enabled;
 
-// watch-folder importer (user request): CAMT exports dropped into the
-// mounted folder ingest as raw feed rows for the configured owner —
-// the service exits immediately when ImportWatch:* is unconfigured
+// the service exits at once when ImportWatch:* is unconfigured
 builder.Services.AddHostedService<WatchFolderService>();
 
-// Logto Management API (account deletion, the admin portal's invitations —
-// user 2026-10-07: invitation-only sign-up): one minting path with a cached
-// token; activates with Logto:M2m* config, and the routes say so when absent
+// Logto Management API (account deletion, admin invitations: sign-up is invitation-only); active with Logto:M2m* config
 builder.Services.AddHttpClient(LogtoManagement.ClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ILogtoManagement, LogtoManagement>();
 builder.Services.AddHttpClient("geo", client => client.Timeout = TimeSpan.FromSeconds(4));
 
-// receipt OCR via the Tesseract sidecar — enabled when the container is configured
 var ocrEnabled = !string.IsNullOrEmpty(builder.Configuration["Ocr:BaseUrl"]);
 if (ocrEnabled)
 {
@@ -75,7 +66,6 @@ if (ocrEnabled)
     });
 }
 
-// delayed quotes for the portfolio: free vendors, no secrets, always on
 builder.Services.AddHttpClient(QuoteEndpoints.YahooClientName, client =>
 {
     client.BaseAddress = new Uri("https://query1.finance.yahoo.com"); // NOSONAR(S1075) vendor API base
@@ -89,7 +79,6 @@ builder.Services.AddHttpClient(QuoteEndpoints.CoinGeckoClientName, client =>
     client.Timeout = TimeSpan.FromSeconds(8);
 });
 
-// ECB reference rates for display-currency conversion — free, no key
 builder.Services.AddHttpClient(RatesEndpoints.EcbClientName, client =>
 {
     client.BaseAddress = new Uri("https://www.ecb.europa.eu"); // NOSONAR(S1075) vendor API base
@@ -97,7 +86,6 @@ builder.Services.AddHttpClient(RatesEndpoints.EcbClientName, client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-// brand-logo search (logo.dev) — enabled when both keys are configured
 var logosEnabled = !string.IsNullOrEmpty(builder.Configuration["Logos:SecretKey"])
                    && !string.IsNullOrEmpty(builder.Configuration["Logos:PublicToken"]);
 if (logosEnabled)
@@ -111,7 +99,6 @@ if (logosEnabled)
     });
 }
 
-// the receipt reader (#567) — a vision model behind one interface, enabled when the operator gave its key
 var receiptAiKey = builder.Configuration["ReceiptAi:ApiKey"];
 var receiptAiEnabled = !string.IsNullOrEmpty(receiptAiKey);
 builder.Services.AddSingleton<ReceiptReadCounts>();
@@ -120,7 +107,6 @@ if (receiptAiEnabled)
     builder.Services.AddSingleton<IReceiptReader>(_ => new ClaudeReceiptReader(new Anthropic.AnthropicClient { ApiKey = receiptAiKey }));
 }
 
-// picture search on the web (#521, Brave Search) — enabled when its key is configured
 var imageSearchEnabled = !string.IsNullOrEmpty(builder.Configuration["ImageSearch:BraveKey"]);
 builder.Services.AddSingleton<ImageSearchState>();
 if (imageSearchEnabled)
@@ -145,7 +131,6 @@ if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
 }
 else
 {
-    // Logto OIDC bearer (production: https://logto.<domain>/oidc)
     builder.Services
         .AddAuthentication("Bearer")
         .AddJwtBearer("Bearer", options =>
@@ -160,7 +145,7 @@ else
             var metadata = builder.Configuration["Auth:MetadataAddress"];
             if (!string.IsNullOrEmpty(metadata)) options.MetadataAddress = metadata;
             options.RequireHttpsMetadata = builder.Configuration.GetValue("Auth:RequireHttps", true);
-            // 2026-10-05: a provider the api cannot ask is a 503 that names itself, never a 401 that logs everyone out
+            // a provider the api cannot ask is a 503 that names itself, never a 401 that logs everyone out
             options.Events = AuthOutage.Events();
         });
 }
@@ -172,22 +157,14 @@ builder.Services.AddAuthorizationBuilder()
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    // x-jumbo-token: Jumbo hands its session token back in a response
-    // header, which the store proxy relays and the browser must see.
-    // X-Live-*: the streamed login's frame carries its sequence and size in
-    // headers — unexposed, the browser read neither, so the app never
-    // advanced its poll (a request storm into 429s that dropped the taps)
-    // and sized the picture by a guess (taps landed above the field; user
-    // ss 2026-10-01). Retry-After rides along for the pause copy.
+    // x-jumbo-token: Jumbo's session token comes back in a response header; Retry-After feeds the pause copy
+    // X-Live-*: the streamed frame's sequence and size ride in headers; unexposed, the app never advanced its poll
+    // (429 storm) and sized the picture by a guess (taps landed above the field)
     p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()
         .WithExposedHeaders("x-jumbo-token", "X-Live-Sequence", "X-Live-Size", "X-Live-Origin", "Retry-After")));
 
-// abuse guard, partitioned per user (per IP before auth): the global
-// bucket and the streamed login's own (ApiRateLimits); the social-
-// mutations policy throttles writes that reach OTHER people (invites,
-// friend requests, role changes) much harder. Functional tests run with
-// TestMode and get effectively-unlimited defaults unless a test sets
-// RateLimits keys explicitly (RateLimitTests).
+// abuse guard per user (per IP before auth): the global bucket, the streamed login's own, and a much harder
+// social-mutations policy; tests run with TestMode and effectively unlimited defaults unless RateLimits keys are set
 var unlimitedForTests = builder.Configuration.GetValue<bool>("Auth:TestMode") ? int.MaxValue : (int?)null;
 var globalTokens = builder.Configuration.GetValue<int?>("RateLimits:GlobalTokens") ?? unlimitedForTests ?? 600;
 var globalRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:GlobalRefillPer10s") ?? unlimitedForTests ?? 60;
@@ -221,17 +198,16 @@ var app = builder.Build();
 if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
-    // real migrations: schema evolves in place across releases
     var migrated = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await DatabaseStartup.WaitForServerAsync(migrated.Database, app.Logger, TimeSpan.FromMinutes(5));
     await migrated.Database.MigrateAsync();
-    // the 2026-10-05 overlay repair: once per database, remembered in AppSettings
+    // overlay repair, once per database (remembered in AppSettings)
     await TxMetaOverlayRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
-    // the 2026-10-07 derived-duplicate repair: the copies a re-keyed ING id left behind, once per database
+    // derived-duplicate repair: the copies a re-keyed ING id left behind, once per database
     await Munni.Api.Connectors.DerivedDuplicateRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
-    // the 2026-10-09 needs-review repair: rows a prediction alone marked reviewed go back to the review, once per database
+    // needs-review repair: rows a prediction alone marked reviewed go back to the review, once per database
     await NeedsReviewRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
-    // the 2026-11-08 reserved-row repair (#508): untracked reserved rows go to a connection that settles them, once per database
+    // reserved-row repair (#508): untracked reserved rows go to a connection that settles them, once per database
     await Munni.Api.Connectors.ReservedRowRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // #615: the spaces deleted before the server erased anything, and an erase a restart cut short — every start
     await SpaceErasure.SweepAsync(migrated, app.Logger, CancellationToken.None);
@@ -256,7 +232,6 @@ app.Use(async (http, next) =>
     await UserResolution.ResolveUser(http, db, () => next(http));
 });
 
-// interactive API reference (Scalar) backed by the generated OpenAPI doc
 app.MapOpenApi();
 app.MapScalarApiReference(options => options.WithTitle("munni API"));
 
@@ -264,9 +239,8 @@ app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
     build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev",
-    // version handshake (apps/web/src/lib/protocol.ts owns the bump
-    // discipline): native apps deploy on their own cadence — clients
-    // compare BOTH directions before syncing and refuse a mismatch
+    // version handshake (apps/web/src/lib/protocol.ts owns the bump discipline): native apps deploy on their own cadence,
+    // so clients compare both directions before syncing and refuse a mismatch
     protocol = ApiProtocol.Version,
     minClientProtocol = ApiProtocol.MinClient,
     capabilities = new
@@ -282,7 +256,7 @@ app.MapGet("/health", () => Results.Ok(new
         quotes = true,
         // the Connections hub's "connect a party" door (#367)
         connectors = connectorsEnabled,
-        // user 2026-10-07: invitation-only sign-up — the web app closes its own sign-up door and points at the invitation
+        // invitation-only sign-up: the web app closes its own sign-up door and points at the invitation
         inviteOnly = app.Configuration.GetValue<bool>(AdminInvitationEndpoints.InviteOnlyKey),
     },
 }));

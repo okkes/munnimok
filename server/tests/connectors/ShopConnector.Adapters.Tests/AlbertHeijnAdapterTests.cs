@@ -9,15 +9,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// Albert Heijn with a stubbed transport: the token exchange, the whole
-/// GraphQL fetch path and the refresh-and-retry, with no network, no browser
-/// and no account.
-///
-/// The browser login itself is exercised by the human on a live run - what is
-/// asserted here is everything that made the previous live run fail: the
-/// client id, the header block, and receipts being GraphQL rather than REST.
-/// </summary>
+// the browser login is exercised live; here is what failed the previous live run:
+// client id, header block, receipts as GraphQL
 public sealed class AlbertHeijnAdapterTests
 {
     private const string TokenPath = "/mobile-auth/v1/auth/token";
@@ -26,11 +19,7 @@ public sealed class AlbertHeijnAdapterTests
 
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
 
-    /// <summary>
-    /// The whole provider, answering from its recorded payloads. List and
-    /// detail share one path and one method - which operation was asked for
-    /// is in the body, exactly as it is upstream.
-    /// </summary>
+    // list and detail share one path and method: the operation is in the body, as upstream
     private static HttpResponseMessage Route(RecordedRequest request, int _) => request.Path switch
     {
         RefreshPath => Stub.Fixture("ah/token.json"),
@@ -42,19 +31,12 @@ public sealed class AlbertHeijnAdapterTests
     private static bool IsDetail(RecordedRequest request) =>
         request.Body?.Contains("posReceiptDetails", StringComparison.Ordinal) == true;
 
-    /// <summary>
-    /// The TYPED login by default, because that is what almost everything in
-    /// this file describes: filling two boxes, meeting a captcha, settling.
-    /// Albert Heijn now streams its own page by default in production, and
-    /// that path asks for nothing - so a test about a missing credential has
-    /// no credential to miss. Pass true to exercise the streamed one.
-    /// </summary>
+    // typed login by default; production streams AH's own page, which asks for nothing,
+    // so a missing-credential test needs the typed one
     private static AlbertHeijnAdapter Adapter(bool liveLogin = false) =>
         new(new AlbertHeijnOptions { LiveLogin = liveLogin }, new FixedTimeProvider(Now));
 
     private static AlbertHeijnAdapter Adapter(AlbertHeijnOptions options) => new(options, new FixedTimeProvider(Now));
-
-    // ---- the three corrections --------------------------------------------
 
     [Fact]
     public void The_authorize_url_names_the_corrected_client_id()
@@ -65,14 +47,11 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Contains("client_id=appie-ios", url, StringComparison.Ordinal);
         Assert.Contains("response_type=code", url, StringComparison.Ordinal);
 
-        // Verbatim, exactly as the reference sends it. Percent-encoding the
-        // scheme is the kind of "correction" that fails an authorize request
-        // for a reason nobody can reconstruct later.
+        // verbatim, as the reference sends it: percent-encoding the scheme fails the authorize request
         Assert.Contains("redirect_uri=appie://login-exit", url, StringComparison.Ordinal);
         Assert.DoesNotContain("appie%3A%2F%2F", url, StringComparison.Ordinal);
 
-        // The value the adapter used to send, which is what made a real login
-        // fail. The suffix is not cosmetic.
+        // the old value `appie` made a real login fail; the suffix is not cosmetic
         Assert.DoesNotContain("client_id=appie&", url, StringComparison.Ordinal);
     }
 
@@ -87,9 +66,7 @@ public sealed class AlbertHeijnAdapterTests
 
         await Adapter().FetchAsync(ctx, Requests.Receipts(since: Requests.Day(2026, 7, 15)), CancellationToken.None);
 
-        // Sent because the API needs them to route and to answer at all, not
-        // to disguise anything. The adapter sent none of these before, which
-        // is bug two of the three that failed a real login.
+        // the API needs these to route and answer, not to disguise anything
         Assert.All(handler.Requests, request =>
         {
             AssertUserAgent(request);
@@ -113,7 +90,7 @@ public sealed class AlbertHeijnAdapterTests
 
         await Adapter().FetchAsync(ctx, Requests.Receipts(since: Requests.Day(2026, 7, 15)), CancellationToken.None);
 
-        // Bug three: /mobile-services/v2/receipts does not exist.
+        // /mobile-services/v2/receipts does not exist
         Assert.All(handler.Requests, request =>
         {
             Assert.Equal(GraphQlPath, request.Path);
@@ -126,7 +103,7 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Contains("\"offset\":0", list, StringComparison.Ordinal);
         Assert.Contains("\"limit\":50", list, StringComparison.Ordinal);
 
-        // Confirmed: query and variables, and no operationName at all.
+        // query and variables, no operationName
         Assert.DoesNotContain("operationName", list, StringComparison.Ordinal);
 
         var detail = handler.Requests[1].Body;
@@ -135,16 +112,13 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Contains("ah-2026-07-19-4711", detail, StringComparison.Ordinal);
     }
 
-    // ---- login -------------------------------------------------------------
-
     [Fact]
     public async Task A_redirect_handed_over_up_front_needs_no_browser_and_no_human()
     {
         var handler = new StubHttpHandler(Route);
         using var ctx = new FakeJobContext(handler)
         {
-            // The escape hatch: a native consumer that intercepted the
-            // appie:// scheme itself already holds the answer.
+            // escape hatch: a native consumer that intercepted appie:// already holds the answer
             Inputs = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["redirect_url"] = "appie://login-exit?code=already-collected",
@@ -156,9 +130,8 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Empty(ctx.Asked);
         Assert.False(ctx.Browser.Started);
 
-        // An OAuth code is single-use, so the latch has to close before it
-        // goes upstream: after this a lost lease must fail the job rather
-        // than replay a code that may already have been spent.
+        // an OAuth code is single-use: the latch closes before it goes upstream,
+        // so a lost lease fails the job instead of replaying a spent code
         Assert.True(ctx.CredentialWasSubmitted);
 
         var exchange = Assert.Single(handler.Requests, r => r.Path == TokenPath);
@@ -171,9 +144,8 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Equal("ah-access-token-fixture", result.Material.AccessToken);
         Assert.Equal("ah-refresh-token-fixture", result.Material.RefreshToken);
 
-        // Deliberately unset: the access token's own expiry says nothing
-        // about how long the connection lasts, and claiming the short one
-        // would make the consumer prompt for a reconnect that is not needed.
+        // unset: the access token's expiry says nothing about the connection's life;
+        // the short one would prompt needless reconnects
         Assert.Null(result.ExpiresAt);
     }
 
@@ -195,15 +167,12 @@ public sealed class AlbertHeijnAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().LoginAsync(ctx, CancellationToken.None));
 
-        // Nothing went upstream, so nothing counted against the user - and no
-        // browser was started to find that out.
+        // nothing went upstream, so nothing counted against the user, and no browser started
         Assert.Equal(ErrorCode.InvalidRequest, error.Code);
         Assert.False(ctx.CredentialWasSubmitted);
         Assert.False(ctx.Browser.Started);
         Assert.Empty(handler.Requests);
     }
-
-    // ---- fetch -------------------------------------------------------------
 
     [Fact]
     public async Task Fetch_returns_a_normalised_reconciled_receipt_with_its_discounts_folded_in()
@@ -221,35 +190,31 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Equal("ah-2026-07-19-4711", receipt.ExternalId);
         Assert.Equal("ah", receipt.Merchant.Id);
 
-        // The confirmed operations select no store, so there is nothing to
-        // state. Null, not a guess.
+        // the confirmed operations select no store: null, not a guess
         Assert.Null(receipt.Merchant.StoreName);
 
         Assert.Equal(636, receipt.Total.Value);
         Assert.Equal("EUR", receipt.Total.Currency);
         Assert.Equal(TimeSpan.FromHours(2), receipt.PurchasedAt.Offset);
 
-        // Three products and the bonus, which AH states in its own array with
-        // nothing linking it to a product.
+        // three products and the bonus, which AH states in its own array with nothing linking it to a product
         Assert.Equal(4, receipt.Items.Count);
         Assert.True(receipt.Reconciled);
 
         Assert.NotNull(receipt.Payment);
         Assert.Equal("card", receipt.Payment.Method);
 
-        // Explicitly null rather than omitted: the operation selects nothing
-        // that could carry a tail, and the consumer's match is weaker for it.
+        // null, not omitted: the operation selects nothing that could carry a tail, so the consumer's match is weaker
         Assert.Null(receipt.Payment.CardLast4);
         Assert.Null(receipt.Payment.IbanTail);
 
         Assert.True(result.Complete);
         Assert.Equal("graphql", result.Via);
 
-        // Nothing rotated, so the caller's stored bundle is still current and
-        // must not be needlessly re-sealed.
+        // nothing rotated, so the stored bundle is current and must not be re-sealed
         Assert.Null(result.RefreshedMaterial);
 
-        // A fetch is plain HTTP: the browser is only ever for the one login.
+        // a fetch is plain HTTP; the browser is only for the login
         Assert.False(ctx.Browser.Started);
         Assert.Contains(JobStep.Normalizing, ctx.Steps);
     }
@@ -265,8 +230,7 @@ public sealed class AlbertHeijnAdapterTests
 
         var result = await Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
 
-        // The detail call is the expensive part and the one most likely to
-        // trip protection, so it only happens when items were asked for.
+        // the detail call is the expensive one and the likeliest to trip protection: only when items were asked for
         Assert.Single(handler.Requests);
         Assert.Equal(2, result.Receipts.Count);
         Assert.All(result.Receipts, r => Assert.Empty(r.Items));
@@ -300,14 +264,10 @@ public sealed class AlbertHeijnAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None));
 
-        // GraphQL puts the failure in the body with a 200. A client that only
-        // reads the status code hands back nothing and calls it "you have
-        // never shopped here" - a worse lie than an outage.
+        // GraphQL puts failures in the body under a 200; reading only the status would answer "never shopped here"
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Contains("Member is not entitled", error.Detail, StringComparison.Ordinal);
     }
-
-    // ---- raw ---------------------------------------------------------------
 
     [Fact]
     public async Task The_providers_own_document_comes_back_only_when_it_was_asked_for()
@@ -324,14 +284,11 @@ public sealed class AlbertHeijnAdapterTests
         var receipt = Assert.Single(result.Receipts);
         var raw = Assert.Contains(receipt.ExternalId, result.Raw);
 
-        // AH's own detail document, verbatim - which is the point. When AH
-        // renames a field the normalised receipt simply loses a value and says
-        // nothing about why; this is the thing to read.
+        // AH's own detail document, verbatim: when AH renames a field the normalised receipt silently loses a value,
+        // and this shows why
         Assert.Contains("posReceiptDetails", raw, StringComparison.Ordinal);
 
-        // The detail call's answer and nothing else. The list page carries
-        // every other receipt in the pass, and handing one caller another
-        // shopper's rows would be a worse leak than the one this diagnoses.
+        // the detail answer only: the list page carries other receipts, and another shopper's rows would be a leak
         Assert.DoesNotContain("posReceiptsPage", raw, StringComparison.Ordinal);
     }
 
@@ -347,8 +304,7 @@ public sealed class AlbertHeijnAdapterTests
         var result = await Adapter().FetchAsync(
             ctx, Requests.Receipts(since: Requests.Day(2026, 7, 15)), CancellationToken.None);
 
-        // Raw is strictly the more sensitive of the two: normalisation drops
-        // the fields nobody asked for and this puts them back. Never a default.
+        // raw is more sensitive than normalised (it restores dropped fields): never a default
         Assert.NotEmpty(result.Receipts);
         Assert.Empty(result.Raw);
     }
@@ -367,22 +323,18 @@ public sealed class AlbertHeijnAdapterTests
 
         Assert.Equal(2, result.Receipts.Count);
 
-        // Every receipt still carries the document it came from. Returning
-        // nothing here read as "the provider sent nothing" rather than "you did
-        // not ask for the call that produces the richer one".
+        // returning nothing read as "provider sent nothing" rather than "you did not ask for the richer call"
         Assert.Equal(2, result.Raw.Count);
 
         var first = result.Receipts[0];
         var raw = Assert.Contains(first.ExternalId, result.Raw);
 
-        // The receipt's OWN row, not the page it arrived on: the page carries
-        // every other receipt in the pass.
+        // the receipt's own row, not the page, which carries every other receipt in the pass
         Assert.Contains(first.ExternalId, raw, StringComparison.Ordinal);
         Assert.DoesNotContain("posReceiptsPage", raw, StringComparison.Ordinal);
         Assert.DoesNotContain(result.Receipts[1].ExternalId, raw, StringComparison.Ordinal);
 
-        // And still no detail call, so asking for raw did not quietly make the
-        // fetch expensive.
+        // no detail call: asking for raw must not make the fetch expensive
         Assert.Single(handler.Requests);
     }
 
@@ -401,8 +353,7 @@ public sealed class AlbertHeijnAdapterTests
         var receipt = Assert.Single(result.Receipts);
         var raw = Assert.Contains(receipt.ExternalId, result.Raw);
 
-        // The richer of the two: it is the one carrying the line items, which
-        // is where a renamed field actually shows up.
+        // the detail document carries the line items, where a renamed field shows up
         Assert.Contains("posReceiptDetails", raw, StringComparison.Ordinal);
     }
 
@@ -418,14 +369,10 @@ public sealed class AlbertHeijnAdapterTests
         var result = await Adapter().FetchAsync(
             ctx, Requests.Receipts(items: false), CancellationToken.None);
 
-        // Not merely absent from the result - never stringified in the first
-        // place, which on a two-hundred-receipt page is the difference worth
-        // having.
+        // never stringified at all, which matters on a two-hundred-receipt page
         Assert.NotEmpty(result.Receipts);
         Assert.Empty(result.Raw);
     }
-
-    // ---- pagination --------------------------------------------------------
 
     [Fact]
     public async Task A_history_longer_than_one_pass_stops_at_the_cap_and_says_so()
@@ -436,20 +383,16 @@ public sealed class AlbertHeijnAdapterTests
             Material = new SessionMaterial { AccessToken = "live" },
         };
 
-        // The seam rather than the manifest's number: the manifest now allows
-        // two thousand, and proving the cap with two thousand invented
-        // receipts would be a fixture nobody can read.
+        // the seam, not the manifest's number (two thousand): a fixture that size would be unreadable
         const int cap = 200;
         var result = await Adapter(new AlbertHeijnOptions { RecordCap = cap })
             .FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
 
         Assert.Equal(cap, result.Receipts.Count);
 
-        // False is the whole point: the caller comes back for the rest rather
-        // than believing it has the lot.
+        // false: the caller comes back for the rest rather than believing it has the lot
         Assert.False(result.Complete);
 
-        // offset/limit, advancing by the page size on every call.
         Assert.Equal(5, handler.Requests.Count);
         Assert.Collection(
             handler.Requests.Select(r => r.Body!),
@@ -463,9 +406,8 @@ public sealed class AlbertHeijnAdapterTests
     [Fact]
     public async Task A_list_that_keeps_answering_the_same_page_stops_instead_of_looping()
     {
-        // The symptom of an offset that stopped advancing anything upstream.
-        // Without the guard this is the same request five times against a
-        // defended endpoint.
+        // the symptom of an offset that stopped advancing upstream;
+        // without the guard it is one request five times against a defended endpoint
         var handler = new StubHttpHandler((_, _) => FullPage(0));
         using var ctx = new FakeJobContext(handler)
         {
@@ -478,15 +420,11 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Equal(2, handler.Requests.Count);
     }
 
-    // ---- session -----------------------------------------------------------
-
     [Fact]
     public async Task An_expired_access_token_refreshes_once_retries_once_and_rotates_the_material()
     {
         var handler = new StubHttpHandler((request, ordinal) => request.Path switch
         {
-            // The first list call finds a dead token; the refresh succeeds and
-            // the retry is served.
             GraphQlPath when ordinal == 0 => Stub.Status(HttpStatusCode.Unauthorized),
             _ => Route(request, ordinal),
         });
@@ -506,8 +444,7 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Contains("\"clientId\":\"appie-ios\"", refresh.Body, StringComparison.Ordinal);
         Assert.Contains("still-good", refresh.Body, StringComparison.Ordinal);
 
-        // The caller must persist the newest bundle, so a rotation has to be
-        // reported rather than silently kept in memory.
+        // a rotation must be reported so the caller persists the newest bundle
         Assert.NotNull(result.RefreshedMaterial);
         Assert.Equal("ah-access-token-fixture", result.RefreshedMaterial.AccessToken);
         Assert.Equal("ah-refresh-token-fixture", result.RefreshedMaterial.RefreshToken);
@@ -530,8 +467,7 @@ public sealed class AlbertHeijnAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None));
 
-        // One refresh, one retry. Repeatedly presenting a dead session is how
-        // a provider starts treating a client as hostile.
+        // one refresh, one retry: repeatedly presenting a dead session makes a provider treat the client as hostile
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
         Assert.Equal(3, handler.Requests.Count);
         Assert.False(error.Retriable);
@@ -557,8 +493,7 @@ public sealed class AlbertHeijnAdapterTests
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None));
 
-        // Telling a user their password is wrong when the truth is bot
-        // protection sends them to reset a password that was fine.
+        // bot protection is not a wrong password: saying so sends the user to reset a fine one
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
     }
@@ -613,15 +548,8 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Empty(handler.Requests);
     }
 
-    /// <summary>
-    /// The user agent, asserted as its two product tokens.
-    ///
-    /// <see cref="HttpRequestMessage"/> parses a User-Agent into tokens, so
-    /// the recorder here sees them separately; on the wire they are re-joined
-    /// with a space and arrive exactly as the reference sends them. Asserting
-    /// the tokens keeps the recorder's comma out of an expectation that would
-    /// then look wrong to the next reader.
-    /// </summary>
+    // HttpRequestMessage parses User-Agent into tokens, so the recorder sees them separately;
+    // on the wire they rejoin with a space
     private static void AssertUserAgent(RecordedRequest request)
     {
         var agent = request.Header("User-Agent");
@@ -630,11 +558,7 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Contains("(iPhone17,3; iPhone; CPU OS 26_1 like Mac OS X)", agent, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A full page of distinct receipts, all inside any window. The ordinal
-    /// makes each page's ids unique, so a walk that really advances is told
-    /// apart from one that keeps re-reading page one.
-    /// </summary>
+    // the ordinal makes page ids unique, so a walk that advances differs from one re-reading page one
     private static HttpResponseMessage FullPage(int ordinal, int size = 50)
     {
         var rows = new JsonArray();

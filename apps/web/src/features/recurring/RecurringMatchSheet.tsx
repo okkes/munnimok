@@ -17,14 +17,8 @@ import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 
-/**
- * #257 (user): accepting a detected recurring cost no longer links its
- * charges blind — this sheet lists every candidate payment (same rules
- * the auto-reconciler uses) with the reconciler's own picks pre-checked,
- * and the user prunes before anything is written. Applying links the
- * picked rows through linkTx, which also re-files them under the
- * recurring's category (the second half of the issue).
- */
+// #257: accepting a detected cost lists its candidate payments (the reconciler's rules) with the reconciler's picks
+// pre-checked; the user prunes before anything is written
 export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string | null; onClose: () => void }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
@@ -34,8 +28,7 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
   const rec = useQuery(store, async () => (recId ? store.get('recurring', recId) : undefined), [recId]);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  // #274: the per-row counter-match queue a bank-fed counterparty runs
-  // after the links land
+  // #274: per-row counter-match queue for a bank-fed counterparty, run after the links land
   const [counterQueue, setCounterQueue] = useState<SpaceTx[] | null>(null);
   const counterAcct = accounts?.find((a) => a.id === rec?.linkedAccountId);
 
@@ -53,9 +46,7 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
     return rows;
   }, [rec, txs]);
 
-  // the reconciler's own selection (one charge per billing cycle) arrives
-  // pre-checked ONCE per recurring; live-query re-emissions must never
-  // clobber the user's pruning (LoanMatchSheet pattern)
+  // the reconciler's picks (one charge per cycle) are pre-checked ONCE per recurring: re-emissions must not clobber pruning
   const seededFor = useRef<string | null>(null);
   useEffect(() => {
     if (!recId) {
@@ -93,9 +84,8 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
         await ops.linkTx(tx, recId);
         linked.push(tx);
       }
-      // #274 (user): a BANK-FED counterparty can't mint its legs — each
-      // linked row picks its own counter transaction (or keeps waiting).
-      // Manual counters already minted per row inside linkTx's choke.
+      // #274: a bank-fed counterparty can't mint its legs: each linked row picks its own counter tx
+      // manual counters mint inside linkTx
       if (counterAcct && counterAcct.source !== 'manual' && linked.length > 0) {
         setCounterQueue(linked);
         return;
@@ -106,8 +96,6 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
     }
   };
 
-  // #274: one queue step — the row already links-and-waits; a pick adds
-  // its own peer and pairs the reciprocal
   const resolveCounter = async (item: TransactionRow, peerId: string | null) => {
     if (!peerId) return; // link-and-wait: linkTx already wrote the link
     const row = txs?.find((tx) => tx.id === item.id) ?? (item as SpaceTx);
@@ -124,7 +112,6 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
           {t('recurring.matchEmpty')}
         </p>
       )}
-      {/* #378: the one select-all row every transaction list wears */}
       {candidates.length > 0 && (
         <SelectAllRow
           total={candidates.length}
@@ -155,9 +142,7 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
         </Button>
       )}
       </Sheet>
-      {/* #274 (user): each linked row picks its own counter transaction
-          when the counterparty is bank-fed (link-and-wait otherwise) —
-          a sheet SIBLING, never nested (portal order) */}
+      {/* #274: sheet SIBLING, never nested (portal order) */}
       {counterQueue && counterAcct && (
         <BulkCounterQueue
           queue={counterQueue}

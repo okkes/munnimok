@@ -6,14 +6,8 @@ using Connector.Kit.Hosting.Endpoints;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// Speaks the published contract rather than the C# one.
-///
-/// The tests serialise their request bodies with snake case and read responses
-/// as raw JSON on purpose: deserialising into the kit's own records would let a
-/// naming or casing regression pass unnoticed, because both sides would move
-/// together.
-/// </summary>
+// speaks the published contract (snake case in, raw JSON out): deserialising into the kit's own records
+// would let a naming regression pass, both sides moving together
 internal static class Wire
 {
     private static readonly JsonSerializerOptions Options = Build();
@@ -59,7 +53,6 @@ internal static class Wire
         return document.RootElement.Clone();
     }
 
-    /// <summary>A property that the serializer omits when null, read without a null check at every call site.</summary>
     public static string? TextOrNull(this JsonElement element, string property) =>
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
@@ -83,13 +76,8 @@ internal static class Wire
         request.Headers.TryAddWithoutValidation(name, value);
     }
 
-    /// <summary>
-    /// Binds the client to one user: from here on every call carries the
-    /// subject header the connector answers session, job, ticket and agent
-    /// routes for - exactly what the relay does for the user it acts for.
-    /// <see cref="Flows"/> stamps it from the subject it is handed, so a test
-    /// that logs in through Flows never sets it by hand.
-    /// </summary>
+    // binds the client to one user via the subject header the connector answers session, job, ticket and agent routes for;
+    // Flows stamps it itself
     public static HttpClient ActAs(this HttpClient http, string subject)
     {
         ArgumentNullException.ThrowIfNull(http);

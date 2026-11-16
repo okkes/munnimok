@@ -45,7 +45,7 @@ describe('counterDuplicates (#133 B pick-existing)', () => {
       base({ id: 'far-date', date: '2026-05-01' }),
       base({ id: 'container', splits: [{ catId: 'a', amountCents: 3000 }, { catId: 'b', amountCents: 2240 }] }),
       base({ id: 'tombstone', deleted: 1 }),
-      base({ id: anchor.id }), // the anchor itself never offers
+      base({ id: anchor.id }),
     ];
     const found = counterDuplicates(rows, 'counter', anchor);
     expect(found.map((row) => row.id)).toEqual(['hit-exact', 'hit-near']);
@@ -88,9 +88,7 @@ describe('#237: the wallet story + the browse-all door', () => {
   });
 
   it('#237 r2: a row some OTHER row (or split part) points at is never offered — one-way pairs are spoken for', () => {
-    // the user's screenshot: the sheet offered a transaction that was
-    // already the other half of a one-way pair (its own reciprocal was
-    // missing) — being POINTED AT must disqualify it everywhere
+    // being POINTED AT disqualifies a row everywhere: the other half of a one-way pair was being offered
     const rows: TransactionRow[] = [
       base({ id: 'free', amountCents: -5240 }),
       base({ id: 'taken', amountCents: -5240 }),

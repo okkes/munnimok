@@ -7,11 +7,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { applyTitleMemory, buildTitleMemory } from './titleMemory';
 
-/**
- * User rule 2026-07-18: renaming a transaction teaches the app — the
- * next arrival of the same merchant gets the preferred title
- * automatically; the bank's original merchant is never touched.
- */
+// a rename teaches the app: the merchant's next arrival gets the preferred title; the bank's merchant is untouched
 describe('title memory', () => {
   it('learns the majority rename per merchant, ties break alphabetically', () => {
     const memory = buildTitleMemory([
@@ -37,7 +33,6 @@ describe('title memory', () => {
     expect(await applyTitleMemory(new DexieBackend(db), repo, 's1')).toBe(1);
     expect((await db.transactions.get('tx-2'))?.titleOverride).toBe('Odido');
     expect((await db.transactions.get('tx-3'))?.titleOverride).toBeUndefined();
-    // second pass finds nothing left to do
     expect(await applyTitleMemory(new DexieBackend(db), repo, 's1')).toBe(0);
     db.close();
   });

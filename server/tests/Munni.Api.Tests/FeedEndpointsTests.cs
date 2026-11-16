@@ -12,11 +12,6 @@ using Xunit;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// Shared-accounts P2: feed registration (S1 squatting fix), derived
-/// read access via attachments, archive-on-leave and revive-on-rejoin —
-/// and every link the server writes carrying its gate and type.
-/// </summary>
 public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
 {
     private readonly FeedsApiFactory _factory;
@@ -48,8 +43,8 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
     public void Feed_shape_detection_is_version_based()
     {
         Assert.True(FeedAccess.IsFeedShaped(FeedId()));
-        Assert.False(FeedAccess.IsFeedShaped(Guid.NewGuid().ToString())); // v4
-        Assert.False(FeedAccess.IsFeedShaped("space_abc123")); // free-form client ids
+        Assert.False(FeedAccess.IsFeedShaped(Guid.NewGuid().ToString()));
+        Assert.False(FeedAccess.IsFeedShaped("space_abc123"));
         Assert.False(FeedAccess.IsFeedShaped(""));
     }
 
@@ -71,21 +66,16 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         var register = await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"));
         Assert.Equal(HttpStatusCode.OK, register.StatusCode);
 
-        // owner can now push raw data into the feed
         var push = await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed)]));
         Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync());
 
-        // re-register (reconnect) stays fine
         Assert.Equal(HttpStatusCode.OK,
             (await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
 
-        // someone else claiming the same deterministic id gets a conflict —
-        // and never any access to alice's data
         Assert.Equal(HttpStatusCode.Conflict,
             (await mallory.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await mallory.GetAsync($"/sync/{feed}/pull?since=0")).StatusCode);
 
-        // the feed shows up in the owner's feed list and space discovery
         var feeds = await alice.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds");
         Assert.Contains(feeds!, f => f.FeedSpaceId == feed);
     }
@@ -101,13 +91,11 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         Assert.Equal(HttpStatusCode.OK,
             (await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
 
-        // living owner: someone else stays conflicted
         Assert.Equal(HttpStatusCode.Conflict,
             (await bob.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
 
-        // the owner's user row disappears (account deletion / go-offline
-        // left the feed behind) — the feed becomes claimable instead of
-        // 409ing the next importer forever (staging 2026-07-24)
+        // the owner's user row disappears (account deletion / going offline left the feed behind):
+        // the feed becomes claimable, not a 409 forever
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -120,7 +108,6 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
             (await bob.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
         var feeds = await bob.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds");
         Assert.Contains(feeds!, f => f.FeedSpaceId == feed);
-        // and the new owner can push raw data
         var push = await bob.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed)]));
         Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync());
     }
@@ -140,10 +127,8 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "spacerow")]));
         await AddMemberAsync(spaceId, member);
 
-        // before attachment bob cannot read the feed
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.GetAsync($"/sync/{feed}/pull?since=0")).StatusCode);
 
-        // non-owner of the feed cannot attach it, even as a space member
         Assert.Equal(HttpStatusCode.Forbidden,
             (await bob.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1", "2026-01-01"))).StatusCode);
 
@@ -151,20 +136,16 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
             new AttachAccountRequest(feed, "acct1", "2026-01-01"));
         Assert.True(attach.IsSuccessStatusCode, await attach.Content.ReadAsStringAsync());
 
-        // bob now pulls the feed and discovers it via /me/spaces
         var pull = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Single(pull!.Ops);
         var spaces = await bob.GetFromJsonAsync<List<string>>("/me/spaces");
         Assert.Contains(feed, spaces!);
 
-        // …and the feed snapshot too (uncapped access)
         Assert.True((await bob.GetAsync($"/sync/{feed}/bootstrap")).IsSuccessStatusCode);
 
-        // but nobody except the owner writes raw data
         Assert.Equal(HttpStatusCode.Forbidden,
             (await bob.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev2", [Op(feed, "x")]))).StatusCode);
 
-        // detach revokes access
         var links = await alice.GetFromJsonAsync<List<AccountLinkDto>>($"/spaces/{spaceId}/accounts");
         await alice.DeleteAsync($"/spaces/{spaceId}/accounts/{links![0].Id}");
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.GetAsync($"/sync/{feed}/pull?since=0")).StatusCode);
@@ -177,23 +158,19 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         var spaceId = $"space_{Guid.NewGuid():N}";
         var alice = ClientFor($"owner_{Guid.NewGuid():N}");
         await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"));
-        // the feed's account row says what the account IS globally
         await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1",
             [new SyncOpDto(Guid.NewGuid().ToString(), feed, "account", "acct1",
                 new() { ["name"] = Json("ING"), ["type"] = Json("savings") }, "000000100-0000-dev")]));
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "spacerow")]));
 
-        // the gate is not optional — an attach without one is refused
         Assert.Equal(HttpStatusCode.BadRequest,
             (await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new { feedSpaceId = feed, accountId = "acct1" })).StatusCode);
 
-        // no pick: the link takes the account row's own type
         var link = await (await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts",
             new AttachAccountRequest(feed, "acct1", "2026-01-01"))).Content.ReadFromJsonAsync<AccountLinkDto>();
         Assert.Equal("2026-01-01", link!.HistoryFrom);
         Assert.Equal("savings", link.Type);
 
-        // an explicit pick wins, and a re-attach re-states the gate
         var picked = await (await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts",
             new AttachAccountRequest(feed, "acct1", "2026-03-01", "credit"))).Content.ReadFromJsonAsync<AccountLinkDto>();
         Assert.Equal(link.Id, picked!.Id);
@@ -219,19 +196,15 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         await AddMemberAsync(spaceId, memberSub);
         await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1", "2026-01-01"));
 
-        // alice (the attacher) leaves the space
         var aliceId = await UserIdAsync(ownerSub);
         var leave = await alice.DeleteAsync($"/spaces/{spaceId}/members/{aliceId}");
         Assert.True(leave.IsSuccessStatusCode);
 
-        // link is archived; bob keeps the shared history…
         var links = await bob.GetFromJsonAsync<List<AccountLinkDto>>($"/spaces/{spaceId}/accounts");
         Assert.True(links![0].Archived);
 
-        // …and the SYNCED mirror row carries the archived flag, so bob's
-        // devices render the badge without asking the server. No device
-        // ever wrote this mirror, so the server's op carries the whole
-        // link — gate and type included — never a gateless or untyped row
+        // the SYNCED mirror row carries archived so bob's devices render the badge; no device wrote it,
+        // so the server's op carries the whole link, gate and type
         var mirror = await bob.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
         var archiveOp = mirror!.Ops.Single(o => o.Entity == "accountLink" && o.Fields.TryGetValue("archived", out var v) && v.GetInt32() == 1);
         Assert.Equal("2026-01-01", archiveOp.Fields["historyFrom"].GetString());
@@ -239,7 +212,6 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         var history = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Single(history!.Ops);
 
-        // …but data pushed AFTER the archive stays invisible to him
         await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed, "tx-after")]));
         var capped = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Single(capped!.Ops);
@@ -247,8 +219,6 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         // an archived reader is told there is no snapshot for them (rows as they stand cannot stop at the archive point): the capped pull above is their way in
         Assert.Equal(HttpStatusCode.NoContent, (await bob.GetAsync($"/sync/{feed}/bootstrap")).StatusCode);
 
-        // bob (owner after auto-promotion) invites alice back; accepting
-        // revives her attachment automatically — new data flows again
         await bob.PostAsJsonAsync("/friends/requests", new SendFriendRequest(aliceId));
         var requests = await alice.GetFromJsonAsync<FriendsResponse>("/friends");
         await alice.PostAsync($"/friends/requests/{requests!.ReceivedPending[0].Id}/accept", null);
@@ -263,11 +233,8 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         Assert.Equal(2, full!.Ops.Count);
     }
 
-    /// <summary>
-    /// #569: one call names every space the caller reaches with the head its
-    /// pull would report - an archived reader's feed capped where its pull is -
-    /// so a sync round pulls only what moved instead of asking each space.
-    /// </summary>
+    // #569: /sync/heads names every reachable space with the head its pull reports;
+    // an archived reader's feed is capped where its pull is
     [Fact]
     public async Task Heads_name_every_reachable_space_with_the_head_its_pull_reports()
     {
@@ -297,7 +264,6 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
             }
         }
 
-        // the owner's own feed runs on; the archived reader's stops where his pull does
         await AssertHeadsMatchPullsAsync(alice, feed);
         await AssertHeadsMatchPullsAsync(bob, feed, spaceId);
         var bobs = (await bob.GetFromJsonAsync<List<SpaceHead>>("/sync/heads"))!.Single(h => h.SpaceId == feed);

@@ -65,8 +65,8 @@ describe('categorySeries', () => {
     const txs = [
       tx({ date: '2026-05-05', amountCents: -2000 }),
       tx({ date: '2026-06-05', amountCents: -1000, reimbursements: [{ txId: 'r', amountCents: 400 }] }),
-      tx({ date: '2026-06-06', amountCents: 5000, txType: 'income' }), // not an expense
-      tx({ date: '2026-06-07', amountCents: -999, pending: 1 }), // reservation noise
+      tx({ date: '2026-06-06', amountCents: 5000, txType: 'income' }),
+      tx({ date: '2026-06-07', amountCents: -999, pending: 1 }),
     ];
     expect(categorySeries(txs, periods, catalog)).toEqual([2000, 600]);
   });
@@ -74,9 +74,8 @@ describe('categorySeries', () => {
   it('a main covers its subs; category spreads and parts count toward their own category (#211)', () => {
     const txs = [
       tx({ date: '2026-06-05', catId: 'groceries', amountCents: -1500 }),
-      tx({ date: '2026-06-06', catId: 'gym', amountCents: -3000 }), // sport, not consumption
+      tx({ date: '2026-06-06', catId: 'gym', amountCents: -3000 }),
       tx({
-        // #211: the row's OWN spread — one transaction, two categories
         date: '2026-06-07',
         catId: 'consumptionOther',
         amountCents: -1000,
@@ -86,7 +85,6 @@ describe('categorySeries', () => {
         ],
       }),
       tx({
-        // a real split: only the consumption PART counts here
         date: '2026-06-08',
         catId: 'groceries',
         amountCents: -900,
@@ -96,7 +94,6 @@ describe('categorySeries', () => {
         ],
       }),
     ];
-    // consumption = groceries 1500 + spread 700+300 + part 400
     expect(categorySeries(txs, periods, catalog, 'consumption')).toEqual([0, 2900]);
     expect(categorySeries(txs, periods, catalog, 'groceries')).toEqual([0, 1900]);
   });
@@ -108,9 +105,9 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
     expect(scopeIds(catalog, [])).toBeNull();
     const ids = scopeIds(catalog, ['consumption', 'gym'])!;
     expect(ids.has('consumption')).toBe(true);
-    expect(ids.has('groceries')).toBe(true); // a main brings its subs
-    expect(ids.has('gym')).toBe(true); // a sub stands for itself
-    expect(ids.has('sport')).toBe(false); // …not its parent
+    expect(ids.has('groceries')).toBe(true);
+    expect(ids.has('gym')).toBe(true);
+    expect(ids.has('sport')).toBe(false);
   });
 
   it('expenseSeries sums the scope per period and scopedContribution names a row’s share', () => {
@@ -123,8 +120,8 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
     const ids = scopeIds(catalog, ['consumption', 'gym']);
     expect(expenseSeries(txs, periods, ids)).toEqual([0, 4500]);
     expect(scopedContribution(txs[0], ids)).toBe(1500);
-    expect(scopedContribution(txs[2], ids)).toBe(0); // entertainment is outside the scope
-    expect(scopedContribution(txs[3], ids)).toBe(0); // pending never counts
+    expect(scopedContribution(txs[2], ids)).toBe(0);
+    expect(scopedContribution(txs[3], ids)).toBe(0);
   });
 
   it('scopedBreakdown files each slice under its own category, largest first', () => {
@@ -141,8 +138,8 @@ describe('scopeIds + expenseSeries (custom graphs, user 2026-10-08)', () => {
           { id: 'p2', catId: 'alcohol', amountCents: 500 },
         ],
       }),
-      tx({ date: '2026-06-08', amountCents: -250 }), // uncategorized stays visible
-      tx({ date: '2026-06-09', catId: 'gym', amountCents: -3000 }), // outside the scope
+      tx({ date: '2026-06-08', amountCents: -250 }),
+      tx({ date: '2026-06-09', catId: 'gym', amountCents: -3000 }),
     ];
     expect(scopedBreakdown(txs, periods[1], scopeIds(catalog, ['consumption']))).toEqual([
       { catId: 'groceries', cents: 2400 },
@@ -165,7 +162,7 @@ describe('cumulativeByDay + reachedBy (user 2026-10-08)', () => {
     tx({ date: '2026-06-03', amountCents: -500 }),
     tx({ date: '2026-06-03', amountCents: -250, catId: 'gym' }),
     tx({ date: '2026-06-30', amountCents: -100 }),
-    tx({ date: '2026-07-01', amountCents: -9999 }), // next period
+    tx({ date: '2026-07-01', amountCents: -9999 }),
     tx({ date: '2026-05-02', amountCents: -2000 }),
   ];
 
@@ -174,7 +171,6 @@ describe('cumulativeByDay + reachedBy (user 2026-10-08)', () => {
     expect(cumulative).toHaveLength(30);
     expect(cumulative.slice(0, 4)).toEqual([1000, 1000, 1750, 1750]);
     expect(cumulative.at(-1)).toBe(1850);
-    // a scope narrows it the same way the period series does
     expect(cumulativeByDay(txs, june, ['gym'], catalog)[2]).toBe(250);
   });
 
@@ -187,7 +183,6 @@ describe('cumulativeByDay + reachedBy (user 2026-10-08)', () => {
   it('reads every period at the same day-of-period, clamped to a shorter period', () => {
     const cumulatives = periods.map((period) => cumulativeByDay(txs, period, null, catalog));
     expect(cumulatives.map((cumulative) => reachedBy(cumulative, 2))).toEqual([2000, 1750]);
-    // a day index past a period's end reads its last day; one before the first reads zero
     expect(reachedBy(cumulatives[1], 99)).toBe(1850);
     expect(reachedBy(cumulatives[1], -1)).toBe(0);
     expect(reachedBy([], 3)).toBe(0);
@@ -212,16 +207,14 @@ describe('netWorthSeries', () => {
   it('walks the current balance backwards through the transactions', () => {
     const accounts = [
       { id: 'a1', balanceCents: 100_000, archived: 0 as const, deleted: 0 as const },
-      { id: 'flat', balanceCents: 50_000, archived: 0 as const, deleted: 0 as const }, // no txs → flat
+      { id: 'flat', balanceCents: 50_000, archived: 0 as const, deleted: 0 as const },
     ];
     const txs = [
       tx({ date: '2026-06-05', amountCents: -20_000 }),
       tx({ date: '2026-06-20', amountCents: 220_000, txType: 'income' }),
     ];
     const series = netWorthSeries(accounts, txs, ['2026-05-31', '2026-06-10', '2026-06-30']);
-    // before both: 150000 - (−20000 + 220000) = −50000; between: 150000 − 220000
     expect(series.map((p) => p.cents)).toEqual([-50_000, -70_000, 150_000]);
-    // archived accounts never count
     expect(netWorthSeries([{ id: 'a1', balanceCents: 1, archived: 1, deleted: 0 }], [], ['2026-06-30'])[0].cents).toBe(0);
   });
 });
@@ -230,8 +223,8 @@ describe('dailyBalanceSeries (the balance line, user 2026-10-08)', () => {
   const accounts = [
     { id: 'a1', type: 'checking' as const, balanceCents: 100_000, archived: 0 as const, deleted: 0 as const },
     { id: 'sav', type: 'savings' as const, balanceCents: 50_000, archived: 0 as const, deleted: 0 as const },
-    { id: 'loan', type: 'loan' as const, balanceCents: -900_000, archived: 0 as const, deleted: 0 as const }, // not liquid
-    { id: 'pot', type: 'funding' as const, balanceCents: 7_000, archived: 0 as const, deleted: 0 as const }, // the shared pot
+    { id: 'loan', type: 'loan' as const, balanceCents: -900_000, archived: 0 as const, deleted: 0 as const },
+    { id: 'pot', type: 'funding' as const, balanceCents: 7_000, archived: 0 as const, deleted: 0 as const },
     { id: 'old', type: 'cash' as const, balanceCents: 3_000, archived: 1 as const, deleted: 0 as const },
   ];
 
@@ -239,14 +232,12 @@ describe('dailyBalanceSeries (the balance line, user 2026-10-08)', () => {
     const txs = [
       tx({ date: '2026-06-02', amountCents: -20_000 }),
       tx({ date: '2026-06-04', amountCents: 220_000, txType: 'income' }),
-      tx({ date: '2026-06-04', amountCents: -5_000, accountId: 'loan' }), // not liquid
-      tx({ date: '2026-06-09', amountCents: -1_000, pending: 1 }), // reservation noise
-      tx({ date: '2026-06-20', amountCents: -30_000 }), // after the window: already "after" every day
+      tx({ date: '2026-06-04', amountCents: -5_000, accountId: 'loan' }),
+      tx({ date: '2026-06-09', amountCents: -1_000, pending: 1 }),
+      tx({ date: '2026-06-20', amountCents: -30_000 }),
     ];
     const daily = dailyBalanceSeries(accounts, txs, '2026-06-01', '2026-06-05');
     expect(daily.map((p) => p.date)).toEqual(['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05']);
-    // now 150000; after 06-05: −30000 ⇒ 180000 on the 5th and 4th; the 3rd is
-    // before the +220000 credit ⇒ −40000; the 1st is before the −20000 too
     expect(daily.map((p) => p.cents)).toEqual([-20_000, -40_000, -40_000, 180_000, 180_000]);
   });
 
@@ -256,12 +247,11 @@ describe('dailyBalanceSeries (the balance line, user 2026-10-08)', () => {
 
   it('a custom graph sums the accounts it names, whatever their type (#531)', () => {
     const txs = [
-      tx({ date: '2026-06-03', amountCents: -20_000 }), // a1: not picked
+      tx({ date: '2026-06-03', amountCents: -20_000 }),
       tx({ date: '2026-06-03', amountCents: -5_000, accountId: 'loan' }),
       tx({ date: '2026-06-04', amountCents: 10_000, accountId: 'sav' }),
     ];
     const daily = dailyBalanceSeries(accounts, txs, '2026-06-02', '2026-06-04', ['sav', 'loan', 'old']);
-    // sav + loan today: −850000; the archived one never counts
     expect(daily.map((p) => p.cents)).toEqual([-855_000, -860_000, -850_000]);
   });
 });
@@ -276,7 +266,6 @@ describe('another currency in a sum: restated in the space’s own first', () =>
       { id: 'usd', type: 'savings' as const, currency: 'USD', balanceCents: 100_000, archived: 0 as const, deleted: 0 as const },
     ];
     const txs = [tx({ date: '2026-06-03', accountId: 'usd', currency: 'USD', amountCents: 20_000, txType: 'saving' })];
-    // $1,000 is €500 beside the €500; the day before, $200 (€100) had not come in yet
     expect(dailyBalanceSeries(accounts, txs, '2026-06-02', '2026-06-03', null, halve).map((p) => p.cents)).toEqual([90_000, 100_000]);
     expect(dailyBalanceSeries(accounts, txs, '2026-06-03', '2026-06-03', ['usd'], halve).map((p) => p.cents)).toEqual([50_000]);
     expect(netWorthSeries(accounts, txs, ['2026-06-02', '2026-06-03'], halve).map((p) => p.cents)).toEqual([90_000, 100_000]);
@@ -292,7 +281,6 @@ describe('another currency in a sum: restated in the space’s own first', () =>
     expect(cumulativeByDay(txs, periods[1], null, catalog, halve)[4]).toBe(2500);
     expect(scopedBreakdown(txs, periods[1], null, halve).find((row) => row.catId === 'groceries')?.cents).toBe(1500);
     expect(cashflowSeries(txs, [periods[1]], halve)[0]).toEqual({ incomeCents: 50_000, expenseCents: 2500, netCents: 47_500 });
-    // $1,000 in is €500 — exactly the mark a pay day is named from
     expect(incomeSpikes(txs, '2026-06-01', '2026-06-30', 50_000, halve).map((spike) => spike.cents)).toEqual([50_000]);
     expect(incomeSpikes(txs, '2026-06-01', '2026-06-30', 60_000, halve)).toEqual([]);
   });
@@ -358,8 +346,8 @@ describe('balanceProjection (the dashed expected path)', () => {
   it('walks the recurring costs and the payday to the period end, flat afterwards', () => {
     const recurrings = [
       rec({ amountCents: 1_500, dueDay: 20, catId: 'subs' }),
-      rec({ amountCents: 1_000, dueDay: 25, catId: 'subs', active: 0 }), // off
-      rec({ amountCents: 2_000, dueDay: 10, catId: 'subs' }), // already passed
+      rec({ amountCents: 1_000, dueDay: 25, catId: 'subs', active: 0 }),
+      rec({ amountCents: 2_000, dueDay: 10, catId: 'subs' }),
     ];
     const path = balanceProjection(10_000, '2026-06-15', '2026-06-30', recurrings, { date: '2026-06-24', merchant: 'Demo Corp', amountCents: 50_000 });
     expect(path).toEqual([

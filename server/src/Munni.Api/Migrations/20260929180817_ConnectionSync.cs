@@ -4,12 +4,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Munni.Api.Migrations
 {
-    /// <inheritdoc />
     public partial class ConnectionSync : Migration
     {
-        // store sync became connection sync: renames, never drop/create —
-        // the rows are ciphertext nobody can re-encrypt for the user
-        /// <inheritdoc />
+        // renames, never drop/create: the rows are ciphertext nobody can re-encrypt for the user
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.RenameTable(
@@ -36,7 +33,6 @@ namespace Munni.Api.Migrations
                 table: "ConnectionSyncDevices");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.RenameIndex(

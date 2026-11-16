@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import type { PushState } from '@/application/pushState';
 
-/** the device's notification state, set per test (#534) */
 const device = vi.hoisted(() => ({ push: 'on' as PushState | null }));
 vi.mock('@/application/pushState', () => ({ usePushState: () => device.push }));
 
@@ -79,7 +78,6 @@ describe('the budget form, signed in', () => {
   });
 
   it('a choice taken back reaches the server: Off, an emptied reset day and carry-over switched off travel as null', async () => {
-    // what the server is sent for the budget, as the JSON it arrives in
     const sent: Record<string, unknown>[] = [];
     renderAppAsUser('/budgets/new', {
       api: {

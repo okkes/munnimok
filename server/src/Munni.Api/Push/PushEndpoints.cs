@@ -8,7 +8,6 @@ namespace Munni.Api.Push;
 /// <summary>Kind "webpush" (default): endpoint+keys. Kind "fcm": the device token rides Endpoint, keys stay null.</summary>
 public sealed record SubscribeRequest(string Endpoint, string? P256dh = null, string? Auth = null, string Kind = "webpush", string? Lang = null);
 
-/// <summary>#549: whether the caller gets one space's notifications.</summary>
 public sealed record SpaceNotifyRequest(bool On);
 
 /// <summary>#580: the moment up to which the caller cleared their in-app notifications on one device.</summary>
@@ -52,8 +51,8 @@ public static class PushEndpoints
             return Results.Ok();
         }).WithValidation<SubscribeRequest>();
 
-        // the Settings row "Send a test notification": every registered device of the caller gets one — the way to
-        // see that push reaches a phone end to end (user request 2026-09-28); the space it was sent from rides along
+        // the Settings "Send a test notification": every registered device of the caller gets one;
+        // the space it was sent from rides along
         group.MapPost("/test", async (string? spaceId, PushNotifier notifier, HttpContext http, CancellationToken ct) =>
             Results.Ok(new { sent = await notifier.NotifyTestAsync(http.GetUserId(), spaceId, ct) }));
 

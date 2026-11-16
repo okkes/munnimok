@@ -21,7 +21,6 @@ import { AmountSuggestions } from './AmountSuggestions';
 import type { AmountSuggestion } from './AmountSuggestions';
 import type { MoneyFmt } from './SegmentSection';
 
-/** the source rows' detail screens, per mirrored segment */
 function useOpenSource() {
   const navigate = useNavigate();
   return (subject: PlanSubjectRow) => {
@@ -51,11 +50,7 @@ function useOpenSource() {
 
 const centsText = (cents: number | null): string => (cents === null ? '' : (cents / 100).toFixed(2));
 
-/**
- * An event subject's own total (#504, user 2026-10-20): what the person means
- * to set aside for the event in all. Empty = the event's estimate; either way
- * the period's target spreads it over the periods left until the event.
- */
+// an event subject's own total (#504): empty = the event's estimate; the period's target spreads it over the periods left
 function EventTotal({ view, model, ops, fmt, currency }: Readonly<{ view: SubjectView; model: PlanningModel; ops: PlanningOps; fmt: MoneyFmt; currency: string }>) {
   const { t } = useLang();
   const event = model.data.events.find((e) => e.id === view.subject.sourceId);
@@ -91,7 +86,6 @@ function EventTotal({ view, model, ops, fmt, currency }: Readonly<{ view: Subjec
   );
 }
 
-/** a subject blocked on some categories (#535): whose they are, and the one tap that settles it from here */
 function OverlapNote({ overlap, model, canEdit, ops }: Readonly<{ overlap: Overlap; model: PlanningModel; canEdit: boolean; ops: PlanningOps }>) {
   const { t } = useLang();
   const { holder } = overlap;
@@ -113,7 +107,6 @@ function OverlapNote({ overlap, model, canEdit, ops }: Readonly<{ overlap: Overl
 }
 
 
-/** the amount chips: the target, the shortfall, the estimates (expenses) — the one the field holds reads pressed */
 function AmountChips({
   view,
   model,
@@ -134,7 +127,6 @@ function AmountChips({
   return <AmountSuggestions items={chips} fmt={fmt} currency={currency} testIdPrefix="plan-fund-chip" selectedCents={selectedCents} onPick={onPick} />;
 }
 
-/** where to take money from: munni's picks first, then everybody with room */
 export function CoverSheet({
   open,
   onOpenChange,
@@ -191,12 +183,6 @@ export function CoverSheet({
   );
 }
 
-/**
- * A subject opened: set what it holds (typed or by chip), fill it to its
- * target, cover an overspend from another subject, snooze a mirrored
- * subject for the period, edit or remove an expense subject, or jump to
- * the source row. The previous period only moves money; older ones read.
- */
 export function SubjectSheet({
   view,
   model,
@@ -238,7 +224,7 @@ export function SubjectSheet({
   const dirty = typed !== null && typed !== view.fundedCents;
   const save = () => {
     if (typed === null) return;
-    // beyond the pool asks once a day (user 2026-10-07): only the part the pool must still give counts
+    // beyond the pool asks once a day: only the part the pool must still give counts
     overBudget.guard(model.toAllocateOf(plan), typed - view.fundedCents, () => void ops.fund(subject.id, typed).then(onClose));
   };
   return (
@@ -322,7 +308,7 @@ export function SubjectSheet({
                     {t('plan.cover.title')}
                   </Button>
                 )}
-                {/* skip only where nothing actually leaves this period (user 2026-10-07): a yearly cost spread out, a goal far off */}
+                {/* skip only where nothing leaves this period: a yearly cost spread out, a goal far off */}
                 {canEdit && (canSkipPeriod(view) || subject.snoozed === 1) && (
                   <Button size="sm" variant="ghost" data-testid="plan-fund-snooze" onClick={() => void ops.snooze(subject.id, subject.snoozed !== 1).then(onClose)}>
                     {subject.snoozed === 1 ? t('plan.fund.unsnooze') : t('plan.fund.snooze')}

@@ -7,16 +7,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// Albert Heijn's recorded GraphQL payloads, parsed.
-///
-/// Two things are load-bearing here and both are asserted rather than left to
-/// a reader. An <c>errors</c> array arrives with a 200 status, so a parser
-/// that trusts the status code returns an empty history that reads as "you
-/// have never shopped here". And AH states discounts in their own array with
-/// nothing linking one to a product, so they have to be folded in as their
-/// own lines or every promotion-heavy receipt fails its own arithmetic.
-/// </summary>
+/// an errors array arrives with a 200 status: trusting the status returns an empty history
+/// discounts have no link to a product: they are folded in as their own lines or promotion-heavy receipts fail arithmetic
 public sealed class AlbertHeijnParsingTests
 {
     private const string ListFixture = "ah/receipts-list.json";
@@ -29,8 +21,6 @@ public sealed class AlbertHeijnParsingTests
     private static JsonArray RowsOf(JsonObject document) =>
         document["data"]!["posReceiptsPage"]!["posReceipts"]!.AsArray();
 
-    // ---- the list ----------------------------------------------------------
-
     [Fact]
     public void List_reads_totals_in_minor_units_from_a_nested_euro_number()
     {
@@ -41,9 +31,7 @@ public sealed class AlbertHeijnParsingTests
         Assert.Equal(2, summaries.Count);
         Assert.Equal("ah-2026-07-19-4711", summaries[0].Id);
 
-        // 6.36 EUR under MoneyUnit.MajorDecimal, nested in totalAmount.amount,
-        // is 636 cents. Never a float, never a decimal that has been through a
-        // locale.
+        // 6.36 EUR (MajorDecimal, nested in totalAmount.amount) is 636 cents: never a float
         Assert.Equal(636, summaries[0].Total.Value);
         Assert.Equal("EUR", summaries[0].Total.Currency);
         Assert.Equal(2314, summaries[1].Total.Value);
@@ -56,12 +44,9 @@ public sealed class AlbertHeijnParsingTests
 
         var summaries = AlbertHeijnReceiptParser.ParseList(document.RootElement, Options);
 
-        // The first row states its offset and it is honoured.
         Assert.Equal(new DateTimeOffset(2026, 7, 19, 17, 42, 0, TimeSpan.FromHours(2)), summaries[0].PurchasedAt);
 
-        // The second is a bare local time. Read in Europe/Amsterdam rather
-        // than the agent's own zone: a near-midnight purchase dated a day out
-        // is worse than one that was never matched.
+        // a bare local time is read in Europe/Amsterdam, not the agent's zone: a day-off date is worse than no match
         Assert.Equal(TimeSpan.FromHours(2), summaries[1].PurchasedAt.Offset);
         Assert.Equal(new DateTimeOffset(2026, 7, 12, 9, 15, 0, TimeSpan.FromHours(2)), summaries[1].PurchasedAt);
     }
@@ -82,7 +67,6 @@ public sealed class AlbertHeijnParsingTests
             ["data"] = new JsonObject { ["posReceiptsPage"] = null },
         });
 
-        // An account with nothing on it. A fact, not a failure.
         Assert.Empty(AlbertHeijnReceiptParser.ParseList(nulled.RootElement, Options));
 
         using var missing = Fixture.Reparse(new JsonObject { ["data"] = new JsonObject() });
@@ -93,8 +77,6 @@ public sealed class AlbertHeijnParsingTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Contains("posReceiptsPage", error.Detail, StringComparison.Ordinal);
     }
-
-    // ---- the errors array --------------------------------------------------
 
     [Fact]
     public void A_graphql_errors_array_raises_provider_changed_carrying_the_first_message()
@@ -113,8 +95,6 @@ public sealed class AlbertHeijnParsingTests
     {
         using var document = Fixture.Doc(ErrorsFixture);
 
-        // This is the trap, demonstrated: HTTP 200, a null page, and a parser
-        // that never looked at "errors" hands back an empty history.
         Assert.Empty(AlbertHeijnReceiptParser.ParseList(document.RootElement, Options));
     }
 
@@ -128,8 +108,6 @@ public sealed class AlbertHeijnParsingTests
         Assert.Null(raised);
     }
 
-    // ---- the detail --------------------------------------------------------
-
     [Fact]
     public void Detail_folds_each_discount_in_as_its_own_negative_line()
     {
@@ -137,7 +115,6 @@ public sealed class AlbertHeijnParsingTests
 
         var items = AlbertHeijnReceiptParser.ParseItems(document.RootElement, Options);
 
-        // Three products and the bonus AH states separately.
         Assert.Equal(4, items.Count);
 
         Assert.Equal("AH Melk halfvol 1L", items[0].Name);
@@ -148,15 +125,13 @@ public sealed class AlbertHeijnParsingTests
         Assert.Equal("AH Volkorenbrood heel", items[1].Name);
         Assert.Equal(189, items[1].Total.Value);
 
-        // Sold by weight: the quantity is 1.200 kg and the unit price is AH's
-        // own, never a total divided by a weight.
+        // by weight: the unit price is AH's own, never a total divided by a weight
         Assert.Equal("Bananen los", items[2].Name);
         Assert.Equal(239, items[2].Total.Value);
         Assert.Equal(1.2m, items[2].Quantity);
         Assert.Equal(199, items[2].UnitPrice?.Value);
 
-        // Its own line, because nothing in the payload says which product it
-        // belongs to. Attaching it to one would be inventing a fact.
+        // its own line: nothing in the payload says which product it belongs to
         var bonus = items[3];
         Assert.Equal("BONUS 2e halve prijs", bonus.Name);
         Assert.Equal(-30, bonus.Total.Value);
@@ -171,8 +146,7 @@ public sealed class AlbertHeijnParsingTests
 
         using var reparsed = Fixture.Reparse(document);
 
-        // Providers state a discount as either sign; the schema wants it
-        // negative so that summing a receipt is unconditional.
+        // the schema wants discounts negative so that summing a receipt is unconditional
         var items = AlbertHeijnReceiptParser.ParseItems(reparsed.RootElement, Options);
         Assert.Equal(-30, items[3].Total.Value);
     }
@@ -185,8 +159,7 @@ public sealed class AlbertHeijnParsingTests
 
         using var reparsed = Fixture.Reparse(document);
 
-        // Dropping it would leave the receipt failing its own arithmetic with
-        // nothing to explain why.
+        // dropping it would leave the receipt failing its arithmetic with nothing to explain why
         var error = Assert.Throws<ConnectorException>(
             () => AlbertHeijnReceiptParser.ParseItems(reparsed.RootElement, Options));
 
@@ -202,9 +175,7 @@ public sealed class AlbertHeijnParsingTests
 
         Assert.Equal("card", payment.Method);
 
-        // The confirmed operation selects nothing that could carry a card
-        // number or an IBAN, so both are null by construction. Explicit, not
-        // omitted: the consumer needs to know its match will be weaker.
+        // null by construction: the operation selects nothing that carries a card number or IBAN, so the match is weaker
         Assert.Null(payment.CardLast4);
         Assert.Null(payment.IbanTail);
     }
@@ -238,8 +209,6 @@ public sealed class AlbertHeijnParsingTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
     }
 
-    // ---- the two together --------------------------------------------------
-
     [Fact]
     public void Items_and_discounts_reconcile_against_the_list_s_stated_total()
     {
@@ -249,9 +218,7 @@ public sealed class AlbertHeijnParsingTests
         var summary = AlbertHeijnReceiptParser.ParseList(list.RootElement, Options)[0];
         var items = AlbertHeijnReceiptParser.ParseItems(detail.RootElement, Options);
 
-        // 238 + 189 + 239 - 30 = 636, and the detail states no total of its
-        // own - which is what makes the two operations a real check rather
-        // than one number repeated.
+        // the detail states no total of its own, which makes the two operations a real check
         var sum = items.Sum(i => i.Total.Value + (i.Discount?.Amount.Value ?? 0));
         Assert.Equal(636, sum);
         Assert.Equal(636, summary.Total.Value);
@@ -266,8 +233,6 @@ public sealed class AlbertHeijnParsingTests
         Assert.StartsWith("rcp_", receipt.Id, StringComparison.Ordinal);
     }
 
-    // ---- defensive parsing -------------------------------------------------
-
     [Fact]
     public void An_unexpected_extra_field_is_tolerated()
     {
@@ -279,8 +244,7 @@ public sealed class AlbertHeijnParsingTests
 
         using var reparsed = Fixture.Reparse(document);
 
-        // Retailers add fields without telling anyone. A parser that refuses
-        // one it has never seen breaks on a change that meant nothing.
+        // retailers add fields unannounced: refusing an unknown one breaks on a meaningless change
         var summaries = AlbertHeijnReceiptParser.ParseList(reparsed.RootElement, Options);
         Assert.Equal(636, summaries[0].Total.Value);
     }
@@ -313,7 +277,6 @@ public sealed class AlbertHeijnParsingTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
 
-        // The field is named, so the repair is one line.
         Assert.Contains("totalAmount", error.Detail, StringComparison.Ordinal);
     }
 
@@ -330,11 +293,7 @@ public sealed class AlbertHeijnParsingTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
 
-        // The FIELD, and never the value. This asserted the opposite until the
-        // detail started travelling: adapters interpolate it into notes, which
-        // are logged, stored on the job row and returned to the caller, so a
-        // total that will not parse must not ride out inside the complaint
-        // about it.
+        // the field, never the value: details are logged, stored on the job row and returned to the caller
         Assert.Contains("totalAmount", error.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain("six euros thirty-six", error.Detail, StringComparison.Ordinal);
     }
@@ -347,30 +306,14 @@ public sealed class AlbertHeijnParsingTests
 
         using var reparsed = Fixture.Reparse(document);
 
-        // A boolean where an amount belongs is a shape change, not a value to
-        // coerce.
         var error = Assert.Throws<ConnectorException>(
             () => AlbertHeijnReceiptParser.ParseList(reparsed.RootElement, Options));
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
     }
 
-    /// <summary>
-    /// A ROW WITH NO ID IS REFUSED, NOT SKIPPED - AND THE REASON IS PAGING.
-    /// </summary>
-    /// <remarks>
-    /// Skipping it was defensible on its own terms: dedupe is
-    /// (session_id, external_id), so a row with no id would emit a fresh
-    /// duplicate on every fetch. What that reasoning never asked is what a
-    /// dropped row does to the LENGTH of the page.
-    /// <para>
-    /// The caller reads a page shorter than the one it asked for as the end of
-    /// the history. So one unkeyable receipt stopped the walk there and
-    /// everything older than it went missing - from a pass that reported
-    /// itself complete. Every other field in this row already refuses when it
-    /// goes missing; the id was the one that quietly gave up.
-    /// </para>
-    /// </remarks>
+    /// a row with no id is refused, not skipped: a page shorter than asked reads as the end of history,
+    /// so one unkeyable receipt hid everything older from a pass that reported itself complete
     [Fact]
     public void A_row_with_no_id_is_refused_rather_than_dropped_out_of_the_page()
     {
@@ -384,11 +327,8 @@ public sealed class AlbertHeijnParsingTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
 
-        // Named by position, because the id is exactly what it does not have.
         Assert.Contains("posReceipts[0]", error.Detail, StringComparison.Ordinal);
     }
-
-    // ---- the escape hatch --------------------------------------------------
 
     [Theory]
     [InlineData("appie://login-exit?code=abc123def456", "abc123def456")]

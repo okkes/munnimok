@@ -50,7 +50,6 @@ describe('#578: stored merchant keys follow the new spelling once', () => {
     expect(dismissals.map((d) => d.merchantKey)).toEqual(['albert heijn@1309']);
     expect(dismissals[0].id).toBe(recurringDismissId(SPACE, 'albert heijn@1309'));
 
-    // a later boot leaves whatever was stored since alone
     await repo.upsert('recurring', SPACE, 'rec1', { merchantKey: oldKey });
     expect(await rekeyMerchantKeys(store, repo)).toBe(0);
     expect((await store.get('recurring', 'rec1'))?.merchantKey).toBe(oldKey);
@@ -65,7 +64,6 @@ describe('#578: stored merchant keys follow the new spelling once', () => {
     expect(await rekeyMerchantKeys(store, repo)).toBe(0);
     expect((await store.metaGet(MERCHANT_KEY_REKEY_MARKER))?.value).toBeFalsy();
 
-    // the first round lands the account's rows, still in the old spelling
     const oldKey = merchantKeyBefore578(AH);
     await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
     await repo.upsert('transaction', SPACE, 't1', { accountId: 'a', currency: 'EUR', needsReview: 0, catId: 'groceries', date: '2026-10-30', amountCents: -1309, merchant: AH });

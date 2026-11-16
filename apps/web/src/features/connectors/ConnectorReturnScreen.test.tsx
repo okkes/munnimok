@@ -11,7 +11,7 @@ import { USER_TEST_DB, mockUserServer } from '@/test/harness';
 import { ConnectorReturnScreen } from './ConnectorReturnScreen';
 import { rememberReturn } from './connectorReturn';
 
-// a phone's browser, and where it sends the person: the shell's scheme (user ss 2026-10-03)
+// a phone's browser, and the shell's scheme it is sent to
 const phone = vi.hoisted(() => ({ mobile: false, opened: [] as string[] }));
 vi.mock('@/lib/platform', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/platform')>()),
@@ -78,11 +78,8 @@ describe('ConnectorReturnScreen — the page a party brings the person back to (
     mountAt('?ref=REF-1');
 
     await waitFor(() => expect(stateOf()).toBe('done'), { timeout: 5000 });
-    // the address the bank landed on, on the app's public origin — the query the bank's
     expect(answered).toEqual({ challengeId: 'ch_r', value: `${window.location.origin}/gc-callback?ref=REF-1` });
-    // the pending return served its purpose
     expect(localStorage.getItem('munni_connector_return')).toBeNull();
-    // a fresh connection asks for its name right here, the party's name prefilled (user ruling)
     const name = screen.getByTestId('connector-return-name') as HTMLInputElement;
     expect(name.value).toBe('GoCardless');
     fireEvent.change(name, { target: { value: 'Mijn bank' } });

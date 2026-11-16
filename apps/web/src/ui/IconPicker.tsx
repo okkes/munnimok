@@ -11,7 +11,6 @@ const COLS = 6;
 const TILE = 44;
 const GAP = 8;
 const PITCH = TILE + GAP;
-/** rows drawn past the visible window on both sides */
 const OVERSCAN = 3;
 /** rows drawn before the box is measured — and where nothing lays out (tests) */
 const UNMEASURED_ROWS = 12;
@@ -27,7 +26,6 @@ const chunk = (names: readonly string[]): GridRow[] => {
 /** "credit card" finds credit-card: the font names its glyphs with hyphens */
 export const iconNeedle = (query: string): string => query.trim().toLowerCase().replaceAll(/\s+/g, '-');
 
-/** every glyph whose name holds the needle: the exact name, then names that start with it, then a word that does, then the rest */
 export function searchIcons(needle: string): string[] {
   const exact: string[] = [];
   const starts: string[] = [];
@@ -47,30 +45,21 @@ export function searchIcons(needle: string): string[] {
 interface IconPickerProps {
   value: string;
   onChange: (name: string) => void;
-  /** the screen's own suggestions, shown first */
   featured: readonly string[];
   /** the search text — the host owns it, so a fresh form starts unsearched */
   query: string;
   onQuery: (next: string) => void;
-  /** tiles are `${testIdPrefix}-<name>`, the search `${testIdPrefix}-search` */
   testIdPrefix: string;
   /** the glyphs preview this colour (a space's pick); the ink otherwise */
   color?: string;
   /** #389: icons a sibling already wears — shown, asleep and refused */
   taken?: ReadonlySet<string>;
-  /** no tile takes a tap (a read-only form, a picture rules) */
   disabled?: boolean;
   /** nothing reads as selected (a picture rules) */
   sleeping?: boolean;
 }
 
-/**
- * #563 (user): every icon picker lets the person browse the WHOLE font, not
- * only a curated handful or what a search finds — the screen's suggestions
- * lead, then all 7k+ glyphs follow under a caption. Only the rows in view
- * render (fixed row pitch, a window with overscan), so the full list costs
- * no more than the old grid. A search ranks exact and leading matches first.
- */
+/** #563: every picker browses the WHOLE font (7k+ glyphs) under the screen's suggestions; only rows in view render */
 export function IconPicker({ value, onChange, featured, query, onQuery, testIdPrefix, color, taken, disabled = false, sleeping = false }: Readonly<IconPickerProps>) {
   const { t } = useLang();
   const needle = iconNeedle(query);
@@ -109,7 +98,6 @@ export function IconPicker({ value, onChange, featured, query, onQuery, testIdPr
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  // a new search starts at its best match
   useEffect(() => {
     const el = scrollerRef.current;
     if (el) el.scrollTop = 0;

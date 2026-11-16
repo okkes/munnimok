@@ -1,4 +1,3 @@
-// Ported from apps/legacy/src/shared/i18n.jsx — source of truth for translation keys.
 export const en = {
   'tab.home': 'Home',
   'tab.transactions': 'Transactions',
@@ -6,7 +5,6 @@ export const en = {
   'tab.insights': 'Insights',
   'tab.settings': 'Settings',
   'tab.portfolio': 'Portfolio',
-  // #577: the space's phone bar
   'nav.title': 'Navigation bar',
   'nav.sub': 'Home always comes first; pick up to {max} more for the bar at the bottom of the screen. It shows their names while they fit and icons once they no longer do. On a wide screen the side panel lists everything.',
   'nav.inBar': 'In the bar',
@@ -1054,8 +1052,6 @@ export const en = {
   'acct.archivedEverywhere': 'Archived — tap to reconnect',
   'acct.archived': 'Archived',
   'acct.archivedReconnect': 'Archived — tap to reconnect',
-  // #314 (user): the all-accounts screen's two clear segments + the
-  // archived echo's reason line
   'acct.inSpacesCap': 'In your spaces',
   'acct.noLongerSharedBy': '{name} no longer shares this account',
   'acct.noLongerShared': 'No longer shared',
@@ -1420,18 +1416,13 @@ export const en = {
   'space.sharedBadge': 'Shared',
   'space.inviteUnlockTitle': 'Enable invitations',
   'space.inviteUnlockBody': 'Enter your app PIN to open this space up for invitations.',
-  // #291: a friend request sent from the members surface pends there too
   'space.friendPending': 'Friend request pending — they join when they accept',
-  // #292: the signed-in user's own member row
   'space.me': 'Me',
-  // #304: ONE members-screen door — friends list + friend request share a sheet
   'space.inviteSomeone': 'Invite someone',
   'space.inviteFromFriends': 'From your friends',
   'space.inviteRequestLead': 'Can’t find someone? Send them a friend request right here.',
-  // #303: withdrawing a pending invite asks first
   'space.cancelInviteTitle': 'Cancel invitation?',
   'space.cancelInviteBody': '{name} will no longer be able to accept this invitation.',
-  // #302: the locked note links straight to the switch that lifts the lock
   'sync.offlineBanner': 'Offline — changes are saved on this device.',
   'sync.offlineShort': 'Offline',
   'login.offlineNote': 'You’re offline — signing in needs a connection. Demo and offline mode still work.',
@@ -1835,7 +1826,6 @@ export const en = {
   'debts.matchApply': 'Link {n} payments',
   'debts.matchOldCaption': 'Payments older than the balance date link up without lowering the balance — it already includes them. The Counts switch on such a row subtracts it anyway.',
   'debts.matchCounts': 'Counts',
-  // #286 r3 (user): count→deduct rename + footer math + bulk sweeps
   'debts.matchDeduct': 'Deducts',
   'debts.matchDeductCaption': 'Deducts lowers what’s left to pay on this loan.',
   'debts.matchSelected': '{n} selected',
@@ -1995,7 +1985,7 @@ export const en = {
   'acct.adjustNote': 'Saving records the difference as an adjustment transaction ({delta}).',
   'review.addCategory': 'Add category',
   'review.bulkCount': '{n} similar transactions',
-  'review.bulkNoneSelected': 'Similar found — none selected', // #325
+  'review.bulkNoneSelected': 'Similar found — none selected',
   'review.bulkSelectAll': 'Select all',
   'select.all': 'Select all',
   'select.none': 'Deselect all',
@@ -2856,7 +2846,6 @@ export const en = {
   'conn.noAccountsYet': 'No accounts yet — sync to fetch them.',
   'conn.uncoveredTitle': 'Not fetched any more',
   'conn.uncoveredBody': 'No connection fetches these accounts any more. Reconnecting the bank keeps the account and its history.',
-  // #527: the banks are connected and managed on All accounts
   'conn.bankConnections': 'Bank connections',
   'conn.addBank': 'Connect a bank',
   'conn.addBankSub': 'Open banking or munni’s own connector. The accounts it fetches are yours to attach to any space.',
@@ -2871,15 +2860,12 @@ export const en = {
   'bankpick.note': 'A bank connection is yours, not a space’s: attach its accounts to the spaces that should see them.',
   'acct.showArchived': 'Show archived accounts ({n})',
   'acct.hideArchived': 'Hide archived accounts',
-  // #528: a reconnect says why, and leads to the connection
   'acct.consentEnded': 'Its {party} connection lost its consent: nothing is fetched until you reconnect it.',
-  // #548: Home's quick sync
   'quicksync.open': 'Sync connections',
   'quicksync.title': 'Sync now',
   'quicksync.intro': 'These connections need you for every sync. The others sync by themselves.',
   'quicksync.sync': 'Sync',
   'quicksync.never': 'Not synced yet',
-  // #543: the bank's login, kept on this device
   'connect.savedLogin': 'Your saved login is used: nothing to type.',
   'connect.savedLoginOther': 'Use another login',
   'acct.uncovered': 'Not fetched any more since {date} — reconnect {party} to resume.',
@@ -2965,7 +2951,6 @@ export const en = {
   'connect.return.continue': 'Continue',
   'connect.return.signedOut': 'Sign in to munni first, then start the connection again from All accounts.',
   'connect.field.lookup': 'Pick from the list',
-  // #413: the payoff planner
   'debtplan.title': 'Payoff planner',
   'debtplan.card': 'Payoff planner',
   'debtplan.toolBadge': 'Tool',
@@ -3052,7 +3037,6 @@ export const en = {
   'tour.debts.4t': 'Plan the way out',
   'tour.debts.4b':
     'The payoff planner compares Avalanche, Snowball and Tsunami and shows what an extra amount per month buys you — for all debts together, with the numbers and the rollover switch, and for each debt on its own: drag its slider (or pick the month to be done by), read its numbers, and apply the extra to the loan itself.',
-  // ── planning (#128) ─────────────────────────────────────────────────
   'tab.planning': 'Planning',
   'plan.title': 'Planning',
   'plan.toAllocate': 'left to give a job',
@@ -3099,7 +3083,6 @@ export const en = {
   'plan.overBudgetConfirm': 'Give it anyway',
   'plan.unplannedPlanHint': 'What you spent here already counts in the pool. Fund it here for this period only, or plan it to keep it in your plan.',
   'plan.unplannedPlanSub': 'Name it, pick its categories and a target.',
-  // the Unplanned source rows (user 2026-10-09): recurring costs, loans and goals paid for without a subject
   'plan.unplannedKind.recurring': 'Recurring cost',
   'plan.unplannedKind.debt': 'Loan',
   'plan.unplannedKind.event': 'Event',
@@ -3220,7 +3203,6 @@ export const en = {
   'plan.home.red': '{n} in the red',
   'plan.reorder.title': 'Reorder {segment}',
   'plan.reorder.hint': 'The order is the fill order: the first subject is funded first.',
-  // ── planning, the user's round of 2026-10-21/23 (#494 #504 #517 #532 #535 #557) ──
   'plan.overlapRow': 'Shares categories with {name} — they count there',
   'plan.overlapNote': '{name} came first and counts {cats}.',
   'plan.overlapTake': 'Take them from {name}',
@@ -3287,7 +3269,6 @@ export const en = {
   'tour.plan.4b': 'A subject in the red borrows from one with room — munni’s picks first; “in the red” walks you through them one by one. What a recurring cost, a debt or an event holds and does not spend carries into the next period, and a new period starts from the last plan by itself.',
   'tour.plan.5t': 'Blueprints and the sandbox',
   'tour.plan.5b': 'Save a plan’s shape as a blueprint and apply it later; the sandbox is a copy to try things in — make it the plan when it reads right.',
-  // ── connectors round 19 (2026-10-01): sign-ins in flight, the pause ───
   'conn.pending.signingIn': 'Signing in… — closing the sheet keeps it going',
   'conn.pending.asking': 'The party is waiting for you — continue the sign-in',
   'conn.pending.failed': 'The sign-in did not finish',
@@ -3297,7 +3278,6 @@ export const en = {
   'conn.state.waitUntil': 'The party asked munni to wait — try again after {time}',
   'connect.progress.closeNote': 'You can close this: the sign-in carries on, and the connection’s card shows where it stands.',
   'connect.progress.close': 'Close for now',
-  // ── planning round 19 (2026-10-02) ──────────────────────────────────
   'plan.segment.unplanned': 'Unplanned',
   'plan.unplannedHint': 'Spent this period outside your subjects — fund it for this period only, or plan it.',
   'plan.unplannedPlan': 'Plan it',
@@ -3334,15 +3314,12 @@ export const en = {
   'receipt.itemsTitle': 'Items',
   'receipt.linkedTitle': 'Transaction',
   'receipt.unreconciled': 'The party’s line items do not add up to its total.',
-  // user 2026-10-08: one receipt, several payments — the picker says where a receipt already sits
   'receipt.attachedTo': 'Attached to {tx}',
   'receipt.attachedToN': 'Attached to {n} transactions',
   'receipt.linkedTitleN': 'Transactions',
   'receipt.detachOne': 'Detach from this transaction',
   'tour.conn.7t': 'Fetched receipts',
   'tour.conn.7b': 'Everything your shops handed over, per connection, with the dates covered — and a counter climbing while a fetch runs. A shop reaches a space only once you pick it.',
-  // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
-  // user 2026-10-07: a changed password is a new sign-in on the same connection (the manage sheet's row)
   'conn.relogin': 'Sign in again',
   'conn.reloginSub': 'Changed your password? Enter the new details here.',
   'conn.report.ask': 'Report this failure?',

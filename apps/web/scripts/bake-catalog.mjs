@@ -1,8 +1,5 @@
-// AC3 bake-in: fetch the published catalog document and write it into
-// the bundle as the offline baseline. Runs in CI before the build with
-// CATALOG_URL set (derived from the API url); any failure leaves the
-// committed null default — a build must never break on catalog fetch.
-//   CATALOG_URL=https://…/catalog node scripts/bake-catalog.mjs
+// bakes the published catalog into the bundle as the offline baseline (CI, CATALOG_URL set); any failure keeps the
+// committed null default: a build must never break on the catalog fetch
 import { writeFileSync } from 'node:fs';
 
 const url = process.env.CATALOG_URL;

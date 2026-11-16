@@ -1,12 +1,7 @@
 import { aheadColor } from '@/domain/planning';
 import { AHEAD_COLOR } from './planningUi';
 
-/**
- * The circle (#128): how many periods ahead are funded, against the
- * rhythm's suggestion. It fills clockwise and shifts colour as it fills —
- * grey (nothing), green (one), orange (two), red (three or more: money
- * that could work harder) — the fill animates between states.
- */
+/** #128: grey none, green one, orange two, red three or more periods ahead (money that could work harder) */
 export function AheadCircle({
   count,
   suggested,
@@ -18,7 +13,6 @@ export function AheadCircle({
   count: number;
   suggested: number;
   size?: number;
-  /** the caption under the fraction */
   label?: string;
   testId?: string;
   onClick?: () => void;

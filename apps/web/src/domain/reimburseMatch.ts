@@ -2,17 +2,10 @@ import type { TransactionRow, TxSplit } from '@/db/types';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID } from '@/domain/categories';
 import { creditRemainingCents, netAmountCents, remainingCents } from '@/domain/reimbursement';
 
-/**
- * Candidate scoring for the reimbursement link screen (user design
- * 2026-07-28): a small "suggested" segment surfaces the 1–2 rows most
- * likely to be the counterpart the user came looking for, from timing
- * (repayments follow the expense within days), wording (Dutch P2P
- * repayment vocabulary), bookkeeping (rows already filed under the
- * reimbursement categories) and size (a repayment is never much more
- * than what it repays).
- */
+// link-screen candidate scoring from timing, Dutch P2P wording, reimbursement-category filing and size
+// a repayment is never much more than what it repays
 
-/** P2P repayment vocabulary Dutch banks stamp on transfers (user list) */
+/** P2P repayment vocabulary Dutch banks stamp on transfers */
 const REPAY_WORDS = /tikkie|betaalverzoek|payment request|terugbetaling|terugstorting/i;
 
 const DAY_MS = 86_400_000;
@@ -20,11 +13,8 @@ const dayDiff = (fromIso: string, toIso: string): number => Math.round((Date.par
 
 const REIMB_CAT_IDS = new Set<string>([EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID]);
 
-/** the fields the earmark math reads off a row */
 type ReimbRow = Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>;
 
-/** does the row book itself as reimbursement money (category, part or
- *  #211 category-spread entry)? */
 export function filedAsReimbursement(tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits'>): boolean {
   if (tx.catId && REIMB_CAT_IDS.has(tx.catId)) return true;
   return [...(tx.splits ?? []), ...(tx.cats ?? [])].some((s) => REIMB_CAT_IDS.has(s.catId));
@@ -35,26 +25,16 @@ const reimbSliceCents = (slices: readonly { catId: string; amountCents: number }
   return hits.length > 0 ? hits.reduce((sum, s) => sum + Math.abs(s.amountCents), 0) : null;
 };
 
-/** what ONE part of a split still earmarks: its own cats' slice once a
- *  settle has written them, else the whole part when it is filed so */
+/** a part's own cats' slice once a settle has written them, else the whole part when it is filed so */
 export function partEarmarkCents(part: Pick<TxSplit, 'catId' | 'cats' | 'amountCents'>): number | null {
   const inner = reimbSliceCents(part.cats);
   if (inner !== null) return inner;
   return REIMB_CAT_IDS.has(part.catId) ? Math.abs(part.amountCents) : null;
 }
 
-/**
- * What the row's reimbursement CATEGORY still earmarks, in cents - NET of
- * what has been settled already: a settle moves linked cents out of the
- * expected/received slice into `reimbursed`, so the slice that is left IS
- * what is still expected. Parts answer through their own cats (#228: the
- * settle lives on the part), a #211 row spread through the row's cats,
- * a row filed whole through its net value; null when the row carries no
- * reimbursement bookkeeping at all (the caller falls back to the open
- * value). 2026-10-06 (user ss): the callers used to subtract the links
- * from this once more - a second link from the same pair defaulted to
- * (earmark - links) - links and could not reach the remainder.
- */
+// NET of what was settled: a settle moves linked cents out of the expected/received slice into `reimbursed`
+// so the slice left IS what is still expected; callers must not subtract the links again (a second link defaulted too low)
+// null when the row carries no reimbursement bookkeeping: callers fall back to the open value
 export function reimbEarmarkCents(tx: ReimbRow): number | null {
   const parts = tx.splits ?? [];
   if (parts.length > 0) {
@@ -67,8 +47,6 @@ export function reimbEarmarkCents(tx: ReimbRow): number | null {
   return null;
 }
 
-/** #197: what a split expense's PART still expects back - its magnitude
- *  minus the links already targeting it */
 export function partOpenCents(row: Pick<TransactionRow, 'reimbursements'>, part: Pick<TxSplit, 'id' | 'amountCents'>): number {
   return Math.max(
     0,
@@ -76,12 +54,7 @@ export function partOpenCents(row: Pick<TransactionRow, 'reimbursements'>, part:
   );
 }
 
-/**
- * What an expense (or one of its parts) still NEEDS back: its open value,
- * capped by its reimbursement earmark when it carries one - the default
- * amount of a link. The earmark is already net of the settle (above), so
- * nothing is subtracted twice.
- */
+// the default amount of a link: the open value capped by the earmark, which is already net of the settle
 export function expenseNeedCents(expense: ReimbRow, partId?: string): number {
   const part = partId ? (expense.splits ?? []).find((p) => p.id === partId) : undefined;
   if (part) {
@@ -94,12 +67,7 @@ export function expenseNeedCents(expense: ReimbRow, partId?: string): number {
   return earmark === null ? open : Math.min(open, earmark);
 }
 
-/**
- * What a credit can still give - its open value, capped by its received-
- * reimbursement earmark when it carries one (a split's received slice funds
- * links; its groceries slice never does - user rule 2026-07-28). The earmark
- * is net of the settle, so `given` is not subtracted from it again.
- */
+// a credit's received-reimbursement slice funds links, its groceries slice never does; `given` is not subtracted again
 export function creditGiveableCents(credit: ReimbRow, given: number): number {
   const net = creditRemainingCents(credit, given);
   const earmark = reimbEarmarkCents(credit);
@@ -125,12 +93,8 @@ export interface ScoredCandidate<T extends TransactionRow> {
   score: number;
 }
 
-/**
- * Rank counterpart candidates for `anchor`. Direction follows the
- * anchor's sign: an expense looks forward in time at credits, a credit
- * looks back at expenses. Only rows scoring at least 4 qualify — one
- * weak signal alone never makes a suggestion.
- */
+// direction follows the anchor's sign: an expense looks forward at credits, a credit back at expenses
+// only a score of at least 4 qualifies: one weak signal alone never makes a suggestion
 export function suggestCounterparts<T extends TransactionRow>(
   anchor: TransactionRow,
   candidates: readonly T[],

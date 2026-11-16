@@ -13,10 +13,10 @@ describe('update check', () => {
     expect(updateAvailable(600, 640)).toBe(true);
     expect(updateAvailable(640, 640)).toBe(false);
     expect(updateAvailable(650, 640)).toBe(false);
-    expect(updateAvailable(600, 640, 640)).toBe(false); // dismissed
-    expect(updateAvailable(600, 650, 640)).toBe(true); // NEXT release nudges again
+    expect(updateAvailable(600, 640, 640)).toBe(false);
+    expect(updateAvailable(600, 650, 640)).toBe(true);
     expect(updateAvailable(Number.NaN, 640)).toBe(false);
-    expect(updateAvailable(0, 640)).toBe(false); // a bundle built without git carries 0 — no count to compare, not "older than everything"
+    expect(updateAvailable(0, 640)).toBe(false); // a bundle built without git carries 0: nothing to compare
   });
 
   it('links the right store per platform and channel', () => {

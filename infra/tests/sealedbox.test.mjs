@@ -1,12 +1,5 @@
-// The setup wizard writes GitHub secrets from the browser, which demands
-// libsodium's crypto_box_seal built from the vendored tweetnacl + blakejs
-// inlined in infra/setup/index.html. A wrong construction would produce
-// secrets GitHub ACCEPTS but that decrypt to garbage at workflow time —
-// the worst failure mode — so this spec extracts the EXACT inline script
-// blocks from the shipped HTML and pins every moving part:
-//   - blake2b against the RFC 7693 test vector,
-//   - X25519 against the RFC 7748 §6.1 vectors,
-//   - the sealed-box layout (epk ‖ box) and a full seal/open roundtrip.
+// a wrong sealed-box construction yields secrets GitHub ACCEPTS but that decrypt to garbage at workflow time,
+// so this runs the EXACT inline script blocks of infra/setup/index.html against RFC vectors and a roundtrip
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,19 +8,15 @@ const html = readFileSync(new URL('../setup/index.html', import.meta.url), 'utf8
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
 assert.ok(scripts.length >= 4, 'wizard html lost a script block');
 
-// script 0: tweetnacl UMD — give it a `self` to hang nacl on. In the real
-// page self.crypto is the browser's; here node's WebCrypto stands in so
-// the PRNG init path matches the browser one.
+// tweetnacl needs a `self`; node's WebCrypto stands in for the browser's so the PRNG init path matches
 const selfShim = { crypto: globalThis.crypto };
 new Function('self', scripts[0])(selfShim);
 const nacl = selfShim.nacl;
 assert.ok(nacl?.box && nacl?.scalarMult, 'tweetnacl failed to load from the inline block');
 
-// script 1: blakejs wrapper (declares const blakejs)
 const blakejs = new Function(`${scripts[1]}\nreturn blakejs;`)();
 assert.ok(blakejs?.blake2b, 'blakejs failed to load from the inline block');
 
-// script 2: the sealed-box block between the MARKER comments
 assert.match(scripts[2], /MARKER:SEALEDBOX-BEGIN/, 'sealed-box block moved — update this extractor');
 const box = new Function('nacl', 'blakejs', `${scripts[2]}\nreturn { sealedBox, sealedOpen, sealedNonce, b64decode, b64encode };`)(nacl, blakejs);
 

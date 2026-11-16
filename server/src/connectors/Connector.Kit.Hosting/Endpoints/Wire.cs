@@ -12,8 +12,7 @@ using Connector.Kit.Sessions;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-// The public wire shapes, in one file. Snake case comes from the serializer,
-// so these read as ordinary C# and still land on the contract in the spec.
+// snake case comes from the serializer, so these read as ordinary C#
 
 public sealed record CatalogResponse
 {
@@ -24,12 +23,7 @@ public sealed record CatalogResponse
 
 public sealed record ServiceDescriptor
 {
-    /// <summary>
-    /// The kinds this control plane hosts — <c>bank</c>, <c>store</c>,
-    /// <c>registry</c> — read from the manifests it serves. One munni
-    /// environment runs one control plane for every pack, so the catalogue
-    /// says which kinds are present instead of pretending to be one product.
-    /// </summary>
+    /// The kinds present in the manifests served: one environment runs one control plane for every pack.
     public required IReadOnlyList<ProviderKind> Kinds { get; init; }
 
     public required string Version { get; init; }
@@ -47,19 +41,10 @@ public sealed record LoginRequest
     public IReadOnlyDictionary<string, string> Inputs { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>
-    /// A credential bundle this connector sealed earlier, offered instead of
-    /// asking the human again.
-    ///
-    /// Read only when <see cref="Inputs"/> is empty, so a caller that sends
-    /// both is taken at the word of what it typed rather than what it
-    /// remembered. What comes out is fed through the manifest's own validator
-    /// exactly as posted inputs are, so a bundle cannot carry a field the
-    /// provider never declared.
-    /// </summary>
+    /// A sealed credential bundle offered instead of asking the human again. Read only when Inputs is empty, and validated
+    /// like posted inputs, so it cannot carry a field the provider never declared.
     public string? CredentialBundle { get; init; }
 
-    /// <summary>Non-secret settings the provider needs on every call.</summary>
     public IReadOnlyDictionary<string, string> Config { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -68,27 +53,9 @@ public sealed record LoginRequest
     /// <summary>Record the run (#441 L3). Honoured with the lab trigger only; refused otherwise.</summary>
     public bool Record { get; init; }
 
-    /// <summary>
-    /// Where this run should happen: an agent id, the reserved word
-    /// <see cref="RunOn.Fleet"/>, or nothing at all. Required for a
-    /// <c>device_persistent</c> provider.
-    /// </summary>
-    /// <remarks>
-    /// THREE ANSWERS, AND UNTIL 2026-09-21 THERE WERE ONLY TWO. Absent has
-    /// always meant "no preference", which the queue honours by giving the
-    /// caller's own live machine a head start; naming an agent has always
-    /// meant that machine. What had no spelling was "the operator's fleet,
-    /// please" - so a consumer offering both options sent nothing for the
-    /// fleet, and nothing is not a choice. The account holder picked the fleet
-    /// for DUO that day and watched it run on their own NAS again, because a
-    /// standing preference the queue infers was beating an explicit one the
-    /// wire could not carry.
-    /// <para>
-    /// The reserved word rather than a field beside this one, for the reason
-    /// <see cref="RunOn"/> gives: one field cannot contradict itself, and an
-    /// agent id cannot be spelt <c>fleet</c>.
-    /// </para>
-    /// </remarks>
+    /// An agent id, the reserved word <see cref="RunOn.Fleet"/>, or nothing (no preference: the queue gives the caller's own
+    /// live machine a head start). Required for a <c>device_persistent</c> provider. A reserved word, not a second field:
+    /// one field cannot contradict itself and an agent id cannot be spelt <c>fleet</c>.
     public string? PreferAgent { get; init; }
 }
 
@@ -108,17 +75,9 @@ public sealed record SessionResponse
     /// <summary>Present exactly once, when the session first becomes usable or rotates.</summary>
     public string? Bundle { get; init; }
 
-    /// <summary>
-    /// What the human typed, sealed for this device to keep - present exactly
-    /// once, and only where the provider declares
-    /// <c>offers_credential_store</c>.
-    ///
-    /// Offer it back as <c>credential_bundle</c> on the next login and the same
-    /// human is not asked again. Store it the way the device class allows: on
-    /// web that is the tab and nothing longer, because a sealed password
-    /// surviving a browser restart is the thing the whole custody model exists
-    /// to avoid.
-    /// </summary>
+    /// What the human typed, sealed for the device to keep; present once, only where the provider declares
+    /// <c>offers_credential_store</c>. Offer it back as <c>credential_bundle</c>. On web keep it for the tab only:
+    /// surviving a browser restart is what the custody model exists to avoid.
     public string? CredentialBundle { get; init; }
 
     public DateTimeOffset? ExpiresAt { get; init; }
@@ -136,21 +95,7 @@ public sealed record SessionResponse
 
     public IReadOnlyDictionary<string, string>? Config { get; init; }
 
-    /// <summary>
-    /// What the adapter said while signing in. See <see cref="JobResponse.Notes"/>.
-    /// </summary>
-    /// <remarks>
-    /// THE SIGN-IN IS WHERE MOST NOTES ARE WRITTEN and it was the one outcome
-    /// that carried none. An adapter says which of two doors the provider
-    /// opened, whether the password form appeared at all, what scope the
-    /// session came back with, which endpoints it touched - and every one of
-    /// those went to the agent's stdout, on whichever machine ran the job, while
-    /// the person watching the screen was told only "connected".
-    /// <para>
-    /// Read from the same login job the progress trail comes from, so a note
-    /// appears the moment it is written rather than at the end.
-    /// </para>
-    /// </remarks>
+    /// The adapter's sign-in notes, read from the login job so a note appears when written; see <see cref="JobResponse.Notes"/>.
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     /// <summary>
@@ -168,11 +113,7 @@ public sealed record ChallengeView
 
     public required ChallengeType Type { get; init; }
 
-    /// <summary>
     /// Tells the consumer to draw a tappable picture instead of a text box.
-    /// This is the last hop before munni, and the only field on this view that
-    /// changes what the human is shown rather than what they are told.
-    /// </summary>
     public ChallengeAnswerKind AnswerKind { get; init; } = ChallengeAnswerKind.Text;
 
     public string? PromptKey { get; init; }
@@ -219,31 +160,17 @@ public sealed record ChallengeView
     }
 }
 
-/// <summary>
-/// Typed progress, never prose. A free-text status cannot be translated,
-/// cannot drive a progress bar, and becomes a de-facto API the moment a
-/// consumer string-matches it.
-/// </summary>
+/// Typed progress, never prose: free text cannot be translated and becomes a de-facto API once a consumer string-matches it.
 public sealed record ProgressView
 {
     public required JobStep Step { get; init; }
 
     public required IReadOnlyList<JobStep> StepsDone { get; init; }
 
-    /// <summary>
-    /// While the job waits: how many queued jobs are older than it, any
-    /// party's, because the fleet drains the queue oldest first whatever
-    /// the party. Null once it runs - a number there would be a lie. A
-    /// consumer can say "3 ahead of you" instead of a spinner that is
-    /// really a waiting list (user request 2026-10-01).
-    /// </summary>
+    /// While waiting: queued jobs older than it, any party's (the fleet drains oldest first); null once it runs.
     public int? Ahead { get; init; }
 
-    /// <summary>
-    /// How many records the fetch has gathered so far, as the agent reported
-    /// it page by page; null until it counted anything. A consumer shows it
-    /// climbing while the job runs (user request 2026-10-02).
-    /// </summary>
+    /// Records gathered so far, as the agent reported page by page; null until it counted anything.
     public int? Found { get; init; }
 
     public static ProgressView From(JobRow job)
@@ -273,15 +200,8 @@ public sealed record ResumeRequest
     public required string Bundle { get; init; }
 }
 
-/// <summary>
-/// The optional body of <c>DELETE /v1/{provider}/sessions/{id}</c>.
-///
-/// Optional because disconnecting must always succeed: a caller that has lost
-/// its bundle, or never held one, is still entitled to remove the connection.
-/// Supplying it is what makes an upstream logout possible at all - custody is
-/// the user's device, so the only copy of the credential is the one they hand
-/// back here, and a provider declaring <c>logout: none</c> ignores it entirely.
-/// </summary>
+/// Optional so a disconnect always succeeds. Supplying it is what makes an upstream logout possible (custody is the
+/// user's device); a provider declaring <c>logout: none</c> ignores it.
 public sealed record DisconnectRequest
 {
     public string? Bundle { get; init; }
@@ -322,15 +242,8 @@ public sealed record DataResponse
 
     public required bool Complete { get; init; }
 
-    /// <summary>
-    /// What the adapter said about this run. See <see cref="JobResponse.Notes"/>.
-    /// </summary>
-    /// <remarks>
-    /// Here as well as on <see cref="JobResponse"/> because a fetch that
-    /// finishes inside the wait window never becomes a job the caller polls -
-    /// it comes straight back as data. A note that appeared only on the slow
-    /// path would be a note that vanished whenever the provider was quick.
-    /// </remarks>
+    /// Here as well as on <see cref="JobResponse"/>: a fetch finishing inside the wait window never becomes a polled job,
+    /// so notes only on the slow path would vanish whenever the provider was quick.
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     public SessionBundle? Session { get; init; }
@@ -381,23 +294,8 @@ public sealed record JobResponse
 
     public SessionBundle? Session { get; init; }
 
-    /// <summary>
-    /// What the adapter said about this run, in the order it said it.
-    /// </summary>
-    /// <remarks>
-    /// Operator-facing prose, and deliberately NOT part of
-    /// <see cref="ProgressView"/> - that type is a closed, translatable
-    /// vocabulary, and these are sentences an adapter author wrote in whatever
-    /// language they wrote them in. Both are true at once and neither can do
-    /// the other's job.
-    /// <para>
-    /// They exist because the outcomes most in need of explaining are the ones
-    /// that already look like success: a page of transactions that is partial,
-    /// an account type a provider would not list, a balance it does not serve.
-    /// Without this the explanation was in the agent's stdout, on whichever
-    /// machine happened to run the job.
-    /// </para>
-    /// </remarks>
+    /// Operator-facing prose, deliberately not part of <see cref="ProgressView"/> (a closed, translatable vocabulary). Meant for
+    /// outcomes that look like success: a partial page, an unlisted account type, an unserved balance.
     public IReadOnlyList<string> Notes { get; init; } = [];
 
     public ConnectorError? Error { get; init; }
@@ -411,77 +309,32 @@ public sealed record AckRequest
     public required string Cursor { get; init; }
 }
 
-/// <summary>
-/// What a disconnect actually did about the provider's own session.
-/// </summary>
-/// <remarks>
-/// The local purge always happens - a user disconnecting must always succeed
-/// here. <see cref="LoggedOut"/> says whether an upstream logout was dispatched
-/// as well, which depends on the manifest declaring one, the session still
-/// being active, and the caller having handed over the bundle to do it with.
-/// <para>
-/// It exists because this route used to answer 204 in every case, so a consumer
-/// could only repeat the manifest's claim - and did, telling people their bank
-/// had been signed out of when nothing had been sent.
-/// </para>
-/// </remarks>
+/// The local purge always happens; <see cref="LoggedOut"/> says whether an upstream logout was dispatched. The route used
+/// to answer 204 in every case, so consumers repeated the manifest's claim over a disconnect that sent nothing.
 public sealed record DisconnectResponse
 {
-    /// <summary>
-    /// Whether a sign-out was DISPATCHED - not whether it landed.
-    /// </summary>
-    /// <remarks>
-    /// The distinction is the whole reason <see cref="JobId"/> is here. This
-    /// endpoint queues a logout job and returns; the job then drives a browser
-    /// for as long as that takes. So true means "the provider is being told",
-    /// and the consuming app said "the connector logged out upstream" - past
-    /// tense, completed - over a job that had not started.
-    /// <para>
-    /// The adapters know the difference and say so: ASN's logout confirms the
-    /// signed-out page it reaches and notes "signed out upstream" or "the
-    /// sign-out was clicked but the signed-out page never arrived". That
-    /// sentence lives on the job, which is why the id comes back.
-    /// </para>
-    /// </remarks>
+    /// Whether a sign-out was DISPATCHED, not whether it landed: the logout job drives a browser for as long as it takes,
+    /// and its outcome notes live on the job, hence <see cref="JobId"/>.
     [JsonPropertyName("logged_out")]
     public required bool LoggedOut { get; init; }
 
-    /// <summary>
-    /// The logout job, for a caller that wants to know whether it worked.
-    /// Null when nothing was dispatched.
-    /// </summary>
+    /// The logout job, to learn whether it worked; null when nothing was dispatched.
     [JsonPropertyName("job_id")]
     public string? JobId { get; init; }
 
-    /// <summary>
-    /// Why not, when <see cref="LoggedOut"/> is false. Null when it is true.
-    /// </summary>
-    /// <remarks>
-    /// Four of the five branches are the caller's to fix - most of all "the
-    /// caller sent no bundle to log out with", which is a consumer bug that
-    /// looks exactly like a provider without a logout. Operator prose rather
-    /// than a copy key, on the same footing as a note: the audience is whoever
-    /// is debugging the consumer, not the account holder.
-    /// </remarks>
+    /// Why not, when <see cref="LoggedOut"/> is false. Operator prose, not a copy key: "no bundle sent" is a consumer bug
+    /// that looks exactly like a provider without a logout.
     public string? Reason { get; init; }
 }
 
-/// <summary>
-/// Enrolling the operator's own connection as a provider's canary.
-/// </summary>
-/// <remarks>
-/// The bundle is the one a normal login handed back, for an account the
-/// OPERATOR owns and created for this. <see cref="Subject"/> has to carry the
-/// canary marker, which is what makes it impossible to enrol a real user's
-/// connection here by mistake - see <c>CanaryService.SubjectPrefix</c>.
-/// </remarks>
+/// The bundle is from a normal login for an account the OPERATOR owns. Subject must carry the canary marker, so a real
+/// user's connection cannot be enrolled by mistake (see <c>CanaryService.SubjectPrefix</c>).
 public sealed record CanaryEnrolmentRequest
 {
     public required string Subject { get; init; }
 
     public required string Bundle { get; init; }
 
-    /// <summary>Which resource to read. The cheapest one that exercises the parser.</summary>
     public required string Resource { get; init; }
 
     public required int IntervalMinutes { get; init; }
@@ -604,10 +457,8 @@ public sealed record PrivateAgentStatusResponse
     /// <summary>Slots online, unbound and clean - what an approval can hand out right now.</summary>
     public required int Free { get; init; }
 
-    /// <summary>The caller's latest request, whatever its state.</summary>
     public PrivateAgentRequestView? Request { get; init; }
 
-    /// <summary>The slot bound to the caller, if one is.</summary>
     public AgentView? Agent { get; init; }
 }
 
@@ -711,20 +562,13 @@ public sealed record ProviderStatusUpdate
     public string? ReasonKey { get; init; }
 }
 
-/// <summary>
-/// The agent's challenge upload. The image arrives base64 rather than as a
-/// multipart part: an agent posts JSON everywhere else, and one encoding for
-/// the whole protocol is worth the third of a byte.
-/// </summary>
+/// The image is base64 rather than multipart: an agent posts JSON everywhere else.
 public sealed record AgentChallengeRequest
 {
     public required ChallengeType Type { get; init; }
 
-    /// <summary>
-    /// Must mirror <see cref="Connector.Kit.AgentProtocol.RaiseChallengeRequest"/>
-    /// field for field - that record is what the agent SENDS, this one is what
-    /// the server BINDS, and nothing but review keeps the two in step.
-    /// </summary>
+    /// Must mirror <see cref="Connector.Kit.AgentProtocol.RaiseChallengeRequest"/> field for field: that is what the agent
+    /// SENDS, this is what the server BINDS, and only review keeps them in step.
     public ChallengeAnswerKind AnswerKind { get; init; } = ChallengeAnswerKind.Text;
 
     public string? PromptKey { get; init; }
@@ -751,8 +595,6 @@ public sealed record RenewResponse
 {
     public required DateTimeOffset LeaseExpiresAt { get; init; }
 }
-
-// ---- the operator's history and health (#441 L1) ---------------------------
 
 /// <summary>The answer to a share: what is kept and until when. Never the picture - that is the operator's to read, under <c>/admin</c>.</summary>
 public sealed record ArtifactShareResponse
@@ -821,15 +663,12 @@ public sealed record OperatorJobView
     /// <summary><c>none</c>, <c>pending</c> (held for the person's answer; nothing readable), or <c>retained</c>.</summary>
     public required string Artifacts { get; init; }
 
-    /// <summary>Only once retained.</summary>
     public string? DomDigest { get; init; }
 
-    /// <summary>Whether <c>/admin/jobs/{jobId}/artifacts/screenshot</c> has a picture to serve.</summary>
     public bool HasScreenshot { get; init; }
 
     public DateTimeOffset? ArtifactsExpireAt { get; init; }
 
-    /// <summary>The run's recording, when one is kept (#441 L3).</summary>
     public TraceSummaryView? Trace { get; init; }
 }
 
@@ -867,7 +706,6 @@ public sealed record JobListResponse
     public bool Truncated { get; init; }
 }
 
-/// <summary>Per-provider health: what happened to its runs lately, and what that did to its people.</summary>
 public sealed record HealthReportResponse
 {
     public required DateTimeOffset GeneratedAt { get; init; }
@@ -881,7 +719,6 @@ public sealed record ProviderHealthView
 
     public required ProviderStatus Status { get; init; }
 
-    /// <summary>Keyed by window: <c>24h</c>, <c>7d</c>, <c>30d</c>.</summary>
     public required IReadOnlyDictionary<string, HealthWindow> Windows { get; init; }
 
     /// <summary>Within the month the report covers; null when no run succeeded in it.</summary>
@@ -894,7 +731,6 @@ public sealed record ProviderHealthView
 
     public CanaryView? Canary { get; init; }
 
-    /// <summary>Failure reports the operator can open now.</summary>
     public int Reports { get; init; }
 
     /// <summary>Pictures still waiting on a person's answer. A count and nothing else.</summary>
@@ -911,13 +747,10 @@ public sealed record HealthWindow
 
     public int Expired { get; init; }
 
-    /// <summary>Still queued, leased, running or waiting for an answer.</summary>
     public int Open { get; init; }
 
-    /// <summary>Failures by wire code.</summary>
     public required IReadOnlyDictionary<string, int> ByCode { get; init; }
 
-    /// <summary>Runs by who asked: <c>user</c>, <c>schedule</c>, <c>lab</c>, <c>canary</c>, <c>other</c>.</summary>
     public required IReadOnlyDictionary<string, int> ByTrigger { get; init; }
 
     /// <summary>Distinct sessions of people - not the operator's runs - whose run failed or expired.</summary>

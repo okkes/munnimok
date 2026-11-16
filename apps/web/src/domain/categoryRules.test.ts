@@ -95,7 +95,7 @@ describe('affectedByDelete + detachCategoryPatch', () => {
 
     expect(detachCategoryPatch(plain, ids)).toEqual({ needsReview: 1, catId: 'uncategorized' });
     const splitPatch = detachCategoryPatch(split, ids);
-    expect(splitPatch.catId).toBeUndefined(); // the direct catId was fine
+    expect(splitPatch.catId).toBeUndefined();
     expect(splitPatch.splits).toEqual([
       { catId: 'uncategorized', amountCents: 300 },
       { catId: 'kept', amountCents: 700 },

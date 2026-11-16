@@ -2,20 +2,14 @@ using System.Text.Json.Nodes;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The control plane's catalogue, revalidated rather than refetched: the
-/// connector answers 304 to the ETag it issued, and the relay keeps the
-/// last document it was given. The document changes on a deploy or a
-/// health change, and every relay call that needs a manifest — which
-/// resources a provider has, which params they take — reads it from here.
-/// </summary>
+// revalidated, not refetched: the connector answers 304 to the ETag it issued and the relay keeps the last document;
+// it changes on a deploy or a health change
 public sealed class ConnectorCatalogue
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private string? _etag;
     private JsonObject? _document;
 
-    /// <summary>The catalogue as the connector renders it (snake_case), with its ETag.</summary>
     public async Task<(string? ETag, JsonObject Document)> GetAsync(ConnectorClient client, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
@@ -38,7 +32,6 @@ public sealed class ConnectorCatalogue
         }
     }
 
-    /// <summary>One provider's manifest (snake_case), or null when the catalogue has no such provider.</summary>
     public async Task<JsonObject?> ProviderAsync(ConnectorClient client, string providerId, CancellationToken ct)
     {
         var (_, document) = await GetAsync(client, ct);
@@ -48,7 +41,6 @@ public sealed class ConnectorCatalogue
     }
 }
 
-/// <summary>A connector answer that was not a success, carried to the handler that turns it into the app's envelope.</summary>
 public sealed class ConnectorReplyException(ConnectorReply reply) : Exception($"connector answered {(int)reply.Status}")
 {
     public ConnectorReply Reply { get; } = reply;

@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { wheelToHorizontal } from './wheelScroll';
 
-/** a strip with mocked layout: happy-dom has no real layout engine */
 function strip(overflowX: string, opts: { scrollWidth?: number; clientWidth?: number; scrollHeight?: number; clientHeight?: number } = {}) {
   const el = document.createElement('div');
   el.style.overflowX = overflowX;
@@ -47,7 +46,7 @@ describe('#153: vertical wheel drives horizontal-only scrollers', () => {
   it('at the end of the strip the event falls through so the page scrolls', () => {
     const el = strip('auto');
     el.scrollLeft = 300; // happy-dom does not clamp — treat as at-end
-    const e = wheel(el, 0); // deltaY 0: never handled
+    const e = wheel(el, 0);
     expect(e.defaultPrevented).toBe(false);
   });
 

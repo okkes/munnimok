@@ -2,13 +2,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// What ending one session came to (user 2026-10-09: the operator's Bank
-/// connections dashboard says it instead of a bare 200): the party's side
-/// — <c>ended</c>, <c>gone</c> (the control plane no longer had it),
-/// <c>refused</c> with the code, <c>unreachable</c> — and how many account
-/// references went with the binding.
-/// </summary>
+// Party: ended, gone (the control plane no longer had it), refused (with the code) or unreachable
 public sealed record SessionDisconnectOutcome(string Party, string? PartyError, int AccountsForgotten)
 {
     public const string Ended = "ended";
@@ -17,20 +11,11 @@ public sealed record SessionDisconnectOutcome(string Party, string? PartyError, 
     public const string Unreachable = "unreachable";
 }
 
-/// <summary>
-/// A connection ends at the party as well as here (§15). Deleting a feed
-/// takes its account out of the consent that reaches it — the consent ends
-/// at the party when that was its last account, and lives on for the
-/// others otherwise, the account left where the party lists it; deleting
-/// the munni account ends every consent the person made — the way the
-/// api's own bank ingest revoked its requisitions. Where the relay keeps
-/// the bundle (a household agent's pointer, an open-banking consent) the
-/// party is told with it; a client-custody session is told without, and
-/// expires on its own.
-/// </summary>
+// a connection ends at the party as well as here (§15): deleting a feed ends the consent only when it was the last account,
+// deleting the munni account ends every consent; where the relay keeps the bundle the party is told with it,
+// a client-custody session is told without and expires on its own
 public sealed class ConnectorDisconnector(ConnectorRelay relay, ILogger<ConnectorDisconnector> logger)
 {
-    /// <summary>The feed's accounts leave their consents; a consent with no account left ends at the party.</summary>
     public async Task DisconnectFeedAsync(Guid userId, string feedSpaceId, CancellationToken ct = default)
     {
         var leaving = await relay.Db.ConnectorAccountRefs
@@ -63,7 +48,6 @@ public sealed class ConnectorDisconnector(ConnectorRelay relay, ILogger<Connecto
         await relay.Db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Everything the user connected: revoked at the party, forgotten here.</summary>
     public async Task DisconnectAllAsync(Guid userId, CancellationToken ct = default)
     {
         var sessions = await relay.Db.ConnectorSessions.Where(s => s.UserId == userId).ToListAsync(ct);
@@ -71,17 +55,8 @@ public sealed class ConnectorDisconnector(ConnectorRelay relay, ILogger<Connecto
         await ForgetAsync(await relay.Db.ConnectorAccountRefs.Where(a => a.UserId == userId).ToListAsync(ct), ct);
     }
 
-    /// <summary>
-    /// One session, as an operator ends it from the admin portal (user
-    /// 2026-10-09: "too many active connections that are not used any
-    /// more", with no place to see them): told to the control plane with
-    /// the bundle the relay keeps — an open-banking consent is revoked at
-    /// the bank by it — best effort, the way a feed's deletion tells it; the
-    /// binding goes either way, and so do the account references the
-    /// connection made, so nothing is scheduled or settled against it any
-    /// more. The account rows in the feed stay: a reconnect lands on them,
-    /// history included (#445). Null when no session carries the id.
-    /// </summary>
+    // best effort at the party; the binding and account references go either way, so nothing is scheduled or settled
+    // the feed's account rows stay: a reconnect lands on them, history included (#445)
     public async Task<SessionDisconnectOutcome?> DisconnectSessionAsync(string sessionId, CancellationToken ct = default)
     {
         var session = await relay.Db.ConnectorSessions.FirstOrDefaultAsync(s => s.Id == sessionId, ct);
@@ -95,7 +70,6 @@ public sealed class ConnectorDisconnector(ConnectorRelay relay, ILogger<Connecto
         return new SessionDisconnectOutcome(party, error, refs.Count);
     }
 
-    /// <summary>Tells the control plane, with whatever bundle the relay keeps, and removes the binding whatever it answered.</summary>
     private async Task<(string Party, string? Error)> EndAsync(ConnectorSession session, CancellationToken ct)
     {
         (string Party, string? Error) outcome;

@@ -18,13 +18,11 @@ const catalogue = { 'GET /connectors/providers': () => catalogueOf(manifestOf())
 const feeds = { 'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }) };
 const quietSync = { [`POST /connectors/${PROVIDER}/sync`]: () => ({ sessionId: 'ses_1', state: 'active', ingested: NO_INGEST }) };
 
-/** the user's database as the app opened it */
 async function userDb() {
   const { MunniDB } = await import('@/db/schema');
   return new MunniDB(USER_TEST_DB);
 }
 
-/** a connection already made on this device, the way adopt() leaves it */
 async function seedConnection(id: string, extra: Record<string, unknown> = {}) {
   const { Repo } = await import('@/db/repo');
   const { DexieBackend } = await import('@/db/backend');
@@ -41,7 +39,6 @@ async function seedConnection(id: string, extra: Record<string, unknown> = {}) {
   db.close();
 }
 
-/** two receipts the relay filed for a connection, the way its ingest leaves them in the store feed */
 async function seedReceipts(connectionId: string) {
   const { Repo } = await import('@/db/repo');
   const { DexieBackend } = await import('@/db/backend');
@@ -164,7 +161,6 @@ describe('Connections hub — the failure report (#441 L1)', () => {
       expect(row?.lastError?.artifactsJobId).toBeUndefined();
     });
 
-    // a sign-in that fails with a picture of its own: shared the same way, the sheet says thanks instead of asking
     fireEvent.click(await screen.findByTestId('conn-signin-c-auto', {}, { timeout: 5000 }));
     fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
@@ -203,7 +199,6 @@ describe('Connections hub — the failure report (#441 L1)', () => {
     fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
-    // the sheet asks; closed without an answer, the card asks instead — and the answer closes it for good
     await screen.findByTestId('connect-report', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('connect-cancel'));
     await waitFor(() => expect(screen.queryByTestId('connect-report')).toBeNull());
@@ -254,7 +249,6 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.click(screen.getByTestId('connect-next'));
     await waitFor(() => expect(screen.queryByTestId('connect-form')).toBeNull(), { timeout: 5000 });
     expect(request).toMatchObject({ connectionId: 'c-door' });
-    // the connection exists: no naming step, and still one row — with the new session
     expect(screen.queryByTestId('conn-name-input')).toBeNull();
     await waitFor(async () => {
       const db = await userDb();
@@ -284,14 +278,13 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(await screen.findByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
-    // a fresh connection: its own id, and the naming step that follows a first connect
     await screen.findByTestId('conn-name-input', {}, { timeout: 5000 });
     expect(request.connectionId).toBeTruthy();
     expect(request.connectionId).not.toBe('c-forgotten');
   }, 20_000);
 
   it('#445: an account whose connection is gone is listed as not fetched any more, with the way back', async () => {
-    // the feed set says whose the account is (user ss 2026-10-09): this one sits in my own space
+    // the feed set says whose the account is: this one sits in my own space
     renderAppAsUser('/connections', { api: { ...catalogue, 'GET /me/feeds': () => [{ feedSpaceId: 's-user' }] } });
     await screen.findByTestId('screen-connections');
     const { MunniDB } = await import('@/db/schema');
@@ -313,10 +306,8 @@ describe('Connections hub (signed-in user)', () => {
     });
     db.close();
 
-    // no card carries the party any more: the account sits in its own list
     const row = await screen.findByTestId('conn-uncovered-gone-acc', {}, { timeout: 5000 });
     expect(row.textContent).toContain('Not fetched any more');
-    // the way back is the party’s own flow
     fireEvent.click(await screen.findByTestId('conn-uncovered-reconnect-gone-acc', {}, { timeout: 5000 }));
     expect((await screen.findByTestId('connect-notes')).textContent).toContain('stand-in');
   }, 20_000);
@@ -344,7 +335,6 @@ describe('Connections hub (signed-in user)', () => {
 
     fireEvent.click(await screen.findByTestId('conn-add-open'));
     fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
-    // the manifest's form: an e-mail and a password, nothing else
     expect((await screen.findByTestId('connect-notes')).textContent).toContain('stand-in');
     expect(screen.getByTestId('connect-web-note')).toBeTruthy();
     fireEvent.click(screen.getByTestId('connect-next'));
@@ -353,13 +343,12 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
 
-    // a fresh connection asks for its display name right away (user ruling)
     const nameInput = (await screen.findByTestId('conn-name-input', {}, { timeout: 5000 })) as HTMLInputElement;
     expect(nameInput.value).toBe('Mock Store');
     fireEvent.change(nameInput, { target: { value: 'Mock thuis' } });
     fireEvent.click(screen.getByTestId('conn-name-save'));
 
-    // the step after naming: no space has the connection until picked (user ruling 2026-10-02)
+    // the step after naming: no space has the connection until picked
     await screen.findByTestId('conn-spaces-step', {}, { timeout: 5000 });
     const db = await userDb();
     expect((await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0)).toHaveLength(0);
@@ -373,12 +362,10 @@ describe('Connections hub (signed-in user)', () => {
       return el!;
     });
     const id = card.getAttribute('data-testid')!.slice('conn-card-'.length);
-    // the first sync ran by itself against the relay: the row says what it brought, and how far the fetches reach
     await waitFor(() => expect(screen.getByTestId(`conn-result-${id}`).textContent).toMatch(/Up to date/), { timeout: 5000 });
     expect(screen.getByTestId(`conn-range-${id}`).textContent).toMatch(/Nothing fetched yet/);
     await waitFor(() => expect(screen.getByTestId(`conn-usedin-${id}`).textContent).toContain('Second'));
 
-    // the active space joins from the manage sheet; afterwards both spaces see the connection
     fireEvent.click(screen.getByTestId(`conn-manage-${id}`));
     const rows = [await screen.findByTestId('conn-space-s-user'), await screen.findByTestId('conn-space-s-two')];
     await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(1));
@@ -431,13 +418,11 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
 
-    // queued: the step, the line ahead, the clock
     await screen.findByTestId('connect-progress', {}, { timeout: 5000 });
     expect(screen.getByTestId('connect-progress-step').textContent).toContain('turn');
     expect(screen.getByTestId('connect-progress-ahead').textContent).toContain('2');
     expect(screen.getByTestId('connect-progress-elapsed').textContent).toMatch(/\d+ s/);
 
-    // the poll brings the party's page: the sheet stands at the full height, the frame waits for its first picture, the close is the way out
     await screen.findByTestId('connect-live', {}, { timeout: 8000 });
     expect(screen.getByTestId('connect-live-waiting')).toBeTruthy();
     expect(screen.getByTestId('connect-live-close')).toBeTruthy();
@@ -479,7 +464,6 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
     await screen.findByTestId('connect-live', {}, { timeout: 5000 });
-    // the ended stream re-reads the session, which has settled: the connection is named
     expect(await screen.findByTestId('conn-name-input', {}, { timeout: 8000 })).toBeTruthy();
     expect(screen.queryByTestId('connect-live')).toBeNull();
   }, 20_000);
@@ -508,12 +492,10 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
     await screen.findByTestId('connect-progress', {}, { timeout: 5000 });
-    // closing detaches: the hub lists the sign-in with a way back in
     fireEvent.click(screen.getByTestId('connect-running-close'));
     const row = await screen.findByTestId(/^conn-pending-(?!state|continue|cancel)/);
     expect(row.textContent).toMatch(/Signing in/);
     expect(screen.getByTestId(/^conn-pending-continue-/)).toBeTruthy();
-    // the follower reads the session while the sheet is closed and adopts it once it settles
     await screen.findByTestId('conn-name-input', {}, { timeout: 10000 });
   }, 25_000);
 
@@ -591,7 +573,6 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
 
-    // the typed question: a code, sent by text message, with its countdown
     await screen.findByTestId('connect-challenge-mfa_code', {}, { timeout: 5000 });
     expect(screen.getByTestId('connect-challenge-prompt').textContent).toContain('text message');
     expect(screen.getByTestId('connect-challenge-expires')).toBeTruthy();
@@ -624,7 +605,6 @@ describe('Connections hub (signed-in user)', () => {
 
     expect((await screen.findByTestId('connect-error', {}, { timeout: 5000 })).textContent).toContain('cannot be reached');
     fireEvent.click(screen.getByTestId('connect-retry'));
-    // back on the form with what was typed; the second attempt is refused for good — and still gets a retry
     await screen.findByTestId('connect-field-username');
     expect(typed('connect-field-username')).toBe('a@b.nl');
     expect(typed('connect-field-password')).toBe('wrong');
@@ -634,7 +614,6 @@ describe('Connections hub (signed-in user)', () => {
     await screen.findByTestId('connect-field-username');
     expect(typed('connect-field-username')).toBe('a@b.nl');
 
-    // closed on a refusal and opened again from the catalogue, the form still reads what was typed
     fireEvent.click(screen.getByTestId('connect-next'));
     await screen.findByTestId('connect-error', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('connect-cancel'));
@@ -645,7 +624,6 @@ describe('Connections hub (signed-in user)', () => {
     expect(typed('connect-field-username')).toBe('a@b.nl');
     expect(typed('connect-field-password')).toBe('wrong');
     expect(attempts).toBe(3);
-    // nothing was stored
     const db = await userDb();
     expect(await db.connectorConns.toArray()).toHaveLength(0);
     expect((await db.storeConns.toArray()).filter((c) => c.deleted === 0)).toHaveLength(0);
@@ -670,7 +648,6 @@ describe('Connections hub (signed-in user)', () => {
     await screen.findByTestId('conn-sync-c-again', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('conn-manage-c-again'));
     fireEvent.click(await screen.findByTestId('conn-manage-relogin', {}, { timeout: 5000 }));
-    // the manage sheet is gone and the sign-in sheet is up for the same connection
     await waitFor(() => expect(screen.queryByTestId('conn-manage-relogin')).toBeNull());
     expect((await screen.findByTestId('connect-notes')).textContent).toContain('stand-in');
     fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
@@ -678,7 +655,6 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.click(screen.getByTestId('connect-next'));
     await waitFor(() => expect(screen.queryByTestId('connect-form')).toBeNull(), { timeout: 5000 });
     expect(request).toMatchObject({ connectionId: 'c-again', inputs: { username: 'a@b.nl', password: 'new-pw' } });
-    // no naming step — the connection exists; its row carries the new session and still the standing answer
     expect(screen.queryByTestId('conn-name-input')).toBeNull();
     await waitFor(async () => {
       const db = await userDb();
@@ -717,7 +693,6 @@ describe('Connections hub (signed-in user)', () => {
     await waitFor(() => expect(screen.getByTestId('conn-result-c-seeded').textContent).toContain('pause'), { timeout: 5000 });
     expect(bundles).toEqual(['sb_v1.seeded', 'sb_v1.rotated']);
 
-    // a dead session: the bundle is dropped and the card asks for a reconnect
     fireEvent.click(screen.getByTestId('conn-sync-c-seeded'));
     await waitFor(() => expect(screen.getByTestId('conn-result-c-seeded').textContent).toContain('Sign in'), { timeout: 5000 });
     await waitFor(async () => expect((await db.connectorConns.get('c-seeded'))?.state).toBe('needs_reauth'));
@@ -758,9 +733,7 @@ describe('Connections hub (signed-in user)', () => {
     const group = await screen.findByTestId('receipts-conn-c-seeded', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.getByTestId('receipts-conn-count-c-seeded').textContent).toBe('2'));
     expect(screen.getByTestId('receipts-conn-range-c-seeded').textContent).toMatch(/Fetched .*· 2/);
-    // the hub's list carries no space's labels
     expect(group.querySelector('[data-testid^="receipt-unmatched-"]')).toBeNull();
-    // user 2026-10-06: folded by default — the count shows, the receipts come out on a tap
     expect(screen.queryByTestId('receipt-row-rcpt:mock:c-seeded:2')).toBeNull();
     fireEvent.click(screen.getByTestId('receipts-conn-toggle-c-seeded'));
     expect(screen.getByTestId('receipt-row-rcpt:mock:c-seeded:2').textContent).toContain('Invoice');
@@ -889,19 +862,16 @@ describe('Connections hub (signed-in user)', () => {
     });
     await screen.findByTestId('screen-accounts');
     fireEvent.click(await screen.findByTestId('conn-add-open'));
-    // the bank picker: no shop on offer, munni's own connector lists its banks
     const picker = await screen.findByTestId('bank-picker', {}, { timeout: 5000 });
     expect(picker.querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeNull();
     fireEvent.click(await screen.findByTestId('bank-picker-munni', {}, { timeout: 5000 }));
     fireEvent.click(await screen.findByTestId('conn-party-mock-bank-simple'));
-    // what the fetch says about itself rides the form
     expect((await screen.findByTestId('connect-resource-note-transactions')).textContent).toContain('one file');
     fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'me' } });
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
     fireEvent.click(await screen.findByTestId('conn-name-save', {}, { timeout: 5000 }));
 
-    // the card sits under Banks with the fetched account beneath it, unattached
     const list = await screen.findByTestId('conn-list-bank', {}, { timeout: 5000 });
     const card = list.querySelector('[data-testid^="conn-card-"]')!;
     const id = card.getAttribute('data-testid')!.slice('conn-card-'.length);
@@ -913,11 +883,7 @@ describe('Connections hub (signed-in user)', () => {
     expect((await db.storeConns.toArray()).find((c) => c.deleted === 0)?.kind).toBe('bank');
     db.close();
 
-    // Sync now speaks bank counts, not receipts. The connect's own first sync
-    // already left the same words on the row, and Sync now takes the row
-    // through "fetching" first — so both reads wait together for the result
-    // to be back, rather than one passing on the old result and the next
-    // landing mid-sync.
+    // both reads wait for the result: the connect's first sync left the same words on the row, and Sync now passes "fetching"
     fireEvent.click(await screen.findByTestId(`conn-sync-${id}`));
     await waitFor(
       () => {
@@ -928,7 +894,6 @@ describe('Connections hub (signed-in user)', () => {
       { timeout: 5000 },
     );
 
-    // the attach door lands on the space's accounts screen with the account already picked (#310)
     fireEvent.click(screen.getByTestId('conn-attach-acct-mock-1'));
     await screen.findByTestId('screen-space-accounts', {}, { timeout: 5000 });
     expect((await screen.findByTestId('space-attach-focus', {}, { timeout: 5000 })).textContent).toContain('Betaalrekening');
@@ -966,7 +931,6 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('connect-next'));
     await waitFor(() => expect(request.connectionId).toBe('c-eb'), { timeout: 5000 });
-    // the same connection: no naming step, still one connection
     expect(screen.queryByTestId('conn-name-input')).toBeNull();
   }, 20_000);
 
@@ -1012,7 +976,6 @@ describe('Connections hub (signed-in user)', () => {
       api: {
         'GET /connectors/providers': () => catalogueOf(manifestOf({ id: 'enablebanking', name: 'Enable Banking', kind: 'bank' })),
         'GET /me/feeds': () => [{ feedSpaceId: 's-user' }],
-        // the relay's per-person record: which of MY connections fetches what
         'GET /connectors/accounts': () => [
           { connectionId: 'c-paypal', provider: 'enablebanking', feedSpaceId: 's-user', accountId: 'acc-paypal' },
           { connectionId: 'c-ing', provider: 'enablebanking', feedSpaceId: 's-user', accountId: 'acc-ing' },
@@ -1032,7 +995,6 @@ describe('Connections hub (signed-in user)', () => {
       },
       { timeout: 5000 },
     );
-    // a card's range is its own accounts' history, not the party's
     expect(screen.getByTestId('conn-range-c-paypal').textContent).not.toContain('2024');
     expect(screen.getByTestId('conn-range-c-ing').textContent).toContain('2024');
     // the co-owned account another person's connection fetched last is still the viewer's own connection's: never "not fetched any more"
@@ -1070,7 +1032,6 @@ describe('Connections hub (signed-in user)', () => {
     const party = await screen.findByTestId('conn-party-mock-store-persistent', {}, { timeout: 5000 });
     expect(screen.getByTestId('conn-party-mock-store-persistent-agent')).toBeTruthy();
     fireEvent.click(party);
-    // no form: the party signs in on the agent; the online agent is picked, the offline one cannot be
     await screen.findByTestId('connect-agent-step', {}, { timeout: 5000 });
     await screen.findByTestId('connect-agent-agt_on');
     expect((screen.getByTestId('connect-agent-agt_off') as HTMLButtonElement).disabled).toBe(true);
@@ -1161,7 +1122,6 @@ describe('Connections hub (signed-in user)', () => {
         },
         'POST /connectors/gocardless/login': (body) => {
           const request = body as { config: Record<string, string>; inputs: Record<string, string> };
-          // the country and the bank as picked (the step's fields); the return address is the app's own answer, never typed
           expect(request.inputs).toEqual({ country: 'NL', institution: 'ING_NL' });
           expect(request.config).toEqual({ return_url: `${origin}/gc-callback` });
           return json(
@@ -1187,18 +1147,15 @@ describe('Connections hub (signed-in user)', () => {
     try {
       await screen.findByTestId('screen-accounts');
       fireEvent.click(await screen.findByTestId('conn-add-open'));
-      // #527: the bank picker offers the aggregator itself, straight into its consent flow
       const openBanking = await screen.findByTestId('bank-picker-open-banking', {}, { timeout: 5000 });
       expect(openBanking.textContent).toContain('180 days');
       fireEvent.click(await screen.findByTestId('conn-party-gocardless', {}, { timeout: 5000 }));
       await screen.findByTestId('connect-field-country');
       expect(screen.queryByTestId('connect-field-return_url')).toBeNull();
       fireEvent.change(screen.getByTestId('connect-field-country'), { target: { value: 'NL' } });
-      // the bank comes from the party's own list, searched as typed, the country riding along as context
       fireEvent.change(screen.getByTestId('connect-field-institution'), { target: { value: 'in' } });
       const option = await screen.findByTestId('connect-lookup-institution-ING_NL', {}, { timeout: 5000 });
-      // the list owns its touches, and the field is no <label>: Safari re-dispatched a tap on a
-      // row to the first labelable element — the just-picked button — and unpicked it (user ss 2026-10-02)
+      // the list owns its touches and the field is no <label>: Safari re-dispatched a row tap to the picked button, unpicking it
       expect(screen.getByTestId('connect-lookup-institution-options').hasAttribute('data-sheet-no-drag')).toBe(true);
       expect(screen.getByTestId('connect-fieldset-institution').tagName).toBe('DIV');
       expect(screen.getByTestId('connect-fieldset-country').tagName).toBe('LABEL');
@@ -1208,8 +1165,6 @@ describe('Connections hub (signed-in user)', () => {
       expect((await screen.findByTestId('connect-lookup-institution-picked')).textContent).toContain('ING');
       fireEvent.click(screen.getByTestId('connect-next'));
 
-      // the consent is a redirect that comes back to the app's own page: nothing to paste,
-      // and what the return page needs is written down before the bank opens
       await screen.findByTestId('connect-redirect-own-note', {}, { timeout: 5000 });
       expect(screen.queryByTestId('connect-redirect-paste')).toBeNull();
       const pending = JSON.parse(localStorage.getItem('munni_connector_return') ?? '{}') as Record<string, unknown>;

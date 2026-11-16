@@ -6,14 +6,9 @@ using Munni.Api.Push;
 
 namespace Munni.Api.Splits;
 
-/// <summary>
-/// The ways into a split event (#538). A LINK lets in whoever holds it —
-/// no friendship needed, no space access granted — within what its owner
-/// set: how many people, until when, and whether they wait for an owner's
-/// word first. A FRIEND an owner asks gets a notice like a space
-/// invitation and is in the moment they say yes. Only owners open either
-/// door, and both close when the event is settled.
-/// </summary>
+/// #538: a LINK lets in whoever holds it (no friendship, no space access) within its owner's limits: uses, expiry,
+/// approval first. A FRIEND an owner asks is in the moment they say yes. Only owners open either door; both close
+/// when the event is settled.
 internal static class SplitInviteEndpoints
 {
     private const string Mutations = Social.SocialEndpoints.MutationsPolicy;
@@ -33,14 +28,13 @@ internal static class SplitInviteEndpoints
         group.MapPost("/friend-invites/{inviteId:guid}/{answer}", AnswerFriendInviteAsync).RequireRateLimiting(Mutations);
     }
 
-    /// <summary>A link works until its date passes or its uses are spent.</summary>
     private static bool Works(SplitInvite link, DateTimeOffset now) =>
         (link.ExpiresAt is null || link.ExpiresAt >= now) && (link.MaxUses == 0 || link.Uses < link.MaxUses);
 
     private static SplitLinkDto LinkView(SplitInvite? link) =>
         link is null ? new SplitLinkDto(null, null, 0, 0, false) : new SplitLinkDto(link.Token, link.ExpiresAt, link.MaxUses, link.Uses, link.NeedsApproval);
 
-    /// <summary>the event's link as it stands: reading never replaces it, so a link already sent out keeps working</summary>
+    /// reading never replaces the link, so one already sent out keeps working
     private static async Task<IResult> ActiveLinkAsync(string splitId, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -51,8 +45,7 @@ internal static class SplitInviteEndpoints
         return Results.Ok(LinkView(links.FirstOrDefault(l => Works(l, now))));
     }
 
-    /// <summary>a new link is an owner's explicit act and ends the one before it: one link per event keeps "who can
-    /// still get in" a question with one answer</summary>
+    /// a new link ends the one before: one link per event keeps "who can still get in" a question with one answer
     private static async Task<IResult> NewLinkAsync(string splitId, NewLinkRequest? request, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -87,7 +80,7 @@ internal static class SplitInviteEndpoints
         return Results.Ok(LinkView(null));
     }
 
-    /// <summary>The link with its event, and whether it still lets anyone in — someone already in is told so by a link that no longer does.</summary>
+    /// someone already in is told so by a link that no longer works
     private static async Task<(SplitInvite Link, Split Split, bool Works)?> LinkAsync(AppDbContext db, string token, TimeProvider time, CancellationToken ct)
     {
         var link = await db.SplitInvites.FindAsync([token], ct);
@@ -96,9 +89,8 @@ internal static class SplitInviteEndpoints
         return split is null ? null : (link, split, Works(link, time.GetUtcNow()) && split.Status == SplitWords.Open);
     }
 
-    /// <summary>the join screen shows the event's name, look and inviter and nothing else — and where the caller
-    /// stands: the link's own maker, already in, waiting for an owner, or taken out before; a link that does not
-    /// work 404s whatever the reason</summary>
+    /// shows only the event's name, look and inviter, plus where the caller stands;
+    /// a link that does not work 404s whatever the reason
     private static async Task<IResult> PeekAsync(string token, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var me = http.GetUserId();
@@ -124,10 +116,8 @@ internal static class SplitInviteEndpoints
         });
     }
 
-    /// <summary>
-    /// Using the link: someone already in stays as they are and spends no use; someone an owner took out does not
-    /// come back through a link; a link that asks for approval puts its user in the queue; any other lets them in.
-    /// </summary>
+    /// someone already in stays as they are and spends no use; someone an owner took out does not come back through a link;
+    /// an approval link queues its user, any other lets them in
     private static async Task<IResult> AcceptAsync(string token, AcceptInviteRequest? request, AppDbContext db, PushNotifier push, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var me = http.GetUserId();
@@ -158,7 +148,6 @@ internal static class SplitInviteEndpoints
         return Results.Ok(new { splitId = (string?)null, state = "waiting" });
     }
 
-    /// <summary>In, as a contributor: a first time, or back after having left.</summary>
     private static void Join(AppDbContext db, string splitId, Guid userId, SplitMember? membership, string? spaceId, TimeProvider time)
     {
         if (membership is null)
@@ -172,7 +161,6 @@ internal static class SplitInviteEndpoints
         membership.LeftAt = null;
     }
 
-    /// <summary>An owner's word on someone waiting: `approve` lets them in, anything else turns them away.</summary>
     private static async Task<IResult> AnswerRequestAsync(string splitId, Guid requestId, string answer, AppDbContext db, PushNotifier push, HttpContext http, TimeProvider time)
     {
         var ct = http.RequestAborted;
@@ -215,7 +203,6 @@ internal static class SplitInviteEndpoints
         return Results.Ok(new { id = splitId });
     }
 
-    /// <summary>An invitation nobody answered yet can be taken back by any owner.</summary>
     private static async Task<IResult> CancelFriendInviteAsync(string splitId, Guid inviteId, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -231,7 +218,7 @@ internal static class SplitInviteEndpoints
         return Results.Ok(new { id = splitId });
     }
 
-    /// <summary>The invitations waiting for the caller's answer, with what an invitee may know: the event's name and look, and who asked.</summary>
+    /// an invitee may know only the event's name and look, and who asked
     private static async Task<IResult> MyFriendInvitesAsync(AppDbContext db, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
@@ -254,7 +241,7 @@ internal static class SplitInviteEndpoints
             .ToList());
     }
 
-    /// <summary>The invitee's word: `accept` puts them in at once — no queue, an owner asked for them — anything else declines.</summary>
+    /// `accept` puts them in at once, no queue: an owner asked for them
     private static async Task<IResult> AnswerFriendInviteAsync(Guid inviteId, string answer, AppDbContext db, PushNotifier push, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var me = http.GetUserId();

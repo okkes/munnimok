@@ -15,7 +15,6 @@ describe('PayPal detection (PP1)', () => {
     expect(isPaypalFunding({ merchant: 'PAY PAL EUROPE' })).toBe(true);
     expect(isPaypalFunding({ merchant: 'Onbekend', counterIban: 'LU89 7510 0013 5104 200E' })).toBe(true);
     expect(isPaypalFunding({ merchant: 'Albert Heijn' })).toBe(false);
-    // "paypal" inside another word never matches (word boundary)
     expect(isPaypalFunding({ merchant: 'paypallet bv' })).toBe(false);
   });
 
@@ -32,16 +31,14 @@ describe('PayPal pair matching (PP1)', () => {
       [tx('b1', '2026-07-14', -2599, 'PayPal Europe', 'PP.1234 Steam Purchase')],
       [tx('p1', '2026-07-16', -2599, 'Steam'), tx('p2', '2026-07-10', -2599, 'Steam')],
     );
-    expect(pairs.get('b1')).toBe('p1'); // 2 days beats 4 (p2 is outside anyway)
+    expect(pairs.get('b1')).toBe('p1');
   });
 
   it('breaks same-amount ties only with a merchant token from the remittance', () => {
     const tied = [tx('p1', '2026-07-14', -999, 'Spotify'), tx('p2', '2026-07-14', -999, 'Netflix')];
-    // remittance names netflix -> deterministic
     expect(
       matchPaypalPairs([tx('b1', '2026-07-14', -999, 'PayPal Europe', 'PP.5678 NETFLIX payment')], tied).get('b1'),
     ).toBe('p2');
-    // no token -> ambiguous -> stays review-gated
     expect(matchPaypalPairs([tx('b1', '2026-07-14', -999, 'PayPal Europe', 'PP.5678')], tied).size).toBe(0);
   });
 
@@ -54,7 +51,7 @@ describe('PayPal pair matching (PP1)', () => {
       ],
       [tx('p1', '2026-07-15', -500, 'bol.com')],
     );
-    expect([...pairs.values()]).toEqual(['p1']); // exactly one bank debit claimed it
-    expect(pairs.has('b3')).toBe(false); // 14 days out of window
+    expect([...pairs.values()]).toEqual(['p1']);
+    expect(pairs.has('b3')).toBe(false);
   });
 });

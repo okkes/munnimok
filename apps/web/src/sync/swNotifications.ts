@@ -1,9 +1,5 @@
-/**
- * Push-notification decisions for the service worker, extracted so the
- * logic is unit-testable (sw.ts itself only runs in a real worker). The
- * app language is mirrored into a tiny IDB store because push workers
- * boot cold — module state would be lost.
- */
+// extracted so the logic is unit-testable (sw.ts only runs in a real worker)
+// the app language is mirrored into a tiny IDB store because push workers boot cold and lose module state
 
 export interface PushPayload {
   type?: string;
@@ -12,7 +8,7 @@ export interface PushPayload {
   fromName?: string;
   spaceName?: string;
   role?: string;
-  /** #538: what happened in a split, the split it happened in, and — settled, a payment — the receiver's own figure */
+  /** #538: what happened in a split, which split, and (settled, a payment) the receiver's own figure */
   kind?: string;
   splitId?: string;
   splitName?: string;
@@ -33,7 +29,6 @@ interface PushTexts {
   roles: Record<string, string>;
   someone: string;
   aSpace: string;
-  /** the Settings row's test push */
   test: string;
 }
 
@@ -163,7 +158,6 @@ function splitBody(payload: PushPayload, lang: string, someone: string): { body:
 export interface WorkerNotification {
   title: string;
   body: string;
-  /** coalescing tag */
   tag: string;
   /** click-through target (hash route) */
   url: string;
@@ -206,28 +200,23 @@ function socialBody(payload: PushPayload, texts: PushTexts): { body: string; url
   }
 }
 
-/** what (if anything) to show for a push payload, localized */
 export function buildNotification(payload: PushPayload, lang: string): WorkerNotification | null {
   const texts = TEXTS[lang] ?? TEXTS.en;
   const spaceId = spaceIdOf(payload);
-  // #551: a notification about one space wears its name as the title — the
-  // social ones name their space in the sentence
   const spaceTitle = payload.spaceName?.trim() || texts.title;
   if (payload.type === 'new-transactions') {
     const count = payload.count ?? 1;
     return {
       title: spaceTitle,
       body: count === 1 ? texts.one : texts.many.replace('{n}', String(count)),
-      tag: `new-tx-${spaceId ?? 'all'}`, // coalesce per space
-      // #132 (user request): the tap lands IN the announced space's
-      // review — the space rides the hash query for cold starts
+      tag: `new-tx-${spaceId ?? 'all'}`,
+      // #132: the tap lands IN the announced space's review; the space rides the hash query for cold starts
       url: spaceId ? `./#/review?space=${spaceId}` : './#/review',
       pullSpaceId: spaceId,
       pull: true,
     };
   }
   if (payload.type === 'test') {
-    // the proof that push reaches this device — the tap lands back on the space's notifications row
     return { title: spaceTitle, body: texts.test, tag: 'test', url: spaceId ? `./#/settings?space=${spaceId}` : './#/settings', pull: false };
   }
   const social = payload.type === 'split' ? splitBody(payload, lang, texts.someone) : socialBody(payload, texts);

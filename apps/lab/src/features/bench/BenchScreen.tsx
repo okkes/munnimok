@@ -8,21 +8,15 @@ import { AbsentCard } from '../dashboard/DashboardScreen';
 import { stateChip } from '../jobs/jobFacts';
 import { SIGNING_IN } from './benchFacts';
 
-/** a lab session's state, in the connector's word, coloured by what it means */
 const SESSION_CHIP: Record<string, string> = { active: 'ok-chip', awaiting_input: 'warn-chip', needs_reauth: 'warn-chip', blocked: 'danger-chip', failed: 'danger-chip', expired: 'danger-chip' };
 export const sessionChip = (state: string): string => SESSION_CHIP[state] ?? stateChip(state);
 
-/** what a session still signing in waits for, and that opening it picks the run up (#576) */
 export function signingInLine(row: Pick<LabSessionRow, 'provider' | 'state'>): string {
   if (row.state !== 'awaiting_input') return 'still signing in — open it to follow the run';
   return row.provider === 'explore' ? 'the live view waits for you — open it to drive the browser' : 'waiting for your answer — open it to answer';
 }
 
-/**
- * The relay keeps a session's state as it last read it, and nobody reads a
- * run the operator walked away from — a session still signing in is asked
- * afresh, which also brings the relay's copy up to date.
- */
+/** the relay keeps a session's state as last read and nobody reads a run the operator walked away from: ask afresh */
 async function freshStates(call: ScreenProps['call'], rows: LabSessionRow[]): Promise<LabSessionRow[]> {
   return Promise.all(
     rows.map(async (row) => {
@@ -33,12 +27,7 @@ async function freshStates(call: ScreenProps['call'], rows: LabSessionRow[]): Pr
   );
 }
 
-/**
- * The test bench (#441 L2): the operator's own connections at the parties,
- * made under the lab subject — sign in, answer what the party asks, fetch
- * and read the records, keep the session for tomorrow, flip it into the
- * party's canary. Nothing here is a person's, nothing is ingested.
- */
+/** the operator's own connections under the lab subject; nothing here is a person's, nothing is ingested */
 export function BenchScreen({ call }: Readonly<ScreenProps>) {
   const [sessions, setSessions] = useState<LabSessionRow[] | null | 'unreachable' | 'loading'>('loading');
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);

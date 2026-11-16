@@ -1,4 +1,3 @@
-// Ported from apps/legacy/src/shared/i18n.jsx
 import type { TranslationKey } from './en';
 
 export const tr: Partial<Record<TranslationKey, string>> = {
@@ -1055,8 +1054,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.archivedEverywhere': 'Arşivlendi — yeniden bağlamak için dokun',
   'acct.archived': 'Arşivlendi',
   'acct.archivedReconnect': 'Arşivlendi — yeniden bağlamak için dokun',
-  // #314 (user): tüm hesaplar ekranının iki net bölümü + arşivlenen
-  // satırın nedeni
   'acct.inSpacesCap': 'Alanlarınızda',
   'acct.noLongerSharedBy': '{name} bu hesabı artık paylaşmıyor',
   'acct.noLongerShared': 'Artık paylaşılmıyor',
@@ -1421,18 +1418,13 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.sharedBadge': 'Paylaşılan',
   'space.inviteUnlockTitle': 'Davetleri etkinleştir',
   'space.inviteUnlockBody': 'Bu alanı davetlere açmak için uygulama PIN kodunuzu girin.',
-  // #291: a friend request sent from the members surface pends there too
   'space.friendPending': 'Arkadaşlık isteği beklemede — kabul edince katılır',
-  // #292: the signed-in user's own member row
   'space.me': 'Ben',
-  // #304: ONE members-screen door — friends list + friend request share a sheet
   'space.inviteSomeone': 'Birini davet et',
   'space.inviteFromFriends': 'Arkadaşlarından',
   'space.inviteRequestLead': 'Birini bulamadın mı? Buradan hemen arkadaşlık isteği gönder.',
-  // #303: withdrawing a pending invite asks first
   'space.cancelInviteTitle': 'Davet iptal edilsin mi?',
   'space.cancelInviteBody': '{name} bu daveti artık kabul edemez.',
-  // #302: the locked note links straight to the switch that lifts the lock
   'sync.offlineBanner': 'Çevrimdışı — değişiklikler bu cihazda saklanır.',
   'sync.offlineShort': 'Çevrimdışı',
   'login.offlineNote': 'Çevrimdışısın — giriş için bağlantı gerekli. Demo ve çevrimdışı mod çalışmaya devam eder.',
@@ -1836,7 +1828,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'debts.matchApply': '{n} ödemeyi bağla',
   'debts.matchOldCaption': 'Bakiye tarihinden eski ödemeler bakiyeyi düşürmeden bağlanır — bakiye onları zaten içerir. Böyle bir satırdaki Sayılır anahtarı yine de düşülmesini sağlar.',
   'debts.matchCounts': 'Sayılır',
-  // #286 r3 (user): count→deduct rename + footer math + bulk sweeps
   'debts.matchDeduct': 'Düşülür',
   'debts.matchDeductCaption': 'Düşülür bu kredide kalan borcu azaltır.',
   'debts.matchSelected': '{n} seçili',
@@ -1996,7 +1987,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.adjustNote': 'Kaydedince fark bir düzeltme işlemi olarak kaydedilir ({delta}).',
   'review.addCategory': 'Kategori ekle',
   'review.bulkCount': '{n} benzer işlem',
-  'review.bulkNoneSelected': 'Benzerleri bulundu — hiçbiri seçili değil', // #325
+  'review.bulkNoneSelected': 'Benzerleri bulundu — hiçbiri seçili değil',
   'review.bulkSelectAll': 'Tümünü seç',
   'select.all': 'Tümünü seç',
   'select.none': 'Seçimi kaldır',
@@ -2857,7 +2848,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'conn.noAccountsYet': 'Henüz hesap yok — getirmek için eşitle.',
   'conn.uncoveredTitle': 'Artık alınmıyor',
   'conn.uncoveredBody': 'Bu hesapları artık hiçbir bağlantı almıyor. Bankayla yeniden bağlanmak hesabı ve geçmişini korur.',
-  // #527: bankalar Tüm hesaplar altında bağlanır ve yönetilir
   'conn.bankConnections': 'Banka bağlantıları',
   'conn.addBank': 'Bir banka bağla',
   'conn.addBankSub': 'Açık bankacılık ya da munni’nin kendi bağlayıcısı. Aldığı hesapları istediğin alana kendin bağlarsın.',
@@ -2872,15 +2862,12 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'bankpick.note': 'Banka bağlantısı bir alanın değil senindir: hesaplarını görmesi gereken alanlara bağla.',
   'acct.showArchived': 'Arşivlenen hesapları göster ({n})',
   'acct.hideArchived': 'Arşivlenen hesapları gizle',
-  // #528: yeniden bağlama nedenini söyler ve bağlantıya götürür
   'acct.consentEnded': '{party} bağlantısının onayı sona erdi: yeniden bağlayana kadar hiçbir şey alınmaz.',
-  // #548: Ana sayfadan hızlı eşitleme
   'quicksync.open': 'Bağlantıları eşitle',
   'quicksync.title': 'Şimdi eşitle',
   'quicksync.intro': 'Bu bağlantılar her eşitlemede sana ihtiyaç duyar. Diğerleri kendi kendine eşitlenir.',
   'quicksync.sync': 'Eşitle',
   'quicksync.never': 'Henüz eşitlenmedi',
-  // #543: bankanın girişi bu cihazda saklanır
   'connect.savedLogin': 'Kayıtlı girişin kullanılır: yazacak bir şey yok.',
   'connect.savedLoginOther': 'Başka bir giriş kullan',
   'acct.uncovered': '{date} tarihinden beri alınmıyor — devam etmek için {party} ile yeniden bağlan.',
@@ -2966,7 +2953,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'connect.return.continue': 'Devam et',
   'connect.return.signedOut': 'Önce munni’ye giriş yap, sonra bağlantıyı Tüm hesaplar’dan yeniden başlat.',
   'connect.field.lookup': 'Listeden seç',
-  // #413: borç ödeme planı
   'debtplan.title': 'Borç ödeme planı',
   'debtplan.card': 'Borç ödeme planı',
   'debtplan.toolBadge': 'Araç',
@@ -3053,7 +3039,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.debts.4t': 'Çıkış yolunu planla',
   'tour.debts.4b':
     'Borç ödeme planı Çığ, Kartopu ve Tsunami’yi karşılaştırır; aylık fazlanın ne kazandırdığını tüm borçlar için birlikte — rakamlar ve devam-ettir anahtarıyla — ve her borç için tek başına gösterir: kaydırıcıyı sürükle (ya da bitmesini istediğin ayı seç), rakamları oku ve fazlayı kredinin kendisine uygula.',
-  // ── planning (#128) ─────────────────────────────────────────────────
   'tab.planning': 'Planlama',
   'plan.title': 'Planlama',
   'plan.toAllocate': 'görev verilecek',
@@ -3220,7 +3205,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'plan.home.red': '{n} eksiye düştü',
   'plan.reorder.title': '{segment} sırala',
   'plan.reorder.hint': 'Sıra, doldurma sırasıdır: ilk konu ilk doldurulur.',
-  // ── planlama, 2026-10-21/23 turu (#494 #504 #517 #532 #535 #557) ──
   'plan.overlapRow': '{name} ile kategori paylaşıyor — orada sayılıyor',
   'plan.overlapNote': '{name} önce geldi ve şunları sayıyor: {cats}.',
   'plan.overlapTake': '{name} konusundan al',
@@ -3287,7 +3271,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.plan.4b': 'Eksiye düşen bir konu yeri olandan ödünç alır — önce munni’nin seçimleri; “eksiye düşen” rozeti onları tek tek gezdirir. Bir düzenli giderin, borcun ya da etkinliğin tutup harcamadığı sonraki döneme devreder ve yeni dönem kendiliğinden son plandan başlar.',
   'tour.plan.5t': 'Şablonlar ve deneme',
   'tour.plan.5b': 'Bir planın biçimini şablon olarak kaydet ve sonra uygula; deneme, içinde bir şeyler denemek için bir kopyadır — doğru okunduğunda plan yap.',
-  // ── connectors round 19 (2026-10-01): sign-ins in flight, the pause ───
   'conn.pending.signingIn': 'Giriş yapılıyor… — kapatsan da devam eder',
   'conn.pending.asking': 'Taraf seni bekliyor — girişe devam et',
   'conn.pending.failed': 'Giriş tamamlanmadı',
@@ -3297,7 +3280,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'conn.state.waitUntil': 'Taraf munni’den beklemesini istedi — {time} sonrasında yeniden dene',
   'connect.progress.closeNote': 'Bunu kapatabilirsin: giriş sürer ve bağlantının kartı nerede olduğunu gösterir.',
   'connect.progress.close': 'Şimdilik kapat',
-  // ── planning round 19 (2026-10-02) ──────────────────────────────────
   'plan.segment.unplanned': 'Plansız',
   'plan.unplannedHint': 'Bu dönem konularının dışında harcanan — yalnızca bu dönem için karşıla ya da planla.',
   'plan.unplannedPlan': 'Planla',
@@ -3334,15 +3316,12 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'receipt.itemsTitle': 'Kalemler',
   'receipt.linkedTitle': 'İşlem',
   'receipt.unreconciled': 'Tarafın kalemleri toplamına eşit değil.',
-  // user 2026-10-08: one receipt, several payments — the picker says where a receipt already sits
   'receipt.attachedTo': '{tx} işlemine bağlı',
   'receipt.attachedToN': '{n} işleme bağlı',
   'receipt.linkedTitleN': 'İşlemler',
   'receipt.detachOne': 'Bu işlemden ayır',
   'tour.conn.7t': 'Alınan fişler',
   'tour.conn.7b': 'Mağazalarının verdiği her şey, bağlantı başına, kapsanan tarihlerle — ve alım sürerken artan bir sayaç. Bir mağaza, ancak sen seçince bir alana ulaşır.',
-  // ── connector failure reports + the debt drill's linked view (2026-10-06) ──
-  // user 2026-10-07: a changed password is a new sign-in on the same connection (the manage sheet's row)
   'conn.relogin': 'Yeniden giriş yap',
   'conn.reloginSub': 'Şifreni mi değiştirdin? Yeni bilgileri buraya gir.',
   'conn.report.ask': 'Bu hata bildirilsin mi?',

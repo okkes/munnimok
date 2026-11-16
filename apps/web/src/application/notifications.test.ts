@@ -30,7 +30,6 @@ describe('notification inbox (arc 6)', () => {
     const store = fresh();
     await appendNotification(store, 'whatsnew', { version: '2.27.0' }, 'v2.27.0');
     await appendNotification(store, 'recurringDue', { name: 'Rent', date: '1 Aug' }, 'rec_1');
-    // the same version again is a no-op
     await appendNotification(store, 'whatsnew', { version: '2.27.0' }, 'v2.27.0');
 
     const list = await readInbox(store);
@@ -44,7 +43,7 @@ describe('notification inbox (arc 6)', () => {
     for (let i = 0; i < 55; i++) await appendNotification(store, 'digest', { n: String(i) });
     const list = await readInbox(store);
     expect(list).toHaveLength(50);
-    expect(list[0].payload?.n).toBe('54'); // newest survives on top
+    expect(list[0].payload?.n).toBe('54');
   });
 
   it('unread counts entries newer than the stamp; opening the tab clears it', async () => {
@@ -56,7 +55,6 @@ describe('notification inbox (arc 6)', () => {
     await stampNotifSeen(store);
     expect(await unreadNotifCount(store)).toBe(0);
 
-    // a later arrival counts again
     await new Promise((r) => setTimeout(r, 5));
     await appendNotification(store, 'debtRate', { name: 'Car loan' });
     expect(await unreadNotifCount(store)).toBe(1);
@@ -73,7 +71,6 @@ describe('notification inbox (arc 6)', () => {
     expect(await clearInboxUpTo(store, moment)).toBe(true);
     expect((await readInbox(store)).map((e) => e.kind)).toEqual(['digest']);
     expect(await readInboxClearedAt(store)).toBe(moment);
-    // a device reporting an older clear changes nothing
     expect(await clearInboxUpTo(store, '2020-01-01T00:00:00.000Z')).toBe(false);
     expect(await readInbox(store)).toHaveLength(1);
   });

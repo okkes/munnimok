@@ -1,8 +1,4 @@
-/**
- * Minimal RFC-4180-ish CSV reader for bank exports: quoted fields,
- * doubled quotes, comma or semicolon delimiters, CRLF tolerant.
- * Dependency-free on purpose — bank files never leave the device.
- */
+/** dependency-free on purpose: bank files never leave the device */
 export function parseCsv(content: string, delimiter: ',' | ';'): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -14,7 +10,6 @@ export function parseCsv(content: string, delimiter: ',' | ';'): string[][] {
     field = '';
   };
   const pushRow = () => {
-    // skip completely empty lines
     if (row.length > 1 || (row.length === 1 && row[0].trim() !== '')) rows.push(row);
     row = [];
   };

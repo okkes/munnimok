@@ -81,17 +81,14 @@ describe('copying categories from several other spaces', { timeout: 15_000 }, ()
     await screen.findByTestId('cats-copy-unit-fam-hobby');
     fireEvent.click(screen.getByTestId('cats-copy-decline-main:hobby'));
     await waitFor(() => expect(screen.queryByTestId('cats-copy-unit-fam-hobby')).toBeNull());
-    // the other offer stays, and the sheet says one is hidden
     expect(screen.getByTestId('cats-copy-into-s-fam-sport')).toBeTruthy();
     expect(screen.getByTestId('cats-copy-hidden').textContent).toContain('1');
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('cats-copy-open').textContent).toContain('1 custom category'), { timeout: 5000 });
 
-    // Family adds a sub to Hobby: the offer is back
     await repo.upsert('category', 's-fam', 'fam-clay', { ...custom, parentId: 'fam-hobby', name: 'Clay', icon: 'pot' });
     await waitFor(() => expect(screen.getByTestId('cats-copy-open').textContent).toContain('2 custom categories'), { timeout: 5000 });
 
-    // declined again, then asked back by hand
     fireEvent.click(screen.getByTestId('cats-copy-open'));
     fireEvent.click(await screen.findByTestId('cats-copy-decline-main:hobby'));
     await waitFor(() => expect(screen.queryByTestId('cats-copy-unit-fam-hobby')).toBeNull());

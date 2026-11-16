@@ -6,37 +6,20 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The Jumbo login, driven offline through the page seam.
-///
-/// The login moved and the adapter did not follow it: <c>jumbo.com/inloggen</c>
-/// is a 404, and the live chain is <c>/account/inloggen</c> to
-/// <c>/api/auth/login</c> to Auth0 Universal Login on a different host
-/// entirely. That last part is why the old "am I still on a page whose URL
-/// says inloggen?" test could never say yes.
-///
-/// Everything below decides how a human is treated - whether a wall is
-/// relayed or refused, whether silence is called a wrong password, and
-/// whether a credential that already went upstream can be sent twice - and
-/// none of it was reachable without a live Chromium and real credentials.
-/// </summary>
+// jumbo.com/inloggen is a 404; the live chain is /account/inloggen, /api/auth/login, then Auth0 Universal Login on another
+// host, so a "URL says inloggen" test could never say yes
 public sealed class JumboLoginTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
 
     private const string Signed = "https://www.jumbo.com/mijn-jumbo/bestellingen";
 
-    /// <summary>The form's three controls, as Auth0 lays them out.</summary>
     private static readonly string[] FormControls = ["input#username", "input#password", "button[type='submit']"];
 
     private static JumboAdapter Adapter(JumboOptions? options = null) =>
         new(options ?? new JumboOptions(), new FakeJumboGraphQl(), new FixedTimeProvider(Now));
 
-    /// <param name="answersNothing">
-    /// For the paths that now end in a streamed page. A live view is passive -
-    /// there is no string to type back - so the human acts where we cannot
-    /// observe and never returns an answer.
-    /// </param>
+    // answersNothing: a live view is passive (no string to type back), so the human acts unobserved and never returns an answer
     private static FakeJobContext Context(
         StubLoginPage page, string? storageState = null, bool attended = false, bool answersNothing = false) =>
         new()
@@ -50,13 +33,8 @@ public sealed class JumboLoginTests
     private static StubLoginPage FormPage(params string[] extra) =>
         StubLoginPage.Showing([.. FormControls, .. extra]);
 
-    // ---- the login chain, corrected ---------------------------------------
-
-    /// <summary>
-    /// CONFIRMED-live 2026-07-28. The address the adapter used to open returns
-    /// 404, and the page it ends on is not on jumbo.com at all - so a marker
-    /// of "inloggen" could never match it.
-    /// </summary>
+    // confirmed live 2026-07-28: the old address 404s and the page it ends on is not on jumbo.com,
+    // so an "inloggen" marker never matched
     [Fact]
     public void The_login_starts_at_the_address_that_still_exists()
     {
@@ -104,10 +82,7 @@ public sealed class JumboLoginTests
         Assert.Equal(Now.AddSeconds(86_400), result.ExpiresAt);
     }
 
-    /// <summary>
-    /// The latch is what stops a lost lease from requeuing a login that may
-    /// already have counted against the account.
-    /// </summary>
+    // the latch stops a lost lease requeuing a login that may already have counted against the account
     [Fact]
     public async Task The_credential_latch_is_set_before_anything_is_submitted()
     {
@@ -119,17 +94,8 @@ public sealed class JumboLoginTests
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
-    /// <summary>
-    /// A box that is not where it was is no longer a dead end. The human on a
-    /// streamed page can see what this could not, so a page the adapter cannot
-    /// drive is handed over rather than failed - and nothing was typed or
-    /// clicked on the way, so nothing has counted against the account.
-    /// </summary>
-    /// <summary>
-    /// A page that hangs inside the typed attempt is handed over like a page
-    /// that lacks a box - it reached the person as "something went wrong on
-    /// munni's side" instead (user ss 2026-10-01), which it never was.
-    /// </summary>
+    // a box that moved is handed to the human rather than failed, nothing typed so nothing counted;
+    // a hanging page is handed over too, else it surfaced as "something went wrong on munni's side"
     [Fact]
     public async Task A_page_that_will_not_settle_is_handed_over_rather_than_blamed_on_munni()
     {
@@ -158,13 +124,8 @@ public sealed class JumboLoginTests
         Assert.NotNull(result.Material.StorageState);
     }
 
-    /// <summary>
-    /// Auth0 can ask for the identifier and the password on two screens. When
-    /// the password box never appears on either, both layouts have been tried
-    /// and this is a real shape change - but the identifier has already been
-    /// submitted to get to the second screen, so the latch must already be
-    /// down.
-    /// </summary>
+    // Auth0 may use two screens: the identifier is submitted to reach the second,
+    // so the latch is already down when no password box shows
     [Fact]
     public async Task A_password_box_on_neither_screen_hands_over_with_the_latch_already_down()
     {
@@ -175,18 +136,11 @@ public sealed class JumboLoginTests
 
         Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
 
-        // The identifier was already submitted to reach the second screen, so
-        // the account has been touched and the latch must stay down whatever
-        // happens next.
         Assert.True(ctx.CredentialWasSubmitted);
         Assert.NotNull(result.Material.StorageState);
     }
 
-    /// <summary>
-    /// Both credentials are optional now, so a login with neither is a first
-    /// connect rather than a bad request: the page is simply streamed to the
-    /// person who has one.
-    /// </summary>
+    // both credentials are optional: none is a first connect, the page is streamed to the person who has one
     [Fact]
     public async Task A_login_with_no_credentials_streams_the_page_instead_of_refusing()
     {
@@ -204,8 +158,6 @@ public sealed class JumboLoginTests
         Assert.NotNull(result.Material.StorageState);
     }
 
-    // ---- what the page answers with ---------------------------------------
-
     [Fact]
     public async Task A_stated_credential_error_is_the_only_path_to_invalid_credentials()
     {
@@ -218,17 +170,8 @@ public sealed class JumboLoginTests
         Assert.Equal(ErrorCode.InvalidCredentials, error.Code);
     }
 
-    /// <summary>
-    /// Guessing "wrong password" from silence sends the user to reset a
-    /// password that was fine, and a credential error is never retried - so
-    /// the mistake would be permanent for that session too.
-    /// </summary>
-    /// <summary>
-    /// Silence is still never called a wrong password - it is now handed to
-    /// the human instead, which is the one move that can actually resolve it.
-    /// Guessing "wrong password" would send them to reset one that was fine,
-    /// and a credential error is never retried.
-    /// </summary>
+    // silence is handed to the human, never called a wrong password: that sends the user to reset a fine one
+    // and credential errors are never retried
     [Fact]
     public async Task Silence_hands_the_page_over_and_is_never_a_wrong_password()
     {
@@ -255,16 +198,8 @@ public sealed class JumboLoginTests
         Assert.Contains("no jumbo.com cookies", error.Detail, StringComparison.Ordinal);
     }
 
-    // ---- the wall ----------------------------------------------------------
-
-    /// <summary>
-    /// Auth0 Universal Login ships hCaptcha, reCAPTCHA and Turnstile and
-    /// activates one on risk score. None of them can be relayed: a widget
-    /// wants drags and tile clicks and mints its token inside its own
-    /// JavaScript, so a photograph and a typed answer cannot pass one however
-    /// faithfully the page is captured. On a pooled agent there is nobody to
-    /// ask, and saying so at once is worth far more than a hang.
-    /// </summary>
+    // Auth0 activates hCaptcha, reCAPTCHA or Turnstile on risk score; none can be relayed
+    // (the token is minted in the widget's own JS); a pooled agent has nobody to ask
     [Fact]
     public async Task An_interactive_widget_hands_the_page_to_the_human_who_can_pass_it()
     {
@@ -276,9 +211,7 @@ public sealed class JumboLoginTests
         Assert.Equal(ChallengeType.LiveView, Assert.Single(ctx.Asked).Type);
         Assert.NotNull(result.Material.StorageState);
 
-        // The password never went into the box, because the wall was seen
-        // first - and the redactor refuses to photograph a page holding one,
-        // so a filled box would have relayed a live view of nothing.
+        // the password never went into the box: the redactor refuses to photograph a page holding one
         Assert.DoesNotContain("input#password", page.Filled.Keys);
         Assert.False(page.HoldsSecret);
     }
@@ -303,9 +236,7 @@ public sealed class JumboLoginTests
         Assert.NotNull(challenge.Image);
         Assert.Equal("8421", page.Answered);
 
-        // The redactor produces no bytes at all while a secret is on the page,
-        // so a picture that reached the human proves the clearing happened
-        // first.
+        // the redactor produces no bytes while a secret is on the page, so a delivered picture proves the clearing came first
         var calls = page.Calls.ToList();
         var clear = calls.IndexOf("clear-secrets");
         var shot = calls.IndexOf("screenshot");
@@ -314,11 +245,7 @@ public sealed class JumboLoginTests
         Assert.NotNull(result.Material.StorageState);
     }
 
-    /// <summary>
-    /// The one-time code is on the account owner's phone or in their mailbox.
-    /// It is relayed, never guessed, and the prompt deliberately does not
-    /// claim which way it arrived.
-    /// </summary>
+    // relayed, never guessed; the prompt does not claim how the code arrived
     [Fact]
     public async Task A_one_time_code_is_relayed_to_the_human()
     {
@@ -337,9 +264,8 @@ public sealed class JumboLoginTests
         Assert.Equal(ChallengeType.MfaCode, challenge.Type);
         Assert.Equal("connect.challenge.verification_code", challenge.PromptKey);
 
-        // Not "the code we texted you": Auth0 sends it the way the account is
-        // configured, and telling somebody to watch a phone that will never
-        // ring is a failure they cannot recover from.
+        // no delivery claim: Auth0 sends the code however the account is configured,
+        // and pointing at a phone that never rings is unrecoverable
         Assert.Null(challenge.Delivery);
 
         Assert.Equal("123456", page.Answered);

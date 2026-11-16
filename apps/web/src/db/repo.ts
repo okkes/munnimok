@@ -12,12 +12,8 @@ import type { EntityName, EntityRowMap, OutboxRow } from './types';
 const KNOWN_ENTITIES: ReadonlySet<string> = new Set(ENTITY_NAMES);
 
 export interface RepoOptions {
-  /**
-   * Demo and offline identities never sync, so they skip the outbox
-   * (otherwise it would grow forever with nowhere to drain).
-   */
+  /** demo and offline identities never sync: no outbox, it would grow with nowhere to drain */
   trackOutbox: boolean;
-  /** called after every local write — used to nudge the sync engine */
   onWrite?: () => void;
   /** #505: the spaces this identity may only read — every write into one is refused */
   readOnly?: (spaceId: string) => boolean;
@@ -25,11 +21,8 @@ export interface RepoOptions {
   skipReadOnly?: boolean;
 }
 
-/**
- * The only write path to synced tables. Every write goes through the
- * LWW merge (stamping fieldVersions) and queues an op in the outbox,
- * so local edits and remote edits are literally the same operation.
- */
+// the only write path to synced tables: every write merges via LWW and queues an outbox op,
+// so local and remote edits are one operation
 export class Repo {
   private upkeepView: Repo | null = null;
 
@@ -43,17 +36,12 @@ export class Repo {
     return uuidv7();
   }
 
-  /** #505: whether a write into the space lands — a space this identity only reads takes none */
   canWrite(spaceId: string): boolean {
     return !this.options.readOnly?.(spaceId);
   }
 
-  /**
-   * #505: this repo for the app's own upkeep (boot heals, pairings,
-   * matchers): in a space this identity only reads, their writes are
-   * skipped — the members who may write do that work — where a person's
-   * write is refused.
-   */
+  // upkeep (boot heals, pairings, matchers) skips writes into a read-only space instead of refusing:
+  // the members who may write do that work (#505)
   upkeep(): Repo {
     if (this.options.skipReadOnly) return this;
     this.upkeepView ??= new Repo(this.store, this.clock, { ...this.options, skipReadOnly: true });
@@ -67,20 +55,12 @@ export class Repo {
     throw new SpaceReadOnlyError(spaceId);
   }
 
-  /**
-   * 2026-10-09 (user: Confirm stalled, quick attaches "bottled"): the
-   * writes inside `fn` are one burst — the live queries hold their re-run
-   * until it ends, so a confirm's several writes (the card, its siblings,
-   * the pair, the receipt) reach the screens as ONE update instead of one
-   * per write. Every write still commits on its own (read-your-writes
-   * holds inside); only the screens' refresh is held. A backend without
-   * the notion just runs `fn`.
-   */
+  // writes inside fn are one burst: live queries hold their re-run until it ends, so a confirm's several writes
+  // reach screens as ONE update; each write still commits on its own
   batch<T>(fn: () => Promise<T>): Promise<T> {
     return this.store.burst ? this.store.burst(fn) : fn();
   }
 
-  /** Create or partially update a row. `fields` contains only what changed. */
   async upsert<E extends EntityName>(
     entity: E,
     spaceId: string,
@@ -95,12 +75,8 @@ export class Repo {
     await this.write(entity, spaceId, entityId, {}, true);
   }
 
-  /**
-   * #554: many rows of one entity in ONE storage transaction — the
-   * matcher's pass wrote a proposal per receipt, each committed on its own
-   * (hundreds on a first pass). Every row merges and queues its op exactly
-   * as `upsert` does; an invariant violation refuses the whole set.
-   */
+  // #554: many rows of one entity in ONE storage transaction (a per-row commit cost hundreds on the matcher's first pass);
+  // an invariant violation refuses the whole set
   async upsertMany<E extends EntityName>(
     entity: E,
     writes: readonly { spaceId: string; entityId: string; fields: Partial<Omit<EntityRowMap[E], keyof SyncEnvelope | 'id' | 'spaceId'>> }[],
@@ -158,18 +134,14 @@ export class Repo {
     this.options.onWrite?.();
   }
 
-  /** one local op onto its row, inside the caller's transaction; false when the op changed nothing */
   private async mergeLocal(op: OutboxRow, deleted: boolean): Promise<boolean> {
     const local = ((await this.store.get(op.entity, op.entityId)) ?? null) as
       | (Record<string, unknown> & SyncEnvelope)
       | null;
     const { row, changed } = applyOp(local, op);
     if (!changed) return false;
-    // model-level invariants on the MERGED row (user request: the
-    // FluentValidation idea) — a violation blocks the write and lands
-    // in GlitchTip, because it means a screen's own validation leaked.
-    // applyRemoteOps stays unchecked on purpose: convergence with data
-    // other devices already own must never be refused.
+    // invariants on the MERGED row: a violation blocks the write and lands in GlitchTip (a screen's validation leaked);
+    // applyRemoteOps stays unchecked on purpose: convergence with data other devices own must never be refused
     const merged = { ...row, id: op.entityId, spaceId: op.spaceId };
     const problems = deleted ? [] : rowProblems(op.entity, merged);
     if (problems.length > 0) {
@@ -182,14 +154,10 @@ export class Repo {
     return true;
   }
 
-  /**
-   * Apply ops that arrived from the server (pull). Stale ops are dropped by
-   * the merge; the clock observes every stamp so local edits sort after.
-   */
+  /** stale ops are dropped by the merge; the clock observes every stamp so local edits sort after */
   async applyRemoteOps(allOps: Op[]): Promise<void> {
-    // an entity this build does not know (retired here, still pushed by
-    // an older device or replayed from the server log) is skipped, not
-    // fatal — one unknown row must never stall the space's whole pull
+    // an unknown entity (retired here, still pushed by an older device or replayed from the log) is skipped:
+    // one row must never stall a space's pull
     const ops = allOps.filter((op) => KNOWN_ENTITIES.has(op.entity));
     for (const entity of new Set(allOps.filter((op) => !KNOWN_ENTITIES.has(op.entity)).map((op) => op.entity))) {
       reportError('sync', new Error(`skipped ops of unknown entity: ${entity}`));
@@ -197,14 +165,12 @@ export class Repo {
     if (ops.length === 0) return;
     const entities = [...new Set(ops.map((op) => op.entity as EntityName))];
     await this.store.transact(entities, async () => {
-      // one read and one write per KIND of row, whatever the page holds: every store call is a trip into
-      // native code on a phone, and a page is a thousand changes (#594)
+      // one read and one write per KIND of row: every store call is a trip into native code on a phone (#594)
       for (const entity of entities) await this.mergeInto(entity, ops.filter((op) => op.entity === entity));
     });
     for (const op of ops) this.clock.observe(op.hlc);
   }
 
-  /** the ops of one entity, in their order, merged over what the store holds; rows no op changed are not written */
   private async mergeInto(entity: EntityName, ops: Op[]): Promise<void> {
     type Row = Record<string, unknown> & SyncEnvelope & { id: string };
     const ids = [...new Set(ops.map((op) => op.entityId))];

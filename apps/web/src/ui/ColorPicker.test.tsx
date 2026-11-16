@@ -42,7 +42,7 @@ describe('color math', () => {
 
 describe('ColorPicker', () => {
   it('preset swatch picks directly, wheel swatch shows the custom value', () => {
-    const onChange = renderPicker('#123456'); // not in presets -> custom active
+    const onChange = renderPicker('#123456');
     fireEvent.click(screen.getByTestId('pk-3498DB'));
     expect(onChange).toHaveBeenCalledWith('#3498DB');
     const custom = screen.getByTestId('pk-custom') as HTMLButtonElement;
@@ -53,8 +53,7 @@ describe('ColorPicker', () => {
     const onChange = renderPicker('#3498DB');
     fireEvent.click(screen.getByTestId('pk-custom'));
     const ring = await screen.findByTestId('colorwheel-ring');
-    // happy-dom rects are 0x0, so the center is (0,0): pointing right = 3
-    // o'clock = 90° hue on our 12-o'clock-based conic wheel
+    // happy-dom rects are 0x0, so the center is (0,0): pointing right = 90° hue on the 12-o'clock-based conic wheel
     fireEvent.pointerDown(ring, { clientX: 10, clientY: 0, pointerId: 1 });
     const { s, l } = hexToHsl('#3498DB')!;
     fireEvent.click(screen.getByTestId('colorwheel-apply'));
@@ -65,7 +64,7 @@ describe('ColorPicker', () => {
     const onChange = renderPicker('#3498DB');
     fireEvent.click(screen.getByTestId('pk-custom'));
     const hexInput = await screen.findByTestId('colorwheel-hex');
-    fireEvent.change(hexInput, { target: { value: 'ff8800' } }); // no # needed
+    fireEvent.change(hexInput, { target: { value: 'ff8800' } });
     fireEvent.click(screen.getByTestId('colorwheel-apply'));
     expect(onChange).toHaveBeenCalledWith('#FF8800');
   });
@@ -77,6 +76,6 @@ describe('ColorPicker', () => {
     fireEvent.change(saturation, { target: { value: '0' } });
     fireEvent.change(screen.getByTestId('colorwheel-lightness'), { target: { value: '50' } });
     fireEvent.click(screen.getByTestId('colorwheel-apply'));
-    expect(onChange).toHaveBeenCalledWith('#808080'); // fully desaturated mid-grey
+    expect(onChange).toHaveBeenCalledWith('#808080');
   });
 });

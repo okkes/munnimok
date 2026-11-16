@@ -6,13 +6,8 @@ using Xunit;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// GlitchTip 17–19 (2026-10-05): a deploy, a router swap or a container
-/// restart makes a schedule cycle that cannot reach the control plane at
-/// all. The next tick handles it, so it is a warning — the error that pages
-/// the operator waits for the outage to last three cycles; a fault in the
-/// cycle itself still reports at once.
-/// </summary>
+/// GlitchTip 17-19 (2026-10-05): a deploy or restart makes a cycle that cannot reach the control plane; that is a warning,
+/// and the paging error waits for three cycles in a row.
 public class ConnectorScheduleNoiseTests
 {
     private sealed class CapturingLogger : ILogger<ConnectorScheduleService>
@@ -36,7 +31,6 @@ public class ConnectorScheduleNoiseTests
         return (new ConnectorScheduleService(scopes, TimeProvider.System, log), log);
     }
 
-    /// <summary>A cycle whose first call times out the way HttpClient reports it: a TaskCanceledException nobody asked for.</summary>
     private static (ConnectorScheduleService Service, CapturingLogger Log) BuildTimingOut() =>
         Build(services => services.AddScoped<ConnectorRelay>(_ => throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 10 seconds elapsing.")));
 

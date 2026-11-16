@@ -8,63 +8,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Connector.Kit.Agent.Tests.Deployment;
 
-/// <summary>
-/// The configuration a user actually ships advertises the tier they installed
-/// it for.
-///
-/// <para>
-/// <b>What was missing.</b> <c>AdvertisedRuntimesTests</c> proves the rule:
-/// a BYO agent's tiers come from its adapters. This proves the rule is what
-/// the shipped files produce, which is a different claim and the one that
-/// failed live. The code was right about a BYO agent for as long as nobody
-/// looked at the appsettings, which listed the pooled fleet's three tiers
-/// for every image, and at the BYO compose file, which set the class and
-/// left the list alone. Neither file was wrong on its own; together they
-/// enrolled an agent that could never be handed a persistent login. No test
-/// read either file.
-/// </para>
-///
-/// <para>
-/// <b>What this reads.</b> Each agent's <c>appsettings.json</c> as the
-/// image carries it - not the Development one, which never reaches an image
-/// - with the environment <c>deploy/byo/docker-compose.yml</c> gives the
-/// container laid over it, exactly as the host lays environment variables
-/// over the file. Then the options are bound through
-/// <c>AddConnectorAgent</c>, the same call the three <c>Program.cs</c> make,
-/// and asked what they would advertise for a persistent provider. In the
-/// style of <c>AgentExclusivityTests</c>: the deployment is the thing under
-/// test, and a one-line edit to either file is what breaks it.
-/// </para>
-///
-/// <para>
-/// The environment comes from whichever services that file ships live -
-/// there is one now, an agent that attaches to as many connectors as the
-/// household lists - rather than from a service named here, because the point
-/// of the check is that the file as shipped produces this, and a test naming
-/// the service argues with the file about what it ships.
-/// <see cref="ByoAgentServicesTests"/> is what holds the file's shape and its
-/// connector blocks; this one takes the environment that comes out and asks
-/// what an agent bound from it would advertise.
-/// </para>
-/// </summary>
+/// proves the shipped files produce the rule AdvertisedRuntimesTests proves: appsettings listed the pooled tiers for every
+/// image and the BYO compose left the list alone, so an agent enrolled that could never get a persistent login
+/// the environment comes from whichever services the file ships; ByoAgentServicesTests holds the file's shape
 public sealed class ByoAgentRuntimesTests
 {
-    /// <summary>
-    /// Every agent image, because every one of them ships the same appsettings
-    /// shape and this environment is laid over whichever one is installed.
-    /// </summary>
-    /// <remarks>
-    /// <c>home-agent</c> is the one the compose file names, and it is here
-    /// because it is the image the assertion is actually about. The three
-    /// per-connector ones are here because they KEEP WORKING - the file's own
-    /// migration note promises it, they are still built and still published,
-    /// and a household that has not moved yet is running one of them under an
-    /// environment that differs from this one only by carrying its connector
-    /// as the top-level shorthand rather than as a numbered block. An image
-    /// whose appsettings drifted into advertising the pooled fleet's tiers
-    /// would strand exactly those people, silently, on the tier this file
-    /// exists for.
-    /// </remarks>
+    /// the per-connector images keep working (still built and published, connector as the top-level shorthand):
+    /// a drifted appsettings would silently strand those households
     [Theory]
     [InlineData("server/src/connectors/Connector.Agent")]
     public void The_shipped_settings_under_the_BYO_compose_file_advertise_browser_persistent(string agentDirectory)
@@ -76,9 +26,8 @@ public sealed class ByoAgentRuntimesTests
         {
             Assert.NotEmpty(service.MergedEnvironment);
 
-            // ConnectorAgent__Class on a container is ConnectorAgent:Class to
-            // the binder; the environment provider does this translation and
-            // an in-memory one is handed the translated keys.
+            // the environment provider translates ConnectorAgent__Class to ConnectorAgent:Class;
+            // an in-memory one is handed translated keys
             var configuration = new ConfigurationBuilder()
                 .AddJsonFile(Path.Combine(ByoCompose.RepoRoot(), agentDirectory, "appsettings.json"), optional: false)
                 .AddInMemoryCollection(service.MergedEnvironment.Select(kv => KeyValuePair.Create(
@@ -91,9 +40,7 @@ public sealed class ByoAgentRuntimesTests
 
             var capabilities = options.BuildCapabilities([PersistentAdapter.Manifest]);
 
-            // The compose file is what makes it BYO; the appsettings say
-            // pooled. Asserted so a test that passed because the override
-            // never arrived cannot pass.
+            // the compose file makes it BYO, the appsettings say pooled: asserted so a missing override cannot pass
             Assert.Equal(AgentClass.Byo, capabilities.Class);
 
             Assert.Equal([PersistentAdapter.Manifest.Id], capabilities.Providers);
@@ -101,10 +48,6 @@ public sealed class ByoAgentRuntimesTests
         }
     }
 
-    /// <summary>
-    /// The shape of provider the BYO agent exists for: a persistent tier,
-    /// agent custody, unattended.
-    /// </summary>
     private sealed class PersistentAdapter : IProviderAdapter
     {
         public static ProviderManifest Manifest { get; } = new()

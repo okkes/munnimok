@@ -7,11 +7,7 @@ import { netAmountCents } from './reimbursement';
 import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
 
-/**
- * Trends & net worth (design T1/T2): pure series builders over local
- * data. Reimbursements count NET (consistent with every list); pending
- * rows are the bank's reservation noise and stay out.
- */
+// reimbursements count NET (consistent with every list); pending rows are the bank's reservation noise and stay out
 
 interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
@@ -25,22 +21,16 @@ export const minIso = (a: string, b: string): string => (a < b ? a : b); // NOSO
 export type InSpaceCurrency = (cents: number, currency: string | undefined) => number;
 const AS_RECORDED: InSpaceCurrency = (cents) => cents;
 
-// funding rows are standard-typed since the type retired (2026-08-05)
-// but the shared pot is not spending — the category family excludes them
+// funding rows are standard-typed, but the shared pot is not spending: the category family excludes them
 const countable = (tx: TxView): boolean =>
   tx.deleted === 0 && tx.pending !== 1 && tx.txType === 'expense' && mainCatOf(tx.catId) !== 'funding';
 
-/** the cat ids a selection covers: a main includes its subs, a sub itself */
 function coveredIds(catalog: CatalogLookup, catId: string): Set<string> {
   return new Set([catId, ...catalog.childrenOf(catId).map((child) => child.id)]);
 }
 
-/**
- * The ids a graph's scope covers (user 2026-10-08: a custom graph picks
- * one or more mains and/or subs): every main brings its subs — the ones
- * created later too, since this resolves live — and a sub stands for
- * itself. Null (or an empty pick) means every expense.
- */
+// every main brings its subs, ones created later too (resolved live); a sub stands for itself;
+// null or an empty pick means every expense
 export function scopeIds(catalog: CatalogLookup, catIds: readonly string[] | null | undefined): Set<string> | null {
   if (!catIds || catIds.length === 0) return null;
   const ids = new Set<string>();
@@ -48,10 +38,8 @@ export function scopeIds(catalog: CatalogLookup, catIds: readonly string[] | nul
   return ids;
 }
 
-/** the slices of one transaction that fall inside the covered categories
- *  — the canonical slice fan-out (#211): container parts, per-part
- *  spreads and the row's own `cats` partition all count toward their
- *  actual category; the settled `reimbursed` value is not spending */
+// #211: container parts, per-part spreads and the row's `cats` count toward their actual category
+// the settled `reimbursed` value is not spending
 function* scopedSlices(tx: TxView, ids: ReadonlySet<string> | null): Generator<{ catId: string; cents: number }> {
   // a partitionless row settles via its links alone — net keeps it honest
   if (!tx.cats?.length && !tx.splits?.length) {
@@ -66,7 +54,6 @@ function* scopedSlices(tx: TxView, ids: ReadonlySet<string> | null): Generator<{
   }
 }
 
-/** how much of one transaction falls inside the covered categories */
 function txContribution(tx: TxView, ids: ReadonlySet<string> | null): number {
   let sum = 0;
   for (const slice of scopedSlices(tx, ids)) sum += slice.cents;
@@ -79,9 +66,6 @@ export interface BreakdownRow {
   cents: number;
 }
 
-/** a period's spending inside a scope by the category each slice is
- *  actually filed under (the sub, or a main a row sits on directly),
- *  largest first — the Breakdown view (user 2026-10-08) */
 export function scopedBreakdown(
   txs: readonly TxView[],
   period: Period,
@@ -98,11 +82,9 @@ export function scopedBreakdown(
   return [...sums].map(([catId, cents]) => ({ catId, cents })).sort((a, b) => b.cents - a.cents);
 }
 
-/** what a row contributes to a scope — the transactions sheet lists the rows that do */
 export const scopedContribution = (tx: TxView, ids: ReadonlySet<string> | null): number =>
   countable(tx) ? txContribution(tx, ids) : 0;
 
-/** expense cents per period inside a scope (null = every expense) */
 export function expenseSeries(
   txs: readonly TxView[],
   periods: readonly Period[],
@@ -118,11 +100,6 @@ export function expenseSeries(
   });
 }
 
-/**
- * Expense cents per period for one category (main or sub) — or ALL
- * expenses when catId is undefined. Split parts count toward their own
- * category, the remainder toward the parent's.
- */
 export function categorySeries(
   txs: readonly TxView[],
   periods: readonly Period[],
@@ -141,18 +118,11 @@ export function finishedAverage(values: readonly number[]): number {
 /** ISO dates parse as UTC midnights — day diffs come out exact */
 const dayDiff = (from: string, to: string): number => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 
-/** how many days a period spans (inclusive bounds) */
 export const periodDays = (period: Period): number => dayDiff(period.start, period.end) + 1;
 
 /** the 0-based day-of-period of a date (negative or past the end when outside) */
 export const dayIndexOf = (date: string, period: Period): number => dayDiff(period.start, date);
 
-/**
- * Cumulative expense cents per day of a period (index 0 = the period's
- * first day, one entry per day up to its end) inside a scope — the
- * "how am I doing against last period" line (user 2026-10-08). The same
- * countable/contribution rules as the period series.
- */
 export function cumulativeByDay(
   txs: readonly TxView[],
   period: Period,
@@ -208,12 +178,8 @@ export interface NetWorthPoint {
   cents: number;
 }
 
-/**
- * Balance history reconstructed, not stored: for every account,
- * balance(t) = balanceNow − Σ amounts of its transactions AFTER t.
- * Accounts without transactions contribute a flat line — honest for
- * savings/brokerage rows that only carry a balance.
- */
+// balance(t) = balanceNow − Σ amounts of its transactions after t; an account without transactions is a flat line
+// (honest for savings/brokerage rows that only carry a balance)
 export function netWorthSeries(
   accounts: readonly (Pick<AccountRow, 'id' | 'balanceCents' | 'archived' | 'deleted'> & Partial<Pick<AccountRow, 'currency'>>)[],
   txs: readonly TxView[],
@@ -239,14 +205,8 @@ export interface DailyPoint {
 
 type LiquidAccount = Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived' | 'deleted'> & Partial<Pick<AccountRow, 'currency'>>;
 
-/**
- * The money in hand per calendar day (user 2026-10-08: the filled
- * balance line): the liquid accounts — checking, savings, cash; the
- * shared pot is not among LIQUID_TYPES — summed and walked back the net
- * worth way (balanceNow − Σ amounts after the day), one point per day
- * from `from` to `to` inclusive. Pending rows stay out. A custom graph
- * (#531) names its own accounts, whatever their type.
- */
+// the shared pot is not among LIQUID_TYPES; pending rows stay out
+// a custom graph (#531) names its own accounts, whatever their type
 export function dailyBalanceSeries(
   accounts: readonly LiquidAccount[],
   txs: readonly TxView[],
@@ -284,9 +244,7 @@ export interface IncomeSpike {
   cents: number;
 }
 
-/** the days a sizeable credit landed (≥ €500 by default) and who paid it
- *  — the largest credit of the day names it; income rows only, so a
- *  shuffle between two of your own accounts never reads as salary */
+/** the largest credit of the day names it; income rows only, so a shuffle between own accounts never reads as salary */
 export function incomeSpikes(txs: readonly TxView[], from: string, to: string, minCents = 50_000, inSpace: InSpaceCurrency = AS_RECORDED): IncomeSpike[] {
   const byDay = new Map<string, IncomeSpike>();
   for (const tx of txs) {
@@ -315,8 +273,6 @@ const foldRange = (range: BalanceRange | null, point: DailyPoint): BalanceRange 
   return range;
 };
 
-/** each period's lowest and highest daily balance (null where the daily
- *  series has no day inside the period) */
 export function periodBalanceRange(daily: readonly DailyPoint[], periods: readonly Period[]): (BalanceRange | null)[] {
   return periods.map((period) => {
     let range: BalanceRange | null = null;
@@ -327,7 +283,6 @@ export function periodBalanceRange(daily: readonly DailyPoint[], periods: readon
   });
 }
 
-/** the middle value of a sorted copy (the mean of the two middles for an even count) */
 export function median(values: readonly number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -340,19 +295,10 @@ export interface ProjectionPoint {
   cents: number;
 }
 
-/** a recurring row filed under the Income family pays IN */
 const recurringIsIncome = (rec: Pick<RecurringRow, 'catId'>): boolean => mainCatOf(rec.catId) === 'income';
 
-/**
- * The expected path from today to the period's end (user 2026-10-08: the
- * dashed tail of the balance line): starts at today's balance, then one
- * point per day something is due — the active recurring rows' occurrences
- * (negative for costs, positive for rows filed as income) and the next
- * payday when it falls inside the period (skipped when an income recurring
- * already lands that day, so the salary is never counted twice) — and ends
- * flat at the period end. Nothing beyond those rows is guessed.
- */
-/** what the active recurring rows put in or take out per day of the window, and the days an income row lands on */
+// nothing beyond the active recurring rows and the next payday is guessed; a payday is skipped when an income recurring
+// already lands that day, so the salary is never counted twice
 function recurringDeltas(recurrings: readonly RecurringRow[], from: string, to: string): { deltas: Map<string, number>; incomeDays: Set<string> } {
   const deltas = new Map<string, number>();
   const incomeDays = new Set<string>();
@@ -367,11 +313,8 @@ function recurringDeltas(recurrings: readonly RecurringRow[], from: string, to: 
   return { deltas, incomeDays };
 }
 
-/**
- * The recurring rows a custom balance line expects (#531): a recurring
- * cost carries no account of its own, so it counts where its latest
- * linked payment landed; one never paid yet belongs to no picked set.
- */
+// a recurring cost carries no account of its own: it counts where its latest linked payment landed;
+// one never paid belongs to no picked set (#531)
 export function recurringsOnAccounts(recurrings: readonly RecurringRow[], txs: readonly TxView[], accountIds: readonly string[]): RecurringRow[] {
   const latest = new Map<string, TxView>();
   for (const tx of txs) {
@@ -414,13 +357,8 @@ export function localDate(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/**
- * Sparse x labels for a period axis — first, middle, last, so the chart
- * stays calm. User 2026-10-08: the whole trend respects the period dates,
- * so a period that does not start on the 1st (a periodDay, a weekly
- * rhythm) is named by its START date ("21 Sep"); only periods on the 1st
- * read as a month ("Sep").
- */
+// a period not starting on the 1st (a periodDay, a weekly rhythm) is named by its START date ("21 Sep")
+// periods on the 1st read as a month
 export function trendLabels(periods: readonly Period[], periodType: SpacePeriodType, periodDay: number, locale: string): string[] {
   const n = periods.length;
   return periods.map((period, i) =>
@@ -428,7 +366,6 @@ export function trendLabels(periods: readonly Period[], periodType: SpacePeriodT
   );
 }
 
-/** one period's name on an axis: its start date, or the month for periods on the 1st */
 export function periodLabel(period: Period, periodType: SpacePeriodType, periodDay: number, locale: string): string {
   const byStart = periodType === 'week' || periodType === 'biweekly' || periodDay !== 1;
   return localDate(period.start).toLocaleDateString(locale, byStart ? { day: 'numeric', month: 'short' } : { month: 'short' });

@@ -4,15 +4,7 @@ using Connector.Kit.Errors;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// The error contract, asserted structurally rather than by example.
-///
-/// Two rules from the spec are checked on every failure the suite provokes: the
-/// body is the envelope and nothing but the envelope, and no field carries
-/// user-facing prose. The prose check is a whitespace check, which sounds crude
-/// and is exactly right - every legal value in the envelope is a code, a key or
-/// an id, and not one of them contains a space.
-/// </summary>
+// the envelope and nothing but it, with no user-facing prose: every legal value is a code, key or id, so no space is allowed
 internal static class ErrorEnvelope
 {
     private static readonly HashSet<string> Allowed = new(StringComparer.Ordinal)
@@ -28,10 +20,6 @@ internal static class ErrorEnvelope
     private static readonly HashSet<string> KnownCodes =
         [.. Enum.GetValues<ErrorCode>().Select(ErrorCatalog.Wire)];
 
-    /// <summary>
-    /// Asserts the whole contract and hands back the error object, so a caller
-    /// that wants to say more about it does not have to read the body twice.
-    /// </summary>
     public static async Task<JsonElement> AssertAsync(HttpResponseMessage response, HttpStatusCode expectedStatus, string? expectedCode = null)
     {
         ArgumentNullException.ThrowIfNull(response);

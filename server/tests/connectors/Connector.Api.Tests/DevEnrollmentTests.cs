@@ -6,17 +6,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// <c>Connector:DevEnrollmentCode</c> is a fixed, reusable, ten-year enrollment
-/// code that exists so an agent in a compose file can enroll with nobody
-/// present. That is a password by any other name, and it is written in a file
-/// in this repository.
-///
-/// So the two properties worth testing are not the happy path. They are: it
-/// keeps working across restarts and wiped volumes (otherwise the stack it
-/// exists for breaks the second time anyone runs it), and it cannot be present
-/// in production at all.
-/// </summary>
+/// the dev code is fixed, reusable and ten years long so a compose-file agent enrols unattended: it must survive restarts
+/// and wiped volumes, and must never be present in production
 [Collection(ShopApiCollection.Name)]
 public sealed class DevEnrollmentTests(ShopApiFactory factory)
 {
@@ -28,11 +19,8 @@ public sealed class DevEnrollmentTests(ShopApiFactory factory)
         await SeedAsync(code);
         var first = await RedeemAsync(code);
 
-        // The agent's state file and the control plane's database are two
-        // separate volumes. Clearing either one - a stuck agent state deleted
-        // by hand, a rebuilt agent image, a compose file brought down while its
-        // database volume survives - sends the agent back to enrollment with a
-        // code that a one-time rule would already have spent forever.
+        // agent state and control-plane database are separate volumes: clearing either sends the agent back to enrollment
+        // with a code a one-time rule would already have spent
         await SeedAsync(code);
         var second = await RedeemAsync(code);
 
@@ -40,11 +28,7 @@ public sealed class DevEnrollmentTests(ShopApiFactory factory)
         Assert.Equal(ConnectorOptions.DevFleetSubject, second.Subject);
     }
 
-    /// <summary>
-    /// Re-seeding is what makes it reusable; a single seed must still behave
-    /// like every other enrollment code, or the dev path and the real path
-    /// would be different code with different rules.
-    /// </summary>
+    /// re-seeding makes it reusable; a single seed redeems once like any code, so dev and real paths share rules
     [Fact]
     public async Task One_seeding_is_still_only_one_redemption()
     {
@@ -65,11 +49,7 @@ public sealed class DevEnrollmentTests(ShopApiFactory factory)
         Assert.Contains("Connector:DevEnrollmentCode", failure.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The same configuration without the code must fail for its OTHER reasons
-    /// and not this one - otherwise the test above would pass against a
-    /// production check that refuses everything.
-    /// </summary>
+    /// without the code it must fail for its OTHER reasons, else the test above passes against a check that refuses everything
     [Fact]
     public void A_production_connector_without_one_is_not_refused_for_this_reason()
     {

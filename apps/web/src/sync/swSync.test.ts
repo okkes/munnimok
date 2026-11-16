@@ -57,7 +57,7 @@ describe('service-worker background sync', () => {
   });
 
   it('readSwSession rejects missing or expired sessions', async () => {
-    expect(await readSwSession()).toBeNull(); // nothing mirrored
+    expect(await readSwSession()).toBeNull();
     expect(
       // expired bearer — the worker cannot refresh, so it must skip
       await (async () => {
@@ -81,13 +81,11 @@ describe('service-worker background sync', () => {
     expect((await db.spaces.get('sp2'))?.name).toBe('Work');
     expect((await db.meta.get('syncCursor_sp1'))?.value).toBe(1);
 
-    // second run: cursors make it a no-op
     expect(await backgroundPull(undefined, { backend, session: SESSION })).toBe(0);
     db.close();
   });
 
   it('a push-woken pull of a space with more than one page drains it — the cursor never jumps past ops it did not apply', async () => {
-    // before: one page applied, the cursor stamped at the head, the other 15 ops skipped for good
     const backend = new FakeBackend();
     backend.pageSize = 10;
     backend.ops.sp1 = [spaceOp('sp1', 'Home'), ...Array.from({ length: 24 }, (_, i) => categoryOp('sp1', i))];
@@ -107,20 +105,17 @@ describe('service-worker background sync', () => {
     backend.spaces = ['sp1', 'sp2'];
     backend.ops.sp1 = [spaceOp('sp1', 'Home'), ...Array.from({ length: 24 }, (_, i) => categoryOp('sp1', i))];
     backend.ops.sp2 = [spaceOp('sp2', 'Work')];
-    // every page costs a second
     const pull = backend.pull.bind(backend);
     backend.pull = async (spaceId, since) => {
       clock += 1_000;
       return pull(spaceId, since);
     };
 
-    // a one-second budget: the first page lands, the cursor stops with it, the next space waits
     expect(await backgroundPull(undefined, { backend, session: SESSION, now: () => clock, budgetMs: 1_000 })).toBe(10);
     const db = new MunniDB(identityDbName(SESSION.identityKey));
     expect((await db.meta.get('syncCursor_sp1'))?.value).toBe(10);
     expect(await db.meta.get('syncCursor_sp2')).toBeUndefined();
 
-    // the next wake resumes from the page it stopped at: nothing skipped, nothing twice
     expect(await backgroundPull(undefined, { backend, session: SESSION, now: () => clock })).toBe(16);
     expect((await db.categories.toArray()).filter((c) => c.spaceId === 'sp1')).toHaveLength(24);
     expect((await db.meta.get('syncCursor_sp1'))?.value).toBe(25);
@@ -146,7 +141,6 @@ describe('service-worker background sync', () => {
   });
 
   it('flushOutbox pushes queued ops in HLC order and clears them', async () => {
-    // seed an outbox exactly like the app's repo does
     const db = new MunniDB(identityDbName(SESSION.identityKey));
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -162,7 +156,6 @@ describe('service-worker background sync', () => {
     const hlcs = backend.pushed[0].ops.map((o) => o.hlc);
     expect([...hlcs].sort((a, b) => a.localeCompare(b))).toEqual(hlcs);
 
-    // drained: a second flush pushes nothing
     expect(await flushOutbox({ backend, session: SESSION })).toBe(0);
   });
 

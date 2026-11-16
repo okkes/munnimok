@@ -16,8 +16,8 @@ public class PushSetupTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not json at all")]
-    [InlineData("""{"project_id":"munni"}""")] // missing client_email + private_key
-    [InlineData("""{"project_id":"","client_email":"x","private_key":"y"}""")] // empty field
+    [InlineData("""{"project_id":"munni"}""")]
+    [InlineData("""{"project_id":"","client_email":"x","private_key":"y"}""")]
     public void Malformed_or_partial_keys_are_rejected(string? json)
     {
         Assert.False(PushSetup.IsValidFcmConfig(json));

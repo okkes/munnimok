@@ -9,8 +9,7 @@ describe('offline profile registry', () => {
     expect(listOfflineProfiles()).toEqual([]);
     const a = addOfflineProfile('  Okkes ');
     expect(a.name).toBe('Okkes');
-    // arc 8 lifted one-per-device: each profile is its own world — the
-    // old silent return-the-first was a landmine once multiples exist
+    // each profile is its own world: adding never returns an existing one
     const b = addOfflineProfile('Partner');
     expect(b.id).not.toBe(a.id);
     expect(listOfflineProfiles().map((p) => p.name)).toEqual(['Okkes', 'Partner']);

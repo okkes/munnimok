@@ -10,16 +10,8 @@ using ShopConnector.Adapters.Tests.Support;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The pieces every Jumbo test needs, in one place.
-///
-/// Jumbo speaks one endpoint with three operations, so a fake that answered
-/// a flat queue of bodies would hand an order-detail response to a receipt
-/// call the moment the fetch loop's shape changed. Answering by operation
-/// name - and, for the two detail calls, by the id in the variables - is what
-/// keeps these tests about the adapter rather than about the order its calls
-/// happen to come out in.
-/// </summary>
+// answers by operation name (and by id for the two detail calls),
+// so tests do not depend on the order the fetch loop calls in
 internal sealed class FakeJumboGraphQl : IJumboGraphQlClient
 {
     private readonly string[] _listPages;
@@ -44,7 +36,6 @@ internal sealed class FakeJumboGraphQl : IJumboGraphQlClient
     public IReadOnlyList<JumboGraphQlRequest> ListCalls =>
         [.. _calls.Where(c => string.Equals(c.OperationName, "GetOnlineOrdersAndStoreReceipts", StringComparison.Ordinal))];
 
-    /// <summary>The three fixtures a whole fetch needs, wired up.</summary>
     public static FakeJumboGraphQl Recorded(params string[] listPages)
     {
         var fake = new FakeJumboGraphQl(listPages);
@@ -88,15 +79,7 @@ internal sealed class FakeJumboGraphQl : IJumboGraphQlClient
     }
 }
 
-/// <summary>
-/// A browser lease that can do the two things a Jumbo login needs and nothing
-/// else: hand back a storage state, and refuse to photograph a page that is
-/// still holding a password.
-///
-/// The refusal is reproduced rather than assumed - a page holding a secret
-/// produces no bytes at all, exactly as the agent's redactor does - so a test
-/// that gets a picture back has proved the password was gone first.
-/// </summary>
+// a page holding a secret yields no bytes, as the agent's redactor does: a picture back proves the password was gone first
 internal sealed class JumboBrowserLease : IBrowserLease
 {
     private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47];
@@ -135,7 +118,6 @@ internal sealed class JumboBrowserLease : IBrowserLease
 
 internal static class JumboFixtures
 {
-    /// <summary>The session a fetch runs on: jumbo.com cookies plus a carried device id.</summary>
     public static SessionMaterial LiveSession => new()
     {
         StorageState = FixtureCatalog.Read("jumbo/storage-state.json"),
@@ -149,7 +131,6 @@ internal static class JumboFixtures
             ["password"] = "correct horse battery staple",
         };
 
-    /// <summary>The first row of an order list page, as the parser sees it.</summary>
     public static JsonNode OrdersFixture() =>
         JsonNode.Parse(FixtureCatalog.Read("jumbo/orders-and-receipts.json"))!;
 

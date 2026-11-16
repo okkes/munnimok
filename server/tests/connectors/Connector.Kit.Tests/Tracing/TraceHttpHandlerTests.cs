@@ -6,11 +6,6 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Tracing;
 
-/// <summary>
-/// The HTTP client's half of a recording (#441 L3): one handler, a book
-/// resolved per call, text answers kept and still readable, binary ones
-/// left streaming.
-/// </summary>
 public sealed class TraceHttpHandlerTests
 {
     private sealed class Stub(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler

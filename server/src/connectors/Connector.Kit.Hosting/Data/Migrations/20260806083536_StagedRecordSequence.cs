@@ -4,10 +4,8 @@
 
 namespace Connector.Kit.Hosting.Data.Migrations
 {
-    /// <inheritdoc />
     public partial class StagedRecordSequence : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<int>(
@@ -18,7 +16,6 @@ namespace Connector.Kit.Hosting.Data.Migrations
                 defaultValue: 0);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(

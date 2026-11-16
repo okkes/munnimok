@@ -25,14 +25,9 @@ export interface Scored {
   preAnchor: boolean;
 }
 
-/** the loan fields the matcher reads — a fresh store.get row satisfies it */
 type MatchAccount = Pick<AccountRow, 'id' | 'name' | 'iban' | 'paymentCents' | 'balanceAsOf'>;
 
-/**
- * #286 r2: the WHOLE candidate derivation as one module joint — the
- * sheet's memo renders from it, and the DebtsScreen host asks it BEFORE
- * auto-opening (zero hits = the sheet never shows at all).
- */
+// one joint: the sheet renders from it and DebtsScreen asks it before auto-opening (zero hits: no sheet) (#286)
 export function loanMatchCandidates(account: MatchAccount, txs: readonly SpaceTx[]): Scored[] {
   const ctx = {
     iban: account.iban ? normalizeIban(account.iban) : null,
@@ -57,9 +52,7 @@ export function loanMatchCandidates(account: MatchAccount, txs: readonly SpaceTx
   return scored.slice(0, MAX_SHOWN);
 }
 
-/** additive evidence: counter-IBAN is near-proof, the debt-payment
- *  label is strong, amount and name keywords corroborate (S3776: the
- *  branches live out of the component) */
+// additive evidence: counter-IBAN is near-proof, the debt-payment label strong, amount and name keywords corroborate
 function scoreCandidate(
   tx: SpaceTx,
   ctx: { iban: string | null; tokens: readonly string[]; paymentCents?: number },
@@ -85,9 +78,7 @@ const toggle = (set: ReadonlySet<string>, id: string): Set<string> => {
 const rowDeducts = (candidate: Scored, counted: ReadonlySet<string>): boolean =>
   candidate.preAnchor ? counted.has(candidate.tx.id) : true;
 
-/** #286 r3 (user): the pinned footer's math — only picked rows that
- *  DEDUCT move the number (a payment is negative, so subtracting it
- *  brings the negative balance toward zero) */
+// only picked rows that deduct move the number (a payment is negative: subtracting it moves the balance toward zero)
 function deductTotals(
   candidates: readonly Scored[],
   picked: ReadonlySet<string>,
@@ -101,9 +92,8 @@ function deductTotals(
   return { deductSumCents: sum, newBalanceCents: balanceCents - sum };
 }
 
-/** #286 r3 (user): strong matches arrive pre-picked; when the loan's
- *  original size equals its current balance nothing was deducted
- *  upfront — every pre-anchor candidate's deduct switch starts ON */
+// strong matches arrive pre-picked; original == |balance| means nothing was deducted upfront,
+// so every pre-anchor deduct switch starts ON
 function seedSelections(
   candidates: readonly Scored[],
   account: Pick<AccountRow, 'balanceCents' | 'originalCents'>,
@@ -114,11 +104,8 @@ function seedSelections(
   return { picked, counted };
 }
 
-/** the apply loop out of the component (S3776): every picked candidate
- *  links as a debt payment — the #133 r5 bijection files the source leg
- *  by its counter's kind, the choke point mints the loan-side mirror,
- *  and a pre-anchor row opted in carries the one-shot count-it marker
- *  on the SAME write so its mint moves the balance */
+// every pick links as a debt payment: the #133 r5 bijection files the source leg, the choke point mints the loan mirror
+// a pre-anchor opt-in carries loanCounted on the same write so its mint moves the balance
 async function applyLinks(
   transform: ReturnType<typeof useTxTransform>,
   accountId: string,
@@ -140,10 +127,7 @@ async function applyLinks(
   }
 }
 
-/** #286 r3 (user): the deduct control is a SWITCH, not a checkbox —
- *  the house track visual (BudgetForm carry-over) at row density.
- *  Disabled renders muted and inert instead of absent, so the layout
- *  never jumps between rows. */
+// disabled renders muted and inert, never absent, so the layout never jumps between rows
 function Switch({
   on,
   disabled = false,
@@ -171,10 +155,7 @@ function Switch({
   );
 }
 
-/** one candidate: the LEFT half (checkbox + face) is one pick target —
- *  TxRow's own button carries the tap (the old wrapping label stopped
- *  at that button, so face taps registered but did nothing); the deduct
- *  switch sits behind a thin vertical divider (#286 r3, user) */
+// TxRow's own button carries the tap: a wrapping label stopped at it, so face taps did nothing
 function MatchRow({
   candidate,
   picked,
@@ -198,8 +179,7 @@ function MatchRow({
           <TxRow tx={tx} showDate onClick={onPick} />
         </span>
       </div>
-      {/* post-anchor rows always deduct — their switch shows ON and
-          DISABLED, never absent (#286 r3: no layout jumping) */}
+      {/* post-anchor rows always deduct: their switch shows ON and disabled, never absent (no layout jump) */}
       <div className="flex w-12 shrink-0 flex-col items-center justify-center gap-1 border-l border-line-2 pl-2 text-center text-[10px] font-medium text-ink-4">
         <Switch
           on={deducts}
@@ -214,10 +194,7 @@ function MatchRow({
   );
 }
 
-/** #286 r3 (user): bulk sweeps above the list — select all/none for the
- *  pick column (mixed shows as indeterminate) and a master deduct
- *  switch that reads ON only when every togglable row deducts and
- *  disables when none is togglable */
+// the master deduct switch reads ON only when every togglable row deducts, and is disabled when none is togglable
 function BulkBar({
   candidates,
   picked,
@@ -237,7 +214,6 @@ function BulkBar({
   const allDeduct = preIds.every((id) => counted.has(id));
   return (
     <div className="mb-1 flex items-center justify-between gap-2 border-b border-line pb-2">
-      {/* #378: the one select-all row every transaction list wears */}
       <SelectAllRow
         total={candidates.length}
         selected={picked.size}
@@ -260,9 +236,6 @@ function BulkBar({
   );
 }
 
-/** #286 r3 (user): the pinned footer carries the math — how many rows
- *  are picked, what the DEDUCTING ones sum to, and where the balance
- *  lands ("−€10,000.00 → −€9,895.20") — above the apply button */
 function MatchFooter({
   count,
   deductSumCents,
@@ -284,9 +257,7 @@ function MatchFooter({
   const { fmt, fmtSensitive } = useDisplayMoney();
   return (
     <div className="flex flex-col gap-1.5" data-testid="loanmatch-summary">
-      {/* #286 r5 (user ss): the app's fact-row recipe — plain UI-font
-          label (digits included, like "2 parts" elsewhere), m-num value.
-          r4's whole-row m-num made the halves read as two styles. */}
+      {/* plain UI-font label, m-num value: a whole-row m-num made the two halves read as two styles */}
       <div className="flex items-baseline justify-between text-[12px] text-ink-3">
         <span>{t('debts.matchSelected', { n: count })}</span>
         <span className="m-num font-medium text-ink" data-testid="loanmatch-deduct-sum">
@@ -306,14 +277,8 @@ function MatchFooter({
   );
 }
 
-/**
- * "Found these payments" (user request 2026-08-01, the event-suggest
- * idea for loans): right after a loan is created — or any time from its
- * detail — the full stored history is searched by counter-IBAN, the
- * debt-payment label, the payment amount and name keywords. The user
- * picks which rows to link; rows older than the loan's balance date are
- * flagged and only move the balance when their deduct switch is on.
- */
+// searches the full history by counter-IBAN, debt-payment label, amount and name keywords
+// rows older than the balance date move it only with deduct on
 export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: string | null; onClose: () => void }>) {
   const { t } = useLang();
   const { store } = useData();
@@ -328,15 +293,12 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
     () => (account && txs ? loanMatchCandidates(account, txs) : []),
     [account, txs],
   );
-  // #286 r2: "nothing found" is only true once the queries answered —
-  // while they load, the sheet shows the hint, never a false empty line
+  // "nothing found" is true only once the queries answered; while loading, show the hint
   const ready = !!account && !!txs;
   const empty = ready && candidates.length === 0;
 
-  // strong matches arrive pre-checked ONCE per loan; live-query
-  // re-emissions must never clobber the user's pruning (review finding).
-  // #286 r3: an untouched loan (original == |current|) also seeds every
-  // deduct switch ON — nothing was deducted upfront, so matches must.
+  // strong matches pre-check once per loan: live-query re-emissions must not clobber the user's pruning
+  // an untouched loan (original == |current|) also seeds every deduct switch ON
   const seededFor = useRef<string | null>(null);
   useEffect(() => {
     if (!accountId) {
@@ -364,19 +326,15 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
   const totals = deductTotals(candidates, picked, counted, account?.balanceCents ?? 0);
 
   return (
-    // #286 r2 (user): a manual open with nothing to offer collapses to
-    // the title plus ONE quiet line — no hint paragraph, compact height
-    // (the auto-open host skips the sheet entirely on zero candidates)
+    // a manual open with nothing to offer collapses to the title plus one quiet line (#286)
     <Sheet
       open={accountId !== null}
       onOpenChange={(next) => !next && onClose()}
       title={t('debts.matchTitle')}
       size={empty ? 'compact' : 'tall'}
-      // #286 r3 (user): closing with candidates on offer asks first —
-      // the Sheet's own discard guard; apply's programmatic close skips it
+      // closing with candidates asks first (the Sheet's discard guard); apply's programmatic close skips it
       dirty={candidates.length > 0}
-      // #286 r3 (user): constant shape — the list scrolls inside the
-      // fixed-height sheet while this footer stays pinned below it
+      // the list scrolls inside the fixed-height sheet while this footer stays pinned
       footer={
         candidates.length > 0 && account ? (
           <MatchFooter
@@ -401,8 +359,6 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
           {t('debts.matchNone')}
         </p>
       )}
-      {/* #286 (user): the pre-anchor story told ONCE above the list —
-          #286 r3 rewords it to the deduct language */}
       {candidates.some((c) => c.preAnchor) && (
         <p className="pb-2 text-[11px] leading-snug text-ink-4" data-testid="loanmatch-old-caption">
           {t('debts.matchDeductCaption')}

@@ -1,6 +1,3 @@
-// infra/ci/matrix.mjs: the workflows' matrices from the committed
-// platform config — filtered by platform, channel, role, feature, stack
-// or environment, and handed to GitHub as include + count.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -14,7 +11,7 @@ test.after(() => fx.cleanup());
 const MATRIX = fileURLToPath(new URL('../ci/matrix.mjs', import.meta.url));
 let n = 0;
 
-/** run the script as the workflows do; GITHUB_OUTPUT points at a scratch file (never the real step output) */
+/** GITHUB_OUTPUT points at a scratch file, never the real step output */
 function matrix(args, { githubOutput = false } = {}) {
   const outFile = githubOutput ? join(fx.root, `github-output-${n++}.txt`) : '';
   const stdout = execFileSync(process.execPath, [MATRIX, ...args], { encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: outFile } });

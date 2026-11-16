@@ -1,8 +1,4 @@
-/**
- * Generates tests/gallery/index.html from screenshots + videos.
- * Auto-discovers feature metadata from tests/meta/*.meta.mjs.
- * Run: node tests/generate-gallery.mjs
- */
+/** run: node tests/generate-gallery.mjs — feature metadata comes from tests/meta/*.meta.mjs */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -13,8 +9,7 @@ const VIDEOS_DIR = path.join(__dirname, 'videos');
 const GALLERY_DIR = path.join(__dirname, 'gallery');
 const META_DIR   = path.join(__dirname, 'meta');
 
-// --deploy flag: use paths relative to the gallery HTML file (for GitHub Pages where
-// screenshots live next to index.html). Locally, screenshots live one level up.
+// --deploy: screenshots sit next to index.html; locally they live one level up
 const DEPLOY = process.argv.includes('--deploy');
 const BASE = DEPLOY ? '.' : '..';
 
@@ -35,9 +30,6 @@ const TAG_COLORS = {
   navigation:   '#a78bfa',
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 const available = (dir, ext) => fs.existsSync(dir)
   ? new Set(fs.readdirSync(dir).filter(f => f.endsWith(ext)).map(f => f.slice(0, -ext.length)))
   : new Set();
@@ -50,10 +42,6 @@ const tagPill = (tag) => {
   return `<span class="tag" style="background:${color}28;color:${color}">${tag}</span>`;
 };
 
-// ---------------------------------------------------------------------------
-// Card renderers
-// ---------------------------------------------------------------------------
-
 function variantBadge(V) {
   const langColor  = V.lang === 'en' ? '#3b82f6' : '#f97316';
   const themeIcon  = V.dark ? '🌙' : '☀️';
@@ -64,7 +52,6 @@ function variantBadge(V) {
 }
 
 function stepPlayer(key, V, stepLabels) {
-  // Build the steps array: --s1, --s2, ..., final (no suffix)
   const steps = [];
   for (let i = 1; i < stepLabels.length; i++) {
     const name = `${key}--${V.id}--s${i}`;
@@ -72,11 +59,10 @@ function stepPlayer(key, V, stepLabels) {
       steps.push({ img: `${BASE}/screenshots/${name}.png`, label: stepLabels[i - 1] });
     }
   }
-  // Always add final screenshot as last step
   const finalName = `${key}--${V.id}`;
   steps.push({ img: `${BASE}/screenshots/${finalName}.png`, label: stepLabels[stepLabels.length - 1] });
 
-  if (steps.length < 2) return null; // not enough steps to show a player
+  if (steps.length < 2) return null;
 
   const stepsJson = JSON.stringify(steps).replace(/'/g, "\\'");
   return `
@@ -137,9 +123,6 @@ function card(key, meta, V, feature) {
     </div>`;
 }
 
-// ---------------------------------------------------------------------------
-// Discover + render
-// ---------------------------------------------------------------------------
 if (!fs.existsSync(GALLERY_DIR)) fs.mkdirSync(GALLERY_DIR, { recursive: true });
 
 const metaFiles = fs.existsSync(META_DIR)
@@ -180,9 +163,6 @@ for (const file of metaFiles) {
   featureFilterBtns.push(`<button class="filter-btn" data-filter="feature" data-value="${FEATURE}">${FEATURE_LABEL}</button>`);
 }
 
-// ---------------------------------------------------------------------------
-// HTML
-// ---------------------------------------------------------------------------
 const html = `<!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>

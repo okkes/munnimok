@@ -5,10 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
-/**
- * The forced update (user ruling 2026-10-04): a server that no longer
- * speaks this build takes the screen, not just the banner.
- */
+/** the forced update: a server that no longer speaks this build takes the screen, not just the banner */
 describe('UpdateGate', () => {
   beforeEach(() => {
     localStorage.clear();

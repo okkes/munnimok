@@ -1,10 +1,7 @@
 import type { TxView } from '@/db/types';
 import { merchantKey } from './merchantKey';
 
-/**
- * The payday the cash-flow projection (Trends) draws towards. Safe to
- * spend moved to the space's own period (#541, domain/safeToSpend).
- */
+/** the payday the cash-flow projection (Trends) draws towards; safe to spend uses the space's own period (#541) */
 
 export interface PaydayInfo {
   date: string;
@@ -19,11 +16,7 @@ const isoAddMonths = (iso: string, months: number): string => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-/**
- * The next salary-like credit: the largest merchant that paid at least
- * twice in distinct months during the last four; its day-of-month
- * projects forward. Null when nothing salary-shaped exists.
- */
+/** the largest merchant that paid in at least two distinct months of the last four; its day-of-month projects forward */
 export function nextPayday(txs: readonly TxView[], today: string): PaydayInfo | null {
   const cutoff = isoAddMonths(today, -4);
   const groups = new Map<string, { merchant: string; months: Set<string>; latest: TxView }>();
@@ -40,7 +33,6 @@ export function nextPayday(txs: readonly TxView[], today: string): PaydayInfo | 
   if (candidates.length === 0) return null;
   const salary = candidates.reduce((a, b) => (b.latest.amountCents > a.latest.amountCents ? b : a), candidates[0]);
 
-  // project the latest pay date's day-of-month forward
   const payDay = Number(salary.latest.date.slice(8, 10));
   const [y, m] = today.split('-').map(Number);
   const clamp = (year: number, month: number) => Math.min(payDay, new Date(year, month, 0).getDate());

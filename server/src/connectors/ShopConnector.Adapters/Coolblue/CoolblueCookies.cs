@@ -4,14 +4,7 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Coolblue;
 
-/// <summary>
-/// The session cookies out of a Playwright storage state, for the day the
-/// capture shows that Coolblue's order call is authenticated by its
-/// <c>Coolblue-Session</c> cookie rather than by the OIDC access token.
-///
-/// Sent through the job's own politeness-limited client rather than the
-/// browser's request context, because anything else bypasses the rate limiter.
-/// </summary>
+/// Sent through the job's own politeness-limited client, not the browser's request context: that bypasses the rate limiter.
 internal static class CoolblueCookies
 {
     public static string? Header(string? storageState, string domainSuffix)
@@ -49,9 +42,7 @@ internal static class CoolblueCookies
 
                 if (!domain.TrimStart('.').EndsWith(domainSuffix, StringComparison.OrdinalIgnoreCase)) continue;
 
-                // A negative expiry marks a session cookie, and a session
-                // cookie is exactly what a login issues - it must not be
-                // filtered out as "already expired".
+                // a negative expiry marks a session cookie, which is what a login issues: not "already expired"
                 var expires = JsonAccess.Quantity(cookie, "expires");
                 if (expires is > 0 && expires < now) continue;
 

@@ -6,18 +6,9 @@ import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
 import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxSplitCat, TxType, TxView } from './types';
 
-/**
- * Feature B join layer: what a space "sees".
- *
- * Raw bank data lives once, in the account's feed space. A viewing
- * space sees a raw transaction through its attachments, dressed with
- * the space's own transformation overlay (txMeta). The space's OWN rows
- * (manual entries, statement imports without a feed) carry both halves
- * on the row itself and are served as-is.
- */
+// raw bank data lives once in the account's feed space; a viewing space sees it via attachments, with its own txMeta overlay
+// the space's own rows carry both halves and are served as-is
 
-/** a transaction as a space sees it: the view (derived txType included)
- *  plus where the row came from */
 export interface SpaceTx extends TxView {
   /** present when the row is a joined feed transaction (not one of the space's own rows) */
   feedSpaceId?: string;
@@ -25,7 +16,6 @@ export interface SpaceTx extends TxView {
   entry?: LinkedEntry;
 }
 
-/** #547: what a person typed before the bank's own transaction arrived */
 export interface LinkedEntry {
   id: string;
   amountCents: number;
@@ -33,12 +23,8 @@ export interface LinkedEntry {
   title: string;
 }
 
-/**
- * #547: an entry linked to a bank row in view IS that row — the row says
- * what was typed, and the entry itself stays out of every list and total.
- * An entry whose bank row is not in view (replaced, gated, detached) shows
- * as itself until the link is repaired.
- */
+// an entry linked to a bank row in view IS that row (#547): the entry stays out of lists and totals;
+// one whose bank row is not in view shows as itself until the link is repaired
 function foldEntries(rows: SpaceTx[]): SpaceTx[] {
   const linked = rows.filter((row) => !row.feedSpaceId && !!row.bankTxId);
   if (linked.length === 0) return rows;
@@ -54,7 +40,6 @@ function foldEntries(rows: SpaceTx[]): SpaceTx[] {
     });
 }
 
-/** a row as the space stores or joins it, before the view types derive */
 type JoinedRow = TransactionRow & { feedSpaceId?: string };
 
 const TRANSFORM_DEFAULTS: Pick<TransactionRow, 'catId' | 'needsReview'> = {
@@ -86,26 +71,21 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
   };
 }
 
-/** attachments of a space (non-deleted; archived ones still serve history) */
+/** non-deleted; archived ones still serve history */
 export async function spaceAccountLinks(store: StorageBackend, spaceId: string): Promise<AccountLinkRow[]> {
   return (await store.bySpace('accountLink', spaceId)).filter((l) => l.deleted === 0);
 }
 
-/** #152: what the SPACE says an attached account is — the link's type
- *  wins over the account row's own (global accounts carry no meaningful
- *  type anymore; each space decides at attach time) */
+/** #152: the link's type wins: a global account has no meaningful type, each space decides at attach time */
 export const linkEffectiveType = (link: AccountLinkRow, account: AccountRow): AccountType =>
   link.type ?? account.type;
 
-/** R1 + #152: accountId → the stamped type for the space's own accounts
- *  and every attached one (absent = regular, rows type freely) — plus
- *  the set of FUNDING accounts, whose transactions this space never
- *  shows at all */
+// accountId -> stamped type (absent = regular) for own and attached accounts (R1, #152),
+// plus the FUNDING accounts, whose transactions this space never shows
 interface SpaceAccountFacts {
   stamps: Map<string, TxType>;
   funding: Set<string>;
-  /** #133 removal: what each account MEANS as a counterparty — feeds
-   *  the per-row type derivation at the join */
+  /** #133: what each account means as a counterparty, for the per-row type derivation at the join */
   counter: Map<string, { funding: boolean }>;
 }
 
@@ -132,8 +112,7 @@ async function accountFacts(store: StorageBackend, spaceId: string, links: Accou
   return { stamps, funding, counter };
 }
 
-/** #133: the VIEW's txType is DERIVED, row and parts alike — nothing is
- *  stored; the adjustment marker is the row's own field */
+/** #133: the view's txType is derived, row and parts alike, never stored; the adjustment marker is the row's own field */
 function deriveViewTypes(row: JoinedRow, facts: SpaceAccountFacts): SpaceTx {
   const counterOf = (id: string | undefined) => (id ? facts.counter.get(id) : undefined);
   const sign = row.amountCents < 0 ? -1 : 1;
@@ -148,10 +127,8 @@ function deriveViewTypes(row: JoinedRow, facts: SpaceAccountFacts): SpaceTx {
       multiPart,
       adjustment,
     });
-  // #228: entries of a spread carry no counterparties — every entry
-  // derives with the OWNER's link (the one counterparty the (split)
-  // transaction has), so a settled movement row's entries still read as
-  // their family
+  // #228: entries of a spread carry no counterparties: each derives with the owner's link,
+  // so a settled movement row's entries still read as their family
   const enrichCats = (cats: TxSplitCat[] | undefined, ownLinked: string | undefined): TxSplitCat[] | undefined =>
     cats?.map((c) =>
       c.catId === 'reimbursed'
@@ -169,7 +146,6 @@ function deriveViewTypes(row: JoinedRow, facts: SpaceAccountFacts): SpaceTx {
   return { ...row, txType, ...(cats ? { cats } : {}), ...(splits ? { splits } : {}) };
 }
 
-/** every transaction the space sees: its own rows + joined feed rows */
 export async function visibleTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
   const [own, links, metas, space] = await Promise.all([
     store.bySpace('transaction', spaceId),
@@ -177,14 +153,10 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
     store.bySpace('txMeta', spaceId),
     store.get('space', spaceId),
   ]);
-  // the space's own rows respect the history start too (arc 5): stored
-  // in full, filtered at display — exactly like attached feed rows.
-  // Rows from before the start (sync races, a start date moved newer)
-  // stay in the database but out of every screen.
+  // the space's own rows respect the history start too: stored in full, filtered at display like attached feed rows
   const startGate = space?.historyStartDate;
   const { stamps, funding, counter } = await accountFacts(store, spaceId, links);
-  // #152: funding accounts complete the counterparty picture and nothing
-  // more — their transactions never enter the space's lists
+  // #152: funding accounts complete the counterparty picture; their transactions never enter the space's lists
   const ownRows = own.filter(
     (t) => t.deleted === 0 && !funding.has(t.accountId) && (!startGate || t.date >= startGate),
   );
@@ -194,10 +166,8 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   const out: SpaceTx[] = ownRows.map((t) => deriveViewTypes({ ...t }, facts));
   for (const link of links) {
     if (funding.has(link.accountId)) continue;
-    // #259: a link's own gate wins; a link WITHOUT one (the server's
-    // connect-time mirror op carries none) falls back to the space's
-    // start date — the setting must govern on every device, not only
-    // the one whose heal happened to run against a populated database
+    // #259: a link without its own gate (the server's connect-time mirror op carries none) falls back to the space start date,
+    // so the setting governs on every device
     const gate = link.historyFrom ?? startGate;
     const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
       (t) => t.deleted === 0 && t.accountId === link.accountId && (!gate || t.date >= gate),
@@ -207,16 +177,8 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   return foldEntries(out);
 }
 
-/**
- * The space's transactions WITHOUT the history gates (user design
- * 2026-08-01): recurring DETECTION reads the full stored history — a
- * yearly subscription needs charges from before the space's start date
- * to show a pattern at all, and banks may backfill years of data that
- * the display gate deliberately hides. Deletion and attachment rules
- * still apply; only the date gates are lifted. Screens keep reading
- * visibleTransactions — the extra rows serve as pattern EVIDENCE, they
- * never enter the space's lists.
- */
+// date gates lifted: recurring detection needs pre-start charges (yearly subscriptions) that the display gate hides
+// deletion and attachment rules still apply; the extra rows are pattern evidence, never in the space's lists
 export async function historyTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
   const [own, links, metas] = await Promise.all([
     store.bySpace('transaction', spaceId),
@@ -240,7 +202,6 @@ export async function historyTransactions(store: StorageBackend, spaceId: string
 }
 
 export interface SpaceAccount extends AccountRow {
-  /** present when the account arrives via an attachment */
   link?: AccountLinkRow;
   /** #547: what this space's own entries add on top of the bank's balance; absent when none count */
   entriesCents?: number;
@@ -248,12 +209,7 @@ export interface SpaceAccount extends AccountRow {
   bankBalanceCents?: number;
 }
 
-/**
- * #547 (user 2026-11-11): "the manual entries should only impact the
- * balance of the account within that space" — the bank's number plus the
- * entries that still count, here in the join and nowhere in storage, so
- * every other space and the global overview keep the bank's number.
- */
+// #547: entries change the balance only inside this space: bank number + counting entries, in the join, never stored
 async function withEntries(store: StorageBackend, account: SpaceAccount, entries: readonly TransactionRow[]): Promise<SpaceAccount> {
   if (account.source === 'manual') return account;
   let cents = 0;
@@ -266,10 +222,7 @@ async function withEntries(store: StorageBackend, account: SpaceAccount, entries
   return cents === 0 ? account : { ...account, balanceCents: account.balanceCents + cents, bankBalanceCents: account.balanceCents, entriesCents: cents };
 }
 
-/** every account the space sees: its own in-space rows + attached feed
- *  accounts — the attachment's TYPE opinion applied (#152: type is a
- *  space-level fact for attached accounts) and its NAME opinion too
- *  (#239: a space may call the account by its own name) */
+/** own in-space accounts + attached feed accounts, with the attachment's type (#152) and name (#239) opinions applied */
 export async function visibleAccounts(store: StorageBackend, spaceId: string): Promise<SpaceAccount[]> {
   const [own, links] = await Promise.all([store.bySpace('account', spaceId), spaceAccountLinks(store, spaceId)]);
   const out: SpaceAccount[] = own.filter((a) => a.deleted === 0);
@@ -284,8 +237,7 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
   return Promise.all(out.map((account) => withEntries(store, account, entries)));
 }
 
-/** #545: one account as a space sees it — visibleAccounts' name and type
- *  for an attached account; a row the space does not attach keeps its own */
+/** #545: visibleAccounts' name and type for an attached account; a row the space does not attach keeps its own */
 export async function asSpaceAccount(
   store: StorageBackend,
   spaceId: string,
@@ -296,7 +248,6 @@ export async function asSpaceAccount(
   return link ? { ...account, name: link.displayName || account.name, type: linkEffectiveType(link, account), link } : account;
 }
 
-/** transformation fields a space may hold an opinion on */
 export type TxTransformFields = Partial<
   Pick<
     TxMetaRow,
@@ -315,13 +266,8 @@ const mergedField = <K extends 'linkedAccountId' | 'transferPeerId' | 'loanCount
   key: K,
 ): TransactionRow[K] => (feed ? (meta?.[key] as TransactionRow[K]) : raw[key]);
 
-/**
- * A linkedAccountId change plans its mirror consequence off FRESH merged
- * state — the caller's snapshot may carry a stale transferPeerId or miss
- * a loanCounted written a beat ago; a loanCounted riding the SAME write
- * must gate this link's mint (the match sheet's count-it-in chip), so
- * the fields overlay the stored value.
- */
+// planned off fresh merged state: the caller's snapshot may hold a stale transferPeerId or miss a just-written loanCounted
+// a loanCounted in the SAME write gates this link's mint (match sheet's count-it-in chip): fields overlay the stored value
 async function planLinkChange(
   repo: Repo,
   tx: TransformTx,
@@ -352,15 +298,8 @@ async function planLinkChange(
   ).catch(() => null);
 }
 
-/**
- * A splits write plans the PART-level mirror consequences (typed-splits
- * v2): each part that gained, moved or lost its counterparty mints or
- * retires its own counter leg — keyed on row+part identity, so a part's
- * mirror survives sibling edits — and a linked part whose amount moved
- * RESIZES it. Returns the splits with the parts' peers applied plus the
- * plans to run after the write. (#228: parts are the smallest unit that
- * carries a counterparty — their category spreads never link.)
- */
+// part-level mirror plans: a part gaining, moving or losing its counterparty mints or retires its own counter leg
+// keyed on row+part identity so it survives sibling edits; a linked part's amount change resizes it (#228)
 async function planPartLinkChanges(
   repo: Repo,
   tx: TransformTx,
@@ -415,10 +354,8 @@ type PartPlanner = (
 type PartRow = NonNullable<TxTransformFields['splits']>[number];
 type MirrorExec = { execute: (repo: Repo) => Promise<void> };
 
-/** one SURVIVING part's plans (S3776): the part-level link/resize move,
- *  its peer riding back. A part arriving with a FOREIGN transferPeerId
- *  (the fold's relocated pick-existing link, #228) is a picked real row:
- *  it rides through and nothing is minted. */
+// a part arriving with a FOREIGN transferPeerId (the fold's relocated pick-existing link, #228) is a picked real row:
+// it rides through and nothing is minted
 async function planOnePartDiff(
   part: PartRow,
   prev: PartRow | undefined,
@@ -443,9 +380,6 @@ async function planOnePartDiff(
   return { adjusted: out, plans };
 }
 
-/** walk the part diff: changed links plan their move (the part's peer
- *  rides back into the write), linked amount edits resize, vanished
- *  parts take their mints along */
 async function diffPartPlans(
   nextParts: NonNullable<TxTransformFields['splits']>,
   prevById: Map<string, PartRow>,
@@ -471,16 +405,8 @@ async function diffPartPlans(
   }
 }
 
-/**
- * The single write path for transformation edits: joined feed rows get
- * their overlay written (creating it deterministically on first edit);
- * the space's own rows write in place. The
- * mirror-mint lifecycle lives at THIS choke point (the loans-v2 lesson,
- * generalized) — every linkedAccountId writer (user edits, auto-linkers,
- * the match sheet, review confirms) mints or retires the manual counter
- * leg exactly once — row-level AND per part — and the balance rides the
- * mirror's lifecycle.
- */
+// single write path for transformation edits: feed rows get their overlay (deterministic id), own rows write in place
+// mirror minting lives here: every linkedAccountId writer mints or retires the manual counter leg once, per row and per part
 export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTransformFields): Promise<void> {
   const plan = Object.hasOwn(fields, 'linkedAccountId') ? await planLinkChange(repo, tx, fields) : null;
   const partPlan = Object.hasOwn(fields, 'splits') ? await planPartLinkChanges(repo, tx, fields) : null;

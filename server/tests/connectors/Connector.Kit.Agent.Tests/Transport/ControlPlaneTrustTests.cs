@@ -5,13 +5,6 @@ using Connector.Kit.Agent.Transport;
 
 namespace Connector.Kit.Agent.Tests.Transport;
 
-/// <summary>
-/// How an agent decides to trust the control plane's certificate when the
-/// operator named a private authority: the machine's own roots keep working,
-/// a certificate that descends from the named authority is accepted, and
-/// everything else — a name for somebody else, a different authority, no
-/// certificate at all — is refused.
-/// </summary>
 public sealed class ControlPlaneTrustTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "control-plane-trust", Guid.NewGuid().ToString("N"));

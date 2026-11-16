@@ -57,18 +57,12 @@ type FormMode =
   | { kind: 'editMain'; row: CategoryRow }
   | { kind: 'editSub'; row: CategoryRow };
 
-/** group header (user redesign 2026-07-17): the whole row is a fold
- *  toggle; press-and-hold opens the action menu (visibility, edit, add
- *  sub) that used to crowd the row as tiny 14px icons */
-/** hold-menu feedback: native haptic tick + web vibration where supported */
 function holdFeedback(): void {
   hapticNotify('SUCCESS');
   navigator.vibrate?.(20);
 }
 
-/** press-and-hold arming shared by mains and subs: the growing
- *  highlight, the haptic cue, then the menu; `fired` lets the trailing
- *  click know the hold consumed this press */
+/** `fired` lets the trailing click know the hold consumed this press */
 function useHoldMenu(enabled: boolean, onMenu: () => void) {
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
   const [holding, setHolding] = useState(false);
@@ -84,11 +78,11 @@ function useHoldMenu(enabled: boolean, onMenu: () => void) {
       onPointerDown: () => {
         if (!enabled) return;
         hold.current.fired = false;
-        setHolding(true); // the growing highlight (user request)
+        setHolding(true);
         hold.current.timer = setTimeout(() => {
           hold.current.fired = true;
           setHolding(false);
-          holdFeedback(); // a physical cue that the menu is coming (user request)
+          holdFeedback();
           onMenu();
         }, 450);
       },
@@ -100,8 +94,6 @@ function useHoldMenu(enabled: boolean, onMenu: () => void) {
   };
 }
 
-/** a sub row: hold (custom, non-Other) opens the action menu; the
- *  handlers sit on the native row button itself */
 function SubCatRow({
   cat,
   parentColor,
@@ -116,8 +108,6 @@ function SubCatRow({
   onEdit: () => void;
   onMenu: () => void;
   t: TFunc;
-  /** custom subs drag onto another main (restored, user request) */
-  /** present on movable rows: lifts the row into the fold-and-drop flow */
   onDragStart?: (clientY: number) => void;
   dragging?: boolean;
 }>) {
@@ -135,22 +125,18 @@ function SubCatRow({
         disabled={!cat.custom || cat.isOther}
         {...hold.handlers}
         onClick={() => {
-          if (hold.fired.fired) return; // the hold consumed this press
+          if (hold.fired.fired) return;
           onEdit();
         }}
         className={`m-tap relative isolate flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink disabled:pointer-events-none ${hold.holding ? 'm-holding' : ''}`}
       >
         <Icon name={cat.icon} size={19} color={parentColor} />
-        {/* #244: direction left the user's vocabulary — the parent's
-            nature (expense / income badge on the group) says it all */}
-        {/* #261: the ◆ shows here too — managing must tell special apart */}
         <SpecialCatMark cat={cat} color={parentColor} />
         <span className="min-w-0 flex-1 truncate">{catName(cat, t)}</span>
-        {/* #386 (user): the badge and the wash were overkill — the pencil (and the handle) say "yours" */}
+        {/* #386: no badge or wash: the pencil and the handle say "yours" */}
         {canHold && <Icon name="pencil-outline" size={16} color="var(--m-ink-4)" />}
       </button>
-      {/* right-side handle (restored pre-replacement design): lifts
-          instantly; touch-none keeps the whole gesture ours on Android */}
+      {/* touch-none keeps the whole gesture ours on Android */}
       {onDragStart && (
         <button
           aria-label={t('cats.moveTarget')}
@@ -182,7 +168,6 @@ function GroupHeader({
   isExpanded: boolean;
   onToggle: () => void;
   onMenu: () => void;
-  /** #383: a custom main shows its pencil — the hold menu stays for the rest */
   onEdit?: () => void;
   t: TFunc;
 }>) {
@@ -195,7 +180,7 @@ function GroupHeader({
         aria-expanded={isExpanded}
         {...hold.handlers}
         onClick={() => {
-          if (hold.fired.fired) return; // the hold consumed this press
+          if (hold.fired.fired) return;
           onToggle();
         }}
         className={`m-tap relative isolate flex h-8 min-w-0 flex-1 select-none items-center gap-2.5 border-none bg-transparent p-0 text-left text-[14px] font-semibold ${hold.holding ? 'm-holding' : ''}`}
@@ -254,25 +239,22 @@ function DropRow({ parent, state, target, home, t }: Readonly<{ parent: Cat; sta
   );
 }
 
-/** the parent a sub form files under: a new sub's parent, or an edited sub's (possibly moved) one */
 const parentIdOf = (mode: FormMode | null, moveTo: string | null): string | undefined => {
   if (mode?.kind === 'newSub') return mode.parentId;
   if (mode?.kind === 'editSub') return moveTo ?? mode.row.parentId;
   return undefined;
 };
-/** the row an edit form stands for — excluded from its own conflict checks */
 const selfIdOf = (mode: FormMode | null): string | undefined =>
   mode?.kind === 'editMain' || mode?.kind === 'editSub' ? mode.row.id : undefined;
-/** what a main is to a lifted sub: a place to drop it, or refused — a locked special (#385) or a
- *  main where a sub already wears the lifted one's icon (#389: siblings never share a face) */
+// a main is a drop place for a lifted sub, or refused: a locked special (#385) or a main where a sub already wears
+// the lifted one's icon (#389)
 type DropState = 'open' | 'locked' | 'icon';
 const dropStateOf = (parentId: string, lifted: CategoryRow, all: readonly Cat[]): DropState => {
   if (LOCKED_MAIN_IDS.has(parentId)) return 'locked';
   if (parentId !== lifted.parentId && iconConflict({ icon: lifted.icon, parentId, selfId: lifted.id }, all)) return 'icon';
   return 'open';
 };
-/** #389: the sub form's icon is one a sibling wears — a clash the person CHOSE (a new pick or a
- *  move); a sub that already shared its face before the rule still saves while neither moves */
+// #389: a clash the person CHOSE (a new pick or a move); a sub that already shared its face before the rule still saves
 const iconClashes = (mode: FormMode | null, icon: string, moveTo: string | null, worn: ReadonlySet<string>): boolean => {
   if (mode?.kind !== 'newSub' && mode?.kind !== 'editSub') return false;
   if (!worn.has(icon)) return false;
@@ -280,7 +262,6 @@ const iconClashes = (mode: FormMode | null, icon: string, moveTo: string | null,
 };
 
 export function ManageCategoriesScreen() {
-  // fold state (user redesign): everything starts collapsed
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
   const [groupMenu, setGroupMenu] = useState<Cat | null>(null);
   const toggleGroup = (id: string) =>
@@ -304,12 +285,7 @@ export function ManageCategoriesScreen() {
   const [txType, setTxType] = useState<TxType>('expense');
   const [moveTo, setMoveTo] = useState<string | null>(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
-  // hold on a custom sub opens its action sheet (accessible alternative)
   const [subMenu, setSubMenu] = useState<Cat | null>(null);
-  // restored pre-replacement drag (user request, from 683f068a): lift a
-  // custom sub via its right-side handle, every main folds into a drop
-  // row, a ghost follows the finger on a vertical rail, edges
-  // auto-scroll, release asks for confirmation
   const [dragging, setDragging] = useState<CategoryRow | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveConfirm, setMoveConfirm] = useState<{ sub: CategoryRow; targetId: string; commit: PendingCommit } | null>(null);
@@ -329,7 +305,7 @@ export function ManageCategoriesScreen() {
   const startDrag = (row: CategoryRow, clientY: number) => {
     dragActiveRef.current = true;
     pointerY.current = clientY;
-    navigator.vibrate?.(15); // lift feedback where supported
+    navigator.vibrate?.(15);
     setLifted(row);
     setDragging(row);
   };
@@ -338,17 +314,9 @@ export function ManageCategoriesScreen() {
   const [pendingDetail, setPendingDetail] = useState<string | undefined>(undefined);
   const [copyOpen, setCopyOpen] = useState(false);
 
-  // pointer-based drag & drop: lift a custom sub (long-press or handle),
-  // every main folds into a drop row, a ghost follows the finger on a
-  // vertical rail, edges auto-scroll, release asks for confirmation
   const [nameError, setNameError] = useState<CategoryNameConflict | null>(null);
-  // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
-  // a drag consumes the trailing click — it must not open the edit sheet
-  // live "a drag owns the pointer" flag for the touch blocker (state is
-  // too slow: the blocker runs inside native touchmove dispatch)
 
-  // rows for the whole visible scope (needed for editing/moving/copying)
   const customRows = useQuery(
     store,
     async () => (await store.allRows('category')).filter((c) => c.deleted === 0),
@@ -356,7 +324,6 @@ export function ManageCategoriesScreen() {
   );
   const rowById = (id: string) => customRows?.find((r) => r.id === id);
 
-  // #390: what the user's other spaces have that this one lacks
   const copyOffers = useQuery(
     store,
     async () => {
@@ -374,7 +341,7 @@ export function ManageCategoriesScreen() {
   const openNewMain = () => {
     setName('');
     setIcon(CATEGORY_ICONS[0]);
-    setIconQuery(''); // #384: a search never outlives the sheet
+    setIconQuery('');
     setColor(COLORS[0]);
     setTxType('expense');
     setNameError(null); // #247: a stale conflict must not flash into a fresh form
@@ -391,7 +358,7 @@ export function ManageCategoriesScreen() {
     // #389: siblings never share an icon — start on the first curated one that is still free
     setIcon(firstFreeIcon(new Set(cats.childrenOf(parentId).map((c) => c.icon))));
     setIconQuery('');
-    setNameError(null); // #247
+    setNameError(null);
     setAttempted(false);
     setMode({ kind: 'newSub', parentId });
   };
@@ -404,7 +371,7 @@ export function ManageCategoriesScreen() {
     setColor(row.color || COLORS[0]);
     setTxType(row.txType);
     setMoveTo(null);
-    setNameError(null); // #247
+    setNameError(null);
     setAttempted(false);
     setMode(row.isParent === 1 ? { kind: 'editMain', row } : { kind: 'editSub', row });
   };
@@ -421,7 +388,6 @@ export function ManageCategoriesScreen() {
     }
   };
 
-  // naming rules (user rules): resolved names, builtins included
   const namedCategories = (): NamedCategory[] =>
     cats.all.map((cat) => ({
       id: cat.id,
@@ -448,8 +414,7 @@ export function ManageCategoriesScreen() {
       return;
     }
     if (mode.kind === 'newMain') {
-      // #244 (user): every new parent IS an expense group — the form
-      // says so instead of asking
+      // #244: every new parent IS an expense group
       await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType: 'expense', otherName: t('cats.other') });
       void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
@@ -489,23 +454,18 @@ export function ManageCategoriesScreen() {
     await repo.upsert('space', spaceId, spaceId, { hiddenMains: [...next] });
   };
 
-  // the active drag: ghost follows the pointer, edges auto-scroll, the
-  // hovered fold row highlights, release opens the confirmation sheet
   useEffect(() => {
     if (!dragging) return;
     const scroller = scrollRef.current;
 
     const targetUnderRail = () => {
-      // the rail ignores horizontal drift: probe at the list's center X
       const rect = scroller?.getBoundingClientRect();
       const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
       const y = rect ? Math.min(Math.max(pointerY.current, rect.top + 1), rect.bottom - 1) : pointerY.current;
       const group = document.elementFromPoint(x, y)?.closest?.('[data-cat-group]');
       return (group as HTMLElement | null)?.dataset.catGroup ?? null;
     };
-    // the ghost is ABSOLUTE inside the scroll container, not fixed:
-    // iOS misplaces fixed elements inside our measured-height app frame,
-    // and content coordinates stay correct while auto-scroll runs
+    // ABSOLUTE inside the scroll container, not fixed: iOS misplaces fixed elements inside our measured-height app frame
     const positionGhost = () => {
       const rect = scroller?.getBoundingClientRect();
       if (!ghostRef.current || !rect || !scroller) return;
@@ -525,8 +485,7 @@ export function ManageCategoriesScreen() {
       const targetId = dropTargetRef.current;
       endDrag();
       if (!targetId || targetId === dragging.parentId || dropStateOf(targetId, dragging, cats.all) !== 'open') return;
-      // naming rules apply to drags too: the target parent may already
-      // hold a sub with this name (or the name IS a parent's)
+      // naming rules apply to drags too: the target parent may already hold the name
       const conflict = categoryNameConflict(
         { name: catName(cats.byId(dragging.id), t), parentId: targetId, selfId: dragging.id },
         namedCategories(),
@@ -548,9 +507,7 @@ export function ManageCategoriesScreen() {
     const blockTouch = (ev: TouchEvent) => {
       if (dragActiveRef.current && ev.cancelable) ev.preventDefault();
     };
-    // holding still near an edge must keep scrolling — hence a rAF loop,
-    // not just pointermove; it also re-resolves the hovered group and
-    // re-anchors the ghost while content slides beneath the finger
+    // a rAF loop, not just pointermove: holding still near an edge must keep scrolling
     let raf = requestAnimationFrame(function tick() {
       if (scroller) {
         const rect = scroller.getBoundingClientRect();
@@ -565,7 +522,7 @@ export function ManageCategoriesScreen() {
       setDropTarget(targetUnderRail());
       raf = requestAnimationFrame(tick);
     });
-    positionGhost(); // anchor before the first move
+    positionGhost();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp, { once: true });
     window.addEventListener('pointercancel', onCancel, { once: true });
@@ -633,9 +590,8 @@ export function ManageCategoriesScreen() {
         )}
         {cats.allParents.map((parent) => {
           const mainHidden = cats.hiddenMains.has(parent.id);
-          // fold mode: every main collapses into one fat drop row, so even a long list fits a couple of
-          // screens while dragging. #572 (user): both views stay in place and fold into each other —
-          // the swap was one frame. Hidden mains take no drops; refused ones say why (#385, #389)
+          // fold mode: every main collapses into a drop row so a long list fits a couple of screens; hidden mains take no drops,
+          // refused ones say why (#385, #389)
           const drop = lifted && !mainHidden ? dropStateOf(parent.id, lifted, cats.all) : null;
           return (
             <div key={parent.id} data-cat-group={!dragging || drop === 'open' ? parent.id : undefined} className={mainHidden ? 'opacity-55' : ''}>
@@ -659,12 +615,10 @@ export function ManageCategoriesScreen() {
               )}
               {!mainHidden && (
               <Collapse open={expandedGroups.has(parent.id)}>
-              {/* #386 (user): subs read as nested — the card starts under the main's name, never wider than it */}
               <div className="ml-7 overflow-hidden rounded-card border border-line bg-surface">
                 {cats.childrenOf(parent.id).map((cat, i) => (
                   <div key={cat.id}>
                     {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-                    {/* custom rows read as "yours": subtle accent wash */}
                     <SubCatRow
                       cat={cat}
                       parentColor={parent.color}
@@ -710,9 +664,7 @@ export function ManageCategoriesScreen() {
           );
         })}
 
-        {/* the lifted sub floats on a vertical rail above the list —
-            absolutely positioned in CONTENT coordinates (fixed proved
-            unreliable inside the measured-height app frame on iOS) */}
+        {/* content coordinates: fixed proved unreliable inside the measured-height app frame on iOS */}
         {dragging && (
           <div
             ref={ghostRef}
@@ -728,7 +680,6 @@ export function ManageCategoriesScreen() {
         )}
       </div>
 
-      {/* hold menu for a custom sub (drag retired — user request) */}
       <Sheet
         open={subMenu !== null}
         onOpenChange={(next) => !next && setSubMenu(null)}
@@ -766,7 +717,6 @@ export function ManageCategoriesScreen() {
         )}
       </Sheet>
 
-      {/* drop confirmation: show the move visually before committing */}
       <Sheet
         open={moveConfirm !== null}
         onOpenChange={(open) => !open && setMoveConfirm(null)}
@@ -806,7 +756,6 @@ export function ManageCategoriesScreen() {
                 data-testid="cats-move-confirm"
                 onClick={() => {
                   void moveConfirm.commit.commit().then(() => {
-                    // cross-main moves log like any other category edit
                     void logActivity(store, repo, spaceId, 'catEdit', moveConfirm.sub.name);
                     setMoveConfirm(null);
                   });
@@ -819,22 +768,19 @@ export function ManageCategoriesScreen() {
         )}
       </Sheet>
 
-      {/* create / edit */}
       <Sheet
         open={mode !== null}
         onOpenChange={(open) => {
           if (open) return;
           setMode(null);
-          // #247 (user): the error outlived the sheet — a click-away
-          // flashed the OLD conflict while the exit animation ran
+          // #247: a click-away flashed the OLD conflict while the exit animation ran
           setNameError(null);
           setAttempted(false);
-          setIconQuery(''); // #384
+          setIconQuery('');
         }}
         title={formTitle}
         size="tall"
-        // pinned footer (user ss: the sticky version floated over the
-        // icon grid once the keyboard/safe-area shifted the scrollport)
+        // pinned footer: a sticky one floated over the icon grid once the keyboard/safe-area shifted the scrollport
         footer={
           <div className="flex flex-col gap-2">
             <Button
@@ -877,8 +823,7 @@ export function ManageCategoriesScreen() {
             aria-invalid={attempted && !name.trim()}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
-          {/* #195 r2 (user): the blocker sits AT the field, not by the
-              footer button — the sheet scrolls it into view */}
+          {/* #195: the blocker sits AT the field; the sheet scrolls it into view */}
           <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="catform-save-blocker" />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="catform-name-error">
@@ -886,9 +831,7 @@ export function ManageCategoriesScreen() {
             </p>
           )}
 
-          {/* main: color. #244 (user): the type question is gone — a new
-              parent IS an expense group (Housing, Transport, …); income
-              lives under the special Income category. Say it plainly. */}
+          {/* #244: a new parent IS an expense group; income lives under the special Income category */}
           {isMainForm && (
             <>
               {mode?.kind === 'newMain' && (
@@ -907,15 +850,12 @@ export function ManageCategoriesScreen() {
             </>
           )}
 
-          {/* sub: move when editing (#244: the direction question is
-              gone — a sub simply follows its parent's nature) */}
           {!isMainForm && (
             <>
               {mode?.kind === 'editSub' && (
                 <>
                   <div className="m-cap px-1">{t('cats.moveTarget')}</div>
-                  {/* a picker row instead of a chip row: the list of mains
-                      grows, chips don't */}
+                  {/* a picker row: the list of mains grows, chips don't */}
                   <button
                     data-testid="catform-move-open"
                     onClick={() => setMoveSheetOpen(true)}
@@ -939,8 +879,7 @@ export function ManageCategoriesScreen() {
             </>
           )}
 
-          {/* the curated icons lead, the whole font follows (#563); #389 (user): the
-              icons a sibling wears are asleep and refused — no error after the fact */}
+          {/* #389: icons a sibling wears are asleep and refused: no error after the fact */}
           <IconPicker
             value={icon}
             onChange={setIcon}
@@ -959,7 +898,6 @@ export function ManageCategoriesScreen() {
         </div>
       </Sheet>
 
-      {/* move-target picker (stacked over the edit sheet) */}
       <Sheet open={moveSheetOpen} onOpenChange={setMoveSheetOpen} title={t('cats.moveTarget')} size="form" dragHandle>
         {mode?.kind === 'editSub' && (
           <div className="pt-1" data-testid="catform-move-list">
@@ -999,7 +937,6 @@ export function ManageCategoriesScreen() {
         )}
       </Sheet>
 
-      {/* impact warning before a breaking change */}
       <Sheet open={pending !== null} onOpenChange={(open) => !open && setPending(null)} title={t('cats.impactTitle')} size="compact">
         <p className="pt-1 text-[14px] text-ink-2" data-testid="cats-impact-text">
           {t(pendingKind === 'delete' ? 'cats.deleteWarning' : 'cats.impactWarning', {
@@ -1016,10 +953,8 @@ export function ManageCategoriesScreen() {
         </div>
       </Sheet>
 
-      {/* #390: the other spaces' custom categories this space lacks — per space and main, every sub its own pick */}
       <CopyCategoriesSheet open={copyOpen} onOpenChange={setCopyOpen} groups={copyable ?? []} hidden={copyOffers?.hidden ?? 0} />
 
-      {/* hold-menu on a group header: the quiet actions live here now */}
       <Sheet
         open={!!groupMenu}
         onOpenChange={(next) => !next && setGroupMenu(null)}
@@ -1060,8 +995,7 @@ export function ManageCategoriesScreen() {
                 {t('action.edit')}
               </button>
             )}
-            {/* #261: locked system mains (incl. Adjustment) refuse user
-                subs through EVERY door — this menu had slipped the gate */}
+            {/* #261: locked system mains refuse user subs through EVERY door */}
             {!LOCKED_MAIN_IDS.has(groupMenu.id) && (
               <button
                 data-testid={`cats-menu-addsub-${groupMenu.id}`}

@@ -53,11 +53,9 @@ describe('authToken bridge', () => {
     const first = getAccessToken();
     await vi.advanceTimersByTimeAsync(TOKEN_MINT_WAIT_MS + 1);
     expect(await first).toBeUndefined();
-    // the cooldown of a failed refresh: nobody asks for a while
     expect(await getAccessToken()).toBeUndefined();
     expect(stuck).toHaveBeenCalledTimes(1);
 
-    // afterwards a mint that answers is used, whatever the stuck one still holds
     await vi.advanceTimersByTimeAsync(REFRESH_RETRY_AFTER_MS + 1);
     setAccessTokenGetter(async () => 'tok-2');
     const next = getAccessToken();

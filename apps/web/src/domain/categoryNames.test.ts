@@ -28,7 +28,6 @@ describe('categoryNameConflict (user rules 2026-07-17)', () => {
   it('renames ignore the row itself; drags are just a sub check on the target', () => {
     expect(categoryNameConflict({ name: 'Household', selfId: 'p-house' }, world)).toBeNull();
     expect(categoryNameConflict({ name: 'Rent', parentId: 'p-house', selfId: 's-rent' }, world)).toBeNull();
-    // dragging Games into Household is fine; dragging a 'Rent' twin is not
     expect(categoryNameConflict({ name: 'Games', parentId: 'p-house', selfId: 's-games' }, world)).toBeNull();
     expect(categoryNameConflict({ name: 'Rent', parentId: 'p-house', selfId: 's-games' }, world)).toBe('duplicateSub');
   });

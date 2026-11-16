@@ -4,7 +4,6 @@ import { Icon } from './Icon';
 interface EmptyStateProps {
   icon: string;
   text: string;
-  /** primary action button(s), already wired */
   action?: ReactNode;
   testId?: string;
 }

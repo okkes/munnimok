@@ -2,25 +2,13 @@ using Connector.Kit.Manifests;
 
 namespace BankConnector.Adapters;
 
-/// <summary>
-/// The two resources every bank provider offers, in one place.
-///
-/// A bank connector's public surface is genuinely uniform - accounts and
-/// transactions, filtered by type and date - so a per-provider copy of
-/// these specs would only be an opportunity for one provider to spell a
-/// parameter differently and break the generic route handler.
-/// </summary>
+// one spec for every bank: per-provider copies could spell a parameter differently and break the generic route handler
 public static class BankResources
 {
     public const string Accounts = "accounts";
     public const string Transactions = "transactions";
 
-    /// <summary>
-    /// Cheap discovery. Served from the bundle's reachable set without
-    /// touching the provider whenever that data is still fresh, which is
-    /// why the expected duration is a couple of seconds rather than a
-    /// browser login.
-    /// </summary>
+    /// cheap discovery: served from the bundle's reachable set while fresh, so seconds rather than a browser login
     public static ResourceSpec AccountsSpec() => new()
     {
         Id = Accounts,
@@ -29,21 +17,8 @@ public static class BankResources
         MaxRecordsPerFetch = 50,
     };
 
-    /// <param name="accountTypes">
-    /// The types this provider can actually TELL APART, when that is fewer than
-    /// the platform's four.
-    /// </param>
-    /// <remarks>
-    /// A parameter offering choices a provider cannot honour is worse than no
-    /// parameter. ASN's statements state no account type, so every account it
-    /// returns is Current - and while this defaulted to all four, a caller
-    /// could tick "credit_card" and "loan" on an ASN connection that has
-    /// neither, and did.
-    /// </remarks>
-    /// <param name="notesKey">
-    /// A caveat about the fetch itself, when this provider has one the account
-    /// filter does not express.
-    /// </param>
+    // accountTypes: only the types the provider can TELL APART. ASN states no type, so all its accounts are Current;
+    // defaulting to all four let callers tick credit_card and loan on a connection that has neither
     public static ResourceSpec TransactionsSpec(
         int maxHistoryDays = 540,
         int typicalDurationSeconds = 90,
@@ -59,8 +34,7 @@ public static class BankResources
         NotesKey = notesKey,
         Params =
         [
-            // Filtering by TYPE rather than by id: the caller usually has
-            // not seen the ids yet, because ids are minted per session.
+            // filtered by TYPE, not id: ids are minted per session, so the caller has not seen them yet
             new ParamSpec
             {
                 Key = "accounts",
@@ -77,21 +51,11 @@ public static class BankResources
 
 public static class BankLimits
 {
-    /// <summary>
-    /// Dutch card payments settle late: a purchase on the 19th can surface
-    /// on the 21st still dated the 19th. Fourteen days covers the worst
-    /// case we have seen (a holiday weekend plus a foreign-currency
-    /// clearing) with room to spare, and the cost of being generous is one
-    /// slightly larger export, deduplicated for free by content hash.
-    /// </summary>
+    /// card payments settle late (bought on the 19th, shown on the 21st still dated the 19th); 14 days covers the worst
+    /// case seen, and the extra overlap is deduplicated by content hash
     public const int DutchCardSettlementLagDays = 14;
 
-    /// <summary>
-    /// Six hours is the platform default - human-plausible, not a firehose.
-    /// A mock provider touches no network at all, so politeness towards it
-    /// is meaningless and a short floor is what makes a demo or an
-    /// integration test usable.
-    /// </summary>
+    /// platform default is 6h; a mock touches no network, so a short floor keeps demos and integration tests usable
     public const int MockMinIntervalSeconds = 60;
 
     public static ProviderLimits ForBank(

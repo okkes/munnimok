@@ -2,13 +2,8 @@ using System.Text.RegularExpressions;
 
 namespace Connector.Kit.Manifests;
 
-/// <summary>
-/// Manifests are the public contract, so they are validated at startup and
-/// a bad one refuses to boot. A manifest that lies - claiming unattended
-/// operation it cannot deliver, or a TTL longer than the session really
-/// lasts - makes the consuming app promise things to users and then fail,
-/// which is worse than not supporting the provider at all.
-/// </summary>
+// manifests are the public contract, so a bad one refuses to boot: one that lies (unattended operation it cannot
+// deliver, a TTL longer than the session lasts) makes the consuming app promise and then fail
 public static partial class ManifestValidator
 {
     [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$")]
@@ -67,11 +62,7 @@ public static partial class ManifestValidator
         ValidateCredentialStore(m, errors);
     }
 
-    /// <summary>
-    /// A stored password is the heaviest thing this platform will hold on a
-    /// user's behalf, so the three cases where it buys nothing are refused
-    /// outright rather than left to a reviewer to notice.
-    /// </summary>
+    // a stored password is the heaviest thing held for a user, so the three cases where it buys nothing are refused outright
     private static void ValidateCredentialStore(ProviderManifest m, List<string> errors)
     {
         if (!m.OffersCredentialStore) return;
@@ -155,33 +146,13 @@ public static partial class ManifestValidator
 
         ValidateHosts("auth.login_origins", auth.LoginOrigins, errors);
 
-        // THE SAME SHAPE, FOR THE OPPOSITE REASON. A host named here is one
-        // whose session a kept profile must not carry forward, and a scheme or
-        // a path on it would match no cookie ever set - so the origin nobody
-        // meant to keep would go on being kept, with no error to read. The
-        // wildcard refusal is worth less here than on the list above (a
-        // wildcard would drop MORE, which is the safe direction) and is kept
-        // anyway, because a manifest field that accepts two spellings of the
-        // same intent is a field two adapters will disagree about.
+        // same shape, opposite reason: a scheme or path matches no cookie, so the origin nobody meant to keep stays kept with
+        // no error; the wildcard refusal stays so two adapters cannot spell one intent two ways
         ValidateHosts("auth.drops_kept_session_for", auth.DropsKeptSessionFor, errors);
     }
 
-    /// <summary>
-    /// A list of bare hosts, as both of the manifest's host lists must be.
-    ///
-    /// On <c>auth.login_origins</c> every rule here refuses something that
-    /// would widen the live view's allowlist beyond a host somebody named on
-    /// purpose. That latch is what stops a stream from becoming a remote view of
-    /// an account after the login it was opened for has finished, so a manifest
-    /// that could smuggle a wildcard past it would make the guarantee
-    /// decorative.
-    /// </summary>
-    /// <remarks>
-    /// SHARED RATHER THAN COPIED, and the caller names itself in the message.
-    /// A second copy of these four rules is a second place for them to drift,
-    /// and the failure they exist to prevent is identical on both lists: a host
-    /// that cannot compare equal to anything matches nothing and says nothing.
-    /// </remarks>
+    // shared so the rules cannot drift; on login_origins they stop a wildcard widening the live view's allowlist beyond a
+    // named host, which would make the guarantee decorative
     private static void ValidateHosts(string field, IReadOnlyList<string> hosts, List<string> errors)
     {
         foreach (var origin in hosts)
@@ -198,10 +169,8 @@ public static partial class ManifestValidator
                            "wherever it goes is a live remote view of an authenticated account");
             }
 
-            // A bare host, because that is what the latch compares against. A
-            // scheme or a path here would never match anything, so the stream
-            // would pin to the opening host and stop at the identity provider -
-            // the exact failure the list was added to fix, arriving silently.
+            // a bare host, because that is what the latch compares: a scheme or path never matches, so the stream would pin to the
+            // opening host and stop at the identity provider, silently
             if (origin.Contains("://", StringComparison.Ordinal) || origin.Contains('/', StringComparison.Ordinal))
             {
                 errors.Add($"{field} '{origin}' must be a bare host, with no scheme and no path");
@@ -215,7 +184,6 @@ public static partial class ManifestValidator
         }
     }
 
-    /// <summary>What each flow demands of the runtime and the steps.</summary>
     private static void ValidateFlow(ProviderManifest m, AuthSpec auth, List<string> errors)
     {
         switch (auth.Flow)
@@ -227,12 +195,8 @@ public static partial class ManifestValidator
                 break;
 
             case AuthFlow.RemoteBrowser:
-                // The inverse rule, and the reason this flow is worth having as a
-                // flow rather than a convention: a streamed login must be INCAPABLE
-                // of asking for a credential. A field here would mean a form
-                // somewhere, and a form means a password crossing the wire and
-                // resting in a job's inputs - the whole thing this exists to stop.
-                // Refusing it at boot makes that structural instead of a promise.
+                // inverse rule: a streamed login must be INCAPABLE of asking for a credential; a field means a form, and a form means
+                // a password crossing the wire into a job's inputs. Refusing at boot makes that structural
                 if (auth.AllFields().Any())
                 {
                     errors.Add("flow 'remote_browser' must declare no fields: the human types into the " +
@@ -256,7 +220,6 @@ public static partial class ManifestValidator
         }
     }
 
-    /// <summary>Every declared field: unique, a select with options, a pattern that compiles.</summary>
     private static void ValidateFields(AuthSpec auth, List<string> errors)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);

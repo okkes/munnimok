@@ -31,7 +31,6 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
 
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(2);
 
-    /// <summary>The only kind of job the agents here offer to take.</summary>
     private static readonly string[] LoginJobsOnly = ["login"];
 
     private string Ours => factory.Services.GetRequiredService<IProviderRegistry>().AgentCatalogDigest;
@@ -45,10 +44,7 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
         Assert.False(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = registry.AgentCatalogDigest }, registry));
         Assert.True(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = "sha256:elsewhere" }, registry));
 
-        // the catalogue's own digest is a consumer's ETag: it moves with the
-        // inline parties and the raw offer, neither of which an agent runs,
-        // so an agent claiming it is on another catalogue as far as the
-        // lease is concerned
+        // the catalogue digest is a consumer's ETag: it moves with the inline parties and raw offer, which no agent runs
         Assert.NotEqual(registry.CatalogDigest, registry.AgentCatalogDigest);
         Assert.True(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = registry.CatalogDigest }, registry));
     }
@@ -97,8 +93,7 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
 
         Assert.Equal(JobState.Queued, StateOf(job));
 
-        // other tests leave work on this provider's queue; the current agent
-        // leases until it reaches ours
+        // other tests leave work on this queue: the current agent leases until it reaches ours
         string leasedId;
         var seen = 0;
         do

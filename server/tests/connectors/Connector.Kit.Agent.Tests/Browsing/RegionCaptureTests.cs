@@ -3,11 +3,7 @@ using Connector.Kit.Challenges;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The box, which is the half of a relayed captcha that nobody looks at and
-/// everything depends on: the picture is only answerable if the rectangle it
-/// was cut from is the rectangle the taps are mapped back into.
-/// </summary>
+/// the picture is answerable only if the rectangle it was cut from is the one the taps are mapped back into
 public class RegionCaptureTests
 {
     private static readonly byte[] Png = [0x89, (byte)'P', (byte)'N', (byte)'G'];
@@ -25,8 +21,7 @@ public class RegionCaptureTests
     [Fact]
     public void A_capture_without_bytes_or_without_area_is_a_refusal()
     {
-        // Captured has to carry a real invariant, because it is the single
-        // question every caller asks before mapping a tap.
+        // Captured is the single question every caller asks before mapping a tap
         Assert.False(RegionCapture.Of([], new CropRegion(0, 0, 10, 10)).Captured);
         Assert.False(RegionCapture.Of(Png, new CropRegion(0, 0, 0, 10)).Captured);
         Assert.False(RegionCapture.Of(Png, new CropRegion(0, 0, 10, 0)).Captured);
@@ -36,8 +31,7 @@ public class RegionCaptureTests
     [Fact]
     public void A_refusal_never_hands_out_a_null_array()
     {
-        // Callers post these bytes; a null here would be an exception on the
-        // path that exists to be uneventful.
+        // callers post these bytes: a null would be an exception on the path meant to be uneventful
         Assert.Empty(RegionCapture.Refused.Png);
         Assert.Empty(default(RegionCapture).Png);
         Assert.Equal(RegionCapture.Refused, default);
@@ -46,8 +40,7 @@ public class RegionCaptureTests
     [Fact]
     public void An_enclosing_box_never_cuts_the_element()
     {
-        // Rounds outward: a captcha's tiles run to the edge of its frame, and a
-        // box truncated on both sides loses the last row of them.
+        // rounds outward: a captcha's tiles run to the edge of its frame, and truncating loses the last row
         var region = Enclosing(10.4, 20.6, 100.3, 50.9);
 
         Assert.Equal(10, region.X);
@@ -79,10 +72,8 @@ public class RegionCaptureTests
     [Fact]
     public void A_tap_on_an_enclosing_box_lands_inside_the_element_it_encloses()
     {
-        // The round trip the whole feature rests on, at the one place the two
-        // halves could disagree: the box that is clipped is the box the taps
-        // are mapped into, so a fraction of the picture is a point on the
-        // element however the browser measured it.
+        // the round trip the feature rests on: the box clipped is the box taps map into,
+        // so a fraction of the picture is a point on the element
         const double X = 100.7, Y = 200.2, Width = 300.6, Height = 150.4;
         var region = Enclosing(X, Y, Width, Height);
 

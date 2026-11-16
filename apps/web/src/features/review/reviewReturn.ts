@@ -1,10 +1,5 @@
-/**
- * #275 (user): creating a category mid-review detours to /categories and
- * back — the deck must return to the SAME card with the category editor
- * reopened, not restart from the top. Read-once module state, stashed
- * only by the create-category door (the old per-visit reset ruling
- * stands for every other way of leaving review).
- */
+// #275: creating a category mid-review detours to /categories; the deck returns to the SAME card with the editor reopened
+// read-once module state, stashed only by the create-category door; other ways of leaving review reset as before
 export interface ReviewReturnState {
   skippedIds: readonly string[];
   txId: string;

@@ -1,5 +1,4 @@
-// One-shot port of the legacy TRANSLATIONS dictionary into typed TS modules.
-// Usage: node scripts/port-i18n.mjs
+// one-shot port of the legacy TRANSLATIONS dictionary into typed TS modules
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +11,6 @@ const src = readFileSync(legacyFile, 'utf8');
 const start = src.indexOf('export const TRANSLATIONS = {');
 if (start === -1) throw new Error('TRANSLATIONS not found');
 const objStart = src.indexOf('{', start);
-// walk braces to find the matching close, ignoring braces inside string literals
 let depth = 0, i = objStart, inStr = null;
 for (; i < src.length; i++) {
   const ch = src[i];

@@ -7,15 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Hosting.Infrastructure;
 
-/// <summary>
-/// Carries an HTTP status the error catalogue does not model.
-///
-/// The catalogue maps a code to exactly one status, which is right for every
-/// case but one: answering a challenge twice is a conflict, and the closed
-/// code set has no <c>conflict</c> member. Rather than widen the frozen
-/// taxonomy this wraps the real error and states the status the wire
-/// contract requires.
-/// </summary>
+// carries a status the closed error catalogue cannot model: answering a challenge twice is a conflict, which has no code
 public sealed class ConnectorHttpException : Exception
 {
     public ConnectorHttpException(int status, ConnectorException error)
@@ -34,35 +26,14 @@ public sealed class ConnectorHttpException : Exception
         new(StatusCodes.Status409Conflict, new ConnectorException(ErrorCode.InvalidRequest, detail));
 }
 
-/// <summary>
-/// The single funnel every response goes through, so that "never a bare 500"
-/// is a property of the code path rather than a rule people remember.
-/// </summary>
+// the single funnel every response goes through, so "never a bare 500" is a property of the code path
 public static class ConnectorResults
 {
-    /// <summary>
-    /// A 200 carrying <typeparamref name="T"/>, and saying so in the reference.
-    ///
-    /// The return type is the whole point. <c>Results.Json</c> hands back a
-    /// bare <see cref="IResult"/>, and ASP.NET only asks a handler's DECLARED
-    /// return type what it produces - so every route in this service documented
-    /// a 200 with no body at all, while its request schema was inferred
-    /// perfectly. A reference that names what to send and stays silent about
-    /// what comes back is the half that cannot be guessed from a curl.
-    /// </summary>
+    // typed so the reference documents the body: ASP.NET reads only the DECLARED return type,
+    // and IResult yielded a 200 with no body
     public static ConnectorJsonResult<T> Json<T>(T value) => new(value, StatusCodes.Status200OK);
 
-    /// <summary>
-    /// The same body under a status the handler picks at run time.
-    ///
-    /// Deliberately <see cref="IResult"/> and therefore deliberately
-    /// undocumented: <see cref="IEndpointMetadataProvider.PopulateMetadata"/>
-    /// is static, so a type cannot describe a status chosen per call - it could
-    /// only ever claim 200, which for the 202 callers here would be a document
-    /// that is confidently wrong. Every caller of this overload has more than
-    /// one outcome, and those name their responses at the <c>MapX</c> call
-    /// where all of them are visible at once.
-    /// </summary>
+    // IResult on purpose: PopulateMetadata is static and cannot document a per-call status; callers name responses at MapX
     public static IResult Json<T>(T value, int status) => new ConnectorJsonResult<T>(value, status);
 
     public static IResult Error(ConnectorException exception, string? detailId = null, int? retryAfterSeconds = null)
@@ -77,12 +48,7 @@ public static class ConnectorResults
         return Envelope(exception.Error, exception.Status, detailId, null);
     }
 
-    /// <summary>
-    /// Maps anything that escaped to an envelope. An unexpected exception
-    /// becomes <see cref="ErrorCode.Internal"/> with a correlation id and
-    /// nothing else - a caller never receives a stack trace or a message we
-    /// did not choose.
-    /// </summary>
+    // an unexpected exception becomes Internal with a correlation id only, never a stack trace or a message we did not choose
     public static IResult FromException(Exception exception, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -101,7 +67,6 @@ public static class ConnectorResults
                 return Error(connector);
 
             case OperationCanceledException:
-                // The caller went away. Nothing to report and nobody to report to.
                 return Envelope(new ConnectorException(ErrorCode.Internal, "request cancelled"),
                     StatusCodes.Status499ClientClosedRequest, null, null);
 
@@ -123,22 +88,8 @@ public static class ConnectorResults
             statusCode: status);
 }
 
-/// <summary>
-/// The funnel's own result: the same bytes <c>Results.Json</c> would have
-/// written, and a type the reference can read.
-///
-/// It exists because response documentation in minimal APIs is inferred from
-/// the handler's declared return type, and every helper that returns
-/// <see cref="IResult"/> erases it. <c>TypedResults.Json</c> is not the way
-/// out - its <c>JsonHttpResult&lt;T&gt;</c> contributes no response-type
-/// metadata at all - so the funnel that already owns "how a body is written"
-/// takes on "what the body is" as well.
-///
-/// Declaring it once here rather than as <c>.Produces&lt;T&gt;()</c> on every
-/// route is the same call the rest of this file makes: a wire property should
-/// be a consequence of the code path, not a line somebody has to remember on
-/// route thirty-seven.
-/// </summary>
+// IResult helpers erase the return type and TypedResults.Json adds no response metadata,
+// so the funnel owns the body type too
 public sealed class ConnectorJsonResult<T> : IResult, IEndpointMetadataProvider, IStatusCodeHttpResult, IValueHttpResult<T>
 {
     private readonly T _value;
@@ -157,11 +108,7 @@ public sealed class ConnectorJsonResult<T> : IResult, IEndpointMetadataProvider,
         Results.Json(_value, ConnectorJson.Options, contentType: null, statusCode: StatusCode)
             .ExecuteAsync(httpContext);
 
-    /// <summary>
-    /// Static, so it can only ever claim the default status - which is exactly
-    /// why <see cref="ConnectorResults.Json{T}(T, int)"/> returns a bare
-    /// <see cref="IResult"/> instead of coming through here.
-    /// </summary>
+    // static, so it can only claim the default status; hence Json(value, status) returns a bare IResult
     static void IEndpointMetadataProvider.PopulateMetadata(MethodInfo method, EndpointBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);

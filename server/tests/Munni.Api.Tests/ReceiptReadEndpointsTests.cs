@@ -10,7 +10,6 @@ using Munni.Api.Shopping;
 
 namespace Munni.Api.Tests;
 
-/// <summary>A reader that answers what the test tells it to, and remembers what it was asked.</summary>
 internal sealed class ScriptedReceiptReader : IReceiptReader
 {
     public int Reads;
@@ -68,10 +67,7 @@ public class ReceiptReadApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>
-/// #567: a receipt photo read by a vision model through the API. One
-/// factory per test — the per-person counts live in the API's memory.
-/// </summary>
+// #567: one factory per test: the per-person counts live in the API's memory
 public class ReceiptReadEndpointsTests
 {
     private const string Jpeg = "data:image/jpeg;base64,/9j/4AAQ";
@@ -153,7 +149,6 @@ public class ReceiptReadEndpointsTests
         Assert.Equal(HttpStatusCode.Forbidden, (await shopper.GetAsync("/admin/receipt-reading")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync("/admin/receipt-reading", new { dailyPerUser = 0, monthlyCap = 5 })).StatusCode);
 
-        // the model is the operator's choice too: none named is the reader's own default; a sentence is no model
         Assert.Equal("scripted-default", before.GetProperty("defaultModel").GetString());
         Assert.Equal(JsonValueKind.Null, before.GetProperty("model").ValueKind);
         Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync("/admin/receipt-reading", new { dailyPerUser = 2, monthlyCap = 1000, model = "the cheap one please" })).StatusCode);
@@ -166,7 +161,6 @@ public class ReceiptReadEndpointsTests
         var limited = await ReadAsync(shopper, Jpeg);
         Assert.Equal("limited", limited.GetProperty("state").GetString());
         Assert.Equal(new DateTimeOffset(2026, 11, 13, 0, 0, 0, TimeSpan.Zero), limited.GetProperty("until").GetDateTimeOffset());
-        // the limit is each person's own, and tomorrow it starts over
         Assert.Equal("ok", (await ReadAsync(ClientFor(factory, "somebody-else"), Jpeg)).GetProperty("state").GetString());
         factory.Clock.Advance(TimeSpan.FromDays(1));
         Assert.Equal("ok", (await ReadAsync(shopper, Jpeg)).GetProperty("state").GetString());
@@ -202,7 +196,6 @@ public class ReceiptReadEndpointsTests
             Assert.Equal("2", (await db.AppSettings.FindAsync(ReceiptReadEndpoints.MonthCountPrefix + "2026-11"))?.Value);
         }
 
-        // December starts at nothing
         factory.Clock.Advance(TimeSpan.FromDays(20));
         Assert.Equal("unreadable", (await ReadAsync(ClientFor(factory, "three"), Jpeg)).GetProperty("state").GetString());
     }
@@ -221,7 +214,6 @@ public class ReceiptReadEndpointsTests
         factory.Reader.Answer = () => throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 60 seconds elapsing.");
         Assert.Equal("unavailable", (await ReadAsync(shopper, Jpeg)).GetProperty("state").GetString());
         Assert.Equal(0, (await admin.GetFromJsonAsync<JsonElement>("/admin/receipt-reading")).GetProperty("readThisMonth").GetInt32());
-        // the one read of the day is still there
         factory.Reader.Answer = () => new ReadReceipt("Shop", null, null, 100, [new ReadLine("Thing", null, null, 100, "item", null)]);
         Assert.Equal("ok", (await ReadAsync(shopper, Jpeg)).GetProperty("state").GetString());
     }
@@ -260,7 +252,6 @@ public class ReceiptReadEndpointsTests
         Assert.Null(checkedReceipt.Currency);
         Assert.Equal(4, checkedReceipt.Lines.Count);
         Assert.Equal(new ReceiptLine("Kaas jong belegen", 0.456m, 1200, 547, "item", "groceries"), checkedReceipt.Lines[0]);
-        // a discount takes off whatever sign it came with, and files under nothing
         Assert.Equal(new ReceiptLine("Korting", 1, 100, -100, "discount", null), checkedReceipt.Lines[1]);
         Assert.Equal(new ReceiptLine("Statiegeld", 2, 25, 50, "deposit", null), checkedReceipt.Lines[2]);
         // a kind and a category the reader made up fall back to an item without a category
@@ -269,7 +260,6 @@ public class ReceiptReadEndpointsTests
         Assert.False(checkedReceipt.Reconciled);
         Assert.Equal(1500, checkedReceipt.TotalCents);
 
-        // no printed total: the receipt is worth its lines
         var summed = ReceiptReadCheck.Normalize(new ReadReceipt(null, "2026-11-12", "EUR", null, [new ReadLine("A", null, null, 300, "item", null)]), categories)!;
         Assert.Equal((300, true, "2026-11-12", "EUR"), (summed.TotalCents, summed.Reconciled, summed.Date, summed.Currency));
         Assert.Null(ReceiptReadCheck.Normalize(null, categories));

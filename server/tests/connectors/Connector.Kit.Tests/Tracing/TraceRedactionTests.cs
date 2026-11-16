@@ -3,11 +3,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Tracing;
 
-/// <summary>
-/// What a recording may never contain (#441 L3): the rules by name and by
-/// value, pinned one by one, because a trace is the one artefact the
-/// platform makes whose whole purpose is to be read by somebody else.
-/// </summary>
+// a trace is the one artefact meant to be read by somebody else, so each redaction rule is pinned (#441)
 public sealed class TraceRedactionTests
 {
     [Fact]

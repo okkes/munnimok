@@ -2,104 +2,32 @@ using Connector.Kit.Challenges;
 
 namespace Connector.Kit.Hosting.Live;
 
-/// <summary>
-/// The live view's entire memory: the newest picture of each streamed login,
-/// and the events the human made that the agent has not collected yet.
-///
-/// Nothing here ever reaches a table, and that is the feature rather than an
-/// optimisation. A frame is a photograph of somebody's provider login page -
-/// their e-mail address in plain text, their password as dots, whatever the
-/// provider happens to be showing - and it is worthless a tenth of a second
-/// later. Writing it to Postgres would put the provider's authenticated pixels
-/// at rest in the control plane, which is the exact custody problem a streamed
-/// login exists to remove. The same goes for the events coming back: a
-/// keystroke that landed in a column would be the password we just went to
-/// this much trouble not to have.
-///
-/// Three bounds, because "in memory" without them is a leak with a nicer name:
-///
-/// <list type="bullet">
-/// <item>ONE frame per job. A new one REPLACES the old rather than queueing
-/// behind it - a consumer that fell behind wants the login as it is, not a
-/// slideshow of how it was.</item>
-/// <item>A bounded event queue per job. <see cref="Enqueue"/> says what gives
-/// way when it fills.</item>
-/// <item>A bounded number of jobs, and an idle window. A login abandoned
-/// mid-stream - the tab closed, the phone back in a pocket - stops being
-/// written to, and <see cref="Sweep"/> drops it. If no sweep ever runs the job
-/// cap still evicts the least recently written entry, so the worst case is
-/// <see cref="MaxJobs"/> x (<see cref="MaxFrameBytes"/> +
-/// <see cref="MaxQueuedEvents"/> events) ~= 40 MB whatever anybody forgets to
-/// call.</item>
-/// </list>
-///
-/// Instance-local, deliberately and for now. A job's frames and its input have
-/// to reach the same process for the life of the stream, which is the first
-/// session-scoped affinity in the platform; today the shop connector runs one
-/// replica and this costs nothing. Frames in a shared cache would be the same
-/// custody mistake as frames in a table, so the answer when a second replica
-/// arrives is routing, not storage.
-/// </summary>
+// memory only, deliberately: frames are photos of a provider login and events carry keystrokes
+// bounds: ONE frame per job (replaced, not queued), bounded events, a job cap, an idle window; worst case ~40 MB
+// instance-local for now: a second replica needs routing, not shared storage
 public sealed class LiveChannel(TimeProvider time)
 {
-    /// <summary>
-    /// A refusal, not a tuning knob. A phone-sized JPEG of a login page is
-    /// tens of kilobytes; anything near a megabyte is an agent sending
-    /// something that is not a frame, and a frame slot is not a place to find
-    /// that out later.
-    /// </summary>
+    // a refusal, not a tuning knob: a phone-sized login JPEG is tens of KB, near 1 MB is not a frame
     public const int MaxFrameBytes = 1024 * 1024;
 
-    /// <summary>
-    /// Four full batches' worth. Enough that a drag across the screen survives
-    /// an agent that is a poll behind, small enough that a consumer cannot
-    /// make the connector hold its gestures indefinitely.
-    /// </summary>
+    // four batches: a drag survives an agent a poll behind, yet a consumer cannot make the connector hold gestures indefinitely
     public const int MaxQueuedEvents = 4 * LiveInputBatch.MaxEvents;
 
-    /// <summary>
-    /// How many logins may be streaming at once before the least recently
-    /// written one is dropped. Far above what a fleet running one browser slot
-    /// can actually serve; it exists so that memory is bounded by construction
-    /// rather than by the sweeper being wired up.
-    /// </summary>
+    // far above what one browser slot serves; bounds memory by construction, not by the sweeper running
     public const int MaxJobs = 32;
 
-    /// <summary>
-    /// How long an entry survives with nothing written to it in either
-    /// direction. A streamed login writes several times a second, so silence
-    /// this long means the stream is over however it ended.
-    /// </summary>
+    // a streamed login writes several times a second, so this much silence means the stream is over
     public static readonly TimeSpan IdleWindow = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// One lock for the whole map rather than one per entry. Every critical
-    /// section here is a reference swap or a walk of a list bounded by
-    /// <see cref="MaxQueuedEvents"/> - the bytes are read off the wire and
-    /// handed over as an already-built array - so there is nothing to gain
-    /// from finer locking and a great deal to lose from getting it wrong.
-    /// </summary>
+    // one lock for the whole map: every critical section is a reference swap or a bounded list walk
     private readonly Lock _gate = new();
 
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// The streams waiting on a job's next picture (#429). Kept beside the
-    /// entries rather than in them: a waiter must not admit an entry, because
-    /// reads never keep a login alive (see <see cref="Sweep"/>).
-    /// </summary>
+    // stream waiters (#429), beside the entries: a waiter must not admit an entry, as reads never keep a login alive
     private readonly Dictionary<string, Pulse> _pulses = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Stores the newest picture of a job, and says whether it was kept.
-    ///
-    /// False means the frame was older than the one already held. Two POSTs
-    /// can overtake each other on a mobile uplink, and a picture from the past
-    /// replacing the present would show the human their login as it was a
-    /// moment ago - with the cursor, the error banner and the field contents
-    /// of that moment - which is worse than dropping it, because they would
-    /// act on it.
-    /// </summary>
+    // false when the frame is older than the held one: POSTs can overtake on mobile, and the human would act on a stale picture
     public bool Publish(string jobId, LiveFrame frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
@@ -116,7 +44,6 @@ public sealed class LiveChannel(TimeProvider time)
         }
     }
 
-    /// <summary>The newest picture of a job, or null when none has arrived yet.</summary>
     public LiveFrame? Frame(string jobId)
     {
         lock (_gate)
@@ -125,22 +52,8 @@ public sealed class LiveChannel(TimeProvider time)
         }
     }
 
-    /// <summary>
-    /// The newest picture numbered past <paramref name="after"/>, waiting up
-    /// to <paramref name="window"/> for one to be published (#429, the
-    /// pushed stream).
-    ///
-    /// The check and the registration happen under the lock
-    /// <see cref="Publish"/> takes, so a frame published between "nothing
-    /// newer" and "wait" still wakes the waiter - the signal-then-sleep
-    /// pattern elsewhere in this service can lose that one, and at a dozen
-    /// frames a second a lost wake-up is a visible stall.
-    ///
-    /// No frame when the window passed with nothing newer, or when the job's
-    /// entry went (dropped at a terminal state, swept, evicted) - which wakes
-    /// the waiter at once and says so, so the caller reads the run again
-    /// instead of waiting out its window.
-    /// </summary>
+    // check and registration run under Publish's lock, so a frame landing between "nothing newer" and "wait" still wakes (#429)
+    // no frame when the window passed or the entry went (Ended), so the caller re-reads the run instead of waiting
     public async Task<LiveWait> NextFrameAsync(string jobId, long after, TimeSpan window, CancellationToken ct)
     {
         Pulse pulse;
@@ -184,25 +97,9 @@ public sealed class LiveChannel(TimeProvider time)
         }
     }
 
-    /// <summary>
-    /// Takes what the human just did, and says how many older events had to go
-    /// to make room.
-    ///
-    /// The batch is taken WHOLE - a gesture is refused whole or dispatched
-    /// whole, never half - and then the queue is trimmed back to
-    /// <see cref="MaxQueuedEvents"/> from the front, oldest
-    /// <see cref="LiveInputKind.Move"/> first. That ordering is the whole
-    /// policy and it is not symmetric: a pointer position the human has
-    /// already moved past is worth nothing, while a click, a keystroke or a
-    /// typed character is something they chose to do exactly once. Refusing
-    /// the NEWEST events instead - the obvious way to bound a queue - would
-    /// throw away the tap they just made in favour of thirty stale hover
-    /// positions.
-    ///
-    /// The count comes back so a caller can log how many events were dropped.
-    /// Never what they were: an event carries the characters of somebody's
-    /// password, and no log line in this platform may be able to hold one.
-    /// </summary>
+    // the batch is taken whole (a gesture is refused or dispatched whole), then trimmed from the front, oldest Move first
+    // refusing the newest events would drop the tap just made in favour of stale hover positions
+    // only a count comes back: events carry password characters, and no log may hold one
     public int Enqueue(string jobId, LiveInputBatch batch)
     {
         ArgumentNullException.ThrowIfNull(batch);
@@ -225,29 +122,8 @@ public sealed class LiveChannel(TimeProvider time)
         }
     }
 
-    /// <summary>
-    /// Hands the agent everything the human did after <paramref name="after"/>,
-    /// in the order they did it.
-    ///
-    /// <paramref name="after"/> is the CONSUMER's own counter -
-    /// <see cref="LiveInput.Sequence"/> - and not a cursor of the connector's,
-    /// because the batch on the wire carries no field a cursor could ride back
-    /// on: the only number the agent can learn from a response is the sequence
-    /// of the events in it, so that is the only number it can ask about next.
-    /// A consumer whose counter does not advance therefore starves itself,
-    /// which is the same monotonicity the agent's own de-duplication already
-    /// requires of it.
-    ///
-    /// Asking clears the acknowledgement: everything at or below
-    /// <paramref name="after"/> has demonstrably arrived and is dropped. What
-    /// is above it stays queued until a later poll says otherwise, so a
-    /// response lost between here and the agent is re-delivered rather than
-    /// silently gone.
-    ///
-    /// Never more than <see cref="LiveInputBatch.MaxEvents"/> at a time, so
-    /// what comes back is itself a well-formed batch; the rest waits for the
-    /// next poll, which is one round trip away.
-    /// </summary>
+    // after is the CONSUMER's counter (LiveInput.Sequence): the wire batch has no field a cursor could ride back on
+    // asking acknowledges everything <= after; the rest stays queued so a lost response is re-delivered
     public LiveInputBatch Collect(string jobId, long after)
     {
         lock (_gate)
@@ -264,14 +140,8 @@ public sealed class LiveChannel(TimeProvider time)
         }
     }
 
-    /// <summary>
-    /// Forgets a job's frame and its queued input, now.
-    ///
-    /// Called when a job reaches a terminal state. That is the prompt path and
-    /// not the guarantee - a job can also die inside the queue on an expired
-    /// lease, without passing through the outcome service - which is why
-    /// <see cref="Sweep"/> exists and why the entry count is capped.
-    /// </summary>
+    // the prompt path, not the guarantee: a job can die in the queue on an expired lease without the outcome service
+    // (hence Sweep and the cap)
     public bool Drop(string jobId)
     {
         lock (_gate)
@@ -282,17 +152,7 @@ public sealed class LiveChannel(TimeProvider time)
         }
     }
 
-    /// <summary>
-    /// Drops every entry nothing has been written to for
-    /// <see cref="IdleWindow"/>, and answers how many went.
-    ///
-    /// This is what closes the abandoned login: the human shut the tab, the
-    /// agent's job will eventually time out, and in between there is a
-    /// photograph of a half-typed login form sitting in memory with nobody
-    /// coming for it. Reads deliberately do not count as traffic - a consumer
-    /// polling a stream whose agent stopped posting is looking at something
-    /// that is already over.
-    /// </summary>
+    // closes the abandoned login (tab shut, half-typed form left in memory); reads deliberately do not count as traffic
     public int Sweep()
     {
         var cutoff = time.GetUtcNow() - IdleWindow;
@@ -326,9 +186,7 @@ public sealed class LiveChannel(TimeProvider time)
     {
         if (_entries.TryGetValue(jobId, out var existing)) return existing;
 
-        // The cap is a backstop, so it evicts rather than refuses: a new
-        // login is the one that has a human in front of it, and the entry it
-        // displaces is the one nothing has been written to for longest.
+        // the cap evicts rather than refuses: a new login has a human in front of it; the displaced entry is the longest unwritten
         while (_entries.Count >= MaxJobs)
         {
             var oldest = _entries.MinBy(e => e.Value.WrittenAt).Key;
@@ -341,14 +199,10 @@ public sealed class LiveChannel(TimeProvider time)
         return entry;
     }
 
-    /// <summary>Under the lock: the held picture when it is past <paramref name="after"/>.</summary>
     private LiveFrame? Newer(string jobId, long after) =>
         _entries.TryGetValue(jobId, out var entry) && entry.Frame is { } frame && frame.Sequence > after ? frame : null;
 
-    /// <summary>
-    /// Under the lock: releases every stream waiting on the job. The
-    /// continuations run elsewhere, never inside the lock.
-    /// </summary>
+    // under the lock; the continuations run elsewhere, never inside it
     private void Wake(string jobId, bool ended)
     {
         if (!_pulses.Remove(jobId, out var pulse)) return;
@@ -359,32 +213,24 @@ public sealed class LiveChannel(TimeProvider time)
 
     private static readonly LiveInputBatch Empty = new();
 
-    /// <summary>One job's waiters share one completion, counted so the last to leave removes it.</summary>
     private sealed class Pulse
     {
         public TaskCompletionSource Source { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int Waiters { get; set; }
 
-        /// <summary>Woken because the entry went, not because a picture arrived.</summary>
         public bool Ended { get; set; }
     }
 
-    /// <summary>
-    /// One streamed login's worth of memory. A list rather than a queue
-    /// because the drop policy removes from the middle - the oldest MOVE, not
-    /// simply the oldest event.
-    /// </summary>
+    // a list, not a queue: the drop policy removes from the middle (oldest Move, not oldest event)
     private sealed class Entry
     {
         public LiveFrame? Frame { get; set; }
 
         public List<LiveInput> Pending { get; } = [];
 
-        /// <summary>Last write in either direction. See <see cref="Sweep"/>.</summary>
         public DateTimeOffset WrittenAt { get; set; }
     }
 }
 
-/// <summary>What a wait for the next picture came back with: the picture, or nothing - and whether the run's entry ended.</summary>
 public readonly record struct LiveWait(LiveFrame? Frame, bool Ended);

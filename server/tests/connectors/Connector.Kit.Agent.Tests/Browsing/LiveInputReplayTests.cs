@@ -4,17 +4,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// Where a relayed event lands, and everything that must NOT reach the page.
-///
-/// These stand between a human touching a picture of a login form on their
-/// phone and this agent doing something else entirely to a live browser holding
-/// somebody's session. The arithmetic is one line; every other test here is
-/// about a refusal.
-/// </summary>
+/// the arithmetic is one line; every other test is about a refusal: only a well-formed event may reach a live browser
 public class LiveInputReplayTests
 {
-    /// <summary>A phone-sized frame, which is the shape the agent really streams.</summary>
     private static readonly (int Width, int Height) Frame = (390, 844);
 
     [Fact]
@@ -38,12 +30,8 @@ public class LiveInputReplayTests
         Assert.Equal([(0d, 0d), (390d, 0d), (0d, 844d), (390d, 844d)], surface.Moves);
     }
 
-    /// <summary>
-    /// The bug this exists to catch: Playwright's mouse has no coordinates on
-    /// press or release - they act wherever the pointer already is - so a press
-    /// dispatched without moving first lands wherever the last event left it,
-    /// which after any pause is somewhere the human is not looking.
-    /// </summary>
+    /// Playwright's mouse press and release take no coordinates:
+    /// a press without a move lands wherever the last event left the pointer
     [Fact]
     public async Task A_press_moves_to_the_point_before_it_presses()
     {
@@ -54,11 +42,7 @@ public class LiveInputReplayTests
         Assert.Equal(["move 78,675.2", "down", "move 78,675.2", "up"], surface.Trace);
     }
 
-    /// <summary>
-    /// <c>WheelAsync</c> takes no position either, so the same rule applies -
-    /// and getting it wrong scrolls whatever the last click was over, which on
-    /// a login page is the field the human was typing in.
-    /// </summary>
+    /// WheelAsync takes no position either: unmoved, it scrolls whatever the last click was over, e.g. the field being typed in
     [Fact]
     public async Task A_scroll_moves_first_and_travels_in_fractions_of_the_frame()
     {
@@ -69,11 +53,7 @@ public class LiveInputReplayTests
         Assert.Equal(["move 195,422", "scroll 211"], surface.Trace);
     }
 
-    /// <summary>
-    /// A distance, not a position, so it is clamped rather than refused - and
-    /// clamped before it can become <c>float.Infinity</c> halfway through a
-    /// batch, which is the outcome the whole-or-nothing rule exists to prevent.
-    /// </summary>
+    /// a scroll is a distance, so it is clamped rather than refused: before it becomes float.Infinity halfway through a batch
     [Fact]
     public async Task An_absurd_scroll_distance_is_clamped_rather_than_dispatched_as_infinity()
     {
@@ -91,8 +71,7 @@ public class LiveInputReplayTests
     {
         var surface = new RecordingLiveSurface();
 
-        // The exact string PressAsync's own documentation says it reads as a
-        // chord. It must arrive as nine characters of text and press nothing.
+        // the string PressAsync's documentation reads as a chord: it must arrive as nine characters of text and press nothing
         await ReplayAsync(surface, [Text("Control+o")]);
 
         Assert.Equal("Control+o", Assert.Single(surface.Texts));
@@ -108,20 +87,14 @@ public class LiveInputReplayTests
 
             Assert.NotNull(literal);
 
-            // The whole hazard in one assertion. PressAsync's own documentation
-            // says "Control+o"-style shortcuts are supported, so a literal that
-            // could carry a separator would be a way to reach a file dialog
-            // from a key channel.
+            // PressAsync reads "Control+o"-style chords:
+            // a literal that could carry a separator would reach a file dialog from the key channel
             Assert.DoesNotContain("+", literal, StringComparison.Ordinal);
             Assert.DoesNotContain(" ", literal, StringComparison.Ordinal);
         }
     }
 
-    /// <summary>
-    /// A value nobody wrote an arm for is a refusal, never a fallback. This is
-    /// what a key from a newer contract, or an integer a deserialiser cast into
-    /// the enum, arrives as.
-    /// </summary>
+    /// a value nobody wrote an arm for (a newer contract's key, an integer cast into the enum) is a refusal, never a fallback
     [Fact]
     public void A_key_this_build_does_not_know_maps_to_nothing()
     {
@@ -140,16 +113,8 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Trace);
     }
 
-    /// <summary>
-    /// An event kind this build has no word for never reaches the page, and the
-    /// batch carrying it is refused whole.
-    ///
-    /// The half of the fix that is a proof of unreachability: the contract's
-    /// <c>IsWellFormed</c> now asks <c>Enum.IsDefined</c> first, so the
-    /// dispatcher's own refusal below is belt and braces. Worth pinning here,
-    /// because the enum converter reads an integer as happily as a name and this
-    /// is the only thing that says so.
-    /// </summary>
+    /// IsWellFormed asks Enum.IsDefined first, so the dispatcher's own refusal is belt and braces;
+    /// the enum converter accepts integers
     [Fact]
     public async Task An_event_kind_this_build_does_not_know_never_reaches_the_page()
     {
@@ -162,17 +127,8 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Trace);
     }
 
-    /// <summary>
-    /// And if one ever did reach the dispatcher, it costs that one event.
-    ///
-    /// This is the arm that was commented "unreachable" and was not: it threw an
-    /// <c>ArgumentOutOfRangeException</c>, which matched no catch filter around
-    /// the call, escaped the replay loop and faulted the input task for the rest
-    /// of the login - frames still arriving, nothing the human did working
-    /// again, one debug line at disposal. Called directly, because the only
-    /// route to it from outside is a hole that has since been closed, and
-    /// "unreachable" is exactly the claim that failed the first time.
-    /// </summary>
+    /// the arm once commented "unreachable" threw ArgumentOutOfRangeException, escaped the replay loop and faulted
+    /// the input task for the rest of the login; called directly, because "unreachable" is the claim that failed
     [Fact]
     public async Task A_kind_that_reaches_the_dispatcher_anyway_is_refused_rather_than_thrown()
     {
@@ -189,15 +145,8 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Trace);
     }
 
-    /// <summary>
-    /// The same for the two arms that used to trust a nullable: a key with no
-    /// literal, and a text event with no text, are refusals at the dispatcher
-    /// and not exceptions out of it.
-    ///
-    /// <c>PressAsync</c>'s one real implementation throws on a key it has no
-    /// word for, and <c>input.Text!</c> was a null-forgiving operator standing
-    /// in for a check that lived somewhere else entirely.
-    /// </summary>
+    /// a key with no literal and a text event with no text are refusals at the dispatcher, not exceptions
+    /// (PressAsync throws on an unknown key)
     [Theory]
     [InlineData(LiveInputKind.Key)]
     [InlineData(LiveInputKind.Text)]
@@ -216,12 +165,8 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Trace);
     }
 
-    /// <summary>
-    /// The batch is the unit, and a half-dispatched batch is worse than none:
-    /// refusing only the bad event in the middle of Down/Move/Up leaves the
-    /// button held down on a page the human is still looking at, with no event
-    /// left to release it.
-    /// </summary>
+    /// the batch is the unit: refusing only a middle event of Down/Move/Up leaves the button held down
+    /// with nothing left to release it
     [Fact]
     public async Task One_malformed_event_refuses_the_whole_batch()
     {
@@ -257,10 +202,7 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Texts);
     }
 
-    /// <summary>
-    /// Enter is available as a key and says so; a newline smuggled inside a
-    /// "typed" string submits a form the human was still filling in.
-    /// </summary>
+    /// Enter exists as a key; a newline inside "typed" text would submit a form the human is still filling in
     [Fact]
     public async Task Text_carrying_a_control_character_is_refused()
     {
@@ -270,11 +212,7 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Texts);
     }
 
-    /// <summary>
-    /// The redactor's refusal arriving here, exactly as it arrives in the tap
-    /// relay: if no frame ever left this machine then nobody saw anything, and
-    /// these events cannot be answers to it.
-    /// </summary>
+    /// the redactor's refusal as in the tap relay: no frame left this machine, so these events cannot be answers to it
     [Fact]
     public async Task Input_that_answers_no_picture_is_refused()
     {
@@ -287,10 +225,6 @@ public class LiveInputReplayTests
         Assert.Empty(surface.Trace);
     }
 
-    /// <summary>
-    /// A failure mid-batch stops the batch rather than carrying on into a page
-    /// that has just proved it is not there.
-    /// </summary>
     [Fact]
     public async Task A_dispatch_that_fails_stops_the_rest_of_the_batch()
     {

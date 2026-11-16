@@ -2,13 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Adapters;
 
-/// <summary>
-/// An adapter behind an account the operator holds at a third party — an
-/// open-banking aggregator — can list what that account holds: every consent
-/// the aggregator knows, whether or not a session here holds it. Foreign
-/// environments' consents and consents left behind by an earlier integration
-/// show up here, and the operator revokes them from the admin portal.
-/// </summary>
+// lists every consent the aggregator knows, held by a session here or not (other environments', an earlier integration's);
+// the operator revokes them from the admin portal
 public interface IRemoteInventory
 {
     Task<IReadOnlyList<RemoteConsent>> ListRemoteAsync(HttpClient http, CancellationToken ct);
@@ -19,7 +14,6 @@ public interface IRemoteInventory
 
 public sealed record RemoteConsent
 {
-    /// <summary>The party's own id — what <see cref="IRemoteInventory.RevokeRemoteAsync"/> takes.</summary>
     public required string Id { get; init; }
 
     public required string Status { get; init; }

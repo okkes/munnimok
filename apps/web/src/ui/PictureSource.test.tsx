@@ -72,7 +72,6 @@ describe('where a picture comes from', () => {
     const onFile = vi.fn();
     renderWithProviders(<Door onFile={onFile} openLibrary={openLibrary} hint="Netflix logo" />);
 
-    // the capability arrives a moment after the first render: from then on the door opens the choice
     await waitFor(() => {
       fireEvent.click(screen.getByTestId('door'));
       expect(screen.getByTestId('picture-source-search')).toBeTruthy();

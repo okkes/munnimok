@@ -30,8 +30,6 @@ public class ControlApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>/control shares the `admin` scope gate with /admin (AdminScope); the cockpit reads the
-/// connector control plane through /control/connectors/* (ConnectorOpenBankingTests walks a live one).</summary>
 public class ControlEndpointsTests : IClassFixture<ControlApiFactory>
 {
     private readonly ControlApiFactory _factory;

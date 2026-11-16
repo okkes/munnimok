@@ -23,38 +23,32 @@ interface HealthInfo {
   capabilities?: Record<string, unknown>;
 }
 
-/** "1 space · 2 bank feeds" — the IBAN-keyed feeds a bank connection adds are counted apart from the spaces */
 function membershipLabel(u: AdminUser): string {
   const spaces = `${u.spaceCount} space${u.spaceCount === 1 ? '' : 's'}`;
   if (!u.feedCount) return spaces;
   return `${spaces} · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}`;
 }
 
-/** the invitations as the API lists them, or the one line that says why it could not (Logto down, an older API) */
 async function readInvitations(res: Response | null): Promise<InvitationsDoc | string> {
   if (res?.ok) return (await res.json()) as InvitationsDoc;
   return failureLine(res);
 }
 
-/** #567: the receipt reader's settings, or why they could not be read (an older API answers 404) */
 async function readReceiptReading(res: Response | null): Promise<ReceiptReadingDoc | string> {
   if (res?.ok) return (await res.json()) as ReceiptReadingDoc;
   return failureLine(res);
 }
 
-/** #521: the picture search's limit and month, or why they could not be read (an older API answers 404) */
 async function readImageSearch(res: Response | null): Promise<ImageSearchDoc | string> {
   if (res?.ok) return (await res.json()) as ImageSearchDoc;
   return failureLine(res);
 }
 
-/** user 2026-10-09: the bank connections as the API lists them, or why it could not (an older API answers 404) */
 async function readBankConnections(res: Response | null): Promise<BankConnectionsDoc | string> {
   if (res?.ok) return (await res.json()) as BankConnectionsDoc;
   return failureLine(res);
 }
 
-/** a plain string from this api, else the status, else the network */
 async function failureLine(res: Response | null): Promise<string> {
   const body = (await res?.json().catch(() => null)) as { error?: string } | null;
   return body?.error ?? (res ? `HTTP ${res.status}` : 'network');
@@ -63,7 +57,6 @@ async function failureLine(res: Response | null): Promise<string> {
 type Screen = 'overview' | 'users' | 'invitations' | 'connectors' | 'bank-connections' | 'catalog' | 'image-search' | 'receipt-reading';
 const SCREENS: Screen[] = ['overview', 'users', 'invitations', 'connectors', 'bank-connections', 'catalog', 'image-search', 'receipt-reading'];
 
-/** the operator-published catalog document (admin-catalog design AC2) */
 interface CatalogCategory {
   id: string;
   parentId?: string;
@@ -76,8 +69,7 @@ interface CatalogKeywordRule {
   catId: string;
   keywords: string[];
 }
-/** receipts v3 R9: operator-curated merchant patterns per store — the
- *  receipt auto-matcher improves without an app release */
+/** receipts v3 R9: operator-curated merchant patterns per store, so the auto-matcher improves without an app release */
 interface CatalogStoreRule {
   id: string;
   patterns: string[];
@@ -108,11 +100,7 @@ interface BundledKeywordRule {
   keywords: string[];
 }
 
-/**
- * This browser's stable device id: the API stamps every authenticated
- * request's device (X-Munni-Device) and refuses requests that name none,
- * so the account's Logged-in devices screen can list and disconnect it.
- */
+/** the API refuses requests naming no device (X-Munni-Device): one stable id per browser, listed in Logged-in devices */
 const DEVICE_KEY = 'munni_admin_device';
 function deviceId(): string {
   try {
@@ -137,21 +125,15 @@ interface AdminAppProps {
   config: AdminConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
   getToken: (() => Promise<string | undefined>) | null;
-  /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
+  /** absent in test-auth mode; a freshly granted admin role rides on the next token */
   signOut?: () => void;
   /** the OIDC session's state (absent in test-auth mode): a dead refresh grant, and the way back in */
   session?: { expired: boolean; signIn: () => void };
 }
 
-/**
- * munni admin console (admin-redesign): a desktop-first operator tool —
- * overview, user management, and bank-connection
- * upkeep. Talks to the same API (/admin/* gated server-side); it
- * deliberately shares no code with the member app.
- */
+/** shares no code with the member app on purpose; /admin/* is gated server-side */
 export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminAppProps>) {
-  // survives the full page reload a Logto re-auth causes (else every token
-  // hiccup dumps the operator back on Overview mid-task)
+  // survives the page reload a Logto re-auth causes: else every token hiccup dumps the operator back on Overview
   const [screen, setScreen] = useState<Screen>(() => {
     const saved = sessionStorage.getItem('munni_admin_screen');
     return saved && (SCREENS as readonly string[]).includes(saved) ? (saved as Screen) : 'overview';
@@ -164,18 +146,14 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
-  // the invitations as last listed; a string says why they could not be (the screen shows it, never an empty table)
   const [invitations, setInvitations] = useState<InvitationsDoc | string | null>(null);
-  // user 2026-10-09: the bank connections as last listed (every party on request), the same way
   const [bankConnections, setBankConnections] = useState<BankConnectionsDoc | string | null>(null);
   const [bankAll, setBankAll] = useState(false);
   const [imageSearch, setImageSearch] = useState<ImageSearchDoc | string | null>(null);
   const [receiptReading, setReceiptReading] = useState<ReceiptReadingDoc | string | null>(null);
-  // what the last act came to, where it has something to say (a disconnect's outcome at the party)
   const [notice, setNotice] = useState<string | null>(null);
-  // 'denied' = the api really said 403; 'unreachable' = the ping never
-  // got an answer (network/CORS/5xx) — one shared message made a blocked
-  // request read as "not an admin" (found live 2026-08-28, control twin)
+  // 'denied' = the api said 403; 'unreachable' = no answer (network/CORS/5xx): one shared message made a blocked
+  // request read as "not an admin"
   const [denied, setDenied] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
   // 'disconnected' = the api said 410: this browser's device was revoked
@@ -205,9 +183,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   // blocked: nothing loaded — the empty screens would only mislead (a dead session included)
   const blocked = denied || unreachable || disconnected || sessionExpired;
   const reload = useCallback(async () => {
-    // a dead refresh grant (prod Logto logs 2026-10-08): no call would carry a
-    // bearer, so none goes out — the note below says why instead of "did not
-    // answer", and nothing hammers the api with 401s meanwhile
+    // a dead refresh grant: no call would carry a bearer, so none goes out (no 401 hammering, no false "did not answer")
     if (sessionExpired) return;
     const ping = await call('/admin/ping').catch(() => null);
     if (ping?.status === 410) {
@@ -255,7 +231,6 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
     }
     await reload();
     setBusy(false);
-    // the answer rides along for the few acts that mint something (an invitation's link)
     return res;
   };
 
@@ -264,7 +239,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
 
-  // user 2026-10-09: a session ended from the portal — at the party, then forgotten here; the strip says what the party did
+  // ended at the party, then forgotten here; the strip says what the party did
   const disconnectSession = async (row: SessionRow): Promise<DisconnectOutcome | null> => {
     setNotice(null);
     const res = await act(() => call(`/admin/bank-connections/${encodeURIComponent(row.sessionId)}`, { method: 'DELETE' }));
@@ -274,7 +249,6 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
     return outcome;
   };
 
-  // every stale row of one person after one confirm: one call each, one reload, one line
   const cleanUpSessions = async (rows: BankConnectionRow[]) => {
     setBusy(true);
     setError(null);
@@ -362,7 +336,6 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
         )}
         {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
         {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
-        {/* blocked: no data loaded — the empty screens would only mislead */}
         {error && (
           <p className="error" data-testid="admin-error">
             {error}
@@ -440,7 +413,7 @@ export function AdminApp({ config, getToken, signOut, session }: Readonly<AdminA
   );
 }
 
-/** #441: the connectors are the lab's now — every operator act on a party, an agent or a slot lives there */
+/** #441: the connectors are the lab's now: every operator act on a party, an agent or a slot lives there */
 function LabHandoverScreen({ labUrl, onOpenBankConnections }: Readonly<{ labUrl: string; onOpenBankConnections: () => void }>) {
   return (
     <>
@@ -454,7 +427,7 @@ function LabHandoverScreen({ labUrl, onOpenBankConnections }: Readonly<{ labUrl:
           Open the lab
         </a>
       </section>
-      {/* user 2026-10-09: the people's own consents stay in this portal — the lab is about the parties, not the persons */}
+      {/* the people's own consents stay in this portal: the lab is about the parties, not the persons */}
       <section className="card">
         <p className="hint">
           The bank consents of the users — every GoCardless and Enable Banking connection, with a disconnect per row and a clean-up of the
@@ -480,7 +453,6 @@ function OverviewScreen({ users, health }: Readonly<{ users: AdminUser[]; health
         <Tile label="Bank feeds" value={String(users.reduce((sum, u) => sum + (u.feedCount ?? 0), 0))} />
       </div>
 
-      {/* the parties — banks included since #414 — live under Connectors: their state, their budget, their inventory */}
       {health && (
         <section className="card">
           <h2>Server</h2>
@@ -516,7 +488,7 @@ function UsersScreen({
   busy: boolean;
   /** resolves to the diagnosis, or a human-readable failure line */
   onDiagnose: (sub: string) => Promise<UserDiagnosis | string>;
-  /** user 2026-10-09: a session row's Disconnect — the diagnosis is read again once it settles */
+  /** the diagnosis is read again once it settles */
   onDisconnect: (row: SessionRow) => Promise<unknown>;
 }>) {
   const [query, setQuery] = useState('');
@@ -616,15 +588,11 @@ function UsersScreen({
 const TX_TYPES = ['expense', 'income', 'saving', 'transfer', 'debtPayment', 'investment', 'adjustment'];
 
 /**
- * Catalog editor (AC2): edits the OVERLAY document, not the app bundle —
- * entries here rename, add or retire built-in categories and extend the
- * prediction keywords. Publishing bumps the server-owned version; every
- * client picks it up on its next sync.
+ * edits the OVERLAY document, not the app bundle; publishing bumps the server-owned version, clients pick it up on next sync
  */
 /** what every app ships with — the baseline the overlay edits against */
 const BUNDLED = bundledCatalog as { categories: BundledCategory[]; keywords: BundledKeywordRule[] };
 
-/** one merged row of the tree: what ships + what the overlay says */
 interface TreeRow {
   id: string;
   parentId?: string;
@@ -676,8 +644,7 @@ function CatalogScreen({
 }>) {
   const [categories, setCategories] = useState<CatalogCategory[]>(doc.categories);
   const [keywords, setKeywords] = useState<CatalogKeywordRule[]>(doc.keywords);
-  // raw text per store (parsing on publish — a controlled parse-on-type
-  // input would swallow the comma the operator just typed)
+  // raw text per store, parsed on publish: a controlled parse-on-type input would swallow the comma just typed
   const [storeText, setStoreText] = useState<Record<string, string>>(() =>
     Object.fromEntries((doc.stores ?? []).map((s) => [s.id, s.patterns.join(', ')])),
   );
@@ -702,7 +669,6 @@ function CatalogScreen({
     return !q || row.id.toLowerCase().includes(q) || rowLabel(row).toLowerCase().includes(q);
   };
 
-  // keyword UX: humans pick and read category NAMES, ids stay subtitles
   const pretty = (id: string) => id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
   const catLabel = (id: string) => {
     const overlay = categories.find((c) => c.id === id && !isSyntheticTombstone(c));
@@ -739,8 +705,7 @@ function CatalogScreen({
     setFormOpen(false);
   };
 
-  /** retire/restore straight from the tree: bundled rows without an
-   *  overlay get a synthesized tombstone; restoring one removes it again */
+  /** a bundled row without an overlay gets a synthesized tombstone; restoring one removes it again */
   const toggleRow = (row: TreeRow) => {
     setConfirmDelete(null);
     if (!row.overlay) {
@@ -906,8 +871,7 @@ function CatalogScreen({
                   .map((row) => (
                     <Fragment key={row.id}>
                       {renderRow(row, true)}
-                      {/* overlay additions may nest under a sub (padel
-                          under hobby) — render that third level too */}
+                      {/* overlay additions may nest under a sub (padel under hobby): render that third level too */}
                       {tree.childrenOf(row.id).map((leaf) => renderRow(leaf, true))}
                     </Fragment>
                   ))}
@@ -986,8 +950,6 @@ function CatalogScreen({
         </details>
       </section>
 
-      {/* receipts v3 R9: merchant fingerprints per store — the receipt
-          auto-matcher tests these against transaction merchants */}
       <section className="card">
         <div className="card-head">
           <h2>Store matching</h2>
@@ -1027,7 +989,6 @@ function CatalogScreen({
   );
 }
 
-/** retire flow: typing the exact id arms the button (mistake-proof) */
 function CatalogRowAction({
   cat,
   busy,

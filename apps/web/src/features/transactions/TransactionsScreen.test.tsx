@@ -12,7 +12,7 @@ import { MunniDB } from '@/db/schema';
 
 const rows = () => screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]');
 
-/** the boot chain (heals, minted legs, migrations) still writes rows after the first paint — count from its end, once the list holds still */
+/** the boot chain still writes rows after the first paint: count once the list holds still */
 async function settledRows(): Promise<number> {
   await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
   let last = -1;
@@ -30,14 +30,12 @@ async function settledRows(): Promise<number> {
 
 describe('TransactionsScreen (demo identity)', () => {
   beforeEach(async () => {
-    // the previous spec's boot chain must settle before the db goes
-    // away, or its dying writes race this spec's seeds (the db.close
-    // trap — the heavier every-boot chain widened the window)
+    // the previous spec's boot chain must settle before the db goes away, or its dying writes race this spec's seeds
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
-    // #140: the lens survives remounts by design — specs are fresh apps
+    // #140: the lens survives remounts, so each spec clears it
     clearTxFilters();
   });
 
@@ -54,18 +52,14 @@ describe('TransactionsScreen (demo identity)', () => {
         { id: 'pfb', catId: 'uncategorized', amountCents: 1000, label: 'Mystery half' },
       ],
     });
-    // unfiltered: the band with both branches stands
     await screen.findByTestId('tx-parts-pf1', {}, { timeout: 5000 });
 
-    // the Uncategorized quick filter matches ONE part — the band gives
-    // way to that part standing alone with the split glyph
     fireEvent.click(screen.getByTestId('tx-filter-uncat'));
     await screen.findByTestId('tx-part-solo-pf1-1');
     expect(screen.getByTestId('tx-part-solo-pf1-1').textContent).toContain('Mystery half');
     expect(screen.queryByTestId('tx-parts-pf1')).toBeNull();
     expect(screen.queryByTestId('tx-part-solo-pf1-0')).toBeNull();
 
-    // filter off: the full band returns
     fireEvent.click(screen.getByTestId('tx-filter-uncat'));
     await screen.findByTestId('tx-parts-pf1');
     db.close();
@@ -74,7 +68,6 @@ describe('TransactionsScreen (demo identity)', () => {
   it('#492: the whole history is listed — a page at a time, as deep again after the detour', async () => {
     const first = renderApp('/transactions');
     await screen.findByTestId('tx-list');
-    // the lean demo fits one page: nothing waits behind the list's end
     const demoRows = await settledRows();
     expect(screen.queryByTestId('tx-list-more')).toBeNull();
     const db = new MunniDB('munni_demo');
@@ -90,16 +83,14 @@ describe('TransactionsScreen (demo identity)', () => {
           });
         }
       });
-      // one page stands; the older rows wait behind the list's end
       await waitFor(() => expect(rows()).toHaveLength(120), slow);
-      // the count the list names — the boot's own background steps may still move a demo row, so it is read, not
-      // assumed; and the seeded rows reach the list in bursts, so it is read once it covers them all
+      // read, not assumed: boot background steps may move a demo row, and seeded rows reach the list in bursts
       let behind = 0;
       await waitFor(() => {
         behind = Number(/\((\d+)/.exec(screen.getByTestId('tx-list-more').textContent ?? '')?.[1]);
         expect(120 + behind).toBeGreaterThanOrEqual(150 + demoRows - 3);
       }, slow);
-      // each step brings the next page, down to the end of what the list named (a boot step may still add a demo row)
+      // a boot step may still add a demo row
       fireEvent.click(screen.getByTestId('tx-list-more'));
       await waitFor(() => expect(rows()).toHaveLength(240), slow);
       fireEvent.click(screen.getByTestId('tx-list-more'));
@@ -107,10 +98,8 @@ describe('TransactionsScreen (demo identity)', () => {
         expect(rows().length).toBeGreaterThanOrEqual(120 + behind);
         expect(screen.queryByTestId('tx-list-more')).toBeNull();
       }, slow);
-      // the oldest row of the history is reachable
       expect(screen.getByTestId('tx-row-hist0')).toBeTruthy();
-      // the detour into a row comes back as deep as it was: every page still open (the second boot may
-      // still converge the demo by a row — #546's pass runs every boot until no default is left)
+      // the second boot may still converge the demo by a row (#546's pass runs every boot until no default is left)
       first.unmount();
       cleanup();
       renderApp('/transactions');
@@ -119,7 +108,6 @@ describe('TransactionsScreen (demo identity)', () => {
         expect(rows().length).toBeGreaterThan(240);
         expect(screen.queryByTestId('tx-list-more')).toBeNull();
       }, slow);
-      // a new lens starts over at one page
       fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'History shop' } });
       await waitFor(() => expect(rows()).toHaveLength(120), slow);
     } finally {
@@ -132,27 +120,21 @@ describe('TransactionsScreen (demo identity)', () => {
     const first = renderApp('/transactions');
     await screen.findByTestId('tx-list');
     const fullCount = await settledRows();
-    // turn a lens on — search text
     fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'heijn' } });
     await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
-    // mobile unmounts the list for the detail page — simulate the detour
     first.unmount();
     cleanup();
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
-    // #140: the lens came back with the remount
     expect((screen.getByTestId('tx-search') as HTMLInputElement).value).toBe('heijn');
     await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
     cleanup();
-    // #148 r2: home's "see all" arrives with ONLY the new lens preset.
-    // NEW = first seen by this device within 24h — the whole demo seed
-    // was present on the first render, so the lens starts EMPTY…
+    // #148 r2: NEW = first seen by this device within 24h; the demo seed was there on first render, so the lens starts empty
     presetTxFilters({ newOnly: true });
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     expect((screen.getByTestId('tx-search') as HTMLInputElement).value).toBe('');
     await waitFor(() => expect(rows()).toHaveLength(0));
-    // …and a row arriving AFTER that first sight gets labeled and shows
     const db2 = new MunniDB('munni_demo');
     const repo2 = new Repo(new DexieBackend(db2), new HlcClock('seed-newlens'), { trackOutbox: false });
     await repo2.upsert('transaction', DEMO_SPACE_ID, 'fresh1', {
@@ -162,8 +144,6 @@ describe('TransactionsScreen (demo identity)', () => {
     await screen.findByTestId('tx-row-fresh1', {}, { timeout: 5000 });
     expect(rows()).toHaveLength(1);
     db2.close();
-    // and a tab-switch style reset clears it again (full list = the
-    // demo seed plus the fresh arrival)
     clearTxFilters();
     cleanup();
     renderApp('/transactions');
@@ -187,20 +167,16 @@ describe('TransactionsScreen (demo identity)', () => {
       merchant: 'From checking', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'demo_main', transferPeerId: 'leg-out',
     });
-    // collapsed by default: the outgoing leg speaks for the pair
     await screen.findByTestId('tx-row-leg-out', {}, { timeout: 5000 });
     expect(screen.queryByTestId('tx-row-leg-in')).toBeNull();
     // set-based asserts — background mirror mints keep exact counts racy
     const snap = () => new Set([...rows()].map((r) => r.getAttribute('data-testid')));
     const collapsed = snap();
-    // chip on: the incoming leg joins WITHOUT narrowing — every row of
-    // the collapsed view is still there (the old lens filtered to
-    // linked-only, which the user rejected)
+    // #243: the chip uncollapses pairs without narrowing: every row of the collapsed view stays
     fireEvent.click(screen.getByTestId('tx-filter-counter'));
     await screen.findByTestId('tx-row-leg-in');
     const uncollapsed = snap();
     for (const id of collapsed) expect(uncollapsed.has(id), `${id} vanished`).toBe(true);
-    // chip off: the pair collapses back — nothing new appears either
     fireEvent.click(screen.getByTestId('tx-filter-counter'));
     await waitFor(() => expect(screen.queryByTestId('tx-row-leg-in')).toBeNull());
     expect(screen.getByTestId('tx-row-leg-out')).toBeTruthy();
@@ -222,7 +198,6 @@ describe('TransactionsScreen (demo identity)', () => {
     });
     for (const row of rows()) {
       expect(row.textContent).toContain('Albert Heijn');
-      // the match itself is marked in the row
       expect(row.querySelector('mark')?.textContent).toBe('Albert Heijn');
     }
 
@@ -235,16 +210,13 @@ describe('TransactionsScreen (demo identity)', () => {
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
 
-    // one uncategorized expense + one categoryless transfer (excluded by design)
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-uncat'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-1', {
       accountId: 'demo_main', date: '2026-06-20', amountCents: -1250, currency: 'EUR',
       merchant: 'MYSTERY SHOP', catId: 'uncategorized', needsReview: 0,
     });
-    // #133: the view DERIVES the type — a categoryless row reads as a
-    // transfer through its LINK (the stored txType is legacy-only), so
-    // the exclusion needs the link to be explicit here
+    // #133: the view derives the type: a categoryless row reads as a transfer through its link, so the link must be explicit
     await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-2', {
       accountId: 'demo_main', date: '2026-06-21', amountCents: -5000, currency: 'EUR',
       merchant: 'OWN SAVINGS', catId: 'uncategorized', needsReview: 0,
@@ -268,9 +240,7 @@ describe('TransactionsScreen (demo identity)', () => {
 
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-unsettled'), { trackOutbox: false });
-    // open expectation → shows; fully settled → drops out of the filter
-    // #211: modern split seeds version-stamp with an explicit cats null —
-    // the boot fold must read them as PARTS, not legacy slices
+    // #211: modern split seeds stamp an explicit cats null: the boot fold must read them as parts, not legacy slices
     await repo.upsert('transaction', DEMO_SPACE_ID, 'open-1', {
       accountId: 'demo_main', date: '2026-06-22', amountCents: -8000, currency: 'EUR',
       merchant: 'FRONTED DINNER', catId: 'eatingOut', needsReview: 0, cats: null as never,
@@ -285,8 +255,7 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('FRONTED DINNER')).toBeTruthy(), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('tx-filter-unsettled'));
-    // #149: the fronted dinner is a flat two-part spread — it stands as
-    // the branch group now, not a plain row
+    // #149: a flat two-part spread stands as the branch group, not a plain row
     await screen.findByTestId('tx-parts-open-1', {}, { timeout: 5000 });
     await waitFor(() => expect(rows()).toHaveLength(0), { timeout: 5000 });
     expect(screen.getByText('FRONTED DINNER')).toBeTruthy();
@@ -301,9 +270,7 @@ describe('TransactionsScreen (demo identity)', () => {
     const all = rows().length;
 
     fireEvent.click(screen.getByTestId('tx-filter-open'));
-    // #546: the default pots retired — the space's wallet is an account like any other
     expect(await screen.findByTestId('filter-account-defaultacct_cash_demo_space')).toBeTruthy();
-    // every chip wears the account's face (type icon here — no logo seeded)
     expect(screen.getByTestId('filter-account-demo_main').querySelector('.mdi')).toBeTruthy();
 
     // the demo savings account has no transactions — filter yields none
@@ -312,7 +279,6 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows()).toHaveLength(0));
     expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
 
-    // the clear chip resets the sheet filters
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
     await waitFor(() => expect(rows()).toHaveLength(all));
     // coverage instrumentation pushes this flow past vitest's 5s default
@@ -325,13 +291,11 @@ describe('TransactionsScreen (demo identity)', () => {
     const all = rows().length;
 
     fireEvent.click(screen.getByTestId('tx-filter-open'));
-    // nothing in the demo is a million euros
     fireEvent.change(await screen.findByTestId('filter-amount-min'), { target: { value: '1000000' } });
     fireEvent.click(screen.getByTestId('filter-done'));
     await waitFor(() => expect(rows()).toHaveLength(0));
     expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
 
-    // the pair counts as one filter; an EU decimal parses; a bound alone works
     fireEvent.click(screen.getByTestId('tx-filter-open'));
     fireEvent.change(screen.getByTestId('filter-amount-min'), { target: { value: '' } });
     fireEvent.change(screen.getByTestId('filter-amount-max'), { target: { value: '0,01' } });
@@ -341,7 +305,6 @@ describe('TransactionsScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
     await waitFor(() => expect(rows()).toHaveLength(all));
-    // the boxes empty with the reset
     fireEvent.click(screen.getByTestId('tx-filter-open'));
     expect((await screen.findByTestId('filter-amount-max')).getAttribute('value')).toBe('');
   }, 15_000);
@@ -354,8 +317,6 @@ describe('TransactionsScreen (demo identity)', () => {
     await repo.upsert('account', DEMO_SPACE_ID, 'wl', {
       name: 'Wallet PayPal', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0,
     });
-    // the paired wallet story: the bank top-up is the transfer leg, the
-    // purchase keeps its category — both debits
     await repo.upsert('transaction', DEMO_SPACE_ID, 'wbank', {
       accountId: 'demo_main', date: '2020-04-01', amountCents: -799, currency: 'EUR',
       merchant: 'PayPal top-up', catId: 'transferOut', needsReview: 0,
@@ -367,10 +328,8 @@ describe('TransactionsScreen (demo identity)', () => {
       transferPeerId: 'wbank',
     });
 
-    // the purchase stands, the funding leg hides behind it — one event
     await screen.findByTestId('tx-row-wpur', {}, { timeout: 5000 });
     expect(screen.queryByTestId('tx-row-wbank')).toBeNull();
-    // …and the surviving row says where the money came from
     expect(screen.getByTestId('tx-row-wpur').textContent).toContain('→ Wallet PayPal');
     db.close();
   }, 15_000);

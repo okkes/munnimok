@@ -1,16 +1,8 @@
 import { compareHlc } from './hlc';
 
-/**
- * Per-field last-writer-wins merge — the convergence core of the sync
- * protocol. The same rule runs on every device and on the server, so any
- * order of applying the same set of ops ends in the same state.
- *
- * Deletion is a pseudo-field ($deleted). A row counts as deleted only when
- * the tombstone is newer than every field edit — so an edit made after
- * (or concurrent-but-later than) a delete revives the row, regardless of
- * which op arrives first. Keeping `deleted` derived from fieldVersions is
- * what makes the merge commutative.
- */
+// per-field last-writer-wins: the same rule runs on every device and the server, so any order of the same ops converges
+// deletion is the pseudo-field $deleted: a row is deleted only while the tombstone is newer than every field edit,
+// so a later edit revives it whichever op arrives first; deriving `deleted` from fieldVersions keeps it commutative
 
 export const DELETED_FIELD = '$deleted';
 
@@ -26,7 +18,6 @@ export interface Op {
   spaceId: string;
   entity: string;
   entityId: string;
-  /** changed fields and their new values */
   fields: Record<string, unknown>;
   hlc: string;
   deleted?: boolean;
@@ -48,10 +39,6 @@ function deriveDeleted(fieldVersions: Record<string, string>): 0 | 1 {
   return 1;
 }
 
-/**
- * Apply an op to the local version of a row (null when the row is unknown).
- * Returns the merged row; `changed === false` means the op was entirely stale.
- */
 export function applyOp<T extends Record<string, unknown>>(
   local: (T & SyncEnvelope) | null,
   op: Op,
@@ -94,11 +81,7 @@ export interface SnapshotRow {
   fieldVersions: Record<string, string>;
 }
 
-/**
- * The server's row as the changes that made it what it is, one per stamp: laid over the store by the same
- * rule a pulled change is, so a field this device wrote later keeps its value and a row it holds nothing of
- * becomes the server's.
- */
+/** the server's row as one op per stamp, applied by the pull's own rule: a field this device wrote later keeps its value */
 export function snapshotOps(spaceId: string, row: SnapshotRow): Op[] {
   const byStamp = new Map<string, Op>();
   for (const [field, hlc] of Object.entries(row.fieldVersions)) {
@@ -113,12 +96,8 @@ export function snapshotOps(spaceId: string, row: SnapshotRow): Op[] {
   return [...byStamp.values()];
 }
 
-/**
- * #505, undoing writes the server never took: the fields those writes
- * stamped lose their version but keep their value (the row still renders
- * whole), so any op on them wins — a pull from the start lays the
- * server's values back over them.
- */
+// #505: fields stamped by writes the server never took lose their version but keep their value (the row still renders
+// whole), so any op wins: a pull from the start lays the server's values back
 export function unstampWrites<T extends SyncEnvelope>(row: T, hlcs: ReadonlySet<string>): T {
   const fieldVersions = Object.fromEntries(
     Object.entries(row.fieldVersions ?? {}).map(([field, version]) => [field, hlcs.has(version) ? '' : version]),
@@ -126,11 +105,7 @@ export function unstampWrites<T extends SyncEnvelope>(row: T, hlcs: ReadonlySet<
   return { ...row, fieldVersions, deleted: deriveDeleted(fieldVersions) };
 }
 
-/**
- * …and once that pull is through: what no op ever wrote again is gone
- * from the row — null when nothing of it is left (only this device ever
- * had it).
- */
+// once that pull is through: fields no op wrote again are dropped; null when nothing is left (only this device had the row)
 export function dropUnstamped<T extends SyncEnvelope>(row: T): T | null {
   const merged: Record<string, unknown> = { ...(row as SyncEnvelope & Record<string, unknown>) };
   const fieldVersions: Record<string, string> = {};

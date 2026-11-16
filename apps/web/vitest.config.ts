@@ -15,7 +15,7 @@ export default defineConfig({
     // Playwright specs live in tests/ — vitest must not pick them up
     include: ['src/**/*.test.{ts,tsx}'],
     setupFiles: ['src/test/setup.ts'],
-    // `npm run perf` (user 2026-10-09): hot paths timed in bench mode, apart from the suite
+    // `npm run perf`: hot paths timed in bench mode, apart from the suite
     benchmark: { include: ['src/**/*.bench.ts'] },
     coverage: {
       provider: 'v8',
@@ -34,8 +34,7 @@ export default defineConfig({
         'src/sw.ts',
       ],
       reporter: ['text-summary', 'html'],
-      // the repo's coverage floor (Sonar gate: 85 % lines) — a run under the
-      // bar fails; raise, never lower, when the suite grows
+      // the coverage floor (Sonar gate: 85 % lines): raise, never lower, when the suite grows
       thresholds: { lines: 85, statements: 85, functions: 80, branches: 70 },
     },
   },

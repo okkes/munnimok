@@ -10,20 +10,14 @@ import { ImageZoomView } from './ImageZoomView';
 import { PdfView } from './PdfView';
 import type { ReceiptDocument, ReceiptRow } from '@/db/types';
 
-/** what a receipt is called: the merchant or the party, Photo for a snapped one */
 export const receiptTitle = (receipt: ReceiptRow, t: TFunc): string => {
   if (receipt.source === 'photo') return t('receipt.sourcePhoto');
   return receipt.merchant ?? partyName(receipt.source);
 };
 
-/** what the viewer shows: an invoice the party issued, or the receipt's own picture (#568) */
 type Viewed = { kind: 'invoice'; document: ReceiptDocument } | { kind: 'picture'; src: string };
 
-/** an invoice or the picture, shown in place from its data URL. User
- *  2026-10-06: the sheet takes the whole height (the wide dialog on a
- *  desktop) and a PDF is drawn by pdf.js at the frame's width with zoom on
- *  top — the browser's own plugin fit the page instead, zoomed as it
- *  pleased, and Android had none. #568: a picture zooms the same way. */
+/** #568: a picture zooms like a PDF; pdf.js draws at the frame's width because the browser plugin fit the page */
 function ViewerSheet({ viewed, open, onClose, testIdPrefix }: Readonly<{ viewed: Viewed | null; open: boolean; onClose: () => void; testIdPrefix: string }>) {
   const { t } = useLang();
   const document = viewed?.kind === 'invoice' ? viewed.document : null;
@@ -56,13 +50,8 @@ function ViewerSheet({ viewed, open, onClose, testIdPrefix }: Readonly<{ viewed:
   );
 }
 
-/**
- * A receipt's body — the headline (who, when, how much), the picture, the
- * line items and the party's invoices opened in place. The receipt screen
- * and the picker's peek sheet render the same thing (user 2026-10-09: a
- * look at a receipt must not break the attach flow), so the screen keeps
- * the actions (link, unlink, delete) and the peek shows only this.
- */
+// shared by the receipt screen and the picker's peek sheet so a look never breaks the attach flow
+// only the screen has the actions
 export function ReceiptBody({
   receipt,
   currency,
@@ -71,7 +60,6 @@ export function ReceiptBody({
 }: Readonly<{
   receipt: ReceiptRow;
   currency: string;
-  /** the connection that fetched it, when known ("From Albert Heijn") */
   connectionName?: string;
   /** the screen keeps `receipt-…`; the peek sheet wears its own prefix so both can stand at once */
   testIdPrefix?: string;
@@ -92,7 +80,6 @@ export function ReceiptBody({
 
   return (
     <>
-      {/* the headline: who, when, how much */}
       <div className="rounded-card border border-line bg-surface px-4 py-4" data-testid={id('head')}>
         <div className="flex items-start gap-3">
           <Icon name={receipt.source === 'photo' ? 'camera-outline' : 'storefront-outline'} size={22} color="var(--m-accent-deep)" />
@@ -122,7 +109,6 @@ export function ReceiptBody({
         )}
       </div>
 
-      {/* #568: the picture opens the zoom viewer — its items must be readable */}
       {picture && (
         <button
           data-testid={id('picture')}
@@ -154,7 +140,6 @@ export function ReceiptBody({
                       {t('receipt.itemCategory', { name: catName(cats.byId(item.catId), t) })}
                     </span>
                   )}
-                  {/* #567: what came off this very line, in the shop's own words */}
                   {!!item.discountCents && (
                     <span className="block text-[11px] text-ink-4" data-testid={id(`item-discount-${index}`)}>
                       {[money(item.discountCents), item.discountLabel].filter(Boolean).join(' · ')}
@@ -174,7 +159,6 @@ export function ReceiptBody({
         </div>
       )}
 
-      {/* #367: the invoices the party issued for this purchase */}
       {!!receipt.documents?.length && (
         <div>
           <div className="m-cap mb-1 px-1">{t('receipts.invoice')}</div>

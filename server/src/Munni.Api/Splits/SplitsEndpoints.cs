@@ -6,14 +6,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Splits;
 
-/// <summary>
-/// Split events (#538): a group ledger whose membership is INDEPENDENT of
-/// spaces — a member sees the event and nothing else, a space membership
-/// grants nothing here. Online-only and server-resident by design: roles,
-/// "settled" and the count of a link's uses are rules one place must keep.
-/// The event and its members live here; invitations, entries and settling
-/// each have a file of their own.
-/// </summary>
+/// #538: membership is INDEPENDENT of spaces: a member sees the event and nothing else, a space membership grants nothing.
+/// Online-only and server-resident: roles, "settled" and a link's use count are rules one place must keep.
 public static class SplitsEndpoints
 {
     public static void MapSplits(this IEndpointRouteBuilder app)
@@ -23,7 +17,6 @@ public static class SplitsEndpoints
         group.MapPost("", CreateAsync);
         group.MapGet("/{splitId}", GetAsync);
         group.MapPut("/{splitId}", UpdateAsync);
-        // (re)wire MY OWN attachment — space and/or event
         group.MapPost("/{splitId}/attach", AttachAsync);
         group.MapPost("/{splitId}/leave", LeaveAsync);
         group.MapPost("/{splitId}/members/{userId:guid}/promote", PromoteAsync).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
@@ -73,7 +66,7 @@ public static class SplitsEndpoints
         return Results.Ok(new { id = request.Id });
     }
 
-    /// <summary>Owners change what the event is called and how it looks; its currency only while nothing was entered in it.</summary>
+    /// the currency changes only while nothing was entered in the event
     private static async Task<IResult> UpdateAsync(string splitId, SplitFactsRequest request, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -120,8 +113,8 @@ public static class SplitsEndpoints
             asked?.Select(i => new SplitFriendInviteDto(i.Id, i.ToUserId, Name(i.ToUserId), Face(i.ToUserId), i.Status, i.CreatedAt)).ToList()));
     }
 
-    /// <summary>per-member wiring: the caller updates only THEIR membership row; the server stores the ids blindly —
-    /// they are meaningful only inside the member's own local database</summary>
+    /// the caller updates only THEIR membership row; the server stores the ids blindly
+    /// (meaningful only in the member's own local database)
     private static async Task<IResult> AttachAsync(string splitId, AttachRequest request, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -132,10 +125,8 @@ public static class SplitsEndpoints
         return Results.Ok(new { spaceId = me.AttachedSpaceId, eventId = me.AttachedEventId });
     }
 
-    /// <summary>
-    /// Anyone may leave, owing or not: they stay in the arithmetic as someone who left. The last owner to go
-    /// hands the event to everybody who stays, and the last member to go takes the event with them.
-    /// </summary>
+    /// anyone may leave, owing or not (they stay in the arithmetic); the last owner to go hands the event to everybody who
+    /// stays, the last member to go takes it with them
     private static async Task<IResult> LeaveAsync(string splitId, AppDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);
@@ -160,7 +151,7 @@ public static class SplitsEndpoints
         return Results.Ok(new { id = splitId });
     }
 
-    /// <summary>An owner takes someone out — a contributor or another owner (user); oneself leaves instead.</summary>
+    /// an owner may remove a contributor or another owner; oneself leaves instead
     private static async Task<IResult> RemoveMemberAsync(string splitId, Guid userId, AppDbContext db, PushNotifier push, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (split, me) = await SplitStore.GateAsync(db, splitId, http.GetUserId(), time, ct);

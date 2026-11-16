@@ -3,15 +3,8 @@ import { useData } from '@/app/data';
 import { WHATS_NEW_SEEN_KEY } from '@/application/notifications';
 import type { Lang } from '@/i18n';
 
-/**
- * Release notes shown in-app (user request: "news notification that
- * explains the latest changes"). MAINTENANCE RULE: every release arc
- * appends one entry here, newest FIRST, all three languages — this list
- * is the user-facing changelog, curated (what changed for THEM), not
- * the git log.
- */
+// every release prepends one entry, all three languages: a curated user-facing changelog, not the git log
 export interface WhatsNewEntry {
-  /** app version the entry belongs to (matches release-please tags) */
   version: string;
   date: string; // yyyy-mm-dd
   items: Record<Lang, string>[];
@@ -1737,7 +1730,6 @@ const SEEN_KEY = WHATS_NEW_SEEN_KEY;
 
 export const latestWhatsNewVersion = (): string | undefined => WHATS_NEW[0]?.version;
 
-/** true while the newest entry hasn't been acknowledged on this device */
 export function useWhatsNewUnseen(): boolean {
   const { store } = useData();
   const seen = useQuery(store, async () => (await store.metaGet(SEEN_KEY)) ?? null, []);

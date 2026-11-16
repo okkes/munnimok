@@ -1,19 +1,7 @@
 #!/usr/bin/env node
-/**
- * After a Deploy of one stack: wait until the NAS poller has applied THIS
- * bundle (the marker in the live dir equals the uploaded stamp), print the
- * poller's log tail, and say whether the services now answer with the
- * credentials the deploy seeded — Logto with the environment's infra
- * credential, GlitchTip with the platform's API token. The workflow uses
- * the answers to run the bootstrap once more, which turns sign-in and
- * crash reports into code; no click is left.
- *
- *   node deploy/nas/after-apply.mjs --stack munni-nas-prod --stamp <sha>.<run>
- *
- * Env: SYNOLOGY_URL/USER/PASS/PATH, PLATFORM_DOMAIN, LOGTO_INFRA_M2M_ID/SECRET, GLITCHTIP_API_TOKEN.
- * Step outputs: applied=true|false, logto=answers|silent|no-credential|n/a, glitchtip=answers|silent|no-credential.
- * Never red: what it learns is printed; the next verify shows the rest.
- */
+// run: node deploy/nas/after-apply.mjs --stack munni-nas-prod --stamp <sha>.<run>; never red
+// waits until the poller applied THIS bundle; reports whether Logto/GlitchTip answer with the seeded credentials
+// outputs: applied=true|false, logto=answers|silent|no-credential|n/a, glitchtip=answers|silent|no-credential
 import { appendFileSync } from 'node:fs';
 import { readLiveFile, readPollerLog } from '../../infra/modules/dsm.mjs';
 import { loadStack, sharedOf } from '../../infra/modules/stack.mjs';

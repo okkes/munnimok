@@ -5,10 +5,7 @@ namespace Connector.Kit.Jobs;
 [JsonConverter(typeof(JsonStringEnumConverter<JobKind>))]
 public enum JobKind
 {
-    /// <summary>
-    /// The only kind that submits a credential. Never enqueued by a
-    /// scheduler, and never retried after a credential has gone upstream.
-    /// </summary>
+    // the only kind that submits a credential: never enqueued by a scheduler, never retried after a credential has gone upstream
     Login,
 
     Fetch,
@@ -31,11 +28,8 @@ public enum JobState
     Expired,
 }
 
-/// <summary>
-/// The typed progress vocabulary. A closed enum rather than free text: a
-/// status string cannot be translated, cannot drive a progress bar, and
-/// becomes a de-facto API the moment a consumer matches on it.
-/// </summary>
+// a closed enum, not free text: a status string cannot be translated or drive a progress bar, and becomes a de-facto
+// API once matched on
 [JsonConverter(typeof(JsonStringEnumConverter<JobStep>))]
 public enum JobStep
 {
@@ -85,33 +79,15 @@ public static class JobStateMachine
     }
 }
 
-/// <summary>
-/// What the caller asked for, validated against the resource's
-/// <c>ParamSpec</c> before it ever reaches an adapter.
-/// </summary>
 public sealed record ResourceRequest
 {
-    /// <summary>The multi-valued param that selects optional extras.</summary>
     public const string IncludeParam = "include";
 
-    /// <summary>
-    /// The <see cref="IncludeParam"/> value asking for the provider's own
-    /// payload. Named here rather than spelled out at each site, so the
-    /// registry that may withhold it and the request that reads it cannot
-    /// drift apart.
-    /// </summary>
+    // named once so the registry that may withhold it and the request that reads it cannot drift
     public const string RawInclude = "raw";
 
-    /// <summary>
-    /// The <see cref="IncludeParam"/> value asking for the provider's own
-    /// documents - an invoice PDF - carried whole beside the record.
-    ///
-    /// Distinct from <see cref="RawInclude"/> and not a flavour of it. Raw is
-    /// the payload a record was DERIVED from, for diagnosing a shape change; a
-    /// document is a file the provider issued to the user, which they may
-    /// legitimately want to open, keep or send to an accountant whether or not
-    /// this connector parsed it correctly.
-    /// </summary>
+    // not a flavour of Raw: raw is the payload a record was DERIVED from, for diagnosing shape changes; a document is a
+    // file the provider issued to the user, who may want it whether or not this connector parsed it correctly
     public const string InvoiceInclude = "invoice";
 
     public required string ResourceId { get; init; }
@@ -130,53 +106,18 @@ public sealed record ResourceRequest
     public IReadOnlyList<string> Accounts =>
         Selections.TryGetValue("accounts", out var v) ? v : [];
 
-    /// <summary>
-    /// The <see cref="IncludeParam"/> value asking for every movement booked
-    /// against a standing position, rather than just its current state.
-    /// </summary>
     public const string LedgerInclude = "ledger";
 
     public bool WantsItems => Include.Contains("items", StringComparer.Ordinal);
 
-    /// <summary>
-    /// The movements behind a balance, rather than the balance alone.
-    /// </summary>
-    /// <remarks>
-    /// Opt-in for a reason no other include shares. On DUO this history exists
-    /// in exactly one place - a 2.5 MB customer dossier holding a BSN, both
-    /// parents, twenty years of tax income, IBANs and every address the account
-    /// holder has lived at - and nowhere else. The adapter reads the movements
-    /// out of it and keeps nothing else, but the request is still made, so a
-    /// caller has to ask rather than receive it by accident.
-    /// <para>
-    /// The default therefore keeps the promise the connector was built on: a
-    /// plain fetch never touches the dossier at all.
-    /// </para>
-    /// </remarks>
+    // opt-in: on DUO this history exists only in a 2.5 MB dossier (BSN, parents, tax income, IBANs, addresses); the adapter
+    // keeps only the movements but the request is still made, so a plain fetch never touches the dossier
     public bool WantsLedger => Include.Contains(LedgerInclude, StringComparer.Ordinal);
 
-    /// <summary>
-    /// The provider's own answer, kept beside the normalised record.
-    ///
-    /// Opt-in and never a default, because raw is strictly the more sensitive
-    /// of the two: normalisation drops the fields nobody asked for, and this
-    /// puts them back. It exists so a shape change can be diagnosed from real
-    /// traffic instead of guessed at - when a provider renames a field, the
-    /// normalised record simply loses a value and says nothing about why.
-    ///
-    /// It rides the same row as the normalised record on purpose, so the ack
-    /// that purges one purges the other and there is no second lifetime for
-    /// anybody to get wrong.
-    /// </summary>
+    // opt-in, never default: raw is the more sensitive (it puts back what normalisation drops) and exists to diagnose shape
+    // changes from real traffic; it rides the record's row, so one ack purges both
     public bool WantsRaw => Include.Contains(RawInclude, StringComparer.Ordinal);
 
-    /// <summary>
-    /// The provider's own documents, carried whole beside the record.
-    ///
-    /// Opt-in for a plainer reason than raw's: size. An Amazon invoice is
-    /// eighty to a hundred and ninety kilobytes of PDF, an order may have
-    /// four, and a fifty-order fetch that shipped them by default would be
-    /// several megabytes of JSON nobody asked for.
-    /// </summary>
+    // opt-in for size: an Amazon invoice is 80-190 KB of PDF, up to four per order, so a fifty-order fetch would ship megabytes
     public bool WantsInvoice => Include.Contains(InvoiceInclude, StringComparer.Ordinal);
 }

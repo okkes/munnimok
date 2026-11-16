@@ -21,7 +21,6 @@ describe('PayPal funding auto-link (PP1 rung 2)', () => {
     const repo = new Repo(store, new HlcClock('pp1'), { trackOutbox: false });
     await repo.upsert('account', SPACE, 'acc-bank', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', SPACE, 'acc-pp', { name: 'PayPal', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0, bankId: 'PAYPAL_PPLXLULL' });
-    // funded purchase: the bank debit + the real PayPal-side transaction
     await repo.upsert('transaction', SPACE, 'bank-1', { accountId: 'acc-bank', date: '2026-07-14', amountCents: -2599, currency: 'EUR', merchant: 'PayPal (Europe) S.a.r.l. et Cie, S.C.A.', description: 'PP.4321 STEAM purchase', catId: 'hobby', needsReview: 1 });
     await repo.upsert('transaction', SPACE, 'pp-1', { accountId: 'acc-pp', date: '2026-07-15', amountCents: -2599, currency: 'EUR', merchant: 'Steam', needsReview: 1 });
     // an unrelated debit must stay untouched
@@ -33,8 +32,7 @@ describe('PayPal funding auto-link (PP1 rung 2)', () => {
     const { store, repo } = await seeded();
     expect(await linkPaypalFunding(store, repo, SPACE)).toBe(1);
 
-    // counted once: the bank side became a transfer, the PayPal side kept the spend;
-    // the machine linked it, so the debit keeps waiting in the deck (user 2026-10-09)
+    // the machine linked it, so the debit keeps waiting in the deck: every transaction passes review
     expect(await store.get('transaction', 'bank-1')).toMatchObject({
       linkedAccountId: 'acc-pp',
       needsReview: 1,
@@ -42,7 +40,6 @@ describe('PayPal funding auto-link (PP1 rung 2)', () => {
     expect(await store.get('transaction', 'pp-1')).toMatchObject({ needsReview: 1 });
     expect(await store.get('transaction', 'bank-2')).toMatchObject({ needsReview: 0 });
 
-    // idempotent: a second pass finds nothing left to link
     expect(await linkPaypalFunding(store, repo, SPACE)).toBe(0);
   });
 

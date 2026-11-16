@@ -1,6 +1,5 @@
 // GENERATED from apps/legacy/src/shared/data/categories.js by scripts/port-demo-data.mjs.
-// Built-in categories are a static catalog (not synced DB rows); only custom
-// categories live in the database.
+// Built-ins are a static catalog, not synced rows; only custom categories live in the database.
 import type { TxType } from '@/db/types';
 
 export type CatDirection = 'credit' | 'debit' | 'both';
@@ -8,7 +7,7 @@ export type CatDirection = 'credit' | 'debit' | 'both';
 export interface BuiltinCategory {
   id: string;
   parentId?: string;
-  nameKey: string; // 'cat.{id}' translation key
+  nameKey: string;
   icon: string;
   color?: string;
   isParent?: boolean;
@@ -19,16 +18,11 @@ export interface BuiltinCategory {
 }
 
 export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
-  // gray by DESIGN (#353): uncategorized must read as "no category yet"
-  // on every surface — without a color here each call site invented its
-  // own fallback (palette colors in charts, accents in drills)
+  // gray by design (#353): without a color here each call site invented its own fallback for uncategorized
   {"id":"general","nameKey":"cat.general","icon":"help-circle-outline","color":"#8A94A6","isParent":true,"hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
   {"id":"uncategorized","parentId":"general","nameKey":"cat.uncategorized","icon":"help-circle-outline","color":"#8A94A6","hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
-  // reimbursement redesign (2026-07-24):
-  // a LOCKED system main — no user subs, no edits. `reimburse` keeps its
-  // historical id (old rows keep resolving) but now reads as "received
-  // reimbursement"; `expenseReimburse` is the expected side; `reimbursed`
-  // holds the settled value on BOTH sides of a link.
+  // locked system main: no user subs, no edits. `reimburse` keeps its historical id (old rows resolve) but reads as received;
+  // `expenseReimburse` is the expected side; `reimbursed` holds the settled value on both sides of a link
   {"id":"reimbursement","nameKey":"cat.reimbursement","icon":"cash-refund","color":"#16A085","isParent":true,"txTypes":["expense","income"],"direction":"both"},
   {"id":"reimbursed","parentId":"reimbursement","nameKey":"cat.reimbursed","icon":"check-decagram-outline","txTypes":["expense","income"],"direction":"both"},
   {"id":"reimburse","parentId":"reimbursement","nameKey":"cat.reimburse","icon":"cash-refund","positive":true,"txTypes":["income"],"direction":"credit"},
@@ -40,12 +34,10 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"giftReceived","parentId":"income","nameKey":"cat.giftReceived","icon":"gift-open-outline","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"incomeOther","parentId":"income","nameKey":"cat.incomeOther","icon":"cash-plus","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"saving","nameKey":"cat.saving","icon":"piggy-bank-outline","color":"#A8782B","isParent":true,"txTypes":["saving"],"direction":"both"},
-  // typed-splits v2: movement subs live on BOTH legs now (R1 stamps put
-  // them on the special account's own rows, where the signs invert)
+  // movement subs live on both legs (stamps put them on the special account's own rows, where signs invert)
   {"id":"savingWithdraw","parentId":"saving","nameKey":"cat.savingWithdraw","icon":"bank-remove","txTypes":["saving"],"direction":"both"},
   {"id":"savingDeposit","parentId":"saving","nameKey":"cat.savingDeposit","icon":"bank-plus","txTypes":["saving"],"direction":"both"},
-  // typed-splits v2 (2026-08-05, approved table): saving-account rows no
-  // transfer caused — interest grows the pot (+), fees shrink it (−)
+  // saving-account rows no transfer caused: interest grows the pot (+), fees shrink it (−)
   {"id":"savingInterest","parentId":"saving","nameKey":"cat.savingInterest","icon":"percent-outline","positive":true,"txTypes":["saving"],"direction":"credit"},
   {"id":"savingFees","parentId":"saving","nameKey":"cat.savingFees","icon":"cash-minus","txTypes":["saving"],"direction":"debit"},
   {"id":"expense","nameKey":"cat.expense","icon":"cash-remove","isParent":true,"hidden":true,"txTypes":["expense"],"direction":"debit"},
@@ -135,19 +127,17 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"petInsurance","parentId":"pet","nameKey":"cat.petInsurance","icon":"shield-bug-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"petOther","parentId":"pet","nameKey":"cat.petOther","icon":"fishbowl-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"extra","nameKey":"cat.extra","icon":"archive-plus-outline","color":"#607D8B","isParent":true,"txTypes":["expense"],"direction":"debit"},
-  // 2026-07-24: expected reimbursement moved under the locked
-  // `reimbursement` main (id unchanged — old rows keep resolving)
+  // under the locked `reimbursement` main; id unchanged so old rows keep resolving
   {"id":"expenseReimburse","parentId":"reimbursement","nameKey":"cat.expenseReimburse","icon":"cash-refund","txTypes":["expense"],"direction":"debit"},
   {"id":"birthday","parentId":"extra","nameKey":"cat.birthday","icon":"cake-variant-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"funeralInsurance","parentId":"extra","nameKey":"cat.funeralInsurance","icon":"shield-cross-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"charity","parentId":"extra","nameKey":"cat.charity","icon":"handshake-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"taxes","parentId":"extra","nameKey":"cat.taxes","icon":"bank-transfer-in","txTypes":["expense"],"direction":"debit"},
   {"id":"fee","parentId":"extra","nameKey":"cat.fee","icon":"credit-card-check-outline","txTypes":["expense"],"direction":"debit"},
-  // 2026-08-01 (user request): overdraft/loan interest charges
   {"id":"interest","parentId":"extra","nameKey":"cat.interest","icon":"percent-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"workExpense","parentId":"extra","nameKey":"cat.workExpense","icon":"briefcase-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"familyCare","parentId":"extra","nameKey":"cat.familyCare","icon":"account-child-outline","txTypes":["expense"],"direction":"debit"},
-  // moved from shopping: child care is rarely a "shopping" decision (catalog plan C2)
+  // moved from shopping: child care is rarely a shopping decision
   {"id":"childCare","parentId":"extra","nameKey":"cat.childCare","icon":"baby-face-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"kidsActivities","parentId":"extra","nameKey":"cat.kidsActivities","icon":"human-male-child","txTypes":["expense"],"direction":"debit"},
   {"id":"insurance","parentId":"extra","nameKey":"cat.insurance","icon":"shield-account-outline","txTypes":["expense"],"direction":"debit"},
@@ -159,19 +149,13 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"transferIn","parentId":"transfer","nameKey":"cat.transferIn","icon":"bank-transfer-in","txTypes":["transfer"],"direction":"credit"},
   {"id":"cashWithdraw","parentId":"transfer","nameKey":"cat.cashWithdraw","icon":"atm","txTypes":["transfer"],"direction":"debit"},
   {"id":"cashDeposit","parentId":"transfer","nameKey":"cat.cashDeposit","icon":"cash-plus","txTypes":["transfer"],"direction":"credit"},
-  // 2026-08-01 (user, ss review): the debt family is exactly the arc-2
-  // pair — Repaid (debit) / Borrowed (credit)
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
   {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"both"},
   {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"both"},
-  // typed-splits v2 (2026-08-05, approved table): debt-account rows no
-  // transfer caused — the lender's interest and fees both grow the debt (−)
+  // debt-account rows no transfer caused: the lender's interest and fees both grow the debt (−)
   {"id":"debtInterest","parentId":"debt","nameKey":"cat.debtInterest","icon":"percent-outline","txTypes":["debtPayment"],"direction":"debit"},
   {"id":"debtFees","parentId":"debt","nameKey":"cat.debtFees","icon":"cash-minus","txTypes":["debtPayment"],"direction":"debit"},
-  // #252 (user 2026-08-16, the five-category model): the MOVEMENT pair
-  // is Invested/Withdrawn (both legs, like saving deposit/withdraw);
-  // Bought/Sold/Fees are the brokerage's OWN ledger stories (stocks
-  // bought with money already inside, no transfer caused).
+  // #252: the movement pair is Invested/Withdrawn (both legs); Bought/Sold/Fees are the brokerage's own ledger
   {"id":"investment","nameKey":"cat.investment","icon":"chart-timeline-variant","color":"#673AB7","isParent":true,"txTypes":["investment"],"direction":"both"},
   {"id":"invest","parentId":"investment","nameKey":"cat.invest","icon":"chart-areaspline","txTypes":["investment"],"direction":"both"},
   {"id":"investBuy","parentId":"investment","nameKey":"cat.investBuy","icon":"trending-up","txTypes":["investment"],"direction":"debit"},
@@ -182,10 +166,8 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"investFees","parentId":"investment","nameKey":"cat.investFees","icon":"cash-minus","txTypes":["investment"],"direction":"debit"},
   {"id":"adjustment","nameKey":"cat.adjustment","icon":"tune-variant","color":"#607D8B","isParent":true,"txTypes":["adjustment"],"direction":"both"},
   {"id":"balanceAdjustment","parentId":"adjustment","nameKey":"cat.balanceAdjustment","icon":"scale-balance","txTypes":["adjustment"],"direction":"both"},
-  // typed-splits v2 Q3 (2026-08-05): funding is a marked special
-  // CATEGORY on standard rows; 'funding' stays in txTypes because a row
-  // whose counterparty is a funding pot DERIVES that family (#152) and
-  // its category must not read as a conflict
+  // funding is a marked special category on standard rows; 'funding' stays in txTypes because a row whose counterparty is
+  // a funding pot derives that family (#152) and its category must not read as a conflict
   {"id":"funding","nameKey":"cat.funding","icon":"hand-coin","color":"#16A085","isParent":true,"txTypes":["expense","income","funding"],"direction":"both"},
   {"id":"fundingOut","parentId":"funding","nameKey":"cat.fundingOut","icon":"bank-transfer-out","txTypes":["expense","funding"],"direction":"debit"},
   {"id":"fundingIn","parentId":"funding","nameKey":"cat.fundingIn","icon":"bank-transfer-in","txTypes":["income","funding"],"direction":"credit"},
@@ -200,16 +182,10 @@ export const childrenOf = (parentId: string): BuiltinCategory[] =>
 
 export const UNCATEGORIZED_ID = 'uncategorized';
 
-// the locked reimbursement tree: the user may PICK these but never edit
-// them or add siblings
+// the locked reimbursement tree: pickable, never editable, no sibling additions
 export const REIMBURSEMENT_MAIN_ID = 'reimbursement';
 
-/**
- * Arc 2 (user-approved 2026-08-01): the transfer-family category mains
- * are LOCKED system doors like Reimbursement — pickable, never editable,
- * no user subs, absent from budget/trends pickers. The machine files the
- * sub by the money's sign (FAMILY_AUTO_SUB below).
- */
+/** locked system mains: pickable, never editable, no user subs, absent from budget/trends pickers */
 export const LOCKED_MAIN_IDS: ReadonlySet<string> = new Set([
   REIMBURSEMENT_MAIN_ID,
   'saving',
@@ -217,8 +193,7 @@ export const LOCKED_MAIN_IDS: ReadonlySet<string> = new Set([
   'debt',
   'investment',
   'funding',
-  // #261 (user): Adjustment is munni's own bookkeeping too — balance edits
-  // mint its rows; nobody grafts user subs under it
+  // Adjustment is munni's own bookkeeping: balance edits mint its rows (#261)
   'adjustment',
 ]);
 
@@ -227,8 +202,7 @@ const FAMILY_AUTO_SUB: Partial<Record<TxType, { debit: string; credit: string }>
   saving: { debit: 'savingDeposit', credit: 'savingWithdraw' },
   transfer: { debit: 'transferOut', credit: 'transferIn' },
   debtPayment: { debit: 'loanRepayment', credit: 'debtBorrowed' },
-  // #252: the unstamped legs file the MOVEMENT pair — Bought/Sold are
-  // brokerage-internal and never auto-file off the brokerage
+  // #252: unstamped legs file the movement pair; Bought/Sold are brokerage-internal, never auto-filed
   investment: { debit: 'investContribution', credit: 'investWithdraw' },
   funding: { debit: 'fundingOut', credit: 'fundingIn' },
 };
@@ -241,12 +215,7 @@ export function autoSubFor(txType: TxType, amountCents: number): string | undefi
   return amountCents < 0 ? pair.debit : pair.credit;
 }
 
-/**
- * Q8 (typed-splits v2, user 2026-08-05): a STAMPED row that names a
- * counterparty is a movement by definition — its category is forced to
- * the movement pair, signed from the special account's own side
- * (+ = money in: set aside / repaid / contributed).
- */
+/** a stamped row naming a counterparty is a movement: category forced to the pair, signed from the special account's side */
 const STAMP_MOVEMENT_SUB: Partial<Record<TxType, { in: string; out: string }>> = {
   saving: { in: 'savingDeposit', out: 'savingWithdraw' },
   debtPayment: { in: 'loanRepayment', out: 'debtBorrowed' },
@@ -259,29 +228,18 @@ export function stampMovementSub(stamp: TxType, amountCents: number): string | u
   return amountCents >= 0 ? pair.in : pair.out;
 }
 
-/** MOVEMENT categories of the counterparty families (#133, all six
- *  since #221): the picks that mean money physically moved to/from
- *  another account — the ones the bare-row fold links onto default
- *  accounts. Interest/fees/etc. are value stories, not movements, and
- *  never link. */
+/** movement categories (#133): money physically moved between accounts; only these link in the bare-row fold */
 const MOVEMENT_CAT_IDS = new Set([
   'savingDeposit', 'savingWithdraw',
   'loanRepayment', 'debtBorrowed',
-  // #252: Bought/Sold left this set — stocks bought with money already
-  // inside the brokerage move nothing between accounts
+  // #252: Bought/Sold are out: stocks bought with money already in the brokerage move nothing between accounts
   'investContribution', 'investWithdraw',
   'transferOut', 'transferIn',
   'cashWithdraw', 'cashDeposit',
   'fundingOut', 'fundingIn',
 ]);
 export const isMovementCat = (catId: string | undefined): boolean => !!catId && MOVEMENT_CAT_IDS.has(catId);
-/**
- * Typed-splits v2 (2026-08-05, user): special categories carry system
- * meaning — buckets count them and movements force them — so every
- * picker marks them as not-a-random-category. Membership = the locked
- * family trees (custom categories can never join: locked mains refuse
- * user subs).
- */
+/** special = locked family trees: buckets count them, movements force them, pickers mark them; custom ones never join */
 export const isSpecialCategory = (cat: { id: string; parentId?: string }): boolean =>
   LOCKED_MAIN_IDS.has(cat.parentId ?? cat.id);
 
@@ -293,16 +251,8 @@ export const mainCatOf = (catId: string | undefined): string | undefined => {
   return cat ? (cat.parentId ?? cat.id) : undefined;
 };
 
-/**
- * R3 (typed-splits v2): the type a special-category pick pulls onto a
- * standard row — "Set aside" makes it a saving, "Repaid" a debt payment.
- * #133 E: the TRANSFER family answers too — with the kind rows gone,
- * picking a Transfer sub is the manual road into a transfer, and the
- * consumers route it into the mandatory counterparty ask.
- * #152 r2: FUNDING answers as well — picking a funding category asks
- * WHICH funding account (the consumers filter the ask to funding
- * attachments; walking away keeps the bare funding story).
- */
+// the type a special-category pick pulls onto a standard row; a transfer sub is the manual road into a transfer (#133)
+// funding asks WHICH funding account; walking away keeps the bare funding story (#152)
 export const specialCatType = (catId: string | undefined): TxType | undefined => {
   switch (mainCatOf(catId)) {
     case 'saving':

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MANUAL_RATES_META_KEY, RATES_META_KEY, convertCents, ensureRates, fmtDisplay, readManualRates } from './rates';
 import type { DayRates, DisplayContext } from './rates';
 
-/** minimal in-memory meta store */
 function memStore() {
   const meta = new Map<string, unknown>();
   return {
@@ -19,7 +18,6 @@ describe('convertCents', () => {
   it('is identity for the same currency and EUR-based across pairs', () => {
     expect(convertCents(1000, 'EUR', 'EUR', DAY)).toBe(1000);
     expect(convertCents(1000, 'EUR', 'USD', DAY)).toBe(1085);
-    // USD → TRY crosses through EUR: 10 USD ≈ 345.62 TRY
     expect(convertCents(1000, 'USD', 'TRY', DAY)).toBe(Math.round((1000 * 37.5) / 1.085));
   });
 
@@ -27,7 +25,7 @@ describe('convertCents', () => {
     expect(convertCents(1000, 'USD', 'TRY', undefined, { 'USD>TRY': 36 })).toBe(36_000);
     expect(convertCents(36_000, 'TRY', 'USD', undefined, { 'USD>TRY': 36 })).toBe(1000);
     expect(convertCents(1000, 'USD', 'TRY', undefined, {})).toBeNull();
-    expect(convertCents(1000, 'USD', 'CHE', DAY)).toBeNull(); // currency the day lacks
+    expect(convertCents(1000, 'USD', 'CHE', DAY)).toBeNull();
   });
 });
 
@@ -43,7 +41,7 @@ describe('fmtDisplay', () => {
     expect(fmtDisplay(1234, 'EUR', 'en', null)).toContain('12.34');
     const converted = fmtDisplay(1000, 'EUR', 'en', display);
     expect(converted.startsWith('≈ ')).toBe(true);
-    expect(converted).toContain('375.00'); // 10 EUR × 37.5
+    expect(converted).toContain('375.00');
   });
 
   it('same-currency amounts never get the marker', () => {
@@ -52,7 +50,7 @@ describe('fmtDisplay', () => {
 
   it('a dated amount converts at that day, not at the latest fixing', () => {
     const dated = fmtDisplay(1000, 'EUR', 'en', display, { date: '2026-01-05' });
-    expect(dated).toContain('340.00'); // 10 EUR × 34 (January's rate)
+    expect(dated).toContain('340.00');
   });
 
   it('an unknown rate renders the true amount unconverted and unmarked', () => {
@@ -95,18 +93,17 @@ describe('ensureRates', () => {
     expect(cache.days['2026-07-18'].date).toBe('2026-07-17');
     expect(cache.days['2026-07-17'].date).toBe('2026-07-17');
 
-    // second call: everything cached — no network
     await ensureRates(store, ['latest', '2026-07-18', '2026-07-17']);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('a failed fetch keeps the existing cache intact', async () => {
     const store = memStore();
-    store.meta.set(RATES_META_KEY, { days: { latest: DAY }, latestAt: 1 }); // stale latest
+    store.meta.set(RATES_META_KEY, { days: { latest: DAY }, latestAt: 1 });
     fetchMock.mockImplementation(() => Promise.resolve(new Response('down', { status: 503 })));
     await ensureRates(store, ['latest']);
     const cache = store.meta.get(RATES_META_KEY) as { days: Record<string, DayRates> };
-    expect(cache.days.latest.date).toBe('2026-07-22'); // old data survives
+    expect(cache.days.latest.date).toBe('2026-07-22');
   });
 
   it('readManualRates tolerates a missing key', async () => {

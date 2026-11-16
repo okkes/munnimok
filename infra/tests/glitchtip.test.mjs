@@ -1,6 +1,3 @@
-// GlitchTip as code: ONE GlitchTip per platform (the shared stack), one
-// org + team per platform, seven projects per environment — against a
-// faked Sentry-shaped API.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { scratchPlatforms, fakeGh, DOMAIN } from './fixture.mjs';

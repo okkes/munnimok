@@ -8,13 +8,8 @@ type Inventory = RemoteConsent[] | 'unreachable' | null;
 const day = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleDateString() : '—');
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/**
- * Bank consents (#571): every consent on munni's own accounts at the
- * open-banking aggregators. One aggregator account serves every
- * environment of the platform, so its inventory is the one list across all
- * of them — read here per environment, never changed: revoking stays in an
- * environment's lab, a person's connection in its admin portal.
- */
+// #571: one aggregator account serves every environment, so its inventory is the one list across them; read-only:
+// revoking stays in an environment's lab, a person's connection in its admin portal
 export function ConsentsScreen({
   parties,
   call,
@@ -41,7 +36,6 @@ export function ConsentsScreen({
     };
   }, [call, key]);
 
-  // opened from a party's row: its card comes into view once, when its consents are in
   useEffect(() => {
     if (!focus || scrolledTo.current === focus || inventories[focus] === undefined) return;
     scrolledTo.current = focus;

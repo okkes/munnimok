@@ -6,14 +6,7 @@ import { KIND_ICON, RecurringVisual } from '@/features/recurring/RecurringVisual
 import { Tile } from '@/ui/primitives';
 import { SEGMENT_COLOR, SEGMENT_META, softOf } from './planningUi';
 
-/**
- * The face of a mirrored source in the plan (user 2026-10-09: "add the
- * recurring cost logos in the list at the planning"): a recurring cost's
- * brand logo covers the tile the way the recurring list shows it, a loan's
- * logo reads as on the Debts screen; without a logo the plan keeps its own
- * coloured icon tile, so the list reads like the source lists do. The
- * `model` hands the source rows over — the subject row carries no logo.
- */
+// the subject row carries no logo: `model` hands the source rows over; without a logo the plan keeps its own icon tile
 export function SourceTile({
   segment,
   sourceId,

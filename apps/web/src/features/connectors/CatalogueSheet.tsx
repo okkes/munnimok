@@ -11,7 +11,6 @@ import { kindIcon, partyLogo } from './logos';
 import { connectableHere, needsOwnComputer } from './manifestForm';
 import type { ErrorEnvelope, ProviderManifest } from './types';
 
-/** one party to connect, as the manifest describes it: its status honest, "needs your own computer" marked, unreachable here disabled */
 export function PartyRow({ manifest, sub, onPick }: Readonly<{ manifest: ProviderManifest; sub?: string; onPick: (manifest: ProviderManifest) => void }>) {
   const { t } = useLang();
   const device = deviceClass();
@@ -51,12 +50,7 @@ export function PartyRow({ manifest, sub, onPick }: Readonly<{ manifest: Provide
   );
 }
 
-/**
- * The catalogue (§10.1): the parties of the kinds a screen manages,
- * rendered from the manifests — grouped by kind, searchable. Connected
- * services offers shops and registries here; banks have their own picker
- * on the accounts screens (#527).
- */
+// Connected services offers shops and registries; banks have their own picker on the accounts screens (#527)
 export function CatalogueSheet({
   open,
   onOpenChange,
@@ -77,7 +71,6 @@ export function CatalogueSheet({
   const { t } = useLang();
   const [query, setQuery] = useState('');
 
-  // banks first, then shops, then the registries
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = providers

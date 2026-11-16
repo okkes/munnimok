@@ -25,14 +25,8 @@ interface ForecastInput {
   display: DisplayContext | null;
 }
 
-/**
- * #541: safe to spend over the space's own period — the picked accounts,
- * minus the dues still open, minus the plan's set-asides the space picked.
- * #349: mixed-currency accounts summed raw made the base lie, so each
- * balance is converted into the ledger currency first (a missing rate keeps
- * the raw figure: better than dropping the account). Null until every
- * source is read.
- */
+// #349: each balance is converted into the ledger currency first (a missing rate keeps the raw figure)
+// null until every source is read
 export function forecastSafeToSpend({ accounts, txs, recurrings, space, planning, currency, display }: ForecastInput): SafeToSpend | null {
   if (!accounts || !txs || !recurrings || !space) return null;
   const day = display?.cache.days.latest;
@@ -54,7 +48,6 @@ export function safeToSpendColor(forecast: SafeToSpend, hidden: boolean): string
   return forecast.perDayCents < 1000 ? 'var(--m-warning)' : 'var(--m-accent-deep)';
 }
 
-/** the forecast with what its screen needs beside it: the accounts to pick from, the space's settings, the ledger currency */
 export function useSafeToSpend(): { forecast: SafeToSpend | null; accounts: SpaceAccount[] | undefined; space: SpaceRow | undefined; currency: string } {
   const { store, spaceId } = useData();
   const accounts = useSpaceAccounts();

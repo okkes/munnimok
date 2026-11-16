@@ -66,7 +66,6 @@ describe('syncConnection — one pass through the relay', () => {
   });
 
   it("a bank's sync re-reads every space with a shop against the shop's receipts (user 2026-10-09: proposals before the review)", async () => {
-    // the shop's receipt and the reviewed transaction it fits, in a space that includes the shop
     await repo.upsert('storeConn', 'feed', 'conn-ah', { store: 'ah', kind: 'store', displayName: 'Albert Heijn', connectedAt: '2026-09-01', status: 'ok' });
     await repo.upsert('storeConnLink', SPACE, storeConnLinkId(SPACE, 'conn-ah'), { instanceId: 'conn-ah', store: 'ah', displayName: 'Albert Heijn' });
     await repo.upsert('receipt', 'feed', 'rcpt:ah:conn-ah:1', { source: 'ah', instanceId: 'conn-ah', date: '2026-07-05', totalCents: 2350, merchant: 'Albert Heijn', storeRef: 'ah:1' });
@@ -91,7 +90,6 @@ describe('syncConnection — one pass through the relay', () => {
     expect((await backend.connectorConnGet(CONN))?.state).toBe('needs_reauth');
     expect((await backend.connectorConnGet(CONN))?.lastError?.code).toBe('session_expired');
 
-    // no bundle on this device now: the relay is not even asked
     expect((await syncConnection(backend, repo, CONN)).status).toBe('signin');
 
     await backend.connectorConnPut({ id: CONN, provider: PROVIDER, bundle: 'sb_v1.b', sessionId: 'ses_1', state: 'active', refreshedAt: '2026-09-01T00:00:00Z' });
@@ -124,7 +122,6 @@ describe('syncConnection — one pass through the relay', () => {
       .mockResolvedValueOnce(job({ state: 'succeeded', complete: true }))
       .mockResolvedValue(job({ jobId: 'job_2', state: 'succeeded', complete: true }));
     const collect = vi.spyOn(connectorApi, 'collect')
-      // the accounts landed; the transactions pass became the next job
       .mockResolvedValueOnce({ running: true, job: job({ jobId: 'job_2', state: 'running', ingested: { ...NO_INGEST, accounts: 1 } }) })
       .mockResolvedValue({ running: false, job: job({ jobId: 'job_2', state: 'succeeded', complete: true, ingested: { ...NO_INGEST, accounts: 1, transactions: 3 } }) });
     const publishSoon = setInterval(() => {
@@ -165,7 +162,6 @@ describe('syncConnection — one pass through the relay', () => {
   });
 
   it('prod 2026-10-06: a job accepted earlier is remembered on the row and resumed before any new fetch — gone, it is let go', async () => {
-    // the first sync is cut off mid-follow (the app closed on it): the job stays on the row
     const pace = { ...syncTuning };
     Object.assign(syncTuning, { pollMs: 1, pollMisses: 2 });
     try {
@@ -177,7 +173,6 @@ describe('syncConnection — one pass through the relay', () => {
     }
     expect((await backend.connectorConnGet(CONN))?.pendingJob).toMatchObject({ jobId: 'job_1' });
 
-    // the next sync follows THAT job to its end and collects it: no second fetch is asked for
     const sync = vi.spyOn(connectorApi, 'sync').mockResolvedValue({ accepted: true, job: job({ jobId: 'job_2', state: 'running' }) });
     sync.mockClear();
     vi.spyOn(connectorApi, 'job').mockResolvedValue(job({ state: 'succeeded', complete: true }));
@@ -188,7 +183,6 @@ describe('syncConnection — one pass through the relay', () => {
     expect(collect).toHaveBeenCalledWith(PROVIDER, 'job_1', 'sb_v1.old', undefined, undefined);
     expect((await backend.connectorConnGet(CONN))?.pendingJob).toBeUndefined();
 
-    // a remembered job the relay no longer holds is forgotten, and the sync starts afresh
     await backend.connectorConnPut({ ...(await backend.connectorConnGet(CONN))!, pendingJob: { jobId: 'job_gone', startedAt: '2026-10-05T00:00:00Z' } });
     vi.spyOn(connectorApi, 'job').mockRejectedValue(new ConnectorError(404, envelope('unsupported_resource')));
     sync.mockClear();
@@ -233,13 +227,11 @@ describe('syncConnection — one pass through the relay', () => {
     expect(await noteSignInFailure(backend, 'conn-new', failure, 'job_n')).toBe('none');
     expect(await noteSignInFailure(backend, CONN, failure, 'job_1')).toBe('asked');
     expect((await backend.connectorConnGet(CONN))?.lastError).toMatchObject({ code: 'provider_changed', artifactsJobId: 'job_1' });
-    // answered: the id leaves the row, the failure itself stays
     await settleQuestion(backend, CONN, 'job_1');
     const settled = (await backend.connectorConnGet(CONN))?.lastError;
     expect(settled?.code).toBe('provider_changed');
     expect(settled?.artifactsJobId).toBeUndefined();
 
-    // the standing answer: shared here, nothing left to ask; a failure without a picture asks nothing either
     await backend.connectorConnPut({ ...(await backend.connectorConnGet(CONN))!, reportFailures: true });
     const share = vi.spyOn(connectorApi, 'shareArtifacts').mockResolvedValue();
     expect(await noteSignInFailure(backend, CONN, failure, 'job_2')).toBe('shared');

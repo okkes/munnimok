@@ -16,18 +16,8 @@ import { RETURN_PATH, TERMINAL_STATES, errorKey, failedWith } from './manifestFo
 import type { ErrorEnvelope, ProviderManifest, SessionView } from './types';
 import { useCatalogue } from './useCatalogue';
 
-/**
- * The page a party brings the person back to (§15): a bank's consent
- * page returns to `/gc-callback` in a fresh document — the same tab on
- * the web, the app re-entered through its App Link on a phone — and this
- * screen answers the redirect challenge the flow sheet wrote down before
- * it opened the party (connectorReturn.ts), then adopts the settled
- * session exactly as the sheet would have, and asks the name a fresh
- * connection gets. Rendered outside the hash router (main.tsx), like the
- * sign-in callback. A return that lands where nothing was started (a
- * phone whose App Link is not verified opens the hosted page) offers the
- * app instead of guessing.
- */
+// the redirect challenge's answer page, outside the hash router (main.tsx); a return where nothing was started
+// (a phone whose App Link is not verified opens the hosted page) offers the app instead of guessing
 type ReturnState =
   | { kind: 'working' }
   | { kind: 'done'; connectionId: string; reconnect: boolean }
@@ -56,7 +46,6 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 const settled = (view: SessionView): boolean => view.state === 'active' || view.state === 'awaiting_input' || TERMINAL_STATES.has(view.state);
 
-/** the view once the party has settled: a login still completing is read again until it has */
 async function settledView(provider: string, first: SessionView): Promise<SessionView> {
   let view = first;
   for (let i = 0; i < POLL_LIMIT && !settled(view); i += 1) {
@@ -66,20 +55,10 @@ async function settledView(provider: string, first: SessionView): Promise<Sessio
   return view;
 }
 
-/** the app's own address for this return: the scheme the shell registered, the bank's query as it came */
 const appReturnUrl = (search: string): string => `${config.nativeScheme}://${RETURN_PATH.slice(1)}${search}`;
 
-/**
- * A phone's browser that did not start this connection: the bank came
- * back here, but the munni app holds the pending return — so hand it over
- * (user ss 2026-10-03: Enable Banking sat on "returning to the
- * authentication initiator", GoCardless landed in the browser). Inside the
- * iOS auth session the scheme ends the session and the app reads the
- * address; in a Custom Tab or in Safari it opens the app. A browser that
- * started the connection itself keeps it; a computer has no app to hand
- * to. Decided before the identity: the session's browser is signed in to
- * nothing.
- */
+// a phone's browser that did not start this connection hands over to the app, which holds the pending return:
+// the scheme ends the iOS auth session, in a Custom Tab or Safari it opens the app; decided before the identity
 function phoneHandoff(): string | null {
   if (isNativeApp() || !isMobileWeb()) return null;
   const params = new URLSearchParams(globalThis.location.search);
@@ -139,8 +118,6 @@ function ReturnFlow() {
     if (started.current) return;
     const { params, pending } = arrival;
     if (params.get('error')) {
-      // the BANK said no — the person cancelled or the consent was refused
-      // upstream: no completion, the session let go, a calm way back
       started.current = true;
       forgetReturn();
       if (pending) void connectorApi.cancel(pending.provider, pending.sessionId).catch(() => undefined);
@@ -209,7 +186,6 @@ function ReturnShell({
 }: Readonly<{ state: ReturnState; name?: string; onName?: (value: string) => void; attempted?: boolean; onContinue?: () => void }>) {
   const { t } = useLang();
   const naming = state.kind === 'done' && !state.reconnect;
-  // the hand-off happens by itself; the button stays for a browser that refuses the scheme
   const appUrl = state.kind === 'handoff' ? state.appUrl : null;
   useEffect(() => {
     if (appUrl) openApp(appUrl);

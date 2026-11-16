@@ -3,18 +3,10 @@ import { randomBytes } from 'node:crypto';
 import { localAwareFetch } from './insecure-fetch.mjs';
 import { loadStack } from './stack.mjs';
 
-/**
- * Logto as code for ONE environment: every environment runs its own
- * Logto (infra/platforms/README.md), reached through the machine
- * credential the environment's first deploy seeded into Logto's database
- * (LOGTO_INFRA_M2M_ID/SECRET). Apps, the API resource with its `admin`
- * scope, the `munni admin` role, social connectors, branding, the sign-up
- * policy (invitation-only), the api's Management API access, the
- * console's first admin — all idempotent upserts by name.
- */
+// every environment runs its own Logto, reached through the machine credential its first deploy seeded
+// (LOGTO_INFRA_M2M_ID/SECRET); everything is an idempotent upsert by name
 
 const MGMT_RESOURCE = 'https://default.logto.app/api';
-/** the admin tenant's Management API — the console's users live there */
 export const ADMIN_RESOURCE = 'https://admin.logto.app/api';
 export const ADMIN_SCOPE = 'admin';
 export const ADMIN_ROLE = 'munni admin';
@@ -35,27 +27,20 @@ async function mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl = localAwareFetch
 async function api(logtoUrl, token, path, init = {}, fetchImpl = localAwareFetch) {
   const res = await fetchImpl(`${logtoUrl}/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers } });
   if (!res.ok) throw new Error(`logto ${init.method ?? 'GET'} ${path} failed (${res.status}): ${await res.text()}`);
-  // some writes answer a bare word ("Created" on POST /roles/{id}/users, 201) — only JSON is parsed; the wizard's admin
-  // switch showed "Unexpected token 'C'" on it although the role had been granted (2026-09-28)
+  // some writes answer a bare word ("Created" on POST /roles/{id}/users): only JSON is parsed
   if (res.status === 204) return null;
   const text = await res.text();
   if (!text.trim()) return null;
   try { return JSON.parse(text); } catch { return text; }
 }
 
-/** a logged-in Management API client for the environment's own Logto */
 async function client(stack, { m2mId, m2mSecret }, fetchImpl = localAwareFetch) {
   const base = stack.urls.logto;
   const token = await mgmtToken(base, m2mId, m2mSecret, fetchImpl);
   return (path, init) => api(base, token, path, init, fetchImpl);
 }
 
-/**
- * the app definitions one environment needs: SPA web + admin + lab (+ the
- * control cockpit when this environment powers it), native, m2m. Redirect
- * URIs mirror what the apps really send (origin + /auth-callback; the
- * native shell returns on its own scheme, into the platform's auth session).
- */
+/** redirect URIs mirror what the apps send (origin + /auth-callback); the native shell returns on its own scheme */
 export function appDefinitions(stack) {
   const spa = (name, url, twinPort) => {
     const origins = originVariants(stack, url, twinPort);
@@ -75,19 +60,10 @@ export function appDefinitions(stack) {
       },
       customClientMetadata: {
         corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'],
-        // The phone's refresh token never rotates (prod Logto logs 2026-10-08: one
-        // invalid_grant on a refresh a day). Logto 1.43 rotates the refresh token of
-        // a public client on EVERY refresh (oidc-provider's default policy — this
-        // key is the only thing Logto consults to switch it off); the webview
-        // sometimes loses the rotated token (its storage is not flushed when iOS
-        // suspends or kills the app), presents the previous one, and Logto's reuse
-        // detection destroys the whole grant → sign in again. A token that never
-        // rotates cannot die to reuse detection when the phone loses a write.
+        // Logto 1.43 rotates a public client's refresh token on EVERY refresh; the webview can lose the rotated one
+        // (iOS kills the app before storage flushes) and reuse detection destroys the grant: no rotation for the phone
         rotateRefreshToken: false,
-        // 90 days is the longest Logto allows; then a sign-in through the auth
-        // session (the Logto session cookie usually survives, so it is one tap).
-        // The SPAs keep rotation: browsers keep localStorage and the cross-tab
-        // lock serialises their refreshes (authToken.ts).
+        // 90 days is Logto's maximum; the SPAs keep rotation (localStorage + the cross-tab lock serialise refreshes, authToken.ts)
         refreshTokenTtlInDays: 90,
       },
     },
@@ -103,15 +79,8 @@ export function appDefinitions(stack) {
 /** the application secret this module owns on every machine app it creates — read back on every run, minted once */
 export const MACHINE_SECRET_NAME = 'munni bootstrap';
 
-/**
- * The machine credential's secret. Logto keeps an application's secrets in
- * their own table and its application endpoints carry none (svhd/logto
- * 1.43; found live 2026-10-01 — the write-back had stored the string
- * "undefined" and the api's token mint answered 401): the module's own
- * named secret is read back when it is there and minted when it is not,
- * so every bootstrap writes back the same value and a run without a
- * deploy never desyncs the running api from Logto.
- */
+// Logto keeps application secrets in their own table and its endpoints carry none (1.43): the module's named secret
+// is read back or minted once; a write-back once stored "undefined" and the api's token mint answered 401
 async function machineSecret(call, appId) {
   const secrets = await call(`/applications/${appId}/secrets`);
   const mine = (Array.isArray(secrets) ? secrets : []).find((s) => s.name === MACHINE_SECRET_NAME);
@@ -127,14 +96,8 @@ const credential = (name, value) => {
   return value;
 };
 
-/**
- * upsert-by-name; returns {web, admin, lab, native, m2m, control?, resource}.
- * An existing application is PATCHed with its WHOLE definition — redirect
- * URIs and customClientMetadata alike (Logto replaces the jsonb column with
- * what the patch carries) — so a policy change such as the native app's
- * refresh-token rotation lands on every environment's next Bootstrap, never
- * only on the apps a first run creates.
- */
+// PATCHes an existing app with its WHOLE definition (Logto replaces the jsonb column), so a policy change
+// reaches every environment's next Bootstrap
 export async function applyApps(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const existing = await call('/applications?page_size=100');
@@ -143,7 +106,6 @@ export async function applyApps(stack, creds, { fetchImpl = localAwareFetch } = 
     const match = existing.find((a) => a.name === def.name);
     out[key] = match ? await call(`/applications/${match.id}`, { method: 'PATCH', body: JSON.stringify(def) }) : await call('/applications', { method: 'POST', body: JSON.stringify(def) });
   }
-  // the api's machine credential: the module's own application secret on its m2m app
   out.m2m.secret = await machineSecret(call, out.m2m.id);
   out.resource = await ensureResource(call, stack);
   return out;
@@ -155,13 +117,7 @@ async function ensureResource(call, stack) {
   return resources.find((r) => r.indicator === indicator) ?? (await call('/resources', { method: 'POST', body: JSON.stringify({ name: `${stack.stack} api`, indicator }) }));
 }
 
-/**
- * Admin access as code (user ruling 2026-09-17): the API resource carries
- * an `admin` scope, the user role `munni admin` grants it, and the api
- * lets a token with that scope into /admin and /control. Nobody's subject
- * is typed anywhere — the wizard's Access tab lists the users and toggles
- * the role. Returns {resourceId, scopeId, roleId}.
- */
+/** the `admin` scope on the API resource, granted by the `munni admin` role; the wizard's Access tab toggles it per user */
 export async function ensureAdminRole(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const resource = await ensureResource(call, stack);
@@ -178,7 +134,6 @@ export async function ensureAdminRole(stack, creds, { fetchImpl = localAwareFetc
   return { resourceId: resource.id, scopeId: scope.id, roleId: role.id };
 }
 
-/** every user of the environment's Logto, with whether they hold the admin role */
 export async function listUsers(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const users = await call('/users?page_size=100');
@@ -189,7 +144,6 @@ export async function listUsers(stack, creds, { fetchImpl = localAwareFetch } = 
   return users.map((u) => ({ id: u.id, username: u.username ?? null, name: u.name ?? null, email: u.primaryEmail ?? null, avatar: u.avatar ?? null, admin: admins.has(u.id), lastSignInAt: u.lastSignInAt ? new Date(u.lastSignInAt).toISOString() : null }));
 }
 
-/** grant or revoke the admin role for one user (the role is ensured first) */
 export async function setAdmin(stack, creds, userId, on, { fetchImpl = localAwareFetch } = {}) {
   const { roleId } = await ensureAdminRole(stack, creds, { fetchImpl });
   const call = await client(stack, creds, fetchImpl);
@@ -200,19 +154,12 @@ export async function setAdmin(stack, creds, userId, on, { fetchImpl = localAwar
   return { userId, admin: on };
 }
 
-/**
- * Social sign-in as code: Google + Apple connectors from the operator's
- * OAuth credentials in the environment; absent credentials skip that
- * provider. Connectors live under their FIXED ids (google-universal,
- * apple-universal) so the callbacks the wizard shows are exact.
- */
+/** connectors live under FIXED ids (google-universal, apple-universal) so the callbacks the wizard shows are exact */
 export async function applySocialConnectors(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const wanted = [];
   const { LOGTO_GOOGLE_CLIENT_ID, LOGTO_GOOGLE_CLIENT_SECRET, LOGTO_APPLE_CLIENT_ID, LOGTO_APPLE_TEAM_ID, LOGTO_APPLE_KEY_ID, LOGTO_APPLE_PRIVATE_KEY } = process.env;
-  // prompts: Google's own session continued the same account after "Use another account" (user 2026-10-08: "when I select
-  // google to login, it just automatically logs into my account") — prompt=select_account makes Google show its chooser;
-  // the chooser is one tap on a normal sign-in and the only way to switch
+  // prompt=select_account: Google's own session otherwise continued the same account after "Use another account"
   if (LOGTO_GOOGLE_CLIENT_ID && LOGTO_GOOGLE_CLIENT_SECRET) wanted.push({ target: 'google', connectorId: 'google-universal', config: { clientId: LOGTO_GOOGLE_CLIENT_ID, clientSecret: LOGTO_GOOGLE_CLIENT_SECRET, scope: 'openid profile email', prompts: ['select_account'] } });
   if (LOGTO_APPLE_CLIENT_ID && LOGTO_APPLE_TEAM_ID && LOGTO_APPLE_KEY_ID && LOGTO_APPLE_PRIVATE_KEY) wanted.push({ target: 'apple', connectorId: 'apple-universal', config: { clientId: LOGTO_APPLE_CLIENT_ID, teamId: LOGTO_APPLE_TEAM_ID, keyId: LOGTO_APPLE_KEY_ID, privateKey: LOGTO_APPLE_PRIVATE_KEY, scope: 'name email' } });
   if (!wanted.length) return { applied: [] };
@@ -233,7 +180,6 @@ export async function applySocialConnectors(stack, creds, { fetchImpl = localAwa
   return { applied, renamed, callbacks: Object.fromEntries(wanted.map((d) => [d.target, `${stack.urls.logto}/callback/${d.connectorId}`])) };
 }
 
-/** sign-in screen branding: the munni logo (served by the environment's own web app) + brand colors */
 export async function applyBranding(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const { logoUrl, favicon } = await brandingImages(stack, fetchImpl);
@@ -254,15 +200,8 @@ async function brandingImages(stack, fetchImpl) {
 /** Logto's built-in machine role over its own Management API — the seed makes it per tenant (the wizard's seed SQL links the infra credential to it the same way) */
 export const MANAGEMENT_ROLE = 'Logto Management API access';
 
-/**
- * The api reaches the Management API as code (user 2026-10-07): account
- * deletion removes the Logto user, and an invitation-only environment
- * mints its invitation links (one-time tokens) — both need the api's
- * machine app behind Logto's built-in role above. The role and the app
- * are found by name, never created here (the seed makes the role,
- * applyApps the app); the grant happens once. Returns
- * {role, roleId, appId, granted}.
- */
+// account deletion removes the Logto user and invite-only mints one-time tokens: both need the api's machine app
+// on the built-in role; role and app are found by name, never created here (the seed makes the role, applyApps the app)
 export async function ensureManagementAccess(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const roles = await call('/roles?page_size=100');
@@ -278,21 +217,8 @@ export async function ensureManagementAccess(stack, creds, { fetchImpl = localAw
   return { role: role.name, roleId: role.id, appId: app.id, granted };
 }
 
-/**
- * Invitation-only sign-up as code (user 2026-10-07): with
- * features.inviteOnly the environment's sign-in experience is sign-in
- * only — nobody registers at the door; the admin portal mints an
- * invitation link (a Logto one-time token) that registers the invitee,
- * whom Logto's own "complete your profile" screens then ask for whatever
- * the tenant's sign-up wants (a username tenant stays a username
- * tenant), and social sign-in links itself to the matching verified
- * e-mail afterwards. The sign-up identifiers and sign-in methods are
- * left EXACTLY as they are: the tenants carry no e-mail connector, and
- * Logto's validator refuses an e-mail identifier or e-mail code method
- * without one (enabled_connector_not_found) — that connector is a later
- * step. Off: registration opens again (SignInAndRegister). One PATCH,
- * only when something differs. Returns {inviteOnly, changed}.
- */
+// invite-only: sign-in only; the admin portal mints an invitation link (a Logto one-time token); off reopens registration
+// sign-up identifiers and sign-in methods stay EXACTLY as they are: no e-mail connector (enabled_connector_not_found)
 export async function applySignUpPolicy(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const exp = (await call('/sign-in-exp')) ?? {};
@@ -309,7 +235,6 @@ export async function applySignUpPolicy(stack, creds, { fetchImpl = localAwareFe
 
 export const CONNECTOR_SCOPE = 'connector:admin';
 
-/** the connector's API resource, machine role and the api's machine app, named per environment */
 export function connectorDefinitions(stack) {
   return {
     resource: { name: `${stack.stack} connector`, indicator: stack.urls.connector },
@@ -318,16 +243,8 @@ export function connectorDefinitions(stack) {
   };
 }
 
-/**
- * The relay's credential as code (#367, slice M2): the connector control
- * plane is an API resource of the environment's Logto (its public address
- * as the indicator, which is the audience the control plane validates),
- * carrying the `connector:admin` scope; a machine role grants that scope;
- * the api's own machine app holds the role. The api mints client
- * credentials for the resource and every scope its roles carry comes along
- * — so the same token opens the consumer routes and the operator's. Upsert
- * by name, like the apps. Returns {appId, secret, resourceId, scopeId, roleId}.
- */
+// the connector control plane is an API resource (its public address is the audience it validates), scope connector:admin
+// a machine role grants it to the api's m2m app: one token opens the consumer routes and the operator's
 export async function ensureConnectorAccess(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   if (!stack.urls.connector) throw new Error(`${stack.stack} runs no connectors — nothing to grant`);
   const call = await client(stack, creds, fetchImpl);
@@ -358,7 +275,6 @@ export async function ensureConnectorAccess(stack, creds, { fetchImpl = localAwa
   return { appId: app.id, secret: await machineSecret(call, app.id), resourceId: resource.id, scopeId: scope.id, roleId: role.id };
 }
 
-/** GitHub write-back (nas) of the relay's machine credential */
 export function writeBackConnector(stack, access) {
   const env = stack.githubEnvironment;
   const appId = credential('CONNECTOR_M2M_APP_ID', access.appId);
@@ -367,7 +283,6 @@ export function writeBackConnector(stack, access) {
   execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_SECRET', '--env', env, '--body', secret]);
 }
 
-/** GitHub write-back (nas): app ids as variables, the api's m2m credential as secrets */
 export function writeBack(stack, apps) {
   const env = stack.githubEnvironment;
   const m2mId = credential('LOGTO_M2M_APP_ID', apps.m2m.id);
@@ -386,12 +301,6 @@ export function writeBack(stack, apps) {
   execFileSync('gh', ['secret', 'set', 'LOGTO_M2M_APP_SECRET', '--env', env, '--body', m2mSecret]);
 }
 
-/**
- * The console's first admin, as code: with the admin-tenant machine
- * credential the deploy seeded, create the console user `admin` with a
- * generated password once, give it the console's roles, and switch the
- * console from Register to SignIn. Idempotent. Returns {created, existing, modeSet}.
- */
 export async function claimConsole(stack, { adminId, adminSecret }, { fetchImpl = localAwareFetch, password = null } = {}) {
   const base = stack.urls.logtoAdmin;
   const token = await mgmtToken(base, adminId, adminSecret, fetchImpl, ADMIN_RESOURCE);
@@ -407,8 +316,7 @@ export async function claimConsole(stack, { adminId, adminSecret }, { fetchImpl 
     created = { username: 'admin', password: pw, id: user.id };
     userId = user.id;
   }
-  // the console admits a user through the TENANT ORGANIZATION (t-<tenant>): a member holding the organization role
-  // "admin" — the legacy roles alone open on "Oops! Access denied" (getOrganizationTokenClaims), nas prod 2026-09-28
+  // the console admits a user through the TENANT ORGANIZATION (t-<tenant>) role "admin": legacy roles give "Access denied"
   const membership = userId ? await ensureConsoleMembership(base, token, userId, fetchImpl) : null;
   const exp = await api(base, token, '/sign-in-exp', {}, fetchImpl);
   let modeSet = false;
@@ -419,11 +327,7 @@ export async function claimConsole(stack, { adminId, adminSecret }, { fetchImpl 
   return { created, existing: users.length > 0, modeSet, membership };
 }
 
-/**
- * every TENANT organization of the admin tenant takes the user with the "admin" organization role — Logto OSS has two
- * (t-default = the default tenant the console manages, t-admin = the admin tenant itself; a first run that joined only
- * the first one listed left the console on "Access denied", nas prod 2026-09-28). Idempotent.
- */
+// Logto OSS has two tenant organizations (t-default, t-admin): joining only the first left the console on "Access denied"
 async function ensureConsoleMembership(base, token, userId, fetchImpl) {
   const list = (x) => (Array.isArray(x) ? x : []);
   const orgs = list(await api(base, token, '/organizations?page_size=20', {}, fetchImpl)).filter((o) => String(o.id).startsWith('t-'));
@@ -448,7 +352,6 @@ async function ensureConsoleMembership(base, token, userId, fetchImpl) {
   return { organizations: orgs.map((o) => o.id), role: admin?.name ?? null, joined, granted };
 }
 
-/** true once Logto issues a token for the infra credential — the seed has landed */
 export async function logtoAnswers(stack, { m2mId, m2mSecret }, fetchImpl = localAwareFetch) {
   try {
     await mgmtToken(stack.urls.logto, m2mId, m2mSecret, fetchImpl);
@@ -458,7 +361,6 @@ export async function logtoAnswers(stack, { m2mId, m2mSecret }, fetchImpl = loca
   }
 }
 
-/** delete the environment's apps (by their code names) and its API resource; returns {removed, absent} */
 export async function removeApps(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
   const existing = await call('/applications?page_size=100');

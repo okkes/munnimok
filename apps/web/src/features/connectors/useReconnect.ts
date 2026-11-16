@@ -10,7 +10,6 @@ import { CATALOGUE_META_KEY, useRelayAccountLinks, useRelayBindingsRead } from '
 import type { Cached } from './useCatalogue';
 import type { BindingView, ProviderKind, ProviderManifest } from './types';
 
-/** where a reconnect leads (#528): the connection itself, brought into view on the screen that manages it */
 export interface ReconnectDoor {
   to: '/accounts' | '/connections';
   search: { connection?: string; uncovered?: string };
@@ -29,7 +28,6 @@ interface Inputs {
   manifests: Map<string, ProviderManifest>;
 }
 
-/** builds the reader from what the device holds and what the relay said (S3776: out of the hook) */
 function readerOf(inputs: Inputs, bindings: ReadonlyMap<string, BindingView> | undefined, reachedBy: ReachedBy | undefined): ReconnectReader {
   const live = new Map<string, ConnectionRenewal>();
   for (const meta of inputs.metas) {
@@ -50,11 +48,7 @@ function readerOf(inputs: Inputs, bindings: ReadonlyMap<string, BindingView> | u
   };
 }
 
-/**
- * #528: reads, per account, whether it needs its connection again — and
- * where to go about it. Undefined until the device's rows are read; the
- * relay's word (bindings, per-person account links) joins once it answers.
- */
+// #528: undefined until the device's rows are read; the relay's word (bindings, account links) joins once it answers
 export function useReconnectReader(): ReconnectReader | undefined {
   const { store } = useData();
   const inputs = useQuery(

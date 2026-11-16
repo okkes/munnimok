@@ -7,7 +7,6 @@ import type { ChartPt } from './monotone';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
-/** every cubic segment of an SVG path as { from, c1, c2, to } */
 function parseCubics(d: string): { from: ChartPt; c1: ChartPt; c2: ChartPt; to: ChartPt }[] {
   const [move, ...curves] = d.split(' C');
   const pt = (pair: string): ChartPt => {
@@ -38,8 +37,6 @@ describe('monotone interpolation (#168 r3)', () => {
   });
 
   it('a drop into a flat stretch never dips past the flat level (the r2 overshoot)', () => {
-    // SVG y grows downward: a high value then two zero months — the
-    // Catmull-Rom curve used to swing BELOW the zero line here
     const pts = [
       { x: 0, y: 20 },
       { x: 10, y: 112 },
@@ -50,8 +47,6 @@ describe('monotone interpolation (#168 r3)', () => {
     expect(m[1]).toBe(0);
     expect(m[2]).toBe(0);
     expect(m[3]).toBe(0);
-    // control points inside each segment's y range ⇒ the whole bezier is
-    // (convex hull) — no value beyond 112, no value above 20
     for (const seg of parseCubics(monotonePath(pts))) {
       const lo = Math.min(seg.from.y, seg.to.y);
       const hi = Math.max(seg.from.y, seg.to.y);
@@ -71,12 +66,10 @@ describe('monotone interpolation (#168 r3)', () => {
     expect(monotonePointAt(pts, 0)).toEqual(pts[0]);
     expect(monotonePointAt(pts, 2)).toEqual(pts[2]);
     expect(monotonePointAt(pts, 1)).toEqual(pts[1]);
-    // halfway through the first segment: the cubic bezier's own midpoint (1/8, 3/8, 3/8, 1/8)
     const [seg] = parseCubics(monotonePath(pts));
     const mid = monotonePointAt(pts, 0.5);
     expect(mid.x).toBeCloseTo((seg.from.x + 3 * seg.c1.x + 3 * seg.c2.x + seg.to.x) / 8, 1);
     expect(mid.y).toBeCloseTo((seg.from.y + 3 * seg.c1.y + 3 * seg.c2.y + seg.to.y) / 8, 1);
-    // outside the run it clamps; a lone point is itself
     expect(monotonePointAt(pts, 9)).toEqual(pts[2]);
     expect(monotonePointAt([{ x: 4, y: 5 }], 0.5)).toEqual({ x: 4, y: 5 });
   });
@@ -88,8 +81,6 @@ describe('monotone interpolation (#168 r3)', () => {
       { x: 20, y: 100 },
     ];
     expect(monotoneTangents(peak)[1]).toBe(0);
-    // a steep monotone descent: every control point stays inside its
-    // segment's range — the curve can never overshoot the data
     const steep = [
       { x: 0, y: 10 },
       { x: 10, y: 90 },
@@ -154,11 +145,10 @@ describe('MultiLine', () => {
     const band = screen.getByTestId('band-band');
     expect(band.getAttribute('fill')).toBe('teal');
     expect(band.getAttribute('fill-opacity')).toBe('0.12');
-    // a closed outline: out along the high line, back along the low one
     const d = band.getAttribute('d')!;
     expect(d.startsWith('M')).toBe(true);
     expect(d.endsWith('Z')).toBe(true);
-    expect(d.split(' C')).toHaveLength(3); // one segment out, one back — the gap at index 2 ends the band
+    expect(d.split(' C')).toHaveLength(3);
   });
 
   it('#500: the selection is one marker on the line — every dot keeps its size, the marker stands on the picked point and moves there on a new pick', () => {
@@ -220,11 +210,9 @@ describe('MultiLine', () => {
     fireEvent.keyDown(svg, { key: 'ArrowLeft' });
     expect(onScrub).toHaveBeenLastCalledWith(1);
     expect(screen.getByTestId('scr-tip').textContent).toBe('Day 2now 1then 1');
-    // both lines carry a dot at the index
     expect(screen.getByTestId('scr-scrub').querySelectorAll('circle')).toHaveLength(2);
     fireEvent.keyDown(svg, { key: 'End' });
     expect(onScrub).toHaveBeenLastCalledWith(3);
-    // the solid line has no day 4: one dot
     expect(screen.getByTestId('scr-scrub').querySelectorAll('circle')).toHaveLength(1);
     fireEvent.keyDown(svg, { key: 'Escape' });
     expect(onScrub).toHaveBeenLastCalledWith(null);
@@ -253,8 +241,7 @@ describe('MultiLine', () => {
     expect(screen.getByTestId('ml2-dot-0-2')).toBeTruthy();
     const paths = [...screen.getByTestId('ml2').querySelectorAll('path')];
     expect(paths).toHaveLength(2);
-    // both lines meet at the shared point: series 0 departs where series 1 ends
-    const start0 = paths[0].getAttribute('d')!.split(' ')[0]; // "M<x>,<y>"
+    const start0 = paths[0].getAttribute('d')!.split(' ')[0];
     expect(paths[1].getAttribute('d')!.endsWith(start0.slice(1))).toBe(true);
   });
 });

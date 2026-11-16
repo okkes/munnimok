@@ -3,15 +3,7 @@ using Connector.Kit.Normalization;
 
 namespace BankConnector.Adapters;
 
-/// <summary>
-/// An account as an adapter states it, before its id and content hash exist.
-/// </summary>
-/// <remarks>
-/// Everything here is the provider's own fact about the account; nothing is
-/// derived. <see cref="BankRecords.NewAccount"/> mints the rest, which is
-/// what keeps an adapter from improvising an id or a hash - see
-/// <see cref="BankRecords"/>.
-/// </remarks>
+// the provider's own facts only; BankRecords.NewAccount mints the id and hash so an adapter cannot improvise them
 public sealed record AccountDraft
 {
     public required string ExternalId { get; init; }
@@ -20,7 +12,6 @@ public sealed record AccountDraft
 
     public required string DisplayName { get; init; }
 
-    /// <summary>An ISO code. Upper-cased by the factory, so any case will do here.</summary>
     public required string Currency { get; init; }
 
     public string? Iban { get; init; }
@@ -36,20 +27,12 @@ public sealed record AccountDraft
     public string? Identity { get; init; }
 }
 
-/// <summary>
-/// A transaction as an adapter states it, before its id and content hash
-/// exist.
-/// </summary>
-/// <remarks>
-/// The account it belongs to is named to
-/// <see cref="BankRecords.NewTransaction"/> rather than here, because that id
-/// is the factory's own product - see <see cref="BankRecords.AccountId"/>.
-/// </remarks>
+// the account is named to NewTransaction, not here: that id is the factory's product (see AccountId)
 public sealed record TransactionDraft
 {
     public required string ExternalId { get; init; }
 
-    /// <summary>True when the adapter built <see cref="ExternalId"/> itself because the bank states none (see <see cref="Transaction.IdIsDerived"/>).</summary>
+    /// true when the adapter built ExternalId itself because the bank states none
     public bool IdIsDerived { get; init; }
 
     public required DateOnly BookedAt { get; init; }
@@ -67,24 +50,11 @@ public sealed record TransactionDraft
     public Money? ResultingBalance { get; init; }
 }
 
-/// <summary>
-/// Builds normalised records for bank adapters.
-///
-/// Ids and content hashes are minted here rather than in each adapter
-/// because together they ARE the idempotency contract: the id must be
-/// derivable from <c>(session, external_id)</c> so a re-run produces the
-/// same ids, and the hash must cover exactly the fields that make a record
-/// what it is. An adapter that improvises either one breaks re-fetch
-/// overlap - and re-fetch overlap is what lets every adapter widen its
-/// window to catch late-settling rows (see <see cref="BankWindow"/>).
-/// </summary>
+// ids and hashes are minted here, not per adapter: together they ARE the idempotency contract (id from
+// (session, external_id); hash over exactly the identity fields), and the re-fetch overlap of BankWindow rests on it
 public static class BankRecords
 {
-    /// <summary>
-    /// The id a transaction must reference. Exposed so an adapter that
-    /// parses transactions before it has built the account record still
-    /// produces a matching <see cref="Transaction.AccountId"/>.
-    /// </summary>
+    /// exposed so an adapter parsing transactions before the account record still gets a matching AccountId
     public static string AccountId(string sessionId, string externalId) =>
         Ids.ForRecord(Ids.Account, sessionId, externalId);
 
@@ -138,11 +108,7 @@ public static class BankRecords
         return transaction with { ContentHash = ContentHash.Of(transaction) };
     }
 
-    /// <summary>
-    /// A balance stamped at a stated moment. Bank exports date balances to a
-    /// day, not an instant, so the offset is made explicit here rather than
-    /// left to whatever local time zone the agent happens to run in.
-    /// </summary>
+    /// bank exports date balances to a day, so the offset is explicit rather than the agent's local zone
     public static Balance BalanceOn(Money amount, DateOnly asOf) =>
         new() { Amount = amount, AsOf = new DateTimeOffset(asOf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) };
 }

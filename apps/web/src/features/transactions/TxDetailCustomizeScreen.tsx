@@ -9,9 +9,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { BlockListEditor } from '@/features/customize/BlockListEditor';
 
-/** the movable sections below the categories card, in default order —
- *  #232 (user): actions and the details/facts card joined the registry;
- *  the headline, account and categories cards stay fixed */
+/** the movable sections below the categories card, default order; headline, account, categories stay fixed (#232) */
 export const TX_DETAIL_BLOCK_IDS = ['actions', 'facts', 'reimburse', 'receipts', 'notes'] as const;
 export type TxDetailBlockId = (typeof TX_DETAIL_BLOCK_IDS)[number];
 
@@ -23,7 +21,6 @@ export const TX_DETAIL_BLOCK_LABELS: Record<TxDetailBlockId, TranslationKey> = {
   notes: 'tx.notes',
 };
 
-/** icons matching the sections they stand for (user feedback 2026-07-24) */
 export const TX_DETAIL_BLOCK_ICONS: Record<TxDetailBlockId, string> = {
   actions: 'gesture-tap-button',
   facts: 'information-outline',
@@ -37,9 +34,7 @@ export interface TxDetailBlockConfig {
   hidden: boolean;
 }
 
-/** the space's saved layout merged with defaults — #232: a section the
- *  save predates slots in at its DEFAULT position (appending shoved
- *  actions/facts under notes for every existing space) */
+/** the saved layout merged with defaults: a section the save predates slots in at its default position (#232) */
 export function resolveTxDetailBlocks(space: SpaceRow | undefined): TxDetailBlockConfig[] {
   const saved = space?.txDetailBlocks ?? [];
   const known = new Set<string>(TX_DETAIL_BLOCK_IDS);
@@ -55,11 +50,7 @@ export function resolveTxDetailBlocks(space: SpaceRow | undefined): TxDetailBloc
   return ordered;
 }
 
-/**
- * "Customize this view" for the transaction detail, as a full screen
- * (same reasoning as Customize Home: drags on a sheet felt awkward and
- * the ghost drifted). Saved on the space row — syncs to every member.
- */
+/** saved on the space row, so it syncs to every member */
 export function TxDetailCustomizeScreen() {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
@@ -98,8 +89,7 @@ export function TxDetailCustomizeScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="pb-2 text-[12px] text-ink-3">{t('tx.customizeSub')}</p>
         <ReadOnlyNote className="mb-3" testId="tx-customize-readonly-note" />
-        {/* render only once the SAVED layout arrived — acting on the
-            defaults mid-load silently overwrote the real order */}
+        {/* render only once the saved layout arrived: acting on defaults mid-load overwrote the real order */}
         {space && (
         <div className="flex flex-col" data-testid="tx-customize-list" inert={canEdit ? undefined : true}>
           <BlockListEditor

@@ -7,41 +7,21 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// The offline backbone of the bank connector.
-///
-/// These providers exist so that the control plane, the agent protocol, the
-/// challenge relay, SSE, BYO routing and the operator alert path can all be
-/// exercised end to end before a single real bank is implemented - and so
-/// that a demo user sees a complete bank connection flow without a byte
-/// leaving the process.
-///
-/// The rules that make them useful are all negative ones. They open no
-/// socket. They never touch <see cref="IJobContext.Browser"/>, even where
-/// the manifest declares a browser tier, because the tier is what routing
-/// and agent-class logic are supposed to see, not an instruction to start
-/// Chromium. And a day's data never moves, so a content hash asserted today
-/// still holds next year - while the history itself ends on the provider's
-/// own today, so it always reaches back as far as the manifest says.
-/// </summary>
+// offline fixtures: no socket, and never touch Browser even where the manifest declares a browser tier (it is for routing)
+// a day's data never moves, so a content hash asserted today holds next year; history ends on the provider's today
 public abstract class MockBankAdapter : IProviderAdapter
 {
     protected MockBankAdapter(TimeProvider? time = null) => Time = time ?? TimeProvider.System;
 
     protected TimeProvider Time { get; }
 
-    /// <summary>
-    /// The fixture set this provider serves, through <paramref name="today"/>:
-    /// the ledger ends on the provider's clock (an injected one in tests), so
-    /// its history limit is always filled - a fixed last day emptied every
-    /// window once it fell behind the limit.
-    /// </summary>
+    // the ledger ends on the provider's clock so its history limit is always filled:
+    // a fixed last day emptied every window once it fell behind
     protected virtual MockBankLedger LedgerThrough(DateOnly today) => MockBankLedger.Through(today);
 
-    /// <summary>The provider's today in UTC: where its ledger ends and its windows are resolved from.</summary>
     protected DateOnly Today => DateOnly.FromDateTime(Time.GetUtcNow().UtcDateTime);
 
-    /// <summary>Overrides the transactions resource's per-fetch ceiling; null outside tests, where a small one makes a pass partial on purpose.</summary>
+    // overrides the per-fetch record ceiling; null outside tests, where a small one makes a pass partial on purpose
     public int? RecordCap { get; init; }
 
     public abstract ProviderManifest Describe();
@@ -54,11 +34,7 @@ public abstract class MockBankAdapter : IProviderAdapter
         return Task.FromResult(Serve(ctx, request));
     }
 
-    /// <summary>
-    /// A mock has no upstream to log out of. Overriding to do nothing is
-    /// still the correct behaviour rather than an omission: a user
-    /// disconnecting must always succeed locally.
-    /// </summary>
+    // a user disconnecting must always succeed locally
     public virtual Task LogoutAsync(IJobContext ctx, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ctx);
@@ -66,11 +42,6 @@ public abstract class MockBankAdapter : IProviderAdapter
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// The whole read path, shared by every provider in the fleet: resolve
-    /// the window, resolve which accounts the caller asked for, page, verify
-    /// the balance chain, emit.
-    /// </summary>
     protected FetchResult Serve(IJobContext ctx, ResourceRequest request)
     {
         ArgumentNullException.ThrowIfNull(ctx);
@@ -109,10 +80,7 @@ public abstract class MockBankAdapter : IProviderAdapter
         }
     }
 
-    /// <summary>
-    /// The cap is the page's budget, shared out per account the way the live parties do it: each account
-    /// keeps its own newest rows, so the accounts of one partial page stop on different days.
-    /// </summary>
+    // the cap is shared out per account, each keeping its newest rows, so a partial page stops on different days per account
     internal static (IReadOnlyList<Transaction> Page, bool Complete) Newest(IReadOnlyList<Transaction> ordered, int cap)
     {
         ArgumentNullException.ThrowIfNull(ordered);
@@ -153,46 +121,28 @@ public abstract class MockBankAdapter : IProviderAdapter
                 ExternalId = MockBankLedger.CurrentIban,
             },
             Reachable = LedgerThrough(Today).Reachable,
-            // Stating the real expiry rather than letting the manifest TTL
-            // stand: a manifest that claims thirty days for a one-hour
-            // session makes the consumer promise a month of silent syncing
-            // and then fail.
+            // the real expiry, not the manifest TTL: a longer claim makes the consumer promise syncing it then fails
             ExpiresAt = Time.GetUtcNow().AddSeconds(ttlSeconds),
         };
     }
 }
 
-/// <summary>
-/// The fixed inputs the fleet recognises, exposed so tests and the demo
-/// seed do not have to guess them.
-/// </summary>
 public static class MockBankCredentials
 {
     public const string Username = "demo";
 
     public const string Password = "demo-password";
 
-    /// <summary>
-    /// Any password is accepted except this one, which fails with
-    /// <see cref="ErrorCode.InvalidCredentials"/> - the code that must never
-    /// be retried by anything, anywhere.
-    /// </summary>
+    // any password is accepted except this one, which fails with InvalidCredentials, a code that must never be retried
 #pragma warning disable S2068 // the mock bank's rejected password, not a credential
     public const string RejectedPassword = "invalid";
 #pragma warning restore S2068
 
-    /// <summary>The number a digipass-style provider displays for the human to key in.</summary>
     public const string DisplayedCode = "84213906";
 
-    /// <summary>
-    /// Not a real Playwright storage state, but the same shape, so a control
-    /// plane that seals and reopens it exercises the real path.
-    /// </summary>
+    // same shape as a Playwright storage state, so a control plane that seals and reopens it exercises the real path
     public const string StorageState = """{"cookies":[{"name":"mock-bank-session","value":"fixture","domain":"mock.invalid","path":"/"}],"origins":[]}""";
 
-    /// <summary>
-    /// Shown so a user can tell two connections apart. Not a real address:
-    /// <c>.invalid</c> is reserved by RFC 2606 and can never be routed.
-    /// </summary>
+    // .invalid is reserved by RFC 2606 and can never be routed
     public const string AccountLabel = "Mock Bank - demo@mock.invalid";
 }

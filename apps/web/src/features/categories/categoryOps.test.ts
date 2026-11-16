@@ -98,10 +98,8 @@ describe('#389 iconConflict / #390 copyableUnits', () => {
     expect(withoutDeclined(offers, declined).map(copyDeclineKey)).toEqual(['into:sport']);
     expect(withoutDeclined(offers, undefined)).toHaveLength(2);
 
-    // a sub taken away over there: still declined
     const fewer = copyGroups('here', spaces, base.filter((r) => (r as { id: string }).id !== 's2'));
     expect(withoutDeclined(fewer, declined).map(copyDeclineKey)).toEqual(['into:sport']);
-    // a new sub over there: the main is offered again, with everything it holds
     const more = copyGroups('here', spaces, [...base, { id: 's4', spaceId: 'other', isParent: 0, parentId: 'm1', name: 'Lessons', icon: 'school', deleted: 0 } as never]);
     const back = withoutDeclined(more, declined);
     expect(back.map(copyDeclineKey)).toEqual(['main:padel', 'into:sport']);

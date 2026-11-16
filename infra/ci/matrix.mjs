@@ -1,22 +1,7 @@
 #!/usr/bin/env node
-/**
- * The workflows' matrices from the platform config (infra/platforms —
- * materialized from the MUNNI_PLATFORM_* variables first, #416): which
- * stacks to bootstrap, deploy or build.
- *
- *   node infra/ci/matrix.mjs --platform nas [--channel dev|latest] [--role env|shared] [--feature ios|android] [--stack munni-nas-prod] [--env prod|shared|all] [--existing nas-shared,nas-prod]
- *
- * --existing names the GitHub environments that exist: a stack whose
- * environment is missing was never bootstrapped, so pushes and image builds
- * skip it (with a note on stderr) — a dispatch that names its --stack is the
- * Bootstrap that creates the environment, and is never filtered.
- *
- * Prints a JSON array of {stack, platform, env, role, environment, channel, ref,
- * appChannel, androidPackage, iosBundleId, scheme, label} — `environment` is
- * the GitHub environment the job must run in. With GITHUB_OUTPUT set the
- * array also lands in the step output `include` (fromJSON-ready) and its
- * length in `count`.
- */
+// the workflows' matrices from the platform config (#416); `environment` is the GitHub environment the job must run in
+// --existing names the GitHub environments that exist: a stack without one was never bootstrapped, so pushes and
+// image builds skip it; a dispatch that names its --stack is the Bootstrap that creates it, and is never filtered
 import { appendFileSync } from 'node:fs';
 import { listPlatforms, loadStack, platformEnvs, stackName } from '../modules/stack.mjs';
 

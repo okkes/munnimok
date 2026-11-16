@@ -6,13 +6,8 @@ import { useTipsDisabled } from './tipsPref';
 import type { TourId } from './tours';
 import { Icon } from '@/ui/Icon';
 
-/**
- * Layer 1: the passive nudge — a dismissible one-liner the first time a
- * screen with a tour opens. Never nags again once dismissed or once the
- * tour was seen (device-level meta, tutorials are per person). Screens
- * mid-task pass idle={false} so the lesson never interrupts live work
- * (§2K) — the ? in the bar stays the always-available door.
- */
+// device-level meta (tutorials are per person); screens mid-task pass idle={false}
+// so the lesson never interrupts live work (§2K)
 export function IntroCard({ tourId, idle = true }: Readonly<{ tourId: TourId; idle?: boolean }>) {
   const { t } = useLang();
   const { store } = useData();

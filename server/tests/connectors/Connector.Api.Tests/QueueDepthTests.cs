@@ -7,31 +7,11 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// What happens when more work arrives than the fleet can drain.
-///
-/// <para>
-/// The fleet is scaled by running more agents, each taking exactly one job at a
-/// time - see <c>AgentExclusivityTests</c>. That makes throughput small and
-/// knowable, and it makes the queue the thing that absorbs a burst. A queue
-/// nobody bounds absorbs it invisibly: the job is accepted, the user watches a
-/// spinner that is really a waiting list, and nothing tells them so.
-/// </para>
-///
-/// <para>
-/// So past a cap the work is refused with <c>rate_limited</c>, which carries
-/// <c>user_action: wait</c> - a consumer can say "busy, try shortly" instead of
-/// rendering progress that is not progressing.
-/// </para>
-/// </summary>
+// past a cap work is refused with rate_limited (user_action: wait): an unbounded queue hides a backlog behind a spinner
 [Collection(ShopApiCollection.Name)]
 public sealed class QueueDepthTests(ShopApiFactory factory)
 {
-    /// <summary>
-    /// Fills the queue directly rather than through the API, because what is
-    /// under test is the queue's own rule and a hundred real logins would be a
-    /// hundred browsers.
-    /// </summary>
+    // fills the queue directly: a hundred real logins would be a hundred browsers
     private static void Flood(ShopApiFactory factory, int count) =>
         Db.Write(factory, db =>
         {
@@ -83,8 +63,6 @@ public sealed class QueueDepthTests(ShopApiFactory factory)
 
             Assert.Equal(ErrorCode.RateLimited, refused.Code);
 
-            // The code is the contract: retriable, and the user is told to
-            // wait rather than to do anything.
             Assert.True(ErrorCatalog.IsRetriable(ErrorCode.RateLimited));
             Assert.Equal(UserAction.Wait, ErrorCatalog.ActionFor(ErrorCode.RateLimited));
         }
@@ -94,15 +72,7 @@ public sealed class QueueDepthTests(ShopApiFactory factory)
         }
     }
 
-    /// <summary>
-    /// A LOGOUT IS NEVER REFUSED, however long the queue is.
-    /// </summary>
-    /// <remarks>
-    /// Disconnecting must always succeed - the platform says so on every other
-    /// path - and somebody told "too busy to sign you out of your bank" is
-    /// somebody whose only remaining option is to leave the session running.
-    /// That is the exact opposite of what a shed is for.
-    /// </remarks>
+    // a logout is never refused, however long the queue: a refused sign-out leaves the bank session running
     [Fact]
     public async Task A_sign_out_is_accepted_even_when_everything_else_is_refused()
     {
@@ -123,10 +93,6 @@ public sealed class QueueDepthTests(ShopApiFactory factory)
         }
     }
 
-    /// <summary>
-    /// And an ordinary queue accepts work, so the cap is a backstop rather than
-    /// a throttle somebody meets on a quiet system.
-    /// </summary>
     [Fact]
     public async Task An_ordinary_queue_still_takes_work()
     {

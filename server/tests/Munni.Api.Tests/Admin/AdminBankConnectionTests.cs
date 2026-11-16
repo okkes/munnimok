@@ -8,13 +8,8 @@ using Munni.Api.Tests.Connectors;
 
 namespace Munni.Api.Tests.Admin;
 
-/// <summary>
-/// The Bank connections dashboard (user 2026-10-09): every open-banking
-/// session across users with the accounts it reached and whether it is
-/// stale, every party on request, and a disconnect that ends the session
-/// at the in-process control plane and forgets the binding and its
-/// references — with the answer saying what the party did.
-/// </summary>
+/// a disconnect ends the session at the in-process control plane and forgets the binding and its references;
+/// the answer says what the party did
 public class AdminBankConnectionTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Admin = "openid profile admin";
@@ -89,7 +84,6 @@ public class AdminBankConnectionTests(ConnectorApiFactory factory) : IClassFixtu
         // active in a device's own custody: no bundle here, and not stale for it
         Assert.False(shop["stale"]!.GetValue<bool>());
 
-        // the scope decides, not the subject
         Assert.Equal(HttpStatusCode.Forbidden, (await shopper.GetAsync("/admin/bank-connections")).StatusCode);
     }
 
@@ -124,7 +118,6 @@ public class AdminBankConnectionTests(ConnectorApiFactory factory) : IClassFixtu
         Assert.Equal(SessionState.Disabled, await factory.ControlPlane.SessionStateAsync(sessionId));
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/connectors/{MockBank}/login/{sessionId}")).StatusCode);
 
-        // gone is gone
         Assert.Equal(HttpStatusCode.NotFound, (await admin.DeleteAsync($"/admin/bank-connections/{sessionId}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.DeleteAsync($"/admin/bank-connections/{sessionId}")).StatusCode);
     }
@@ -169,7 +162,6 @@ public class AdminBankConnectionTests(ConnectorApiFactory factory) : IClassFixtu
         return view;
     }
 
-    /// <summary>A user the api knows, named where the dashboard should show a name.</summary>
     private async Task<Guid> MaterializeAsync(string sub, string? displayName)
     {
         using var client = factory.ClientFor(sub);

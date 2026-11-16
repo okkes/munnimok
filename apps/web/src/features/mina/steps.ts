@@ -1,22 +1,15 @@
 import type { TranslationKey } from '@/i18n';
 import type { MinaArt, MinaExpr } from './assets';
 
-/**
- * The Mina onboarding tutorial:
- * auto-starts after the onboarding form, walks the REAL navigation via
- * gated clicks, and never writes data — the user's own form submissions
- * complete the act-steps (store-diff detection, value-flexible).
- */
+// the tutorial never writes data: the user's own form submissions complete the act-steps
+// (store-diff detection, value-flexible)
 
-/** entities the act-steps watch and the revert ledger tracks */
 export type MinaEntity = 'space' | 'account' | 'transaction';
 
 export interface MinaStep {
   /** stable id — resume + tests key on it */
   id: string;
-  /** fullscreen Mina page vs the small bubble beside the action */
   kind: 'fullscreen' | 'bubble';
-  /** bubble avatar / fullscreen art */
   expr?: MinaExpr;
   art?: MinaArt;
   titleKey: TranslationKey;
@@ -32,10 +25,8 @@ export interface MinaStep {
   info?: boolean;
   /** completes when a NEW row of this entity exists (deleted: absent) */
   act?: { entity: MinaEntity; absent?: boolean };
-  /** form prefill suggestion while this step is live (localized name key) */
   suggestKey?: TranslationKey;
-  /** testids whose live wording fills the copy's {target} (user ruling:
-   *  quote the REAL button so renames never desync the tutorial) */
+  /** testids whose live wording fills the copy's {target}: renames never desync the tutorial */
   labelFrom?: string[];
   /** safe re-entry point: a killed app resumes at the nearest one —
    *  mid-sheet steps can't reconstruct their transient UI */
@@ -72,8 +63,7 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'openManage2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true, labelFrom: ['space-pick-manage'] },
   { id: 'openCreate2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openCreate.b', anchor: ['spaces-add'], gate: true },
   { id: 'createFamily', kind: 'bubble', expr: 'thinking', titleKey: 'mina.family.t', bodyKey: 'mina.createFamily.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.family', labelFrom: ['space-create-save'] },
-  // teach switching FROM HOME (user ruling): swapping on the manage
-  // screen shows nothing changing — on Home the whole screen follows
+  // teach switching from Home: on the manage screen nothing visibly changes
   { id: 'goHomeSwap', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.goHomeSwap.b', anchor: ['tab-home', 'side-tab-home'], gate: true },
   { id: 'openSwitcherSwap', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.openSwitcherSwap.b', anchor: ['home-space-switcher'], gate: true },
   { id: 'pickPrivate', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.pickPrivate.b', anchor: ['space-pick-$s1'], gate: true },
@@ -84,8 +74,7 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'tryTxAdd', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.tryTxAdd.b', anchor: ['tx-add'], gate: true },
   // a new space is born with its cash wallet, so the form opens: what it can still show is whose accounts it offers
   { id: 'ownAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.ownAccount.b', anchor: ['txform-account'], info: true, labelFrom: ['txform-account'] },
-  // the ACTIVE space cannot be deleted (user ss): hop back to the first
-  // space, then reach Family's OWN settings through its cog
+  // the ACTIVE space cannot be deleted: hop back to the first space, then reach Family's own settings through its cog
   { id: 'openSwitcherCleanup', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.openSwitcherCleanup.b', screen: '/home', anchor: ['home-space-switcher'], gate: true },
   { id: 'pickPrivateCleanup', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.pickPrivateCleanup.b', anchor: ['space-pick-$s1'], gate: true },
   { id: 'openSwitcherCleanup2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.openSwitcherCleanup2.b', anchor: ['home-space-switcher'], gate: true },
@@ -97,7 +86,6 @@ export const MINA_STEPS: readonly MinaStep[] = [
 
 export const minaStepIndex = (id: string): number => MINA_STEPS.findIndex((s) => s.id === id);
 
-// ── run state (persisted in meta so a killed app resumes) ────────────────
 export interface MinaLedgerEntry {
   entity: MinaEntity;
   spaceId: string;
@@ -112,9 +100,8 @@ export interface MinaRunState {
 export const MINA_STATE_KEY = 'minaTutorialState';
 export const MINA_DONE_KEY = 'minaTutorialDone';
 
-// ── live form suggestions (module-level: forms read, controller writes) ──
-// The tutorial never writes DATA; pre-filling a form the user still
-// submits is presentation. Cleared the moment the step advances.
+// module-level: forms read, the controller writes; pre-filling a form the user still submits is presentation, not data
+// cleared the moment the step advances
 let suggestions: { spaceName?: string; accountName?: string; txMerchant?: string; txAmount?: string; txCatId?: string } = {};
 export const setMinaSuggestions = (next: typeof suggestions): void => {
   suggestions = next;

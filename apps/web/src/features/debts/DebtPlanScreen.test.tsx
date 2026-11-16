@@ -41,28 +41,22 @@ describe('Payoff planner (#413)', () => {
     await seedLoans();
     await screen.findByTestId('debtplan-hero');
     expect((await screen.findByTestId('debtplan-free')).textContent).toMatch(/Debt-free/);
-    // avalanche: the 12% card before the 5% car
     await waitFor(() => expect(orderNames()[0]).toMatch(/Credit card/));
     expect(orderNames()[1]).toMatch(/Car loan/);
     expect(screen.getByTestId('debtplan-order-loan-card').textContent).toMatch(/12% interest/);
     expect(screen.getByTestId('debtplan-order-loan-card').textContent).toMatch(/paid off/);
-    // the comparison lists all three with a date and the interest
     for (const s of ['avalanche', 'snowball', 'tsunami']) expect(screen.getByTestId(`debtplan-compare-${s}`).textContent).toMatch(/free .+ · €/);
-    // snowball: the smaller car first
     fireEvent.click(screen.getByTestId('debtplan-strategy-snowball'));
     await waitFor(() => expect(orderNames()[0]).toMatch(/Car loan/));
     expect(screen.getByTestId('debtplan-strategy-snowball').getAttribute('aria-pressed')).toBe('true');
-    // an extra per month: the hero says how much earlier than the minimums
     const before = screen.getByTestId('debtplan-hero').textContent;
     fireEvent.click(screen.getByTestId('debtplan-extra-chip-10000'));
     await waitFor(() => expect(screen.getByTestId('debtplan-vs').textContent).toMatch(/months earlier/));
     expect(screen.getByTestId('debtplan-hero').textContent).not.toBe(before);
     expect((screen.getByTestId('debtplan-extra') as HTMLInputElement).value).toBe('100');
-    // the ladder applies on tap: +€25 on top of the €100
     fireEvent.click(screen.getByTestId('debtplan-ladder-2500'));
     await waitFor(() => expect((screen.getByTestId('debtplan-extra') as HTMLInputElement).value).toBe('125'));
     expect(screen.getByTestId('debtplan-chart')).toBeTruthy();
-    // the inputs survive a reopen on this device
     cleanup();
     renderApp('/debts/plan');
     await screen.findByTestId('debtplan-hero');
@@ -104,7 +98,6 @@ describe('Payoff planner (#413)', () => {
     await screen.findByTestId('debtplan-hero');
     expect((await screen.findByTestId('debtplan-free')).textContent).toMatch(/Not paid off at this pace/);
     expect(screen.getByTestId('debtplan-order-loan-trap').textContent).toMatch(/never at this payment/);
-    // enough extra and it is a plan again
     fireEvent.click(screen.getByTestId('debtplan-extra-chip-25000'));
     await waitFor(() => expect(screen.getByTestId('debtplan-free').textContent).toMatch(/Debt-free/));
   });
@@ -117,18 +110,15 @@ describe('Payoff planner (#413)', () => {
     await screen.findByTestId('debtplan-order-loan-car');
     // both seeded loans are in once the scale reads their total (the live query lands the writes one by one)
     await waitFor(() => expect(screen.getByTestId('debtplan-chart-top').textContent).toMatch(/€10,000/));
-    // the overall chart carries both walks, the minimums-only one dashed; every debt has its own
     expect(screen.getByTestId('debtplan-chart').querySelectorAll('path')).toHaveLength(2);
     expect(screen.getByTestId('debtplan-chart-baseline').getAttribute('stroke-dasharray')).toBe('5 4');
     expect(screen.getByTestId('debtplan-chart-plan').getAttribute('stroke-dasharray')).toBeNull();
     expect(screen.getByTestId('debtplan-chart-legend').textContent).toMatch(/Minimums only · free/);
     expect(screen.getByTestId('debtplan-debt-chart-loan-car').querySelectorAll('path')).toHaveLength(2);
     expect(screen.getByTestId('debtplan-debt-legend-loan-car').textContent).toMatch(/Payment \+ extra.*Minimum alone · free/);
-    // the scale's cues: the total owed at the top, zero at the bottom (user 2026-10-09)
     expect(screen.getByTestId('debtplan-chart-top').textContent).toMatch(/€10,000/);
     expect(screen.getByTestId('debtplan-chart-zero').textContent).toMatch(/€0/);
     expect(screen.getByTestId('debtplan-debt-chart-loan-car-top').textContent).toMatch(/€4,000/);
-    // the x labels never pile up: a handful, all different
     const labels = [...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid]):not([aria-hidden])')].map((el) => el.textContent);
     expect(labels.length).toBeGreaterThan(1);
     expect(labels.length).toBeLessThanOrEqual(7);
@@ -140,17 +130,14 @@ describe('Payoff planner (#413)', () => {
     expect(screen.getByTestId('debtplan-hero').textContent).not.toBe(heroBefore);
     // the budget line counts it: minimums 350 + the car's 100
     expect(screen.getByTestId('debtplan-budget').textContent).toMatch(/450/);
-    // a chip sets it outright
     fireEvent.click(screen.getByTestId('debtplan-debt-extra-chip-loan-car-5000'));
     await waitFor(() => expect((screen.getByTestId('debtplan-debt-extra-loan-car') as HTMLInputElement).value).toBe('50'));
     expect(screen.getByTestId('debtplan-debt-extra-chip-loan-car-5000').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('debtplan-budget').textContent).toMatch(/400/);
-    // a plan that ends within months is drawn over its own horizon, labelled by month
     fireEvent.change(screen.getByTestId('debtplan-lump'), { target: { value: '9900' } });
     await waitFor(() =>
       expect([...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid]):not([aria-hidden])')].some((el) => /’[0-9]{2}$/.test(el.textContent ?? ''))).toBe(true),
     );
-    // the per-debt extra survives a reopen on this device
     cleanup();
     renderApp('/debts/plan');
     await screen.findByTestId('debtplan-hero');
@@ -169,7 +156,6 @@ describe('Payoff planner (#413)', () => {
     const cardEnd = screen.getByTestId('debtplan-debt-end-loan-card').textContent;
     const cardPath = screen.getByTestId('debtplan-debt-chart-plan-loan-card').getAttribute('d');
     const heroBefore = screen.getByTestId('debtplan-hero').textContent;
-    // the card's numbers as they stand: what it owes, pays and costs, when it ends
     const numbers = screen.getByTestId('debtplan-debt-numbers-loan-card').textContent ?? '';
     expect(numbers).toMatch(/Owed now€6,000\.00/);
     expect(numbers).toMatch(/Per month€150\.00/);
@@ -181,7 +167,6 @@ describe('Payoff planner (#413)', () => {
     for (const fact of screen.getByTestId('debtplan-debt-numbers-loan-card').children) expect(fact.children).toHaveLength(3);
     expect(screen.getByTestId('debtplan-debt-alone-loan-card').textContent).toMatch(/This loan on its own/);
     expect((screen.getByTestId('debtplan-debt-apply-loan-card') as HTMLButtonElement).disabled).toBe(true);
-    // drag the card's slider to €200 extra
     fireEvent.change(screen.getByTestId('debtplan-debt-slider-loan-card'), { target: { value: '20000' } });
     await waitFor(() => expect(screen.getByTestId('debtplan-debt-end-loan-card').textContent).not.toBe(cardEnd));
     expect(screen.getByTestId('debtplan-debt-chart-plan-loan-card').getAttribute('d')).not.toBe(cardPath);
@@ -192,11 +177,9 @@ describe('Payoff planner (#413)', () => {
     for (const fact of screen.getByTestId('debtplan-debt-numbers-loan-card').children) expect(fact.children).toHaveLength(3);
     expect((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value).toBe('200');
     expect((screen.getByTestId('debtplan-debt-apply-loan-card') as HTMLButtonElement).disabled).toBe(false);
-    // the car's card did not move: nothing of the card's extra reaches it
     expect(screen.getByTestId('debtplan-debt-end-loan-car').textContent).toBe(carEnd);
     expect(screen.getByTestId('debtplan-debt-chart-plan-loan-car').getAttribute('d')).toBe(carPath);
     expect(screen.getByTestId('debtplan-debt-numbers-loan-car').textContent).toBe(carNumbers);
-    // the combined plan did: the hero and the overall numbers count the €200
     expect(screen.getByTestId('debtplan-hero').textContent).not.toBe(heroBefore);
     expect(screen.getByTestId('debtplan-overall-numbers').textContent).toMatch(/Per month€550\.00€350\.00/);
     expect(screen.getByTestId('debtplan-overall-numbers').textContent).toMatch(/Owed now€10,000\.00/);
@@ -227,7 +210,6 @@ describe('Payoff planner (#413)', () => {
     } finally {
       db.close();
     }
-    // the extra is the payment now: the card's extra rests at zero and its numbers read the raised minimum
     await waitFor(() => expect((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value).toBe(''));
     expect((screen.getByTestId('debtplan-debt-slider-loan-card') as HTMLInputElement).value).toBe('0');
     expect((screen.getByTestId('debtplan-debt-apply-loan-card') as HTMLButtonElement).disabled).toBe(true);
@@ -272,14 +254,11 @@ describe('Payoff planner (#413)', () => {
     expect(screen.getByTestId('debtplan-vs').textContent).toMatch(/The same as paying the minimums only/);
     expect(screen.getByTestId('debtplan-overall-saved').textContent).toMatch(/The same as paying the minimums only/);
     expect(screen.getByTestId('debtplan-rollover-hint').textContent).toMatch(/Each payment stops with its loan/);
-    // the comparison agrees: every order ends with the minimums
     const free = screen.getByTestId('debtplan-overall-free').textContent;
     for (const s of ['avalanche', 'snowball', 'tsunami']) expect(screen.getByTestId(`debtplan-compare-${s}`).textContent).toContain(`free ${free}`);
-    // an extra sets the plan apart again
     fireEvent.click(screen.getByTestId('debtplan-extra-chip-5000'));
     await waitFor(() => expect(screen.getByTestId('debtplan-vs').textContent).toMatch(/months earlier/));
     expect(pathOf('debtplan-chart-plan')).not.toBe(pathOf('debtplan-chart-baseline'));
-    // the switch survives a reopen on this device
     cleanup();
     renderApp('/debts/plan');
     await screen.findByTestId('debtplan-hero');
@@ -304,15 +283,12 @@ describe('Payoff planner (#413)', () => {
     const extra = Number((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value);
     expect(extra).toBeGreaterThan(0);
     expect(screen.getByTestId('debtplan-debt-numbers-loan-card').textContent).toMatch(/Paid off.+24 months|Paid off.+2[0-3] months/);
-    // a month far beyond its own end needs nothing extra
     fireEvent.change(screen.getByTestId('debtplan-debt-by-loan-card'), { target: { value: inMonths(240) } });
     await waitFor(() => expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/No extra needed/));
     expect((screen.getByTestId('debtplan-debt-extra-loan-card') as HTMLInputElement).value).toBe('');
-    // a chip by hand: the note is the hint again
     fireEvent.click(screen.getByTestId('debtplan-debt-extra-chip-loan-card-5000'));
     await waitFor(() => expect(screen.getByTestId('debtplan-debt-by-loan-card-note').textContent).toMatch(/Pick a month/));
 
-    // the whole plan: debt-free in a year sets the extra per month
     fireEvent.change(screen.getByTestId('debtplan-free-by'), { target: { value: inMonths(12) } });
     await waitFor(() => expect(screen.getByTestId('debtplan-free-by-note').textContent).toMatch(/extra a month gets it done by/));
     expect(Number((screen.getByTestId('debtplan-extra') as HTMLInputElement).value)).toBeGreaterThan(0);
@@ -327,7 +303,6 @@ describe('Payoff planner (#413)', () => {
     await seedLoans();
     await screen.findByTestId('debtplan-hero');
     await screen.findByTestId('debtplan-order-loan-car');
-    // the minimums line's end point is drawn on the overall chart and on every card
     expect(screen.getByTestId('debtplan-chart-baseline-end')).toBeTruthy();
     expect(screen.getByTestId('debtplan-debt-chart-min-loan-car-end')).toBeTruthy();
     // a big extra on the card (its minimum runs over four years): the plan lands within months — its line ends at its

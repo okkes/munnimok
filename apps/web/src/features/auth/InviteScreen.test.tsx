@@ -7,8 +7,7 @@ import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { reportError } from '@/lib/report';
 import { renderApp } from '@/test/harness';
 
-// an invitation only means something with Logto configured (the sign-in it
-// leads into); deterministic regardless of the developer's .env.local
+// an invitation only means something with Logto configured; pinned regardless of the developer's .env.local
 const mockLogto = { value: true };
 vi.mock('@/app/config', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/app/config')>();
@@ -37,8 +36,7 @@ vi.mock('@logto/react', () => ({
 }));
 vi.mock('@/lib/report', () => ({ reportError: vi.fn(), reportWarning: vi.fn() }));
 
-// the invite screen itself is zero-network: the token reaches Logto through
-// the SDK on the tap alone (the login screen behind "Not now" may ask /health)
+// the invite screen is zero-network: the token reaches Logto through the SDK on the tap alone
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
 const INVITE = '/invite?token=ott-123&email=ada%40example.com';
@@ -134,7 +132,7 @@ describe('the login screen of an invitation-only munni', () => {
       expect(await screen.findByTestId('login-invite-only')).toBeTruthy();
       expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.endsWith('/health'))).toHaveLength(1);
     } finally {
-      resetApiCapabilitiesCache(); // the per-page cache must not leak into the next spec
+      resetApiCapabilitiesCache();
     }
   });
 });

@@ -26,19 +26,9 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/**
- * Settings → Connections → Your own computer (#367 §10.4): the household
- * agents a person runs on their own machine for the parties that will only
- * ever talk to a browser on the account holder's own connection. Enrol
- * (a name, a one-time code, the compose line to paste), see each agent's
- * health and the logins it keeps, revoke one — with the warning that the
- * revocation destroys the profile that keeps the login alive.
- *
- * And the hosted private agent (#420 A2): the same thing on munni's own
- * hardware, one browser for this person alone. Ask for one, wait for the
- * admin, and the slot shows up in the list as hosted; giving it back wipes
- * the sign-ins it keeps before the next person gets it.
- */
+// #367 §10.4: household agents run on the person's own machine for parties that only talk to the account holder's own
+// connection; revoking one destroys the profile that keeps the login alive
+// #420 A2: the hosted private agent is munni's own browser for one person; giving it back wipes the sign-ins it keeps
 export function AgentsScreen() {
   const { t, lang } = useLang();
   const [agents, setAgents] = useState<AgentView[] | null>(null);
@@ -144,7 +134,6 @@ export function AgentsScreen() {
     }
   };
 
-  /** the private card's lower half: the slot held, the wait, or the ask */
   const privateBody = (standing: PrivateAgentStatus) => {
     if (standing.agent) {
       return (
@@ -307,7 +296,6 @@ export function AgentsScreen() {
         )}
       </div>
 
-      {/* enrol: a name, then the code and the line that starts the agent */}
       <Sheet open={enrolOpen} onOpenChange={(open) => !open && closeEnrol()} title={t('agents.enrolTitle')} size="tall">
         <div className="flex flex-col gap-3 pt-1">
           {enrollment ? (

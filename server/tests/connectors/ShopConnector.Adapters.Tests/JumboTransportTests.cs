@@ -9,15 +9,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// Jumbo's transport, where a wrong answer is a user-facing bug.
-///
-/// www.jumbo.com is fronted by Akamai. Bot protection answers 403, and an edge
-/// that tarpits a request reports it as 502 or 504. Reading any of those as a
-/// credential failure sends a user to reset a password that was fine, leaves
-/// the block undiagnosed, and - because a credential failure is never retried
-/// by anything - is permanent for that session.
-/// </summary>
+// Akamai fronts jumbo.com: 403, 502 and 504 are blocks, never credential failures
+// reading them as one sends the user to reset a good password and is permanent for that session
 public sealed class JumboTransportTests
 {
     private static readonly JumboOptions Options = new();
@@ -97,13 +90,8 @@ public sealed class JumboTransportTests
         Assert.Equal(ErrorCode.RateLimited, error.Code);
     }
 
-    /// <summary>
-    /// The header block the confirmed working client sends. Two of these were
-    /// wrong: the client name and source said <c>JUMBO_MOBILE-orders</c>, which
-    /// is corroborated nowhere, and the version said <c>30.14.0</c> - a mobile
-    /// version string beside a web client name, which is an inconsistent
-    /// fingerprint before it is a wrong value.
-    /// </summary>
+    // the confirmed working client's headers; JUMBO_MOBILE-orders is corroborated nowhere,
+    // and a mobile version 30.14.0 beside a web client name is an inconsistent fingerprint
     [Fact]
     public async Task Every_call_carries_the_web_client_headers_and_the_cookies()
     {
@@ -131,12 +119,7 @@ public sealed class JumboTransportTests
         Assert.DoesNotContain("should-not-be-sent", cookies, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Sent when the session has one, because a device that changes identity
-    /// every run is a fraud signal - and simply omitted when it does not,
-    /// because the confirmed working client sends no such header at all and it
-    /// is therefore no reason to refuse a fetch.
-    /// </summary>
+    // a device id that changes every run is a fraud signal; omitted when absent, since the working client sends none
     [Fact]
     public async Task The_device_header_is_carried_when_there_is_one_and_omitted_when_there_is_not()
     {
@@ -231,8 +214,6 @@ public sealed class JumboTransportTests
         Assert.Contains("onlineOrders: orders(input: $ordersInput)", query, StringComparison.Ordinal);
         Assert.DoesNotContain("persistedQuery", Assert.Single(handler.Requests).Body!, StringComparison.Ordinal);
     }
-
-    // ---- errors transported in a 200 body ----------------------------------
 
     [Fact]
     public void A_successful_body_carries_no_errors_to_raise()

@@ -5,14 +5,8 @@ using Connector.Kit.Errors;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// The consent redirect as a challenge, and the bank's return as its answer.
-/// The consumer sends where the bank should come back (<c>config.return_url</c>,
-/// its own page), the adapter tells the aggregator, the person consents at
-/// the bank, the bank lands on that page, and the page hands the landing URL
-/// back as the answer; its query says which consent (<c>ref</c> or
-/// <c>state</c>) and, for Enable Banking, carries the single-use code.
-/// </summary>
+// the consent redirect as a challenge; its answer is the landing URL, whose query names the consent (ref or state)
+// and, for Enable Banking, carries the single-use code
 internal static class OpenBankingReturn
 {
     public const string PromptKey = "connect.open_banking.prompt.consent";
@@ -41,7 +35,6 @@ internal static class OpenBankingReturn
         ExpiresAt = expiresAt,
     };
 
-    /// <summary>The landing URL's query (and fragment) as a map; anything that is not a URL reads as empty.</summary>
     public static IReadOnlyDictionary<string, string> Landing(string answer)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -60,7 +53,6 @@ internal static class OpenBankingReturn
         return result;
     }
 
-    /// <summary>The answer must be the return for THIS consent, and a bank that refused says so in the query.</summary>
     public static IReadOnlyDictionary<string, string> RequireReturn(
         string providerId, ChallengeAnswer answer, string reference, string referenceKey)
     {

@@ -11,13 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// Production authentication against the real bearer handler, with a signing
-/// key of our own standing in for the identity provider: a token from the
-/// wrong issuer, for another audience or under another key is no caller; a
-/// valid one is; the required scope is required; and the admin routes want
-/// the admin scope on top, answering a known caller 403 rather than 401.
-/// </summary>
+// real bearer handler, with our own signing key standing in for the identity provider
 public sealed class ProductionAuthTests
 {
     private const string Issuer = "https://issuer.test";
@@ -145,11 +139,7 @@ public sealed class ProductionAuthTests
         });
     }
 
-    /// <summary>
-    /// One request: its own service scope, because the authentication
-    /// handler cache is per scope and a handler stays bound to the first
-    /// context it was initialised for.
-    /// </summary>
+    // own service scope per request: the handler cache is per scope and a handler stays bound to its first context
     private static DefaultHttpContext Call(IServiceProvider services, string? token)
     {
         var http = new DefaultHttpContext { RequestServices = services.CreateScope().ServiceProvider };

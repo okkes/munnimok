@@ -9,7 +9,6 @@ import { stateChip, triggerWord, whoLine } from './jobFacts';
 /** a run not over yet — a lab sign-in in one of these is picked up on the bench (#576) */
 const OPEN_STATES = new Set(['queued', 'leased', 'running', 'awaiting_input']);
 
-/** the picture a retained report holds, fetched with the lab's credentials and shown in place */
 function useScreenshot(call: ScreenProps['call'], jobId: string, wanted: boolean): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -28,7 +27,6 @@ function useScreenshot(call: ScreenProps['call'], jobId: string, wanted: boolean
   return url;
 }
 
-/** one run in full: the facts, how it ended, what the adapter said, what it asked for, and what it left behind */
 export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) {
   const [job, setJob] = useState<OperatorJob | null | 'unreachable' | 'loading'>('loading');
   const retained = job !== 'loading' && job !== null && job !== 'unreachable' && job.artifacts === 'retained' && job.hasScreenshot;
@@ -158,13 +156,11 @@ export function JobScreen({ id, call }: Readonly<{ id: string } & ScreenProps>) 
   );
 }
 
-/** the entry count, with what the book dropped when it ran out of room */
 export function entriesLine(trace: TraceSummary): string {
   if (!trace.truncated) return String(trace.entries);
   return `${trace.entries} (${trace.dropped} dropped — the book ran out of room)`;
 }
 
-/** the run's recording (#441 L3), in brief, with the door to it */
 function RecordingCard({ jobId, trace }: Readonly<{ jobId: string; trace: TraceSummary }>) {
   return (
     <section className="card" data-testid="job-trace">

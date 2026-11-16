@@ -34,7 +34,6 @@ const debt = (partial: Partial<PlanDebt> & { id: string }): PlanDebt => ({
   ...partial,
 });
 
-// a car loan, a credit card, a small family loan: the three orders disagree
 const car = debt({ id: 'car', balanceCents: 1_000_000, aprPct: 5, minMonthlyCents: 25_000 });
 const card = debt({ id: 'card', balanceCents: 300_000, aprPct: 18, minMonthlyCents: 9_000 });
 const family = debt({ id: 'family', balanceCents: 150_000, aprPct: 0, minMonthlyCents: 5_000, stress: 5 });
@@ -78,7 +77,6 @@ describe('the walk', () => {
     expect(baseline.months).not.toBeNull();
     expect(plan.months!).toBeLessThan(baseline.months!);
     expect(plan.totalInterestCents).toBeLessThan(baseline.totalInterestCents);
-    // the card goes first under avalanche, and the car (the biggest) last
     const byId = Object.fromEntries(plan.debts.map((d) => [d.id, d]));
     expect(byId.card.paidOffMonth!).toBeLessThan(byId.car.paidOffMonth!);
     expect(plan.debts.map((d) => d.order)).toEqual([1, 2, 3]);
@@ -100,7 +98,6 @@ describe('the walk', () => {
     expect(r.debts[0].stuck).toBe(true);
     expect(r.debts[0].paidOffMonth).toBeNull();
     expect(r.balances.length).toBeLessThan(20);
-    // the same debt with enough extra is fine
     const saved = simulatePlan([debt({ id: 'trap', balanceCents: 1_000_000, aprPct: 24, minMonthlyCents: 10_000 })], { strategy: 'avalanche', extraMonthlyCents: 30_000 });
     expect(saved.months).not.toBeNull();
     expect(saved.debts[0].stuck).toBe(false);
@@ -150,7 +147,6 @@ describe('an extra aimed at one debt (user 2026-10-08)', () => {
     expect(aimed.balancesByDebt.car[0]).toBe(1_000_000);
     expect(aimed.balancesByDebt.car[1]).toBe(1_000_000 + Math.round((1_000_000 * 5) / 100 / 12) - 25_000 - 20_000);
     expect(plain.balancesByDebt.car[1]).toBe(1_000_000 + Math.round((1_000_000 * 5) / 100 / 12) - 25_000);
-    // every debt's walk is as long as the total's, and they sum to it month by month
     for (const walk of Object.values(aimed.balancesByDebt)) expect(walk).toHaveLength(aimed.balances.length);
     for (let m = 0; m < aimed.balances.length; m++) {
       const sum = Object.values(aimed.balancesByDebt).reduce((acc, walk) => acc + walk[m], 0);
@@ -165,9 +161,7 @@ describe('an extra aimed at one debt (user 2026-10-08)', () => {
     expect(aimed.debts.find((d) => d.id === 'family')!.paidOffMonth).toBe(1);
     // month 1: of the 5 000 + 200 000 only 150 000 was needed; the 55 000 left went to the card (first in the order)
     expect(aimed.balancesByDebt.card[1]).toBe(plain.balancesByDebt.card[1] - 55_000);
-    // month 2: the family's whole 205 000 keeps flowing into the plan
     expect(aimed.balancesByDebt.card[2]).toBeLessThan(plain.balancesByDebt.card[2] - 200_000);
-    // the baseline knows nothing of it: minimums only
     expect(simulateBaseline(three).balancesByDebt.family[1]).toBe(145_000);
   });
 
@@ -190,7 +184,6 @@ describe('an extra aimed at one debt (user 2026-10-08)', () => {
 describe('one debt on its own (user 2026-10-09)', () => {
   it('walks the debt alone: with no extra it is the baseline walk of that debt, the extra shortens it and cuts its interest', () => {
     const alone = simulateDebtAlone(car);
-    // the baseline's car walk is the same walk, padded with zeros until the last of the three is gone
     const inBaseline = simulateBaseline(three).balancesByDebt.car;
     expect(inBaseline.slice(0, alone.balances.length)).toEqual(alone.balances);
     expect(inBaseline.slice(alone.balances.length).every((v) => v === 0)).toBe(true);
@@ -202,7 +195,6 @@ describe('one debt on its own (user 2026-10-09)', () => {
     expect(more.months!).toBeLessThan(alone.months!);
     expect(more.interestCents).toBeLessThan(alone.interestCents);
     expect(more.monthlyCents).toBe(45_000);
-    // month 1: interest, then the minimum and the extra
     expect(more.balances[1]).toBe(1_000_000 + Math.round((1_000_000 * 5) / 100 / 12) - 45_000);
   });
 
@@ -210,7 +202,6 @@ describe('one debt on its own (user 2026-10-09)', () => {
     const plan = simulatePlan(three, { strategy: 'avalanche', extraByDebtCents: { family: 200_000 } });
     const carInPlan = plan.debts.find((d) => d.id === 'car')!;
     expect(carInPlan.paidOffMonth!).toBeLessThan(simulateDebtAlone(car).months!);
-    // the alone walk is a function of the one debt and its own extra, nothing else
     expect(simulateDebtAlone(car, 0)).toEqual(simulateDebtAlone(car));
     expect(simulateDebtAlone(car, 5_000).balances).not.toEqual(simulateDebtAlone(car).balances);
     const cardAlone = simulateDebtAlone(card).balances;
@@ -239,10 +230,8 @@ describe('the rollover switch (user 2026-10-09)', () => {
     // the family loan's 5 000 stops with it: the card's walk is the baseline's
     const off = simulatePlan(three, { strategy: 'avalanche', rollover: false });
     expect(off.balancesByDebt.card).toEqual(baseline.balancesByDebt.card);
-    // with the switch on the family's freed minimum shortens the card
     const on = simulatePlan(three, { strategy: 'avalanche', rollover: true });
     expect(on.debts.find((d) => d.id === 'card')!.paidOffMonth!).toBeLessThan(off.debts.find((d) => d.id === 'card')!.paidOffMonth!);
-    // an extra with the rollover off: avalanche aims it at the card
     const extra = simulatePlan(three, { strategy: 'avalanche', rollover: false, extraMonthlyCents: 10_000 });
     expect(extra.balancesByDebt.card[1]).toBe(baseline.balancesByDebt.card[1] - 10_000);
     expect(extra.balancesByDebt.car[1]).toBe(baseline.balancesByDebt.car[1]);
@@ -310,7 +299,6 @@ describe('the chart axis (#513)', () => {
     const points = sampleWalk(long, true, tailed);
     expect(points.at(-1)).toEqual({ month: 366, value: 0 });
     expect(points.length).toBeLessThanOrEqual(125);
-    // every month on the even scale, then wider steps — the break point itself sampled
     expect(points.slice(0, 18).map((p) => p.month)).toEqual(Array.from({ length: 18 }, (_, i) => i));
     expect(points[18].month - points[17].month).toBeGreaterThan(1);
   });
@@ -325,14 +313,11 @@ describe('the chart axis (#513)', () => {
     // a June payoff (month 20) sits right of its own year's mark, never left of it
     const ticks = yearTicks(24, '2026-10-08');
     expect(ticks.filter((t) => t.month <= 20).at(-1)?.label).toBe('2028');
-    // thirty years: every fifth year, the start too close to 2030 to be named
     const thirty = yearTicks(360, '2026-10-08');
     expect(thirty.map((t) => t.label)).toEqual(['2030', '2035', '2040', '2045', '2050', '2055']);
     expect(thirty.map((t) => t.month)).toEqual([39, 99, 159, 219, 279, 339]);
-    // six Januaries fit at one per year; ten years take the even ones
     expect(yearTicks(72, '2026-10-08').map((t) => t.label)).toEqual(['2027', '2028', '2029', '2030', '2031', '2032']);
     expect(yearTicks(120, '2026-10-08').map((t) => t.label)).toEqual(['2026', '2028', '2030', '2032', '2034', '2036']);
-    // January itself is a year's own start
     expect(yearTicks(30, '2027-01-15').map((t) => t.label)).toEqual(['2027', '2028', '2029']);
     for (const months of [5, 13, 50, 99, 250, 600]) {
       const marks = yearTicks(months, '2026-10-08');
@@ -356,11 +341,9 @@ describe('the chart axis (#513)', () => {
   it('axis ticks: the even scale’s marks, then the tail’s middle year (a long tail) and its end year', () => {
     expect(axisTicks(chartAxis(20, 65), '2026-10-08').map((t) => t.label)).toEqual(['2027', '2028', '2029', '2030', '2031', '2032']);
     const tailed = axisTicks(chartAxis(11, 366), '2026-10-08');
-    // four month marks at most on the even 72%, then the January nearest the tail's middle, and its end, 2057
     expect(tailed.map((t) => t.label)).toEqual(['2026-10', '2027-04', '2027-10', '2043', '2057']);
     expect(tailed[3].month % 12).toBe(3);
     expect(tailed.at(-1)?.month).toBe(366);
-    // a short tail names its end only
     expect(axisTicks(chartAxis(11, 60), '2026-10-08').map((t) => t.label).at(-1)).toBe('2031');
     expect(axisTicks(chartAxis(11, 60), '2026-10-08').filter((t) => t.label.length === 4)).toHaveLength(1);
   });
@@ -381,11 +364,8 @@ describe('an end date instead of an amount (#514)', () => {
     const extra = extraForDebtBy(car, 24)!;
     expect(extra % 100).toBe(0);
     expect(simulateDebtAlone(car, extra).months!).toBeLessThanOrEqual(24);
-    // a euro less misses the month
     expect(simulateDebtAlone(car, extra - 100).months!).toBeGreaterThan(24);
-    // next month: everything at once (and a month's interest)
     expect(simulateDebtAlone(car, extraForDebtBy(car, 1)!).months).toBe(1);
-    // a payment under its interest still gets there with enough extra
     const trap = debt({ id: 'trap', balanceCents: 1_000_000, aprPct: 24, minMonthlyCents: 10_000 });
     expect(simulateDebtAlone(trap, extraForDebtBy(trap, 36)!).months!).toBeLessThanOrEqual(36);
   });

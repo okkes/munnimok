@@ -1,19 +1,12 @@
 import type { StorageBackend } from '@/db/backend';
 
-/**
- * The in-app notification inbox (arc 6): a device-local, per-identity
- * meta list — the `txSeen` pattern. OS push/SW notifications keep firing
- * as before; this is the in-app record that works identically offline and
- * online. Clearing it travels to the person's other devices (#580,
- * application/inboxClear.ts). The service worker imports this module, so
- * it stays free of network and window code.
- */
+// device-local per-identity meta list (the txSeen pattern); clearing travels to other devices (#580, inboxClear.ts)
+// the service worker imports this module: no network or window code
 export type InboxKind = 'whatsnew' | 'recurringDue' | 'debtRate' | 'digest' | 'planOverspent';
 
 export interface InboxEntry {
   id: string;
   kind: InboxKind;
-  /** ISO timestamp — newer than `notifSeenAt` counts as unread */
   ts: string;
   /** per-kind display bits (name, date, version, n), the space it is about (#551) and the dedupe key */
   payload?: Record<string, string>;
@@ -26,7 +19,6 @@ const CLEARED_KEY = 'notifClearedAt';
 const RETIRED_KEY = 'notifRetiredKeys';
 const CAP = 50;
 const RETIRED_CAP = 200;
-/** the release whose notes this device has read */
 export const WHATS_NEW_SEEN_KEY = 'whatsNewSeenVersion';
 
 const retiredKey = (kind: InboxKind, dedupeKey: string) => `${kind}:${dedupeKey}`;
@@ -47,11 +39,7 @@ export async function readInbox(store: StorageBackend): Promise<InboxEntry[]> {
   return ((await store.metaGet(LIST_KEY))?.value as InboxEntry[] | undefined) ?? [];
 }
 
-/**
- * Prepend one entry, newest first, capped. A `dedupeKey` makes the event
- * once-only (one What's-new per version, one due reminder per date) —
- * matching entries already in the list are left alone.
- */
+// a `dedupeKey` makes an event once-only (one What's-new per version, one due reminder per date)
 export async function appendNotification(
   store: StorageBackend,
   kind: InboxKind,
@@ -74,11 +62,8 @@ export async function appendNotification(
   });
 }
 
-/**
- * #614: rewrites the list in one step with the appends — `revise` answers an
- * entry with itself, a corrected copy, or null to let it go. Returns what went.
- * Nothing is retired: what left because it stopped being true may be said again.
- */
+// #614: `revise` answers an entry with itself, a corrected copy, or null to drop it;
+// nothing is retired, so what stopped being true may be said again
 export async function reviseInbox(store: StorageBackend, revise: (entry: InboxEntry) => InboxEntry | null): Promise<InboxEntry[]> {
   const dropped: InboxEntry[] = [];
   await store.transact(['meta'], async () => {
@@ -96,27 +81,21 @@ export async function reviseInbox(store: StorageBackend, revise: (entry: InboxEn
   return dropped;
 }
 
-/** unread = entries newer than the last time the tab was opened */
 export async function unreadNotifCount(store: StorageBackend): Promise<number> {
   const seen = (await store.metaGet(SEEN_KEY))?.value as string | undefined;
   return (await readInbox(store)).filter((e) => !seen || e.ts > seen).length;
 }
 
-/** opening the Notifications tab marks everything seen (v1: no per-row state) */
 export async function stampNotifSeen(store: StorageBackend): Promise<void> {
   await store.metaPut(SEEN_KEY, new Date().toISOString());
 }
 
-/** #580: the moment up to which this device's list was cleared (ISO, UTC), if ever */
 export async function readInboxClearedAt(store: Pick<StorageBackend, 'metaGet'>): Promise<string | undefined> {
   const value = (await store.metaGet(CLEARED_KEY))?.value;
   return typeof value === 'string' ? value : undefined;
 }
 
-/**
- * #580: a clear made on another device — drops every entry up to its moment
- * `at` (ISO, UTC) and remembers it; false when the list was already cleared that far.
- */
+// #580: a clear made on another device; false when the list was already cleared that far
 export async function clearInboxUpTo(store: StorageBackend, at: string): Promise<boolean> {
   let moved = false;
   await store.transact(['meta'], async () => {

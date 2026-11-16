@@ -41,9 +41,7 @@ describe('space attention (arc 7)', () => {
 
   it('the avatar dot asks only about OTHER spaces', async () => {
     const { store } = await seeded();
-    // sitting in calm: busy needs you → dot
     expect(await anyOtherSpaceNeedsAttention(store, 'calm')).toBe(true);
-    // sitting in busy: calm is fine → no dot
     expect(await anyOtherSpaceNeedsAttention(store, 'busy')).toBe(false);
   });
 });

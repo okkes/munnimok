@@ -6,29 +6,9 @@ import type { TxSliceView } from './txSlices';
 import { accountStamp } from './txType';
 import type { Period } from './periods';
 
-/**
- * Period overview: how much was earned / spent / saved / invested.
- *
- * Typed-splits v2 (user Q6, 2026-08-05): the family buckets — saved,
- * debt, invested, funded — are computed from the SPECIAL CATEGORIES,
- * wherever they live. A set-aside on the savings account's own ledger
- * (+400, R1-stamped) and a bare set-aside on checking (−400, R3) both
- * mean "+400 saved"; the sub carries the direction, so the measure is
- * |amount| signed by the sub's meaning. A properly linked pair can
- * never double-count by construction: its regular-side leg wears the
- * locked Transfer category, which belongs to no bucket. Income and
- * expense stay type-driven, minus the funding family (those rows are
- * standard-typed since the funding type retired, but the pot is not
- * income or spending).
- *
- * User ss 2026-10-06 (Earned €4,392 above an Income group of €3,861): the
- * total and its breakdown read the SAME slices. The settled `reimbursed`
- * value is bookkeeping on both sides of a link — the expense side counts
- * NET of it and the credit that settled it is not income (it already
- * reduced the spending) — while expected and received reimbursement are
- * money that moved and list under their own family, in the total and in
- * the groups alike.
- */
+// family buckets (saved, debt, invested, funded) come from the SPECIAL CATEGORIES; the sub carries the direction
+// a linked pair never double-counts: its regular leg wears the locked Transfer category
+// the settled `reimbursed` value is bookkeeping on both sides of a link: expense counts net, the credit is no income
 
 export type OverviewKind = 'income' | 'expense' | 'saving' | 'investment' | 'funding' | 'debt';
 
@@ -41,8 +21,7 @@ const FAMILY_MAIN: Partial<Record<OverviewKind, string>> = {
   debt: 'debt',
 };
 
-/** +1 = money entered the family's story (set aside, repaid, funded…),
- *  −1 = it left; the SUB carries the direction, whichever leg it's on */
+/** +1 = money entered the family's story, −1 = it left; the SUB carries the direction, whichever leg */
 const SPECIAL_CONTRIB: Record<string, 1 | -1> = {
   savingDeposit: 1,
   savingWithdraw: -1,
@@ -60,11 +39,8 @@ const SPECIAL_CONTRIB: Record<string, 1 | -1> = {
   fundingIn: -1,
 };
 
-/** the slices a bucket may count: everything but the settled value */
 const countableViews = (tx: TxView): TxSliceView[] => txSliceViews(tx).filter((view) => view.catId !== REIMBURSED_ID);
 
-/** does one PART belong to this bucket? (typed-splits v2: a split row
- *  answers per part — the container itself has no bucket) */
 function viewInKind(kind: OverviewKind, view: TxSliceView): boolean {
   const familyMain = FAMILY_MAIN[kind];
   if (familyMain) return mainCatOf(view.catId) === familyMain;
@@ -73,7 +49,6 @@ function viewInKind(kind: OverviewKind, view: TxSliceView): boolean {
   return view.effType === kind && mainCatOf(view.catId) !== 'funding';
 }
 
-/** one part's signed contribution to a bucket */
 function viewContribution(kind: OverviewKind, view: TxSliceView, tx: TxView, accountsById?: Map<string, AccountRow>): number {
   switch (kind) {
     case 'income':
@@ -91,22 +66,14 @@ function viewContribution(kind: OverviewKind, view: TxSliceView, tx: TxView, acc
   }
 }
 
-/** signed contribution of one transaction to a bucket (cents) —
- *  summed over its matching parts. An UNSPLIT row keeps the classic
- *  contract (membership is the caller's txsForKind filter); only a
- *  split row's parts answer per kind themselves. */
+// an UNSPLIT row keeps the classic contract: membership is the caller's txsForKind filter
 export function contributionCents(kind: OverviewKind, tx: TxView, accountsById?: Map<string, AccountRow>): number {
   return countableViews(tx)
     .filter((view) => !view.fromParts || viewInKind(kind, view))
     .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
 }
 
-/**
- * The rows of a period with a part in this bucket, both legs of a linked
- * pair included. #455: what a goal cashed out (`cashedOut`, both legs)
- * leaves the saving bucket — spending saved money on its goal is no
- * setback; the screens name it separately.
- */
+// #455: what a goal cashed out (both legs) leaves the saving bucket: spending saved money on its goal is no setback
 function rowsForKind(kind: OverviewKind, txs: TxView[], period: Period, cashedOut?: ReadonlySet<string>): TxView[] {
   return txs.filter(
     (tx) =>
@@ -130,16 +97,8 @@ export function txsForKind(
 /** the ledger a family's rows are stamped by: the leg that carries the meaning when a linked pair lands in the bucket twice */
 const FAMILY_STAMP: Partial<Record<OverviewKind, TxType>> = { saving: 'saving', investment: 'investment', debt: 'debtPayment' };
 
-/**
- * User ss 2026-10-06 (Debt Payment €1,224.98 = both legs of every
- * repayment): a linked pair whose two legs BOTH land in a family bucket —
- * the loan's +52.08 and the checking account's −52.08, both filed Repaid —
- * counts once, by the leg on the family's own ledger (the loan's), or by
- * the positive one where neither ledger is stamped. The other leg is the
- * counterpart: out of the total, reachable for the drill's linked view.
- * Income and expense are untouched — a pair there is a transfer wearing
- * the wrong category, which is the person's to fix.
- */
+// a linked pair whose legs BOTH land in a family bucket counts once: the family ledger's leg, else the positive one
+// income and expense stay untouched: a pair there is a transfer wearing the wrong category, the person's to fix
 export function collapsePairedLegs(
   kind: OverviewKind,
   rows: TxView[],
@@ -168,7 +127,6 @@ export function collapsePairedLegs(
   return { kept: dropped.size === 0 ? rows : rows.filter((row) => !dropped.has(row.id)), counterparts };
 }
 
-/** the other leg of a linked pair, whichever side carries the link */
 function peerOf(row: TxView, byId: Map<string, TxView>, reverse: Map<string, TxView>): TxView | undefined {
   const peer = (row.transferPeerId ? byId.get(row.transferPeerId) : undefined) ?? reverse.get(row.id);
   return peer && peer.id !== row.id ? peer : undefined;
@@ -191,7 +149,6 @@ export interface OverviewSummary {
   debtCents: number;
 }
 
-/** the six amounts for every period given, in the order given (the Periods screen's history) */
 export function overviewSummarySeries(
   txs: TxView[],
   accountsById: Map<string, AccountRow>,
@@ -219,8 +176,6 @@ export function overviewSummary(
   };
 }
 
-// ── category breakdown (main category → sub categories) ────────────────
-
 export interface CatBreakdownSub {
   catId: string;
   totalCents: number;
@@ -238,14 +193,7 @@ interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
 }
 
-/** one category's transactions in a period (a main matches its whole
- *  family, a sub only itself — same attribution as categoryBreakdown),
- *  newest first, with the signed total */
-/**
- * What one transaction puts into ONE category (positive cents): split
- * transactions partition across their slices — several slices under the
- * same parent sum up instead of double-counting the whole amount.
- */
+/** positive cents; slices under the same parent sum instead of double-counting the whole amount */
 export function categoryContributionCents(
   kind: OverviewKind,
   tx: TxView,
@@ -278,10 +226,8 @@ export function txsForCategory(
   cashedOut?: ReadonlySet<string>,
 ): { txs: TxView[]; totalCents: number; counterparts: Map<string, TxView> } {
   const { kept, counterparts } = collapsePairedLegs(kind, rowsForKind(kind, txs, period, cashedOut), accountsById);
-  // split transactions belong to every category their slices touch
   const matches = kept.filter((tx) => categoryContributionCents(kind, tx, catId, catalog, accountsById) !== 0);
   matches.sort((a, b) => b.date.localeCompare(a.date));
-  // the dropped legs of the pairs listed here, for the drill's linked view
   const listed = new Map<string, TxView>();
   for (const tx of matches) {
     const peer = counterparts.get(tx.id);
@@ -294,8 +240,6 @@ export function txsForCategory(
   };
 }
 
-/** groups a kind's transactions by main category, sorted by size —
- *  split transactions land per slice, not on their primary category */
 export function categoryBreakdown(
   kind: OverviewKind,
   txs: TxView[],
@@ -324,7 +268,7 @@ export function categoryBreakdown(
   };
   for (const tx of txsForKind(kind, txs, accountsById, period, cashedOut)) {
     for (const view of countableViews(tx)) {
-      if (view.fromParts && !viewInKind(kind, view)) continue; // parts answer per kind (v2)
+      if (view.fromParts && !viewInKind(kind, view)) continue;
       add(view.catId, view.fromParts ? Math.abs(view.amountCents) : viewContribution(kind, view, tx, accountsById));
     }
   }

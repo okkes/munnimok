@@ -1,12 +1,5 @@
-/**
- * Split-session ledger math (settleup-splits SP1). Pure: entries in,
- * net positions and a minimal transfer plan out.
- *
- * One formula covers both kinds: whoever PAID an entry is owed its full
- * amount, every share holder owes their slice. A settlement is simply
- * an entry whose only share holder is the receiver — recording "A paid
- * B €x" moves both nets by x with no special casing.
- */
+// one formula: the payer is owed the full amount, every share holder owes their slice; a settlement is simply
+// an entry whose only share holder is the receiver
 
 export interface LedgerShare {
   userId: string;
@@ -37,11 +30,7 @@ export interface Transfer {
   cents: number;
 }
 
-/**
- * Greedy netting: repeatedly match the largest debtor with the largest
- * creditor. Produces at most (n − 1) transfers and is deterministic
- * (ties broken by userId) so every member computes the same plan.
- */
+/** at most n-1 transfers; ties by userId so every member computes the same plan */
 export function settlementPlan(nets: ReadonlyMap<string, number>): Transfer[] {
   const debtors = [...nets.entries()].filter(([, cents]) => cents < 0).map(([id, cents]) => ({ id, open: -cents }));
   const creditors = [...nets.entries()].filter(([, cents]) => cents > 0).map(([id, cents]) => ({ id, open: cents }));

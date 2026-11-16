@@ -6,11 +6,7 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// api-spec §2.4 and §8 steps 4-5: the ticket, the user's requested
-/// <c>GET …?since=…</c> shape, the rotated bundle, and the ack that makes the
-/// connector forget what it just handed over.
-/// </summary>
+// api-spec §2.4 and §8 steps 4-5
 [Collection(ShopApiCollection.Name)]
 public sealed class ReceiptsTests(ShopApiFactory factory)
 {
@@ -26,19 +22,11 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
         ["password"] = RotatingStoreAdapter.Password,
     };
 
-    /// <summary>
-    /// Before the mock store's first day (2026-06-28); the platform clamps it
-    /// to the year the store keeps, so it reaches everything the store holds.
-    /// </summary>
+    // before the mock store's first day (2026-06-28); the platform clamps since to the year the store keeps
     private const string Since = "2026-06-01";
 
-    /// <summary>
-    /// One cycle of the mock store, ending yesterday and pinned to the day the
-    /// test started: the store repeats the fixture's three receipts every
-    /// <see cref="MockStoreAdapters.ReceiptCycleDays"/> days, so this window
-    /// holds each of them exactly once on any day - and a midnight mid-test
-    /// cannot move it.
-    /// </summary>
+    // one cycle ending yesterday, pinned to the test's start day: the store repeats three receipts every ReceiptCycleDays,
+    // so each appears once and a midnight mid-test cannot move the window
     private static (string Since, string Until) OneCycle()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -47,7 +35,6 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
 
     private static string Day(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    /// <summary>The one include the one-shot form asks for.</summary>
     private static readonly string[] ItemsOnly = ["items"];
 
     [Fact]
@@ -72,8 +59,6 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
         var receipts = page.GetProperty("data").EnumerateArray().ToList();
         Assert.Equal(3, receipts.Count);
 
-        // One schema for every provider: a caller never learns which one answered
-        // beyond the merchant it asked about.
         foreach (var receipt in receipts)
         {
             Assert.StartsWith("rcp_", receipt.Text("id"), StringComparison.Ordinal);
@@ -81,39 +66,28 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
             Assert.Equal(provider, receipt.GetProperty("merchant").Text("id"));
             Assert.Equal("EUR", receipt.GetProperty("total").Text("currency"));
 
-            // A real offset, never a bare date: a near-midnight purchase would
-            // otherwise land on the wrong day on the consumer's side.
+            // a real offset, never a bare date: a near-midnight purchase would land on the wrong day
             Assert.True(receipt.GetProperty("purchased_at").TryGetDateTimeOffset(out var purchasedAt));
             Assert.NotEqual(TimeSpan.Zero, purchasedAt.Offset);
 
-            // Stated on every receipt rather than only where it is true, so a
-            // consumer can read one field instead of guessing from its absence.
-            // This provider states its own totals, so ours is never a sum of
-            // the lines - which is what makes `reconciled` below mean something.
+            // this provider states its own totals, so ours is never a sum of the lines, which makes `reconciled` meaningful
             Assert.False(receipt.GetProperty("total_is_derived").GetBoolean());
         }
 
-        // Keyed by the fixture receipt each one repeats: an id names its own day,
-        // then which of the file's receipts it is (mock-{yyyy-MM-dd}-0001).
+        // keyed by the fixture receipt each repeats: the external id ends in its number (mock-{yyyy-MM-dd}-0001)
         var byFixtureReceipt = receipts.ToDictionary(r => r.Text("external_id")[^4..], StringComparer.Ordinal);
 
         // Money is minor units and an ISO-4217 code, never a float.
         Assert.Equal(1085, byFixtureReceipt["0001"].GetProperty("total").GetProperty("value").GetInt64());
 
-        // Discount lines are negative, because without them the items do not sum
-        // to the total and reconciliation would be meaningless.
+        // discount lines are negative, or the items would not sum to the total
         var discount = byFixtureReceipt["0001"].GetProperty("items")[0].GetProperty("discount");
         Assert.Equal(-30, discount.GetProperty("amount").GetProperty("value").GetInt64());
 
-        // A receipt whose items do not reconcile is emitted with the verdict
-        // rather than dropped: dropping it would hide a real purchase, and
-        // trusting it silently would hand over a total we know is inconsistent.
+        // a receipt whose items do not reconcile is emitted with the verdict, not dropped
         Assert.False(byFixtureReceipt["0003"].GetProperty("reconciled").GetBoolean());
         Assert.True(byFixtureReceipt["0001"].GetProperty("reconciled").GetBoolean());
 
-        // This adapter reported no refreshed material, so nothing is re-issued.
-        // A bundle appearing here would mean the connector was handing back
-        // something it had merely been holding.
         Assert.False(page.TryGetProperty("session", out _), "an unrotated fetch must not re-issue a bundle");
 
         Assert.Equal(3, Db.StagedRows(factory, connection.SessionId));
@@ -125,8 +99,7 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
             Assert.Equal(3, (await ack.JsonAsync()).GetProperty("purged").GetInt32());
         }
 
-        // "Delivered, purge it" is literal. This is what keeps the connector a
-        // pipe rather than a second copy of the consumer's database.
+        // ack purges literally: the connector is a pipe, not a second copy of the consumer's database
         Assert.Equal(0, Db.StagedRows(factory, connection.SessionId));
 
         using var replay = await Flows.PostWithTicketAsync(
@@ -160,8 +133,6 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
         Assert.StartsWith("sb_v1.", rotated, StringComparison.Ordinal);
         Assert.NotEqual(connection.Bundle, rotated);
 
-        // The re-issued bundle is a real one, not a token that merely looks like
-        // it: the caller can hand it straight back and keep working.
         var ticketFromRotated = await Flows.ResumeAsync(http, provider, connection with { Bundle = rotated });
         Assert.StartsWith("tkt_", ticketFromRotated, StringComparison.Ordinal);
     }

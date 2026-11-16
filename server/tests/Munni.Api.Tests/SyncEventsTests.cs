@@ -40,7 +40,6 @@ public class SyncEventsTests : IClassFixture<SyncApiFactory>
         using var reader = new StreamReader(stream);
         Assert.Equal(": connected", await reader.ReadLineAsync());
 
-        // a change in someone else's space must NOT surface, ours must
         await stranger.PostAsJsonAsync($"/sync/{strangerSpace}/push", Push(strangerSpace, "devS", "000000200-0000-devS"));
         await device.PostAsJsonAsync($"/sync/{mySpace}/push", Push(mySpace, "devB", "000000200-0000-devB"));
 

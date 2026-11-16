@@ -3,25 +3,14 @@ import { apiFetch } from '@/lib/api';
 import { clearNativeDeliveredNotifications } from '@/lib/platform';
 import { clearInboxNow, clearInboxUpTo, readInboxClearedAt } from './notifications';
 
-/**
- * #580: clearing the notifications list on one device clears it on the
- * person's other devices. The moment travels through the server (a clear
- * made offline goes out once the server is in reach); each device drops its
- * entries up to it and closes the OS notifications it still shows. Another
- * device follows when its list is next opened or the app comes back to the
- * foreground — not instantly: a push cannot carry a silent "clear" (web push
- * must show what it delivers, and iOS throttles silent pushes).
- */
+// #580: a clear travels through the server (offline, it goes out later); other devices follow on list open or foreground
+// not by push: web push must show what it delivers and iOS throttles silent pushes
 const PENDING_KEY = 'notifClearPending';
 
 /** a clear still waiting for the server has nowhere to go once the identity leaves its account */
 export const forgetPendingClear = (store: Pick<StorageBackend, 'metaDelete'>): Promise<void> => store.metaDelete(PENDING_KEY);
 
-/**
- * Closes the OS notifications this device still shows — the shell's own, or
- * the service worker's (those up to `upTo` when the browser dates them; a
- * remote clear leaves what arrived after it).
- */
+/** `upTo`: only notifications the browser dates up to it close; a remote clear leaves later arrivals */
 export async function dismissDeliveredNotifications(upTo?: number): Promise<void> {
   if (await clearNativeDeliveredNotifications()) return;
   const registration = await navigator.serviceWorker?.getRegistration?.().catch(() => undefined);
@@ -32,7 +21,6 @@ export async function dismissDeliveredNotifications(upTo?: number): Promise<void
   }
 }
 
-/** the Clear button: empties the list here, closes what the OS shows and — signed in — tells the other devices */
 export async function clearNotifications(store: StorageBackend, syncing: boolean): Promise<void> {
   await clearInboxNow(store);
   await dismissDeliveredNotifications();
@@ -41,7 +29,6 @@ export async function clearNotifications(store: StorageBackend, syncing: boolean
   await syncNotificationsCleared(store);
 }
 
-/** brings this device and the server to the same moment; true when a clear made elsewhere took entries away here */
 export async function syncNotificationsCleared(store: StorageBackend): Promise<boolean> {
   const pending = (await store.metaGet(PENDING_KEY))?.value === true;
   const local = await readInboxClearedAt(store);

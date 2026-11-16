@@ -2,41 +2,18 @@ using Connector.Kit.Normalization;
 
 namespace ShopConnector.Adapters.Bol;
 
-/// <summary>
-/// The two normalizations both shapes need, in one place.
-///
-/// Shared rather than copied because the whole point of the two shapes is
-/// that they produce the same receipts: a test asserts exactly that against
-/// the same order recorded both ways, and it would be worth nothing if the
-/// halves it compares had drifting ideas about what "card" means or how a
-/// line total is derived from a unit price.
-/// </summary>
+// shared so both shapes produce the same receipts (a test compares them) with no drift in "card" or line totals
 internal static class BolNormalize
 {
-    /// <summary>
-    /// A line total from its unit price, where the payload states one and not
-    /// the other. Multiplication, not a guess: the quantity is the provider's
-    /// own, and where there is none a single unit is what "no quantity shown"
-    /// means on every retail page there is.
-    /// </summary>
+    // a line total from the unit price: the provider's quantity multiplies, and none means a single unit
     public static Money Extended(Money unit, decimal? quantity)
     {
         var count = quantity is > 0 ? decimal.Round(quantity.Value, 3, MidpointRounding.AwayFromZero) : 1m;
         return unit with { Value = (long)decimal.Round(unit.Value * count, 0, MidpointRounding.AwayFromZero) };
     }
 
-    /// <summary>
-    /// The payment method in the vocabulary <see cref="ReceiptPayment"/>
-    /// documents.
-    ///
-    /// Never invented: text bol does not recognisably name is <c>other</c>,
-    /// and no text at all stays null so the consumer knows its match against
-    /// a bank transaction will be weaker, rather than being handed a guess it
-    /// would trust. iDEAL is called out because it is how most of the
-    /// Netherlands pays and it matches a bank line exactly; "achteraf betalen"
-    /// is bol's pay-later, which settles days after the order and would
-    /// otherwise look like a missing payment.
-    /// </summary>
+    // never invented: unrecognised text is other, no text stays null (a weaker bank match, not a guess); "achteraf betalen"
+    // is pay-later, settling days after the order, and would otherwise look like a missing payment
     public static string? Method(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;

@@ -68,7 +68,6 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     const link = await backend.get('receiptLink', receiptLinkId(SPACE, `rcpt:ah:${CONN}:t-100`));
     expect(link).toMatchObject({ proposedTxId: 'tx-ah', auto: 0, receiptId: `rcpt:ah:${CONN}:t-100` });
     expect(link?.txId).toBeFalsy();
-    // a second pass changes nothing
     expect(await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts())).toEqual({ linked: 0, proposed: 0 });
   });
 
@@ -80,7 +79,6 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     let link = (await backend.get('receiptLink', id))!;
     expect(link.proposedTxId).toBe('tx-reviewed');
     expect(link.txId).toBeFalsy();
-    // the same proposal is not written twice
     expect(await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts())).toEqual({ linked: 0, proposed: 0 });
 
     await acceptProposal(repo, SPACE, link);
@@ -88,7 +86,6 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
     expect(link.txId).toBe('tx-reviewed');
     expect(link.proposedTxId).toBeFalsy();
 
-    // a rejected transaction is never proposed again for this receipt
     await repo.upsert('receiptLink', SPACE, id, { txId: null as never, proposedTxId: 'tx-reviewed' });
     await rejectProposal(repo, SPACE, (await backend.get('receiptLink', id))!);
     link = (await backend.get('receiptLink', id))!;
@@ -123,7 +120,6 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
       alsoTxIds: ['tx-held'],
       auto: 0,
     });
-    // a second receipt that fits tx-held to the cent finds it taken
     await seedReceipt('t-501');
     expect(await matchReceiptsIntoSpace(backend, repo, SPACE, await feedReceipts())).toEqual({ linked: 0, proposed: 0 });
     expect((await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId)).toHaveLength(0);
@@ -165,7 +161,6 @@ describe('a receipt kept without a transaction (#567)', () => {
     // the space's copy carries the picture: its members read it without the owner's feed
     expect(link?.source).toBe('photo');
     expect(link?.image).toContain('data:image/jpeg');
-    // asked once: a second pass has nothing to add
     expect((await rematchSpaces(backend, repo)).proposed).toBe(0);
   });
 
@@ -178,7 +173,6 @@ describe('a receipt kept without a transaction (#567)', () => {
     const row = (await backend.get('receipt', 'photo2'))!;
     expect((await matchReceiptEverywhere(backend, repo, row)).proposed).toBe(1);
     expect((await backend.get('receiptLink', receiptLinkId('s2', 'photo2')))?.proposedTxId).toBe('coffee');
-    // the other space has no such payment: nothing was written there
     expect(await backend.get('receiptLink', receiptLinkId(SPACE, 'photo2'))).toBeUndefined();
   });
 
@@ -197,14 +191,12 @@ describe('the upfront pass (user 2026-10-09: proposals before the review opens)'
     await seedReceipt('t-601', 'conn-other'); // in the feed, included nowhere yet
     expect(await rematchSpace(backend, repo, SPACE)).toEqual({ linked: 0, proposed: 1 });
     expect((await backend.bySpace('receiptLink', SPACE)).filter((l) => l.proposedTxId).map((l) => l.instanceId)).toEqual([CONN]);
-    // a space without a shop has nothing to match; one that includes the other connection meets its receipt on the walk
     await repo.upsert('space', 's2', 's2', { name: 'Two', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('transaction', 's2', 'tx-s2', { accountId: 'a2', date: '2026-07-05', amountCents: -2350, currency: 'EUR', merchant: 'Albert Heijn', needsReview: 0 });
     expect(await rematchSpace(backend, repo, 's2')).toEqual({ linked: 0, proposed: 0 });
     await repo.upsert('storeConnLink', 's2', storeConnLinkId('s2', 'conn-other'), { instanceId: 'conn-other', store: 'ah', displayName: 'Albert Heijn 2' });
     expect(await rematchSpaces(backend, repo)).toEqual({ linked: 0, proposed: 1 });
     expect((await backend.bySpace('receiptLink', 's2')).map((l) => [l.instanceId, l.proposedTxId])).toEqual([['conn-other', 'tx-s2']]);
-    // named spaces narrow the walk
     expect(await rematchSpaces(backend, repo, [SPACE])).toEqual({ linked: 0, proposed: 0 });
   });
 
@@ -239,7 +231,6 @@ describe('the upfront pass (user 2026-10-09: proposals before the review opens)'
     scheduler.request('s1');
     await sleep(25);
     expect(runs).toEqual([['s1', 's2']]);
-    // mid-pass: the ask for everything waits for the running pass and follows it as one more
     scheduler.request();
     scheduler.request('s9');
     await sleep(25);
@@ -249,7 +240,6 @@ describe('the upfront pass (user 2026-10-09: proposals before the review opens)'
     expect(runs).toEqual([['s1', 's2'], undefined]);
     release();
     await scheduler.settled();
-    // a waiting ask dies with the scheduler; nothing installed = a landing point's ask is a no-op
     scheduler.request('s3');
     scheduler.dispose();
     await scheduler.settled();

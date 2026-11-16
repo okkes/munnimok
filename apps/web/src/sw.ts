@@ -1,10 +1,6 @@
 /// <reference lib="webworker" />
 /* eslint-env serviceworker */
-// Custom service worker (vite-plugin-pwa injectManifest): precaching like
-// the old generateSW build, plus Web Push — a notification wakes the
-// device so new bank transactions are announced even while the app is
-// closed, and opening the notification lands in a freshly syncing app.
-// Runtime glue only — the decisions live in sync/swNotifications (tested).
+// injectManifest worker: precaching plus Web Push; runtime glue only, the decisions live in sync/swNotifications (tested)
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { backgroundPull, flushOutbox } from '@/sync/swSync';
 import { evaluateBudgetAlertsFromWorker } from '@/sync/swBudgets';
@@ -15,17 +11,12 @@ import type { PushPayload } from '@/sync/swNotifications';
 declare const self: ServiceWorkerGlobalScope;
 
 cleanupOutdatedCaches();
-// ignoreURLParametersMatching: the MDI icon font is referenced as
-// …webfont.woff2?v=7.4.47 — with the default matcher that query defeats
-// the precache lookup and the request goes to the network, which is why
-// icons rendered as squares offline. Every precached asset is
-// content-hashed, so matching URLs without their query is always safe.
+// the MDI icon font's ?v= query defeats the precache lookup (icons rendered as squares offline); precached assets are
+// content-hashed, so matching URLs without their query is always safe
 precacheAndRoute(self.__WB_MANIFEST, { ignoreURLParametersMatching: [/.*/] });
 
-// /runtime-config.js is the per-deployment config overlay the nginx
-// entrypoint rewrites — excluded from the precache (vite.config globIgnores)
-// and served network-first here so an offline relaunch still boots with the
-// last-seen deployment config instead of the baked defaults.
+// /runtime-config.js (rewritten per deployment by nginx, excluded from the precache) is served network-first so an offline
+// relaunch boots with the last-seen config instead of the baked defaults
 const RUNTIME_CONFIG_CACHE = 'munni-runtime-config';
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
@@ -46,11 +37,8 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// UpdateToast's reload button posts SKIP_WAITING (registerSW prompt mode)
 self.addEventListener('message', (event) => {
-  // defense-in-depth: only act on messages from same-origin clients (a
-  // worker only ever receives them from pages it controls, but verify
-  // the origin explicitly rather than trust it)
+  // defense in depth: verify the origin explicitly rather than trust that only controlled pages post here
   if (event.origin && event.origin !== self.location.origin) return;
   if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING') void self.skipWaiting();
 });
@@ -77,23 +65,16 @@ self.addEventListener('push', (event) => {
         tag: notification.tag,
         data: { url: notification.url, spaceId: notification.pullSpaceId },
       });
-      // open clients refresh their server-backed lists (notification
-      // bell, members, invites) the moment a push lands
       const clientList = await self.clients.matchAll({ type: 'window' });
       for (const client of clientList) client.postMessage({ type: 'PUSH', payloadType: payload.type });
 
       if (!notification.pull) return;
-      // …then pre-sync the announced data into IndexedDB while we're
-      // awake, so opening the app (or the notification) starts hot.
-      // Best-effort: an expired mirrored token just skips.
+      // …then pre-sync the announced data while awake so opening starts hot; best-effort, an expired mirrored token just skips
       try {
         await backgroundPull(notification.pullSpaceId);
-        // budgets stay client-side (the server never learns them) — this
-        // wake-up is the moment to warn about limits the new bank
-        // transactions just crossed (budgets design P4)
+        // budgets stay client-side (the server never learns them): this wake-up is the moment to warn about limits just crossed
         const alerts = [
           ...(await evaluateBudgetAlertsFromWorker(notification.pullSpaceId, lang)),
-          // #128: a plan subject in the red, once a day
           ...(await evaluatePlanAlertsFromWorker(notification.pullSpaceId, lang)),
         ];
         for (const alert of alerts) {
@@ -112,8 +93,6 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Android one-shot Background Sync: connectivity returned while the app
-// is killed — flush queued local ops, then pull what we missed.
 self.addEventListener('sync', (event: Event) => {
   const sync = event as Event & { tag?: string; waitUntil: (p: Promise<unknown>) => void };
   if (sync.tag !== 'munni-outbox') return;
@@ -123,8 +102,7 @@ self.addEventListener('sync', (event: Event) => {
         await flushOutbox();
         await backgroundPull();
       } catch {
-        // the sync manager retries with backoff on rejection — but a
-        // missing/expired session must NOT loop, hence catch-all here
+        // the sync manager retries on rejection, but a missing/expired session must NOT loop: hence catch-all
       }
     })(),
   );
@@ -138,12 +116,8 @@ self.addEventListener('notificationclick', (event) => {
     (async () => {
       const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       const existing = clientList[0];
-      // focusing (or opening) the app triggers its start-up sync,
-      // pulling the announced transactions immediately
       if (existing) {
-        // a focused client keeps its current screen — post the target so
-        // the app's listener routes there (friend request → friends,
-        // new transactions → the announced space's review, …)
+        // a focused client keeps its current screen: post the target so the app's listener routes there
         existing.postMessage({ type: 'NAVIGATE', url, spaceId: data?.spaceId });
         await existing.focus();
       } else {

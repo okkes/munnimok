@@ -37,7 +37,6 @@ describe('loans v2 balance coupling', () => {
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-40_000);
     await applyLoanLinkDelta(store, repo, payment, 'loan1', undefined);
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-50_000);
-    // borrowing €50 more THROUGH the loan pushes the debt deeper
     await applyLoanLinkDelta(store, repo, { amountCents: 5_000, date: '2026-07-02' }, undefined, 'loan1');
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-55_000);
   });
@@ -56,7 +55,6 @@ describe('loans v2 balance coupling', () => {
     expect(countsTowardLoan({ balanceAsOf: '2026-06-01' }, old)).toBe(false);
     await applyLoanLinkDelta(store, repo, old, undefined, 'loan1');
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-50_000);
-    // the loanCounted override rides the same check
     expect(countsTowardLoan({ balanceAsOf: '2026-06-01' }, { ...old, loanCounted: 1 })).toBe(true);
   });
 
@@ -73,7 +71,6 @@ describe('loans v2 balance coupling', () => {
     expect(applied).toBe(true);
     expect(marked).toBe(true);
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-40_000);
-    // the marker makes a second call a no-op
     const again = await countPreAnchorTx(store, repo, { ...tx, loanCounted: 1 } as never, async () => undefined);
     expect(again).toBe(false);
     expect((await store.get('account', 'loan1'))?.balanceCents).toBe(-40_000);
@@ -122,7 +119,6 @@ describe('#509: a loan typed at its original amount counts every payment linked 
     await pay(repo, 'p2', '2026-09-24', -6324);
     await link(repo, 'p1');
     await link(repo, 'p2');
-    // the cut-off kept both out
     expect((await store.get('account', 'loan'))?.balanceCents).toBe(-1_000_000);
 
     expect(await settlePristineLoans(store, repo)).toBe(1);
@@ -130,9 +126,7 @@ describe('#509: a loan typed at its original amount counts every payment linked 
     expect(loan?.balanceCents).toBe(-987_352);
     expect(loan?.balanceAsOf ?? undefined).toBeUndefined();
     expect((await store.get('transaction', 'p1'))?.loanCounted).toBe(1);
-    // settled once: nothing left to fold
     expect(await settlePristineLoans(store, repo)).toBe(0);
-    // and unlinking now gives the payment back
     await writeTxTransform(repo, { id: 'p2', spaceId: SPACE, feedSpaceId: undefined, needsReview: 0 }, { linkedAccountId: null as never });
     expect((await store.get('account', 'loan'))?.balanceCents).toBe(-993_676);
   });

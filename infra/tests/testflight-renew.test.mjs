@@ -1,9 +1,4 @@
-// TestFlight renewal (user 2026-10-09): a TestFlight build expires 90 days after its
-// upload, so the weekly workflow asks App Store Connect for every iOS environment's
-// newest build and rebuilds the stack when fewer than 30 days are left. The pure
-// parts of the script (days left, the verdict, the App Store Connect calls against
-// a fake fetch) and the workflow's shape are pinned here; the ES256 token itself is
-// the same code every asc-*.js script runs live.
+// a TestFlight build expires 90 days after upload: the weekly run rebuilds a stack with fewer than 30 days left
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

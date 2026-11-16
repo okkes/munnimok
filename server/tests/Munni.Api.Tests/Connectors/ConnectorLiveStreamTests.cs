@@ -19,14 +19,8 @@ using Munni.Api.Connectors;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The live view pushed (#429): the app holds one stream at this API, this
-/// API holds one at the control plane, and every picture the agent posts
-/// travels down both without a request of its own. Driven through the real
-/// in-process control plane; the run is staged there the way an agent would
-/// leave it - a session signing in, a leased job, a live challenge - because
-/// no shipped party can be made to raise one on demand.
-/// </summary>
+/// <summary>#429: app to this API to control plane, one stream each. The run is staged on the control plane
+/// because no shipped party can raise a live challenge on demand.</summary>
 public class ConnectorLiveStreamTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     /// <summary>An agent-tier party, so the control plane's own runner leaves the staged job alone.</summary>
@@ -118,11 +112,6 @@ public class ConnectorLiveStreamTests(ConnectorApiFactory factory) : IClassFixtu
         Assert.Null(await events.NextAsync());
     }
 
-    /// <summary>
-    /// A phone that switched networks reconnects while its old connection
-    /// still looks open here; the newer stream takes the place, and the older
-    /// one is told so and lets its upstream go.
-    /// </summary>
     [Fact]
     public async Task A_second_stream_of_the_same_viewer_takes_over_and_the_first_is_told()
     {
@@ -163,8 +152,6 @@ public class ConnectorLiveStreamTests(ConnectorApiFactory factory) : IClassFixtu
         await UntilAsync(() => !LiveStreamRelay.Holds(key), "the relay to let the stream go");
     }
 
-    // ------------------------------------------------------------ the parts
-
     [Fact]
     public async Task The_reader_takes_events_as_the_format_writes_them_and_refuses_one_without_end()
     {
@@ -181,7 +168,6 @@ public class ConnectorLiveStreamTests(ConnectorApiFactory factory) : IClassFixtu
         await Assert.ThrowsAsync<InvalidDataException>(() => endless.ReadAsync(CancellationToken.None));
     }
 
-    /// <summary>The app is handed the fields it draws with, rebuilt from what was checked, and nothing a frame could carry besides.</summary>
     [Fact]
     public void A_frame_is_handed_on_with_its_own_fields_and_a_wrong_one_not_at_all()
     {
@@ -201,8 +187,6 @@ public class ConnectorLiveStreamTests(ConnectorApiFactory factory) : IClassFixtu
         Assert.Equal(": keep-alive\n\n", LiveStreamRelay.Render(new SseEvent("message", null, null, true)));
         Assert.Contains("\"code\":\"challenge_expired\"", LiveStreamRelay.Render(new SseEvent("end", null, "garbage", false)), StringComparison.Ordinal);
     }
-
-    // ------------------------------------------------------------- helpers
 
     private sealed record LiveRun(string Sub, Guid UserId, string SessionId, string JobId, string ChallengeId, string AgentToken);
 
@@ -250,11 +234,6 @@ public class ConnectorLiveStreamTests(ConnectorApiFactory factory) : IClassFixtu
         response.EnsureSuccessStatusCode();
     }
 
-    /// <summary>
-    /// A person's session signing in, its job leased by an agent, a live
-    /// challenge on it - staged on the control plane under the subject this
-    /// API mints for the person, and bound to them here as a login would.
-    /// </summary>
     private async Task<LiveRun> ArrangeAsync(string sub)
     {
         using (var first = factory.ClientFor(sub))

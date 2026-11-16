@@ -21,12 +21,10 @@ describe('Bars (user 2026-10-08: numbers on top, a pick with a ring)', () => {
     );
     const texts = [...screen.getByTestId('b').querySelectorAll('text')].map((node) => node.textContent);
     expect(texts).toEqual(['€10', 'Jan', '€0', '€25', 'Mar']);
-    // the label sits ABOVE the bar it names
     const bar = screen.getByTestId('b-bar-2');
     const rect = bar.querySelectorAll('rect');
     const label = bar.querySelector('text')!;
     expect(Number(label.getAttribute('y'))).toBeLessThan(Number(rect[1].getAttribute('y')));
-    // the ring wraps the picked bar only
     expect(screen.getByTestId('b-selected')).toBeTruthy();
     expect(screen.getByTestId('b-bar-0').querySelectorAll('rect')).toHaveLength(1);
     fireEvent.click(screen.getByTestId('b-bar-0'));

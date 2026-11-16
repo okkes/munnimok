@@ -4,11 +4,6 @@ using Connector.Kit.Normalization;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// A transaction as either aggregator hands it over, before it becomes a
-/// draft: signed amount as text, the two parties, the remittance line, and
-/// whether the bank has booked it yet.
-/// </summary>
 public sealed record AggregatorTransaction
 {
     /// <summary>The bank's own reference (GoCardless <c>transactionId</c>, Enable Banking <c>entry_reference</c>).</summary>
@@ -41,12 +36,8 @@ public sealed record AggregatorTransaction
 
 internal static partial class OpenBankingRecords
 {
-    /// <summary>
-    /// The identity the consumer's ingest keys on: the reference the old
-    /// integration keyed on (<c>transactionId ?? internalTransactionId</c>),
-    /// a pending row under a <c>pending:</c> prefix. Keeping these exact is
-    /// what lets a reconnected bank continue its history without a duplicate.
-    /// </summary>
+    // the id the consumer's ingest keys on: transactionId ?? internalTransactionId as the old integration did,
+    // pending under "pending:"; kept exact so a reconnected bank continues its history without duplicates
     public static string? ExternalId(AggregatorTransaction tx)
     {
         ArgumentNullException.ThrowIfNull(tx);
@@ -60,8 +51,7 @@ internal static partial class OpenBankingRecords
         ArgumentNullException.ThrowIfNull(tx);
         var externalId = ExternalId(tx);
         var booked = ParseDay(tx.BookingDate) ?? ParseDay(tx.ValueDate);
-        // a row without an identity or a day cannot be keyed nor placed; the
-        // old ingest dropped and counted them, and so does the consumer's
+        // no identity or no day: cannot be keyed or placed; dropped and counted, as the old ingest did
         if (externalId is null || booked is null) return null;
         var amount = new Money(MoneyParser.ToMinor(tx.Amount, MoneyUnit.MajorString), tx.Currency.ToUpperInvariant());
         var outgoing = amount.Value < 0;
@@ -102,7 +92,6 @@ internal static partial class OpenBankingRecords
         };
     }
 
-    /// <summary>closingBooked first, interimBooked next, then whatever the bank offered.</summary>
     public static Balance? PickBalance(IReadOnlyList<(string Type, string Amount, string Currency, string? Date)> balances, DateOnly today)
     {
         ArgumentNullException.ThrowIfNull(balances);

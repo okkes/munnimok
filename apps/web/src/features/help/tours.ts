@@ -1,11 +1,5 @@
 import type { TranslationKey } from '@/i18n';
 
-/**
- * Tutorials are data (approved tutorial design): the slides sheet and
- * the spotlight walkthrough are generic renderers over this registry.
- * Adding a feature's tour = one entry here + i18n strings ×3.
- */
-
 export type TourId =
   | 'install'
   | 'home'
@@ -37,7 +31,6 @@ export interface TourStep {
   bodyKey: TranslationKey;
   /** emoji-scale art: shown on slides and as the missing-anchor sample */
   illustration: string;
-  /** data-testid to spotlight in the interactive walkthrough */
   anchor?: string;
   /** 'tap' forwards the tap to the real element and advances */
   advanceOn?: 'tap' | 'next';
@@ -54,8 +47,7 @@ export interface Tour {
 
 export const TOURS: Tour[] = [
   {
-    // browsers cap what a tab may keep (iOS clears idle-tab storage);
-    // installed PWAs are exempt — nudging install is data-safety, not vanity
+    // browsers cap what a tab may keep (iOS clears idle-tab storage); installed PWAs are exempt
     id: 'install',
     titleKey: 'install.tourTitle',
     icon: 'cellphone-arrow-down',
@@ -87,9 +79,7 @@ export const TOURS: Tour[] = [
     steps: [
       { titleKey: 'tour.review.1t', bodyKey: 'tour.review.1b', illustration: '🎯' },
       { titleKey: 'tour.review.2t', bodyKey: 'tour.review.2b', illustration: '🃏', anchor: 'review-card' },
-      // no advanceOn:'tap' here (user report): forwarding the tap really
-      // CONFIRMED the card — the deck advanced mid-tour and the skip
-      // step could point at nothing. Tour steps only point, never act.
+      // no advanceOn:'tap': forwarding the tap really CONFIRMED the card; tour steps only point, never act
       { titleKey: 'tour.review.3t', bodyKey: 'tour.review.3b', illustration: '✅', anchor: 'review-confirm-btn' },
       { titleKey: 'tour.review.4t', bodyKey: 'tour.review.4b', illustration: '⏭️', anchor: 'review-skip-btn' },
     ],
@@ -184,10 +174,8 @@ export const TOURS: Tour[] = [
     screen: '/accounts',
     steps: [
       { titleKey: 'tour.acct.1t', bodyKey: 'tour.acct.1b', illustration: '🏦' },
-      // #317: the header upload icon is gone — import lives behind the +
       { titleKey: 'tour.acct.2t', bodyKey: 'tour.acct.2b', illustration: '📄', anchor: 'accounts-add' },
       { titleKey: 'tour.acct.3t', bodyKey: 'tour.acct.3b', illustration: '⏰' },
-      // #527: the banks are connected and managed here
       { titleKey: 'tour.acct.4t', bodyKey: 'tour.acct.4b', illustration: '🔗', anchor: 'bank-connections' },
     ],
   },
@@ -215,9 +203,7 @@ export const TOURS: Tour[] = [
     ],
   },
   {
-    // ships with the extracted period screen (user rule: new screens
-    // bring their tour in the same arc); 'current' = the screen carries
-    // a spaceId param, so the walkthrough runs where the ? lives
+    // 'current' = the screen carries a spaceId param, so the walkthrough runs where the ? lives
     id: 'period',
     titleKey: 'space.periodTitle',
     icon: 'calendar-month-outline',
@@ -230,7 +216,7 @@ export const TOURS: Tour[] = [
     ],
   },
   {
-    // #577: the space's phone bar; 'current' — the screen carries a spaceId param
+    // 'current' = the screen carries a spaceId param
     id: 'navigation',
     titleKey: 'nav.title',
     icon: 'dock-bottom',
@@ -292,8 +278,6 @@ export const TOURS: Tour[] = [
     titleKey: 'trends.title',
     icon: 'chart-bar',
     screen: '/trends',
-    // user 2026-10-08: the Spending cards (bars with numbers, custom
-    // graphs, three views), the balance line and the net-worth line
     steps: [
       { titleKey: 'tour.trends.1t', bodyKey: 'tour.trends.1b', illustration: '📊', anchor: 'trends-cat-chart' },
       { titleKey: 'tour.trends.2t', bodyKey: 'tour.trends.2b', illustration: '✏️', anchor: 'trends-graph-new' },
@@ -344,8 +328,7 @@ export const TOURS: Tour[] = [
   },
 ];
 
-/** the three account tiers, taught where they live (user request:
- *  understanding manual vs import vs open banking is load-bearing) */
+/** the three account tiers (manual, import, open banking) are taught where they live */
 const SPACE_ACCOUNTS_TOUR: Tour = {
   id: 'spaceAccounts',
   titleKey: 'space.financialAccounts',
@@ -361,9 +344,5 @@ const SPACE_ACCOUNTS_TOUR: Tour = {
   ],
 };
 TOURS.push(SPACE_ACCOUNTS_TOUR);
-
-// The old 'welcome' walkthrough retired 2026-07-26: the Mina tutorial
-// (features/mina) owns the first-run now — auto-started, forced-nav,
-// replayable from the help index.
 
 export const tourById = (id: TourId): Tour => TOURS.find((tour) => tour.id === id)!;

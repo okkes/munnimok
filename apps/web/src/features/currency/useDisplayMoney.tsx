@@ -16,32 +16,15 @@ export interface DisplayMoney {
   ensureDates: (dates: readonly string[]) => void;
   /** #530: the device hides the sensitive figures */
   hideSensitive: boolean;
-  /**
-   * `fmt` for a sensitive figure — every account balance and every total
-   * built from balances (the pools, net worth, safe to spend, a debt's
-   * remaining, a portfolio's value), what comes in and what is put aside —
-   * stars while the device hides them. `asRecorded` keeps the figure in its
-   * own currency for the screens that never take the display lens.
-   */
+  /** `fmt` for a sensitive figure (balances and totals built from them): stars while hidden;
+   * `asRecorded` keeps the figure in its own currency, skipping the display lens */
   fmtSensitive: (cents: number, currency: string, opts?: { sign?: boolean; date?: string; asRecorded?: boolean }) => string;
   /** the same rule for a formatter a screen already holds (a chart's scale, a currency-bound `money`) */
   sensitive: <A extends unknown[]>(format: (...args: A) => string) => (...args: A) => string;
 }
 
-/**
- * The display-currency lens (currency plan CD3): reads the user-level
- * preference from the profile, keeps the latest ECB rates warm (signed-in
- * only — offline identities never call out, they use pinned manual
- * pairs), and hands surfaces one `fmt` that renders any amount in the
- * chosen currency, marked ≈. With no preference set it is exactly
- * fmtCents — "as recorded" costs nothing.
- *
- * Subscriptions live ONCE in the provider (AppLayout): the first
- * version ran this hook per TxRow, which meant hundreds of store
- * subscriptions all re-reading the rates cache on EVERY write emission
- * — a real slowdown during sync pulls (it melted the multi-user e2e
- * specs on cold CI runners before it would have melted real devices).
- */
+// subscriptions live once in the provider: per-row hooks re-read the rates cache on every write and slowed sync pulls
+// offline identities never call out: they use pinned manual pairs
 function useDisplayMoneyStandalone(): DisplayMoney {
   const { lang } = useLang();
   const { store } = useData();
@@ -85,8 +68,7 @@ function useDisplayMoneyStandalone(): DisplayMoney {
     [hideSensitive],
   );
 
-  /** transaction lists call this with their visible dates so rows can
-   *  convert at their OWN day's fixing (historically honest lists) */
+  /** rows convert at their own day's fixing, so lists pass their visible dates */
   const ensureDates = useCallback(
     (dates: readonly string[]) => {
       if (!displayCurrency || !online || dates.length === 0) return;
@@ -103,7 +85,6 @@ function useDisplayMoneyStandalone(): DisplayMoney {
 
 const DisplayMoneyContext = createContext<DisplayMoney | null>(null);
 
-/** mounted once inside the authed layout — all screens and rows share it */
 export function DisplayMoneyProvider({ children }: Readonly<{ children: ReactNode }>) {
   const value = useDisplayMoneyStandalone();
   return <DisplayMoneyContext.Provider value={value}>{children}</DisplayMoneyContext.Provider>;

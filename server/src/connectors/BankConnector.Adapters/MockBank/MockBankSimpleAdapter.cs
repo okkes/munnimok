@@ -7,14 +7,8 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// T1: password in, session out, no browser and no human.
-///
-/// This is munni's demo identity, and the only provider in the fleet that
-/// runs inline in the control plane. That combination is deliberate: it
-/// means the full connect-fetch-ack loop can be demonstrated on a machine
-/// with no agent, no browser binaries and no network at all.
-/// </summary>
+// T1: munni's demo identity, the only provider running inline in the control plane,
+// so connect-fetch-ack works with no agent, browser or network
 public sealed class MockBankSimpleAdapter : MockBankAdapter
 {
     public const string ProviderId = "mock-bank-simple";
@@ -65,9 +59,8 @@ public sealed class MockBankSimpleAdapter : MockBankAdapter
 
         ctx.Progress(JobStep.Authenticating);
 
-        // Latched before the verdict, not after. Once a credential has gone
-        // upstream a lost lease must fail the job permanently rather than
-        // requeue it, and that is true whether or not the attempt succeeded.
+        // latched before the verdict: once a credential went upstream a lost lease must fail the job
+        // permanently, whatever the outcome
         ctx.CredentialSubmitted();
 
         if (string.Equals(password, MockBankCredentials.RejectedPassword, StringComparison.Ordinal))
@@ -82,8 +75,7 @@ public sealed class MockBankSimpleAdapter : MockBankAdapter
             AccessToken = Ids.New("mockat"),
             RefreshToken = Ids.New("mockrt"),
             AccessTokenExpiresAt = Time.GetUtcNow().AddHours(1),
-            // Minted once and carried for the life of the session: rotating
-            // a device identifier every run is itself a fraud signal.
+            // minted once for the session: rotating a device id every run is a fraud signal
             DeviceId = Ids.New(Ids.Profile),
         }, TtlSeconds));
     }

@@ -13,27 +13,9 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// Hosted private agents (#420, slice A2): munni's own browser containers
-/// that serve ONE person at a time.
-///
-/// A slot enrolls with the platform's private-slot code under the subject
-/// <see cref="ConnectorOptions.PrivateSlotSubject"/>, which is nobody and is
-/// not the fleet: free, it is leased nothing and counts for nobody's
-/// "machine of my own". A person asks for one; the operator approves, which
-/// binds the oldest free slot to that person - their subject becomes its
-/// owner, and every rule that looks for a machine of theirs (the own-machine
-/// profile, the egress check, the agent list) finds it exactly as it would
-/// find a container in their house. Giving it back, or the operator taking
-/// it back, returns it to the slot subject and asks the agent to wipe every
-/// browser profile; the slot is free to the next person only once the agent
-/// has said on a heartbeat that it did.
-///
-/// The operator decides, not the platform: a slot is a browser with
-/// somebody's bank signed into it, on munni's hardware, and handing those out
-/// is a judgement call the platform should not make on its own (user ruling
-/// 2026-10-01: "user can request and admin approves").
-/// </summary>
+/// Hosted private agents (#420 A2): munni's own browser containers serving one person at a time. A free slot belongs to
+/// PrivateSlotSubject (nobody, not the fleet); approval binds it to the person. Release asks the agent to wipe; the slot
+/// is free again once its heartbeat says it did. The operator approves: a slot is somebody's signed-in bank.
 internal static class PrivateAgentEndpoints
 {
     public static void Map(IEndpointRouteBuilder api, IEndpointRouteBuilder admin)
@@ -52,7 +34,6 @@ internal static class PrivateAgentEndpoints
             .Produces(StatusCodes.Status204NoContent);
     }
 
-    /// <summary>A hosted slot somebody holds: its owner is a person, not the slot subject.</summary>
     internal static bool IsBound(AgentRow agent) =>
         agent.Hosted && !string.Equals(agent.OwnerSubject, ConnectorOptions.PrivateSlotSubject, StringComparison.Ordinal);
 
@@ -181,8 +162,7 @@ internal static class PrivateAgentEndpoints
         var ids = slots.Select(a => a.Id).ToList();
         var profiles = await db.Profiles.AsNoTracking().Where(p => ids.Contains(p.AgentId)).ToListAsync(ct);
 
-        // Every open request, and the recent decisions so the operator sees
-        // what they did: thirty days is history enough for a household.
+        // every open request plus 30 days of decisions: history enough for a household
         var since = now.AddDays(-30);
         var requests = await db.PrivateAgentRequests.AsNoTracking()
             .Where(r => r.State == PrivateAgentRequestState.Pending || r.CreatedAt > since)
@@ -274,14 +254,8 @@ internal static class PrivateAgentEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>
-    /// The slot goes back to the slot subject and is asked to wipe. The
-    /// previous person's profile rows go now - they are how the next
-    /// person would be shown somebody else's sign-ins - and the sessions
-    /// pinned to them expire, because a job pinned to a profile nobody holds
-    /// would wait half an hour to fail; "reconnect" is the honest answer at
-    /// once. Idempotent: a slot already free is asked again and nothing else.
-    /// </summary>
+    /// Profile rows go now (they would show the next person somebody else's sign-ins); sessions pinned to them expire, as their
+    /// jobs would wait half an hour to fail. Idempotent.
     internal static async Task ReleaseAsync(ConnectorDbContext db, AgentRow agent, DateTimeOffset now, CancellationToken ct)
     {
         var profileIds = await db.Profiles.Where(p => p.AgentId == agent.Id).Select(p => p.Id).ToListAsync(ct);

@@ -7,18 +7,12 @@ using System.Text.Json.Serialization;
 
 namespace Munni.Api.Admin;
 
-/// <summary>
-/// The versioned catalog document (admin-catalog design AC1): builtin
-/// categories + prediction keywords + store merchant patterns as
-/// operator-editable content. One JSON document in AppSettings, version
-/// bumped on every publish; clients fetch opportunistically at sync time
-/// and fall back to the bundled copy when they have never fetched one.
-/// </summary>
+// one operator-editable JSON document in AppSettings, version bumped per publish;
+// clients fall back to the bundled copy until they have fetched one
 public static class CatalogEndpoints
 {
     private const string SettingKey = "catalog";
 
-    /// <summary>one publish = the whole document: all three sections, each an array</summary>
     public sealed record CatalogPublishDto(
         [property: JsonPropertyName("categories")] JsonElement Categories,
         [property: JsonPropertyName("keywords")] JsonElement Keywords,
@@ -38,7 +32,6 @@ public static class CatalogEndpoints
         return doc.RootElement.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
     }
 
-    /// <summary>What a read answers with: the document and its ETag, or neither before the first publish.</summary>
     private sealed record Served(string? Json, string? ETag);
 
     private const string ServedKey = "catalog:served";

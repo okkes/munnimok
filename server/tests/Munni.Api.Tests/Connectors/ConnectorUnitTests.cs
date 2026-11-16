@@ -7,7 +7,6 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>The relay's pieces on their own: subjects, casing, budgets, the client's headers and envelopes, the event frames.</summary>
 public class ConnectorUnitTests
 {
     [Fact]
@@ -25,14 +24,12 @@ public class ConnectorUnitTests
 
         // another environment's salt is another subject: a rotation severs every connection
         Assert.NotEqual(subject, new SubjectMinter("salt-two").For(user));
-        // and another user is another subject
         Assert.NotEqual(subject, minter.For(Guid.NewGuid()));
     }
 
     [Fact]
     public void Options_refuse_a_relay_that_cannot_be_right_and_wait_for_a_credential_not_written_back_yet()
     {
-        // a setting that cannot be right refuses to start with its name
         Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "http://c/" }.Require());
         Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "not a url", SubjectSalt = "s", DevKey = "k" }.Require());
         Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "http://c/", SubjectSalt = "s", M2mAppId = "a" }.Require());
@@ -92,7 +89,6 @@ public class ConnectorUnitTests
         Assert.Equal("opening_provider", camel["stepsDone"]![0]!.GetValue<string>());
         Assert.Equal(1, camel["nested"]![0]!["aB"]!.GetValue<int>());
 
-        // and the other direction, for a body the app wrote
         var snake = (JsonObject)ConnectorJson.ToSnake(JsonNode.Parse("""{"events":[{"deltaY":2,"kind":"scroll"}]}"""))!;
         Assert.Equal(2, snake["events"]![0]!["delta_y"]!.GetValue<int>());
 
@@ -145,7 +141,6 @@ public class ConnectorUnitTests
         Assert.False(budget.TrySpend(user, ConnectorBudget.Login, out var retryAfter));
         Assert.InRange(retryAfter, 3599, 3600);
 
-        // another kind, another user: their own budgets
         Assert.True(budget.TrySpend(user, ConnectorBudget.Sync, out _));
         Assert.False(budget.TrySpend(user, ConnectorBudget.Sync, out _));
         Assert.True(budget.TrySpend(Guid.NewGuid(), ConnectorBudget.Login, out _));
@@ -298,13 +293,10 @@ public class ConnectorUnitTests
             """)!;
         var transactions = (JsonObject)manifest["resources"]![1]!;
 
-        // #460: the window's end rides along where the resource takes one
         Assert.Equal("?since=2026-01-01&until=2026-03-10", ConnectorSyncService.QueryFor(transactions, manifest, "2026-01-01", "2026-03-10"));
-        // a backfill pass walks the history only: accounts are all of them already
         Assert.Equal(EveryPass, ConnectorSyncService.PassResources(manifest, null).Select(r => r["id"]!.GetValue<string>()));
         Assert.Equal(BackfillPass, ConnectorSyncService.PassResources(manifest, "2026-03-10").Select(r => r["id"]!.GetValue<string>()));
 
-        // past the party's floor, or before the pass's own since, there is nothing to ask for
         var now = new DateTimeOffset(2026, 11, 8, 12, 0, 0, TimeSpan.Zero);
         Assert.True(ConnectorSyncService.Reaches(transactions, manifest, null, "2026-03-10", now));
         Assert.False(ConnectorSyncService.Reaches(transactions, manifest, null, "2025-10-01", now));
@@ -362,19 +354,16 @@ public class ConnectorUnitTests
             oldest is null ? new JsonObject { ["complete"] = complete } : new JsonObject { ["complete"] = complete, ["oldest"] = oldest };
         static ConnectorSession Row() => new() { Id = "ses_1", Provider = "p", ConnectionId = "c", State = "active" };
 
-        // a partial scheduled pass leaves the days below what it brought, down to its since
         var row = Row();
         ConnectorScheduleService.NoteBackfill(row, "2026-11-01", null, Finished(false, "2026-11-04"));
         Assert.Equal(new DateOnly(2026, 11, 1), row.BackfillSince);
         Assert.Equal(new DateOnly(2026, 11, 4), row.BackfillUntil);
-        // a whole one leaves it as it was
         ConnectorScheduleService.NoteBackfill(row, "2026-11-07", null, Finished(true));
         Assert.Equal(new DateOnly(2026, 11, 4), row.BackfillUntil);
         // the settlement lag can bring days below the since: the backfill starts from them
         ConnectorScheduleService.NoteBackfill(row, "2026-11-01", "2026-11-04", Finished(false, "2026-10-25"));
         Assert.Equal(new DateOnly(2026, 10, 25), row.BackfillSince);
         Assert.Equal(new DateOnly(2026, 10, 25), row.BackfillUntil);
-        // reaching no further, or coming back whole, ends it
         ConnectorScheduleService.NoteBackfill(row, "2026-10-25", "2026-10-25", Finished(false, "2026-10-25"));
         Assert.Null(row.BackfillUntil);
         Assert.Null(row.BackfillSince);
@@ -418,7 +407,6 @@ public class ConnectorUnitTests
         return new ConnectorClient(new HttpClient(handler) { BaseAddress = options.BaseAddress() }, auth);
     }
 
-    /// <summary>Answers every request from a function and keeps what it saw.</summary>
     internal sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> answer) : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];
@@ -438,7 +426,6 @@ public class ConnectorUnitTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
-    /// <summary>A clock a test moves by hand.</summary>
     internal sealed class TestClock(DateTimeOffset start) : TimeProvider
     {
         private DateTimeOffset _now = start;

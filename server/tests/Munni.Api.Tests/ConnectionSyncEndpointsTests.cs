@@ -24,7 +24,7 @@ public class ConnectionSyncEndpointsTests : IClassFixture<AdminApiFactory>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
         client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
-        await client.GetAsync("/me"); // materialize the user
+        await client.GetAsync("/me");
         return client;
     }
 
@@ -35,19 +35,15 @@ public class ConnectionSyncEndpointsTests : IClassFixture<AdminApiFactory>
     public async Task EnrollmentHandshake_RegisterWrapPoll()
     {
         var client = await ClientFor("sync-alice");
-        // two devices register; the first one gets approved out-of-band
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(Devices, new { deviceId = "dev-a", publicJwk = "{jwk-a}", name = "iPhone" })).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync(Devices, new { deviceId = "dev-b", publicJwk = "{jwk-b}", name = "Desktop" })).StatusCode);
 
-        // the new device polls: nothing wrapped for it yet
         Assert.Equal(HttpStatusCode.NoContent, (await client.GetAsync($"{Devices}/dev-b/wrap")).StatusCode);
 
-        // an enrolled device wraps the CSK to dev-b
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync($"{Devices}/dev-b/wrap", new { wrappedCsk = "wrapped-for-b" })).StatusCode);
         var wrap = await Json(await client.GetAsync($"{Devices}/dev-b/wrap"));
         Assert.Equal("wrapped-for-b", wrap.GetProperty("wrappedCsk").GetString());
 
-        // the device list reports approval state
         var devices = await Json(await client.GetAsync(Devices));
         Assert.Equal(2, devices.GetArrayLength());
         Assert.Contains(devices.EnumerateArray(), d => d.GetProperty("deviceId").GetString() == "dev-b" && d.GetProperty("hasWrap").GetBoolean());
@@ -69,7 +65,6 @@ public class ConnectionSyncEndpointsTests : IClassFixture<AdminApiFactory>
     {
         var alice = await ClientFor("sync-carol");
         var mallory = await ClientFor("sync-mallory");
-        // one bundle blob per connection, keyed by the relay's connection id
         var connectionId = Guid.NewGuid().ToString();
         Assert.Equal(HttpStatusCode.OK, (await alice.PutAsJsonAsync($"{Connections}/{connectionId}", new { cipher = "opaque-blob" })).StatusCode);
 

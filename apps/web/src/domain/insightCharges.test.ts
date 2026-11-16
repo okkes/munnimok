@@ -78,7 +78,6 @@ describe('a bill that grew', () => {
 
   it('small changes, old news and subscriptions stay quiet', () => {
     expect(billChanged(inputs({ recurrings: [energy], txs: [...history, bill('2026-07-05', 15_600)] }))).toHaveLength(0);
-    // the last bill is from April: nothing new in the last two periods
     expect(billChanged(inputs({ recurrings: [energy], txs: history.slice(0, 2) }))).toHaveLength(0);
     // a subscription answers to the sustained rule (priceCreep)
     expect(billChanged(inputs({ recurrings: [{ ...energy, kind: 'subscription' }], txs: [...history, bill('2026-07-05', 18_400)] }))).toHaveLength(0);
@@ -144,7 +143,6 @@ describe('the same charge twice', () => {
     expect(duplicateCharge(inputs({ txs: [buy({}), buy({ pending: 1 })] }))).toHaveLength(0);
     expect(duplicateCharge(inputs({ txs: [buy({}), buy({ accountId: 'card' })] }))).toHaveLength(0);
     expect(duplicateCharge(inputs({ txs: [buy({ date: '2026-05-03' }), buy({ date: '2026-05-03' })] }))).toHaveLength(0);
-    // a movement between own accounts is no purchase
     expect(duplicateCharge(inputs({ txs: [buy({ catId: 'savingDeposit', txType: 'saving' }), buy({ catId: 'savingDeposit', txType: 'saving' })] }))).toHaveLength(0);
   });
 

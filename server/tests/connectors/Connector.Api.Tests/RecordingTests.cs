@@ -21,13 +21,7 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// Recordings on the control plane (#441 L3): the record flag is the lab's
-/// alone, an inline run writes its own trace, the operator reads the trace
-/// and its digest and deletes them, an agent's trace lands only for the
-/// operator's run, the explore provider is nobody else's, and navigation is
-/// refused on every live view but an explore run's.
-/// </summary>
+// #441 L3: the record flag is the lab's alone; an agent's trace lands only for the operator's run
 [Collection(ShopApiCollection.Name)]
 public sealed class RecordingTests(ShopApiFactory factory)
 {
@@ -195,7 +189,6 @@ public sealed class RecordingTests(ShopApiFactory factory)
         using var nothing = await operatorClient.GetAsync($"/v1/admin/jobs/{theirs.JobId}/trace");
         Assert.Equal(HttpStatusCode.BadRequest, nothing.StatusCode);
 
-        // Another agent's token cannot post for a job it does not hold.
         using var stranger = await theirAgent.SendAsync(TracePost(mine.JobId, trace, gzip: false));
         Assert.Equal(HttpStatusCode.BadRequest, stranger.StatusCode);
     }

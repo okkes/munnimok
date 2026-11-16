@@ -1,8 +1,5 @@
-// Publish an .aab to a Play track with the bare androidpublisher API —
-// replaces r0adkll/upload-google-play (deprecated 'track' input, ancient
-// googleapis client full of DEP0040/DEP0169 noise, no retry when a
-// concurrent edit — the wizard's store probe, an open Play Console tab —
-// expires ours). Env: PLAY_JSON, PACKAGE, AAB_PATH, MAPPING_PATH?, TRACK?
+// bare androidpublisher API instead of r0adkll/upload-google-play (deprecated 'track' input, DEP0040/DEP0169 noise,
+// no retry when a concurrent edit expires ours)
 import { createSign } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -69,11 +66,7 @@ const temporary = (message) => /→ 5\d\d:/.test(message);
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Runs one whole publish (`once`: a fresh edit each time) until it gets through, for the failures another
- * try can cure. A commit the store answered with a 5xx may have gone through all the same: the try after
- * it then finds the version code taken, and that is the release it was asked for.
- */
+// a commit answered with a 5xx may have gone through: the retry finds the version code taken, and that is the release
 export async function publishWithRetries(once, { attempts = 3, pauseMs = 30_000, sleep = pause, log = console.log } = {}) {
   let commitUnsure = false;
   for (let attempt = 1; ; attempt += 1) {

@@ -4,7 +4,6 @@ import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 import { setHideSensitiveFocusIntent } from './sensitive';
 
-/** #530: why the balance reads as stars, and the way to the switch that does it */
 export function HiddenFiguresSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t } = useLang();
   const navigate = useNavigate();

@@ -6,7 +6,6 @@ import { minutes, when } from '../../lib/format';
 import type { Canary } from '../../types';
 import { AbsentCard } from '../dashboard/DashboardScreen';
 
-/** the operator's own connections that prove a party still works, fetched on their interval */
 export function CanariesScreen({ call, busy, act }: Readonly<ScreenProps>) {
   const [canaries, setCanaries] = useState<Canary[] | null | 'unreachable' | 'loading'>('loading');
 

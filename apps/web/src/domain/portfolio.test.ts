@@ -109,7 +109,6 @@ describe('DEGIRO parsing', () => {
     expect(first.lots[0]).toMatchObject({ key: 'deg:abc-123', kind: 'buy', date: '2026-06-02', quantity: 2, totalCents: -128_000 });
     expect(first.lots[1]).toMatchObject({ key: 'deg:abc-123:fee', kind: 'fee', totalCents: -200 });
     expect(first.lots[2]).toMatchObject({ key: 'deg:def-456', kind: 'sell', quantity: 1, totalCents: 66_000 });
-    // deterministic keys → the import layer can no-op on re-import
     expect(parseDegiroTransactions(csv).lots.map((l) => l.key)).toEqual(first.lots.map((l) => l.key));
   });
 });

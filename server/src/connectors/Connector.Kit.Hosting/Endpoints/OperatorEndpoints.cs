@@ -16,18 +16,8 @@ using Microsoft.Extensions.Primitives;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// The operator's view of what happened (#441 L1): every job with what it
-/// did and how it ended, per-provider health over the last day, week and
-/// month, the pictures failed runs left behind where people allowed it, and
-/// a canary run on demand.
-///
-/// Under <c>/admin</c> beside the kill switch. The job list is the one
-/// place a consumer's runs are visible to somebody who is not that
-/// consumer, so what a row carries is decided here once: the columns that
-/// say what happened, and none of the ones that say what was typed - inputs
-/// and material are not on the view and have no field to arrive through.
-/// </summary>
+/// The operator's view of runs (#441 L1), under /admin. The job list is the one place a consumer's runs are visible to
+/// someone else, so rows carry what happened and never what was typed: inputs and material have no field.
 internal static class OperatorEndpoints
 {
     private const int DefaultLimit = 100;
@@ -61,13 +51,6 @@ internal static class OperatorEndpoints
         admin.MapPost("/canaries/{id}/run", RunCanaryAsync);
     }
 
-    /// <summary>
-    /// Newest first, narrowed by <c>provider</c>, <c>subject</c>, <c>session</c>,
-    /// <c>state</c>, <c>kind</c>, <c>trigger</c> (<c>none</c> for the rows
-    /// without one), <c>code</c>, <c>since</c> and <c>before</c>; at most
-    /// <c>limit</c> rows (100, up to 500), and the body says when the limit
-    /// cut the list.
-    /// </summary>
     private static async Task<ConnectorJsonResult<JobListResponse>> ListAsync(
         HttpContext http,
         ConnectorDbContext db,
@@ -163,12 +146,8 @@ internal static class OperatorEndpoints
         return ConnectorResults.Json(View(row.Job, row.Subject, kept, recorded.GetValueOrDefault(jobId)));
     }
 
-    /// <summary>
-    /// The picture, only once the person said the operator may see it - or
-    /// when the run was the operator's own. A pending picture answers exactly
-    /// as a job that never had one, so the route tells nobody that a person
-    /// is being asked.
-    /// </summary>
+    /// Only once the person allowed the operator to see it, or for the operator's own run; a pending picture answers like none,
+    /// so the route does not reveal that a person is being asked.
     private static async Task<IResult> ScreenshotAsync(
         HttpContext http,
         string jobId,
@@ -186,13 +165,6 @@ internal static class OperatorEndpoints
         return Results.File(png, "image/png");
     }
 
-    /// <summary>
-    /// What happened to every provider's runs over the last day, week and
-    /// month, read off the month's jobs in one pass: outcomes, failures by
-    /// code and by who asked, the people whose run failed, the sessions that
-    /// say something about them, the canary's last word, and the reports
-    /// waiting to be read.
-    /// </summary>
     private static async Task<IResult> TraceAsync(
         HttpContext http,
         string jobId,
@@ -335,17 +307,10 @@ internal static class OperatorEndpoints
         return ConnectorResults.Json(new HealthReportResponse { GeneratedAt = now, Providers = providers });
     }
 
-    /// <summary>
-    /// The canary now, not on its next due minute. The run is a real job that
-    /// takes as long as the provider does; the view names it, so the caller
-    /// follows it rather than waiting here.
-    /// </summary>
+    /// Runs the canary now; it is a real job, so the view names it and the caller follows it instead of waiting.
     private static async Task<ConnectorJsonResult<CanaryView>> RunCanaryAsync(string id, CanaryScheduler scheduler, CancellationToken ct) =>
         ConnectorResults.Json(await scheduler.RunNowAsync(id, ct));
 
-    // ---- the view ----------------------------------------------------------
-
-    /// <summary>One job as the operator reads it. Inputs and material have no field here; see the type's summary.</summary>
     internal static OperatorJobView View(JobRow job, string subject, JobArtifactRow? kept, TraceSummaryView? trace = null) => new()
     {
         JobId = job.Id,
@@ -383,8 +348,6 @@ internal static class OperatorEndpoints
         ArtifactStatus.Pending => "pending",
         _ => "retained",
     };
-
-    // ---- health arithmetic ------------------------------------------------
 
     private sealed record JobFact(
         string Id,
@@ -450,8 +413,6 @@ internal static class OperatorEndpoints
 
     private static bool IsOperatorRun(string? trigger) => trigger is JobRow.LabTrigger or JobRow.CanaryTrigger;
 
-    // ---- the query string ---------------------------------------------------
-
     private static string? Value(IQueryCollection query, string key) =>
         query.TryGetValue(key, out StringValues values) && values.ToString().Trim() is { Length: > 0 } value
             ? value
@@ -467,7 +428,6 @@ internal static class OperatorEndpoints
             : throw ConnectorException.InvalidRequest("limit must be a positive number");
     }
 
-    /// <summary>The wire form of an enum member, as the JSON would spell it.</summary>
     private static string Wire<T>(T value) where T : struct, Enum =>
         JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
 

@@ -22,7 +22,6 @@ vi.mock('@logto/react', () => ({
   useHandleSignInCallback: () => undefined,
 }));
 
-/** the portal stands in: it shows the session it was handed and fetches a token on a press */
 vi.mock('./AdminApp', () => ({
   AdminApp: ({ getToken, session }: { getToken: (() => Promise<string | undefined>) | null; session?: { expired: boolean; signIn: () => void } }) => (
     <div data-testid="admin-app" data-expired={String(session?.expired ?? false)}>
@@ -61,7 +60,7 @@ describe('the token guard (prod Logto logs 2026-10-08: a dead grant refreshed 66
     const [a, b] = await Promise.all([fetchTokenGuarded(fetchToken), fetchTokenGuarded(fetchToken)]);
     expect([a, b]).toEqual(['tok-1', 'tok-1']);
     expect(fetchToken).toHaveBeenCalledTimes(1);
-    // the SDK swallows a failure into undefined — a failed attempt
+    // the SDK swallows a failure into undefined: that counts as a failed attempt
     fetchToken.mockResolvedValueOnce(undefined);
     expect(await fetchTokenGuarded(fetchToken)).toBeUndefined();
     expect(await fetchTokenGuarded(fetchToken)).toBeUndefined();
@@ -71,7 +70,6 @@ describe('the token guard (prod Logto logs 2026-10-08: a dead grant refreshed 66
     vi.advanceTimersByTime(1);
     expect(await fetchTokenGuarded(fetchToken)).toBe('tok-1');
     expect(fetchToken).toHaveBeenCalledTimes(3);
-    // a throw is a failed attempt as well
     fetchToken.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     expect(await fetchTokenGuarded(fetchToken)).toBeUndefined();
     expect(await fetchTokenGuarded(fetchToken)).toBeUndefined();
@@ -82,7 +80,7 @@ describe('the token guard (prod Logto logs 2026-10-08: a dead grant refreshed 66
     vi.useFakeTimers({ toFake: ['Date'] });
     const fetchToken = vi.fn(async (): Promise<string | undefined> => 'tok-1');
     expect(markGrantDead()).toBe(true);
-    expect(markGrantDead()).toBe(false); // the transition is reported once
+    expect(markGrantDead()).toBe(false);
     expect(isGrantDead()).toBe(true);
     expect(await fetchTokenGuarded(fetchToken)).toBeUndefined();
     vi.advanceTimersByTime(60 * 60_000);

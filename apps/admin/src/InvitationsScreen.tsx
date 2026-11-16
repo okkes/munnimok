@@ -9,12 +9,10 @@ export interface Invitation {
   expiresAt: string;
   link: string;
 }
-/** GET /admin/invitations: whether this environment admits anyone, and the invitations that are out */
 export interface InvitationsDoc {
   inviteOnly: boolean;
   invitations: Invitation[];
 }
-/** POST /admin/invitations: the link the operator hands to the person */
 export interface InviteResult {
   id: string;
   email: string;
@@ -41,11 +39,6 @@ const COPY_LABEL: Record<CopyState, string> = {
   selected: 'Selected — press Ctrl+C',
 };
 
-/**
- * The link in a read-only box with its Copy button: the clipboard API where
- * the browser grants it (a secure origin, the permission), else the text is
- * selected for a manual Ctrl+C — the operator never ends up empty-handed.
- */
 function LinkCopy({ link, linkTestId, copyTestId }: Readonly<{ link: string; linkTestId: string; copyTestId: string }>) {
   const box = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<CopyState>('idle');
@@ -76,12 +69,7 @@ function LinkCopy({ link, linkTestId, copyTestId }: Readonly<{ link: string; lin
   );
 }
 
-/**
- * Invitations: sign-up by magic link. The operator mints a link for an
- * e-mail address and hands it over personally (WhatsApp, e-mail) — the
- * API sends nothing itself. On an invite-only environment this is the
- * only door in; elsewhere the link merely spares the person the form.
- */
+// the operator hands the link over personally (the API sends nothing); on an invite-only environment it is the only door in
 export function InvitationsScreen({
   doc,
   inviteOnlyFallback,

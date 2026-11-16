@@ -29,17 +29,12 @@ import { partyName } from '@/features/connectors/logos';
 
 const daysSince = (iso: string): number => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 
-// ── #300: live ETA while a big import runs ──────────────────────────
-// rows/second over a ROLLING window (early slow rows must not haunt the
-// whole run), spoken only once it can be honest: ≥2s in, a window wide
-// enough to smooth burst noise, and actual forward progress.
+// #300: ETA from rows/second over a ROLLING window, spoken only once honest: >=2s in, a window wide enough
+// to smooth burst noise, and real forward progress
 const ETA_WINDOW_MS = 8000;
 const ETA_MIN_ELAPSED_MS = 2000;
 const ETA_MIN_SPAN_MS = 1000;
-// #300 r2 (user): the first spoken number should be the HIGH guess that
-// quickly falls — never a low one that creeps up. A young sample window
-// hasn't met the stalls ahead, so early estimates wear a pad that decays
-// away as the run matures.
+// #300: the first number is the HIGH guess that falls, never a low one that creeps up: early estimates wear a decaying pad
 const ETA_PAD_START = 1.5;
 const ETA_PAD_UNTIL_MS = 12_000;
 
@@ -50,7 +45,6 @@ export interface EtaState {
 
 export const newEtaState = (now: number): EtaState => ({ startAt: now, samples: [{ at: now, done: 0 }] });
 
-/** whole seconds left, or null while an estimate would be dishonest */
 export function etaSecondsLeft(state: EtaState, done: number, total: number, now: number): number | null {
   const { samples } = state;
   samples.push({ at: now, done });
@@ -64,11 +58,7 @@ export function etaSecondsLeft(state: EtaState, done: number, total: number, now
   return Math.ceil((((total - done) * spanMs) / rows / 1000) * pad);
 }
 
-/** #226 (user): the tested banks, searchable like the connect flow —
- *  the pick guides the file dialog (parsing still sniffs the content).
- *  Brand names stay brand names in every language. #226 r2: each row
- *  wears the bank's logo (local asset — offline-first, never hotlinked),
- *  its own download route, and the format family the pick promises. */
+/** #226: the pick guides the file dialog (parsing still sniffs the content); logos are local assets, never hotlinked */
 const IMPORT_BANKS = [
   { id: 'asn', name: 'ASN Bank', logo: asnLogo, accept: '.xml,text/xml,application/xml', subKey: 'import.bankAsnSub', kind: 'camt' },
   { id: 'ing', name: 'ING', logo: ingLogo, accept: '.csv,text/csv', subKey: 'import.formatIngSub', kind: 'ing' },
@@ -77,7 +67,6 @@ const IMPORT_BANKS = [
 
 const ANY_ACCEPT = '.xml,.csv,text/xml,application/xml,text/csv';
 
-/** #226 r2: human names for detected formats in the wrong-file ask */
 const KIND_NAMES: Record<Exclude<StatementKind, 'unknown'>, string> = {
   camt: 'CAMT.053 (ASN)',
   ing: 'ING CSV',
@@ -89,26 +78,16 @@ interface PendingFile {
   name: string;
 }
 
-/**
- * The whole statement-import journey as one reusable flow (extracted
- * from AccountsScreen 2026-08-01 so the counterparty picker's Create
- * door can import IN PLACE instead of bouncing to the global overview):
- * format pick → file dialog → per-statement preview (coverage + start-
- * date notes) → run → result. Imported accounts are global and attach
- * to the CURRENT space, exactly like the accounts-screen flow.
- */
+/** reusable so the counterparty picker's Create door can import in place; imported accounts are global */
 export function StatementImportFlow({
   open,
   onOpenChange,
   note,
   onImported,
 }: Readonly<{
-  /** the format-pick sheet's visibility — the host's single lever */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** host-specific line above the format rows (e.g. "global, attaches here") */
   note?: string;
-  /** fires after a successful run (hosts refresh ownership etc.) */
   onImported?: () => void;
 }>) {
   const { t, lang } = useLang();
@@ -121,27 +100,22 @@ export function StatementImportFlow({
   const [importError, setImportError] = useState(false);
   const [runFailed, setRunFailed] = useState(false);
   const [importing, setImporting] = useState(false);
-  // #226: the searchable bank list narrows; the pick tunes the dialog
   const [bankQuery, setBankQuery] = useState('');
   const [accept, setAccept] = useState<string>(ANY_ACCEPT);
-  // #226 r2: the picked bank promises a format family — a file that
-  // sniffs as another one gets an explicit "import anyway?" ask
+  // the picked bank promises a format family: a file that sniffs as another gets an "import anyway?" ask
   // (the universal CAMT door promises nothing and never asks)
   const [pickedBank, setPickedBank] = useState<(typeof IMPORT_BANKS)[number] | null>(null);
   const [mismatch, setMismatch] = useState<{ found: Exclude<StatementKind, 'unknown'>; files: PendingFile[] } | null>(null);
-  // #184 (user): long imports say how far they are, not just "busy"
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  // #299 (user): pick which previewed accounts import — excluded INDEXES
-  // into importPreview (monthly exports repeat IBANs); empty set = all
+  // #299: excluded INDEXES into importPreview (monthly exports repeat IBANs); empty set = all
   const [excluded, setExcluded] = useState<ReadonlySet<number>>(new Set());
-  /** user rule 2026-10-05: a statement for an account a PARTY feeds asks first — it starts unticked, the person opts in */
+  /** a statement for an account a PARTY feeds asks first: it starts unticked, the person opts in */
   const fedBy = (stmt: ParsedStatement): string | null => {
     const match = byIban.get(stmt.iban.replace(/\s/g, '').toUpperCase());
     if (match?.source !== 'connector') return null;
     return match.provider ? partyName(match.provider) : t('import.fedByParty');
   };
   const [noneBlocked, setNoneBlocked] = useState(false);
-  // #300: "about X left" while the rows land — null until honest
   const etaRef = useRef<EtaState | null>(null);
   const [etaSec, setEtaSec] = useState<number | null>(null);
 
@@ -153,10 +127,9 @@ export function StatementImportFlow({
     [allAccounts],
   );
 
-  // #299: what Import will actually run — the result notes reuse it
   const selectedStatements = useMemo(() => (importPreview ?? []).filter((_, i) => !excluded.has(i)), [importPreview, excluded]);
   const toggleStatement = (index: number) => {
-    setNoneBlocked(false); // checking anything answers the blocker
+    setNoneBlocked(false);
     setExcluded((prev) => {
       const next = new Set(prev);
       if (next.has(index)) next.delete(index);
@@ -166,17 +139,15 @@ export function StatementImportFlow({
   };
 
   const buildPreview = (files: readonly PendingFile[]) => {
-    setExcluded(new Set()); // #299: a fresh preview starts all-checked
+    setExcluded(new Set());
     setNoneBlocked(false);
     try {
-      // several exports in one go (user request): parse each file and
-      // pool the statements — dedupe refs make overlaps import cleanly
+      // several exports in one go: pooled, dedupe refs make overlaps import cleanly
       const statements: ParsedStatement[] = [];
       for (const file of files) {
         statements.push(...parseStatement(file.content, file.name));
       }
       setImportPreview(statements);
-      // the statements for party-fed accounts wait for a tick
       setExcluded(new Set(statements.map((s, i) => (fedBy(s) ? i : -1)).filter((i) => i >= 0)));
     } catch {
       setImportError(true);
@@ -193,9 +164,7 @@ export function StatementImportFlow({
     for (const file of picked) {
       files.push({ content: await file.text(), name: file.name });
     }
-    // #226 r2 (user): picked bank X but the file reads as format Y —
-    // ask BEFORE the preview ('unknown' stays silent: the parse error
-    // path already reports unsupported files)
+    // picked bank X but the file reads as format Y: ask BEFORE the preview ('unknown' stays silent, the parse error reports it)
     const found = pickedBank
       ? files
           .map((f) => detectStatementKind(f.content, f.name))
@@ -209,8 +178,6 @@ export function StatementImportFlow({
     buildPreview(files);
   };
 
-  // #226 r2: Continue imports the stashed files on the exact same parse
-  // path; Cancel discards them and reopens the bank picker
   const confirmMismatch = () => {
     const pending = mismatch;
     setMismatch(null);
@@ -222,17 +189,15 @@ export function StatementImportFlow({
   };
 
   const runImport = async () => {
-    if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports (user report 2026-07-25)
-    // #299 (user): only the CHECKED accounts import; zero checked names
-    // the reason instead of a dead click (#195 blocker pattern)
+    if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports
+    // zero checked names the reason instead of a dead click
     const chosen = selectedStatements;
     if (chosen.length === 0) {
       setNoneBlocked(true);
       return;
     }
     setImporting(true);
-    // #184: rows land one by one — the count updates every ~1% so an
-    // 8000-row statement narrates instead of spinning mutely
+    // #184: the count updates every ~1% so an 8000-row statement narrates instead of spinning mutely
     const total = chosen.reduce((sum, stmt) => sum + stmt.entries.length, 0);
     const step = Math.max(1, Math.floor(total / 100));
     setProgress({ done: 0, total });
@@ -240,19 +205,14 @@ export function StatementImportFlow({
     const onProgress = (done: number) => {
       if (done !== total && done % step !== 0) return;
       setProgress({ done, total });
-      // #300: the narration gains "about X left" once it can be honest
       if (etaRef.current) setEtaSec(done === total ? null : etaSecondsLeft(etaRef.current, done, total, Date.now()));
     };
-    // syncing identities import into feed spaces (shared-accounts model);
-    // demo/offline keep everything merged in the current space
+    // syncing identities import into feed spaces; demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     try {
       setImportResult(await importCamtStatements(repo, store, spaceId, chosen, feeds, onProgress));
     } catch (err) {
-      // a failed run (feed registration, server away) must SAY so —
-      // a silently unchanged screen reads as "the app is broken"
-      // (user report 2026-07-24); the preview stays for a retry.
-      // #186: …and leave a trace — the swallow hid every import failure
+      // a failed run must SAY so (a silent screen reads as broken) and leave a trace (#186); the preview stays for a retry
       const { reportError } = await import('@/lib/report');
       reportError('import', err);
       setRunFailed(true);
@@ -265,14 +225,12 @@ export function StatementImportFlow({
     }
     setRunFailed(false);
     void logActivity(store, repo, spaceId, 'importRun', `${chosen.length}`);
-    // a just-imported account may BE the counterparty of older rows
-    // (and vice versa) — retro-link them (user rule)
+    // a just-imported account may BE the counterparty of older rows (and vice versa): retro-link them
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
     await linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
     // every space is walked: one this identity only reads is left to its writers, never the pass's end
     await linkTransferPairs(store, repo.upkeep()).catch(() => undefined);
     await applyTitleMemory(store, repo, spaceId).catch(() => undefined);
-    // the import may have registered new feeds — hosts refresh ownership
     if (feeds) void fetchMyFeedIds().catch(() => undefined);
     onImported?.();
   };
@@ -282,12 +240,11 @@ export function StatementImportFlow({
     setImportPreview(null);
     setImportResult(null);
     setImportError(false);
-    setExcluded(new Set()); // #299
+    setExcluded(new Set());
     setNoneBlocked(false);
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  // #299: with several accounts on offer the button counts the picks
   const importLabel =
     (importPreview?.length ?? 0) > 1
       ? t('import.doImportSelected', { n: selectedStatements.length, m: importPreview?.length ?? 0 })
@@ -305,8 +262,6 @@ export function StatementImportFlow({
         onChange={(e) => void onFilePicked(e.target.files)}
       />
 
-      {/* #226 (user): which BANK is this export from? — searchable like
-          the connect flow; the universal CAMT.053 door stays separate */}
       <Sheet open={open} onOpenChange={onOpenChange} title={t('import.pickFormat')} size="tall">
         <div className="flex flex-col gap-2 pt-1" data-testid="import-format-pick">
           {note && (
@@ -330,7 +285,7 @@ export function StatementImportFlow({
                 setAccept(bank.accept);
                 setPickedBank(bank);
                 onOpenChange(false);
-                // the accept change must land in the DOM before the dialog
+                // the accept change must land in the DOM before the dialog opens
                 requestAnimationFrame(() => fileRef.current?.click());
               }}
               className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
@@ -359,8 +314,7 @@ export function StatementImportFlow({
               <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t('import.formatCamtSub')}</span>
             </span>
           </button>
-          {/* #177 (user): a long export helps — history powers pattern
-              detection while the space start date keeps the view clean */}
+          {/* #177: a long export helps: history powers pattern detection while the space start date keeps the view clean */}
           <p className="flex items-start gap-1.5 px-1 text-[12px] leading-snug text-ink-4" data-testid="import-history-tip">
             <Icon name="lightbulb-outline" size={14} color="var(--m-accent-deep)" />
             {t('import.longHistoryTip')}
@@ -368,9 +322,7 @@ export function StatementImportFlow({
         </div>
       </Sheet>
 
-      {/* #226 r2 (user): the pick said bank X but the file reads as
-          format Y — ask before the preview. Content is state-gated so
-          post-close assertions see it leave (IS_TEST sheets stay mounted). */}
+      {/* #226: content is state-gated so post-close assertions see it leave (IS_TEST sheets stay mounted) */}
       <Sheet open={mismatch !== null} onOpenChange={(next) => !next && cancelMismatch()} title={t('import.mismatchTitle')} size="compact">
         {mismatch && (
           <div className="flex flex-col gap-3 pt-1" data-testid="import-mismatch-sheet">
@@ -387,9 +339,7 @@ export function StatementImportFlow({
         )}
       </Sheet>
 
-      {/* CAMT.053 import: preview then result */}
-      {/* #203 (user): while the import runs, clicking away says "still
-          running" instead of silently closing over the work */}
+      {/* #203: clicking away while the import runs says "still running" instead of closing over the work */}
       <Sheet
         open={importPreview !== null}
         onOpenChange={(next) => !next && closeImport()}
@@ -417,9 +367,6 @@ export function StatementImportFlow({
               return (
                 // key by index: monthly exports repeat the same IBAN per statement
                 <label key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
-                  {/* #299 (user): several accounts in the pick (one CAMT
-                      with many, or several files) import à la carte —
-                      all checked by default, unchecking skips one */}
                   {((importPreview?.length ?? 0) > 1 || fedBy(stmt)) && (
                     <input
                       type="checkbox"
@@ -440,10 +387,7 @@ export function StatementImportFlow({
                         {t('import.fedBy', { party: fedBy(stmt) ?? '' })}
                       </span>
                     )}
-                    {/* export-vs-upload insight: an old export imports
-                        fine and silently misses everything after it —
-                        warn BEFORE the import, when a fresh export is
-                        one download away */}
+                    {/* an old export imports fine and silently misses everything after it: warn BEFORE the import */}
                     {(() => {
                       const through = statementCoverageEnd(stmt);
                       if (!through) return null;
@@ -457,8 +401,7 @@ export function StatementImportFlow({
                         </span>
                       );
                     })()}
-                    {/* rows before the space's start import fine — say
-                        NOW that they will sit stored-but-hidden (arc 5) */}
+                    {/* rows before the space's start import fine but sit stored-but-hidden: say so now */}
                     {(() => {
                       const start = activeSpace?.historyStartDate;
                       const preStart = start ? stmt.entries.filter((e) => e.date < start).length : 0;
@@ -478,12 +421,9 @@ export function StatementImportFlow({
                 </label>
               );
             })}
-            {/* #299: zero checked — the note near the list says why */}
             <FormBlockerNote show={noneBlocked} text={t('import.selectNone')} testId="import-select-blocker" className="px-1" />
             <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
               {importing ? (
-                // big statements take a while — #184: narrate the count,
-                // not just a spinner (user ss 2026-08-01 + #184)
                 <span className="inline-flex items-center gap-2" data-testid="import-running">
                   <span className="inline-flex animate-spin">
                     <Icon name="loading" size={16} />
@@ -496,8 +436,6 @@ export function StatementImportFlow({
                 importLabel
               )}
             </Button>
-            {/* #300: the quiet ETA line under the narration, only once
-                the rolling rows/sec window can speak honestly */}
             {importing && etaSec !== null && (
               <p className="text-center text-[11px] text-ink-4" data-testid="import-eta">
                 {t('import.etaLeft', { time: fmtEtaShort(etaSec, lang) })}
@@ -513,7 +451,6 @@ export function StatementImportFlow({
             </p>
             {(() => {
               const start = activeSpace?.historyStartDate;
-              // #299: only what actually imported counts here
               const preStart = start
                 ? selectedStatements.reduce((sum, stmt) => sum + stmt.entries.filter((e) => e.date < start).length, 0)
                 : 0;
@@ -524,15 +461,11 @@ export function StatementImportFlow({
                 </p>
               );
             })()}
-            {/* #204 (user): the account is global and NOT attached — say
-                so plainly and door into the explicit attach flow, where
-                the type and the history gate are the user's choices */}
+            {/* #204: the account is global and NOT attached: say so and door into the explicit attach flow */}
             {importResult.accounts.some((a) => a.attached === false) && (
               <div className="w-full rounded-card border border-accent/40 bg-accent-soft/30 px-4 py-3 text-left" data-testid="import-unattached-note">
                 <p className="text-[13px] font-medium text-ink">{t('import.notAttachedTitle')}</p>
                 <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">{t('import.notAttachedBody')}</p>
-                {/* #278: "a space" was a riddle — name the space the
-                    button below will attach into (the active one) */}
                 <p className="mt-1 text-[12px] leading-relaxed font-medium text-ink-2" data-testid="import-attach-target">
                   {t('acct.importAttachTarget', { space: activeSpace?.name ?? '' })}
                 </p>
@@ -541,8 +474,6 @@ export function StatementImportFlow({
                   className="mt-2 w-full"
                   data-testid="import-goto-attach"
                   onClick={() => {
-                    // #310 (user): land with the attach sheet OPEN — and
-                    // when exactly one account waits, on its final step
                     const unattached = importResult.accounts.filter((a) => a.attached === false);
                     setSpaceAttachIntent(unattached.length === 1 ? unattached[0].accountId : undefined);
                     closeImport();

@@ -20,7 +20,6 @@ describe('Dashboard', () => {
     expect(tiles.textContent).toContain('1 / 2'); // agents online
     expect(tiles.textContent).toContain('1 · 2'); // in flight · awaiting
     expect(tiles.textContent).toContain('3'); // open streams
-    // L1: the month's failures today and the people behind them, the reports to read
     expect(screen.getByTestId('dashboard-failures').textContent).toContain('3 · 2');
     expect(screen.getByTestId('dashboard-reports').textContent).toContain('1');
     expect(screen.getByTestId('dashboard-state-ah').textContent).toBe('paused');

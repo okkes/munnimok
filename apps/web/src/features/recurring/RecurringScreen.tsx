@@ -32,18 +32,12 @@ import { readRecurringView, writeRecurringView } from './recurringView';
 import type { RecurringView } from './recurringView';
 import { MultiLine } from '@/ui/charts/MultiLine';
 
-/** linked-tx rows with their ids for the period sheet (#168 r2/r3) —
- *  structurally a superset of domain LinkedTx, so the same map feeds
- *  computeRange; the sheet resolves ids back to full rows */
 interface ChartTx {
   id: string;
   date: string;
   amountCents: number;
 }
 
-/** #168 r5 (user): is this dot an ESTIMATE month (future)? Its sheet
- *  lists expected recurring costs instead of transactions — the chart
- *  door and the sheet body decide from the same fact */
 const isEstimateMonth = (seriesIndex: number, monthIdx: number, chartYear: number, today: string): boolean =>
   seriesIndex === 0 && `${chartYear}-${String(monthIdx + 1).padStart(2, '0')}` > today.slice(0, 7);
 
@@ -66,9 +60,6 @@ export function RecurringScreen() {
   const navigate = useNavigate();
   const canEdit = useCanEdit(); // #505
 
-  // #188 (user): this year, next year and All join the range filter.
-  // #168 r5 (user): the tab survives a detour into a transaction — the
-  // module snapshot seeds it and every change writes back (#140 pattern)
   const [view, setView] = useState<RecurringView>(() => readRecurringView());
   const switchView = (next: RecurringView) => {
     writeRecurringView(next);
@@ -76,7 +67,6 @@ export function RecurringScreen() {
   };
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
-  // pick up freshly imported payments the moment the screen opens
   useEffect(() => {
     void ops.reconcile().catch(() => undefined); // teardown-safe
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,8 +89,7 @@ export function RecurringScreen() {
   const thisYear = Number(today.slice(0, 4));
   let range = period;
   if (view === 'next') range = upcoming;
-  // 'all' borrows this year's range for the paid math; its LIST skips
-  // the occurrence filter below (every recurring shows, user #188)
+  // 'all' borrows this year's range for the paid math; its LIST skips the occurrence filter (every recurring shows)
   else if (view === 'year' || view === 'all') range = { start: `${thisYear}-01-01`, end: `${thisYear}-12-31` };
   else if (view === 'nextyear') range = { start: `${thisYear + 1}-01-01`, end: `${thisYear + 1}-12-31` };
 
@@ -115,17 +104,14 @@ export function RecurringScreen() {
     return map;
   }, [txs]);
 
-  // #189: occurrences before the space's start date are unknowable —
-  // their payments are older than the space shows, so they must not
-  // read as "not paid yet"
+  // #189: occurrences before the space's start date are unknowable: their payments predate what the space shows
   const computed = useMemo(
     () => computeRange(recs ?? [], linkedByRec, range.start, range.end, today, space?.historyStartDate),
     [recs, linkedByRec, range.start, range.end, today, space?.historyStartDate],
   );
   const summary = summarize(computed.filter((c) => c.rec.active === 1));
 
-  // detection reads the FULL stored history (user design 2026-08-01):
-  // yearly patterns live in the pre-start tail the display gate hides
+  // detection reads the FULL stored history: yearly patterns live in the pre-start tail the display gate hides
   const historyTxs = useSpaceHistoryTransactions();
   const spaceAccounts = useSpaceAccounts();
   const suggestionCount = useMemo(() => {
@@ -136,15 +122,13 @@ export function RecurringScreen() {
       ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
       ...(spaceAccounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
     ]);
-    // #192 r2: known-lender patterns surface on the DEBTS screen — the
-    // banner must promise only what this inbox actually shows
+    // #192: known-lender patterns show on the DEBTS screen; the banner may promise only what this inbox shows
     return detectRecurring(historyTxs, { excludeKeys: exclude, today }).filter((s) => !looksLikeDebtCreditor(s.name))
       .length;
   }, [historyTxs, recs, spaceAccounts, dismissed, today]);
 
-  // #188 (user ss): a recurring shows only in ranges it actually
-  // OCCURS in — a yearly due Jan 2027 belongs to "next year" alone.
-  // 'all' lists everything; a stray in-range payment keeps a row too.
+  // #188: a recurring shows only in ranges it OCCURS in (a yearly due Jan 2027 is "next year" alone); 'all' lists
+  // everything; a stray in-range payment keeps a row
   const occursHere = (c: RecurringComputed) => view === 'all' || c.occurrences > 0 || c.paidCents > 0;
   const fixed = computed.filter((c) => c.rec.kind === 'fixed' && c.rec.active === 1 && occursHere(c));
   const subs = computed.filter((c) => c.rec.kind === 'subscription' && c.rec.active === 1 && occursHere(c));
@@ -153,10 +137,7 @@ export function RecurringScreen() {
 
   const subtitleFor = (c: RecurringComputed): string => {
     if (view === 'period' && c.paid) return t('recurring.paidThisPeriod');
-    // custom cadences say their rhythm; plain monthly/yearly say how many
-    // days are left (user ss 2026-10-05: "Due day 4 · next 4 Nov" said the
-    // day twice and never the distance) — the day number only when there
-    // is no next date to count to
+    // custom cadences say their rhythm, plain ones the days left; the day number only when there is no next date to count to
     const custom = c.rec.every === 'week' || (c.rec.everyN ?? 1) > 1;
     const plainLead = c.nextDue ? dueInText(c.nextDue) : t('recurring.dueDay2', { day: c.rec.dueDay });
     const lead = custom ? cadenceLabel(c.rec, t) : plainLead;
@@ -166,7 +147,6 @@ export function RecurringScreen() {
     return parts.join(' · ');
   };
 
-  /** "Due in 12 days" / today / tomorrow / overdue, from a yyyy-mm-dd next date against today's calendar day */
   const dueInText = (nextDue: string): string => {
     const days = daysFromToday(nextDue);
     if (days === 0) return t('recurring.dueToday');
@@ -175,8 +155,7 @@ export function RecurringScreen() {
     return t('recurring.dueIn', { n: days });
   };
 
-  // the toggle filters by date range — label it with the actual dates,
-  // not the "period" word (cadences are independent of the space period)
+  // label the toggle with the actual dates: cadences are independent of the space period
   const rangeLabelFor = (r: { start: string; end: string }): string => {
     if (r.start.slice(5) === '01-01' && r.end.slice(5) === '12-31' && r.start.slice(0, 4) === r.end.slice(0, 4))
       return r.start.slice(0, 4);
@@ -213,7 +192,6 @@ export function RecurringScreen() {
               {t('recurring.luxury')}
             </Pill>
           )}
-          {/* S2: a sustained price change wears its delta openly */}
           {(() => {
             const change = detectPriceChange(linkedByRec.get(c.rec.id) ?? []);
             if (!change) return null;
@@ -252,9 +230,6 @@ export function RecurringScreen() {
   // #167: a future range has no payments — only its total is a fact
   const futureView = view === 'next' || view === 'nextyear';
 
-  // #168 r2 (user): the year views plot the months — estimate from the
-  // current period into the future, paid from the past up to it, and
-  // every point is a tappable dot that opens its month's numbers
   const yearView = view === 'year' || view === 'nextyear';
   const chartYear = view === 'nextyear' ? thisYear + 1 : thisYear;
   const monthly = useMemo(
@@ -262,8 +237,7 @@ export function RecurringScreen() {
     [yearView, recs, linkedByRec, chartYear, today, space?.historyStartDate],
   );
   const nowMonthIdx = Number(today.slice(5, 7)) - 1;
-  // #168 r4 (user): the vertical marker means the SPACE'S START — the
-  // months left of it are untracked; outside the charted year, no marker
+  // #168: the vertical marker means the SPACE'S START (months left of it are untracked); no marker outside the charted year
   const startDate = space?.historyStartDate;
   const startMonthIdx =
     startDate && Number(startDate.slice(0, 4)) === chartYear ? Number(startDate.slice(5, 7)) - 1 : undefined;
@@ -309,8 +283,6 @@ export function RecurringScreen() {
       />
       <div ref={(el) => attachScrollMemory(el, 'recurring')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <ReadOnlyNote className="mt-1 mb-2" testId="recurring-readonly-note" />
-        {/* date-range filter (#188): current range / next range / this
-            year / next year / all — five tabs scroll when tight */}
         {/* the pill's backdrop sits on the wrapper: the strip's own edges fade (#376) */}
         <ScrollRow className="mt-1 rounded-xl bg-bg-2" scrollerClassName="p-0.5">
           {(
@@ -335,7 +307,6 @@ export function RecurringScreen() {
           ))}
         </ScrollRow>
 
-        {/* detection inbox entry: one quiet notification, details behind it */}
         {canEdit && suggestionCount > 0 && (
           <button
             data-testid="recurring-suggestions-banner"
@@ -356,11 +327,7 @@ export function RecurringScreen() {
           </button>
         )}
 
-        {/* summary card — 'all' is not a date range, so the range-bound
-            numbers stand down and only the honest annual figure stays.
-            #167 (user): FUTURE ranges have no payments yet — paid and
-            remaining would always parrot 0 and the total, so they and
-            the progress bar stand down; only the total speaks. */}
+        {/* 'all' is no date range: only the annual figure stays; #167: future ranges have no payments, only the total speaks */}
         <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="recurring-summary">
           {view !== 'all' && futureView && (
             <div data-testid="recurring-summary-future">
@@ -389,7 +356,6 @@ export function RecurringScreen() {
               <ProgressBar className="mt-3" value={progress} />
             </>
           )}
-          {/* subscription intelligence S1: the honest annual figure */}
           <div className={`${view === 'all' ? '' : 'mt-3 '}text-[11px] text-ink-3`} data-testid="recurring-year-total">
             {t('recurring.perYearTotal', {
               amount: money((recs ?? []).filter((r) => r.active === 1).reduce((sum, r) => sum + yearlyCents(r), 0)),
@@ -408,9 +374,6 @@ export function RecurringScreen() {
           )}
         </div>
 
-        {/* #168 r2 (user): both lines always draw and tapped dots surface
-            their month. #168 r4: the marker sits on the space's start
-            month — the lines' own paid/estimate split marks "now". */}
         {yearView && monthly && (
           <RecurringChartCard
             monthly={monthly}
@@ -422,9 +385,8 @@ export function RecurringScreen() {
             onShowTxs={() => {
               if (selectedDot) setPeriodSheet({ seriesIndex: selectedDot.seriesIndex, monthIdx: selectedDot.pointIndex });
             }}
-            // #357: a month with nothing behind the door disables it —
-            // paid months check the actual links; estimate months list
-            // expected items, so any active recurring keeps it live
+            // #357: a month with nothing behind the door disables it; estimate months list expected items,
+            // so any active recurring keeps it live
             showTxsEnabled={
               !!selectedDot &&
               (isEstimateMonth(selectedDot.seriesIndex, selectedDot.pointIndex, chartYear, today)
@@ -437,8 +399,6 @@ export function RecurringScreen() {
                       ),
                   ))
             }
-            // #168 r5 (user): an estimate month's door promises recurring
-            // costs, not transactions — matching what the sheet will list
             estimateSelected={
               !!selectedDot && isEstimateMonth(selectedDot.seriesIndex, selectedDot.pointIndex, chartYear, today)
             }
@@ -475,8 +435,6 @@ export function RecurringScreen() {
   );
 }
 
-/** #168 r2 (user): the year chart card — passive legend, smoothed
- *  lines split at the current period, tapped dot's value + tx door */
 function RecurringChartCard({
   monthly,
   labels,
@@ -492,29 +450,22 @@ function RecurringChartCard({
 }: Readonly<{
   monthly: { expected: number[]; paid: number[] };
   labels: string[];
-  /** current-month index (splits paid/estimate); undefined when the
-   *  chart year is future */
+  /** current month (splits paid/estimate); undefined when the chart year is future */
   nowIndex?: number;
-  /** #168 r4 (user): the space's start month — the vertical marker;
-   *  undefined when the start falls outside the charted year */
+  /** the space's start month, where the vertical marker sits; undefined outside the charted year */
   markerIndex?: number;
   selected: { seriesIndex: number; pointIndex: number } | null;
   onSelect: (seriesIndex: number, pointIndex: number) => void;
   onShowTxs: () => void;
   /** #357: nothing behind the door → the button disables, not a dead end */
   showTxsEnabled: boolean;
-  /** #168 r5 (user): the selected dot is an ESTIMATE month — the door
-   *  promises recurring costs instead of transactions */
   estimateSelected: boolean;
   money: (cents: number) => string;
   monthNameOf: (idx: number) => string;
 }>) {
   const { t } = useLang();
-  // cents → euros keeps the shared scale honest across both lines;
-  // estimate exists from now onward, paid up to now — overlap only at now.
-  // #168 r3 (user): at now the estimate BORROWS paid's value, so it rises
-  // smoothly out of the paid line's endpoint instead of shelving at its
-  // own expected figure; paid owns the shared point's one dot
+  // estimate runs from now on, paid up to now; at now the estimate BORROWS paid's value so it rises out of the paid
+  // endpoint instead of shelving, and paid owns that shared point's dot (#168)
   const series = useMemo(
     () => [
       {
@@ -572,8 +523,6 @@ function RecurringChartCard({
               {money(selectedCents)}
             </span>
           </span>
-          {/* #168 r4 (user): the door wears its arrow; r5: it names the
-              story behind it — payments, or a future month's estimates */}
           <Button size="sm" variant="outline" data-testid="recurring-chart-txs" onClick={onShowTxs} disabled={!showTxsEnabled}>
             {t(estimateSelected ? 'recurring.showRecs' : 'recurring.showTxs')}
             <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
@@ -584,13 +533,8 @@ function RecurringChartCard({
   );
 }
 
-/** #168 r2 (user): the tapped period's story — the linked transactions
- *  behind a paid number; a future estimate lists the expected items.
- *  #168 r3 (user): payments wear the standard TxRow face. #168 r5
- *  (user): the in-between peek is retired — a payment row travels
- *  STRAIGHT to the transaction page (chevron and all), mounted under
- *  /recurring so desktop keeps this list as the master pane; expected
- *  rows carry the recurring's own face and lead on to its detail. */
+// the tapped period's story: linked transactions behind a paid number, or a future estimate's expected items;
+// payment rows go straight to the tx page, mounted under /recurring so desktop keeps this list as master pane
 function PeriodTxSheet({
   sel,
   chartYear,
@@ -630,21 +574,17 @@ function PeriodTxSheet({
     return rows.sort((a, b) => a.date.localeCompare(b.date));
   }, [sel, active, linkedByRec, monthKey, txById]);
 
-  // #168 r4 (user): the recurring's own page, reached from an expected row
   const openRec = (recId: string) => {
     onClose();
     void navigate({ to: '/recurring/$recId', params: { recId } });
   };
-  // #168 r5 (user): straight to the transaction — under the recurring
-  // tree, so lg keeps the recurring list beside it and mobile's back
-  // returns to /recurring (pushed, never replaced)
+  // straight to the transaction under the recurring tree: lg keeps the list beside it,
+  // mobile back returns to /recurring (pushed, never replaced)
   const openTx = (txId: string) => {
     onClose();
     void navigate({ to: '/recurring/tx/$txId', params: { txId } });
   };
 
-  // an ESTIMATE dot in a future month has no payments yet — it lists
-  // the expected recurring items for that month instead
   const futureEstimate = sel !== null && isEstimateMonth(sel.seriesIndex, monthIdx, chartYear, today);
   const expectedRows = useMemo(() => {
     if (!futureEstimate) return [];
@@ -665,8 +605,6 @@ function PeriodTxSheet({
     >
       <div data-testid="recurring-period-sheet" className="pt-1">
         {futureEstimate ? (
-          // #168 r4 (user): an expected row wears the recurring's own
-          // icon and is a door into its detail — arrow included
           expectedRows.map((c) => (
             <button
               key={c.rec.id}
@@ -691,8 +629,6 @@ function PeriodTxSheet({
         ) : (
           <div className="divide-y divide-line-2">
             {txRows.map((tx) => (
-              // #168 r5 (user): the row is a door to the transaction page
-              // and wears the arrow like the expected rows do
               <div key={tx.id} data-testid={`recurring-period-tx-${tx.id}`} className="flex items-center">
                 <div className="min-w-0 flex-1">
                   <TxRow tx={tx} showDate onClick={() => openTx(tx.id)} />

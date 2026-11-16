@@ -2,13 +2,8 @@ import { useReadOnlySpaceIds } from '@/app/useCanEdit';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 
-/**
- * The spaces a connection is available in, as a checkbox list — the same
- * rows on the step after a connect and on the card's manage sheet (user
- * ruling 2026-10-02: a connection is global and the person picks its
- * spaces afterwards, like a bank account). #505: a space the person only
- * reads stays as it is.
- */
+// a connection is global and the person picks its spaces afterwards, like a bank account;
+// #505: a space the person only reads stays as it is
 export function SpacePicker({
   spaces,
   selected,

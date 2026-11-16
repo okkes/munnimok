@@ -2,15 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Manifests;
 
-/// <summary>
-/// What a provider needs from a user, and what it can deliver.
-///
-/// This is the only contract a consumer codes against: it renders login
-/// forms from <see cref="Auth"/>, decides which resources to offer from
-/// <see cref="Resources"/>, and knows before asking whether scheduled sync
-/// is even offerable from <see cref="UnattendedFetch"/>. Adding a provider is a
-/// manifest plus an adapter - never a change in the consuming app.
-/// </summary>
+// the only contract a consumer codes against: adding a provider is a manifest plus an adapter, never a consumer change
 public sealed record ProviderManifest
 {
     /// <summary>Route namespace: <c>/v1/{id}/*</c>. Lowercase, kebab-case.</summary>
@@ -23,115 +15,43 @@ public sealed record ProviderManifest
     /// <summary>ISO-3166 alpha-2, uppercase.</summary>
     public required string Country { get; init; }
 
-    /// <summary>
-    /// Bumped on any breaking change to the session material's shape. Sealed
-    /// into every bundle as AAD, so a bundle minted before the change is
-    /// rejected rather than misinterpreted.
-    /// </summary>
+    // bumped on any breaking change to the session material's shape; sealed into every bundle as AAD, so an older
+    // bundle is rejected, not misread
     public required int ManifestVersion { get; init; }
 
-    /// <summary>How the data is actually obtained. Drives agent routing.</summary>
     public required ProviderRuntime Runtime { get; init; }
 
     public required AgentRequirement Agent { get; init; }
 
-    /// <summary>
-    /// Can a FETCH complete with no human present?
-    ///
-    /// The fetch axis and nothing else. It was called <c>Unattended</c>, which
-    /// read as a claim about the whole provider and was believed as one: Albert
-    /// Heijn and Lidl Plus both declare it true while neither login can finish
-    /// without a person - AH streams its own page to them, Lidl sends them to
-    /// sign in in their own browser. Both are still true here, because a stored
-    /// refresh token really does fetch on its own at three in the morning; what
-    /// was wrong was the name promising something about the login too.
-    ///
-    /// Whether the LOGIN needs a human, and where that human has to be
-    /// standing, is <see cref="LoginNeedsHeadedAgent"/> and the challenge list
-    /// on <see cref="Auth"/>.
-    /// </summary>
+    // the FETCH axis only: Albert Heijn and Lidl Plus declare it true though neither login finishes without a person
+    // (a stored refresh token fetches alone at 3 am). The LOGIN's need: LoginNeedsHeadedAgent plus Auth's challenges
     public required bool UnattendedFetch { get; init; }
 
-    /// <summary>
-    /// True when this login can meet a wall only a human sitting at the agent's
-    /// own browser can pass.
-    ///
-    /// False does not mean the login needs nobody. It means whoever is needed
-    /// can be reached from anywhere - a captcha photographed and relayed to a
-    /// phone, a live view of the provider's own page - so any agent will do.
-    /// True means the wall is interactive and unrelayable, and the only person
-    /// who can pass it is one with hands on that machine.
-    ///
-    /// Declared rather than discovered. The condition already exists at run
-    /// time as <c>IJobContext.Attended</c>, which comes from the agent's own
-    /// headless setting, so today a pooled headless agent leases an Amazon
-    /// login, drives it for two minutes, meets the widget and fails it
-    /// <c>blocked_by_provider</c> - having learnt nothing the catalogue could
-    /// not have said up front.
-    /// </summary>
+    // true when the login can meet a wall only a person at the agent's own browser can pass; false means whoever is needed
+    // is reachable from anywhere (relayed captcha, live view). Declared, not discovered: a pooled headless agent would
+    // lease an Amazon login, drive it two minutes and fail it blocked_by_provider
     public bool LoginNeedsHeadedAgent { get; init; }
 
-    /// <summary>
-    /// The operator's alone (#441 L3): left out of every consumer catalogue and
-    /// refused on every door but the lab's. The explore run is one - a browser
-    /// driven around a site that has no adapter yet is nothing a person should
-    /// ever be offered.
-    /// </summary>
+    // the operator's alone (#441 L3): left out of every consumer catalogue and refused on every door but the lab's
     public bool OperatorOnly { get; init; }
 
-    /// <summary>
-    /// The platform's own stand-in party (the mocks, #526): it runs on every
-    /// door as any party does — the tests and the lab's bench exercise the
-    /// protocol through it without anybody's real account — but it is no
-    /// shop or bank a person would connect, so a consumer leaves it out of
-    /// what it offers people, and the lab lists it apart.
-    /// </summary>
+    // the platform's own stand-in party (mocks, #526): runs on every door, but is no shop or bank a person would connect,
+    // so a consumer leaves it out of its offers and the lab lists it apart
     public bool Fixture { get; init; }
 
-    /// <summary>
-    /// What disconnecting does to the account upstream, if anything.
-    ///
-    /// There was no field, so <c>DELETE /sessions/{id}</c> called
-    /// <c>LogoutAsync</c> on every provider - a no-op for fourteen of the
-    /// sixteen, each costing a job row, a lease and an agent round trip - and
-    /// the consuming app told the user "logged out upstream" every time,
-    /// including when nothing of the sort had happened.
-    /// </summary>
+    // what disconnecting does upstream: without it DELETE /sessions/{id} ran LogoutAsync on every provider (a no-op for
+    // most) and the consuming app claimed "logged out upstream" even when nothing happened
     public LogoutSupport Logout { get; init; } = LogoutSupport.None;
 
-    /// <summary>
-    /// Whether a successful login hands back a sealed copy of what the human
-    /// typed, for their own device to keep.
-    /// </summary>
-    /// <remarks>
-    /// For one shape of provider only: a session that cannot be refreshed, so a
-    /// fresh username and password is wanted again within a day. Jumbo is the
-    /// case - its Auth0 cookie is not refreshable and it wants a real sign-in
-    /// roughly daily, so the alternative is asking the same human for the same
-    /// password every morning.
-    /// <para>
-    /// The connector keeps no copy: the bundle is sealed to the user's subject
-    /// and handed over once, exactly as a session bundle is. What it costs is
-    /// real and belongs written down - a password re-submitted by machine on a
-    /// schedule is one that can be wrong without anybody watching, and this
-    /// platform never retries a submitted credential precisely because that is
-    /// how accounts get locked.
-    /// </para>
-    /// <para>
-    /// Refused at boot for a provider that declares no fields (there is nothing
-    /// to store), for one whose session IS refreshable (the refresh already
-    /// removes the reason), and for anything but client custody.
-    /// </para>
-    /// </remarks>
+    // a sealed copy of the typed credential for the user's own device, only for a non-refreshable session (Jumbo's Auth0
+    // cookie wants a sign-in daily); refused with no fields, a refreshable session, or non-client custody. Cost: a password
+    // re-submitted by machine can be wrong unwatched, and a submitted credential is never retried (lockout)
     public bool OffersCredentialStore { get; init; }
 
     /// <summary>Where the long-lived secret lives at rest.</summary>
     public required SecretCustody SecretCustody { get; init; }
 
-    /// <summary>
-    /// Whether browser clients may connect. Web bundles are never persisted
-    /// across a browser restart, so web users re-authenticate each visit.
-    /// </summary>
+    // web bundles are never persisted across a browser restart, so web users re-authenticate each visit
     public WebSupport WebSupport { get; init; } = WebSupport.Ephemeral;
 
     public required AuthSpec Auth { get; init; }
@@ -143,7 +63,6 @@ public sealed record ProviderManifest
     /// <summary>Consumer-owned copy key for any provider-specific caveat.</summary>
     public string? NotesKey { get; init; }
 
-    /// <summary>Asset hint; the consumer resolves the actual image itself.</summary>
     public string? LogoRef { get; init; }
 
     public ResourceSpec? Resource(string resourceId) =>
@@ -156,28 +75,14 @@ public enum ProviderKind
     Bank,
     Store,
 
-    /// <summary>
-    /// A registry: somewhere that holds an official record ABOUT you rather
-    /// than a stream of things you did.
-    ///
-    /// Bank and store are both event feeds - transactions, receipts - and a
-    /// registry is not. BKR states what credit you have outstanding, right
-    /// now, as a standing position; the same is true of a pension overview or
-    /// a student-debt balance. Modelling those as another kind of transaction
-    /// would force every one of them to invent a date and an amount it does
-    /// not have.
-    /// </summary>
+    // a registry holds an official record ABOUT you (BKR credit, pension, student debt) as a standing position; modelling
+    // it as a transaction would force an invented date and amount
     Registry,
 
-    /// <summary>The lab's own: an operator-only provider that is a tool, not a party (#441 L3).</summary>
     Lab,
 }
 
-/// <summary>
-/// The four runtime tiers. A provider's tier is a finding, not a plan - it
-/// is established by reading the provider, and it may move in either
-/// direction as the provider changes.
-/// </summary>
+// a provider's tier is a finding established by reading the provider, and may move either way
 [JsonConverter(typeof(JsonStringEnumConverter<ProviderRuntime>))]
 public enum ProviderRuntime
 {
@@ -217,33 +122,17 @@ public enum WebSupport
     None,
 }
 
-/// <summary>
-/// What disconnecting reaches beyond this platform, if anything.
-///
-/// The three values are three different promises to make to the person
-/// pressing the button, and telling them apart matters most at the far end:
-/// signing somebody out of the grocery app on their own phone because they
-/// tidied up a connection here is not a tidy-up, it is a surprise.
-/// </summary>
+// three different promises to the person disconnecting: signing them out of the grocery app on their phone is a surprise
 [JsonConverter(typeof(JsonStringEnumConverter<LogoutSupport>))]
 public enum LogoutSupport
 {
-    /// <summary>
-    /// Nothing upstream. Disconnect purges what is held here and the provider
-    /// never learns of it. The default, and true of most adapters.
-    /// </summary>
+    // nothing upstream: disconnect purges only what is held here; the default
     None,
 
-    /// <summary>
-    /// Only the credential this connection holds stops working. The user's own
-    /// app, on their own phone, is untouched.
-    /// </summary>
+    // only the credential this connection holds stops working; the user's own app is untouched
     Session,
 
-    /// <summary>
-    /// The account's other sessions go too. Declaring this is what lets a
-    /// consumer warn somebody before it happens.
-    /// </summary>
+    // the account's other sessions go too; declaring it lets a consumer warn first
     Account,
 }
 
@@ -268,81 +157,21 @@ public sealed record AgentRequirement
 
     public EgressRequirement? Egress { get; init; }
 
-    /// <summary>
-    /// Whether this provider may only ever be driven from a machine the
-    /// account holder owns.
-    /// </summary>
-    /// <remarks>
-    /// A READING OF THE TWO FIELDS ABOVE, in one place, because three readers
-    /// now branch on it: the job queue, which must not offer such a provider to
-    /// the operator's fleet; the login, which must refuse at once rather than
-    /// queue work no agent may take; and the pinning that keeps a second
-    /// sign-in on the machine holding the first one's cookies. Three copies of
-    /// <c>Required &amp;&amp; Class == Byo</c> would be three chances to spell
-    /// it differently, and the one that drifted would be a safety rule silently
-    /// turning into a routing hint.
-    /// <para>
-    /// NEITHER FIELD MEANS THIS ON ITS OWN. <see cref="Required"/> is true of
-    /// every browser provider there is, because a browser cannot run in the
-    /// control plane; <see cref="Class"/> was, until something read it here, a
-    /// preference nothing enforced. Together they are a promise about WHOSE
-    /// computer, and DUO is what makes it a safety rule rather than a
-    /// convenience: Logius scores DigiD authentications on IP, failed attempts
-    /// and BSN, a pooled fleet signing in as many different citizens from one
-    /// address is that signature exactly, and the consequence lands on the
-    /// account holder - who files their taxes with that account.
-    /// </para>
-    /// <para>
-    /// NOT ON THE WIRE. A consumer already receives <c>agent.required</c> and
-    /// <c>agent.class</c>, so publishing a third field computed from them would
-    /// be one more thing that can disagree with the two it is made of.
-    /// </para>
-    /// </remarks>
+    // true when only a machine the account holder owns may drive this provider: read by the job queue, the login and the
+    // pinning of a second sign-in. DUO makes it a safety rule: Logius scores DigiD on IP, failed attempts and BSN, and a
+    // pooled fleet signing in many citizens from one address looks like abuse. Not on the wire (computed from two fields)
     [JsonIgnore]
     public bool NeedsOwnMachine => Required && Class == AgentClass.Byo;
 
-    /// <summary>
-    /// This provider's site must be driven as a DESKTOP browser, whatever
-    /// device the agent otherwise emulates.
-    /// </summary>
-    /// <remarks>
-    /// An escape hatch with one confirmed user, and it earned it. An agent
-    /// emulates a phone by default because several providers serve a lighter,
-    /// steadier page to one - but amazon.nl's mobile sign-in DOES NOT SUBMIT in
-    /// a containerised headed Chromium. Not rejected: no request is made at
-    /// all, by a button click or by Enter, while the password sits correctly in
-    /// the field. The identical run with no device emulation posts immediately.
-    /// <para>
-    /// Four live sign-ins were spent on that before it was reproduced inside
-    /// the agent's own container, where the network log made it obvious in one
-    /// run: the e-mail step POSTs, the password step produces nothing.
-    /// </para>
-    /// </remarks>
+    // escape hatch: amazon.nl's mobile sign-in does not submit in a containerised headed Chromium (no request at all,
+    // password filled correctly), while the same run without device emulation posts at once
     public bool DesktopBrowser { get; init; }
 
     public static AgentRequirement Inline { get; } = new() { Required = false, Class = AgentClass.Inline };
 }
 
-/// <summary>
-/// An address a provider needs to be reached from, and - the same record, read
-/// the other way - the address an agent says it leaves from.
-/// </summary>
-/// <remarks>
-/// ONE RECORD FOR BOTH SIDES on purpose: the comparison in
-/// <see cref="IsSatisfiedBy"/> is the only place the two meanings meet, and a
-/// second type would mean two spellings of <c>residential</c> that agree only
-/// while somebody keeps them agreeing.
-/// <para>
-/// A CLAIM, NOT A MEASUREMENT. Nothing here verifies that an agent saying
-/// <c>residential</c> is on a domestic line; the agent's configuration says so
-/// and it is believed. That is worth stating wherever this is read, because it
-/// bounds what the check buys: it stops an HONEST deployment being routed work
-/// its address cannot carry, which is the mistake that actually happens - a
-/// datacenter agent quietly taking Jumbo's logins and being tarpitted for it.
-/// It is not a defence against an agent that lies, and the answer to that is
-/// the enrollment code deciding whose agent it is, not this field.
-/// </para>
-/// </remarks>
+// one record for both sides (what a provider needs, what an agent claims), so IsSatisfiedBy is the only place they meet.
+// A CLAIM, not a measurement: it stops an honest datacenter agent taking Jumbo's logins, not a lying one
 public sealed record EgressRequirement
 {
     /// <summary>A home line. What a provider means when it will not accept a datacenter.</summary>
@@ -354,42 +183,10 @@ public sealed record EgressRequirement
     /// <summary>ISO-3166 alpha-2, uppercase.</summary>
     public required string Country { get; init; }
 
-    /// <summary><c>residential</c> or <c>any</c>.</summary>
     public required string Kind { get; init; }
 
-    /// <summary>
-    /// Whether an agent claiming <paramref name="claim"/> may be offered work
-    /// for a provider asking for this.
-    /// </summary>
-    /// <remarks>
-    /// Four rules, and two of them are the ones that decide whether this is a
-    /// check or a decoration:
-    /// <list type="bullet">
-    /// <item>THE COUNTRY MUST MATCH, case-insensitively. A provider asking for
-    /// NL is asking to be reached from the Netherlands, and
-    /// <c>nl</c> typed into a compose file is the same country as
-    /// <c>NL</c>.</item>
-    /// <item><see cref="Any"/> IS WEAKER THAN <see cref="Residential"/>, NOT A
-    /// WILDCARD. A provider asking for <c>any</c> is satisfied by a
-    /// residential claim as readily as by a datacenter one - it asked for
-    /// nothing beyond the country. A provider asking for <c>residential</c> is
-    /// satisfied only by a residential claim: reading <c>any</c> as "matches
-    /// anything" on the requirement side AND the claim side would make every
-    /// requirement satisfiable by every agent, which is this check spelled
-    /// correctly and doing nothing.</item>
-    /// <item>AN AGENT THAT CLAIMS NOTHING SATISFIES NOTHING. A null claim is an
-    /// address nobody has stated, not an address that will do - and the
-    /// alternative reading is the dangerous one, because saying nothing is the
-    /// default and would make the whole comparison opt-in for the deployments
-    /// careful enough to fill it in. This is the rule that makes every shipped
-    /// deployment's claim load-bearing, which is why they were all corrected in
-    /// the same change that added this method: <c>deploy/byo</c> stated no
-    /// egress at all until then.</item>
-    /// <item>A KIND THIS RECORD DOES NOT KNOW demands an exact match. Nothing
-    /// validates the string, so an unrecognised requirement is treated as a
-    /// requirement rather than quietly widened to <see cref="Any"/>.</item>
-    /// </list>
-    /// </remarks>
+    // country matches case-insensitively; Any is weaker than Residential, not a wildcard; a null claim satisfies nothing
+    // (silence must not make the check opt-in); an unknown kind demands an exact match, never widened to Any
     public bool IsSatisfiedBy(EgressRequirement? claim)
     {
         if (claim is null) return false;
@@ -402,77 +199,24 @@ public sealed record EgressRequirement
 
 public sealed record ProviderLimits
 {
-    /// <summary>
-    /// How often a consumer SHOULD sync. Six hours by default - human
-    /// plausible, not a firehose.
-    /// </summary>
-    /// <remarks>
-    /// ADVISORY, and published so a consumer can honour it. This doc used to
-    /// say "Enforced server-side, not advisory" and that was simply untrue:
-    /// every manifest sets a value, the catalogue publishes it as
-    /// <c>min_interval_seconds</c>, and nothing anywhere reads it back. A
-    /// comment asserting an invariant nobody implements is worse than no
-    /// comment, because it is believed.
-    /// <para>
-    /// Enforcing it is a real feature and deliberately not a silent one. On the
-    /// day this was found, one account had six Amazon fetches inside three
-    /// hours - all of them diagnosing a genuine defect - and a six-hour floor
-    /// would have refused five. So enforcement has to answer a question this
-    /// field does not currently carry: whether the caller is a schedule, which
-    /// should be held to it, or a person who has just pressed a button, who has
-    /// asked. Deciding that by adding a rate limit to the fetch endpoint would
-    /// break every operator mid-debug and call it correctness.
-    /// </para>
-    /// <para>
-    /// What ACTUALLY paces the provider today is a different thing entirely and
-    /// does work: <see cref="MinRequestGapMs"/> and the agent's politeness gate
-    /// govern the rate INSIDE one fetch, which is where the traffic that gets
-    /// an account throttled comes from.
-    /// </para>
-    /// </remarks>
+    // ADVISORY: published as min_interval_seconds and nothing reads it back; enforcing needs to tell a schedule from a person
+    // who pressed a button. What really paces a provider is MinRequestGapMs and the agent's politeness gate, inside one fetch
     public int MinIntervalSeconds { get; init; } = 21_600;
 
     /// <summary>Per session. Always 1; the field exists to make that explicit.</summary>
     public int Concurrency { get; init; } = 1;
 
-    /// <summary>
-    /// The smallest gap this provider wants between two REQUESTS, as opposed to
-    /// between two fetches.
-    ///
-    /// <see cref="MinIntervalSeconds"/> governs how often a user may sync;
-    /// this governs the cadence inside one sync, which is a different question
-    /// with a different answer. A first Amazon connect walks an order list and
-    /// then an invoice per order - on this account, a hundred and thirty-four of
-    /// them - and at Chromium's own speed that is a burst no human produces.
-    /// <para>
-    /// Zero means the provider asks for nothing beyond the operator's own
-    /// politeness floor, which is the default and true of most: they are
-    /// answering a handful of calls per fetch and the floor already covers it.
-    /// The value is a stated preference, not a measurement - no provider
-    /// publishes its threshold - so raising one is a decision to spend wall
-    /// clock on caution, and worth writing down where it is made.
-    /// </para>
-    /// </summary>
+    // the smallest gap between two REQUESTS inside one sync (MinIntervalSeconds is between syncs): a first Amazon connect
+    // walks an invoice per order, 134 on one account. Zero = no more than the politeness floor; a stated preference
     public int MinRequestGapMs { get; init; }
 
     public int MaxHistoryDays { get; init; } = 365;
 
-    /// <summary>
-    /// How long a provider may take to surface a transaction that settles
-    /// late. Any caller-supplied <c>since</c> is widened by this, because
-    /// fetching strictly since the last sync loses late-settling rows
-    /// permanently and invisibly.
-    /// </summary>
+    // a caller-supplied since is widened by this: fetching strictly since the last sync loses late-settling rows invisibly
     public int SettlementLagDays { get; init; }
 
-    /// <summary>
-    /// The hour of the day, in the account's own zone (the consumer derives
-    /// it from the IBAN's country), at which an unattended fetch is worth
-    /// running — banks book overnight, so a fetch at 03:00 local gets whole
-    /// days. Null means any hour once <see cref="MinIntervalSeconds"/> has
-    /// passed. Advisory, like the interval: the consumer's scheduler reads
-    /// it; the platform does not.
-    /// </summary>
+    // hour in the account's own zone (derived from the IBAN's country) at which an unattended fetch is worth running: banks
+    // book overnight, so 03:00 gets whole days; null = any hour once MinIntervalSeconds passed; advisory
     [System.Text.Json.Serialization.JsonPropertyName("preferred_fetch_hour_local")]
     public int? PreferredFetchHourLocal { get; init; }
 }

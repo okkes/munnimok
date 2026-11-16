@@ -8,18 +8,8 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// T3 that takes its time, on purpose.
-///
-/// A minute-long run is what proves the parts of the platform that a fast
-/// provider never touches: an SSE stream that has to stay open and keep
-/// emitting, a lease that has to be renewed by heartbeat before it expires,
-/// and a consumer UI that has to render progress rather than a spinner.
-///
-/// The duration is a config field rather than a constant so the same
-/// provider can be driven at sixty seconds by a human watching a stream and
-/// at zero by a test suite that must not sleep.
-/// </summary>
+// T3 that takes its time: proves an SSE stream staying open, lease renewal by heartbeat and progress rendering
+// the duration is config so a human can watch at sixty seconds and a test suite run at zero
 public sealed class MockBankSlowAdapter : MockBankAdapter
 {
     public const string ProviderId = "mock-bank-slow";
@@ -54,9 +44,8 @@ public sealed class MockBankSlowAdapter : MockBankAdapter
         Agent = MockBankManifests.ResidentialPooled,
         UnattendedFetch = false,
         SecretCustody = SecretCustody.Client,
-        // The one provider in the fleet that opts out of web. A login this
-        // heavy repeated on every visit is exactly the case the opt-out
-        // exists for, and having one provider use it keeps the path honest.
+        // the one provider opting out of web: a login this heavy on every visit is what the opt-out is for,
+        // and one user keeps the path honest
         WebSupport = WebSupport.None,
         LogoRef = MockBankManifests.LogoRef,
         NotesKey = "connect.mock_bank.notes",
@@ -117,11 +106,7 @@ public sealed class MockBankSlowAdapter : MockBankAdapter
         return Serve(ctx, request);
     }
 
-    /// <summary>
-    /// Progress is reported before each wait, not after, so a consumer sees
-    /// the step it is currently waiting on rather than the one that just
-    /// finished.
-    /// </summary>
+    // progress is reported before each wait, so a consumer sees the step it is waiting on
     private async Task PaceAsync(IJobContext ctx, JobStep[] steps, TimeSpan total, CancellationToken ct)
     {
         var slice = total / steps.Length;
@@ -131,8 +116,7 @@ public sealed class MockBankSlowAdapter : MockBankAdapter
             ctx.Progress(step);
             if (slice > TimeSpan.Zero)
             {
-                // Delaying through the injected TimeProvider is what lets a
-                // test drive a sixty-second run to completion instantly.
+                // delaying through the injected TimeProvider lets a test finish a sixty-second run instantly
                 await Task.Delay(slice, Time, ct).ConfigureAwait(false);
             }
         }

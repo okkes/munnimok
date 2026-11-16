@@ -10,7 +10,6 @@ const spaces = [
   { id: 's-trip', name: 'Trip', kind: 'shared' as const },
 ];
 
-/** the space this device was in before the notification arrived */
 async function startIn(spaceId: string) {
   const db = new MunniDB(USER_TEST_DB);
   await db.meta.put({ key: 'activeSpaceId', value: spaceId });

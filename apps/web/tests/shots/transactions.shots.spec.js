@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Guide captures (npm run shots — never in CI): a reimbursement link
-// (34-tx-reimburse), a set-aside filed with its savings counterparty
-// (35-tx-type-link) and categories split over one transaction (36-tx-split).
-// The rules behind each are unit-tested (features/transactions/*.test.tsx).
+// guide captures (npm run shots, never in CI): 34-tx-reimburse, 35-tx-type-link, 36-tx-split;
+// the rules behind each are unit-tested (features/transactions/*.test.tsx)
 
 async function openReviewTx(page) {
   await page.click('[data-testid="tab-transactions"]');

@@ -17,7 +17,6 @@ import type { SyncActivity } from './syncActivity';
 
 type Translate = ReturnType<typeof useLang>['t'];
 
-/** merchant, item names and the amount's digits are all searchable */
 function rowMatches(receipt: ReceiptRow, q: string, amountQ: string | null): boolean {
   const haystack = [receipt.merchant ?? '', receipt.source, ...(receipt.items?.map((i) => i.name) ?? [])].join(' ').toLowerCase();
   if (haystack.includes(q)) return true;
@@ -26,7 +25,6 @@ function rowMatches(receipt: ReceiptRow, q: string, amountQ: string | null): boo
 
 const fmtDay = (iso: string, lang: Lang) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
-/** the dates a connection's fetches cover, with the count — or that nothing came yet */
 export function rangeLine(range: FetchedRange | undefined, t: Translate, lang: Lang): string {
   if (!range || range.count === 0) return t('conn.rangeNone');
   return t('conn.range', { from: fmtDay(range.from, lang), to: fmtDay(range.to, lang), n: range.count });
@@ -35,7 +33,6 @@ export function rangeLine(range: FetchedRange | undefined, t: Translate, lang: L
 /** #460: a sync gone on to older history, with the oldest day it reached so far */
 export const olderLine = (reached: string, t: Translate, lang: Lang): string => t('conn.syncOlder', { date: fmtDay(reached, lang) });
 
-/** what a sync is doing for this connection right now, in one line; null when nothing is running or fresh */
 export function activityLine(activity: SyncActivity | undefined, t: Translate, lang: Lang): { text: string; busy: boolean } | null {
   if (!activity) return null;
   if (activity.phase === 'fetching') {
@@ -51,13 +48,7 @@ export function activityLine(activity: SyncActivity | undefined, t: Translate, l
   return { text, busy: false };
 }
 
-/**
- * Every receipt the shops handed over, per connection — the hub's own
- * receipts screen (user ruling 2026-10-02): the data is global, so this
- * lists it without a space's matched/unmatched labels or linking; a space's
- * Receipts screen carries those. Each connection says how far its fetches
- * reach and what a running fetch has found so far.
- */
+// the hub's receipts: the data is global, so no matched/unmatched labels or linking; a space's Receipts screen has those
 export function ConnectionReceiptsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -66,7 +57,7 @@ export function ConnectionReceiptsScreen() {
   const ranges = useFetchedRanges();
   const activity = useSyncActivity((s) => s.activity);
   const [query, setQuery] = useState('');
-  // user 2026-10-06: every shop folded by default — a search unfolds the ones with hits
+  // every shop folded by default; a search unfolds the ones with hits
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const toggle = (id: string) =>
     setUnfolded((prev) => {

@@ -10,8 +10,6 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { reportEviction, useEvicted } from './evicted';
 
-/** #173: the kicked-out takeover — the engine's 403 report reaches the
- *  layout sheet and the active space hops to a survivor. */
 describe('eviction takeover (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -24,7 +22,6 @@ describe('eviction takeover (demo identity)', () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
-    // a second space to land on
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-evict'), { trackOutbox: false });
     await repo.upsert('space', 'space_two', 'space_two', {
@@ -35,11 +32,9 @@ describe('eviction takeover (demo identity)', () => {
     });
     db.close();
 
-    // the engine-side door fires (what the sync 403 catch calls)
     reportEviction({ spaceId: DEMO_SPACE_ID, spaceName: 'Demo space' });
     const sheet = await screen.findByTestId('space-kicked-sheet');
     expect(sheet.textContent).toContain('Demo space');
-    // the data provider hopped and said where you landed
     await waitFor(() => expect(screen.getByTestId('space-kicked-sheet').textContent).toContain('Landing zone'));
     fireEvent.click(screen.getByTestId('space-kicked-ok'));
     await waitFor(() => expect(screen.queryByTestId('space-kicked-sheet')).toBeNull());
@@ -51,7 +46,6 @@ describe('eviction takeover (demo identity)', () => {
     reportEviction({ spaceId: 'some_other_space', spaceName: 'Elsewhere' });
     const sheet = await screen.findByTestId('space-kicked-sheet');
     expect(sheet.textContent).toContain('Elsewhere');
-    // no switch line — the active space was untouched
     expect(sheet.textContent).not.toContain('now looking at');
     fireEvent.click(screen.getByTestId('space-kicked-ok'));
     await waitFor(() => expect(screen.queryByTestId('space-kicked-sheet')).toBeNull());

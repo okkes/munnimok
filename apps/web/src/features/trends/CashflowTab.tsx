@@ -34,7 +34,6 @@ type Mode = 'balance' | 'range';
 const WINDOW = 4;
 const MODE_KEY: Record<Mode, 'trends.flowBalance' | 'trends.flowRange'> = { balance: 'trends.flowBalance', range: 'trends.flowRange' };
 
-/** the footer's right-hand word: the scrubbed day, marked when it lies on the expectation */
 function scrubText(scrub: AreaScrub, expected: string, day: string, value: string): string {
   const suffix = scrub.projected ? ` · ${expected}` : '';
   return `${day}${suffix}: ${value}`;
@@ -52,14 +51,8 @@ interface CardShared {
   inSpace: InSpaceCurrency;
 }
 
-/**
- * One balance card (user 2026-10-08): Balance draws the money in hand day
- * by day — filled, solid to today, dashed for what is due until the period
- * ends — and a finger reads any day; Range draws each period's highest and
- * lowest balance as two lines with the band between them. The built-in
- * card reads checking, savings and cash; a custom one (#531) the accounts
- * it names — their rows, and the recurring costs paid from them.
- */
+/** the built-in card reads checking, savings and cash; a custom one (#531)
+ *  the accounts it names and the recurring costs paid from them */
 function CashflowCard({
   graphId,
   accountIds,
@@ -203,12 +196,6 @@ function CashflowCard({
   );
 }
 
-/**
- * The Cash flow tab: the built-in card over the money in hand, one card per
- * balance line the space composed (#531, user: "just like in spending …
- * custom graphs, and then specify the financial accounts"), and the door
- * to make another. The lines live on the space row.
- */
 export function CashflowTab({ space, ...shared }: Readonly<CardShared & { space: SpaceRow | undefined }>) {
   const { t } = useLang();
   const [editor, setEditor] = useState<{ open: boolean; graph: CashflowGraph | null }>({ open: false, graph: null });

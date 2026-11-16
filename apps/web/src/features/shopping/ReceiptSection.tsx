@@ -19,12 +19,9 @@ import { ReceiptPickSheet, ReceiptProposalCard } from './ReceiptPickSheet';
 import { applyPick, attachedElsewhere, candidatesFor, describeTxFor, dropAttached, suggestionsFor } from './receiptPick';
 import { useFileByReceipt } from './useFileByReceipt';
 
-// the ranking lives in receiptPick.ts (user 2026-10-07: the review's helpers
-// share it without importing this component); its old door stays open
+// the ranking lives in receiptPick.ts so the review's helpers share it without importing this component
 export { rankForTx } from './receiptPick';
 
-/** the attached receipt (user 2026-10-07: "see which one is attached and change it"):
- *  the card opens it, Change opens the picker with it marked */
 function AttachedReceiptCard({
   receipt,
   currency,
@@ -68,14 +65,7 @@ function AttachedReceiptCard({
   );
 }
 
-/**
- * The transaction's line-item proof (receipts v3, R8 redesign): the
- * empty state opens ONE attach sheet — best-matching unlinked store
- * receipts first, camera/upload and the connections door as the
- * fallback rungs, then every receipt behind a search (user 2026-10-07:
- * the review's picker, shared) — and an attached receipt leads that
- * same sheet, marked, so it can be changed.
- */
+/** one attach sheet serves the empty state and Change; an attached receipt leads it, marked */
 export function ReceiptSection({
   tx,
   onCategorise,
@@ -117,16 +107,13 @@ export function ReceiptSection({
   };
   // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
   const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
-  // the receipts on offer: every receipt of the included shops, the attached one never twice (it leads the lists,
-  // marked); user 2026-10-08: one attached elsewhere stays on offer — its row says where it already sits
+  // the attached receipt leads the lists, marked, so it is never offered twice; one attached elsewhere stays on offer
   const others = useMemo(() => (attachable?.rows ?? []).filter((r) => r.id !== receipt?.id), [attachable, receipt?.id]);
-  // the suggestions: the unmatched receipts that fit; the proposal's receipt asks on its own card, not among them
-  // (the review's rule)
+  // suggestions: unmatched receipts that fit; the proposal's receipt asks on its own card, not among them (review's rule)
   const candidates = useMemo(() => candidatesFor(tx, attachable, proposal?.receiptId), [tx, attachable, proposal?.receiptId]);
   const elsewhere = useMemo(() => attachedElsewhere(attachable?.attachedTo, tx.id), [attachable, tx.id]);
   const describeTx = useMemo(() => describeTxFor(txs, lang, tx.currency), [txs, lang, tx.currency]);
 
-  /** the receipt screen, back here on return — the card's own door */
   const openReceipt = (receiptId: string) => void navigate({ to: '/receipts/$receiptId', params: { receiptId }, search: { from: tx.id } });
 
   const onFile = async (file: File) => {
@@ -195,9 +182,6 @@ export function ReceiptSection({
         onApply={applyPicks}
       />
 
-      {/* ONE attach flow (user: the old scatter felt odd): the attached receipt and the
-          suggestions lead, capture and the stores door follow, every receipt sits behind
-          the search — the review card's sheet, shared (user 2026-10-07) */}
       <ReceiptPickSheet
         open={attachOpen}
         onOpenChange={setAttachOpen}

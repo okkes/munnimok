@@ -1,12 +1,6 @@
 import type { SyncEnvelope } from '@/sync/merge';
 
-/**
- * v1 data model. Every synced row carries the SyncEnvelope (fieldVersions +
- * derived deleted flag) and belongs to exactly one space — the unit of
- * sharing and sync.
- *
- * Money is stored as integer minor units (cents), never floats.
- */
+/** every synced row carries the SyncEnvelope and belongs to exactly one space; money is integer cents, never floats */
 
 export type SpaceKind = 'personal' | 'shared';
 
@@ -23,46 +17,31 @@ export interface SpaceRow extends SyncEnvelope {
   currency: string; // ISO 4217, e.g. 'EUR'
   periodType: SpacePeriodType;
   periodDay: number; // day of month the budget period starts (month type)
-  /** #370: this space's first weekday (weekly budgets, week views); set from the device preference at creation */
+  /** #370: set from the device preference at creation */
   weekStart?: WeekStart;
-  /** creator's display name at creation — distinguishes same-named
-   *  shared spaces in lists (user rule; private names stay unique) */
+  /** creator's display name at creation: tells same-named shared spaces apart in lists */
   createdByName?: string;
-  /** custom image (small data URL, client-downscaled) — wins over `icon` in lists */
+  /** small client-downscaled data URL; wins over `icon` in lists */
   picture?: string;
-  /** where the picture is shown from and how far it is zoomed (user
-   *  2026-10-06): object-position percentages + a scale; absent or null =
-   *  the centre at 1× */
+  /** object-position percentages + scale; absent or null = the centre at 1x */
   pictureFocus?: { x: number; y: number; scale?: number } | null;
-  /** MDI icon shown in lists (default 'leaf') */
   icon?: string;
   color?: string;
   /** default start date (yyyy-mm-dd) for transaction history when accounts get attached */
   historyStartDate?: string;
-  /** private lock (arc 4): 1 = invites disabled until the owner unlocks.
-   *  New spaces create locked; absent (pre-arc rows) reads unlocked. */
+  /** 1 = invites disabled until the owner unlocks; new spaces create locked, absent (older rows) reads unlocked */
   inviteLock?: 0 | 1;
-  /** landing-zone layout: block order + visibility, per space (synced) */
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
-  /** tx-detail layout: section order + visibility under the fixed details block */
   txDetailBlocks?: { id: string; hidden?: 0 | 1 }[];
-  /** #577: the phone bar's features after Home, in order (ids of
-   *  features/navigation/navFeatures; one a build does not know is skipped);
-   *  absent or null = the default bar */
+  /** #577: phone bar features after Home, in order (navFeatures ids; an unknown one is skipped); absent/null = default bar */
   navTabs?: string[] | null;
   /** main categories switched off for this space (picker filtering only — data never blocks) */
   hiddenMains?: string[];
-  /**
-   * #390 r4: the copy offers from other spaces this space said no to — per
-   * main (`main:<name>` for one it lacks, `into:<id>` for one here that
-   * would gain subs), the sub names on offer at that moment. An offer comes
-   * back when it brings a name that is not among them.
-   */
+  // #390 r4: copy offers from other spaces this space declined: per main (`main:<name>` it lacks, `into:<id>` that would
+  // gain subs) the sub names then on offer; an offer returns when it brings a name not among them
   copyDeclined?: Record<string, string[]>;
-  /** Home balance band (user design 2026-08-01): what the big number IS.
-   *  Absent = 'networth' (the pre-config behavior: every account summed). */
+  /** what the big number is; absent = 'networth' (every account summed) */
   balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
-  /** the custom mode's explicit include list */
   balanceBandAccounts?: string[];
   /** #368: the savings accounts that feed the goals; absent = every savings account */
   goalPoolAccountIds?: string[];
@@ -74,21 +53,15 @@ export interface SpaceRow extends SyncEnvelope {
   spendAccountIds?: string[] | null;
   /** #541: the plan's set-asides safe to spend takes off as well; absent = none */
   spendSetAsides?: SpendSetAside[];
-  /** user 2026-10-08: the space's custom trend graphs — a name and the
-   *  (sub)categories each one charts (a main id covers its subs). One
-   *  field under LWW on the space row like homeBlocks: small, rarely
-   *  edited, the whole list travels with every write. #531: `accountIds`
-   *  narrows a graph to those financial accounts; absent = every account
-   *  (the ones added later too) — every graph from before reads so. */
+  // custom trend graphs: a name + the (sub)categories charted (a main covers its subs); one LWW field on the space row;
+  // #531: `accountIds` narrows a graph to those accounts, absent = every account (later ones too)
   trendGraphs?: { id: string; name: string; catIds: string[]; accountIds?: string[]; /** #455: what goals bought stays out */ skipGoalSpending?: boolean }[];
-  /** #531: the Cash flow tab's own graphs — a balance line over the
-   *  accounts each one names; the same LWW list as trendGraphs */
+  /** #531: the Cash flow tab's graphs: a balance line over the named accounts; an LWW list like trendGraphs */
   cashflowGraphs?: { id: string; name: string; accountIds: string[] }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
-/** 'connector' = fetched through the connector platform (#367, #414 —
- *  open banking included); the `provider` field then names the party */
+/** 'connector' = fetched through the connector platform (#367, #414), open banking included; `provider` names the party */
 export type AccountSource = 'manual' | 'camt053' | 'connector';
 
 export interface AccountRow extends SyncEnvelope {
@@ -99,65 +72,47 @@ export interface AccountRow extends SyncEnvelope {
   source: AccountSource;
   currency: string;
   balanceCents: number;
-  /** date balanceCents was known true (yyyy-mm-dd): statement balances and
-   *  manual edits both stamp it, and only a newer date may overwrite */
+  /** date balanceCents was known true (yyyy-mm-dd): statements and manual edits stamp it; only a newer date overwrites */
   balanceAsOf?: string;
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
-  /** #367: the connector party behind a 'connector' source (the provider
-   *  id as the catalogue names it — `gocardless`, `enablebanking`, `asn`
-   *  …) — stamped by the server ingest on EVERY fetched row; manual and
-   *  statement-import rows carry none */
+  // #367: the connector party behind a 'connector' source (catalogue provider id), stamped by server ingest on every
+  // fetched row; none on manual/import rows
   provider?: string;
-  /** #445: the connection that fetched the row last (the relay's connection
-   *  id, the hub's `storeConn` row id) — stamped by the ingest; when that
-   *  connection is gone, nothing fetches the row any more and the app says so */
+  // #445: the connection that fetched the row last (relay connection id / hub `storeConn` row id), stamped by ingest;
+  // when it is gone nothing fetches the row any more and the app says so
   connectionId?: string;
-  /** #133/#221: this account is the space's DEFAULT for a counterparty
-   *  family — minted at space creation (undeletable, ledger system-
-   *  managed), so "Set aside" or an ATM withdrawal without naming an
-   *  account lands somewhere valid */
+  // #133/#221: the space's DEFAULT account for a counterparty family, minted at space creation (undeletable, system-managed)
+  // so "Set aside" or an ATM withdrawal without naming an account lands somewhere valid
   defaultFor?: 'saving' | 'debtPayment' | 'investment' | 'transfer' | 'cash' | 'funding';
-  /** newest transaction date an imported statement covered (yyyy-mm-dd):
-   *  "you imported five minutes ago" and "the data ends three weeks ago"
-   *  are different facts — this carries the second one */
+  /** newest transaction date an imported statement covered (yyyy-mm-dd): not the same as when it was imported */
   dataThroughDate?: string;
-  /** #240 r3: what the last bank fetch actually carried — raw rows the
-   *  provider answered with, and how many could not be stored (no
-   *  reference/date). 0 received = "the bank returned nothing", which
-   *  used to be indistinguishable from a healthy sync. */
+  // #240 r3: raw rows the last bank fetch returned / could not store (no reference/date);
+  // 0 received = the bank returned nothing
   lastFetchReceived?: number;
   lastFetchDropped?: number;
   iban?: string;
-  /** #367: the party's own masking of a card or wallet number — the
-   *  connector ingest writes it for an account that has no IBAN */
+  /** #367: the party's own masking of a card or wallet number, written for an account with no IBAN */
   maskedNumber?: string;
   bankId?: string;
   color?: string;
-  /** user-chosen icon override: '/brands/{slug}.svg' or a logo.dev URL —
-   *  wins over the institution logo derived from bankId */
+  /** user-chosen icon: '/brands/{slug}.svg' or a logo.dev URL; wins over the logo derived from bankId */
   logo?: string;
   archived?: 0 | 1;
-  // ── loans v2 (2026-08-01): the liability account IS the debt — its
-  //    story fields live here, one object, no seams
   /** informational APR, e.g. 3.5 — empty means "remind me", 0 is an answer */
   interestPctYear?: number;
-  /** starting size of the loan — optional garnish powering the progress bar */
+  /** starting size of the loan; powers the progress bar */
   originalCents?: number;
-  /** free-form note */
   note?: string;
   paymentCents?: number;
-  /** payment cadence, recurring-shaped: every N week/month/year; absent =
-   *  monthly, estimates from payments fill the gap */
+  /** payment cadence, recurring-shaped; absent = monthly, estimates from payments fill the gap */
   paymentEvery?: RecurringEvery;
   paymentEveryN?: number;
-  /** #190: due day of month 1..31 (like recurring) — says which period a
-   *  payment belongs to; weekly cadences carry none */
+  /** #190: due day of month 1..31, says which period a payment belongs to; weekly cadences carry none */
   paymentDay?: number;
-  /** auto-link payments by merchant (the recurring→loan handoff) */
   merchantKey?: string;
-  /** debts-screen membership: absent = by type (loan/mortgage in, credit
-   *  out unless it carries a debt story) — the explicit toggle wins */
+  // debts-screen membership: absent = by type (loan/mortgage in, credit out unless it carries a debt story);
+  // the explicit toggle wins
   trackAsDebt?: 0 | 1;
   /** #413: how much this debt weighs on the person (1 light … 5 heavy) — the payoff planner's tsunami order pays the heaviest first */
   debtStress?: 1 | 2 | 3 | 4 | 5;
@@ -167,21 +122,13 @@ export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment
 
 export type CatDirection = 'debit' | 'credit' | 'both';
 
-/**
- * Custom category row. Main (parent) categories carry the transaction
- * type + color; sub categories inherit both from their parent and carry
- * only a direction (which side of the ledger they may be used on).
- * Rows live in the space they were created in: a personal space makes
- * them user-scoped (visible across all the user's personal spaces), a
- * shared space makes them visible to that space's members only.
- */
+// a custom category: mains carry the transaction type + color, subs inherit both and carry only a direction;
+// rows live in the space they were created in
 export interface CategoryRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   parentId?: string;
-  /** translation key for built-in categories (e.g. 'cat.groceries') */
   nameKey?: string;
-  /** user-entered name for custom categories */
   name?: string;
   icon: string; // MDI icon name
   color: string;
@@ -189,7 +136,6 @@ export interface CategoryRow extends SyncEnvelope {
   txType: TxType;
   /** subs only; parents have no direction */
   direction?: CatDirection;
-  /** custom main category (no parentId) */
   isParent?: 0 | 1;
   /** the auto-created "Other" sub of a custom main (direction locked to 'both') */
   isOther?: 0 | 1;
@@ -204,30 +150,20 @@ export interface TxSplit {
   /** percentage split (0–100): scales to any amount, so bulk apply
    *  works across different charges; amountCents stays materialized */
   pct?: number;
-  // ── typed splits v2 (2026-08-05, approved plan) — all optional; a
-  // bare slice behaves exactly as the classic category slice ──
-  /** stable part identity (repo.newId()), minted when the sheet saves */
+  // typed splits: every field below is optional; a bare slice behaves as the classic category slice
   id?: string;
   /** stored ONLY when the user edits it; the default
    *  "<title> – split N" is rendered, localized, at read time */
   label?: string;
-  /** the part's own type (R4: the parent is a container) —
-   *  absent = the part inherits the row's type */
+  /** the part's own type; absent = inherits the row's type */
   txType?: TxType;
-  /** transfer parts: the tracked counter account (mint-on-link) */
   linkedAccountId?: string;
-  /** the paired row on that account (the part's minted mirror) */
   transferPeerId?: string;
-  /** per-part event membership ("this €30 of the dinner is the trip") */
   eventId?: string;
-  /** per-part recurring link (#126 r7: parts carry everything a whole
-   *  transaction carries — the €50 device-plan part ↔ its recurring) */
   recurringId?: string;
-  /** per-part category partition (splits v2.1): a part can spread across
-   *  several categories. Magnitudes sum to the part's amountCents; catId
-   *  stays the largest entry as the compat shadow. Absent = single cat. */
+  // per-part category partition: magnitudes sum to the part's amountCents; catId stays the largest entry
+  // as the compat shadow; absent = single cat
   cats?: TxSplitCat[];
-  /** the part's own note (#126 r5: parts are full transactions) */
   notes?: string;
 }
 
@@ -235,24 +171,18 @@ export interface TxSplitCat {
   catId: string;
   /** positive magnitude, same sign convention as the part */
   amountCents: number;
-  /** percentage entry (0–100), row-level spreads only (#211): kept when
-   *  the spread was typed in % so the #141 sibling offer can rescale;
-   *  amountCents stays materialized either way */
+  // percentage entry (0-100), row-level spreads only (#211): kept so the #141 sibling offer can rescale;
+  // amountCents stays materialized
   pct?: number;
-  // ── #228 (user 2026-08-13): entries carry NO counterparty. One
-  // counterparty per (split) transaction — the row's or part's own
-  // linkedAccountId/transferPeerId — and a special category claims the
-  // whole (split) transaction, so a spread only ever holds regular and
-  // reimbursement categories. ──
-  /** VIEW enrichment only (like a part's): the join derives it from the
-   *  entry's category + the owner's counterparty; a stored value is
-   *  never read */
+  // #228: entries carry NO counterparty: a special category claims the whole (split) transaction,
+  // so a spread holds only regular and reimbursement categories
+  // view enrichment only: the join derives it from the entry's category + the owner's counterparty;
+  // a stored value is never read
   txType?: TxType;
 }
 
 /** money received back against an expense (owned by the expense side) */
 export interface TxReimbursement {
-  /** the credit transaction that pays (part of) this expense back */
   txId: string;
   amountCents: number;
   /** which PART of a split expense it pays back (#126 r5) — absent =
@@ -276,11 +206,8 @@ export interface TransactionRow extends SyncEnvelope {
   titleOverride?: string;
   description?: string;
   catId?: string;
-  /** #211 split categories: the ROW's own multi-category partition —
-   *  magnitudes sum to |amountCents|, catId stays the largest entry as
-   *  the compat shadow. A row with `cats` is still ONE transaction.
-   *  `splits` is the OTHER feature (a container's parts) — the two
-   *  never mix: containers carry no cats of their own. */
+  // #211: the ROW's own multi-category partition (still ONE transaction): magnitudes sum to |amountCents|, catId stays the
+  // largest entry as the compat shadow; never mixed with `splits` (a container's parts carry no cats of their own)
   cats?: TxSplitCat[];
   splits?: TxSplit[];
   needsReview: 0 | 1;
@@ -290,30 +217,24 @@ export interface TransactionRow extends SyncEnvelope {
   pending?: 0 | 1;
   /** deterministic id source for imported rows (bank tx id / CAMT entry ref) */
   importRef?: string;
-  /** master plan IB: which upload created this row — rollback removes a
-   *  batch's rows and ONLY its rows (deduped rows keep their first batch) */
+  // which upload created this row: rollback removes a batch's rows and ONLY its rows (deduped rows keep their first batch)
   importBatchId?: string;
-  /** display name of the uploader at import time (frozen, like activity) */
+  /** uploader's display name, frozen at import */
   importedBy?: string;
   reimbursements?: TxReimbursement[];
   /** counter-account for transfers/savings/debt payments — locks txType */
   linkedAccountId?: string;
-  /** the MIRROR transaction of a transfer pair (the other account's leg)
-   *  — written on both legs by the matcher or a manual link; the list
-   *  collapses a visible pair into one row */
+  // the other leg of a transfer pair, written on both legs by the matcher or a manual link;
+  // the list collapses a visible pair into one row
   transferPeerId?: string;
-  /** the recurring cost this expense pays (rent, a subscription, …) */
   recurringId?: string;
-  /** the event this transaction belongs to (holiday, wedding, …) */
   eventId?: string;
   /** #538: the split the payment was added to — a mark for everyone in the space, so the same payment is not
    *  added twice; the split's members never learn which space it came from */
   splitRef?: SplitRef | null;
-  /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
-   *  the linked manual loan's balance (one-shot marker) */
+  /** pre-anchor row deliberately counted into the linked manual loan's balance (one-shot marker) */
   loanCounted?: 1;
-  /** #133 D (C3): the manual correction marker (manual rows only) — the
-   *  view derives the adjustment type from it; no type is stored */
+  /** #133 D: the manual correction marker (manual rows only); the view derives the adjustment type, none is stored */
   adjustment?: 0 | 1;
   /** #547: when this row was typed by hand on an account the bank or a
    *  statement fills (ISO) — what makes it "your entry"; absent on every other row */
@@ -334,21 +255,12 @@ export type EntryBankBefore = Partial<
   Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'notes' | 'titleOverride' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'reimbursements' | 'transferPeerId'>
 > & { needsReview?: 0 | 1 };
 
-/**
- * A transaction as the VIEW sees it: the stored row plus the type
- * DERIVED at the join (db/joined.ts, domain/txDerive.ts) from the
- * category, the counterparty, the account's stamp and the sign. Every
- * reader consumes this shape; nothing stores a type.
- */
+// a transaction as the VIEW sees it: the stored row + the type derived at the join (db/joined.ts, domain/txDerive.ts);
+// nothing stores a type
 export type TxView = TransactionRow & { txType: TxType };
 
-/**
- * Per-space transformation overlay for one raw transaction (feature B:
- * raw bank data lives once in the account's feed space; every attached
- * space keeps its own opinions about it). Deterministic id
- * uuidv5("meta:" + spaceId + ":" + txId) — concurrent creation by two
- * members converges via LWW.
- */
+// per-space transformation overlay for one raw transaction (raw bank data lives once in the feed space);
+// id uuidv5("meta:" + spaceId + ":" + txId), so concurrent creation by two members converges via LWW
 export interface TxMetaRow extends SyncEnvelope {
   id: string;
   /** the viewing space that owns these opinions */
@@ -358,9 +270,7 @@ export interface TxMetaRow extends SyncEnvelope {
   catId?: string;
   needsReview: 0 | 1;
   notes?: string;
-  /** user-chosen display title; the bank's merchant stays untouched */
   titleOverride?: string;
-  /** #211: the space's multi-category partition of the raw row */
   cats?: TxSplitCat[];
   splits?: TxSplit[];
   reimbursements?: TxReimbursement[];
@@ -369,20 +279,15 @@ export interface TxMetaRow extends SyncEnvelope {
   recurringId?: string;
   eventId?: string;
   splitRef?: SplitRef | null;
-  /** loans v2 (2026-08-01): this row predates the loan's known-true
-   *  balance date but the user chose to count it in anyway (one-shot) */
+  /** this row predates the loan's known-true balance date but the user chose to count it in (one-shot) */
   loanCounted?: 1;
 }
 
 export type RecurringKind = 'fixed' | 'subscription';
 export type RecurringEvery = 'week' | 'month' | 'year';
 
-/**
- * One recurring cost of a space (rent, Netflix, insurance …). The
- * amount is the user's estimate until linked transactions rectify it;
- * merchantKey lets imports auto-link. Scoped per space — shared spaces
- * share their recurring configuration.
- */
+// one recurring cost of a space; the amount is the user's estimate until linked transactions rectify it;
+// merchantKey lets imports auto-link
 export interface RecurringRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -409,29 +314,21 @@ export interface RecurringRow extends SyncEnvelope {
   active: 0 | 1;
   /** remind n days before due; absent/0 = no reminder */
   notifyDaysBefore?: number;
-  /** normalized merchant (domain/merchantKey) for auto-linking */
   merchantKey?: string;
-  /** #274: counterparty account for special categories — linked
-   *  transactions inherit it (older clients simply ignore the field) */
+  /** #274: counterparty account for special categories; linked transactions inherit it */
   linkedAccountId?: string;
 }
 
-/**
- * A rejected recurring suggestion — the same merchant pattern is never
- * suggested again (synced: a partner's dismissal counts for the space).
- */
+/** a rejected recurring suggestion: never suggested again; synced, so a partner's dismissal counts for the space */
 export interface RecurringDismissRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   merchantKey: string;
 }
 
-/** #148 r3: one row per transaction a signed-in user FIRST saw — synced
- *  through the user's private state space so the 24h "new" clock agrees
- *  across their devices. `spaceId` is the state space; `forSpaceId` the
- *  space the transaction lives in. The per-space baseline row (its id
- *  from `txSeenBaseId`) marks when the scheme started: rows older than
- *  it are known without a row of their own. */
+// #148 r3: a transaction a signed-in user FIRST saw, synced through their private state space so the 24h "new" clock
+// agrees across devices; `spaceId` is the state space, `forSpaceId` where the tx lives; rows older than the per-space
+// baseline row (id from `txSeenBaseId`) are known without a row
 export interface TxSeenRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -446,19 +343,14 @@ export interface TxSeenRow extends SyncEnvelope {
 export type BudgetEvery = 'week' | '2weeks' | 'month' | 'period';
 export type BudgetCarryMode = 'periods' | 'cap';
 
-/**
- * A space-scoped spending limit over one or more categories, resetting
- * on its own cadence (anchored at a date, independent of the space
- * period). Spending and carry-over are computed client-side from the
- * space's transactions — carry-over is replayed, never stored, so
- * devices always converge (budgets design doc).
- */
+// a space-scoped spending limit on its own anchored cadence; carry-over is replayed from transactions, never stored,
+// so devices converge
 export interface BudgetRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   name: string;
-  /** MDI icon — #534: a budget wears an icon only; the own pictures of
-   *  #373 are no longer read or written (rows that carry one keep it) */
+  // MDI icon; #534: a budget wears an icon only, the own pictures of #373 are no longer read or written
+  // (rows that carry one keep it)
   icon?: string;
   /** the limit per period, positive minor units */
   amountCents: number;
@@ -480,11 +372,7 @@ export interface BudgetRow extends SyncEnvelope {
   active: 0 | 1;
 }
 
-/**
- * An event groups transactions around a real-world happening (holiday,
- * wedding, move) to answer what it truly cost. Space-scoped; archiving
- * is manual (approved events design).
- */
+/** groups transactions around a real-world happening to answer what it truly cost; archiving is manual */
 export interface EventRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -497,10 +385,8 @@ export interface EventRow extends SyncEnvelope {
   pictureFocus?: { x: number; y: number } | null;
   note?: string;
   color?: string;
-  /** optional date range (yyyy-mm-dd) */
   from?: string;
   to?: string;
-  /** optional planning number */
   budgetCents?: number;
   archived?: 0 | 1;
   /** #538: the split this event belongs to — the event's own fact, so whoever shares the space shares the bond;
@@ -510,12 +396,8 @@ export interface EventRow extends SyncEnvelope {
   splitSkips?: string[];
 }
 
-/**
- * A goal partitions the space's SAVINGS BALANCE into named envelopes
- * (house, car, buffer). No real money moves and no transactions link —
- * the balance is the only truth; over-allocation is flagged, never
- * auto-fixed (approved goals design).
- */
+// a goal partitions the space's savings balance into named envelopes: no money moves, no transactions link;
+// over-allocation is flagged, never auto-fixed
 export interface GoalRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -535,13 +417,9 @@ export interface GoalRow extends SyncEnvelope {
   cashOut?: GoalCashOut | null;
 }
 
-/**
- * #455: what spent a goal. The transactions stay ordinary rows; the
- * overview keeps them (and the other leg of their pair) out of their
- * period's saving and shows them as cashed out instead.
- */
+// #455: what spent a goal: the transactions stay ordinary rows; the overview keeps them (and their pair's other leg)
+// out of the period's saving and shows them as cashed out
 export interface GoalCashOut {
-  /** yyyy-mm-dd the person cashed out */
   date: string;
   /** the rows that took the goal's money out of savings */
   txIds: string[];
@@ -581,28 +459,23 @@ export interface SplitRef {
   name: string;
 }
 
-/** #567: one receipt line filed under a category, for one transaction */
 export interface ReceiptPick {
-  /** the line's index among the receipt's items */
   line: number;
   catId: string;
   /** what of the transaction the line stands for: its printed value, what was paid after the discount, or a typed amount */
   amountCents: number;
 }
 
-/** a document the party issued for the purchase — an invoice, mostly
- *  (the connector's `include=invoice`); carried inline as a data URL */
+/** a document the party issued for the purchase (mostly an invoice, `include=invoice`), carried inline as a data URL */
 export interface ReceiptDocument {
   kind: 'invoice';
   mime: string;
   name?: string;
   filename?: string;
   sizeBytes?: number;
-  /** `data:{mime};base64,…` */
   dataUrl: string;
 }
 
-/** how a store receipt was paid, when the provider exposes it (R5) */
 export interface ReceiptPayment {
   /** provider wording, e.g. 'PIN', 'ideal' */
   method?: string;
@@ -610,13 +483,8 @@ export interface ReceiptPayment {
   accountTail?: string;
 }
 
-/**
- * A store receipt's line-item proof. Receipts v3 (approved redesign):
- * store receipts live ONCE in the owner's personal STORE FEED (the
- * global fetch/dedupe layer); linking snapshots them into a space via
- * `receiptLink`. Photo receipts skip the global layer entirely — they
- * are photo-born `receiptLink` rows.
- */
+// a store receipt's line-item proof: lives ONCE in the owner's STORE FEED (the global fetch/dedupe layer); linking snapshots
+// it into a space via `receiptLink`; photo receipts skip the global layer (photo-born `receiptLink` rows)
 export interface ReceiptRow extends SyncEnvelope {
   id: string;
   /** the owner's store feed */
@@ -638,13 +506,11 @@ export interface ReceiptRow extends SyncEnvelope {
   /** the connection that pulled it — every connector receipt is keyed by it */
   instanceId?: string;
   payment?: ReceiptPayment;
-  /** invoices the party issued for the purchase (connector fetches) */
   documents?: ReceiptDocument[];
   /** false when the party says the line items do not add up to the total */
   reconciled?: boolean;
 }
 
-/** the connector's own words for a session, as the relay renders them (#367) */
 export type ConnectorSessionState =
   | 'queued'
   | 'running'
@@ -656,7 +522,6 @@ export type ConnectorSessionState =
   | 'failed'
   | 'expired';
 
-/** the last thing the relay refused with — the state line reads it */
 export interface ConnectorLastError {
   code: string;
   messageKey: string;
@@ -689,24 +554,16 @@ export interface ConnectorBackfill {
   until: string;
 }
 
-/**
- * DEVICE-ONLY connection state (#367): the credential bundle a party
- * handed this device and what the relay last said about the session.
- * Never synced in plaintext, never exported, never on our server — the
- * E2EE connection sync ferries it as ciphertext between the owner's
- * devices. On the web the bundle lives in sessionStorage instead
- * (custody 'ephemeral', it dies with the tab), so the row carries none.
- */
+// DEVICE-ONLY connection state (#367): never synced in plaintext, never exported, never on our server; the E2EE
+// connection sync ferries it as ciphertext between the owner's devices. On the web the bundle lives in sessionStorage
+// (custody 'ephemeral'), so the row carries none
 export interface ConnectorConnRow {
-  /** the connection id — the client's stable id the relay keys every receipt by */
   id: string;
-  /** the provider id as the catalogue names it */
   provider: string;
   /** `sb_v1.…` — native custody only */
   bundle?: string;
   /** a provider-kept credential store (Jumbo), replayed on re-login */
   credentialBundle?: string;
-  /** the relay session the bundle belongs to */
   sessionId?: string;
   state: ConnectorSessionState;
   /** when the bundle last changed hands (login or rotation) — the E2EE
@@ -721,21 +578,16 @@ export interface ConnectorConnRow {
   reportFailures?: boolean;
 }
 
-/**
- * SYNCED, secret-free connection metadata. Lives in the owner's personal
- * STORE FEED: every one of their devices renders the connection (name,
- * icon) even before the E2EE bundle arrives.
- */
+// SYNCED, secret-free connection metadata in the owner's store feed:
+// every device renders the connection before the E2EE bundle arrives
 export interface StoreConnRow extends SyncEnvelope {
-  id: string; // the connection id
+  id: string;
   spaceId: string; // the owner's store feed
-  /** the provider id as the catalogue names it */
   store: string;
   /** the party's kind, frozen at connect time so the hub sections render
    *  offline; absent on rows written before banks joined (= a shop) */
   kind?: 'store' | 'bank' | 'registry';
   displayName: string;
-  /** BrandIconPicker result ('brands/….svg' or a logo URL) */
   icon?: string;
   providerAccountHash?: string;
   connectedAt: string;
@@ -743,30 +595,20 @@ export interface StoreConnRow extends SyncEnvelope {
   status?: 'ok' | 'expired';
 }
 
-/**
- * Per-space inclusion of a connection (the accountLink analogue):
- * members see included connections and their receipts flow into the
- * space. Carries a name/icon snapshot — members cannot read the
- * owner's store feed.
- */
+// per-space inclusion of a connection (accountLink analogue): members see it and its receipts flow into the space;
+// carries a name/icon snapshot because members cannot read the owner's store feed
 export interface StoreConnLinkRow extends SyncEnvelope {
   id: string; // `sclink:{spaceId}:{instanceId}`
   spaceId: string;
-  /** the connection id */
   instanceId: string;
-  /** the provider id as the catalogue names it */
   store: string;
   displayName: string;
   icon?: string;
   addedByName?: string;
 }
 
-/**
- * Per-space receipt↔transaction link (the txMeta analogue) carrying a
- * SNAPSHOT of the receipt payload — rulings 1+2: linked receipts follow
- * the transactions (survive leaving, survive instance removal) because
- * the link needs no read access to the owner's store feed.
- */
+// per-space receipt-transaction link (txMeta analogue) with a SNAPSHOT of the receipt: linked receipts follow the
+// transactions (survive leaving and instance removal), as the link needs no read access to the owner's store feed
 export interface ReceiptLinkRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -778,7 +620,6 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   /** the other transactions this receipt proves (user 2026-10-08: several payments, one receipt); `txId` stays
    *  the first attachment so every existing reader keeps working; absent = attached to txId alone */
   alsoTxIds?: string[];
-  /** 'photo', or the connector provider id that fetched it */
   source: string;
   instanceId?: string;
   date: string;
@@ -789,7 +630,6 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   reconciled?: boolean;
   /** #567: the currency a reader found on the receipt; absent = the space's */
   currency?: string;
-  /** #567: how each attached transaction's categories were built from the lines, by transaction id */
   picks?: Record<string, ReceiptPick[]>;
   image?: string;
   payment?: ReceiptPayment;
@@ -808,11 +648,9 @@ export interface ReceiptLinkRow extends SyncEnvelope {
 export type AssetClass = 'stock' | 'etf' | 'crypto' | 'cash' | 'other';
 export type PriceSource = 'yahoo' | 'coingecko' | 'manual';
 
-/** A portfolio position's identity (approved investments design). */
 export interface HoldingRow extends SyncEnvelope {
   id: string;
   spaceId: string;
-  /** the brokerage account it lives in (optional) */
   accountId?: string;
   name: string;
   symbol?: string;
@@ -822,38 +660,30 @@ export interface HoldingRow extends SyncEnvelope {
   priceSource?: PriceSource;
   /** yahoo ticker or coingecko coin id, depending on priceSource */
   priceKey?: string;
-  /** for unlisted/manual assets — the user's own valuation per unit */
   manualPriceCents?: number;
   archived?: 0 | 1;
 }
 
-/** The audit trail behind a holding: buys, sells, dividends, fees. */
 export interface LotRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   holdingId: string;
   kind: 'buy' | 'sell' | 'dividend' | 'fee';
   date: string;
-  /** units moved (buy/sell) */
   quantity?: number;
-  /** per-unit price in cents (buy/sell) */
   priceCents?: number;
   /** signed total in cents: buys negative cash, sells/dividends positive */
   totalCents: number;
 }
 
-/**
- * SYNCED insight dismissal (insights ruling #1): an insight is about
- * the space's money — dismissed once, dismissed for every member. The
- * insight id encodes its subject, so a changed situation resurfaces.
- */
+// SYNCED insight dismissal: dismissed once, dismissed for every member;
+// the insight id encodes its subject, so a changed situation resurfaces
 export interface InsightDismissRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   insightId: string;
 }
 
-/** #128: the kinds of plan subject — what must be paid first, then the person’s own expenses, the ceilings, the events (#504), the goals */
 export type PlanSegmentKind = 'recurring' | 'debts' | 'expenses' | 'budgets' | 'events' | 'goals';
 
 /**
@@ -869,70 +699,50 @@ export interface PlanOneOff {
 
 export type PlanKind = 'actual' | 'sandbox' | 'blueprint';
 
-/** one segment’s place in a plan: its order in the list and whether it is shown */
 export interface PlanSegmentConfig {
   kind: PlanSegmentKind;
   hidden?: 0 | 1;
 }
 
-/**
- * A plan (#128): the actual plan of one period, the sandbox beside it
- * (same period, its own subjects and funding), or a blueprint (no period,
- * no funding — a saved shape to apply later). The actual plan and the
- * sandbox carry deterministic ids (`plan:{space}:{kind}:{periodStart}`)
- * so two devices starting the same period converge on one row.
- */
+// a plan (#128): the actual plan of one period, its sandbox (same period, own subjects and funding) or a blueprint
+// (no period, no funding); actual and sandbox ids are deterministic (`plan:{space}:{kind}:{periodStart}`):
+// two devices starting a period converge
 export interface PlanRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   kind: PlanKind;
-  /** yyyy-mm-dd start of the space period the plan belongs to (actual, sandbox) */
   periodStart?: string;
-  /** a blueprint’s name */
   name?: string;
   /** segment order and visibility; absent = the default order, every segment shown */
   segments?: PlanSegmentConfig[];
-  /** ISO: when a blueprint was last saved or overridden */
   savedAt?: string;
   /** #494: the Unplanned rows this period funds without planning them (actual and sandbox plans only) */
   oneOffs?: PlanOneOff[];
 }
 
-/**
- * One subject of a plan (#128): an expense subject is the person’s own
- * (a name, an icon, a colour, one or more categories — a main claims its
- * subs, the ones made later too, minus the excluded ones — and a target);
- * a subject of the other segments mirrors one source row (`sourceId`: a
- * budget, a recurring cost, a loan account, a goal) and dies with it.
- * `fundedCents` is the money this period gave it from the pool.
- */
+// one subject of a plan (#128): an expense subject is the person's own (a main claims its subs, later ones too,
+// minus the excluded); other segments mirror one source row (`sourceId`) and die with it
 export interface PlanSubjectRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   planId: string;
   segment: PlanSegmentKind;
-  /** position inside its segment */
   order: number;
   name: string;
   icon?: string;
   color?: string;
-  /** expenses: the chosen categories (mains and/or subs) */
   catIds?: string[];
-  /** expenses: subs of a chosen main that are left out */
   excludeCatIds?: string[];
   /** expenses: what the person wants to set aside this period (0 = unknown yet);
    *  events (#504): the person's own total for the event — absent = its estimate */
   targetCents?: number;
-  /** the mirrored source row of a budget / recurring / debt / event / goal subject */
   sourceId?: string;
   fundedCents: number;
   /** recurring, debts, goals: not due this period — green without funding */
   snoozed?: 0 | 1;
 }
 
-/** DEVICE-ONLY delayed-quote cache — prices are never synced data. */
 export interface QuoteCacheRow {
-  /** `{source}:{priceKey}` */
   key: string;
   price: number;
   currency: string;
@@ -940,20 +750,13 @@ export interface QuoteCacheRow {
   at: string;
 }
 
-/**
- * Attachment of a financial account (its feed space) to a viewing
- * space. Lives in the viewing space so members render it offline; the
- * server keeps the authoritative copy for feed access control.
- */
+// attachment of an account's feed space to a viewing space; lives in the viewing space so members render it offline;
+// the server keeps the authoritative copy for feed access control
 export interface AccountLinkRow extends SyncEnvelope {
   id: string;
-  /** the space the account is attached to */
   spaceId: string;
-  /** feed space carrying the raw account + transactions */
   feedSpaceId: string;
-  /** account entity id inside the feed */
   accountId: string;
-  /** user who attached it (their display name frozen for offline rendering) */
   attachedBy?: string;
   attachedByName?: string;
   /** transactions before this date stay hidden in this space */
@@ -969,7 +772,6 @@ export interface AccountLinkRow extends SyncEnvelope {
   archived?: 0 | 1;
 }
 
-/** Local-only queue of ops not yet accepted by the server. */
 export interface OutboxRow {
   opId: string;
   spaceId: string;
@@ -980,7 +782,6 @@ export interface OutboxRow {
   deleted?: boolean;
 }
 
-/** Local-only key-value store (schema flags, sync cursors, seed markers). */
 export interface MetaRow {
   key: string;
   value: unknown;
@@ -996,14 +797,12 @@ export interface ActivityRow extends SyncEnvelope {
   actorName?: string;
   /** OIDC sub of the actor (user identities) — lets devices render "You" */
   actorSub?: string;
-  /** free-form context: tx title, account name, budget name … */
   detail?: string;
   /** #618: a second name — where moved money came from */
   detail2?: string;
   /** #618: the figures a line names, in the space's minor units: the reader's device formats them in its own language */
   amountCents?: number;
   fromCents?: number;
-  /** ISO datetime of the action */
   at: string;
 }
 
@@ -1032,9 +831,8 @@ export type EntityName =
   | 'planSubject'
   | 'activity';
 
-/** every entity this build knows, as data — the sync engine skips ops of
- *  any other entity instead of dying on them (an older device may still
- *  push rows this build retired, and a server log replays them) */
+// every entity this build knows: the sync engine skips ops of any other
+// (an older device may push retired ones, a server log replays them)
 export const ENTITY_NAMES: readonly EntityName[] = [
   'space',
   'account',

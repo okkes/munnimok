@@ -1,9 +1,5 @@
-/**
- * Platform adapter seam (native-apps design N2): the ONE place web code
- * asks "am I inside the Capacitor shell?". Detection rides the injected
- * `window.Capacitor` global — the web bundle never imports
- * @capacitor/core, so web/PWA builds carry zero native code.
- */
+/** the ONE place web code asks "inside the Capacitor shell?": detection rides the injected `window.Capacitor`,
+ *  the web bundle never imports @capacitor/core */
 
 import { publicOrigin } from '@/app/config';
 
@@ -74,9 +70,7 @@ const capacitor = (): CapacitorGlobal | undefined =>
 
 export const isNativeApp = (): boolean => capacitor()?.isNativePlatform?.() === true;
 
-/** iOS/iPadOS WebKit on ANY surface — Safari tab, installed PWA, the
- *  native shell. Mirrors react-modal-sheet's own platform test (#134)
- *  so opt-outs fire exactly where its iOS-only behaviors would. */
+/** iOS WebKit on ANY surface (tab, PWA, shell); mirrors react-modal-sheet's platform test (#134) so opt-outs fire with it */
 export const isIOS = (): boolean => {
   if (typeof navigator === 'undefined') return false;
   const platform =
@@ -97,20 +91,13 @@ export function openApp(url: string): void {
   }
 }
 
-/**
- * Web/PWA: ask the browser not to evict IndexedDB. Native: a no-op —
- * WebView storage is app-scoped application data, never evicted.
- */
+// web: ask the browser not to evict IndexedDB; native: no-op, WebView storage is never evicted
 export async function ensurePersistentStorage(): Promise<void> {
   if (isNativeApp()) return;
   await navigator.storage?.persist?.().catch(() => undefined);
 }
 
-/** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls).
- *  Accepts the suffixed schemes too: munni-dev:// (the legacy staging app) and
- *  munni-<env>-<platform>:// (every environment of the platform model, e.g.
- *  munni-prod-nas://) — a dash-blind pattern drops the latter, and with it
- *  the sign-in's own return and the bank's. */
+// accepts munni-<env>-<platform>:// too: a dash-blind pattern drops the sign-in's own return and the bank's
 /** the https paths a verified App Link / universal link may hand us —
  *  a tight allowlist so nothing else ever routes into the shell */
 const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/invite'];
@@ -121,11 +108,8 @@ export function deepLinkToPath(url: string): string | null {
     const path = match[1].replace(/^\/+/, '');
     return `/${path}${match[2] ?? ''}`;
   }
-  // universal links (UL2): the bank's https redirect / a split invite
-  // opens the app directly — same in-app routes as the scheme form.
-  // The allowed hosts derive from publicOrigin (config), not a literal:
-  // the domain is a secret in this public repo. Channel siblings
-  // (munni./munni-test. on the same parent) stay accepted.
+  // universal links (UL2): hosts derive from publicOrigin, not a literal (the domain is a secret in this public repo);
+  // channel siblings (munni./munni-test. on the same parent) stay accepted
   if (url.startsWith('https://')) {
     try {
       const parsed = new URL(url);
@@ -142,32 +126,19 @@ export function deepLinkToPath(url: string): string | null {
   return null;
 }
 
-/** the untouched munni:// callback url — the OIDC code exchange must
- *  present EXACTLY the redirect_uri that was registered, not the
- *  webview's localhost translation of it */
+/** the untouched munni:// callback url: the OIDC code exchange must present EXACTLY the registered redirect_uri */
 export const NATIVE_CALLBACK_KEY = 'munni_native_callback';
 
-/**
- * Ends the web surface the shell opened on top of itself — the auth
- * session or the in-app browser. A bank's app hands its https return to
- * Safari, never to the sheet it left, so by the time the return reaches
- * the app the sheet is sitting on a page that can never finish (Enable
- * Banking's "returning to the authentication initiator", user ss
- * 2026-10-03). Best effort: an older shell without the method, or Android
- * where the Custom Tab has no close, simply keeps what it shows.
- */
+// ends the auth session / in-app browser the shell opened: a bank's app hands its https return to Safari, so the sheet sits
+// on a page that can never finish (Enable Banking "returning to the authentication initiator"). Best effort: an older
+// shell without the method, or Android's Custom Tab (no close), keeps what it shows
 export function closeInAppBrowser(): void {
   const plugins = capacitor()?.Plugins;
   void plugins?.AuthSession?.cancel?.()?.catch(() => undefined);
   void plugins?.Browser?.close?.()?.catch(() => undefined);
 }
 
-/**
- * Native deep links (N3): bank-consent and auth callbacks arrive as
- * munni:// urls while the app runs. Both callback screens live OUTSIDE
- * the hash router on real paths, so a full navigation is the correct
- * (and simplest) re-entry — the shell serves index.html for any path.
- */
+// both callback screens live OUTSIDE the hash router on real paths: a full navigation is the re-entry
 export function initDeepLinks(): void {
   if (!isNativeApp()) return;
   const app = capacitor()?.Plugins?.App;
@@ -176,39 +147,28 @@ export function initDeepLinks(): void {
     const path = deepLinkToPath(url);
     if (!path) return;
     if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
-    // the post sign-out landing: session is already cleared locally —
-    // just bring the app to the login screen
+    // post sign-out landing: the session is already cleared locally
     if (path.startsWith('/signed-out')) {
       globalThis.location.assign('/#/login');
       return;
     }
-    // the bank's return came through Safari: the sheet the app opened for
-    // the consent is still up, on a page that will not finish — close it
-    // before the return page takes over
     if (path.startsWith('/gc-callback')) closeInAppBrowser();
-    // callbacks live on real paths outside the hash router; everything
-    // else (app shortcuts like munni://review, §5) is a hash route
+    // callbacks live on real paths; everything else (app shortcuts like munni://review) is a hash route
     const realPath = path.startsWith('/auth-callback') || path.startsWith('/gc-callback');
     globalThis.location.assign(realPath ? path : `/#${path}`);
   });
 }
 
-/**
- * Native status bar follows the app theme: without this, Android keeps
- * light (white) status-bar icons over munni's cream background and the
- * clock becomes invisible in light mode. The plugin's Style.Light means
- * "light BACKGROUND" (dark icons) — inverted from our theme name.
- */
+// the plugin's Style.Light means light BACKGROUND (dark icons), inverted from our theme name;
+// without this Android keeps white icons on the cream background
 export function syncNativeStatusBar(theme: 'light' | 'dark'): void {
   if (!isNativeApp()) return;
   void capacitor()?.Plugins?.StatusBar?.setStyle?.({ style: theme === 'dark' ? 'DARK' : 'LIGHT' })?.catch(() => undefined);
 }
 
-/** 'android' | 'ios' inside the shells, undefined on the web */
 export const nativePlatform = (): string | undefined =>
   isNativeApp() ? capacitor()?.getPlatform?.() : undefined;
 
-/** one of Android's own records of a process of this app that ended (ApplicationExitInfo) */
 export interface NativeExitRecord {
   at: number;
   /** ApplicationExitInfo's reason code */
@@ -251,16 +211,8 @@ export async function getNativeAppId(): Promise<string | null> {
   }
 }
 
-/**
- * Native camera capture: the webview's <input capture> path crashes on
- * iOS and offers gallery-only on Android (user report), so the shells
- * use the Camera plugin instead. 'CAMERA' opens the camera directly
- * (receipts, and the camera door of every picture upload — ui/PictureSource);
- * 'PHOTOS' the photo library (#496: a receipt picture already taken). Every
- * picture comes back as a JPEG, so a picture that may be see-through never
- * takes the 'PHOTOS' door (#522). Returns a File ready for the existing
- * attach pipeline, or null when cancelled/unavailable.
- */
+// the webview's <input capture> crashes on iOS and is gallery-only on Android, so the shells use the Camera plugin;
+// 'PHOTOS' = the library (#496); pictures come back JPEG, so a possibly see-through one never takes 'PHOTOS' (#522)
 export async function takeNativePhoto(source: 'CAMERA' | 'PHOTOS' = 'CAMERA'): Promise<File | null> {
   const camera = capacitor()?.Plugins?.Camera;
   if (!isNativeApp() || !camera?.getPhoto) return null;
@@ -288,10 +240,6 @@ export async function nativePushPermitted(): Promise<boolean> {
   return permission?.receive === 'granted';
 }
 
-/**
- * Native push registration (N4): resolves the FCM/APNs device token, or
- * null when not native / permission denied. Web push stays in lib/push.
- */
 export async function getNativePushToken(): Promise<string | null> {
   const push = capacitor()?.Plugins?.PushNotifications;
   if (!isNativeApp() || !push?.register) return null;
@@ -310,12 +258,8 @@ export async function getNativePushToken(): Promise<string | null> {
   });
 }
 
-/**
- * Native biometric gate: the OS Face/Touch ID or
- * fingerprint prompt via the Capacitor plugin. WKWebView has no WebAuthn
- * platform authenticator, so the native shell uses this path while
- * web/PWA keeps WebAuthn (both behind the same lock.ts seam).
- */
+// WKWebView has no WebAuthn platform authenticator: the shell uses the native prompt,
+// web/PWA keeps WebAuthn (same lock.ts seam)
 export async function nativeBiometricAvailable(): Promise<boolean> {
   const biometric = capacitor()?.Plugins?.NativeBiometric;
   if (!isNativeApp() || !biometric?.isAvailable) return false;
@@ -326,7 +270,6 @@ export async function nativeBiometricAvailable(): Promise<boolean> {
   }
 }
 
-/** true when the OS confirmed the user; false on cancel/mismatch/absence */
 export async function nativeBiometricVerify(reason: string): Promise<boolean> {
   const biometric = capacitor()?.Plugins?.NativeBiometric;
   if (!biometric?.verifyIdentity) return false;
@@ -338,12 +281,6 @@ export async function nativeBiometricVerify(reason: string): Promise<boolean> {
   }
 }
 
-/**
- * §5 niceties — every helper no-ops (or returns false) outside the
- * native shell so web/PWA behavior is untouched.
- */
-
-/** OS haptic tick on key confirmations (review confirm, budget alert) */
 export function hapticNotify(type: 'SUCCESS' | 'WARNING' = 'SUCCESS'): void {
   if (!isNativeApp()) return;
   void capacitor()?.Plugins?.Haptics?.notification?.({ type })?.catch(() => undefined);
@@ -352,10 +289,6 @@ export function hapticNotify(type: 'SUCCESS' | 'WARNING' = 'SUCCESS'): void {
 /** `unavailable`: not a shell — only then does a caller download in the browser */
 export type NativeShare = 'shared' | 'dismissed' | 'failed' | 'unavailable';
 
-/**
- * Native share sheet for exports: writes the content to the app cache
- * and hands the file to the OS sheet (Files/mail/drive).
- */
 export async function shareNativeFile(fileName: string, content: string): Promise<NativeShare> {
   const plugins = capacitor()?.Plugins;
   if (!isNativeApp() || !plugins?.Filesystem?.writeFile || !plugins.Share?.share) return 'unavailable';
@@ -380,10 +313,7 @@ export async function shareNativeFile(fileName: string, content: string): Promis
   }
 }
 
-/**
- * #506: a page outside the app — the shells show it in the in-app browser
- * (a `_blank` window renders blank in the webview), the web in a new tab.
- */
+/** #506: the shells open it in the in-app browser (a `_blank` window renders blank in the webview), the web in a new tab */
 export function openExternal(url: string): void {
   const browser = capacitor()?.Plugins?.Browser;
   if (isNativeApp() && browser?.open) {
@@ -393,15 +323,10 @@ export function openExternal(url: string): void {
   globalThis.open(url, '_blank', 'noopener');
 }
 
-/** #506: the web search a vague bank title gets looked up with */
 export const webSearchUrl = (query: string): string => `https://www.google.com/search?q=${encodeURIComponent(query.trim())}`;
 
-/**
- * Notification taps (§5): the shell's push plugin reports the tapped
- * notification; the payload rides FCM's data field as a JSON string.
- * The callback receives it parsed — pwa.ts routes it through the same
- * NAVIGATE bridge the service worker uses.
- */
+// the payload rides FCM's data field as a JSON string;
+// pwa.ts routes it through the same NAVIGATE bridge as the service worker
 export function onNativePushTap(callback: (payload: unknown) => void): void {
   if (!isNativeApp()) return;
   capacitor()?.Plugins?.PushNotifications?.addListener?.(

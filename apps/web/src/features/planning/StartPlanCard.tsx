@@ -8,12 +8,6 @@ import { Icon } from '@/ui/Icon';
 import { Row } from '@/ui/primitives';
 import { periodLabel } from './AheadSheet';
 
-/**
- * No plan for the period yet (#128): start it like the last one, from a
- * blueprint, from munni's suggestion (the recurring costs and loans, the
- * budgets and goals, and the mains you spend on — sized from the history
- * or from the income you type) or empty.
- */
 export function StartPlanCard({ model, ops, currency }: Readonly<{ model: PlanningModel; ops: PlanningOps; currency: string }>) {
   const { t, lang } = useLang();
   const cats = useCategories();

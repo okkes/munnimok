@@ -61,7 +61,6 @@ interface QuotePayload {
   quotes: { key: string; price: number; currency: string; dayChangePct?: number }[];
 }
 
-/** once per screen open: refresh stale quotes for the live-priced holdings */
 export function useQuoteRefresh(): void {
   const { store, spaceId } = useData();
   const ran = useRef(false);
@@ -107,7 +106,6 @@ export interface PortfolioOps {
   removeHolding: (id: string) => Promise<void>;
   addLot: (holdingId: string, fields: Partial<LotRow>) => Promise<void>;
   removeLot: (id: string) => Promise<void>;
-  /** DEGIRO exports: Portfolio.csv and/or Transactions.csv, idempotent */
   importDegiro: (files: readonly { name: string; text: string }[]) => Promise<DegiroImportResult>;
 }
 

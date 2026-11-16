@@ -1,15 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown } from '../helpers/base.js';
 
-// Critical flow: the offline start — a zero-network profile is created, holds
-// an account and a transaction, and survives signing out.
-
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
 
   test(`offline-a1 an offline profile keeps its account and transaction across a sign-out [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
-    await base(page, V); // the login screen, no session
+    await base(page, V);
     await page.click('[data-testid="login-offline-btn"]');
     await page.waitForSelector('[data-testid="screen-offline-intro"]');
     await shot(page, k('38-offline') + '--s0');
@@ -29,7 +26,6 @@ for (const V of VARIANTS) {
     await gotoSpaces(page);
     await expect(page.locator('[data-testid="screen-spaces"]')).toContainText('Private');
 
-    // a cash account on the space's own accounts screen, then a transaction
     await gotoGlobalSettings(page);
     await page.click('[data-testid="settings-accounts-row"]');
     await page.click('[data-testid="accounts-add"]');
@@ -46,13 +42,11 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="txform-amount"]', '5,00');
     await page.fill('[data-testid="txform-merchant"]', 'Offline Coffee');
     await page.click('[data-testid="txform-save"]');
-    // saving opens the new transaction's own page; back leads to the list
     await expect(page.locator('[data-testid="screen-tx-detail"]')).toContainText('Offline Coffee');
     await page.goBack();
     await expect(page.locator('[data-testid="tx-list"]')).toContainText('Offline Coffee');
     await shot(page, k('38-offline') + '--s2');
 
-    // signing out keeps an offline profile: it is selectable again, data intact
     await page.click('[data-testid="tab-settings"]');
     await page.click('[data-testid="settings-signout"]');
     await page.waitForSelector('[data-testid="screen-login"]');

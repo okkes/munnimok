@@ -1,12 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Guide capture (npm run shots — never in CI): the trends screen as one
-// real-browser flow — the three views render their charts from demo data
-// and the category picker narrows the bars to one main. It produces the
-// guide screenshots 63-trends-categories and 65-trends-networth (plus
-// 64/66 for the gallery). The bucketing math is unit-tested
-// (domain/trends.test.ts, features/trends/TrendsScreen.test.tsx).
+// guide capture (npm run shots, never in CI): screenshots 63-66; the bucketing math is unit-tested
+// (trends.test.ts, TrendsScreen.test.tsx)
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
@@ -19,7 +15,6 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="trends-cat-current"]')).toContainText('€');
     await shot(page, k('63-trends-categories'));
 
-    // the category picker narrows the bars to one main (66-trends-picker)
     await page.click('[data-testid="trends-cat-picker"]');
     await page.click('[data-testid="trends-cat-consumption"]');
     await expect(page.locator('[data-testid="trends-cat-picker"]')).toContainText('Consumption');

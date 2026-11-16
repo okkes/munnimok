@@ -16,7 +16,6 @@ const json = (body: unknown, status = 200) =>
   });
 const pause = () => new Promise((r) => setTimeout(r, 5));
 
-/** the OS notifications the service worker still shows, as the browser lists them */
 function installShown(shown: { close: () => void; timestamp?: number }[]) {
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
@@ -96,7 +95,6 @@ describe('clearing notifications (#580)', () => {
     expect(shown[0].close).toHaveBeenCalled();
     expect(shown[1].close).not.toHaveBeenCalled();
 
-    // the same moment again is old news
     apiFetchMock.mockResolvedValueOnce(json({ clearedAt: elsewhere }));
     expect(await syncNotificationsCleared(store)).toBe(false);
   });

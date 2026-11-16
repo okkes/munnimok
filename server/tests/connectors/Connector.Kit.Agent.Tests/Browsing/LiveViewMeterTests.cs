@@ -3,10 +3,7 @@ using Connector.Kit.Agent.Browsing;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The measurement itself, because a number nobody can trust is worse than no
-/// number: it would be quoted in a decision.
-/// </summary>
+/// a number nobody can trust is worse than none: it would be quoted in a decision
 public class LiveViewMeterTests
 {
     [Fact]
@@ -14,8 +11,7 @@ public class LiveViewMeterTests
     {
         var meter = new LiveViewMeter(TimeProvider.System, TimeSpan.Zero);
 
-        // Twenty samples so the 95th percentile has somewhere to land: with
-        // nearest-rank it is the 19th of 20, which is the second worst.
+        // nearest-rank p95 of twenty samples is the 19th
         for (var i = 1; i <= 20; i++)
         {
             meter.Posted(TimeSpan.FromMilliseconds(i), TimeSpan.FromMilliseconds(i * 2), bytes: 1000);
@@ -31,11 +27,6 @@ public class LiveViewMeterTests
         Assert.Equal(1000, window.MeanBytes);
     }
 
-    /// <summary>
-    /// What the browser drew and never had to send is counted beside what was
-    /// sent, so a window says how much the pacing kept off the wire - and a
-    /// window in which only that happened is still a window worth writing down.
-    /// </summary>
     [Fact]
     public void Frames_that_never_left_are_counted_beside_those_that_did()
     {
@@ -53,12 +44,7 @@ public class LiveViewMeterTests
         Assert.Contains("2 withheld", window.ToString(), StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Closing a window empties it, so the next second's numbers are the next
-    /// second's. A meter that accumulated forever would report an average over
-    /// the whole login, in which a cadence that fell apart halfway through is
-    /// invisible - which is the reason it reports every second at all.
-    /// </summary>
+    /// a meter that accumulated forever would hide a cadence that fell apart halfway through the login
     [Fact]
     public void Closing_a_window_starts_a_new_one()
     {
@@ -70,25 +56,13 @@ public class LiveViewMeterTests
         Assert.False(meter.Close().HasSamples);
     }
 
-    /// <summary>
-    /// A window with nothing in it says so, so the session does not print a
-    /// line of zeroes under a still page or a stream that had just reported a
-    /// good second.
-    /// </summary>
     [Fact]
     public void An_empty_window_reports_that_it_is_empty()
     {
         Assert.False(new LiveViewMeter(TimeProvider.System, TimeSpan.Zero).Close().HasSamples);
     }
 
-    /// <summary>
-    /// The numbers are formatted invariantly, wherever the agent is running.
-    ///
-    /// Half of Europe writes <c>0,5</c>, and this agent's own locale is
-    /// configurable to match the provider it is pretending to be a customer of.
-    /// A log line that reported <c>4,9 fps</c> is a log line nobody can grep and
-    /// no dashboard can parse.
-    /// </summary>
+    /// invariant formatting: the agent's locale is configurable, and "4,9 fps" cannot be grepped or parsed
     [Fact]
     public void The_numbers_read_the_same_in_every_locale()
     {

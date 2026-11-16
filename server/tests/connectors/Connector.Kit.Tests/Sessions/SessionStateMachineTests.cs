@@ -3,11 +3,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// Session states are what a consumer renders, so an illegal transition is
-/// not a tidiness issue - it is a UI showing "connected" for a session that
-/// never authenticated.
-/// </summary>
+// an illegal transition shows "connected" for a session that never authenticated
 public sealed class SessionStateMachineTests
 {
     private static readonly SessionState[] All = Enum.GetValues<SessionState>();
@@ -29,24 +25,19 @@ public sealed class SessionStateMachineTests
     }
 
     [Theory]
-    // the documented happy path: queued -> running -> awaiting_input -> running -> active
     [InlineData(SessionState.Queued, SessionState.Running)]
     [InlineData(SessionState.Running, SessionState.AwaitingInput)]
     [InlineData(SessionState.AwaitingInput, SessionState.Running)]
     [InlineData(SessionState.Running, SessionState.Active)]
-    // active -> needs_reauth -> (new login run) -> active
     [InlineData(SessionState.Active, SessionState.NeedsReauth)]
     [InlineData(SessionState.NeedsReauth, SessionState.Running)]
-    // the operator and provider paths
     [InlineData(SessionState.Active, SessionState.Disabled)]
     [InlineData(SessionState.Active, SessionState.Blocked)]
     [InlineData(SessionState.Running, SessionState.Blocked)]
     [InlineData(SessionState.Blocked, SessionState.Disabled)]
     [InlineData(SessionState.Blocked, SessionState.Running)]
     [InlineData(SessionState.NeedsReauth, SessionState.Disabled)]
-    // a refresh runs on an already-active session
     [InlineData(SessionState.Active, SessionState.Running)]
-    // failure and expiry
     [InlineData(SessionState.Queued, SessionState.Failed)]
     [InlineData(SessionState.Running, SessionState.Failed)]
     [InlineData(SessionState.AwaitingInput, SessionState.Failed)]
@@ -62,21 +53,16 @@ public sealed class SessionStateMachineTests
     }
 
     [Theory]
-    // a session cannot become usable without a run in between
     [InlineData(SessionState.Queued, SessionState.Active)]
     [InlineData(SessionState.AwaitingInput, SessionState.Active)]
     [InlineData(SessionState.NeedsReauth, SessionState.Active)]
     [InlineData(SessionState.Blocked, SessionState.Active)]
-    // and cannot skip straight to asking a human
     [InlineData(SessionState.Queued, SessionState.AwaitingInput)]
     [InlineData(SessionState.Active, SessionState.AwaitingInput)]
-    // going backwards
     [InlineData(SessionState.Running, SessionState.Queued)]
     [InlineData(SessionState.Active, SessionState.Queued)]
-    // an active session that fails becomes needs_reauth or blocked, never failed:
-    // "failed" belongs to a connect attempt, not to a working connection
+    // an active session that fails becomes needs_reauth or blocked, never failed: "failed" belongs to a connect attempt
     [InlineData(SessionState.Active, SessionState.Failed)]
-    // terminal states are terminal
     [InlineData(SessionState.Disabled, SessionState.Running)]
     [InlineData(SessionState.Failed, SessionState.Running)]
     [InlineData(SessionState.Expired, SessionState.Running)]
@@ -99,8 +85,7 @@ public sealed class SessionStateMachineTests
     [MemberData(nameof(EveryState))]
     public void Terminal_means_exactly_no_exits(SessionState state)
     {
-        // The two notions are declared separately in the kit; if they ever
-        // disagree, one of them is lying to whoever reads it.
+        // terminal and exits are declared separately in the kit; they must agree
         var hasExit = All.Any(to => SessionStateMachine.CanTransition(state, to));
         Assert.Equal(!SessionStateMachine.IsTerminal(state), hasExit);
     }
@@ -109,7 +94,7 @@ public sealed class SessionStateMachineTests
     [MemberData(nameof(EveryState))]
     public void No_state_transitions_to_itself(SessionState state)
     {
-        // A self-transition is how a "state changed" webhook fires forever.
+        // a self-transition is how a "state changed" webhook fires forever
         Assert.False(SessionStateMachine.CanTransition(state, state));
     }
 
@@ -128,8 +113,7 @@ public sealed class SessionStateMachineTests
             }
         }
 
-        // An unreachable state is a state some code sets by assignment,
-        // bypassing the machine entirely.
+        // an unreachable state is one some code sets by assignment, bypassing the machine
         Assert.Equal(All.Order().ToArray(), seen.Order().ToArray());
     }
 
@@ -137,8 +121,7 @@ public sealed class SessionStateMachineTests
     [MemberData(nameof(EveryState))]
     public void Only_active_can_serve_a_fetch(SessionState state)
     {
-        // A fetch on anything else needs a human first, and saying so up
-        // front is the difference between an honest error and a spinner.
+        // a fetch on anything else needs a human first: an honest error instead of a spinner
         Assert.Equal(state == SessionState.Active, SessionStateMachine.IsUsable(state));
     }
 

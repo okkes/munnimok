@@ -1,9 +1,5 @@
-/**
- * Words written over a chart's marks, haloed in the surface colour so a line
- * or a bar under them never swallows them (#375). The halo is its own copy
- * underneath: WebKit paints an outlined text letter by letter, so each
- * letter's outline cut into the letter before it.
- */
+// the halo is its own copy underneath: WebKit paints outlined text letter by letter,
+// each outline cutting into the previous letter (#375)
 export function HaloText({
   x,
   y,

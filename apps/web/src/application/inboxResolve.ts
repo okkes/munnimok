@@ -6,12 +6,8 @@ import { readInbox, reviseInbox, WHATS_NEW_SEEN_KEY } from './notifications';
 import type { InboxEntry } from './notifications';
 import { buildPlanning, hasCurrentPlan, loadPlanningData, localIsoToday } from './planningModel';
 
-/**
- * #614 (user 2026-11-16): a row leaves the bell by itself once what it says
- * stopped being true — the plan is out of the red, the cost was paid or its
- * day passed, the loan got its rate, the release notes were read. Each rule
- * reads the device's own data, so it holds offline and for every space.
- */
+// #614: a row leaves the bell once what it says stops being true
+// each rule reads the device's own data, so it works offline and for every space
 type Verdict = 'keep' | 'drop' | Record<string, string>;
 
 const PLAN_MARK = /^planOverspentNotified_(.+)_(\d{4}-\d{2}-\d{2})$/;
@@ -59,7 +55,6 @@ async function verdicts(store: StorageBackend, inbox: readonly InboxEntry[], tod
   return out;
 }
 
-/** drops and corrects the rows that no longer hold; returns the ones that left */
 export async function resolveInbox(store: StorageBackend, today = localIsoToday()): Promise<InboxEntry[]> {
   const inbox = await readInbox(store);
   if (inbox.length === 0) return [];
@@ -77,11 +72,7 @@ export async function resolveInbox(store: StorageBackend, today = localIsoToday(
   return dropped;
 }
 
-/**
- * The digest of a space says how many insights wait there, and only the
- * Insights screen knows: one row per space with the current count, none
- * once nothing waits.
- */
+// only the Insights screen knows how many insights wait: one digest row per space with the count, none when nothing waits
 export async function settleDigest(store: StorageBackend, spaceId: string, waiting: number): Promise<InboxEntry[]> {
   const mine = (await readInbox(store)).filter((e) => e.kind === 'digest' && e.payload?.spaceId === spaceId);
   const newest = waiting > 0 ? mine[0] : undefined;
@@ -120,7 +111,6 @@ async function closeShown(dropped: readonly InboxEntry[]): Promise<void> {
   }
 }
 
-/** the app's door: settle the list and take down what the OS still shows of it */
 export async function settleInbox(store: StorageBackend): Promise<void> {
   await closeShown(await resolveInbox(store));
 }

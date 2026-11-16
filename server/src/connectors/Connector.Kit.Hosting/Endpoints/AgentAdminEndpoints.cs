@@ -12,17 +12,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// Bring-your-own agents, from the consumer's side: a user's own machines,
-/// named by the subject header like every other thing a user owns here.
-/// Listing, enrolling and revoking are theirs; what they cannot see is
-/// anybody else's agent, or the pooled fleet, which is the operator's and
-/// sits under <c>/admin</c>.
-///
-/// Health is visible on purpose: "your ASN sync is stale because your VM has
-/// been off for three days" is a real message, and it is the difference
-/// between a feature a user trusts and one that quietly stops working.
-/// </summary>
+/// a user's own (BYO) agents, named by the subject header; the pooled fleet is the operator's, under /admin
+/// health is visible on purpose: "your sync is stale because your VM has been off for three days" is a message users need
 internal static class AgentAdminEndpoints
 {
     public static void Map(IEndpointRouteBuilder api, IEndpointRouteBuilder admin)
@@ -72,8 +63,7 @@ internal static class AgentAdminEndpoints
             var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == agentId && a.OwnerSubject == subject, ct)
                         ?? throw ConnectorException.Unsupported($"unknown agent '{agentId}'");
 
-            // A hosted slot is munni's container (#420 A2): the person gives
-            // it back and it goes to the next one clean, rather than dying.
+            // a hosted slot is munni's container (#420 A2): given back, it goes to the next person clean rather than dying
             if (agent.Hosted)
             {
                 await PrivateAgentEndpoints.ReleaseAsync(db, agent, time.GetUtcNow(), ct);
@@ -100,7 +90,6 @@ internal static class AgentAdminEndpoints
             return ConnectorResults.Json(profiles.Select(Profile).ToList());
         });
 
-        // The operator: every agent this control plane knows, whoever owns it.
         admin.MapGet("/agents", async (
             ConnectorDbContext db,
             IProviderRegistry registry,
@@ -137,9 +126,7 @@ internal static class AgentAdminEndpoints
             .Where(p => ids.Contains(p.AgentId))
             .ToListAsync(ct);
 
-        // Online by the platform's one rule, not a copy of it: a login that
-        // names an agent is refused by the same window, and this list is
-        // what a consumer offers to pick from.
+        // online by the platform's one rule: a login naming an agent is refused by the same window
         var now = time.GetUtcNow();
 
         return new AgentListResponse
@@ -151,13 +138,10 @@ internal static class AgentAdminEndpoints
     private static async Task RevokeAsync(ConnectorDbContext db, AgentRow agent, CancellationToken ct)
     {
         agent.Revoked = true;
-        // The token is dead the moment it cannot match anything, and an
-        // agent that learns it is revoked stops and wipes its profiles.
+        // the token stops matching anything; an agent that learns it is revoked stops and wipes its profiles
         agent.TokenHash = "revoked:" + agent.Id;
 
-        // Orphan rather than delete: a profile row is how a user is told
-        // which connections just stopped working, and deleting it deletes
-        // the explanation.
+        // orphan, not delete: a profile row is how a user learns which connections just stopped working
         await db.Profiles.Where(p => p.AgentId == agent.Id)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Healthy, false), ct);
 

@@ -4,7 +4,6 @@ using System.Text.Json.Nodes;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>The lab's view of the connectors (#441), behind the admin scope, relayed to the control plane's own routes.</summary>
 public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Admin = "openid profile admin";
@@ -46,7 +45,6 @@ public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.Contains("docker compose -f household-agent.yml up -d", enrollment["composeCommand"]!.GetValue<string>(), StringComparison.Ordinal);
         Assert.Contains("AGENT_NAME='the lab box'", enrollment["composeCommand"]!.GetValue<string>(), StringComparison.Ordinal);
 
-        // the same person asking twice is the same lab subject; a different person is another
         var again = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/me");
         Assert.Equal(labSubject, again!["subject"]!.GetValue<string>());
         using var other = factory.ClientFor("another-operator", scope: Admin);
@@ -80,11 +78,7 @@ public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.NotNull(cockpit!["providers"]);
     }
 
-    /// <summary>
-    /// L1: the history names who ran what (the relay maps each pseudonym to
-    /// the person; the control plane never learns it), narrows by user, reads
-    /// one job back, reports health per party, and runs a canary now.
-    /// </summary>
+    /// <summary>L1: the relay maps each pseudonym to the person; the control plane never learns it.</summary>
     [Fact]
     public async Task The_history_names_the_people_behind_the_runs_and_health_counts_them()
     {
@@ -245,7 +239,6 @@ public class ConnectorLabTests(ConnectorApiFactory factory) : IClassFixture<Conn
         Assert.True(agents.Single(a => a!["id"]!.GetValue<string>() == labBox)!["lab"]!.GetValue<bool>());
         Assert.False(agents.Single(a => a!["id"]!.GetValue<string>() == slot)!["lab"]!.GetValue<bool>());
 
-        // another operator's lab is another subject: the same box is not theirs
         using var other = factory.ClientFor("another-lab-operator", scope: Admin);
         var theirs = (await other.GetFromJsonAsync<JsonObject>("/lab/agents"))!["agents"]!.AsArray();
         Assert.False(theirs.Single(a => a!["id"]!.GetValue<string>() == labBox)!["lab"]!.GetValue<bool>());

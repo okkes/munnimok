@@ -1,10 +1,6 @@
 ﻿import { useSyncExternalStore } from 'react';
 
-/**
- * The one desktop breakpoint decision (redesign §4): at lg the app gains
- * side panels and master–detail panes. Shared so Sheet and SplitPane can
- * never disagree about where "desktop" begins.
- */
+// the one desktop breakpoint (redesign §4), shared so Sheet and SplitPane never disagree about where "desktop" begins
 const LG_QUERY = '(min-width: 1024px)';
 
 const subscribeLg = (listener: () => void) => {
@@ -17,20 +13,10 @@ const readLg = () => (typeof window === 'undefined' ? false : (window.matchMedia
 /** true on lg+ viewports; false during SSR and in unit tests */
 export const useLgViewport = (): boolean => useSyncExternalStore(subscribeLg, readLg, () => false);
 
-/**
- * Scroll only the NEAREST real scroller (overflow-y auto/scroll) to
- * center `el` in the visible band. Never scrollIntoView: that also
- * scrolls overflow-HIDDEN ancestors — inside a sheet it sheared the
- * container and clipped its header (user ss 2026-07-28). The band
- * respects the visualViewport so a keyboard-shrunk browser viewport
- * centers against what is actually on screen.
- */
-/**
- * Nearest ancestor whose computed overflow-y allows scrolling — unlike
- * the reveal walk it does NOT require overflow to exist yet: the caller
- * may be about to CREATE it (keyboard bottom padding on iOS, where the
- * layout viewport never shrinks and a bottom field has no slack).
- */
+// reveal scrolls only the NEAREST real scroller: scrollIntoView also scrolls overflow-hidden ancestors and sheared a sheet's
+// container; the band respects the visualViewport so a keyboard-shrunk viewport centers against what is on screen
+// unlike the reveal walk it does not require overflow to exist yet:
+// the caller may be about to CREATE it (iOS keyboard padding)
 export function nearestScrollport(el: HTMLElement): HTMLElement | null {
   let node: HTMLElement | null = el.parentElement;
   while (node && node !== document.body) {
@@ -41,15 +27,8 @@ export function nearestScrollport(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
-/**
- * iOS Safari/PWA never resizes the LAYOUT viewport for the keyboard —
- * only the visual viewport shrinks — so a screen scroller has no slack
- * to reveal a bottom field into (the notes textarea sat behind the
- * keyboard, user ss 2026-07-31). While a screen-level editable is
- * focused, the nearest scrollport borrows bottom padding equal to the
- * keyboard inset. Measurement-driven: on Android/native the layout
- * resizes with the keyboard, the inset reads ~0 and this is a no-op.
- */
+// iOS never resizes the LAYOUT viewport for the keyboard, so a screen scroller has no slack to reveal a bottom field into:
+// the nearest scrollport borrows bottom padding equal to the keyboard inset; on Android/native the inset reads ~0, a no-op
 let paddedScrollport: { el: HTMLElement; prev: string } | null = null;
 
 export function restoreScrollportPad(): void {
@@ -69,13 +48,11 @@ export function padScrollportForKeyboard(target: HTMLElement): void {
   scroller.style.paddingBottom = `${inset + 16}px`;
 }
 
-/** #136 r2: is the element outside the visible band — the WINDOW band or
- *  its nearest overflow ancestor's box? A row scrolled out of a sheet's
- *  inner list still has window-plausible coordinates while being clipped
- *  invisible, which let the tutorial glow paint over the wrong spot. */
+// #136 r2: a row scrolled out of a sheet's inner list keeps window-plausible coordinates while clipped invisible,
+// which let the tutorial glow paint over the wrong spot
 export function isClippedFromView(el: HTMLElement, topPad = 70, bottomPad = 96): boolean {
   const r = el.getBoundingClientRect();
-  if (r.width === 0) return false; // display:none — nothing to reveal
+  if (r.width === 0) return false;
   if (r.top < topPad || r.bottom > window.innerHeight - bottomPad) return true;
   let node: HTMLElement | null = el.parentElement;
   while (node && node !== document.body) {

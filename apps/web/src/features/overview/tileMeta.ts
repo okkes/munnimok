@@ -1,17 +1,12 @@
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 
-/**
- * The six period tiles — icon, colour and the summary field each one reads.
- * Home's "This period" card and the Periods screen draw the same tiles, so
- * the table lives here rather than in either screen.
- */
+// Home's "This period" card and the Periods screen draw the same tiles, so the table lives here
 export const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary; signed?: boolean }> = {
   income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
   expense: { icon: 'cash-remove', color: 'var(--m-negative)', field: 'expenseCents' },
   saving: { icon: 'piggy-bank-outline', color: 'var(--m-warning)', field: 'savingCents' },
   investment: { icon: 'chart-timeline-variant', color: 'var(--m-special)', field: 'investmentCents' },
-  // signed: contributing to a pot is green, drawing from it is red; a
-  // borrowing-heavy period flips Repaid the same way (user rule 2026-08-01)
+  // signed: contributing to a pot is green, drawing from it red; a borrowing-heavy period flips Repaid the same way
   funding: { icon: 'hand-coin', color: 'var(--m-accent-deep)', field: 'fundingCents', signed: true },
   debt: { icon: 'hand-coin-outline', color: 'var(--m-special)', field: 'debtCents', signed: true },
 };
@@ -35,7 +30,6 @@ const BETTER_WHEN_UP: Record<OverviewKind, boolean | null> = {
   debt: true,
 };
 
-/** the tone of a change against the period before */
 export function deltaTone(kind: OverviewKind, deltaCents: number): DeltaTone {
   const up = BETTER_WHEN_UP[kind];
   if (deltaCents === 0 || up === null) return 'flat';

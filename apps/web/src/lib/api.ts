@@ -6,22 +6,17 @@ import type { ProtocolIssue } from './protocol';
 import { getDeviceId } from '@/db/device';
 import { isNativeApp } from './platform';
 
-/** what kind of device this is, as far as the server needs to know */
 function devicePlatform(): string {
   if (!isNativeApp()) return 'web';
   return /Android/i.test(navigator.userAgent) ? 'android' : 'ios';
 }
 
-/** every request names the calling device (last-seen stamps, remote
- *  disconnect) and its platform — the server refuses device-less calls
- *  with 401 {device-required}; the sync transport sends the same pair */
+/** every request names the calling device and platform: the server refuses device-less calls with 401 {device-required} */
 export function deviceHeaders(): Record<string, string> {
   return { 'X-Munni-Device': getDeviceId(), 'X-Munni-Platform': devicePlatform() };
 }
 
-/** remote disconnect (user ruling: disconnect = wipe): a 410
- *  device-revoked from ANY endpoint means another device revoked this
- *  one — data.tsx listens and erases this copy */
+/** a 410 device-revoked from any endpoint means another device revoked this one (disconnect = wipe): data.tsx erases it */
 export async function noticeDeviceRevoked(response: Response): Promise<void> {
   if (response.status !== 410) return;
   const body = await response.clone().json().catch(() => null);
@@ -30,19 +25,16 @@ export async function noticeDeviceRevoked(response: Response): Promise<void> {
   }
 }
 
-/** rejects API access for identities that promised to stay offline */
 function assertNetworkAllowed(): void {
   const identity = readSessionIdentity();
-  // the local-first law, enforced at the choke point: demo/offline
-  // identities never touch the network, whatever a screen forgets to
-  // gate. Signed out (null) stays allowed — login provisioning needs it.
+  // the local-first law at the choke point: demo/offline identities never touch the network, whatever a screen forgets
+  // to gate; signed out (null) stays allowed for login provisioning
   if (identity && identity.kind !== 'user') {
     throw new Error('local-only identity — API access denied');
   }
 }
 
-// one breadcrumb per page: a refused session is named once, however many
-// background calls hit the 401 (the expiry mark itself is idempotent)
+// one breadcrumb per page: a refused session is named once, however many background calls hit the 401
 let handlingAuthExpiry = false;
 
 /** test seam */
@@ -50,29 +42,20 @@ export function resetAuthExpiryGuard(): void {
   handlingAuthExpiry = false;
 }
 
-/** Authenticated fetch to the munni API for the current user identity. */
 export async function apiFetch(
   path: string,
   init: RequestInit = {},
   opts?: {
-    /** #281: statuses a caller HANDLES as a designed branch (e.g. the
-     *  /feeds 409 → personal-feed fallback) — expected, so not reported */
+    /** #281: statuses a caller handles as a designed branch (e.g. the /feeds 409 personal-feed fallback): not reported */
     expectStatuses?: readonly number[];
-    /** the relay speaks for a PARTY: its 401 is the party's lapsed login
-     *  (invalid_credentials, session_expired, mfa_failed), never munni's
-     *  session — no retry, no expiry mark (user 2026-10-07: "random
-     *  expired issues" were a bank's 15-minute session, not ours) */
+    /** the relay speaks for a PARTY: its 401 is the party's lapsed login, never munni's session: no retry, no expiry mark */
     partyAuth?: boolean;
   },
 ): Promise<Response> {
   assertNetworkAllowed();
   const identity = readSessionIdentity();
-  // Cold-start guard: every app update forces a cold start, and screens
-  // fire their requests the moment they mount — BEFORE Logto finished
-  // restoring the session. Those requests went out with no bearer, hit
-  // 401 twice and the dead-session handler below logged the user out and
-  // wiped a perfectly healthy refresh token (user: "I must log in after
-  // every update"). Wait for the restore to finish first.
+  // cold-start guard: screens fire requests before Logto restores the session; those went out bearer-less, hit 401 twice
+  // and logged the user out, wiping a healthy refresh token, on every app update. Wait for the restore
   if (identity?.kind === 'user' && !identity.testAuth) await waitForAuthReady();
   let sentBearer = false;
   const attempt = async (): Promise<Response> => {
@@ -92,20 +75,13 @@ export async function apiFetch(
   let response = await attempt();
   await noticeDeviceRevoked(response);
   if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth && !opts?.partyAuth) {
-    // maybe just an expired access token — the SDK mints a fresh one
     response = await attempt();
     // a 401 WITHOUT a bearer proves nothing about the refresh token —
     // only a rejected real token means the session is truly dead
     if (response.status === 401 && sentBearer) {
-      // a freshly minted token the server still refuses: the session is
-      // spent (IdP restart, revocation) and no amount of retrying helps.
-      // LOCAL-FIRST (user 2026-10-06: "I randomly get kicked out"): nobody
-      // is logged out and nothing is wiped — the app keeps working on this
-      // device, the offline banner names the state with its Sign in door
-      // (#222's path), and near app open the OIDC round-trip re-mints
-      // quietly on the IdP's surviving session cookie. A breadcrumb, not
-      // an event (GlitchTip 7/13/14, user rule 2026-10-05): a sign-in that
-      // then fails reports from where it fails.
+      // a fresh token still refused: the session is spent (IdP restart, revocation), retrying is useless
+      // local-first: nobody is logged out or wiped; the offline banner offers Sign in (#222), near app open OIDC re-mints silently
+      // a breadcrumb, not an event (GlitchTip 7/13/14): a sign-in that then fails reports from where it fails
       if (!handlingAuthExpiry) {
         handlingAuthExpiry = true;
         console.warn('session refused: double 401 on a fresh token — asking for a sign-in, nothing logged out');
@@ -118,14 +94,8 @@ export async function apiFetch(
       }
     }
   }
-  // #186 (user rule): UNEXPECTED server answers reach GlitchTip from the
-  // choke point — callers keep swallowing into UI state, but the trace
-  // survives. Identity states (401/403/410) have their own handlers,
-  // and plain 4xx are the caller's business; 500 and 409 are the
-  // "should not happen" band (the re-import 409 resolved itself and
-  // left no trace anywhere). 502/503/504 are a gateway's or a restart's
-  // answer, never a code path of ours (GlitchTip 6, 2026-10-05): the
-  // callers' retry UI handles them.
+  // #186: unexpected answers reach GlitchTip from here; 401/403/410 have own handlers, plain 4xx are the caller's business
+  // 500 and 409 are "should not happen"; 502/503/504 are a gateway's or restart's answer, left to the callers' retry UI
   if ((response.status === 500 || response.status === 409) && !opts?.expectStatuses?.includes(response.status)) {
     const { reportWarning } = await import('@/lib/report');
     reportWarning('api', `apiFetch ${init.method ?? 'GET'} ${path} -> ${response.status}`, { status: response.status });
@@ -155,22 +125,18 @@ export function resetApiCapabilitiesCache(): void {
   protocolIssue = null;
 }
 
-/** the last /health handshake verdict — null while unknown or compatible */
 export const getProtocolIssue = (): ProtocolIssue | null => protocolIssue;
 
 /** false until /health has answered: an empty answer from getApiCapabilities then means "could not ask", not "offers nothing" */
 export const apiCapabilitiesKnown = (): boolean => capabilities !== null;
 
-/** Server feature flags from /health (cached per page load). */
 export async function getApiCapabilities(): Promise<ApiCapabilities> {
   if (capabilities) return capabilities;
   const identity = readSessionIdentity();
-  // offline identities get the "no server features" answer without a
-  // network call — and without caching it, in case a user signs in later
+  // offline identities get "no server features" without a network call, and uncached in case a user signs in later
   if (identity && identity.kind !== 'user') return {};
   try {
     const res = await fetch(`${config.apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
-    // the handshake fields are the server's contract (lib/protocol.ts)
     const body = (await res.json()) as {
       capabilities?: ApiCapabilities;
       protocol: number;
@@ -180,8 +146,7 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
     capabilities = body.capabilities ?? {};
     return capabilities;
   } catch {
-    // transient failure (booted offline, radio still asleep): answer "no
-    // features" but do NOT cache it — the next caller gets a fresh try
+    // transient failure (booted offline): answer "no features" but do not cache it, the next caller retries
     return {};
   }
 }

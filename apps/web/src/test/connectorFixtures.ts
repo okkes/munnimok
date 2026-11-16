@@ -1,6 +1,5 @@
 import type { ProviderManifest } from '@/features/connectors/types';
 
-/** the mock store as the relay renders it, with the knobs a test turns */
 export function manifestOf(overrides: Partial<ProviderManifest> = {}): ProviderManifest {
   return {
     id: 'mock-store-simple',
@@ -42,7 +41,6 @@ export function manifestOf(overrides: Partial<ProviderManifest> = {}): ProviderM
   };
 }
 
-/** the catalogue document around one or more manifests */
 export const catalogueOf = (...providers: ProviderManifest[]) => ({
   providers,
   service: { kinds: ['store', 'bank', 'registry'], version: 'test', manifestDigest: 'digest-1' },

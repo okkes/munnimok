@@ -88,23 +88,18 @@ describe('E2EE connection sync (two devices, real crypto)', () => {
     const phone = backend();
     const desktop = backend();
 
-    // phone: a connection with its bundle in device custody, sync turned on
     await phone.connectorConnPut({ id: 'c-ah', provider: 'ah', bundle: 'sb_v1.secret-bundle', state: 'active', refreshedAt: '2026-07-17T10:00:00Z' });
     await enableConnectionSync(phone);
     await pushConnection(phone, 'c-ah');
-    // the server never sees plaintext
     expect([...server.ciphers.values()].join()).not.toContain('secret-bundle');
     expect([...server.ciphers.keys()]).toEqual(['c-ah']);
 
-    // desktop: fresh device asks to join — no bundle yet, wrap pending
     await requestEnrollment(desktop);
     expect(await adoptWrapIfApproved(desktop)).toBe(false);
 
-    // phone approves the desktop (after the human fingerprint check)
     const pending = (await listSyncDevices()).find((d) => !d.hasWrap)!;
     await approveDevice(phone, pending);
 
-    // desktop adopts the wrap and decrypts the connection into its own custody
     expect(await adoptWrapIfApproved(desktop)).toBe(true);
     expect((await desktop.connectorConnGet('c-ah'))?.state).toBe('active');
     expect(await readBundle(desktop, 'c-ah')).toBe('sb_v1.secret-bundle');

@@ -15,8 +15,7 @@ import {
 import type { AccountType, TxType } from '@/db/types';
 
 describe('typeForLinkedAccount (R2 inversion, 2026-08-05)', () => {
-  // ANY tracked counterparty makes the source leg a plain transfer —
-  // the special meaning lives on the counter account's own ledger now
+  // any tracked counterparty makes the source leg a plain transfer; the special meaning lives on the counter's own ledger
   const cases: AccountType[] = ['savings', 'credit', 'mortgage', 'loan', 'brokerage', 'checking', 'cash'];
   it.each(cases)('%s account -> transfer', (accountType) => {
     expect(typeForLinkedAccount(accountType)).toBe('transfer');
@@ -64,7 +63,7 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
       ['savings', 'savingDeposit'],
       ['loan', 'loanRepayment'],
       ['mortgage', 'loanRepayment'],
-      // #252: the movement pair — Bought/Sold are brokerage-internal now
+      // #252: Bought/Sold are brokerage-internal; the movement pair is Invested/Withdrawn
       ['brokerage', 'investContribution'],
       ['funding', 'fundingOut'],
       ['checking', 'transferOut'],
@@ -139,7 +138,6 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
     it('#218: a credit counter can mean TWO things — transfer or debt payment', () => {
       expect([...movementCatsForCounter('credit', 'debit')].sort()).toEqual(['loanRepayment', 'transferOut']);
       expect([...movementCatsForCounter('credit', 'credit')].sort()).toEqual(['debtBorrowed', 'transferIn']);
-      // single-meaning counters narrow to exactly one category
       expect([...movementCatsForCounter('savings', 'debit')]).toEqual(['savingDeposit']);
       // #574: a cash counter means the ATM pair alone — never "Transfer out" beside it
       expect([...movementCatsForCounter('cash', 'debit')]).toEqual(['cashWithdraw']);

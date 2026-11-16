@@ -1,11 +1,7 @@
 import type { TxType } from '@/db/types';
 
-/**
- * Every technical type keeps a face (colors near the category palette,
- * not the brand). The 7-type picker itself is gone — the user chooses a
- * KIND (TxKindSheet) and the technical type derives — but read surfaces
- * (bulk peek, filter detail chips) still show the resolved member.
- */
+// colors near the category palette, not the brand; the type picker is gone (the user chooses a KIND),
+// read surfaces still show the resolved type
 export const TX_TYPE_VISUAL: Record<TxType, { icon: string; color: string }> = {
   expense: { icon: 'cart-outline', color: '#C0392B' },
   income: { icon: 'cash-plus', color: '#27AE60' },

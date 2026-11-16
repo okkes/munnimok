@@ -10,15 +10,8 @@ using Munni.Api.Accounts;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The scheduler of docs/connectors/relay.md ("Scheduled syncs"): a session
-/// whose bundle the relay keeps (household-agent custody) syncs by itself,
-/// on the provider's interval, and a refusal the person must act on drops
-/// the kept bundle. No agent runs in this suite, so a kept bundle is
-/// modelled by keeping the mock store's own — the scheduler does not know
-/// the difference, and that is the point. Its own fixture: the rows it
-/// keeps must not surprise the relay suite's write-path scan.
-/// </summary>
+/// No agent runs here: a kept bundle is modelled by keeping the mock store's own.
+/// Own fixture: the rows it keeps must not surprise the relay suite's write-path scan.
 public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string MockStore = "mock-store-simple";
@@ -38,7 +31,6 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
         const string sub = "scheduler";
         var (sessionId, bundle) = await LoginAsync(sub, "conn-scheduled");
 
-        // client custody: the relay kept nothing of the login
         Assert.Null(factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId).KeptBundle));
         await KeepAsync(sessionId, bundle);
 
@@ -53,11 +45,9 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
         var feedId = ImportIds.PersonalFeedSpaceId(ConnectorIngest.StoreFeedRef, sub);
         Assert.True(factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "receipt")) > 0);
 
-        // inside the provider's interval nothing runs
         Assert.Equal(0, await service.RunOnceAsync(CancellationToken.None));
 
-        // the connector holds a scheduled fetch to the interval as well: a
-        // run the relay thinks is due is refused, and the refusal is remembered
+        // the connector also holds a scheduled fetch to the interval: a run the relay thinks is due is refused and remembered
         await PatchAsync(sessionId, s => s.LastScheduledSyncAt = DateTimeOffset.UtcNow.AddHours(-2));
         Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));
         row = factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId));
@@ -65,7 +55,6 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
         Assert.Equal("active", row.State);
         Assert.NotNull(row.KeptBundle);
 
-        // the app sees all of it on the bindings list
         using var client = factory.ClientFor(sub);
         var sessions = await client.GetFromJsonAsync<JsonArray>("/connectors/sessions");
         var mine = sessions!.OfType<JsonObject>().Single(s => s["sessionId"]!.GetValue<string>() == sessionId);
@@ -88,16 +77,11 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
         Assert.NotNull(row.LastScheduleError);
         Assert.Equal("needs_reauth", row.State);
         Assert.Null(row.KeptBundle);
-        // and nothing runs for it again until a person signs in
         Assert.Equal(0, await service.RunOnceAsync(CancellationToken.None));
     }
 
-    /// <summary>
-    /// The preferred hour's tick is one of twenty-four, and a deploy or a
-    /// restart during it used to cost a whole night (prod 2026-10-08): a
-    /// later hour of a day without a run is still that day's run — once —
-    /// and the next night lands in the preferred hour as before.
-    /// </summary>
+    /// A deploy or restart during the preferred hour's tick used to cost a whole night (prod 2026-10-08):
+    /// a later hour of a day without a run still runs, once.
     [Fact]
     public void A_missed_preferred_hour_is_caught_up_later_the_same_day_and_only_once()
     {

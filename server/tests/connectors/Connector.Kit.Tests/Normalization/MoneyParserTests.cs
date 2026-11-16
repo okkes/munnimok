@@ -5,12 +5,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// Guessing wrong about cents-versus-euros corrupts financial data
-/// silently, which is the one failure mode worse than crashing. The unit is
-/// always declared; only the separator is inferred, and only where the
-/// inference is unambiguous.
-/// </summary>
+// guessing cents vs euros corrupts silently: the unit is always declared, only the separator is inferred, where unambiguous
 public sealed class MoneyParserTests
 {
     private static decimal Dec(string raw) => decimal.Parse(raw, CultureInfo.InvariantCulture);
@@ -42,13 +37,13 @@ public sealed class MoneyParserTests
     }
 
     [Theory]
-    [InlineData("1.234,56", 123_456L)]           // nl-NL
-    [InlineData("1,234.56", 123_456L)]           // en-US
+    [InlineData("1.234,56", 123_456L)]
+    [InlineData("1,234.56", 123_456L)]
     [InlineData("1.234.567,89", 123_456_789L)]
     [InlineData("1,234,567.89", 123_456_789L)]
     [InlineData("-1.234,56", -123_456L)]
-    [InlineData("1 234,56", 123_456L)]           // space as the thousands group
-    [InlineData("1\u00A0234,56", 123_456L)]      // no-break space, as an export writes it
+    [InlineData("1 234,56", 123_456L)]
+    [InlineData("1\u00A0234,56", 123_456L)]
     public void A_mixed_pair_resolves_by_whichever_separator_comes_last(string raw, long expected)
     {
         Assert.Equal(expected, MoneyParser.ToMinor(raw, MoneyUnit.MajorString));
@@ -65,20 +60,8 @@ public sealed class MoneyParserTests
         Assert.Equal(1234L, MoneyParser.ToMinor(raw, MoneyUnit.MajorString));
     }
 
-    /// <summary>
-    /// The Dutch whole-euro suffix, which was returning a NEGATIVE amount.
-    ///
-    /// "€ 463,-" is how a Dutch page writes four hundred and sixty-three euros
-    /// and no cents. The comma branch rewrites the comma to a dot, giving
-    /// "463.-", and <c>NumberStyles.Number</c> includes
-    /// <c>AllowTrailingSign</c> - so .NET read the hyphen as a minus and this
-    /// parser returned <b>-46300</b>. No exception, no warning, a perfectly
-    /// well-formed negative.
-    ///
-    /// Nothing downstream would have caught it either: reconciliation compares
-    /// a negative total against negative line items and agrees. It would have
-    /// reached a user as a shop that refunds everything it sells.
-    /// </summary>
+    // "€ 463,-" is whole euros; the comma became a dot and NumberStyles.Number's AllowTrailingSign read "463.-" as a minus,
+    // returning -46300 with no error, which would reach a user as a shop that refunds everything it sells
     [Theory]
     [InlineData("463,-", 46_300L)]
     [InlineData("€ 463,-", 46_300L)]
@@ -91,15 +74,7 @@ public sealed class MoneyParserTests
         Assert.Equal(expected, MoneyParser.ToMinor(raw, MoneyUnit.MajorString));
     }
 
-    /// <summary>
-    /// And a hyphen that is NOT that suffix is refused rather than read as
-    /// arithmetic.
-    ///
-    /// Removing the suffix above is only safe because what remains cannot
-    /// quietly mean something else. A trailing sign is no longer accepted at
-    /// all, so "463-" - which is not notation any provider here uses - fails
-    /// loudly instead of becoming minus 463.
-    /// </summary>
+    // a trailing sign is no longer accepted, so "463-" fails loudly instead of becoming minus 463
     [Theory]
     [InlineData("463-")]
     [InlineData("12,34-")]
@@ -118,7 +93,7 @@ public sealed class MoneyParserTests
     [InlineData("abc")]
     [InlineData("12.34.56")]                     // two dots, no comma to disambiguate
     [InlineData("1,234,567")]                    // group separators with no decimal at all
-    [InlineData("$12.34")]                       // a symbol we do not know
+    [InlineData("$12.34")]
     [InlineData("12,34 EUR")]
     [InlineData("--12,34")]
     [InlineData("1.2e3")]
@@ -126,32 +101,13 @@ public sealed class MoneyParserTests
     {
         var ex = Assert.Throws<ConnectorException>(() => MoneyParser.ToMinor(raw, MoneyUnit.MajorString));
 
-        // Not Internal: the provider's shape moved and an adapter needs
-        // fixing. That is the signal that pages an operator.
+        // ProviderChanged, not Internal: the provider's shape moved; that is the signal that pages an operator
         Assert.Equal(ErrorCode.ProviderChanged, ex.Code);
         Assert.False(ex.Retriable);
     }
 
-    /// <summary>
-    /// The refusal names the FIELD and the SHAPE, and never the value.
-    /// </summary>
-    /// <remarks>
-    /// This test used to assert the opposite - that the value was quoted - and
-    /// the value in question is a balance or an amount out of somebody's bank.
-    /// <para>
-    /// What changed is where the detail goes. A <c>ConnectorException</c>'s
-    /// detail is not a private diagnostic: adapters interpolate it into notes,
-    /// and notes are now logged, written to the job row and returned to the
-    /// caller. An ING agreement whose balance ING spells in a way this parser
-    /// does not know would have put that figure through all three.
-    /// </para>
-    /// <para>
-    /// Nothing is lost that anybody needed. A parse failure is diagnosed from
-    /// the field, the shape and the declared unit - "eight characters under
-    /// MajorString, not a number" says what to go and look at, and the one
-    /// thing it cannot do is carry the amount out of the bank.
-    /// </para>
-    /// </remarks>
+    // the refusal names field and shape, never the value: a ConnectorException's detail goes into notes that are logged,
+    // written to the job row and returned to the caller, and the value is a bank amount
     [Fact]
     public void The_refusal_names_the_field_and_the_shape_but_never_the_value()
     {
@@ -169,26 +125,17 @@ public sealed class MoneyParserTests
     [Fact]
     public void A_lone_separator_is_always_read_as_the_decimal_point()
     {
-        // The one genuinely ambiguous case, and the parser picks rather than
-        // refusing: with a single separator and three digits after it there
-        // is nothing to distinguish a decimal point from a thousands group,
-        // so BOTH of these read as one euro twenty-three - including the
-        // dotted form a Dutch export writes for one thousand two hundred.
-        //
-        // This is why the money contract does not end at parsing. A provider
-        // that means the other thing is caught by the stated total not
-        // reconciling, which is the check that exists precisely because a
-        // wrong reading here is silent.
+        // the one ambiguous case: a single separator with three digits reads as a decimal point, so "1.234" is 1.23, also for a
+        // Dutch export meaning 1200; a provider meaning the other is caught by the stated total not reconciling
         Assert.Equal(123L, MoneyParser.ToMinor("1,234", MoneyUnit.MajorString));
         Assert.Equal(123L, MoneyParser.ToMinor("1.234", MoneyUnit.MajorString));
 
-        // Two decimal places leave no room for the ambiguity.
         Assert.Equal(123_400L, MoneyParser.ToMinor("1.234,00", MoneyUnit.MajorString));
         Assert.Equal(123_400L, MoneyParser.ToMinor("1,234.00", MoneyUnit.MajorString));
     }
 
     [Theory]
-    [InlineData("12.345", 1235L)]                // half a cent rounds away from zero
+    [InlineData("12.345", 1235L)]
     [InlineData("-12.345", -1235L)]
     [InlineData("12.344", 1234L)]
     [InlineData("0.005", 1L)]
@@ -211,7 +158,7 @@ public sealed class MoneyParserTests
 
     [Theory]
     [InlineData("1234.0", 1234L)]
-    [InlineData("1234.9", 1234L)]                // a fractional minor unit does not exist
+    [InlineData("1234.9", 1234L)]
     [InlineData("-1234.9", -1234L)]
     public void A_decimal_in_minor_units_truncates(string raw, long expected)
     {
@@ -221,8 +168,7 @@ public sealed class MoneyParserTests
     [Fact]
     public void There_is_no_guess_it_unit()
     {
-        // The absence is the feature. A fourth member would weaken the
-        // adapter contract "declare the unit per field" to a suggestion.
+        // the absence is the feature: a fourth member would weaken "declare the unit per field" to a suggestion
         Assert.Equal(
             new[] { MoneyUnit.Minor, MoneyUnit.MajorDecimal, MoneyUnit.MajorString },
             Enum.GetValues<MoneyUnit>());
@@ -237,8 +183,6 @@ public sealed class MoneyParserTests
     [Fact]
     public void The_same_digits_under_two_units_are_two_different_amounts()
     {
-        // The hazard the declared unit exists to remove: "1234" is either
-        // 12.34 or 1234.00 and nothing in the string says which.
         Assert.NotEqual(
             MoneyParser.ToMinor("1234", MoneyUnit.Minor),
             MoneyParser.ToMinor("1234", MoneyUnit.MajorString));

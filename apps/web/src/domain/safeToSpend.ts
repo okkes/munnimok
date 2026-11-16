@@ -5,19 +5,12 @@ import type { Period } from './periods';
 import { addDays, cycleMonths, occurrencesBetween } from './recurring';
 import { txSliceViews } from './txSlices';
 
-/**
- * Safe to spend (#541, user 2026-10-22): what the period still lets you
- * spend freely. The balances of the accounts you spend from, minus the hard
- * facts — every recurring cost and loan payment still due before the period
- * ends — minus the plan's set-asides you chose to keep untouched (the money
- * given to goals, events…). A plan that gives every euro a job no longer
- * zeroes the number by itself: its set-asides count only once picked.
- */
+// #541: the balances of the accounts spent from, minus the hard facts (recurring costs and loan payments due before
+// the period ends), minus the plan's set-asides picked to stay untouched; unpicked set-asides do not zero the number
 
-/** the types money is spent from — a credit card pays like a checking account (#532) */
+/** a credit card pays like a checking account (#532) */
 export const SPEND_TYPES: ReadonlySet<AccountType> = new Set<AccountType>(['checking', 'cash', 'savings', 'credit']);
 
-/** nothing picked yet: the money in hand */
 const DEFAULT_TYPES: ReadonlySet<AccountType> = new Set<AccountType>(['checking', 'cash']);
 
 /** the planner's set-asides on offer — recurring costs and debts are the hard facts already */
@@ -26,11 +19,9 @@ export const SET_ASIDE_KINDS: readonly SpendSetAside[] = ['goals', 'events', 'ex
 type SpendAccount = Pick<AccountRow, 'id' | 'type' | 'deleted' | 'archived'>;
 type SpendSpace = Pick<SpaceRow, 'spendAccountIds'> | null | undefined;
 
-/** an account a person may pick: live, not archived, a type money is spent from */
 export const isSpendCandidate = (account: SpendAccount): boolean =>
   account.deleted === 0 && account.archived !== 1 && SPEND_TYPES.has(account.type);
 
-/** the picked list, or — nothing picked — every checking and cash account */
 export function isSpendAccount(account: SpendAccount, space: SpendSpace): boolean {
   if (!isSpendCandidate(account)) return false;
   const picked = space?.spendAccountIds;
@@ -45,10 +36,8 @@ export function isDefaultSpendPick(ids: ReadonlySet<string>, accounts: readonly 
 
 export interface SpendDue {
   kind: 'recurring' | 'loan';
-  /** the recurring cost's id, or the loan's account id */
   id: string;
   name: string;
-  /** the occurrences still open before the period ends, soonest first */
   dates: string[];
   cents: number;
 }
@@ -67,7 +56,6 @@ const addDay = (map: Map<string, string[]>, key: string, day: string) => {
 // only a row's own links or its parts can point at a cost — the rest of the history is skipped unread
 const mayPay = (tx: TxView): boolean => !!tx.recurringId || !!tx.linkedAccountId || !!tx.splits?.length;
 
-/** the costs and the accounts one row's outgoing slices point at */
 function paidTowards(tx: TxView): { costs: Set<string>; accounts: Set<string> } {
   const costs = new Set<string>();
   const accounts = new Set<string>();
@@ -79,7 +67,6 @@ function paidTowards(tx: TxView): { costs: Set<string>; accounts: Set<string> } 
   return { costs, accounts };
 }
 
-/** the days money left towards each recurring cost and each account it was linked to, oldest first */
 function paymentDays(txs: readonly TxView[], until: string): { byRecurring: Map<string, string[]>; byAccount: Map<string, string[]> } {
   const byRecurring = new Map<string, string[]>();
   const byAccount = new Map<string, string[]>();
@@ -93,10 +80,8 @@ function paymentDays(txs: readonly TxView[], until: string): { byRecurring: Map<
   return { byRecurring, byAccount };
 }
 
-/**
- * A payment pays the occurrence nearest its day, whatever period it books in and whatever it came to.
- * A past occurrence without a linked payment is not asked for again: an unlinked payment would count twice.
- */
+// a payment pays the occurrence nearest its day, whatever period it books in and whatever it came to
+// a past occurrence without a linked payment is not asked for again: an unlinked payment would count twice
 function stillOpen(cadence: Cadence, amountCents: number, paidOn: readonly string[], period: Period, today: string): Pick<SpendDue, 'dates' | 'cents'> | null {
   if (amountCents <= 0) return null;
   const from = addDays(period.start, -Math.ceil(cycleMonths(cadence) * 31));
@@ -115,7 +100,6 @@ function stillOpen(cadence: Cadence, amountCents: number, paidOn: readonly strin
   return dates.length > 0 ? { dates, cents: dates.length * amountCents } : null;
 }
 
-/** every live loan with a payment plan, the ones still due this period among them (a loan among the picked accounts is none) */
 function loanDues(
   accounts: readonly AccountRow[],
   spendIds: ReadonlySet<string>,
@@ -137,7 +121,6 @@ function loanDues(
   return { dues, loanIds };
 }
 
-/** the active recurring costs still due this period, but for a transfer to one of the `noDueIds` accounts */
 function recurringDues(
   recurrings: readonly RecurringRow[],
   noDueIds: ReadonlySet<string>,
@@ -155,13 +138,8 @@ function recurringDues(
   return dues;
 }
 
-/**
- * The hard facts: every recurring cost and loan payment still due before the
- * period ends. A loan among the picked accounts is no due — its balance
- * already counts, so paying it moves money between them — and neither is a
- * recurring transfer to one of them. A recurring cost linked to a loan with a
- * payment plan is that loan's payment, listed once, as the loan.
- */
+// a loan among the picked accounts is no due (its balance counts, paying it moves money between them), nor is a
+// recurring transfer to one; a recurring cost linked to a loan with a plan is that loan's payment, listed once
 export function spendDues(input: {
   accounts: readonly AccountRow[];
   recurrings: readonly RecurringRow[];
@@ -180,9 +158,7 @@ export function spendDues(input: {
 
 export interface SpendSetAsideLine {
   kind: SpendSetAside;
-  /** what the plan holds for it now */
   cents: number;
-  /** the person chose to keep it untouched */
   picked: boolean;
 }
 
@@ -197,7 +173,6 @@ export interface SafeToSpend {
   dueCents: number;
   /** every set-aside on offer while the space plans; none without a plan */
   setAsides: SpendSetAsideLine[];
-  /** the picked set-asides together */
   setAsideCents: number;
   cents: number;
   perDayCents: number;

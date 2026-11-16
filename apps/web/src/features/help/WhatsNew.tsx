@@ -3,7 +3,6 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { WHATS_NEW } from './releaseNotes';
 
-/** the release-notes sheet — reachable any time from Help */
 export function WhatsNewSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t, lang } = useLang();
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'long', year: 'numeric' });
@@ -30,7 +29,3 @@ export function WhatsNewSheet({ open, onOpenChange }: Readonly<{ open: boolean; 
     </Sheet>
   );
 }
-
-// The one-line Home nudge retired with arc 6: release news now lands as
-// a row in the bell's Notifications tab (NotificationsBell appends one
-// inbox entry per version; the row opens this sheet and marks it seen).

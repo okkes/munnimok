@@ -29,7 +29,7 @@ public class CamtParserTests
         Assert.Equal("2026-07-04", jumbo.Date);
         Assert.Equal("Jumbo Amsterdam", jumbo.CounterpartyName);
         Assert.Equal("NL00JUMB0000000001", jumbo.CounterpartyIban);
-        Assert.Equal("GALLERY-REF-001", jumbo.Ref); // the id-bearing reference
+        Assert.Equal("GALLERY-REF-001", jumbo.Ref);
         Assert.Equal("JUMBO 512 AMSTERDAM Betaalautomaat", jumbo.Description);
 
         var salary = statements[1].Entries[0];
@@ -60,25 +60,21 @@ public class WatchFolderServiceTests
     {
         using var db = Db($"watch-{Guid.NewGuid():N}");
         var (accepted, feedIds) = await WatchFolderService.IngestFileAsync(db, "watch-owner", Fixture);
-        Assert.Equal(3, accepted); // 2 + 1 entries across the two statements
+        Assert.Equal(3, accepted);
         Assert.Equal(2, feedIds.Count);
 
-        // the feed belongs to the configured owner, membership included
         var owner = await db.Users.SingleAsync(u => u.Sub == "watch-owner");
         var feedId = ImportIds.FeedSpaceId("NL00DEMO0000000100");
         Assert.Equal(owner.Id, (await db.FeedSpaces.FindAsync(feedId))!.OwnerUserId);
         Assert.True(await db.SpaceMembers.AnyAsync(m => m.SpaceId == feedId && m.UserId == owner.Id));
 
-        // ids match what a device import of the same file derives
         var txId = ImportIds.TransactionId("NL00DEMO0000000100", "GALLERY-REF-001");
         var row = await db.EntityRows.FindAsync(feedId, "transaction", txId);
         Assert.NotNull(row);
         Assert.Contains("\"counterIban\":\"NL00JUMB0000000001\"", row!.DataJson);
-        // the account row carries the closing balance
         var acct = await db.EntityRows.FindAsync(feedId, "account", ImportIds.AccountId("NL00DEMO0000000100"));
         Assert.Contains("\"balanceCents\":339055", acct!.DataJson);
 
-        // dropping the same file again is a no-op
         var (again, _) = await WatchFolderService.IngestFileAsync(db, "watch-owner", Fixture);
         Assert.Equal(0, again);
     }

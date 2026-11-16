@@ -1,9 +1,6 @@
 // @vitest-environment happy-dom
-// Runtime-config overlay: one public docker image serves every stack —
-// /runtime-config.js (nginx entrypoint) sets window.__MUNNI_CONFIG__ and
-// the app prefers it over the baked Vite env, per key. Baked values vary
-// by machine (a developer's gitignored .env.local feeds import.meta.env),
-// so the fallback specs compare against import.meta.env, never literals.
+// the /runtime-config.js overlay beats the baked Vite env per key; baked values vary by machine (.env.local),
+// so fallback specs compare against import.meta.env, never literals
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Overlay = Partial<Record<string, string>>;
@@ -74,7 +71,6 @@ describe('runtime config overlay', () => {
   it('tracesSampleRate: the overlay first, else a fifth on production and every trace elsewhere (user 2026-10-09)', async () => {
     expect((await withOverlay({ TRACES_SAMPLE_RATE: '0.5' })).config.tracesSampleRate).toBe(0.5);
     expect((await withOverlay({ TRACES_SAMPLE_RATE: '0' })).config.tracesSampleRate).toBe(0);
-    // a value that is not a share falls back to the channel's default
     expect((await withOverlay({ TRACES_SAMPLE_RATE: '7', CHANNEL: 'production' })).config.tracesSampleRate).toBe(0.2);
     expect((await withOverlay({ TRACES_SAMPLE_RATE: 'all', CHANNEL: 'staging' })).config.tracesSampleRate).toBe(1);
     const bakedRate = baked('VITE_TRACES_SAMPLE_RATE');
@@ -90,19 +86,16 @@ describe('runtime config overlay', () => {
   });
 
   it('localCaUrl: only LOCAL native builds on the sslip family get the CA download', async () => {
-    // a local build on the LAN family → the ca host of the same family
     const local = await withOverlay({
       NATIVE_SCHEME: 'munni-local',
       PUBLIC_ORIGIN: 'https://munni-prod.192-168-2-2.sslip.io',
     });
     expect(local.localCaUrl()).toBe('http://ca.192-168-2-2.sslip.io/root.crt');
-    // per-env schemes count as local too
     const dev = await withOverlay({
       NATIVE_SCHEME: 'munni-local-dev',
       PUBLIC_ORIGIN: 'https://munni-dev.192-168-2-2.sslip.io',
     });
     expect(dev.localCaUrl()).toBe('http://ca.192-168-2-2.sslip.io/root.crt');
-    // hosted builds and non-sslip origins stay silent
     const hosted = await withOverlay({ NATIVE_SCHEME: 'munni', PUBLIC_ORIGIN: 'https://munni.example.test' });
     expect(hosted.localCaUrl()).toBeNull();
     const localButHosted = await withOverlay({ NATIVE_SCHEME: 'munni-local', PUBLIC_ORIGIN: 'https://munni.example.test' });

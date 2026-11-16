@@ -4,10 +4,6 @@ using System.Text.Json;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// Admin catalog (AC1): a versioned content document — public read with
-/// ETag caching, admin-gated publish, server-owned version counter.
-/// </summary>
 public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
 {
     private readonly AdminApiFactory _factory;
@@ -46,7 +42,7 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
     public async Task NonAdmin_CannotPublish()
     {
         var client = ClientFor("plain-user");
-        await client.GetAsync("/me"); // materialize the user row
+        await client.GetAsync("/me");
         var response = await client.PutAsJsonAsync("/admin/catalog", Payload());
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -67,12 +63,10 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
         var doc = JsonDocument.Parse(await read.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(v2, doc.GetProperty("version").GetInt32());
         Assert.Equal("tennis", doc.GetProperty("keywords")[0].GetProperty("keyword").GetString());
-        // receipts v3 R9: store merchant patterns publish and serve verbatim
         var store = doc.GetProperty("stores")[0];
         Assert.Equal("ah", store.GetProperty("id").GetString());
         Assert.Equal(2, store.GetProperty("patterns").GetArrayLength());
 
-        // a fresh device revalidates for free
         var cached = ClientFor(null);
         cached.DefaultRequestHeaders.TryAddWithoutValidation("If-None-Match", etag);
         var revalidated = await cached.GetAsync("/catalog");

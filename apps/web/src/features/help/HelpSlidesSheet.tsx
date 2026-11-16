@@ -5,10 +5,6 @@ import type { TourId } from './tours';
 import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 
-/**
- * Layer 2: the quick screening — a handful of illustrated slides,
- * skippable, done in a minute. Pure content, no app interaction.
- */
 export function HelpSlidesSheet({
   tourId,
   onClose,

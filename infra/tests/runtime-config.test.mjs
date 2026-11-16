@@ -1,6 +1,4 @@
-// The web image's start script (deploy/nginx/40-runtime-config.sh) against a
-// temp html root: the runtime overlay and the two app-link files of THIS
-// deployment's own app — rendered from env, never per channel.
+// the app-link files claim THIS deployment's own app, rendered from env, never per channel
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';

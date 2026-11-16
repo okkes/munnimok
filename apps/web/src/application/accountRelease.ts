@@ -5,18 +5,10 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { TransactionRow, TxMetaRow, TxSplit } from '@/db/types';
 
-/**
- * #544 (user): an account that leaves a space — detached, deleted, or a
- * retired default (#546) — takes every counterparty reference in that space
- * with it. A row that named it keeps its category, loses the link and goes
- * back to the review, where the person names the real account (the same
- * for a part, whose container goes back). The links run through the write
- * choke: the legs munni generated ON a leaving manual account go with them,
- * while a leg generated elsewhere becomes an ordinary row — that money
- * moved. Recurrings stop handing the account to their next rows.
- */
+// #544: a leaving account (detached, deleted, retired default #546) takes every counterparty reference in the space:
+// a row keeps its category, loses the link and returns to review; legs munni generated ON a leaving manual account
+// retire via the write choke, a leg generated elsewhere becomes an ordinary row (that money moved)
 
-/** one row as the space stores its transformation: own rows carry it, feed rows' overlays do */
 interface StoredRow {
   raw: TransactionRow;
   meta?: TxMetaRow;
@@ -26,13 +18,11 @@ interface StoredRow {
 const linkedOf = (row: StoredRow): string | undefined => (row.meta ? row.meta.linkedAccountId : row.raw.linkedAccountId);
 const splitsOf = (row: StoredRow): TxSplit[] | undefined => (row.meta ? row.meta.splits : row.raw.splits);
 
-/** a part without its counterparty (its stored view type drops with it — the join derives it again) */
 function withoutLink(part: TxSplit): TxSplit {
   const { linkedAccountId: _linked, transferPeerId: _peer, txType: _type, ...rest } = part;
   return rest;
 }
 
-/** every row the space holds a transformation for: its own rows, then the overlays on the feed rows it sees */
 async function storedRows(store: StorageBackend, spaceId: string): Promise<StoredRow[]> {
   const rows: StoredRow[] = (await store.bySpace('transaction', spaceId))
     .filter((raw) => raw.deleted === 0)
@@ -45,8 +35,7 @@ async function storedRows(store: StorageBackend, spaceId: string): Promise<Store
   return rows;
 }
 
-/** a generated leg still standing on the leaving account once its source let go — a deleted
- *  account's legs outlive the link (the write choke only retires legs on a live account) */
+/** a deleted account's legs outlive the link: the write choke only retires legs on a live account */
 async function dropLeftoverLeg(store: StorageBackend, repo: Repo, mintId: string, accountId: string): Promise<void> {
   const leg = await store.get('transaction', mintId);
   if (leg?.deleted === 0 && leg.accountId === accountId) await repo.remove('transaction', leg.spaceId, leg.id);
@@ -79,9 +68,8 @@ async function releaseRow(store: StorageBackend, repo: Repo, row: StoredRow, acc
   return true;
 }
 
-/** the leaving account's OWN rows forget the space's links too — out of sight now, and a later
- *  re-attach must not bring back half a pair; written past the choke on purpose: the legs those
- *  links generated stay where the money went (released above as ordinary rows) */
+// the leaving account's own rows forget the space's links too, written past the choke on purpose: legs those links
+// generated stay where the money went, and a re-attach must not bring back half a pair
 async function forgetOwnLinks(repo: Repo, row: StoredRow): Promise<boolean> {
   const splits = splitsOf(row) ?? [];
   const partLinked = splits.some((part) => !!part.linkedAccountId || !!part.transferPeerId);
@@ -102,11 +90,7 @@ async function releaseRecurrings(store: StorageBackend, repo: Repo, spaceId: str
   }
 }
 
-/**
- * The account leaves the space: every row, part and recurring there lets go
- * of it. Run BEFORE a manual account's tombstone — its generated legs retire
- * with the links while it is still live. Returns how many rows let go.
- */
+/** run BEFORE a manual account's tombstone, so its generated legs retire with the links while it is still live */
 export async function releaseAccountReferences(
   store: StorageBackend,
   repo: Repo,
@@ -125,12 +109,8 @@ export async function releaseAccountReferences(
   return released;
 }
 
-/**
- * The accounts a space still names but has POSITIVELY lost: the account row
- * is deleted, or the space's own attachment of it is deleted with no live
- * one beside it. An account this device does not know at all is left alone —
- * its attachment may simply not have reached this device yet.
- */
+// accounts positively lost: row deleted, or the space's attachment deleted with none live; an account this device
+// does not know is left alone, its attachment may not have arrived
 async function lostAccountIds(store: StorageBackend, spaceId: string, named: ReadonlySet<string>): Promise<Set<string>> {
   const links = await store.bySpace('accountLink', spaceId);
   const lost = new Set<string>();
@@ -144,7 +124,6 @@ async function lostAccountIds(store: StorageBackend, spaceId: string, named: Rea
   return lost;
 }
 
-/** every account id a stored row or part points at */
 function namedAccounts(rows: readonly StoredRow[]): Set<string> {
   const named = new Set<string>();
   for (const row of rows) {
@@ -155,12 +134,7 @@ function namedAccounts(rows: readonly StoredRow[]): Set<string> {
   return named;
 }
 
-/**
- * #544: the references spaces kept to accounts that left them — detached or
- * deleted before releases existed, or arriving from a device that still
- * held them — let go, every boot (idempotent: a released row names nothing
- * lost any more). Returns how many rows let go.
- */
+/** #544: references to accounts that left before releases existed, or arriving from an older device, let go every boot */
 export async function repairDanglingCounterparties(store: StorageBackend, repo: Repo): Promise<number> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
   let released = 0;
@@ -177,7 +151,6 @@ export async function repairDanglingCounterparties(store: StorageBackend, repo: 
   return released;
 }
 
-/** one stored row lets go of every lost account it names — a lost account's own row forgets its links instead; how many releases it took (S3776) */
 async function releaseLostAccounts(store: StorageBackend, repo: Repo, row: StoredRow, lost: ReadonlySet<string>): Promise<number> {
   if (lost.has(row.raw.accountId)) {
     await forgetOwnLinks(repo, row);
@@ -193,7 +166,6 @@ async function releaseLostAccounts(store: StorageBackend, repo: Repo, row: Store
   return released;
 }
 
-/** the row as stored right now (a previous release in the same pass rewrote it) */
 async function refreshed(store: StorageBackend, row: StoredRow): Promise<StoredRow | null> {
   const raw = await store.get('transaction', row.raw.id);
   if (raw?.deleted !== 0) return null;

@@ -11,8 +11,7 @@ import { specialCatType } from '@/domain/categories';
 import { counterTypesFor } from '@/domain/txType';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
-// #343: one account face for the whole app — logo when set, else the
-// type icon in the account's color (shared with home's upcoming rows)
+// #343: one account face app-wide: logo when set, else the type icon in the account's color
 import { LoanFace } from '@/features/home/UpcomingScreen';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
@@ -38,7 +37,6 @@ export interface FormState {
   /** #520: an icon the person picked; absent = the kind's icon (it follows a kind change) */
   icon?: string;
   every: RecurringEvery;
-  /** custom cadence: repeat every N units, anchored on firstDue */
   everyN: number;
   custom: boolean;
   firstDue: string; // ISO date, '' until picked
@@ -69,9 +67,6 @@ export const emptyForm = (): FormState => ({
   active: true,
 });
 
-/** quick-add prefill (user request): the shortcut inside review / tx
- *  detail derives as much as possible from the transaction itself —
- *  name, amount and the due day from the transaction's own date */
 export const formFromTx = (tx: { merchant: string; titleOverride?: string; amountCents: number; date: string }): FormState => ({
   ...emptyForm(),
   name: txTitle(tx),
@@ -112,21 +107,16 @@ export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   merchantKey: s.merchantKey,
 });
 
-/** the cost's face: a logo, an icon the person picked (#520), or the kind's default */
 const faceOf = (form: Pick<FormState, 'logo' | 'icon'>): 'logo' | 'own' | 'default' => {
   if (form.logo) return 'logo';
   return form.icon ? 'own' : 'default';
 };
 const FACE_LABEL = { logo: 'recurring.iconChosen', own: 'recurring.iconOwn', default: 'recurring.iconNone' } as const;
 const faceLabelKey = (form: Pick<FormState, 'logo' | 'icon'>) => FACE_LABEL[faceOf(form)];
-/** a picked icon (#520) wears the accent, the kind's default stays quiet (S3776) */
 const faceIconColor = (icon: string | undefined): string => (icon ? 'var(--m-accent-deep)' : 'var(--m-ink-3)');
 
-/** the on/off switch's track: the knob rides right on the accent while on (S3776) */
 const switchTrack = (on: boolean): string => (on ? 'justify-end bg-accent' : 'justify-start bg-bg-2');
 
-// #195: the first failing requirement names the blocker (null form =
-// closed sheet, nothing blocks)
 const blockerKeyFor = (form: FormState | null): 'form.needName' | 'form.needAmount' | 'form.needDate' | null => {
   if (form === null) return null;
   if (!form.name.trim()) return 'form.needName';
@@ -135,22 +125,18 @@ const blockerKeyFor = (form: FormState | null): 'form.needName' | 'form.needAmou
   return null;
 };
 
-/** dirty vs the seed baseline (S3776: out of the component) */
 const formDirty = (form: FormState | null, baseline: string): boolean =>
   form !== null && JSON.stringify(form) !== baseline;
 
-/** stable reseed key: the record's identity, 'new' for drafts (S3776) */
 const seedKeyOf = (initial: FormState | null): string | null => (initial === null ? null : (initial.id ?? 'new'));
 
-/** #195 field rings, computed off the component (S3776) */
 function recformRings(attempted: boolean, form: FormState | null) {
   if (!attempted || form === null) return { nameBad: false, amountBad: false, dateBad: false };
   return { nameBad: !form.name.trim(), amountBad: !form.amount, dateBad: !form.firstDue };
 }
 
-/** custom cadences anchor on the first due date; presets keep the
- *  no-auto-`since` rule so a cost added mid-period still counts for the
- *  whole current period (and accepted suggestions own their history) */
+// custom cadences anchor on the first due date; presets leave `since` unset so a cost added mid-period
+// counts for the whole period (accepted suggestions own their history)
 function cadenceFieldsFor(form: FormState) {
   if (form.custom) {
     return {
@@ -171,28 +157,16 @@ function cadenceFieldsFor(form: FormState) {
 }
 
 interface RecurringFormSheetProps {
-  /** non-null opens the sheet with this draft; the sheet owns edits from there */
   initial: FormState | null;
   onClose: () => void;
-  /** e.g. the detail screen leaves after its record was deleted */
   onDeleted?: () => void;
-  /** create-and-return hosts (review, tx detail) get the saved row's id
-   *  HERE — sniffing the live-query list after close is a lost race */
+  /** hosts get the saved row's id here: sniffing the live-query list after close is a lost race */
   onSaved?: (id: string) => void;
-  /** #257: an accepted SUGGESTION hands off to the occurrence review
-   *  (pick which charges belong) instead of blind auto-reconcile; hosts
-   *  without one keep the old reconcile behavior */
+  /** #257: an accepted SUGGESTION hands off to the occurrence review; hosts without one reconcile blindly */
   onAccepted?: (id: string) => void;
 }
 
-/**
- * The one create/edit form for recurring costs, shared by the recurring
- * tab (add), the detail screen (edit) and the suggestions screen
- * (accept). Owns its pickers and persistence.
- */
-/** v2: the recurring's amount and rhythm are the loan's PAYMENT plan
- *  (they were never its original size); #190: the due day rides along.
- *  S3776. */
+/** the recurring's amount and rhythm are the loan's PAYMENT plan, not its original size; #190: the due day rides along */
 function debtHandoffFrom(form: FormState) {
   const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
   return {
@@ -204,7 +178,6 @@ function debtHandoffFrom(form: FormState) {
   };
 }
 
-/** #274: the accounts a category's counter matrix allows. S3776. */
 function counterChoicesFor<T extends { type: import('@/db/types').AccountType }>(
   catId: string | undefined,
   accounts: readonly T[] | undefined,
@@ -224,26 +197,20 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
-  // #274: the counterparty pick for special categories
   const [counterPickerOpen, setCounterPickerOpen] = useState(false);
-  // #341: quick-create — the same full chooser the transaction flow has
   const [counterChooserOpen, setCounterChooserOpen] = useState(false);
   const [debtIntent, setDebtIntent] = useState(false);
-  // what the category was when the sheet opened -- propagation fires
-  // only on a real change
+  // propagation fires only on a real category change
   const initialCatIdRef = useRef<string | undefined>(undefined);
   const initialLinkRef = useRef<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // free-typed drafts so the '1' can be deleted while editing; clamped on blur
+  // free-typed so the '1' can be deleted while editing; clamped on blur
   const [dueDayText, setDueDayText] = useState('1');
   const [everyNText, setEveryNText] = useState('1');
-  // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
 
-  // seed on open or when the underlying RECORD changes — never on object
-  // identity: callers rebuild `initial` per render (formFromTx in review),
-  // and on the native SQL backend every sync cycle re-emits fresh objects.
-  // The identity-keyed reseed kept overwriting mid-typing edits (iOS ss).
+  // seed on open or when the RECORD changes, never on object identity: callers rebuild `initial` per render and
+  // the native SQL backend re-emits fresh objects every sync, which overwrote mid-typing edits
   const seedKey = seedKeyOf(initial);
   const seededRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
@@ -256,18 +223,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
     setAttempted(false);
-    // dirty baseline (user request 2026-08-01): edited forms ask before
-    // a stray dismissal drops them
     baselineRef.current = JSON.stringify(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
   const baselineRef = useRef('');
   const dirty = formDirty(form, baselineRef.current);
   const blockerKey = blockerKeyFor(form);
-  // #274: which accounts the category's counter matrix allows (S3776:
-  // resolved outside the component)
   const counterChoices = counterChoicesFor(form?.catId, accounts);
-  // #195 rings, precomputed once (S3776: the JSX kept re-branching)
   const { nameBad, amountBad, dateBad } = recformRings(attempted, form);
 
   const save = async () => {
@@ -279,8 +241,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     const savedId = await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
-      // #332 (user): a fixed cost is never a luxury — picking the kind
-      // already cleared the flag, the form never shows it for fixed
+      // #332: a fixed cost is never a luxury
       luxury: form.luxury ? 1 : 0,
       amountCents,
       icon: form.icon ?? KIND_ICON[form.kind],
@@ -292,9 +253,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
       catId: form.catId ?? '', // '' clears -- an absent field would not sync
       linkedAccountId: form.linkedAccountId ?? '', // #274 — same clear rule
     });
-    // the recurring OWNS its transactions' category (user rule
-    // 2026-07-28): a changed category re-files every linked transaction;
-    // #274: a changed counterparty rides the same propagation
+    // the recurring OWNS its transactions' category: a change re-files every linked tx; #274: a changed counterparty rides along
     if (form.id && (form.catId !== initialCatIdRef.current || form.linkedAccountId !== initialLinkRef.current)) {
       await propagateRecurringCategory(store, repo, spaceId, form.id, form.catId, form.linkedAccountId || undefined).catch(
         () => undefined,
@@ -302,9 +261,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     }
     onSaved?.(savedId);
     onClose();
-    // an accepted suggestion should immediately own its past payments —
-    // #257: hosts with an occurrence review take over (the user picks
-    // which charges belong); others keep the blind reconcile
+    // an accepted suggestion owns its past payments at once: hosts with an occurrence review (#257) take over, others reconcile
     if (fromSuggestion) {
       if (onAccepted) onAccepted(savedId);
       else await ops.reconcile();
@@ -342,25 +299,19 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
             />
             <div className="flex gap-2">
-              {/* #332 (user): a fixed cost is never a luxury — picking it
-                  clears the flag so no hidden-but-set value survives */}
+              {/* #332: a fixed cost is never a luxury — picking it clears the flag so no hidden value survives */}
               <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed', luxury: false })}>
                 {t('recurring.kindFixed')}
               </Chip>
               <Chip testId="recform-kind-subscription" selected={form.kind === 'subscription'} onClick={() => setForm({ ...form, kind: 'subscription' })}>
                 {t('recurring.kindSub')}
               </Chip>
-              {/* a structural cost that pays something OFF is a DEBT —
-                  picking it asks first on a fullscreen Mina moment, then
-                  hands this form's facts over to debt creation (user
-                  design 2026-07-28, fullscreen ask 2026-07-29) */}
+              {/* a cost that pays something OFF is a DEBT: picking it asks first, then hands the form's facts to debt creation */}
               <Chip testId="recform-kind-debt" selected={false} onClick={() => setDebtIntent(true)}>
                 {t('recurring.kindDebt')}
               </Chip>
             </div>
 
-            {/* the recurring OWNS its transactions' category (user rule
-                2026-07-28) — linked rows re-file here automatically */}
             <button
               data-testid="recform-cat"
               onClick={() => setCatPickerOpen(true)}
@@ -371,8 +322,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
             </button>
 
-            {/* #274 (user): a special category carries a counterparty —
-                transactions attached to this recurring inherit it */}
+            {/* #274: a special category carries a counterparty; attached transactions inherit it */}
             {form.catId && specialCatType(form.catId) && (
               <button
                 data-testid="recform-counter"
@@ -513,7 +463,6 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               </label>
             )}
 
-            {/* #332 (user): fixed costs hide the luxury toggle entirely */}
             {form.kind !== 'fixed' && (
               <button
                 data-testid="recform-luxury"
@@ -583,7 +532,6 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
         open={brandPickerOpen}
         onOpenChange={setBrandPickerOpen}
         initialQuery={form?.name ?? ''}
-        // #520 (user): the cost's own icon from the whole font, beside the logos
         icons={form ? { value: form.icon ?? KIND_ICON[form.kind], featured: RECURRING_ICONS, face: faceOf(form) } : undefined}
         onPick={({ logo, icon }) => {
           if (form) setForm({ ...form, logo: logo ?? undefined, ...(icon ? { icon } : {}) });
@@ -599,8 +547,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
           if (form) setForm({ ...form, catId, ...(specialCatType(catId) ? {} : { linkedAccountId: undefined }) });
         }}
       />
-      {/* #274 (user): the counterparty pick — accounts the category's
-          matrix allows (sheet SIBLING, never nested — portal order) */}
+      {/* #274: sheet SIBLING, never nested (portal order) */}
       <Sheet open={counterPickerOpen} onOpenChange={setCounterPickerOpen} title={t('recurring.counterTitle')} size="form">
         <div className="flex flex-col gap-2 pt-1" data-testid="recform-counter-sheet">
           {counterChoices.map((acct) => (
@@ -613,8 +560,6 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               }}
               className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
             >
-              {/* #343: the account's real face — logo if set, not a
-                  generic bank icon */}
               <LoanFace loan={acct} />
               <span className="min-w-0 flex-1 truncate">{acct.name}</span>
               {form?.linkedAccountId === acct.id && <Icon name="check" size={16} color="var(--m-accent-deep)" />}
@@ -625,8 +570,6 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               {t('recurring.counterEmpty')}
             </p>
           )}
-          {/* #341: the creation door — same full chooser as the
-              transaction flow (bank connect, import, or manual) */}
           <button
             data-testid="recform-counter-create"
             onClick={() => setCounterChooserOpen(true)}
@@ -649,8 +592,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
           )}
         </div>
       </Sheet>
-      {/* #341: chooser as a SIBLING, never nested (#241 — portal order);
-          the type grid narrows to what the category's matrix allows */}
+      {/* #341: chooser as a SIBLING, never nested (#241 portal order); the type grid narrows to the category's matrix */}
       <AddAccountChooser
         open={counterChooserOpen}
         onOpenChange={setCounterChooserOpen}

@@ -9,29 +9,9 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.MediaMarkt;
 
-/// <summary>
-/// MediaMarkt: the provider this project wrote off, and the cheapest fetch it
-/// has.
-///
-/// The July research said "do not build", on two blockers that were both real:
-/// a Cloudflare interactive challenge on the API, and a persisted-query
-/// manifest forbidding a query of our own. Re-checked from a browser on
-/// 2026-08-11, both are walls against the wrong kind of client. The challenge
-/// answers a non-browser - the same endpoint returned 403 to a plain POST and
-/// 200 to twenty-two calls from a real Chromium minutes later - and the query
-/// manifest forbids OUR documents, not MediaMarkt's own.
-///
-/// So this adapter never writes a query and never learns a hash. It puts a
-/// signed-in browser on the orders page, lets MediaMarkt's javascript ask its
-/// own question, and reads the answer. Paging is that same request with one
-/// parameter changed. See <see cref="IMediaMarktPortal"/>.
-/// </summary>
-/// <remarks>
-/// A bundle from this provider holds a cookie jar and nothing else. No token of
-/// any kind is issued: every authenticated request in the capture carried no
-/// authorization header, which was checked across all of them rather than
-/// assumed.
-/// </remarks>
+/// Rechecked 2026-08-11: the Cloudflare challenge and the persisted-query manifest are walls against non-browsers
+/// (plain POST 403, real Chromium 200; the manifest forbids OUR documents). So no query or hash of ours: a signed-in
+/// browser on the orders page lets MediaMarkt's JS ask and we read the answer. A bundle is a cookie jar only.
 public sealed class MediaMarktAdapter : IProviderAdapter
 {
     public const string ProviderId = "mediamarkt-nl";
@@ -54,9 +34,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
     {
         ArgumentNullException.ThrowIfNull(ctx);
 
-        // Everything that can fail without contacting anybody, before a browser
-        // is leased. Launching Chromium to discover a blank field holds an agent
-        // for nothing.
+        // fail on blank inputs before leasing a browser: launching Chromium to find a blank field holds an agent for nothing
         _ = RequiredInput(ctx, "username");
         _ = RequiredInput(ctx, "password");
 
@@ -72,22 +50,9 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The login, behind the seam so the offline suite can drive it.
-    /// </summary>
-    /// <remarks>
-    /// THE SESSION IS CONFIRMED BY ASKING FOR ORDERS, not by reading a URL.
-    /// <para>
-    /// Landing back on <c>/nl/myaccount/orders</c> proves nothing: it is a
-    /// client-routed SPA, so the address bar says "orders" while the app is
-    /// still deciding whether to send the visitor to a login form. Coolblue
-    /// sealed a jar of anonymous cookies that way, and DUO reported a finished
-    /// login eighty milliseconds after opening, having asked the human nothing.
-    /// </para>
-    /// The check here is the strongest available and costs nothing extra: it
-    /// waits for the SAME call the fetch will make and requires it to answer.
-    /// A signed-out browser never fires it.
-    /// </remarks>
+    /// the session is confirmed by asking for orders, not by URL: orders is a client-routed SPA (Coolblue sealed anonymous
+    /// cookies, DUO "finished" in 80ms); waiting for the SAME call the fetch makes is free,
+    /// and a signed-out browser never fires it
     internal async Task<LoginResult> LoginAsync(
         IJobContext ctx, ILoginPage page, IMediaMarktPortal portal, CancellationToken ct)
     {
@@ -98,10 +63,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         var username = RequiredInput(ctx, "username");
         var password = RequiredInput(ctx, "password");
 
-        // The PROTECTED page. MediaMarkt's own redirect takes the browser to
-        // the form carrying `redirectURL`, and its own callback brings it back -
-        // which is both the journey a shopper takes and the only one that ends
-        // with the app holding a session.
+        // the PROTECTED page: MediaMarkt's own redirect to the form and back is the only way to end with a session in the app
         await page.GotoAsync(_options.OrdersPageUrl, ct).ConfigureAwait(false);
 
         await ConsentAsync(ctx, page, ct).ConfigureAwait(false);
@@ -127,23 +89,15 @@ public sealed class MediaMarktAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Finalizing);
 
-        // AND NOW WAIT, WITHOUT TOUCHING ANYTHING.
-        //
-        // The form carries redirectURL=/nl/myaccount/orders, so MediaMarkt's own
-        // app lands on the orders page and fires the query by itself. The first
-        // live run navigated here instead - and a navigation on top of a sign-in
-        // still in flight cancels it, which produced a browser sitting on the
-        // login form and an adapter blaming the password.
+        // wait without touching anything: the form's redirectURL lands the app on orders and it fires the query itself;
+        // a navigation on top of a sign-in in flight cancels it (browser stuck on the form, password blamed)
         var observed = await portal
             .WatchAsync(_options.OrdersOperation, _options.OrdersCallTimeoutMs, ct)
             .ConfigureAwait(false);
 
         if (observed is not { } call)
         {
-            // What the page IS showing, quoted. MediaMarkt renders its own
-            // message into the form, so this distinguishes a refused password
-            // from a second factor from a changed form - none of which the
-            // first version of this message could tell apart.
+            // quote what the page shows: it tells a refused password from a second factor or a changed form
             var showing = await portal.DescribeAsync(ct).ConfigureAwait(false);
 
             throw ConnectorException.InvalidCredentials(
@@ -151,33 +105,19 @@ public sealed class MediaMarktAdapter : IProviderAdapter
                 $"The browser is {showing}");
         }
 
-        // A refusal here is not a bad password - the form accepted it. Left to
-        // say what it is: an expired-looking session, or Cloudflare.
+        // a refusal here is not a bad password (the form accepted it): Body reports an expired-looking session or Cloudflare
         _ = MediaMarktCalls.Body(call, _options, _options.OrdersOperation, ctx.Note);
 
         return new LoginResult
         {
-            // The cookie jar and nothing else.
             Material = new SessionMaterial { StorageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false) },
-            // Named for the brand rather than the person. The payload does carry
-            // the account holder's name, and using it would mean keeping a name
-            // this connector has no need for.
+            // named for the brand: the payload's holder name is not needed, so it is not kept
             Account = new ProviderAccount { DisplayName = Manifest.Name },
         };
     }
 
-    /// <summary>
-    /// The cookie wall, answered with the narrowest option and never with
-    /// "Alles accepteren".
-    /// </summary>
-    /// <remarks>
-    /// Best effort by design: the layer only appears on a profile that has not
-    /// answered it, so a miss usually means it was not there. What must NOT
-    /// happen is the broad answer - a connector signing in on somebody's behalf
-    /// has no business opting them into marketing tracking, and the account
-    /// holder confirmed the orders page works with the necessary categories
-    /// only.
-    /// </remarks>
+    /// the narrowest consent option, never "Alles accepteren": no opting the user into marketing tracking;
+    /// the orders page works with necessary only. Best effort: a miss usually means no layer was shown
     private async Task ConsentAsync(IJobContext ctx, ILoginPage page, CancellationToken ct)
     {
         if (!await page.ClickAsync(_options.ConsentNecessarySelectors, _options.StepProbeMs, ct)
@@ -201,22 +141,8 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         return await FetchAsync(ctx, request, new PageMediaMarktPortal(page, _options), ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The order history: one observed call, then as many pages as the window
-    /// needs.
-    /// </summary>
-    /// <remarks>
-    /// The first page is not requested - it is WATCHED. Navigating to the orders
-    /// page makes MediaMarkt's own client fire <c>GetCombinedOrdersV3</c> with
-    /// its own current persisted hash, and that request is both the first page
-    /// of data and the template every later page is built from.
-    /// <para>
-    /// Which means a fetch cannot ask for page two without having seen page one,
-    /// and that is fine: page one is the page a caller almost always wants, and
-    /// the alternative is keeping a hash that MediaMarkt rotates on every
-    /// front-end deploy.
-    /// </para>
-    /// </remarks>
+    /// the first page is WATCHED, not requested: the page's own GetCombinedOrdersV3 call carries its current persisted hash
+    /// and is the template for later pages; MediaMarkt rotates that hash on every front-end deploy
     internal async Task<FetchResult> FetchAsync(
         IJobContext ctx, ResourceRequest request, IMediaMarktPortal portal, CancellationToken ct)
     {
@@ -281,10 +207,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
 
         if (unreconciled > 0)
         {
-            // Emitted anyway, flagged, and said out loud. A receipt whose lines
-            // disagree with its total is still a real purchase, and the four
-            // money identities this reader is built on held across every order
-            // in the capture - so one that fails is news.
+            // emitted flagged and said aloud: a receipt whose lines miss its total is still a real purchase
             ctx.Note(
                 $"{ProviderId}: {unreconciled} receipt(s) have line items that do not sum to the stated " +
                 "total; they are returned with reconciled=false rather than dropped");
@@ -299,13 +222,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         };
     }
 
-    /// <summary>
-    /// The invoice for each receipt, newest first, up to the ceiling. One page
-    /// per order, so it costs what it costs; a missing one is noted and the
-    /// receipt stays - a document is an extra the caller asked for, never a
-    /// reason to lose the purchase (user request 2026-10-02: MediaMarkt was
-    /// expected to carry its invoices).
-    /// </summary>
+    /// a document is an extra: a missing invoice is noted and the receipt stays; one page per order
     private async Task<List<Receipt>> WithInvoicesAsync(
         IJobContext ctx, IMediaMarktPortal portal, List<Receipt> receipts, CancellationToken ct)
     {
@@ -348,7 +265,6 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         return withDocuments;
     }
 
-    /// <summary>One order's invoice as a document, or none - with the reason noted unless the order simply offers none.</summary>
     private async Task<(ReceiptDocument? Document, bool Offered)> InvoiceAsync(
         IJobContext ctx, IMediaMarktPortal portal, string orderId, CancellationToken ct)
     {
@@ -359,8 +275,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         }
         catch (ConnectorException ex) when (ex.Code is not ErrorCode.SessionExpired)
         {
-            // A dead session is the one failure worth propagating: every
-            // remaining order would fail the same way.
+            // a dead session is the one failure to propagate: every remaining order would fail the same way
             ctx.Note($"order '{orderId}': the invoice could not be fetched ({ex.Code}: {ex.Detail})");
             return (null, true);
         }
@@ -369,14 +284,11 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         return (Document(ctx, orderId, fetched), true);
     }
 
-    /// <summary>What the page handed over, attached only when it is the document it claims to be.</summary>
     private ReceiptDocument? Document(IJobContext ctx, string orderId, MediaMarktDocument? fetched)
     {
         if (fetched is null) return null;
 
-        // What it says it is, not what it is called: a sign-in page answered
-        // to a document link is text/html, and attaching it would hand
-        // somebody a download that opens to nothing.
+        // judge by the declared media type, not the name: a sign-in page answered to a document link is text/html
         var wanted = _options.DocumentMediaTypes.Contains(fetched.MediaType, StringComparer.OrdinalIgnoreCase);
         if (fetched.Status is not 200 || !wanted || fetched.Bytes.Length == 0)
         {
@@ -397,10 +309,6 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         };
     }
 
-    /// <summary>
-    /// The observed first page, then as many more as the window needs. Not
-    /// complete when the walk stopped short of the history's end.
-    /// </summary>
     private async Task<(List<MediaMarktOrder> Orders, bool Complete)> WalkAsync(
         IJobContext ctx, ResourceRequest request, IMediaMarktPortal portal, MediaMarktCall opening, int cap,
         CancellationToken ct)
@@ -423,22 +331,12 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             ctx.Found(orders.Count);
             page++;
 
-            // A SHORT PAGE IS THE END, and it is the only end MediaMarkt states.
-            // The payload carries no total count anywhere - confirmed across
-            // every captured response - so a walk either stops on a page that
-            // came back smaller than it asked for, or it never stops.
-            //
-            // MEASURED ON WHAT MEDIAMARKT SENT, not on what could be read.
-            // Read() drops an order it cannot make a receipt of, so counting
-            // its output made one odd order look like the end of history: the
-            // walk stopped there and reported itself complete, cutting the rest
-            // of somebody's purchases off with nothing to say so.
+            // a short page is the only end MediaMarkt states: the payload has no total count
+            // measured on what MediaMarkt SENT, not on what Read() kept: Read drops unreadable orders,
+            // so one odd order ended the walk reported complete
             if (MediaMarktOrders.Stated(document, _options) < _options.PageSize) break;
 
-            // The oldest order on this page is already before the window, so
-            // every page after it is too. Checked here rather than after the
-            // whole walk, because a ten-year-old account is twenty pages a
-            // caller asked nothing about.
+            // the oldest order is before the window, so every later page is too: spares a ten-year account twenty pages
             if (read.Count > 0 && read.All(order => Older(order, request))) break;
 
             if (page >= _options.MaxPages || orders.Count >= cap)
@@ -461,19 +359,9 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         return (orders, true);
     }
 
-    /// <summary>
-    /// MediaMarkt as a merchant.
-    /// </summary>
-    /// <remarks>
-    /// No <c>StoreName</c>, deliberately. A collected order names an
-    /// <c>outletId</c> - a number - and never the shop it belongs to; turning
-    /// "901" into a store name would mean inventing one, and showing the number
-    /// itself would put a MediaMarkt internal id in front of a user as if it
-    /// meant something.
-    /// </remarks>
+    /// no StoreName: an order names only an outletId number, and a name would be invented or an internal id shown
     internal static Merchant Merchant() => new() { Id = ProviderId, Name = "MediaMarkt" };
 
-    /// <summary>Is this order older than the window the caller asked for?</summary>
     private static bool Older(MediaMarktOrder order, ResourceRequest request) =>
         request.Since is { } since && DateOnly.FromDateTime(order.PurchasedAt.Date) < since;
 

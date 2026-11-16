@@ -5,13 +5,8 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Jumbo;
 
-/// <summary>
-/// One row of <c>data.onlineOrders.orders</c>.
-///
-/// The list states the total; the line items live in a separate
-/// <c>OrderPagesOrder</c> call. Keeping the two apart is what makes them a
-/// real reconciliation pair rather than one number repeated back to itself.
-/// </summary>
+// the list states the total, the line items come from a separate OrderPagesOrder call
+// kept apart they are a real reconciliation pair
 internal sealed record JumboOrderSummary
 {
     public required string OrderId { get; init; }
@@ -22,17 +17,10 @@ internal sealed record JumboOrderSummary
 
     public string? StoreName { get; init; }
 
-    /// <summary>
-    /// This order's list row exactly as Jumbo sent it, or null when the caller
-    /// did not ask. Held only on request: it is a verbatim copy of somebody's
-    /// shopping.
-    /// </summary>
+    // a verbatim copy of somebody's shopping: held only on request
     public string? Raw { get; init; }
 }
 
-/// <summary>
-/// What an <c>OrderPagesOrder</c> document says about one order.
-/// </summary>
 internal sealed record JumboOrderDetail
 {
     public IReadOnlyList<ReceiptItem> Items { get; init; } = [];
@@ -40,28 +28,13 @@ internal sealed record JumboOrderDetail
     public ReceiptPayment Payment { get; init; } = ReceiptFactory.Payment();
 }
 
-/// <summary>
-/// Jumbo's online orders, parsed.
-///
-/// Every path and field name below is CONFIRMED from the operation documents
-/// in <see cref="JumboOptions"/>. What is deliberately <em>not</em> inferred
-/// is the money unit: order amounts are decimal strings of euros and
-/// catalogue prices are cents, and the two live one field apart in the same
-/// schema - so the unit is declared per field in the options and read from
-/// there, never guessed from the value's shape.
-/// </summary>
+// the money unit is declared per field, never guessed: order amounts are decimal-string euros
+// catalogue prices are cents, one field apart
 internal static class JumboOrders
 {
     private const string ProviderId = JumboAdapter.ProviderId;
 
-    /// <summary>
-    /// The rows of an order list page.
-    ///
-    /// A path that does not resolve is <c>provider_changed</c> rather than an
-    /// empty list: "you have never shopped at Jumbo" is a worse lie than an
-    /// outage, and this is exactly the mistake the four guessed
-    /// <c>ReceiptPaths</c> would have produced silently.
-    /// </summary>
+    // an unresolved path is provider_changed, not an empty list: "never shopped at Jumbo" is a worse lie than an outage
     public static IReadOnlyList<JsonElement> Rows(JsonElement root, JumboOptions options)
     {
         if (!JsonAccess.TryPath(root, options.OnlineOrdersPath, out var node))
@@ -73,33 +46,22 @@ internal static class JumboOrders
         return node.ValueKind == JsonValueKind.Array ? JsonAccess.AsArray(node) : [];
     }
 
-    /// <summary>
-    /// The order count the list states, when it states one. A count in a shape
-    /// we cannot read is simply absent: it bounds the walk as a courtesy, and
-    /// the walk's own guards still end it without one.
-    /// </summary>
+    // absent when unreadable: it only bounds the walk as a courtesy
     public static int? TotalCount(JsonElement root, JumboOptions options) =>
         JsonAccess.TryPath(root, options.OnlineOrdersTotalPath, out var node) ? node.Int32() : null;
 
-    /// <summary>
-    /// One order summary, or null when the row cannot be keyed and therefore
-    /// cannot be deduped.
-    /// </summary>
     public static JumboOrderSummary? ParseSummary(
         JsonElement row, JumboOptions options, TimeZoneInfo zone, bool keepRaw = false)
     {
         var id = JsonAccess.StrOf(row, "orderId");
         if (string.IsNullOrWhiteSpace(id)) return null;
 
-        // Stated on the money object itself, not on the order, so it is read
-        // from there and only falls back when Jumbo says nothing.
+        // currency is stated on the money object; the option is only a fallback
         var currency = JsonAccess.TryProp(row, out var money, "totalToPayMoneyType")
             ? MoneyReader.Currency(money, options.Currency)
             : options.Currency;
 
-        // CONFIRMED decimal-string euros. Declared, never sniffed - see
-        // JumboOptions.OrderTotalUnit for why both of Jumbo's conventions are
-        // written down there.
+        // decimal-string euros, declared (see JumboOptions.OrderTotalUnit)
         var total = MoneyReader.Optional(row, options.OrderTotalUnit, currency,
                         $"order[{id}].totalToPayMoneyType", "totalToPayMoneyType")
                     ?? throw ConnectorException.ProviderChanged(
@@ -108,11 +70,7 @@ internal static class JumboOrders
         return new JumboOrderSummary
         {
             OrderId = id,
-            // deliveryDate carries no offset of its own, so it is read in
-            // Europe/Amsterdam rather than in whatever zone the agent happens
-            // to run in - a near-midnight order otherwise lands on the wrong
-            // day, and a receipt matched to the wrong day is worse than one
-            // not matched at all.
+            // deliveryDate has no offset: read in Europe/Amsterdam, else a near-midnight order lands on the wrong day
             PurchasedAt = ReceiptTime.Parse(
                 JsonAccess.StrOf(row, "deliveryDate"), zone, ProviderId, $"order[{id}].deliveryDate"),
             Total = total,
@@ -121,14 +79,7 @@ internal static class JumboOrders
         };
     }
 
-    /// <summary>
-    /// The line items and payment of one order.
-    ///
-    /// A line's <c>Total</c> is its price <em>before</em> discount and its
-    /// <c>Discount</c> is the difference to the price after, so the two sum
-    /// back to exactly what Jumbo says the line cost. Both numbers come from
-    /// the provider; nothing here is derived from a rate or a guess.
-    /// </summary>
+    // Total is the price before discount and Discount the gap to the price after: they sum to what Jumbo says the line cost
     public static JumboOrderDetail ParseDetail(
         JsonElement root, JumboOptions options, string currency, string orderId)
     {
@@ -152,8 +103,7 @@ internal static class JumboOrders
 
             if (gross is null && net is null)
             {
-                // Both confirmed price fields are gone from the line. That is
-                // the schema moving, not an order with a free product.
+                // both price fields gone is the schema moving, not a free product
                 throw ConnectorException.ProviderChanged(
                     $"{ProviderId}: order '{orderId}' line '{name}' states neither " +
                     "linePriceExDiscount nor linePriceIncDiscount");
@@ -177,10 +127,7 @@ internal static class JumboOrders
         return new JumboOrderDetail
         {
             Items = items,
-            // paymentMethod is a bare string on the order. Jumbo states no
-            // card or IBAN tail anywhere in this document, and an explicit
-            // null is what tells the consumer its receipt-to-transaction match
-            // will be weaker here rather than looking like an oversight.
+            // paymentMethod is a bare string, no card or IBAN tail: an explicit null tells the consumer its transaction match is weaker
             Payment = ReceiptFactory.Payment(JumboReceipts.Method(JsonAccess.StrOf(order, "paymentMethod"))),
         };
     }
@@ -193,8 +140,7 @@ internal static class JumboOrders
             if (!string.IsNullOrWhiteSpace(title)) return title;
         }
 
-        // The SKU is not a name, but it is the provider's own identifier for
-        // the thing bought - which beats dropping the line and the money on it.
+        // the SKU beats dropping the line and its money
         return JsonAccess.StrOf(line, "sku") ?? "?";
     }
 
@@ -207,14 +153,8 @@ internal static class JumboOrders
         return MoneyReader.Optional(perUnit, options.OrderLineUnit, currency, $"{field}.pricePerUnit", "price");
     }
 
-    /// <summary>
-    /// The line's own discount, as the gap between its price before and after.
-    ///
-    /// Not read from <c>promotions[].discount</c>: that would be a third
-    /// number that has to agree with the other two, and when it does not the
-    /// receipt silently stops adding up. The promotion is still where the
-    /// label comes from.
-    /// </summary>
+    // from the price gap, not promotions[].discount: a third number that must agree and silently breaks the receipt
+    // promotions still give the label
     private static ReceiptDiscount? Discount(JsonElement line, Money gross, Money? net)
     {
         if (net is not { } paid) return null;
@@ -241,11 +181,7 @@ internal static class JumboOrders
         return null;
     }
 
-    /// <summary>
-    /// Deposits are money the customer actually paid, so they are lines on the
-    /// receipt. Leaving them out is the difference between an order that
-    /// reconciles and one that is short by the crate.
-    /// </summary>
+    // deposits are money paid: leaving them out leaves an order short by the crate
     private static void AddDeposits(
         List<ReceiptItem> items, JsonElement order, JumboOptions options, string currency, string orderId)
     {
@@ -265,10 +201,7 @@ internal static class JumboOrders
                     Name = name,
                     Quantity = quantity,
                     UnitPrice = price,
-                    // Multiplied rather than read: the document states a unit
-                    // price and a count and no line total, so this is the only
-                    // way the deposit reaches the receipt at all. Rounded away
-                    // from zero, the same rule MoneyParser uses.
+                    // multiplied: the document states a unit price and a count but no line total; rounded away from zero like MoneyParser
                     Total = new Money(
                         (long)decimal.Round(price.Value * quantity, 0, MidpointRounding.AwayFromZero),
                         price.Currency),
@@ -295,9 +228,6 @@ internal static class JumboOrders
     }
 }
 
-/// <summary>
-/// The handful of decisions both halves of Jumbo share.
-/// </summary>
 internal static class JumboReceipts
 {
     public static Merchant Merchant(string? storeName) => new()
@@ -307,11 +237,7 @@ internal static class JumboReceipts
         StoreName = storeName,
     };
 
-    /// <summary>
-    /// The provider's word for how it was paid, mapped onto the four the
-    /// normalized schema names. Null stays null - a guess here weakens a
-    /// consumer's receipt-to-transaction match without telling it so.
-    /// </summary>
+    // mapped onto the four normalized names; null stays null, a guess weakens the consumer's receipt-to-transaction match
     public static string? Method(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;

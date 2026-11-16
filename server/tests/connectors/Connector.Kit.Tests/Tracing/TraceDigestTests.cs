@@ -3,11 +3,6 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Tracing;
 
-/// <summary>
-/// digest.md (#441 L3): the page an adapter author reads first, rendered
-/// from a trace - pages, the calls worth reading with the shape of every
-/// JSON answer, the forms posted by field name, the jar, the console.
-/// </summary>
 public sealed class TraceDigestTests
 {
     private static JobTrace Sample()

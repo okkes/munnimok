@@ -1,6 +1,3 @@
-// Runtime-config overlay for the control cockpit — same contract as the
-// other apps: /runtime-config.js sets window.__MUNNI_CONFIG__ and it wins
-// over the baked Vite env, key by key.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Overlay = Partial<Record<string, string>>;

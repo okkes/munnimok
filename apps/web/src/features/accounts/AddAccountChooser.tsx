@@ -25,24 +25,11 @@ import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
 import { DecimalInput } from '@/ui/DecimalInput';
 
-/**
- * THE one "Add an account" entry (account-entry-flow plan, AE1): every
- * surface opens this chooser, which routes by INTENT and says where
- * the result lives. Vocabulary lock-in: Connect (bank) · Import
- * (statement) · Add (manual) · Attach/Detach (space visibility).
- * The manual form is embedded, so any host creates in place; liability
- * types extend it with the debt story (loans v2 — the account IS the
- * loan, so the Debts "+" lands here too, pre-filtered).
- */
-/** any manual-form field carrying text keeps the discard ask armed (S3776) */
+// the ONE "Add an account" entry, routing by intent; the manual form is embedded and liability types add the debt story
 const anyManualFieldFilled = (fields: readonly string[]): boolean => fields.some((field) => field !== '');
 
-/** #326 (user): hosts that cannot pass props — the counterparty ask's
- *  Create door mounts the chooser itself — stage a prefill HERE while
- *  their context is up (review stages the card's facts, and clears on
- *  leave). The chooser drinks it whenever it opens without an explicit
- *  `prefill` prop; the loan-plan fields apply once a liability type is
- *  picked, the name and currency apply to every manual create. */
+// #326: hosts that cannot pass props (the counterparty ask's Create door) stage a prefill here; review clears it on leave
+// the chooser drinks it on open without a `prefill` prop; loan-plan fields apply once a liability type is picked
 export interface ChooserLoanPrefill {
   name?: string;
   currency?: string;
@@ -55,11 +42,9 @@ export const setChooserLoanPrefill = (next: ChooserLoanPrefill | null): void => 
   stagedLoanPrefill = next;
 };
 
-/** the loan-handoff prefill's payment as typed text (S3776) */
 const prefillPaymentText = (cents: number | undefined): string => (cents ? (cents / 100).toFixed(2) : '');
 const prefillPayDayText = (day: number | undefined): string => (day ? String(day) : '');
 
-/** #195 field rings, computed off the component (S3776) */
 function chooserRings(attempted: boolean, nameMissing: boolean, balanceMissing: boolean) {
   if (!attempted) return { nameBad: false, balanceBad: false };
   return { nameBad: nameMissing, balanceBad: balanceMissing };
@@ -79,29 +64,17 @@ export function AddAccountChooser({
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** hosts with an in-place bank connect pass it; others go to All
-   *  accounts with its bank picker open (#527) */
+  /** hosts without an in-place bank connect go to All accounts with its bank picker open (#527) */
   onConnect?: () => void;
   /** hosts with an in-place import flow pass it; others get the door */
   onImport?: () => void;
-  /** hosts that consume the fresh account (the transfer counterparty
-   *  picker) get the manual creation reported back */
   onCreated?: (account: { id: string; type: AccountType }) => void;
-  /** the GLOBAL accounts screen hides manual creation — manual accounts
-   *  live inside a space, so it points at the space instead (user
-   *  ruling 2026-07-28) */
+  /** manual accounts live inside a space, so the global accounts screen points at the space instead */
   hideManual?: boolean;
-  /** 'manual' opens straight on the type grid — the space screen's
-   *  "Add a manual account" button (user redesign 2026-08-01) */
   initialStep?: 'intent' | 'manual';
-  /** limit the manual type grid — the Debts screen's "+" offers the
-   *  liability types only (loans v2: the account IS the debt) */
   manualTypes?: readonly AccountType[];
-  /** the Debts "+" flavor (user request 2026-08-01): titled "New loan"
-   *  and the note says the loan is stored as an account behind the
-   *  scenes — the generic space-scoped copy read like a stranger here */
+  /** the Debts "+" flavor: titled "New loan", the note says the loan is stored as an account behind the scenes */
   loanFlavor?: boolean;
-  /** the recurring→loan handoff seeds the liability form */
   prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; paymentDay?: number; merchantKey?: string };
 }>) {
   const { t } = useLang();
@@ -111,10 +84,7 @@ export function AddAccountChooser({
   const syncing = useSession((s) => s.identity?.kind === 'user');
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [step, setStep] = useState<'intent' | 'manual'>(initialStep ?? 'intent');
-  // #326 (user): drink the staged one-shot prefill on open — hosts that
-  // mount the chooser themselves (the counterparty ask's Create door)
-  // cannot pass the `prefill` prop; review stages the card's facts and
-  // clears them again when the card leaves
+  // #326: drink the staged one-shot prefill on open: hosts that mount the chooser themselves cannot pass `prefill`
   useEffect(() => {
     if (!open || prefill) return;
     const staged = stagedLoanPrefill;
@@ -130,29 +100,24 @@ export function AddAccountChooser({
     // one-shot per open — the staged facts are the OPEN's starting point
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  // no in-place import host? the flow itself embeds (user request: the
-  // old door bounced to the global overview mid-flow)
+  // no in-place import host: the flow embeds itself (the old door bounced to the global overview mid-flow)
   const [importOpen, setImportOpen] = useState(false);
   const [newType, setNewType] = useState<AccountType | null>(null);
   const [name, setName] = useState(prefill?.name ?? '');
   const [balance, setBalance] = useState('');
-  // liabilities DEFAULT to a negative balance but the user decides — an
-  // overpaid credit card is legitimately positive (user rule 2026-07-31)
+  // liabilities default to negative but may be positive (an overpaid credit card)
   const [negative, setNegative] = useState(false);
   const [currency, setCurrency] = useState<string | null>(null);
-  // the debt story (loans v2): liability types carry it on the account
   const [iban, setIban] = useState('');
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState(prefillPaymentText(prefill?.paymentCents));
-  // #190: the plan's due day — like recurring, it says which period a
-  // payment belongs to
+  // #190: the due day says which period a payment belongs to
   const [payDay, setPayDay] = useState(prefillPayDayText(prefill?.paymentDay));
   const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
   const [note, setNote] = useState('');
-  // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
 
@@ -177,9 +142,7 @@ export function AddAccountChooser({
     }
   };
 
-  // #308 (user): the shared-space warning left this flow — connect and
-  // import create GLOBAL accounts and never auto-attach anymore, so the
-  // heads-up moved to the space's attach step, where it is true
+  // #308: connect and import create global accounts and never auto-attach; the shared-space heads-up lives at the attach step
 
   // Mina suggests the demo account's name; the user still presses Add
   useEffect(() => {
@@ -187,25 +150,21 @@ export function AddAccountChooser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, newType]);
 
-  // amount fields accept little arithmetic ("3*250+100", user request):
-  // evaluated on blur into a plain number the rest of the form reads
+  // amount fields evaluate small arithmetic ("3*250+100") on blur
   const evalField = (raw: string, set: (next: string) => void) => {
     if (!/[+*/]|.-/.test(raw)) return; // plain numbers pass through
     const cents = evalAmountCents(raw);
     if (cents !== null) set((cents / 100).toFixed(2));
   };
 
-  // a loan/mortgage exists to track what's owed — its current value is
-  // the whole point and can't default to zero (v2: "current required")
+  // a loan/mortgage tracks what is owed: its current value is required, no zero default
   const balanceRequired = newType === 'loan' || newType === 'mortgage';
   const nameMissing = !name.trim();
   const balanceMissing = balanceRequired && parseCents(balance) === null;
   const saveDisabled = nameMissing || balanceMissing;
-  // #195 rings, precomputed once (S3776: the JSX kept re-branching)
   const { nameBad, balanceBad } = chooserRings(attempted, nameMissing, balanceMissing);
 
-  /** the debt story a LIABILITY account carries (loans v2) — blank
-   *  fields stay off the row entirely */
+  /** the debt story a liability account carries; blank fields stay off the row */
   const liabilityFields = (): Partial<AccountRow> => {
     const originalCents = parseCents(original);
     const paymentCents = parseCents(payment);
@@ -242,8 +201,7 @@ export function AddAccountChooser({
       source: 'manual',
       currency: effectiveCurrency,
       balanceCents,
-      // #509 (user): a loan typed at its original amount holds no payment
-      // yet — no cut-off date, every payment linked to it counts
+      // #509: a loan typed at its original amount holds no payment yet: no cut-off date, every linked payment counts
       ...(isPristineLoan({ originalCents: story.originalCents, balanceCents }) ? {} : { balanceAsOf: manualBalanceDate() }),
       ...story,
     });
@@ -252,8 +210,7 @@ export function AddAccountChooser({
     close(false);
   };
 
-  // a filled manual form deserves a "discard?" before a stray backdrop
-  // tap drops it (user request 2026-08-01) — the intent step never asks
+  // a filled manual form asks "discard?" before a stray backdrop tap drops it; the intent step never asks
   const manualDirty = step === 'manual' && newType !== null && anyManualFieldFilled([name.trim(), balance, iban, original, apr, payment, note]);
 
   return (
@@ -327,8 +284,7 @@ export function AddAccountChooser({
 
       {step === 'manual' && (
         <div className="flex flex-col gap-3 pt-1" data-testid="chooser-manual-form">
-          {/* #283: the scope/storage story folds behind a hint — the
-              always-visible paragraph shouted over the form */}
+          {/* #283: the scope/storage story folds behind a hint: the visible paragraph shouted over the form */}
           <div className="m-cap flex flex-wrap items-center gap-1.5">
             {t('acct.manual')}
             <InfoHint
@@ -350,15 +306,11 @@ export function AddAccountChooser({
                 aria-invalid={nameBad}
                 className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
               />
-              {/* #195 r2 (user): the blocker sits AT the field */}
               <FormBlockerNote show={nameBad} text={t('form.needName')} testId="chooser-acctform-save-blocker" />
-              {/* #342: a funding pot has no balance of its own to ask
-                  for — it counts nowhere and starts at zero */}
+              {/* #342: a funding pot counts nowhere and starts at zero: no balance field */}
               {newType !== 'funding' && (
               <div className="flex gap-2">
-                {/* #327 r3 (user): each half owns its corners of the
-                    clipping frame so the inset focus ring hugs the
-                    visible shape instead of losing its corners */}
+                {/* #327: each half owns its corners of the clipping frame so the inset focus ring hugs the visible shape */}
                 <div className="flex overflow-hidden rounded-input border border-line">
                   <button
                     data-testid="chooser-acctform-neg"
@@ -381,9 +333,7 @@ export function AddAccountChooser({
                   onChange={(e) => setBalance(e.target.value)}
                   onBlur={() => evalField(balance, setBalance)}
                   inputMode="decimal"
-                  // a liability's balance is what's owed RIGHT NOW — not a
-                  // starting value (user ss: "Initial balance" next to
-                  // "Original amount" read as the same thing twice)
+                  // a liability's balance is what is owed right now: "Initial balance" beside "Original amount" read as the same thing twice
                   placeholder={`${t(isLiability(newType) ? 'debts.current' : 'acct.initialBalance')} (${effectiveCurrency})`}
                   aria-invalid={balanceBad}
                   className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(balanceBad)}`}
@@ -399,8 +349,6 @@ export function AddAccountChooser({
                   </Chip>
                 ))}
               </ScrollRow>
-              {/* the debt story (loans v2): a liability account IS the
-                  loan — interest, size and plan live right on it */}
               {isLiability(newType) && (
                 <>
                   <div className="m-cap px-1 pt-1">{t('debts.loanDetails')}</div>
@@ -493,7 +441,7 @@ export function AddAccountChooser({
                   data-testid={`chooser-accttype-${def.type}`}
                   onClick={() => {
                     setNewType(def.type);
-                    setNegative(isLiability(def.type)); // default −, user can flip
+                    setNegative(isLiability(def.type));
                   }}
                   className="m-tap flex flex-col items-start gap-2 rounded-card border border-line bg-surface p-4 text-left"
                 >
@@ -506,12 +454,7 @@ export function AddAccountChooser({
         </div>
       )}
     </Sheet>
-    {/* the embedded import flow ONLY for hosts without their own (the
-        counterparty picker's Create door) — a host that passes onImport
-        owns the flow and must not get a duplicate mount. Beside the
-        chooser sheet so it survives its close. Imports are global but
-        attach to THIS space — the note says so instead of bouncing to
-        the overview */}
+    {/* only for hosts without their own onImport (no duplicate mount); beside the sheet so it survives its close */}
     {!onImport && (
       <StatementImportFlow
         open={importOpen}

@@ -3,11 +3,8 @@ import { nativeExits } from './platform';
 import type { NativeExitRecord } from './platform';
 import { reportErrorWith } from './report';
 
-/**
- * #594: the web layer's error reports die with the app's process, so a crash of the Android app itself left no
- * trace ("no logs in GlitchTip"). The shell notes how its processes ended and Android keeps its own record; the
- * next start reports what was not somebody's choice, once.
- */
+// #594: the web layer's error reports die with the app's process, so an Android app crash left no trace; the shell notes
+// how its processes ended and the next start reports what was not somebody's choice, once
 
 const SEEN_KEY = 'munni_native_exit_seen';
 
@@ -28,7 +25,6 @@ const FAULTS_ON_SCREEN: Readonly<Record<number, string>> = {
 /** ActivityManager's importance of a process the person can see: foreground is 100, visible 200 */
 const ON_SCREEN = 200;
 
-/** what the exit is called when it is one to report */
 function faultOf(exit: NativeExitRecord): string | null {
   const always = FAULTS[exit.reason];
   if (always) return always;
@@ -37,10 +33,8 @@ function faultOf(exit: NativeExitRecord): string | null {
 }
 
 const megabytes = (kb: number | undefined): number | undefined => (kb ? Math.round(kb / 1024) : undefined);
-/** a message is a title: one line, cut */
 const oneLine = (text: string): string => text.split('\n')[0].slice(0, 300);
 
-/** Reports the exits since the last report. Returns how many events it raised. */
 export async function reportNativeExits(): Promise<number> {
   const found = await nativeExits();
   if (!found) return 0;
@@ -85,10 +79,7 @@ export async function reportNativeExits(): Promise<number> {
   return raised;
 }
 
-/**
- * Reports once a signed-in identity is known, and not before: a device that turns out to belong to a
- * chosen-offline identity sends nothing, ever, and at the app's start nobody is known yet.
- */
+/** reports only once a signed-in identity is known: a chosen-offline identity sends nothing, ever */
 export function watchNativeExits(): void {
   let told = false;
   const tell = () => {

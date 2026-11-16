@@ -1,17 +1,12 @@
 import { useState } from 'react';
 import { parseDailyLimit } from './ImageSearchScreen';
 
-/** GET /admin/receipt-reading: whether this environment reads receipt photos, with which model, and how far reads may go */
 export interface ReceiptReadingDoc {
   enabled: boolean;
   provider: string | null;
-  /** the model a read runs on when none is chosen */
   defaultModel: string | null;
-  /** the operator's choice; null = the default */
   model: string | null;
-  /** receipts one person may have read a day; null = no limit */
   dailyPerUser: number | null;
-  /** receipts the whole environment may have read a month; null = no cap */
   monthlyCap: number | null;
   readThisMonth: number;
 }
@@ -31,11 +26,7 @@ const MODELS: { id: string; label: string }[] = [
 
 const limitText = (limit: number | null): string => (limit === null ? '' : String(limit));
 
-/**
- * #567: the receipt reader's settings. The key lives in the setup wizard;
- * here the operator chooses the model — every read is paid for — and how
- * many receipts one person and the whole environment may have read.
- */
+// #567: every read is paid for; the key lives in the setup wizard
 export function ReceiptReadingScreen({
   doc,
   busy,

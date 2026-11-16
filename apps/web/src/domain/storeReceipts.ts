@@ -1,16 +1,7 @@
 import { titleLikeness } from './entryMatch';
 import type { ReceiptItem, ReceiptPayment, TxView } from '@/db/types';
 
-/**
- * Store receipts domain (receipts design S2) — all pure: matching
- * fetched receipts to transactions, and parsing OCR text from photo
- * receipts into the same item shape.
- */
-
-// ── matching ────────────────────────────────────────────────────────────
-
-/** merchant fingerprints per party (keyed by connector provider id),
- *  tested against tx.merchant */
+/** merchant fingerprints keyed by connector provider id */
 const STORE_MERCHANT: Partial<Record<string, RegExp>> = {
   ah: /albert\s*heijn|\bah\b/i,
   jumbo: /jumbo/i,
@@ -21,8 +12,7 @@ const STORE_MERCHANT: Partial<Record<string, RegExp>> = {
   'amazon-nl': /amazon/i,
 };
 
-/** operator overrides from the catalog (R9): admin-curated patterns win
- *  over the bundled fingerprints so matching improves without releases */
+/** admin-curated catalog patterns win over the bundled ones so matching improves without releases (R9) */
 let catalogStorePatterns: Partial<Record<string, RegExp>> = {};
 
 export function setCatalogStorePatterns(rules: readonly { id: string; patterns: string[] }[]): void {
@@ -45,26 +35,18 @@ export interface MatchableReceipt {
   source: string;
   date: string;
   totalCents: number;
-  /** how it was paid, when the store exposes it (R5) */
   payment?: ReceiptPayment;
-  /** the shop's name — what a photo is recognised by, once someone read or typed it */
   merchant?: string;
 }
 
-/** resolves a transaction's paying-account IBAN/PAN tail, when known */
 export type AccountTailOf = (tx: TxView) => string | undefined;
 
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
-/** how far a payment may sit from the receipt's total and still be its candidate */
 const AMOUNT_SLACK_CENTS = 2;
 
-/**
- * Payment awareness (R5 ruling): when the receipt names the paying
- * account's tail AND at least one candidate's account matches it, the
- * mismatching candidates drop out; when NO candidate matches (store
- * cards vs IBAN tails vary) the tail only downranks via scoring.
- */
+// R5: when the receipt's account tail matches at least one candidate the others drop out;
+// when none matches (store cards vs IBAN tails vary) nobody is excluded
 function applyPaymentFilter(
   receipt: MatchableReceipt,
   candidates: TxView[],
@@ -94,12 +76,8 @@ export function matchCandidates(
   return applyPaymentFilter(receipt, base, tailOf);
 }
 
-/**
- * #554: the expenses by what they cost — a matching pass looks up each
- * receipt's neighbours instead of walking every row (receipts × rows grew
- * with every month of history). Hands back exactly the rows the amount
- * rule of `matchCandidates` lets through, for any total.
- */
+// #554: a lookup by cost instead of walking every row (receipts x rows grew with every month of history);
+// hands back exactly the rows matchCandidates' amount rule lets through
 export function expensesByCost(txs: readonly TxView[]): (totalCents: number) => TxView[] {
   const byCost = new Map<number, TxView[]>();
   for (const tx of txs) {
@@ -116,12 +94,8 @@ export function expensesByCost(txs: readonly TxView[]): (totalCents: number) => 
   };
 }
 
-/**
- * The payment looks like the receipt's shop: a connector's by the shop's
- * fingerprint. #567: a photo has no fingerprint — it is told by its shop's
- * name against the payment's title, and a photo nobody named by amount and
- * day alone.
- */
+// #567: a photo has no fingerprint: it is told by its shop's name against the payment's title,
+// or by amount and day alone when nobody named it
 const merchantHit = (receipt: Pick<MatchableReceipt, 'source' | 'merchant'>, tx: TxView): boolean => {
   if (receipt.source === 'photo') return !receipt.merchant || titleLikeness(receipt.merchant, tx.merchant) > 0;
   return (catalogStorePatterns[receipt.source] ?? STORE_MERCHANT[receipt.source])?.test(tx.merchant ?? '') ?? false;
@@ -133,11 +107,8 @@ function scoreOf(receipt: MatchableReceipt, tx: TxView): number {
   return merchant + exact + (2 - dayDiff(tx.date, receipt.date)) * 0.1;
 }
 
-/**
- * Auto-attach policy (user ruling: "rung 1 is enough"): only a rung-1
- * SINGLE — exact amount, date ±2d, merchant fingerprint — attaches by
- * itself; everything else stays unlinked for a manual pick.
- */
+// auto-attach only a rung-1 SINGLE (exact amount, date within 2 days, merchant fingerprint);
+// the rest stays for a manual pick
 export function bestMatch(
   receipt: MatchableReceipt,
   txs: readonly TxView[],
@@ -150,11 +121,6 @@ export function bestMatch(
   return rung1.length === 1 ? rung1[0].id : null;
 }
 
-/**
- * The manual picker's ladder (approved receipts v2): start at the
- * near-matches, widen on demand — same price first, then the latest
- * expenses so the picker never dead-ends.
- */
 export interface CandidateLadder {
   /** amount ±2c and date ±2d, best first (rungs 1–2) */
   primary: TxView[];
@@ -173,8 +139,6 @@ export function candidateLadder(receipt: MatchableReceipt, txs: readonly TxView[
   const latest = expenses.filter((tx) => !sameAmountIds.has(tx.id));
   return { primary, more: [...sameAmount, ...latest].slice(0, 12) };
 }
-
-// ── OCR text → items (photo receipts) ───────────────────────────────────
 
 /** register noise a Dutch receipt prints around the products */
 const OCR_SKIP = /totaal|subtotaal|bonus|korting|te betalen|pinnen|betaald|wisselgeld|btw|koopzegels|airmiles|spaar|statiegeld retour/i;

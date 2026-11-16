@@ -40,7 +40,6 @@ export function generateValue(name) {
   return b64url(randomBytes(32));
 }
 
-/** does the environment enable the feature a manifest entry belongs to? */
 export function featureOn(stack, feature) {
   if (!feature) return true;
   const f = stack.features ?? {};
@@ -58,14 +57,10 @@ export function featureOn(stack, feature) {
   }
 }
 
-/** the manifest entries that apply to a platform at all (never the wizard's own) */
 export const platformEntries = (platform) => MANIFEST.secrets.filter((s) => s.scope !== 'wizard' && (!s.platforms || s.platforms.includes(platform)));
 
-/**
- * the entries ONE stack is responsible for: the shared stack owns the
- * platform-scoped ones (+ its own POSTGRES_PASSWORD); an environment
- * stack owns the env-scoped ones its features need (+ its own postgres)
- */
+// the shared stack owns the platform-scoped entries (+ its POSTGRES_PASSWORD);
+// an environment the env-scoped ones its features need (+ its own postgres)
 export function entriesFor(stack) {
   return platformEntries(stack.platform).filter((s) => {
     if (s.scope === 'stack') return true;
@@ -81,7 +76,6 @@ export const mirroredEntries = (stack) => (stack.role === 'env' ? platformEntrie
 /** is a manifest entry satisfied by what is present? one that names a `fallback` (LOGTO_APPLE_TEAM_ID ← APPLE_TEAM_ID: one Apple membership) is, when the fallback is */
 export const satisfiedBy = (entry, has) => has(entry.name) || Boolean(entry.fallback && has(entry.fallback));
 
-/** fill every entry that names a fallback from the fallback's value (the source first, then the target itself) — the modules then read the entry's own name */
 export function foldFallbacks(target, source = target) {
   for (const entry of MANIFEST.secrets) {
     if (!entry.fallback || target[entry.name]) continue;
@@ -90,8 +84,6 @@ export function foldFallbacks(target, source = target) {
   }
   return target;
 }
-
-/* ── GitHub (the nas platform) ───────────────────────────────────────── */
 
 export function ensureEnvironment(env) {
   gh(['api', '-X', 'PUT', `repos/{owner}/{repo}/environments/${encodeURIComponent(env)}`]);
@@ -125,12 +117,10 @@ export function setEnvVariable(env, name, value) {
   gh(['variable', 'set', name, '--env', env, '--body', value]);
 }
 
-/** every GitHub environment a platform-scoped value lives in: the shared one and every environment's */
 export function platformEnvironments(stack) {
   return [...new Set([stack.sharedStack.replace(/^munni-/, ''), ...platformEnvStacks(stack.platform).map((s) => s.githubEnvironment)])];
 }
 
-/** a platform-scoped write: the same value into every environment of the platform */
 export function setPlatformSecret(stack, name, value) {
   for (const env of platformEnvironments(stack)) {
     ensureEnvironment(env);
@@ -145,14 +135,8 @@ export function setPlatformVariable(stack, name, value) {
   }
 }
 
-/**
- * First-run + drift repair for a nas stack: mint every generated secret
- * missing from its environment (platform-scoped ones from the shared
- * stack, mirrored into every environment of the platform), report the
- * operator secrets still absent, and — for an environment stack — the
- * platform-scoped values its environment does not carry yet (the shared
- * stack's bootstrap mirrors them). `rotate` re-mints named generated ones.
- */
+// mints missing generated secrets (platform-scoped ones from the shared stack, mirrored into every environment)
+// `rotate` re-mints named ones
 export function ensureSecrets(stack, { rotate = [] } = {}) {
   const env = stack.githubEnvironment;
   ensureEnvironment(env);
@@ -209,7 +193,6 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
   return { minted, mirrored, missingOperator, waitingForShared, values };
 }
 
-/** manifest-vs-reality check used by --verify (no writes) */
 export function verifySecrets(stack) {
   const present = existingEnvSecrets(stack.githubEnvironment);
   const expected = [...entriesFor(stack), ...mirroredEntries(stack)];

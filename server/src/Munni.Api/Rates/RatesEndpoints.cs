@@ -4,16 +4,8 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Munni.Api.Rates;
 
-/// <summary>
-/// FX reference rates for display-currency conversion (currency plan
-/// CD1): the ECB daily reference XML — free, no key, ~30 currencies,
-/// EUR-based. Never used for bookkeeping: raw amounts keep their own
-/// currency, the client converts at render time and marks results ≈.
-/// Three vendor files, coarsest first: the daily file for "latest", the
-/// 90-day history for recent transaction dates, the full history as the
-/// fallback for anything older. Each parse is cached server-side so a
-/// fleet of clients costs the ECB one download per window.
-/// </summary>
+// ECB reference rates, EUR-based; never for bookkeeping: raw amounts keep their currency, the client converts at render
+// three files, coarsest first (daily, 90-day, full history), each parse cached so the ECB sees one download per window
 public static class RatesEndpoints
 {
     public const string EcbClientName = "ecb";
@@ -92,7 +84,7 @@ public static class RatesEndpoints
                 .Select(ParseDayCube)
                 .OfType<ParsedDay>()
                 .ToList();
-            days.Sort((a, b) => b.DayOnly.CompareTo(a.DayOnly)); // newest first
+            days.Sort((a, b) => b.DayOnly.CompareTo(a.DayOnly));
             return days.Count > 0 ? days : null;
         }
         catch (Exception e) when (e is HttpRequestException or System.Xml.XmlException or TaskCanceledException)

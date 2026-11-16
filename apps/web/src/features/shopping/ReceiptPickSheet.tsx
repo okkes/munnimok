@@ -16,50 +16,34 @@ import { Sheet } from '@/ui/Sheet';
 import { ReceiptPeekSheet } from './ReceiptPeekSheet';
 import { filterReceipts, receiptFilter, receiptParties } from './receiptPick';
 
-/**
- * The receipt picker (user 2026-10-06 for the review card, user 2026-10-07
- * everywhere a receipt is searched): the proposal's yes / no, then — #542 —
- * the None option, the search with the parties' chips over everything
- * below it, the suggestions, the host's own rungs and every receipt. #496:
- * a row opens the receipt in a sheet over the list, whose Attach is the
- * pick. The sheet only reports picks — the review stages one for its
- * confirm, the detail and the bulk walk link or swap at once.
- */
+/** the sheet only reports picks: the review stages one for its confirm, the detail and the bulk walk link or swap at once */
 export interface ReceiptPickSheetProps {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   title: string;
-  /** every testid in the sheet hangs off this: the review keeps `review-receipt`, the detail uses `receipt-pick` */
   testIdPrefix: string;
   /** the suggestion rows' own prefix when it is not `<testIdPrefix>-pick` (the detail's rows stay `receipt-pick-<id>`) */
   pickTestIdPrefix?: string;
   proposal?: ReceiptLinkRow;
-  /** the transaction the proposal fits, when the host has it: the card shows both rows (user 2026-10-09) — behind a
-   *  full-height sheet the transaction is out of sight, so the comparison must sit on the card */
+  /** behind a full-height sheet the transaction is out of sight, so the card shows both rows to compare */
   proposalTx?: SpaceTx;
-  /** the suggestions, ranked by the host (`suggestionsFor`) */
   candidates: readonly ReceiptRow[];
   all: readonly ReceiptRow[];
-  /** the receipt wearing the check: the attached one on the detail, the staged one on the review card */
   selectedId: string | null;
   /** the receipt already attached to the transaction — its look offers no second attach */
   attachedId?: string | null;
-  /** the None option wears the check instead (the review card staged "no receipt") */
   noneSelected?: boolean;
   /** the None option is on offer at all (the detail hides it until a receipt is attached) */
   showNone?: boolean;
   currency: string;
-  /** user 2026-10-08: the OTHER transactions a receipt is attached to, by receipt id — the row says so and stays
-   *  pickable (several payments, one receipt) */
+  // the OTHER transactions a receipt is attached to, by receipt id: the row says so and stays pickable
+  // (several payments, one receipt)
   attachedTo?: ReadonlyMap<string, readonly string[]>;
-  /** names a transaction for that note ("29 May · bol.com · €157.33"); unnamed = the count alone */
   describeTx?: (txId: string) => string | undefined;
   onAccept: (link: ReceiptLinkRow) => void;
   onReject: (link: ReceiptLinkRow) => void;
   onPick: (row: ReceiptRow | null) => void;
-  /** #495: the bulk walk's head — which transaction is matching, and how far the walk is */
   context?: ReactNode;
-  /** the host's own rungs (capture, upload, the connections door), between the suggestions and every receipt */
   children?: ReactNode;
 }
 
@@ -71,8 +55,6 @@ const fmtReceiptDay = (iso: string, lang: Lang): string =>
 
 const sourceIcon = (receipt: Pick<ReceiptRow, 'source'>): string => (receipt.source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
-/** one of the proposal card's two rows: the receipt and the transaction wear the same shape (icon, name, date,
- *  amount, a chevron where it opens), so the eye compares them line by line (user 2026-10-09) */
 function ProposalRow({
   icon,
   color,
@@ -108,7 +90,6 @@ function ProposalRow({
   );
 }
 
-/** the transaction's row on the card: its category's icon and colour, its title, day and amount */
 function TxProposalRow({ tx, currency, testId, onOpen }: Readonly<{ tx: SpaceTx; currency: string; testId: string; onOpen?: (txId: string) => void }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -127,13 +108,6 @@ function TxProposalRow({ tx, currency, testId, onOpen }: Readonly<{ tx: SpaceTx;
   );
 }
 
-/**
- * The proposal's ask (#367 §5.7) — the detail's own card, the Receipts
- * screen's list and the sheet's head are the same block. User 2026-10-09:
- * the receipt and the transaction it fits stand as two rows of one shape
- * with a line between them that stops short of the edges — the comparison
- * is one glance and each row is a door of its own.
- */
 export function ReceiptProposalCard({
   link,
   tx,
@@ -147,18 +121,14 @@ export function ReceiptProposalCard({
   className = '',
 }: Readonly<{
   link: ReceiptLinkRow;
-  /** the transaction the receipt fits, when the host has it — absent, the card is the receipt's row and the ask alone */
   tx?: SpaceTx;
   currency: string;
   /** the card's testids; `open` and `tx` default to `<card>-open` / `<card>-tx` */
   ids: { card: string; accept: string; reject: string; open?: string; tx?: string };
   onAccept: (link: ReceiptLinkRow) => void;
   onReject: (link: ReceiptLinkRow) => void;
-  /** the receipt row is a door when the host offers one */
   onOpenReceipt?: () => void;
-  /** the transaction row is a door when the host offers one */
   onOpenTx?: (txId: string) => void;
-  /** the answer is on its way (the card is leaving): the buttons stand down */
   busy?: boolean;
   className?: string;
 }>) {
@@ -177,12 +147,10 @@ export function ReceiptProposalCard({
       />
       {tx && (
         <>
-          {/* the line between the two sits inside the card's edges (user 2026-10-09: subtle, not edge to edge) */}
           <div className="mx-4 border-t border-line-2" />
           <TxProposalRow tx={tx} currency={currency} testId={ids.tx ?? `${ids.card}-tx`} onOpen={onOpenTx} />
         </>
       )}
-      {/* the buttons start under the rows' text (the padding, the icon and its gap) */}
       <div className="flex gap-2 px-4 pb-3 pl-[46px]">
         <Button size="sm" data-testid={ids.accept} disabled={busy} onClick={() => onAccept(link)}>
           {t('receipts.accept')}
@@ -195,8 +163,6 @@ export function ReceiptProposalCard({
   );
 }
 
-/** one receipt in a list: a tap opens it over the list (#496), where Attach picks it; a note says where it is
- *  attached already */
 function ReceiptPickRow({
   receipt,
   selected,
@@ -211,7 +177,6 @@ function ReceiptPickRow({
   /** lit while its peek sheet is open; the light fades out over 600 ms once that closes (user 2026-10-09) */
   peeked: boolean;
   currency: string;
-  /** "Attached to …" (user 2026-10-08) — the receipt proves another transaction already */
   note?: string;
   pickTestId: string;
   onLook: () => void;
@@ -248,7 +213,6 @@ function ReceiptPickRow({
   );
 }
 
-/** the None option: no receipt for this transaction (the detail: let the attached one go) */
 function ReceiptNoneOption({ testId, selected, onPick }: Readonly<{ testId: string; selected: boolean; onPick: () => void }>) {
   const { t } = useLang();
   return (
@@ -298,11 +262,9 @@ export function ReceiptPickSheet({
   }, [open]);
   const parties = useMemo(() => receiptParties(all), [all]);
   const listed = useMemo(() => filterReceipts(all, query, party).slice(0, 100), [all, query, party]);
-  // #542: the search sits above the suggestions and narrows them too (in their ranked order)
   const suggested = useMemo(() => candidates.filter(receiptFilter(query, party)), [candidates, query, party]);
   const id = (suffix: string): string => `${testIdPrefix}-${suffix}`;
   const pickPrefix = pickTestIdPrefix ?? id('pick');
-  /** "Attached to 29 May · bol.com · €157.33" for one named transaction, the count otherwise (user 2026-10-08) */
   const attachedNote = (receiptId: string): string | undefined => {
     const others = attachedTo?.get(receiptId);
     if (!others?.length) return undefined;
@@ -394,7 +356,6 @@ export function ReceiptPickSheet({
           )}
         </div>
       </Sheet>
-      {/* the look over the list; the attached receipt itself offers no second attach */}
       <ReceiptPeekSheet
         open={open && peekOpen}
         onOpenChange={setPeekOpen}

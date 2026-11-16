@@ -6,12 +6,10 @@ import { recurringDismissId } from '@/domain/feedIds';
 import { merchantKey, merchantKeyBefore578 } from '@/domain/merchantKey';
 import { LAST_SYNC_KEY } from '@/sync/engine';
 
-/** the migration's marker: it ran on this database */
 export const MERCHANT_KEY_REKEY_MARKER = 'merchantKeyRekey:578';
 
 type Votes = Map<string, Map<string, number>>;
 
-/** every stored transaction's old key → how often each of today's keys stands behind it */
 async function votesByOldKey(store: StorageBackend): Promise<Votes> {
   const votes: Votes = new Map();
   for (const tx of await store.allRows('transaction')) {
@@ -25,7 +23,6 @@ async function votesByOldKey(store: StorageBackend): Promise<Votes> {
   return votes;
 }
 
-/** the key a stored old key becomes: what most of its transactions say today, else the key itself re-read */
 function rekeyed(votes: Votes, old: string): string {
   const tally = votes.get(old);
   if (!tally?.size) return merchantKey(old) || old;
@@ -39,7 +36,6 @@ function rekeyedDismissal(votes: Votes, stored: string): string {
   return `${rekeyed(votes, stored.slice(0, at))}${stored.slice(at)}`;
 }
 
-/** recurrings and loans keep their id: the key moves in place; how many moved (S3776) */
 async function rekeyInPlace(
   repo: Repo,
   entity: 'recurring' | 'account',
@@ -69,14 +65,8 @@ async function rekeyDismissals(repo: Repo, dismissals: readonly RecurringDismiss
   return moved;
 }
 
-/**
- * #578: the merchant key learned to cut a card line's place-and-time tail
- * (">S-GRAVENH30.10.2026 1"), so the keys stored on recurrings, on loans
- * and on dismissed suggestions are rewritten once to today's spelling —
- * each through the transactions that carried it (the old spelling lost the
- * ">", so the key alone cannot say what it becomes). Deterministic, so
- * every device lands on the same keys; synced writes, like any heal.
- */
+// #578: the key now cuts a card line's place-and-time tail; stored keys are rewritten once, each through its transactions
+// (the old spelling lost the ">", so the key alone cannot say what it becomes). Deterministic: every device lands the same.
 export async function rekeyMerchantKeys(store: StorageBackend, repo: Repo): Promise<number> {
   if ((await store.metaGet(MERCHANT_KEY_REKEY_MARKER))?.value) return 0;
   // before a first full round the rows the keys are read through are not all here: running now would settle on nothing

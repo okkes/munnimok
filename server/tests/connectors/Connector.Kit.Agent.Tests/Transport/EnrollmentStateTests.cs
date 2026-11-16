@@ -3,23 +3,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Transport;
 
-/// <summary>
-/// The state file, now that one machine enrolls with several connectors.
-///
-/// <para>
-/// What is in it is the only thing standing between a user and a fresh
-/// one-time code: an enrollment code is single-use and HMAC-signed, so an
-/// agent that loses its entry comes back as a stranger and needs a human at a
-/// keyboard to mint another. It holds one entry per connector now, keyed by
-/// the control plane that issued it - which is what a bearer token belongs to.
-/// </para>
-///
-/// <para>
-/// Two claims matter more than the rest and both are here: the file every
-/// running agent already has is read rather than discarded, and forgetting one
-/// connector's enrollment leaves the others' alone.
-/// </para>
-/// </summary>
+// an enrollment code is single-use and HMAC-signed: an agent that loses its entry needs a human to mint another;
+// entries are keyed by the control plane that issued them, which is what a bearer token belongs to
 public sealed class EnrollmentStateTests : IDisposable
 {
     private const string Bank = "https://bank.internal:8392/";
@@ -48,16 +33,8 @@ public sealed class EnrollmentStateTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// THE FILE EVERY RUNNING AGENT HAS IS READ, not thrown away.
-    /// </summary>
-    /// <remarks>
-    /// This is the exact text the single-connector agent wrote, and it is on a
-    /// state volume on somebody's NAS right now. Reading it as anything other
-    /// than that connector's enrollment costs them a fresh code, a human
-    /// present, and - because profiles are filed under the agent that holds
-    /// them - every provider registration again from the start.
-    /// </remarks>
+    // the single-connector file is on somebody's NAS state volume: reading it as anything else costs a fresh code,
+    // a human present, and every provider registration again (profiles are filed under the agent)
     [Fact]
     public void The_single_connector_file_is_read_as_that_connectors_enrollment()
     {
@@ -78,11 +55,6 @@ public sealed class EnrollmentStateTests : IDisposable
         Assert.Equal(DateTimeOffset.Parse("2026-01-01T00:00:00+00:00", null), stored.EnrolledAt);
     }
 
-    /// <summary>
-    /// AND IT SURVIVES THE SECOND CONNECTOR BEING ADDED, which is what the
-    /// upgrade actually looks like: the same container, one more connector in
-    /// its configuration, the enrollment it already had still good.
-    /// </summary>
     [Fact]
     public void Adding_a_connector_rewrites_the_file_and_keeps_the_old_enrollment()
     {
@@ -98,20 +70,10 @@ public sealed class EnrollmentStateTests : IDisposable
         Assert.Equal("agt_old", _store.Load(Bank)?.AgentId);
         Assert.Equal("agt_registry", _store.Load(Registry)?.AgentId);
 
-        // And the file is now the list, so the next connector does not have to
-        // guess at the shape either.
         Assert.Contains("\"connections\"", File.ReadAllText(_store.FilePath), StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A second enrollment for the same connector replaces the first rather
-    /// than sitting beside it.
-    /// </summary>
-    /// <remarks>
-    /// One connector issues one identity to this machine at a time. Two
-    /// entries would make "which token is this agent's" a matter of ordering,
-    /// and the loser would be a revoked token left on disk.
-    /// </remarks>
+    // one connector issues one identity per machine at a time: two entries would leave a revoked token on disk
     [Fact]
     public void Re_enrolling_with_one_connector_replaces_its_entry()
     {
@@ -123,17 +85,8 @@ public sealed class EnrollmentStateTests : IDisposable
         Assert.Equal("agt_registry", _store.Load(Registry)?.AgentId);
     }
 
-    /// <summary>
-    /// FORGETTING ONE CONNECTOR LEAVES THE OTHERS ENROLLED.
-    /// </summary>
-    /// <remarks>
-    /// A revoke is one connector's verdict, and the commonest way to meet one
-    /// is not a user revoking anything: it is a connector restored from a
-    /// backup taken before this agent enrolled, which answers 401 to
-    /// everything. Clearing the whole file there would cost the registry
-    /// connector beside it its enrollment too - and DUO has no pooled fleet to
-    /// fall back on while somebody mints another code.
-    /// </remarks>
+    // a revoke is one connector's verdict, often a connector restored from a pre-enrollment backup answering 401 to everything;
+    // clearing the whole file would cost the registry connector its enrollment too (DUO has no pooled fleet to fall back on)
     [Fact]
     public void Clearing_one_connector_leaves_the_others_enrollment_alone()
     {
@@ -147,9 +100,6 @@ public sealed class EnrollmentStateTests : IDisposable
         Assert.True(File.Exists(_store.FilePath), "the file still holds an enrollment and must not be deleted");
     }
 
-    /// <summary>
-    /// And clearing the last one takes the file with it, token and all.
-    /// </summary>
     [Fact]
     public void Clearing_the_last_connector_deletes_the_file()
     {
@@ -160,14 +110,8 @@ public sealed class EnrollmentStateTests : IDisposable
         Assert.False(File.Exists(_store.FilePath), "a revoked token must not be left on disk");
     }
 
-    /// <summary>
-    /// An enrollment issued by another connector is not this connector's.
-    /// </summary>
-    /// <remarks>
-    /// The rule this file has always had, and it is the reason the key is the
-    /// control plane: pointing an agent at a different host must force a fresh
-    /// enrollment rather than send one service's token to another.
-    /// </remarks>
+    // the key is the control plane: pointing an agent at another host must force a fresh enrollment,
+    // not send one service's token to another
     [Fact]
     public void An_enrollment_from_another_connector_is_not_handed_over()
     {

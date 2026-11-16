@@ -1,13 +1,5 @@
-/**
- * Category naming rules (user rules 2026-07-17):
- *  - no two parents with the same name
- *  - a sub may not carry ANY parent's name
- *  - within one parent, sub names are unique
- * The same checks guard dragging a sub into another parent. Comparison
- * is case-insensitive on trimmed names. Existing rows that already
- * violate the rules keep working — only NEW operations are validated
- * (no data deletion needed; renaming the offenders clears them up).
- */
+// no two parents share a name, a sub may not carry any parent's name, sub names are unique per parent; drags are checked too
+// existing violators keep working: only new operations are validated
 
 export type CategoryNameConflict = 'duplicateParent' | 'subNamedLikeParent' | 'duplicateSub';
 

@@ -68,8 +68,8 @@ describe('toCsvRows', () => {
       ],
       ctx,
     );
-    expect(rows[1][CSV_COLUMNS.indexOf('net_amount')]).toBe('-6.00'); // expense netted
-    expect(rows[2][CSV_COLUMNS.indexOf('net_amount')]).toBe('0.00'); // credit fully given
+    expect(rows[1][CSV_COLUMNS.indexOf('net_amount')]).toBe('-6.00');
+    expect(rows[2][CSV_COLUMNS.indexOf('net_amount')]).toBe('0.00');
   });
 
   it('splits fan out as part rows with the parent sign', () => {

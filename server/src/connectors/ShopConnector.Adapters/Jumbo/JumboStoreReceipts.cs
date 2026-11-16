@@ -7,13 +7,7 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Jumbo;
 
-/// <summary>
-/// One row of <c>data.storeReceipts.receipts</c>.
-///
-/// Note what is missing: no total and no line items. A receipt summary is a
-/// transaction id, a moment, a source and a shop, and nothing else - so an
-/// in-store receipt costs a second round trip before it can be stated at all.
-/// </summary>
+// a receipt summary has no total and no items: an in-store receipt costs a second round trip
 internal sealed record JumboStoreReceiptSummary
 {
     public required string TransactionId { get; init; }
@@ -24,58 +18,34 @@ internal sealed record JumboStoreReceiptSummary
 
     public string? StoreName { get; init; }
 
-    /// <summary>
-    /// The online order this till record belongs to, when it is one. Jumbo
-    /// builds an <c>ONLINE</c> receipt's transaction id as
-    /// <c>&lt;orderId&gt;-…</c>, which is the only thing that keeps the same
-    /// purchase from being emitted twice - once from each system.
-    /// </summary>
+    // an ONLINE receipt's transaction id is <orderId>-…: the only thing that stops the purchase being emitted twice
     public string? OrderId { get; init; }
 }
 
-/// <summary>
-/// What a print-layout parse produced. Any part of it may be absent, and
-/// which part is absent is the whole diagnosis.
-/// </summary>
+// any part may be absent; which one is the diagnosis
 internal sealed record JumboReceiptContents
 {
-    /// <summary>The <c>Totaal</c> line's amount. Null when there was no such line.</summary>
     public Money? Total { get; init; }
 
     public IReadOnlyList<ReceiptItem> Items { get; init; } = [];
 
     public string? PaymentMethod { get; init; }
 
-    /// <summary>
-    /// Why this is less than a whole receipt, in operator-facing words. Null
-    /// when the layout parsed completely.
-    /// </summary>
+    // why this is less than a whole receipt, in operator-facing words; null when the layout parsed completely
     public string? Shortfall { get; init; }
 }
 
-/// <summary>
-/// The seam over the one part of Jumbo that is not a JSON contract at all.
-///
-/// <c>GetDigitalReceipt</c> answers with a receipt-<em>printer</em> layout
-/// document whose payload is a picture of a paper receipt in text: columns,
-/// headers, a terminator line. Text parsing is guesswork by nature, so it
-/// lives behind an interface with recorded fixtures on the other side - the
-/// day a till template changes, only this implementation moves, and the
-/// change is visible in a diff rather than in somebody's grocery totals.
-/// </summary>
+// text parsing is guesswork: behind an interface with recorded fixtures
+// a till template change moves only this implementation, visibly in a diff
 internal interface IJumboReceiptLayoutParser
 {
     JumboReceiptContents Parse(string layout, JumboOptions options, string currency);
 }
 
-/// <summary>
-/// Jumbo's in-store receipts, parsed.
-/// </summary>
 internal static class JumboStoreReceipts
 {
     private const string ProviderId = JumboAdapter.ProviderId;
 
-    /// <summary>The leading numeric run of an <c>ONLINE</c> receipt's transaction id.</summary>
     private static readonly Regex OrderIdPrefix =
         new(@"^(\d+)-", RegexOptions.None, TimeSpan.FromMilliseconds(100));
 
@@ -90,10 +60,6 @@ internal static class JumboStoreReceipts
         return node.ValueKind == JsonValueKind.Array ? JsonAccess.AsArray(node) : [];
     }
 
-    /// <summary>
-    /// The receipt count <c>receiptOverview</c> states, so the walk can end on
-    /// a number instead of on a heuristic about repeated pages.
-    /// </summary>
     public static int? TotalResults(JsonElement root, JumboOptions options) =>
         JsonAccess.TryPath(root, options.StoreReceiptsTotalPath, out var node) ? node.Int32() : null;
 
@@ -115,14 +81,8 @@ internal static class JumboStoreReceipts
         };
     }
 
-    /// <summary>
-    /// The receipt-printer payload out of a <c>GetDigitalReceipt</c> document.
-    ///
-    /// Returns null when the receipt image is not the JSON layout - an older
-    /// receipt rendered as a picture is a real answer from Jumbo, not a shape
-    /// change, and the caller decides what to do about a receipt it cannot
-    /// read rather than this deciding for it.
-    /// </summary>
+    // null when the image is not the JSON layout: an older picture receipt is a real answer, not a shape change
+    // the caller decides
     public static string? Layout(JsonElement root, JumboOptions options, string transactionId)
     {
         if (!JsonAccess.TryPath(root, options.DigitalReceiptPath, out var receipt))
@@ -144,7 +104,6 @@ internal static class JumboStoreReceipts
         return string.IsNullOrWhiteSpace(payload) ? null : payload;
     }
 
-    /// <summary>The shop name from the detail document, which states it more fully than the list.</summary>
     public static string? StoreName(JsonElement root, JumboOptions options)
     {
         if (!JsonAccess.TryPath(root, options.DigitalReceiptPath, out var receipt)) return null;
@@ -153,38 +112,14 @@ internal static class JumboStoreReceipts
     }
 }
 
-/// <summary>
-/// The text parser.
-///
-/// The working client walks
-/// <c>documents[0].documents[0].printSections[].textObjects[].textLines[].texts[].text</c>
-/// and then reads the flattened lines as a paper receipt: an
-/// <c>OMSCHRIJVING</c>/<c>BEDRAG</c> header opens the item block, a
-/// <c>Totaal</c> line closes it and states the total, and a <c>2 X 0,94</c>
-/// line amends the item above it rather than adding one of its own.
-///
-/// Two rules govern everything here. Nothing is invented: a line that states
-/// no amount produces no item, and a promotion flag produces no discount,
-/// because the layout prints a line's price already net of its promotion and
-/// never prints the promotion's own value - a discount conjured here would be
-/// subtracted a second time. And nothing is dropped: a layout that yields a
-/// total but no items still becomes a receipt, flagged as not reconciling,
-/// because a purchase the user made is not ours to hide.
-/// </summary>
+// nothing invented: no item without an amount, no discount from a promotion flag (the price is printed already net)
+// nothing dropped: a total without items still becomes a receipt, flagged as not reconciling
 internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
 {
-    /// <summary>CONFIRMED: <c>2 X 0,94</c> - a count, an x, and a unit price.</summary>
     [GeneratedRegex(@"^\s*(\d+)\s*[Xx]\s*(\d+[,.]\d+)\s*$")]
     private static partial Regex QuantityLine { get; }
 
-    /// <summary>
-    /// A printed amount: <c>0,94</c>, <c>29,83</c>, <c>1.234,56</c>,
-    /// <c>1234,56</c>, and the trailing-minus form a till uses for a credit.
-    ///
-    /// Anchored on purpose. A loose match would read the <c>1,5</c> out of
-    /// "COCA COLA 1,5L" as money, and a description that turns into a price is
-    /// the quietest way to break a receipt.
-    /// </summary>
+    // anchored: a loose match reads the 1,5 of "COCA COLA 1,5L" as money; the trailing minus is how a till prints a credit
     [GeneratedRegex(@"^-?(?:\d{1,3}(?:[.,]\d{3})+|\d+)[.,]\d{2}-?$")]
     private static partial Regex PrintedAmount { get; }
 
@@ -199,8 +134,7 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         }
         catch (JsonException ex)
         {
-            // The field is declared a string and is documented as carrying a
-            // layout document; something else in it is the provider moving.
+            // the field is documented as a layout document: anything else is the provider moving
             throw new ConnectorException(
                 ErrorCode.ProviderChanged, $"{JumboAdapter.ProviderId}: the receipt layout is not JSON", ex);
         }
@@ -222,10 +156,7 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
             var headerIndex = HeaderIndex(lines, options);
             var payment = PaymentMethod(lines, options);
 
-            // No terminator means no total, and an in-store receipt has no
-            // other source of one anywhere in Jumbo's API. Items without a
-            // total to check them against would be a number we cannot vouch
-            // for, so they are not offered.
+            // no terminator means no total, and Jumbo's API has no other source for one: items without a total to check are not offered
             if (totalIndex < 0)
             {
                 return new JumboReceiptContents
@@ -237,8 +168,7 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
 
             if (headerIndex < 0 || totalIndex <= headerIndex)
             {
-                // A total with no readable item block is still a receipt worth
-                // emitting; the caller flags it rather than dropping it.
+                // a total with no readable item block is still a receipt; the caller flags it
                 return new JumboReceiptContents
                 {
                     Total = total,
@@ -258,11 +188,7 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         }
     }
 
-    /// <summary>
-    /// The flattened text lines. Each keeps its own text fields rather than
-    /// being joined, because the receipt's columns - description, promotion
-    /// flag, amount - are the only structure this document has.
-    /// </summary>
+    // fields stay separate: the columns (description, promotion flag, amount) are the only structure
     internal static IReadOnlyList<PrintLine> Flatten(JsonElement root, JumboOptions options)
     {
         if (!WalkPath(root, options.PrintSectionsPath, out var sections) ||
@@ -288,7 +214,6 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         return lines;
     }
 
-    /// <summary>The text fields of one printed line, trimmed, still in their columns.</summary>
     private static List<string> Fields(JsonElement textLine)
     {
         var fields = new List<string>();
@@ -302,10 +227,6 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         return fields;
     }
 
-    /// <summary>
-    /// A dotted path where a numeric segment indexes an array, because the
-    /// confirmed walk into this document goes through two of them.
-    /// </summary>
     internal static bool WalkPath(JsonElement root, string path, out JsonElement value)
     {
         value = root;
@@ -345,10 +266,7 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         {
             var fields = lines[i].Fields;
 
-            // "2 X 0,94" amends the item printed above it: the count and the
-            // unit price belong to a line whose total is already stated. A
-            // quantity line with nothing above it is a stray and is ignored
-            // rather than turned into an item with no name.
+            // "2 X 0,94" amends the item above it; with none above, it is a stray and ignored
             var quantity = QuantityLine.Match(fields[0]);
             if (quantity.Success)
             {
@@ -370,13 +288,10 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
             var name = fields[0];
             if (string.IsNullOrWhiteSpace(name)) continue;
 
-            // A line whose only word is the promotion flag continues the item
-            // above it. Making it an item of its own would put a line called
-            // "P" on somebody's grocery receipt and double-count its amount.
+            // a line of only the promotion flag continues the item above: as an item it would add a "P" line and double-count
             if (string.Equals(name, options.PromotionFlag, StringComparison.OrdinalIgnoreCase)) continue;
 
-            // The amount field is not a description, so a single-column line
-            // that is nothing but a number is not an item either.
+            // a single-column line that is only a number is not an item
             if (PrintedAmount.IsMatch(name)) continue;
 
             items.Add(new ReceiptItem { Name = name, Total = amount });
@@ -411,11 +326,6 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         return -1;
     }
 
-    /// <summary>
-    /// How it was paid, from the line the till prints after the total. The
-    /// method is the first word on that line that is not the marker and not an
-    /// amount; failing that, the first word of the line below it.
-    /// </summary>
     private static string? PaymentMethod(IReadOnlyList<PrintLine> lines, JumboOptions options)
     {
         var index = IndexOfPrefix(lines, options.PaidPrefix, from: 0, requireAmount: false);
@@ -429,11 +339,7 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
         return index + 1 < lines.Count ? JumboReceipts.Method(lines[index + 1].Fields[0]) : null;
     }
 
-    /// <summary>
-    /// The rightmost printed amount on a line. Rightmost because a receipt
-    /// prints its money in the last column, and a description that happens to
-    /// contain a number would otherwise be read as one.
-    /// </summary>
+    // rightmost: money is in the last column, and a description containing a number must not read as one
     private static Money? Amount(IReadOnlyList<string> fields, JumboOptions options, string currency)
     {
         for (var i = fields.Count - 1; i >= 0; i--)
@@ -453,7 +359,6 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
     }
 }
 
-/// <summary>One printed line, still in its columns.</summary>
 internal sealed record PrintLine(IReadOnlyList<string> Fields)
 {
     public string Text => string.Join(' ', Fields);

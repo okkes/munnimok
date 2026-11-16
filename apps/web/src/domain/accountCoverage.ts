@@ -1,14 +1,7 @@
 import type { AccountLinkRow, AccountRow } from '@/db/types';
 
-/**
- * #445: a party-fed account no live connection fetches any more. The
- * server's ingest stamps the connection that fetched a row; when that
- * connection is gone — reconnected with a consent that reaches other
- * accounts, or removed — nothing fetches the row again, and until now
- * nothing said so (prod 2026-10-04: "last synced four days ago", for a
- * reason only the relay's tables showed). A row the ingest stamped before
- * connection ids existed is read the slow way: a week without a fetch.
- */
+// #445: a party-fed account no live connection fetches any more (its connection was reconnected with a consent
+// reaching other accounts, or removed); a row stamped before connection ids existed: a week without a fetch
 export const UNCOVERED_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type CoverageAccount = Pick<AccountRow, 'source' | 'connectionId' | 'lastSyncedAt'> & Partial<Pick<AccountRow, 'id'>>;
@@ -16,14 +9,8 @@ export type CoverageAccount = Pick<AccountRow, 'source' | 'connectionId' | 'last
 /** #524: the viewer's connections that fetch each account, by account id, as the relay keeps them per person */
 export type ReachedBy = ReadonlyMap<string, readonly string[]>;
 
-/**
- * #524: the connections that fetch an account for the viewer — the relay's
- * per-person record where it has one, else the row's own stamp. The stamp
- * alone misleads twice: it names whoever fetched the row last (an IBAN feed
- * two people connected flips between them), and every connection of the
- * same party used to claim every account the party fed (user ss 2026-10-21:
- * the ING and ASN accounts listed under the PayPal connection).
- */
+// #524: the relay's per-person record where there is one, else the row's stamp, which names whoever fetched last
+// (a shared IBAN feed flips between two people) and let every connection of a party claim all the party's accounts
 export function fetchingConnectionIds(account: CoverageAccount, reachedBy: ReachedBy | undefined): readonly string[] {
   const listed = account.id ? reachedBy?.get(account.id) : undefined;
   if (listed && listed.length > 0) return listed;
@@ -32,19 +19,8 @@ export function fetchingConnectionIds(account: CoverageAccount, reachedBy: Reach
 
 export type CoverageLink = Pick<AccountLinkRow, 'attachedBy'>;
 
-/**
- * Whose feed an account sits in — the one fact that says whether this
- * device's connection ids may be read against the row at all: only the
- * owner's device holds the ids the row's stamp names. `myFeeds` is what
- * /me/feeds answered (the ownership source of truth: the feeds the viewer
- * registered; a device that syncs nothing counts every feed on it, see
- * useMyFeedIds). While that answer is out of reach (offline) the attacher's
- * name on a link is the next best word; with neither, nothing can be told
- * and the caller stays quiet. User ss 2026-10-09: a friend's ING account,
- * attached before links carried a name, read "not fetched any more —
- * reconnect" on the viewer's desktop while the friend's consent was alive
- * and syncing — a nameless link had defaulted to "mine".
- */
+// only the owner's device holds the connection ids the row's stamp names; myFeeds (/me/feeds) is the ownership truth
+// offline: the attacher's name on a link is the next best word; with neither, undefined and the caller stays quiet
 export function ownsFeed(
   feedSpaceId: string,
   myFeeds: ReadonlySet<string> | undefined,
@@ -57,13 +33,8 @@ export function ownsFeed(
   return named.some((link) => link.attachedBy === mySub);
 }
 
-/**
- * When the account stopped being fetched: its last sync, or '' when it
- * never synced at all; null while a live connection covers it, when the
- * row is not a party's to begin with, or when it is not known to be the
- * viewer's to tell (a friend's connection is nowhere in this device's ids;
- * an unknown owner is read the same way — no banner beats a wrong one).
- */
+// last sync, '' if never synced; null while a live connection covers it, for a non-party row,
+// or when not known to be the viewer's (no banner beats a wrong one)
 export function uncoveredSince(
   account: CoverageAccount,
   liveConnectionIds: ReadonlySet<string>,
@@ -78,30 +49,21 @@ export function uncoveredSince(
   return null;
 }
 
-/** what one live connection says about renewing it (#528) */
 export interface ConnectionRenewal {
   /** the party syncs by itself (open banking, an always-on agent): a lost session there is the person's to renew */
   unattended: boolean;
-  /** only a new sign-in or consent revives the session */
   ended: boolean;
 }
 
-/** #528: why an account asks for its connection again */
 export type ReconnectNeed =
   /** no live connection of the viewer's fetches it any more — since its last sync ('' = never synced) */
   | { kind: 'gone'; since: string }
   /** the connection that syncs it by itself lost its session */
   | { kind: 'signin'; connectionId: string };
 
-/**
- * #528: an account asks for a reconnect only when it truly needs one —
- * never because its data is a few days old (user 2026-10-21: an open-banking
- * consent lasts half a year, yet "Reconnect?" showed after two quiet days):
- * when no live connection of the viewer's fetches it, or when every one
- * that does lost its session and one of them is a party that syncs by
- * itself. A party that needs the person for every sync (ING's app approval,
- * a shop's second step) is synced from Home's quick sync, not reconnected.
- */
+// #528: a reconnect is asked only when needed, never because data is a few days old (open-banking consent lasts half
+// a year): no live connection fetches it, or all that do lost their session and one syncs by itself;
+// a party needing the person per sync (ING app approval, a shop's second step) goes through Home's quick sync
 export function reconnectNeedOf(
   account: CoverageAccount,
   owned: boolean | undefined,

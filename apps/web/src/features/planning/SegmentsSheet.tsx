@@ -7,11 +7,8 @@ import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 import { SEGMENT_META } from './planningUi';
 
-/**
- * The segments (#128): their order in the plan and whether they take
- * part — a segment switched off leaves with its subjects (their money
- * returns to the pool). Saved on the plan; blueprints carry it too.
- */
+// a segment switched off leaves with its subjects, their money returns to the pool;
+// saved on the plan, blueprints carry it too
 export function SegmentsSheet({
   open,
   onOpenChange,

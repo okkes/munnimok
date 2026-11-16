@@ -6,13 +6,8 @@ import { txTitle } from '@/lib/text';
 import { logActivity } from './activity';
 import { isLinkedTo, spaceReceipts } from './receiptLinks';
 
-/**
- * #567 (user): "the moment the receipt is attached to a transaction and
- * the receipt and transaction value are the same" the payment is filed by
- * the receipt's lines. Run after an attach — or a read — made outside the
- * review: there the card shows the filing first and Confirm writes it. The
- * review flag is left as it stands: a payment still to review stays so.
- */
+// #567: a payment is filed by the lines of a receipt of the same amount once attached; the review flag stays
+// runs after an attach or read outside the review (there the card shows the filing, Confirm writes it)
 export async function fileByReceipt(
   store: StorageBackend,
   repo: Repo,

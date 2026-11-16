@@ -1,16 +1,10 @@
 import type { AssetClass, HoldingRow, LotRow, QuoteCacheRow } from '@/db/types';
 
-/**
- * Portfolio math (approved investments design) — all pure. Average-cost
- * method: sells release cost proportionally; dividends and fees ride
- * alongside without touching the cost basis.
- */
+// average-cost method: sells release cost proportionally; dividends and fees do not touch the cost basis
 
 export interface Position {
   qty: number;
-  /** cost still tied up in the remaining units */
   costCents: number;
-  /** realized result of sells against average cost */
   realizedCents: number;
   dividendCents: number;
   feeCents: number;
@@ -63,11 +57,7 @@ export const quoteKey = (holding: Pick<HoldingRow, 'priceSource' | 'priceKey'>):
     ? `${holding.priceSource}:${holding.priceKey}`
     : null;
 
-/**
- * Per-unit price in cents for a holding, in the space currency — quote
- * cache first (currency must match; v1 converts only via the provided
- * usdRate), manual price as the always-available fallback.
- */
+// quote cache first (currency must match; only USD converts, via usdRate), manual price as the always-available fallback
 export function holdingPriceCents(
   holding: HoldingRow,
   quotes: ReadonlyMap<string, QuoteCacheRow>,
@@ -122,11 +112,9 @@ export interface PortfolioTotals {
   totalCents: number;
   dayChangeCents: number | null;
   gainCents: number;
-  /** value share per asset class, descending */
   allocation: { assetClass: AssetClass; valueCents: number; share: number }[];
   /** a single holding above 40% of the pot */
   concentrated?: string;
-  /** holdings without a usable price (excluded from the totals) */
   unpricedCount: number;
 }
 

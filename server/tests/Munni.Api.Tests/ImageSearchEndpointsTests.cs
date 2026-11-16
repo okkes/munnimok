@@ -11,7 +11,6 @@ using Munni.Api.Images;
 
 namespace Munni.Api.Tests;
 
-/// <summary>Brave's search and its image store, as far as the API talks to them.</summary>
 internal sealed class FakeBraveHandler : HttpMessageHandler
 {
     public int Searches;
@@ -51,7 +50,6 @@ internal sealed class FakeBraveHandler : HttpMessageHandler
     }
 }
 
-/// <summary>A clock the test moves by hand.</summary>
 internal sealed class HandClock(DateTimeOffset start) : TimeProvider
 {
     private DateTimeOffset _now = start;
@@ -94,10 +92,7 @@ public class ImageSearchApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>
-/// #521: picture search on the web. One factory per test: the pause and the
-/// per-person counts live in the API's memory.
-/// </summary>
+// #521: one factory per test: the pause and the per-person counts live in the API's memory
 public class ImageSearchEndpointsTests
 {
     private static HttpClient ClientFor(ImageSearchApiFactory factory, string sub, string? scope = null)
@@ -131,12 +126,10 @@ public class ImageSearchEndpointsTests
         Assert.Contains("q=netflix%20logo", factory.Brave.LastQuery);
         Assert.Contains("safesearch=strict", factory.Brave.LastQuery);
 
-        // the same words within a day cost nothing, however they are typed
         await SearchAsync(client, "netflix logo");
         await SearchAsync(ClientFor(factory, "somebody-else"), "NETFLIX LOGO");
         Assert.Equal(1, factory.Brave.Searches);
 
-        // the capability tells the app the door exists
         var health = await factory.CreateClient().GetFromJsonAsync<JsonElement>("/health");
         Assert.True(health.GetProperty("capabilities").GetProperty("imageSearch").GetBoolean());
     }
@@ -147,17 +140,14 @@ public class ImageSearchEndpointsTests
         await using var factory = new ImageSearchApiFactory();
         var client = ClientFor(factory, "searcher");
 
-        // the last search of the month still answers — and the next one is not even sent
         factory.Brave.Next = (0, 3600, HttpStatusCode.OK);
         Assert.Equal("ok", (await SearchAsync(client, "first")).GetProperty("state").GetString());
         var paused = await SearchAsync(client, "second");
         Assert.Equal("paused", paused.GetProperty("state").GetString());
         Assert.Equal(factory.Clock.GetUtcNow().AddHours(1), paused.GetProperty("until").GetDateTimeOffset());
         Assert.Equal(1, factory.Brave.Searches);
-        // what was answered before the pause still is
         Assert.Equal("ok", (await SearchAsync(client, "first")).GetProperty("state").GetString());
 
-        // the month is back
         factory.Clock.Advance(TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1));
         factory.Brave.Next = (1999, 2_000_000, HttpStatusCode.OK);
         Assert.Equal("ok", (await SearchAsync(client, "second")).GetProperty("state").GetString());
@@ -177,11 +167,9 @@ public class ImageSearchEndpointsTests
         var burst = await SearchAsync(client, "one");
         Assert.Equal("unavailable", burst.GetProperty("state").GetString());
         Assert.Equal(JsonValueKind.Null, burst.GetProperty("until").ValueKind);
-        // a withdrawn key
         factory.Brave.Next = (500, 1_000_000, HttpStatusCode.Unauthorized);
         Assert.Equal("unavailable", (await SearchAsync(client, "two")).GetProperty("state").GetString());
 
-        // refused with nothing left: the pause, with the service's own reset
         factory.Brave.Next = (0, 7200, HttpStatusCode.TooManyRequests);
         var refused = await SearchAsync(client, "three");
         Assert.Equal("paused", refused.GetProperty("state").GetString());
@@ -221,12 +209,10 @@ public class ImageSearchEndpointsTests
         var limited = await SearchAsync(user, "three");
         Assert.Equal("limited", limited.GetProperty("state").GetString());
         Assert.Equal(new DateTimeOffset(2026, 11, 13, 0, 0, 0, TimeSpan.Zero), limited.GetProperty("until").GetDateTimeOffset());
-        // words already answered cost nothing and are not refused; the limit is each person's own
         Assert.Equal("ok", (await SearchAsync(user, "one")).GetProperty("state").GetString());
         Assert.Equal("ok", (await SearchAsync(other, "three")).GetProperty("state").GetString());
         Assert.Equal(3, factory.Brave.Searches);
 
-        // tomorrow the count starts over; the limit taken off is no limit
         factory.Clock.Advance(TimeSpan.FromDays(1));
         Assert.Equal("ok", (await SearchAsync(user, "four")).GetProperty("state").GetString());
         Assert.Equal(HttpStatusCode.OK, (await admin.PutAsJsonAsync("/admin/image-search", new { dailyPerUser = (int?)null })).StatusCode);
@@ -247,7 +233,6 @@ public class ImageSearchEndpointsTests
         Assert.Equal(4, (await picture.Content.ReadAsByteArrayAsync()).Length);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync(Picked("https://imgs.search.brave.com/abc/netflix.png"))).StatusCode);
-        // anywhere else is refused before a request is made
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(Picked("https://evil.example/x.png"))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(Picked("http://imgs.search.brave.com/abc/x.png"))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(Picked("https://imgs.search.brave.com.evil.example/x.png"))).StatusCode);

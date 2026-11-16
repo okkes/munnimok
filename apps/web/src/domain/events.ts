@@ -3,39 +3,21 @@ import { REIMBURSED_ID } from './categories';
 import { txSliceViews } from './txSlices';
 import type { TxSliceView } from './txSlices';
 
-/** Event math (approved events design; typed-splits v2: per-part events
- *  — "this €30 of the dinner is the trip") — all pure. */
-
-/**
- * The kinds of money an event can hold: what it cost and what came in for
- * it (#447/#448, user: a reimbursement, a contribution, an uncategorized
- * credit). A movement between the person's own accounts - a transfer, a
- * savings deposit, an investment, a debt payment, a correction - is no
- * event's money, however squarely it falls in the date range.
- */
+/** what an event can hold (#447/#448): costs and money in; movements between own accounts are never its money */
 export const isEventMoney = (type: TxType): boolean => type === 'expense' || type === 'income' || type === 'funding';
 
 export type MoneyFormat = (cents: number, currency: string, opts?: { sign?: boolean }) => string;
 
-/**
- * An event's headline figure: what it cost - or, when more came in than
- * went out, the surplus with a plus (#448, user: "receive 200, see +200").
- * `netCents` is spent minus received, so a plain cost stays the plain
- * number every event has always shown.
- */
+/** `netCents` is spent minus received: a plain cost stays plain, a surplus shows with a plus (#448) */
 export const eventNetText = (netCents: number, currency: string, fmt: MoneyFormat): string =>
   netCents < 0 ? fmt(-netCents, currency, { sign: true }) : fmt(netCents, currency);
 
-/** the row's parts that belong to this event, in any kind of event money —
- *  never the settled value (#493): a paid-back expense and the credit that
- *  paid it each carry it as bookkeeping, and counting it made the event
- *  spend and receive the same money twice under "Reimbursement" */
+/** never the settled value (#493): counting it made an event spend and receive the same money twice */
 function eventViews(tx: TxView, eventId: string): TxSliceView[] {
   if (tx.deleted !== 0) return [];
   return txSliceViews(tx).filter((view) => view.eventId === eventId && isEventMoney(view.effType) && view.catId !== REIMBURSED_ID);
 }
 
-/** the event's EXPENSE parts - where the money went */
 const expenseViews = (tx: TxView, eventId: string): TxSliceView[] => eventViews(tx, eventId).filter((view) => view.effType === 'expense');
 
 const viewSpent = (view: TxSliceView): number => (view.fromParts ? Math.abs(view.amountCents) : -view.amountCents);
@@ -49,12 +31,7 @@ export interface EventTotals {
   netCents: number;
 }
 
-/**
- * #448 (user): an event holds what came in as well as what went out -
- * "start at 0, receive 200, see +200, buy the gift, end at 0". Expense
- * parts are spending (a refund reduces it, as ever); every other kind of
- * event money is received when it is a credit and spent when it is not.
- */
+// #448: an event holds what came in too; non-expense event money is received when a credit, spent when not
 export function eventTotals(txs: readonly TxView[], eventId: string): EventTotals {
   let spentCents = 0;
   let receivedCents = 0;
@@ -68,14 +45,12 @@ export function eventTotals(txs: readonly TxView[], eventId: string): EventTotal
   return { spentCents, receivedCents, netCents: spentCents - receivedCents };
 }
 
-/** positive cents spent inside the event (expenses; refunds reduce) */
 export const eventSpentCents = (txs: readonly TxView[], eventId: string): number => eventTotals(txs, eventId).spentCents;
 
 interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
 }
 
-/** main-category totals of the event's expenses, largest first */
 export function eventCategoryBreakdown(
   txs: readonly TxView[],
   eventId: string,
@@ -94,7 +69,6 @@ export function eventCategoryBreakdown(
     .sort((a, b) => b.totalCents - a.totalCents);
 }
 
-/** sub-category totals inside one of the event's main categories, largest first */
 export function eventSubcategoryBreakdown(
   txs: readonly TxView[],
   eventId: string,
@@ -114,15 +88,13 @@ export function eventSubcategoryBreakdown(
     .sort((a, b) => b.totalCents - a.totalCents);
 }
 
-/** dated events: average spend per day of the (inclusive) range */
 export function eventPerDayCents(totalCents: number, from?: string, to?: string): number | null {
   if (!from || !to || to < from) return null;
   const days = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000) + 1;
   return Math.round(totalCents / days);
 }
 
-/** the transactions inside an event's date range not yet attached to it -
- *  money received included (#447, user), own-account movements never */
+/** money received included (#447), own-account movements never */
 export function suggestableTxs<T extends TxView>(txs: readonly T[], eventId: string, from?: string, to?: string): T[] {
   if (!from || !to) return [];
   return txs.filter(

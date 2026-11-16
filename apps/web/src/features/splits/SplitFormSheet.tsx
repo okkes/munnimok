@@ -16,12 +16,7 @@ import { Sheet } from '@/ui/Sheet';
 
 const DATE_INPUT = 'mt-1 h-12 w-full appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none';
 
-/**
- * #538 (user): a split has a name, a picture like a regular event's,
- * optional first and last days, and a currency — fixed once something was
- * entered in it. The same sheet makes a new one and lets an owner change
- * an existing one.
- */
+/** #538: one sheet makes a new split and lets an owner change one; the currency is fixed once something was entered */
 export function SplitFormSheet({
   api,
   open,
@@ -33,7 +28,6 @@ export function SplitFormSheet({
   api: SplitsApi;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** the split being changed; null = a new one */
   editing: SplitSummary | null;
   defaultCurrency: string;
   onSaved: (splitId: string) => void;

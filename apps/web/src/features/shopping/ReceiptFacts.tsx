@@ -9,11 +9,7 @@ import { Field } from '@/ui/primitives';
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 const INPUT = 'h-11 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4';
 
-/**
- * #567: what a receipt kept without a transaction says — shop, day and
- * amount, typed here or filled by a reading. The amount is what its
- * payment is recognised by, so a receipt without one waits unmatched.
- */
+/** #567: the amount is what the payment is recognised by, so a receipt without one waits unmatched */
 export function ReceiptFacts({
   receipt,
   onSave,

@@ -7,23 +7,8 @@ import { PLATFORM_IDS, loadStack } from './stack.mjs';
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
 const OUT_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
-/**
- * The wizard's own store (infra/rendered/wizard/.secrets.json,
- * gitignored): what the operator typed, ONE SET PER PLATFORM under
- * `platforms` (bank providers, logos, push, sign-in providers, store
- * accounts, the GitHub token, the NAS account, the domain, the platform's
- * vault account and upload keystore) — platforms share nothing: each has
- * its own values here and its own GitHub environments. The one exception
- * lives under `machine`: the Apple Development certificate, because Apple
- * caps those per developer account and it identifies this computer's build
- * pipeline, not a platform; every platform's iOS environments ship it.
- * For the lcl platform the values are also what the stacks render with;
- * for nas the wizard copies them into the platform's GitHub environments.
- *
- * Stack stores (infra/rendered/<stack>/.secrets.local.json) hold what a
- * LOCAL stack minted or wrote back: the shared stack's platform-scoped
- * values, each environment's own.
- */
+// wizard store (gitignored): operator values, ONE SET PER PLATFORM — platforms share nothing
+// `machine` holds the Apple Development certificate; lcl: also what stacks render with; nas: copied into GitHub environments
 const WIZARD_FILE = () => join(OUT_DIR(), 'wizard', '.secrets.json');
 const storeFile = (stackName) => join(OUT_DIR(), stackName, '.secrets.local.json');
 
@@ -44,7 +29,7 @@ export function saveWizardStore(store) {
   return writeJson(WIZARD_FILE(), { machine: store.machine ?? {}, platforms: store.platforms ?? {} });
 }
 
-/** the platform's id as the platform list spells it — the list's own string, never the caller's: a store key is only ever one of ours */
+/** the platform list's own string, never the caller's: a store key is only ever one of ours */
 const requirePlatform = (platform, what) => {
   if (typeof platform !== 'string' || !platform) throw new TypeError(`${what}: a platform is required — every value belongs to one platform`);
   const known = PLATFORM_IDS.find((id) => id === platform);
@@ -52,14 +37,13 @@ const requirePlatform = (platform, what) => {
   return known;
 };
 
-/** a value's name as GitHub and the manifest spell it: upper-case, digits and underscores — never a path into the store's own prototype */
+/** upper-case, digits, underscores: never a path into the store's own prototype */
 const NAME_SHAPE = /^[A-Z][A-Z0-9_]{0,63}$/;
 const requireName = (name, what) => {
   if (typeof name !== 'string' || !NAME_SHAPE.test(name)) throw new TypeError(`${what}: "${name}" is not a value name (UPPER_SNAKE_CASE)`);
   return name;
 };
 
-/** the machine-owned values alone (the Apple Development certificate) */
 export function machineValues() {
   return { ...loadWizardStore().machine };
 }
@@ -70,7 +54,6 @@ export function wizardValues(platform) {
   return { ...store.machine, ...(store.platforms[requirePlatform(platform, 'wizardValues')] ?? {}) };
 }
 
-/** where an operator value belongs: the machine for the Apple certificate, the named platform for everything else */
 export function setWizardValues(values, platform = null) {
   const store = loadWizardStore();
   for (const [name, value] of Object.entries(values)) {
@@ -93,12 +76,10 @@ export function forgetWizardValues(names, platform = null) {
   return saveWizardStore(store);
 }
 
-/** a local stack's OWN stored values */
 export function loadLocalValues(stack) {
   return readJson(storeFile(stack.stack)) ?? {};
 }
 
-/** the merged view a local stack renders with: the wizard's values, the shared stack's platform-scoped values, its own */
 export function stackValues(stack) {
   const own = loadLocalValues(stack);
   const shared = stack.role === 'shared' ? {} : (readJson(storeFile(stack.sharedStack)) ?? {});
@@ -107,11 +88,6 @@ export function stackValues(stack) {
   return { ...wizardValues(stack.platform), ...platformScoped, ...own };
 }
 
-/**
- * save: operator/wizard values go to the wizard's store, platform-scoped
- * minted/written-back ones to the platform's shared stack store, the
- * rest to the stack's own store
- */
 export function saveLocalValues(stack, values) {
   const own = {};
   const wizard = {};
@@ -132,7 +108,6 @@ export function saveLocalValues(stack, values) {
   return writeJson(storeFile(stack.stack), own);
 }
 
-/** the manifest entries a local stack is responsible for */
 export const stackManifestEntries = (stack) => entriesFor(stack);
 
 function ensureVapid(values, rotate, minted) {
@@ -144,11 +119,6 @@ function ensureVapid(values, rotate, minted) {
   minted.push('PUSH_VAPID_PUBLIC_KEY', 'PUSH_VAPID_PRIVATE_KEY');
 }
 
-/**
- * Mint the generated secrets THIS local stack owns, absorb operator
- * values offered via process.env into the wizard's store, and report the
- * required operator values still absent for the features it enables.
- */
 export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
   const values = stackValues(stack);
   const own = loadLocalValues(stack);
@@ -176,5 +146,4 @@ export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
   return { values: stackValues(stack), minted, missingOperator };
 }
 
-/** re-export for callers that only need the stack loader alongside the stores */
 export { loadStack };

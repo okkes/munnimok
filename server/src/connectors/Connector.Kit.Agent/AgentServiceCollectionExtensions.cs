@@ -12,35 +12,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent;
 
-/// <summary>
-/// The whole composition surface of the data plane. Every product's agent is a
-/// <c>Program.cs</c> that calls this and lists its adapters.
-/// </summary>
 public static class AgentServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the agent: the adapter registry, the politeness limiter and
-    /// the browser budget once for the machine, then a lease loop, an identity
-    /// and a control-plane client for each connector it serves.
-    /// </summary>
-    /// <param name="config">
-    /// Bound from the <c>ConnectorAgent</c> section. Anything in
-    /// <paramref name="configure"/> wins, so a host can put the endpoint in
-    /// configuration and its adapters in code.
-    /// </param>
-    /// <remarks>
-    /// <b>The split between the two halves is the whole design.</b> The
-    /// adapters, the provider registry, the profile ROOT, the politeness gate,
-    /// the scratch root, the clock and the job slots are properties of the
-    /// COMPUTER, and there is one of each however many connectors are
-    /// configured. The identity, the token, the two HTTP clients, the profile
-    /// store, the job runner and the lease loop are properties of one
-    /// CONNECTOR, and there is a set of them per connection. Anything
-    /// registered as a singleton on the left of that line and used on the right
-    /// is a bug the compiler cannot see - one connector's bearer token on
-    /// another connector's request - which is why the per-connector objects are
-    /// constructed here by hand rather than resolved by type.
-    /// </remarks>
+    // machine-level (adapters, registry, profile ROOT, politeness gate, scratch root, clock, slots) vs per-connector (identity,
+    // token, two clients, profile store, runner, lease loop): a machine singleton used per connector would put one connector's
+    // token on another's request, so the per-connector objects are built by hand. Code in `configure` wins over config
     public static IServiceCollection AddConnectorAgent(
         this IServiceCollection services,
         IConfiguration config,
@@ -53,9 +29,7 @@ public static class AgentServiceCollectionExtensions
         Bind(options, config.GetSection(ConnectorAgentOptions.SectionName));
         configure?.Invoke(options);
 
-        // Fails at startup rather than on the first lease: a misconfigured
-        // agent that looks healthy and never picks up work is worse than one
-        // that refuses to boot.
+        // fails at startup: a misconfigured agent that looks healthy and never picks up work is worse than one that refuses to boot
         options.Validate();
 
         var connections = options.ResolvedConnections();
@@ -68,13 +42,10 @@ public static class AgentServiceCollectionExtensions
             services.Add(adapter);
         }
 
-        // The operator's explore run (#441 L3) rides on every agent image: the
-        // control plane carries the same manifest, so the agent-served digests
-        // agree, and the queue hands an explore job to a fleet agent only -
-        // a household's own machine never leases a job that is not its owner's.
+        // the operator's explore run (#441 L3) rides on every agent image so the digests agree; the queue hands it to a fleet
+        // agent only: a household's own machine never leases a job that is not its owner's
         services.AddSingleton<IProviderAdapter>(sp => new Exploring.ExploreAdapter(sp.GetRequiredService<TimeProvider>()));
 
-        // ── the machine ──────────────────────────────────────────────────
         services.AddSingleton<IProviderRegistry>(sp => new ProviderRegistry(sp.GetServices<IProviderAdapter>()));
         services.AddSingleton(sp => new AgentStateStore(
             options.StateFilePath, sp.GetRequiredService<ILogger<AgentStateStore>>()));
@@ -86,37 +57,14 @@ public static class AgentServiceCollectionExtensions
             sp.GetRequiredService<IHostApplicationLifetime>(),
             sp.GetRequiredService<ILogger<AgentRoster>>()));
 
-        // ── and one of these per connector ───────────────────────────────
         foreach (var connection in connections)
         {
-            // Created HERE rather than inside the host factory because the two
-            // HTTP clients need it now: the auth handler holds this
-            // connector's identity and nobody else's, and a handler resolved
-            // by type from the container would hold whichever identity was
-            // registered last.
+            // created here: the auth handler holds this connector's identity, and one resolved by type would hold the last registered
             var identity = new AgentIdentity();
 
-            // TWO CLIENTS ONTO ONE CONTROL PLANE, because a timeout is a
-            // property of the client and these calls need two of them. The
-            // long polls must be allowed to hang - that is what a long poll is
-            // - and the two keepalives must fail in time to be retried inside
-            // the lease and the liveness window they are holding open. One
-            // client meant the short calls inherited the long polls' seventy
-            // seconds and were given up on after the job had been requeued and
-            // the agent marked offline; see
-            // ConnectorAgentOptions.KeepaliveTimeout for the arithmetic.
-            //
-            // A second CLIENT rather than a deadline token at the call site:
-            // the client's own timeout arrives as a TaskCanceledException with
-            // nobody's token cancelled, which is precisely the case
-            // ControlPlaneClient translates into a transient failure. A token
-            // of ours would arrive cancelled and be indistinguishable from the
-            // caller asking to stop - the one reading that ends renewal for
-            // good.
-            //
-            // Both are per CONNECTOR as well as per purpose, and now carry its
-            // name: a client holds one connector's base address, one
-            // connector's certificate authority and one connector's token.
+            // two clients: long polls must hang, keepalives must fail in time to retry inside the lease and liveness window
+            // (ConnectorAgentOptions.KeepaliveTimeout). A client, not a deadline token: a client timeout is a TaskCanceledException
+            // ControlPlaneClient maps to transient, while our own token would look like the caller stopping, which ends renewal
             AddControlPlaneClient(
                 ControlPlaneClient.ClientNameFor(connection.Name), options.ControlPlaneTimeout, connection, identity);
             AddControlPlaneClient(
@@ -142,9 +90,7 @@ public static class AgentServiceCollectionExtensions
                 {
                     var handler = new HttpClientHandler();
 
-                    // ONLY THESE CLIENTS. An agent drives real providers over
-                    // the public web with other clients entirely, and none of
-                    // them gets the operator's private authority.
+                    // only these clients trust the operator's private CA; the clients that drive real providers never get it
                     if (ControlPlaneTrust.Validator(connection.ControlPlaneCaPath) is { } validate)
                     {
                         handler.ServerCertificateCustomValidationCallback =
@@ -155,10 +101,6 @@ public static class AgentServiceCollectionExtensions
                 });
     }
 
-    /// <summary>
-    /// One connector's lease loop, with its own identity, client, profiles and
-    /// runner, over the machine's adapters, gate, slots and clock.
-    /// </summary>
     private static AgentHost Host(
         IServiceProvider sp,
         ConnectorAgentOptions options,
@@ -173,10 +115,7 @@ public static class AgentServiceCollectionExtensions
             loggers.CreateLogger<ControlPlaneClient>(),
             connection.Name);
 
-        // Under this connector's own root, so that a revoke here wipes this
-        // connector's browsers and leaves the others signed in - and so that
-        // the heartbeat this connector sends describes the profiles it can
-        // actually be routed to.
+        // under this connector's own root: a revoke wipes only its browsers, and the heartbeat describes its routable profiles
         var profiles = new ProfileStore(
             connection.ProfileRootUnder(options.ProfileRootDirectory), loggers.CreateLogger<ProfileStore>());
 
@@ -202,11 +141,7 @@ public static class AgentServiceCollectionExtensions
             time);
     }
 
-    /// <summary>
-    /// Bound by hand rather than through the configuration binder: the wire
-    /// spells runtimes <c>browser_once</c> and the CLR spells them
-    /// <c>BrowserOnce</c>, and the binder would simply reject the former.
-    /// </summary>
+    // by hand: the wire spells runtimes browser_once, the CLR BrowserOnce, and the binder would reject the former
     private static void Bind(ConnectorAgentOptions options, IConfigurationSection section)
     {
         if (!section.Exists()) return;
@@ -233,7 +168,6 @@ public static class AgentServiceCollectionExtensions
         BindConnections(options, section.GetSection("Connections"));
     }
 
-    /// <summary>The browser the agent presents.</summary>
     private static void BindBrowser(ConnectorAgentOptions options, IConfigurationSection section)
     {
         if (section["BrowserDevice"] is { Length: > 0 } device) options.BrowserDevice = device;
@@ -242,7 +176,6 @@ public static class AgentServiceCollectionExtensions
         if (section["BrowserTimezoneId"] is { Length: > 0 } timezone) options.BrowserTimezoneId = timezone;
     }
 
-    /// <summary>What the agent serves and from where: providers, tiers, egress.</summary>
     private static void BindServed(ConnectorAgentOptions options, IConfigurationSection section)
     {
         foreach (var provider in section.GetSection("Providers").GetChildren())
@@ -262,25 +195,9 @@ public static class AgentServiceCollectionExtensions
         }
     }
 
-    /// <summary>
-    /// The connector list, by hand for the same reason as the rest of this
-    /// file.
-    /// </summary>
-    /// <remarks>
-    /// The binding that matters is the ENVIRONMENT's -
-    /// <c>ConnectorAgent__Connections__0__Name</c>, which the environment
-    /// provider hands over as <c>ConnectorAgent:Connections:0:Name</c> - because
-    /// that is how a compose file configures a container and how every agent on
-    /// this platform is actually configured.
-    /// <para>
-    /// An entry with nothing in it at all is skipped rather than kept as an
-    /// empty connection: the list is written by hand in a YAML file, and a
-    /// trailing index nobody filled in should not be a connector this agent
-    /// refuses to boot over. An entry with SOMETHING in it and no control plane
-    /// is a different matter, and <see cref="ConnectorAgentOptions.Validate"/>
-    /// refuses that - it is a connector somebody meant to configure.
-    /// </para>
-    /// </remarks>
+    // by hand for the same reason. The environment binding matters (ConnectorAgent__Connections__0__Name): compose configures
+    // agents that way. A wholly empty entry is skipped (trailing YAML index); one with something but no control plane
+    // is refused by Validate
     private static void BindConnections(ConnectorAgentOptions options, IConfigurationSection section)
     {
         if (!section.Exists()) return;
@@ -302,11 +219,7 @@ public static class AgentServiceCollectionExtensions
 
             var connection = new ConnectorConnection();
 
-            // The index as the name when none is given, so that two unnamed
-            // connectors are still two directories and two log prefixes
-            // instead of one of each. Naming them is much better and the
-            // documentation says so; being unnamed must not silently merge
-            // them.
+            // the index as the name when none is given, so two unnamed connectors stay two directories and log prefixes
             connection.Name = string.IsNullOrWhiteSpace(name) ? entry.Key : name;
 
             if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out var parsed))
@@ -321,7 +234,6 @@ public static class AgentServiceCollectionExtensions
         }
     }
 
-    /// <summary>Accepts both the wire's <c>snake_case</c> and the CLR's <c>PascalCase</c>.</summary>
     private static bool TryParseEnum<T>(string? value, out T parsed) where T : struct, Enum
     {
         parsed = default;

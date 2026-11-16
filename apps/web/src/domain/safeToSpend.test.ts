@@ -78,7 +78,6 @@ describe('safe to spend — the accounts (#541)', () => {
     expect(result.accounts.map((a) => a.id)).toEqual(['main', 'card']);
     expect(result.balanceCents).toBe(130_000);
     expect(isSpendAccount(savings, { spendAccountIds: ['savings'] })).toBe(true);
-    // a loan is never money to spend, picked or not
     expect(isSpendAccount(carLoan, { spendAccountIds: ['car'] })).toBe(false);
   });
 
@@ -99,7 +98,6 @@ describe('safe to spend — the accounts (#541)', () => {
 describe('safe to spend — the hard facts', () => {
   it('a recurring cost still due before the period ends comes off, with its date', () => {
     const result = run({ recurrings: [rec({}), rec({ id: 'gym', name: 'Gym', amountCents: 3_000, dueDay: 5 })] })!;
-    // the gym's 5th is behind us — its payment went by, linked or not, and never counts twice
     expect(result.dues).toEqual([{ kind: 'recurring', id: 'rent', name: 'Rent', dates: ['2026-07-20'], cents: 85_000 }]);
     expect(result.dueCents).toBe(85_000);
     expect(result.cents).toBe(152_000 - 85_000);
@@ -114,10 +112,8 @@ describe('safe to spend — the hard facts', () => {
   it('every occurrence still ahead counts — a weekly cost in a monthly period — the payments covering the nearest first', () => {
     const weekly = rec({ id: 'box', name: 'Veg box', amountCents: 2_500, every: 'week', since: '2026-07-02', dueDay: 1 });
     const paidOn = (date: string) => tx({ date, amountCents: -2_500, recurringId: 'box' });
-    // Jul 2, 9, 16, 23, 30: the 9th's box went by without a link — the three ahead stay open
     const result = run({ recurrings: [weekly], txs: [paidOn('2026-07-02')] })!;
     expect(result.dues[0]).toMatchObject({ dates: ['2026-07-16', '2026-07-23', '2026-07-30'], cents: 7_500 });
-    // the 16th's box paid early: the 23rd and the 30th are left
     const early = run({ recurrings: [weekly], txs: [paidOn('2026-07-02'), paidOn('2026-07-09'), paidOn('2026-07-10')] })!;
     expect(early.dues[0]).toMatchObject({ dates: ['2026-07-23', '2026-07-30'], cents: 5_000 });
   });
@@ -129,10 +125,8 @@ describe('safe to spend — the hard facts', () => {
     const result = run({ recurrings: [endOfMonth], txs: [late], today: '2026-11-09' })!;
     expect(result.dues).toEqual([{ kind: 'recurring', id: 'rent', name: 'Rent', dates: ['2026-11-30'], cents: 85_000 }]);
     expect(result.cents).toBe(152_000 - 85_000);
-    // with October's own payment on record, a second one this early is November's, paid ahead
     const onTime = tx({ date: '2026-10-30', amountCents: -85_000, recurringId: 'rent' });
     expect(run({ recurrings: [endOfMonth], txs: [onTime, late], today: '2026-11-09' })!.dues).toEqual([]);
-    // paid on the last day before the period for the 1st: nothing is due on the 1st
     const first = rec({ dueDay: 1 });
     const dayBefore = tx({ date: '2026-10-31', amountCents: -85_000, recurringId: 'rent' });
     expect(run({ recurrings: [first], txs: [dayBefore], today: '2026-11-01' })!.dues).toEqual([]);
@@ -156,7 +150,6 @@ describe('safe to spend — the hard facts', () => {
     expect(due.dues).toEqual([{ kind: 'loan', id: 'car', name: 'car', dates: ['2026-07-15'], cents: 25_000 }]);
     const paid = tx({ date: '2026-07-03', amountCents: -25_000, linkedAccountId: 'car' });
     expect(run({ accounts: [main, wallet, carLoan], txs: [paid] })!.dues).toEqual([]);
-    // the card pays like a checking account once picked: its balance counts, paying it moves money between them
     expect(run({ accounts: [main, card], space: { ...MONTH, spendAccountIds: ['main', 'card'] } })!.dues).toEqual([]);
     expect(run({ accounts: [main, card] })!.dues.map((d) => d.id)).toEqual(['card']);
   });

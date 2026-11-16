@@ -1,49 +1,30 @@
 import { v5 as uuidv5 } from 'uuid';
 
-/**
- * Deterministic ids for feature B (shared financial accounts). The
- * namespace matches the import namespace on both client and server, so
- * any device — or another member reconnecting the same IBAN via PSD2 —
- * derives the identical feed and overlay ids. That is what makes
- * reconnects seamless and concurrent overlay creation convergent.
- */
+// ids derive from the import namespace shared with the server: any device or reconnecting member gets identical ids
 const IMPORT_NS = '5f3c9a70-0d3e-4e0f-9a57-6d2b3a1c8e42';
 
 export const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUpperCase();
 
-/** sync-space id of a bank account's feed */
 export const feedSpaceId = (iban: string): string => uuidv5(`feed:${normalizeIban(iban)}`, IMPORT_NS);
 
-/** #311 r4 (user): when a BANK-fed account already owns the canonical
- *  `acct:{iban}` id, statement imports keep their own separate account
- *  row — the two sources stay two visible accounts until the user
- *  explicitly MERGES them (the merge runs the reconcile). The server
- *  mirrors this with an `acct:{iban}:bank` fork when the import owned
- *  the canonical id first. */
+// a bank-fed account owning `acct:{iban}` keeps statement imports as a separate account until the user merges (#311);
+// the server forks `acct:{iban}:bank` when the import owned the canonical id first
 export const importAccountId = (iban: string): string => uuidv5(`acct:${normalizeIban(iban)}:import`, IMPORT_NS);
 
 /** the canonical per-IBAN account id (shared with the server's ImportIds) */
 export const canonicalAccountId = (iban: string): string => uuidv5(`acct:${normalizeIban(iban)}`, IMPORT_NS);
 
-/**
- * Fallback when the deterministic id is already registered by another
- * user (feed squatting defence, security S1): salted with the owner's
- * subject the id stays deterministic for THIS user's reconnects but
- * un-guessable squat-bait no more. Costs only cross-user dedupe.
- */
+// salted with the owner's subject when another user registered the deterministic feed id (squatting defence, S1)
+// costs only cross-user dedupe
 export const personalFeedSpaceId = (iban: string, sub: string): string =>
   uuidv5(`feed:${normalizeIban(iban)}:${sub}`, IMPORT_NS);
 
-/** per-space overlay row id for a raw transaction */
 export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:${spaceId}:${txId}`, IMPORT_NS);
 
-/** typed-splits v2 (2026-08-05): the minted counter leg of a transfer to
- *  a MANUAL account — deterministic so two devices linking the same row
- *  converge on ONE mirror instead of duplicating it */
+/** minted counter leg of a transfer to a MANUAL account; deterministic so two devices converge on one mirror */
 export const mirrorTxId = (txId: string): string => uuidv5(`mirror:${txId}`, IMPORT_NS);
 
-/** a PART's minted counter leg: keyed on row + part identity — ':' can
- *  never occur inside real ids (uuid charset), so the key is unambiguous */
+/** a part's counter leg: ':' never occurs in real ids (uuid charset), so the key is unambiguous */
 export const partMirrorSourceId = (txId: string, partId: string): string => `${txId}:${partId}`;
 
 /** the app's own counter leg (a row's or a part's mint): its id IS the
@@ -51,27 +32,19 @@ export const partMirrorSourceId = (txId: string, partId: string): string => `${t
 export const isMintedLeg = (tx: { id: string; transferPeerId?: string }): boolean =>
   !!tx.transferPeerId && tx.id === mirrorTxId(tx.transferPeerId);
 
-/** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>
   uuidv5(`link:${spaceId}:${feedId}`, IMPORT_NS);
 
-/**
- * Id of a user-scoped category's copy inside a space that became shared —
- * deterministic so two owners' devices adopting concurrently converge on
- * the same rows instead of duplicating them.
- */
+/** deterministic so two owners' devices adopting concurrently converge on the same rows */
 export const adoptedCategoryId = (spaceId: string, sourceCatId: string): string =>
   uuidv5(`catcopy:${spaceId}:${sourceCatId}`, IMPORT_NS);
 
-/** one dismissal row per merchant pattern per space (LWW-convergent) */
 export const recurringDismissId = (spaceId: string, merchantKeyValue: string): string =>
   uuidv5(`recdis:${spaceId}:${merchantKeyValue}`, IMPORT_NS);
 
-/** receipts v3: one snapshot link per global receipt per space */
 export const receiptLinkId = (spaceId: string, receiptId: string): string =>
   uuidv5(`rlink:${spaceId}:${receiptId}`, IMPORT_NS);
 
-/** receipts v3: per-space inclusion of a store-connection instance */
 export const storeConnLinkId = (spaceId: string, instanceId: string): string => `sclink:${spaceId}:${instanceId}`;
 
 /** the owner's personal STORE FEED — global receipts + instance metadata */

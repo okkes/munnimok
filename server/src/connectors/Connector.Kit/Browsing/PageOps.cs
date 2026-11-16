@@ -4,16 +4,8 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Browsing;
 
-/// <summary>
-/// Selector work, written to survive a redesign.
-///
-/// Not one of the login pages this service drives has a published contract,
-/// so every selector is a guess with a shelf life. Each operation therefore
-/// takes a candidate list - ordered most-specific first, operator-editable
-/// through options - and a miss on all of them is
-/// <see cref="ErrorCode.ProviderChanged"/> with the list in the detail, so
-/// the next breakage arrives already diagnosed.
-/// </summary>
+// no login page has a published contract, so every selector is a guess: candidates ordered most-specific first;
+// a miss on all is ProviderChanged with the list in the detail
 public static class PageOps
 {
     public static async Task<IElementHandle> RequireAsync(
@@ -24,27 +16,12 @@ public static class PageOps
             $"{providerId}: no element for {what}; tried [{string.Join(", ", selectors)}]");
     }
 
-    /// <summary>
-    /// "This selector did not match", whatever Playwright chose to call it.
-    ///
-    /// Playwright for .NET raises <see cref="System.TimeoutException"/> - NOT
-    /// a <see cref="PlaywrightException"/> - when a wait expires. Catching only
-    /// the latter is a silent trap: every helper here is written to return null
-    /// on a miss, and a bare <c>catch (PlaywrightException)</c> lets the timeout
-    /// escape instead, so a page that simply had no cookie banner takes the
-    /// whole login down. That is exactly what happened on the first live
-    /// Albert Heijn attempt. One predicate, used everywhere, so the next
-    /// candidate list cannot get it wrong again.
-    /// </summary>
+    // Playwright .NET raises System.TimeoutException, not PlaywrightException, when a wait expires; catching only the latter
+    // let a missing cookie banner take a whole login down (first live Albert Heijn attempt)
     public static bool IsSelectorMiss(Exception ex) =>
         ex is PlaywrightException or System.TimeoutException;
 
-    /// <summary>
-    /// First matching selector, or null. The per-selector budget is the
-    /// whole budget divided by the candidate count: trying five selectors
-    /// at ten seconds each turns a redesigned page into a fifty-second hang
-    /// that outlives the job's own timeout.
-    /// </summary>
+    // per-selector budget = whole budget / candidate count: five at ten seconds would outlive the job's own timeout
     public static async Task<IElementHandle?> FindAsync(
         IPage page, IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct)
     {
@@ -82,21 +59,8 @@ public static class PageOps
         await handle.FillAsync(value, new() { Timeout = timeoutMs }).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Clicks the first candidate, within the SAME budget the caller gave for
-    /// finding it.
-    /// </summary>
-    /// <remarks>
-    /// The timeout was passed to the search and then dropped, so the click
-    /// itself ran on Playwright's default of thirty seconds. Finding an element
-    /// and being able to click it are different questions, and the gap between
-    /// them is where this went wrong live: DUO's sign-in chooser styles its
-    /// radios as labels and parks the real input off-screen, so Playwright
-    /// found it, scrolled to it, reported "element is outside of the viewport",
-    /// and retried for thirty seconds - against a caller that had asked for
-    /// four. An adapter that budgets a step cannot have that budget quietly
-    /// ignored by the half of the operation most likely to hang.
-    /// </remarks>
+    // the click runs on the caller's budget, not Playwright's 30 s default: DUO's chooser parks the real radio input
+    // off-screen, so the click retried for 30 s against a caller that asked for four
     public static async Task ClickAsync(
         IPage page, IReadOnlyList<string> selectors, string providerId, string what, int timeoutMs, CancellationToken ct)
     {
@@ -104,10 +68,7 @@ public static class PageOps
         await handle.ClickAsync(new() { Timeout = timeoutMs }).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The element's box, for the challenge redactor: everything outside
-    /// the crop is obscured before an image leaves the agent.
-    /// </summary>
+    // everything outside the crop is obscured before an image leaves the agent
     public static async Task<CropRegion?> CropAsync(IElementHandle handle)
     {
         var box = await handle.BoundingBoxAsync().ConfigureAwait(false);
@@ -116,20 +77,9 @@ public static class PageOps
         return new CropRegion((int)box.X, (int)box.Y, (int)box.Width, (int)box.Height);
     }
 
-    /// <summary>How often to re-ask while a frame is still drawing.</summary>
     public const int SettlePollMs = 150;
 
-    /// <summary>
-    /// Whether a frame has anything worth photographing in it yet.
-    ///
-    /// The distinction that matters is between "not finished" and "finished
-    /// with nothing" - `complete === false` is an image still arriving, while
-    /// `complete === true` with a zero natural width is one that will never
-    /// arrive, and waiting on the second is waiting forever. A frame with no
-    /// images at all is Pending too: the widget swaps its picture in a moment
-    /// after it clears the panel, and that gap is precisely the one a live run
-    /// was photographed in.
-    /// </summary>
+    // a frame with no images is Pending too: the widget swaps its picture in just after clearing the panel
     private const string DrawScript = @"
 () => {
   const imgs = Array.from(document.images || []);
@@ -138,13 +88,7 @@ public static class PageOps
   return imgs.some(i => i.naturalWidth > 0) ? 'drawn' : 'broken';
 }";
 
-    /// <summary>
-    /// Reads the draw state of the frame OWNED by the first matching element.
-    ///
-    /// Anything unreadable answers <see cref="DrawState.Broken"/> rather than
-    /// <see cref="DrawState.Pending"/>: a frame we cannot ask about is not a
-    /// frame we should wait on, and the caller photographs regardless.
-    /// </summary>
+    // unreadable answers Broken, not Pending: a frame we cannot ask about is not waited on; the caller photographs regardless
     public static async Task<DrawState> IsDrawnAsync(
         IPage page, IReadOnlyList<string> selectors, CancellationToken ct)
     {
@@ -174,12 +118,9 @@ public static class PageOps
 /// <summary>What a frame currently has in it. Only <c>Pending</c> is worth waiting on.</summary>
 public enum DrawState
 {
-    /// <summary>Still arriving, or nothing there yet.</summary>
     Pending,
 
-    /// <summary>At least one picture is drawn.</summary>
     Drawn,
 
-    /// <summary>Finished with nothing, or unreadable. Never improves, so never waited on.</summary>
     Broken,
 }

@@ -1,13 +1,7 @@
 import { merchantKey } from './merchantKey';
 
-/**
- * #533: the booked row a reserved (pending) charge became. The bank links
- * the two by nothing — the reserved row's reference is not the booked
- * one's — so the twin is the booked row on the same account that looks
- * like the same payment: the same merchant and direction, a day from a few
- * before the reservation to two weeks after it (a fuel or hotel hold often
- * books for a different sum).
- */
+// #533: the bank links a reserved charge and its booked row by nothing (the references differ), so the twin is the
+// booked row on the same account with the same merchant and direction (a fuel or hotel hold often books another sum)
 export interface TwinFacts {
   id: string;
   date: string;
@@ -16,9 +10,7 @@ export interface TwinFacts {
 }
 
 const DAY_MS = 86_400_000;
-/** how many days before the reservation a booking may carry */
 export const TWIN_DAYS_BEFORE = 3;
-/** how many days after it */
 export const TWIN_DAYS_AFTER = 14;
 
 function scoreOf(reserved: TwinFacts, booked: TwinFacts, reservedKey: string, bookedKey: string): number | null {
@@ -37,9 +29,7 @@ export function twinScore(reserved: TwinFacts, booked: TwinFacts): number | null
   return scoreOf(reserved, booked, merchantKey(reserved.merchant), merchantKey(booked.merchant));
 }
 
-/** each reserved row's booked twin (reserved id → booked id), one booked row
- *  per reservation: the older reservation chooses first and takes its closest
- *  booking left — two identical payments on following days stay in order */
+/** one booked row per reservation: the older reservation chooses first, so repeated payments stay in order */
 export function pairReservedWithBooked(reserved: readonly TwinFacts[], booked: readonly TwinFacts[]): Map<string, string> {
   const taken = new Set<string>();
   const pairs = new Map<string, string>();

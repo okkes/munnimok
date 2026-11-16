@@ -12,7 +12,6 @@ interface FakeSubscription {
   unsubscribe: () => Promise<boolean>;
 }
 
-/** installs the push-capable browser surface happy-dom lacks */
 function installPushEnv(existing: FakeSubscription | null) {
   const subscription: FakeSubscription = existing ?? {
     endpoint: 'https://push.example/abc',

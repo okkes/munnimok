@@ -38,8 +38,7 @@ describe('remote-wipe binding check', () => {
     await verifyAccountBinding(store, USER, onDead);
     expect(onDead).not.toHaveBeenCalled();
 
-    // the account was deleted elsewhere — the server JIT-provisioned a
-    // FRESH user row for the same login: this device's copy is dead
+    // the account was deleted elsewhere: the server provisioned a fresh user row for the same login
     fetchMock.mockImplementation(() => me('user-b'));
     await verifyAccountBinding(store, USER, onDead);
     expect(onDead).toHaveBeenCalledTimes(1);

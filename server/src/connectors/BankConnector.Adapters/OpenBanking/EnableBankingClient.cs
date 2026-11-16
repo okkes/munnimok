@@ -10,14 +10,9 @@ using Connector.Kit.Errors;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// Enable Banking (<c>api.enablebanking.com</c>): every call carries an RS256
-/// JWT the operator's application key signs (issuer <c>enablebanking.com</c>,
-/// audience the API, key id the application id), minted for an hour and
-/// reused for fifty-five minutes. One RSA instance for the life of the
-/// client — the api's transient client once disposed the key under a
-/// process-wide cache and every later request signed with a dead key.
-/// </summary>
+// RS256 JWT signed by the operator's application key, minted for an hour and reused 55 minutes
+// one RSA instance for the client's life: a transient client once disposed the key under a process-wide cache
+// and every later request signed with a dead key
 internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProvider time)
 {
     private const string ProviderId = EnableBankingAdapter.ProviderId;
@@ -28,8 +23,6 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
     private RSA? _key;
     private string? _jwt;
     private DateTimeOffset _jwtExpires = DateTimeOffset.MinValue;
-
-    // ── wire shapes ─────────────────────────────────────────────────────
 
     public sealed record Aspsp(
         [property: JsonPropertyName("name")] string Name,
@@ -87,8 +80,6 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
     private sealed record EbTransactions(
         [property: JsonPropertyName("transactions")] List<EbTransaction> Transactions,
         [property: JsonPropertyName("continuation_key")] string? ContinuationKey);
-
-    // ── calls ───────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<Aspsp>> AspspsAsync(HttpClient http, string country, CancellationToken ct) =>
         (await SendAsync<AspspList>(http, HttpMethod.Get, $"aspsps?country={Uri.EscapeDataString(country)}", null, "institutions", false, ct).ConfigureAwait(false)).Aspsps;
@@ -150,14 +141,9 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         return [.. result.Balances.Select(b => (MapBalanceType(b.BalanceType), b.BalanceAmount.Amount, b.BalanceAmount.Currency, b.ReferenceDate))];
     }
 
-    /// <summary>
-    /// Continuation-key pagination, capped; an out-of-range <c>date_from</c>
-    /// that some banks answer with an empty list (a wallet's window is far
-    /// shorter than the ask) is retried once on the bank's own window.
-    /// <c>date_to</c> only when the caller named an end (a backfill pass,
-    /// #460). Not complete when the cap stopped the walk with a page still
-    /// offered - that used to read as the whole history.
-    /// </summary>
+    // continuation-key pagination, capped; not Complete when the cap stopped the walk with a page still offered
+    // an out-of-range date_from some banks answer with an empty list (a wallet's window is short): retried once without
+    // date_to only when the caller named an end (a backfill pass, #460)
     public async Task<(IReadOnlyList<AggregatorTransaction> Rows, bool Complete)> TransactionsAsync(
         HttpClient http, string accountId, DateOnly? from, DateOnly? to, CancellationToken ct)
     {
@@ -187,8 +173,6 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         return (rows, continuation is null);
     }
 
-    // ── mapping ─────────────────────────────────────────────────────────
-
     private static string MapBalanceType(string? type) => type?.ToUpperInvariant() switch
     {
         "CLBD" => "closingBooked",
@@ -196,12 +180,8 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         var other => other ?? string.Empty,
     };
 
-    /// <summary>
-    /// Amounts come unsigned with a direction; a debit turns negative. Banks
-    /// that omit the reference or the booking day (wallets among them) get a
-    /// reference derived from the row's stable facts, so every re-fetch maps
-    /// to the same row — the derivation the api used, kept to the byte.
-    /// </summary>
+    // amounts come unsigned with a direction; banks omitting the reference or booking day (wallets) get a reference
+    // derived from stable facts, kept to the byte from the old api, so every re-fetch maps to the same row
     private static AggregatorTransaction Row(EbTransaction tx)
     {
         var debit = string.Equals(tx.CreditDebitIndicator, "DBIT", StringComparison.OrdinalIgnoreCase);
@@ -234,8 +214,6 @@ internal sealed class EnableBankingClient(EnableBankingOptions options, TimeProv
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
         return "eb:" + Convert.ToHexString(hash)[..24].ToLowerInvariant();
     }
-
-    // ── plumbing ────────────────────────────────────────────────────────
 
     private string Jwt()
     {

@@ -7,17 +7,9 @@ import { logActivity } from './activity';
 
 export type { SpaceAccount, SpaceTx, TxTransformFields };
 
-/**
- * Application layer (architecture R1): screens ask questions and issue
- * commands here — they no longer know whether a transaction is one of
- * the space's own rows or a feed row joined with this space's overlay,
- * nor that Dexie exists. The feed/overlay model (feature B) lives
- * entirely behind these hooks.
- */
+// screens never know whether a transaction is the space's own row or a feed row joined with this space's overlay (R1)
 
-/** every transaction the active space sees (own rows + attached feeds), unsorted — ONE live read per
- *  space, shared by whoever asks (#554: the planning dot, Home's plan block and a detail screen each
- *  joined every transaction again on every write); `active` false reads nothing */
+/** unsorted; one live read per space shared by all askers (#554); `active` false reads nothing */
 export function useSpaceTransactions(active = true): SpaceTx[] | undefined {
   const { store, spaceId } = useData();
   // #361: remount cache — tab returns render the last rows instantly
@@ -30,15 +22,13 @@ export function useSpaceTransactions(active = true): SpaceTx[] | undefined {
   );
 }
 
-/** every account the active space sees (own + attached), with link info */
 export function useSpaceAccounts(): SpaceAccount[] | undefined {
   const { store, spaceId } = useData();
   // #361: remount cache — tab returns render the last rows instantly
   return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId], undefined, `spaceAccts:${spaceId}`);
 }
 
-/** #545: one account as the active space sees it — the name the space gave
- *  an attached account (and its type), never the global row's */
+/** #545: the name and type the space gave an attached account, never the global row's */
 export function useSpaceAccount(accountId: string | undefined): SpaceAccount | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -48,33 +38,23 @@ export function useSpaceAccount(accountId: string | undefined): SpaceAccount | u
   );
 }
 
-/** the space's FULL stored history, gates lifted — recurring detection
- *  only (user design 2026-08-01): patterns need the pre-start tail */
+/** the full stored history, date gates lifted: recurring detection needs the pre-start tail */
 export function useSpaceHistoryTransactions(): SpaceTx[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(store, async () => historyTransactions(store, spaceId), [spaceId], undefined, `spaceHistTx:${spaceId}`);
 }
 
-/** one visible transaction by id (detail screens) — out of the space's shared read */
 export function useSpaceTransaction(txId: string): SpaceTx | undefined {
   return useSpaceTransactions()?.find((t) => t.id === txId);
 }
 
-/**
- * The single write path for a space's opinion about a transaction
- * (category, notes, splits, reimbursements, review flag): overlay for
- * feed rows, in place for the space's own rows.
- *
- * `activity` names the history line this gesture writes — default
- * 'txEdit'; pass a more specific kind, or null when the caller logs a
- * richer line itself (review). Auto-relinks bypass this hook entirely
- * (writeTxTransform direct), so machine writes never reach the history.
- */
+// single write path for a space's opinion on a transaction: overlay for feed rows, in place for own rows
+// `activity` = the history line ('txEdit' by default; null when the caller logs a richer one itself)
+// auto-relinks call writeTxTransform directly, so machine writes never reach the history
 export function useTxTransform(): (tx: SpaceTx, fields: TxTransformFields, activity?: string | null) => Promise<void> {
   const { store, repo, spaceId } = useData();
   return async (tx, fields, activity = 'txEdit') => {
-    // the loan balance coupling rides INSIDE writeTxTransform (loans v2
-    // review): every linkedAccountId writer shares it, not just this hook
+    // the loan balance coupling rides inside writeTxTransform: every linkedAccountId writer shares it, not just this hook
     await writeTxTransform(repo, tx, fields);
     if (activity) void logActivity(store, repo, spaceId, activity, txTitle(tx));
   };

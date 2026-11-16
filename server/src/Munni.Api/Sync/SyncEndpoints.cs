@@ -8,33 +8,23 @@ namespace Munni.Api.Sync;
 
 public sealed record PushRequest(string ClientId, List<SyncOpDto> Ops);
 public sealed record PushResponse(long LastSeq, int Accepted, int Duplicates);
-// NextSince (#305 bug 4): the last RETURNED op's seq — the honest page
-// cursor. LatestSeq is the space head; advancing the client cursor to it
-// after a capped 1000-op page skipped everything in between forever.
+// NextSince (#305): the last RETURNED op's seq, the honest page cursor; advancing to LatestSeq (the space head)
+// after a capped 1000-op page skipped everything in between for good
 public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq, long NextSince);
 public sealed record BootstrapRow(string Entity, string EntityId, bool Deleted, JsonElement Data, Dictionary<string, string> FieldVersions);
-/// <summary>
-/// One page of a space's rows as they stand (#606): what a device without the space takes instead of
-/// replaying its history.
-/// </summary>
-/// <param name="LatestSeq">The space's head, read before the page's rows. Whatever is written while the pages
-/// are read lies after the FIRST page's value: the device pulls from there once it holds every page.</param>
-/// <param name="Next">What the next page is asked with (<c>after</c>); null on the last one.</param>
+/// one page of a space's rows as they stand (#606): what a device without the space takes instead of replaying history
+/// LatestSeq is read before the page's rows: whatever is written meanwhile lies after the FIRST page's value,
+/// and the device pulls from there
 public sealed record BootstrapResponse(List<BootstrapRow> Rows, long LatestSeq, string? Next = null);
-/// <summary>
-/// Where one space the caller reaches stands: its head as the caller may pull
-/// it (capped for an archived feed), and the caller's role there (#505: a
-/// device refuses its own writes where it may only read) — a feed reached
-/// only through an attachment reads as "reader".
-/// </summary>
+/// where one space stands: its head as the caller may pull it (capped for an archived feed) and the caller's role
+/// (#505: a device refuses its own writes where it may only read); a feed reached only through an attachment reads "reader"
 public sealed record SpaceHead(string SpaceId, long LatestSeq, string Role);
 
 public static class SyncEndpoints
 {
     public static void MapSync(this IEndpointRouteBuilder app)
     {
-        // fresh devices discover their spaces here before pulling — feeds
-        // reachable through attachments/ownership are part of the answer,
+        // feeds reachable through attachments/ownership are part of the answer,
         // so real-time sync of shared accounts needs no extra wiring
         app.MapGet("/me/spaces", async (AppDbContext db, HttpContext http) =>
         {
@@ -44,14 +34,10 @@ public static class SyncEndpoints
             return Results.Ok(spaceIds.Union(feeds).ToList());
         }).RequireAuthorization();
 
-        // #569: every space the caller reaches with its head, in one call — a
-        // sync round pulls only the spaces that moved instead of asking each
-        // in turn (a round over ~25 spaces was ~25 requests, and a burst of
-        // writes ran the rate limiter dry: "too many requests" on attach)
+        // #569: every reached space with its head in one call: a round over ~25 spaces was ~25 requests,
+        // and a burst of writes ran the rate limiter dry
         app.MapGet("/sync/heads", Heads).RequireAuthorization();
 
-        // near-real-time change stream: emits {"spaceId":…} whenever one of
-        // the caller's spaces accepted new ops (push or bank ingest)
         app.MapGet("/sync/events", StreamEvents).RequireAuthorization();
 
         var group = app.MapGroup("/sync/{spaceId}").RequireAuthorization().WithSafeRouteParams();
@@ -60,13 +46,7 @@ public static class SyncEndpoints
         group.MapGet("/bootstrap", Bootstrap);
     }
 
-    /// <summary>
-    /// The caller's spaces (memberships and the feeds reachable through
-    /// attachments or ownership, as <c>/me/spaces</c> lists them) with the
-    /// head each pull would report: the space's last seq, capped where only
-    /// an archived attachment reaches a feed — the same rule <see cref="Pull"/>
-    /// applies.
-    /// </summary>
+    /// the head each pull would report: the space's last seq, capped where only an archived attachment reaches a feed
     private static async Task<IResult> Heads(AppDbContext db, HttpContext http)
     {
         var userId = http.GetUserId();
@@ -86,11 +66,8 @@ public static class SyncEndpoints
     private static async Task<IResult> Push(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, HttpContext http)
     {
         var userId = http.GetUserId();
-        // #281 (GlitchTip API-STAGING-N, 2026-08-20 storm): concurrent
-        // pushes — or a push racing the bank ingest — both miss the row
-        // read and collide on a PK at save. A clean retry re-reads what
-        // the winner committed and the LWW merge converges; without it
-        // the client saw 500s, retried, and ran into the rate limiter.
+        // #281: concurrent pushes (or a push racing the bank ingest) miss the row read and collide on a PK at save; a retry
+        // re-reads what the winner committed and the LWW merge converges; without it the client saw 500s and hit the rate limiter
         var attempt = 0;
         while (true)
         {
@@ -112,14 +89,12 @@ public static class SyncEndpoints
         var owner = true;
         if (space is null)
         {
-            // deterministic (uuidv5) feed ids are guessable from an IBAN —
-            // feeds are born only via POST /feeds (security review S1)
+            // feed ids are deterministic (uuidv5), so guessable from an IBAN: feeds are born only via POST /feeds (security review S1)
             if (Accounts.FeedAccess.IsFeedShaped(spaceId))
                 return Results.Forbid();
             // #615: a space that was erased is never born again from a device that still held it
             if (await SpaceErasure.IsErasedAsync(db, spaceId)) return SpaceErasure.Gone();
-            // first push creates the space with the pusher as owner (a
-            // lost create race lands in the member check on the retry)
+            // first push creates the space with the pusher as owner (a lost create race lands in the member check on the retry)
             space = new Space { Id = spaceId };
             db.Spaces.Add(space);
             db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = userId, Role = Social.SpaceRoles.Owner });
@@ -128,7 +103,6 @@ public static class SyncEndpoints
         {
             var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
             if (membership is null) return Results.Forbid();
-            // readers may pull but never push
             if (!Social.SpaceRoles.CanWrite(membership.Role)) return Social.SpaceRoles.ReadOnly();
             owner = Social.SpaceRoles.IsOwner(membership.Role);
         }
@@ -141,7 +115,7 @@ public static class SyncEndpoints
         if (erase) await SpaceErasure.SealAsync(db, spaceId);
         await db.SaveChangesAsync();
         if (erase) await SpaceErasure.EraseRowsAsync(db, spaceId);
-        if (accepted > 0) events.Publish(spaceId); // wake the other devices/members
+        if (accepted > 0) events.Publish(spaceId);
         return Results.Ok(new PushResponse(lastSeq, accepted, request.Ops.Count - accepted));
     }
 
@@ -151,8 +125,7 @@ public static class SyncEndpoints
         var member = await RequireMember(spaceId, db, http);
         if (member is not null)
         {
-            // not a member — attachments may still derive (possibly
-            // archive-capped) read access to a feed space
+            // not a member: attachments may still give (possibly archive-capped) read access to a feed space
             var feedCap = await Accounts.FeedAccess.ReadCapAsync(db, http.GetUserId(), spaceId);
             if (feedCap is null) return await DeniedAsync(spaceId, db, member);
             cap = feedCap.Value;
@@ -173,22 +146,16 @@ public static class SyncEndpoints
         return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap), Math.Min(nextSince, cap)));
     }
 
-    /// <summary>How many rows one page of a snapshot holds at most.</summary>
     internal const int SnapshotPageRows = 2000;
 
-    /// <summary>
-    /// A page also ends once its rows' data passes this many characters (a picture is tens of thousands): one
-    /// request stays a download a phone finishes inside the app's limit per request.
-    /// </summary>
+    /// a page also ends once its rows' data passes this many characters (a picture is tens of thousands),
+    /// so one request stays a download a phone finishes within the app's per-request limit
     internal const int SnapshotPageChars = 2_000_000;
 
     /// <summary>The longest <c>after</c> a page can have named: an entity's name, the colon, an entity id.</summary>
     private const int SnapshotCursorMaximum = 64 + 1 + 128;
 
-    /// <summary>
-    /// A space's rows after the last one of the page before, in the order of the primary key: the database
-    /// walks one index from where the page before ended, however many rows the space holds.
-    /// </summary>
+    /// ordered by primary key, so the database walks one index from where the page before ended
     internal static IQueryable<EntityRow> SnapshotRowsAfter(AppDbContext db, string spaceId, (string Entity, string EntityId)? last)
     {
         var rows = db.EntityRows.AsNoTracking().Where(r => r.SpaceId == spaceId);
@@ -238,7 +205,7 @@ public static class SyncEndpoints
         return Results.Ok(new BootstrapResponse(page, head, next));
     }
 
-    /// <summary>#615: no access — and whether that is because the space was erased, which a device answers by dropping its copy without a word of "removed"</summary>
+    /// #615: an erased space answers 403 space-deleted; a device then drops its copy without a word of "removed"
     private static async Task<IResult> DeniedAsync(string spaceId, AppDbContext db, IResult denied) =>
         await SpaceErasure.IsErasedAsync(db, spaceId) ? SpaceErasure.Gone() : denied;
 
@@ -252,9 +219,7 @@ public static class SyncEndpoints
     private static async Task StreamEvents(AppDbContext db, SpaceEventBroadcaster events, HttpContext http)
     {
         var userId = http.GetUserId();
-        // membership snapshot at connect (incl. feeds reachable through
-        // attachments); new invites are picked up when the client
-        // reconnects (and the 10s poll covers the gap meanwhile)
+        // membership snapshot at connect; new invites are picked up on reconnect (the 10s poll covers the gap)
         var mySpaces = (await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync())
             .Union(await Accounts.FeedAccess.ReachableFeedsAsync(db, userId))
             .ToHashSet();
@@ -279,7 +244,7 @@ public static class SyncEndpoints
                 }
                 catch (OperationCanceledException) when (!http.RequestAborted.IsCancellationRequested)
                 {
-                    // no events for a while — keepalive comment holds proxies open
+                    // no events for a while: the keepalive comment holds proxies open
                 }
 
                 var frame = FrameFor(evt, userId, mySpaces);
@@ -290,7 +255,7 @@ public static class SyncEndpoints
         }
         catch (OperationCanceledException)
         {
-            // client went away — normal for a long-lived stream
+            // client went away: normal for a long-lived stream
         }
         finally
         {
@@ -298,12 +263,6 @@ public static class SyncEndpoints
         }
     }
 
-    /// <summary>
-    /// What one connection writes for an event: a keepalive when there was
-    /// none, the space id when it is one of the caller's spaces, the frame
-    /// itself when it is addressed to the caller — and nothing when the
-    /// event is somebody else's.
-    /// </summary>
     internal static string? FrameFor(SyncEvent? evt, Guid userId, HashSet<string> mySpaces)
     {
         if (evt is null) return ": keepalive\n\n";

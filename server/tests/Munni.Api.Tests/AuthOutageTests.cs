@@ -9,12 +9,8 @@ using Xunit;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// 2026-10-05: with the identity provider out of reach the api answered
-/// every bearer with 401, and every app concluded its refresh token was
-/// dead and logged the person out. A provider the api cannot ask is a
-/// 503 that names itself; a token the provider rejected stays a 401.
-/// </summary>
+/// with the identity provider unreachable the api answered every bearer 401 and apps logged people out
+/// as if the refresh token were dead: an unreachable provider is a named 503, a rejected token stays 401
 public class AuthOutageTests
 {
     [Fact]

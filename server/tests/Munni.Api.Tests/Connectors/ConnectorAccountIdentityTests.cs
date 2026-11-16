@@ -32,7 +32,7 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
     private async Task<Guid> UserAsync(string sub)
     {
         using var client = factory.ClientFor(sub);
-        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);   // provisions the user
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);
         return factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
     }
 
@@ -53,7 +53,6 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
 
         var refs = factory.Read(db => db.ConnectorAccountRefs.Where(a => a.UserId == userId).ToList());
         var fresh = Assert.Single(refs);
-        // one account, whatever the consent's own ids
         Assert.Equal("acc_id_new", fresh.Id);
         Assert.Equal(old.AccountRef, fresh.AccountRef);
         Assert.Equal(old.FeedSpaceId, fresh.FeedSpaceId);
@@ -76,13 +75,11 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
         var before = factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_bf_a"));
         Assert.Equal($"CONN:{Consent}:uid-a", before.AccountRef);
 
-        // the same consent, now with its identity: the account stays where it was
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-bf-a", "account", [Wallet("acc_bf_a", "uid-a", "hash-bf")], ct);
         var stamped = factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_bf_a"));
         Assert.Equal(before.AccountRef, stamped.AccountRef);
         Assert.Equal("hash-bf", stamped.Identity);
 
-        // a later consent of the same wallet continues that account
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-bf-b", "account", [Wallet("acc_bf_b", "uid-b", "hash-bf")], ct);
         Assert.Equal(before.AccountRef, factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_bf_b")).AccountRef);
     }
@@ -103,7 +100,6 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-relogin", "account", [Wallet("acc_rl_old", "uid-old", null)], ct);
         var old = Ref("acc_rl_old");
 
-        // the same connection, a new consent: a new id per session, and now the identity
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-relogin", "account", [Wallet("acc_rl_new", "uid-new", "hash-rl")], ct);
         var fresh = Ref("acc_rl_new");
         Assert.Equal(old.AccountRef, fresh.AccountRef);
@@ -183,7 +179,6 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
         Assert.Equal(HttpStatusCode.NotFound, login.StatusCode);
         Assert.Equal("unsupported_resource", (await login.Content.ReadFromJsonAsync<JsonObject>())!["error"]!["code"]!.GetValue<string>());
 
-        // the test host's own catalogue still lists them, marked
         using var offered = factory.ClientFor("fixture-tester");
         var all = await offered.GetFromJsonAsync<JsonObject>("/connectors/providers");
         var mock = all!["providers"]!.AsArray().Single(p => p!["id"]!.GetValue<string>() == "mock-store-simple")!;
@@ -213,7 +208,6 @@ public class ConnectorAccountIdentityTests(ConnectorApiFactory factory) : IClass
         var catalogue = await answer.Content.ReadFromJsonAsync<JsonObject>();
         Assert.DoesNotContain(catalogue!["providers"]!.AsArray(), p => p!["id"]!.GetValue<string>().StartsWith("mock-", StringComparison.Ordinal));
 
-        // and what it served is confirmed under its own tag
         var own = answer.Headers.ETag!.ToString();
         Assert.NotEqual(held, own);
         using var again = new HttpRequestMessage(HttpMethod.Get, "/connectors/providers");

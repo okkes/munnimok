@@ -2,18 +2,8 @@ using System.Net.Http.Headers;
 
 namespace Connector.Kit.Tracing;
 
-/// <summary>
-/// The HTTP client's half of a recording: a handler that writes every call
-/// the adapter makes into whatever book is open for the current run, and
-/// nothing when none is. The book is resolved per request rather than fixed
-/// at construction, so one handler in a shared pipeline (the control
-/// plane's inline client) records exactly the runs that asked for it, and
-/// the agent's per-job client hands it the job's own book.
-///
-/// A text answer is buffered so the book can keep it and the adapter can
-/// still read it; a binary one (a PDF, an image) is left streaming and only
-/// its size and type are written down.
-/// </summary>
+// the book is resolved per request, so one handler in a shared pipeline records only the runs that asked.
+// A text answer is buffered so the adapter can still read it; a binary one stays streaming (size and type only)
 public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
 {
     /// <summary>The most a response is buffered for the book; past this, size and type only.</summary>
@@ -48,8 +38,6 @@ public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
 
         if (TraceRedaction.IsWorthReading(contentType) && (length is null || length <= MaxBufferedBytes))
         {
-            // Read once into memory and hand the adapter the same bytes: the
-            // book keeps its copy, the adapter reads as if nothing happened.
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
             if (bytes.LongLength <= MaxBufferedBytes)
             {
@@ -89,8 +77,7 @@ public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
         if (content is null) return null;
         if (!TraceRedaction.IsText(content.Headers.ContentType?.ToString())) return null;
 
-        // A request body is small by nature (a form, a JSON command) and is
-        // buffered by the client anyway; reading it here does not consume it.
+        // a request body is small and buffered by the client anyway; reading it here does not consume it
         await content.LoadIntoBufferAsync(ct).ConfigureAwait(false);
         return await content.ReadAsStringAsync(ct).ConfigureAwait(false);
     }
@@ -111,11 +98,7 @@ public sealed class TraceHttpHandler(Func<TraceBook?> book) : DelegatingHandler
     }
 }
 
-/// <summary>
-/// The book open for the current asynchronous flow, for a shared pipeline
-/// that cannot be handed one per job. Set around the adapter's run, read by
-/// <see cref="TraceHttpHandler"/> on every call made inside it.
-/// </summary>
+// the ambient book for a shared pipeline that cannot be handed one per job
 public static class TraceScope
 {
     private static readonly AsyncLocal<TraceBook?> Current = new();

@@ -19,7 +19,6 @@ import type { SplitPhase } from './splitsCore';
 
 const SECTIONS: readonly SplitPhase[] = ['running', 'planned', 'settling', 'archived'];
 
-/** where the person stands in an event, as the row's right-hand word */
 function Standing({ split }: Readonly<{ split: SplitSummary }>) {
   const { t, lang } = useLang();
   if (split.deleteAt) return <span className="shrink-0 text-[11px] font-medium text-warning">{t('splits.deleting')}</span>;
@@ -54,13 +53,7 @@ function SplitRow({ split, onOpen }: Readonly<{ split: SplitSummary; onOpen: () 
   );
 }
 
-/**
- * Splits (#538): group ledgers whose membership has nothing to do with
- * spaces. The list says which are running, which are planned, which are
- * being settled and which are archived; an invitation from a friend waits
- * on top for a yes or a no. Online by design — a profile without an
- * account is told so, the demo shows seeded examples.
- */
+/** online by design: a profile without an account is told so, the demo shows seeded examples (#538) */
 export function SplitsScreen() {
   const { t } = useLang();
   const navigate = useNavigate();

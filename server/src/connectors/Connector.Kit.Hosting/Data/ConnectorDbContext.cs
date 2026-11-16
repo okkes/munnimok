@@ -3,16 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Connector.Kit.Hosting.Data;
 
-/// <summary>
-/// One context, two providers.
-///
-/// Every mapping here is deliberately provider-agnostic: enums are stored as
-/// strings, structured values as JSON <em>text</em> rather than <c>jsonb</c>,
-/// and every timestamp is a <see cref="DateTimeOffset"/> written in UTC. That
-/// is what lets the identical schema run on Postgres in production and on
-/// Sqlite in a test, so the tests exercise the real queries instead of a
-/// stand-in.
-/// </summary>
+/// one schema on Postgres (production) and Sqlite (tests): enums as strings, JSON as text not jsonb, UTC DateTimeOffset
 public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> options) : DbContext(options)
 {
     public DbSet<SessionRow> Sessions => Set<SessionRow>();
@@ -33,36 +24,17 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
 
     public DbSet<PrivateAgentRequestRow> PrivateAgentRequests => Set<PrivateAgentRequestRow>();
 
-    /// <summary>Operator-owned connections, run on a schedule. See <see cref="CanaryRow"/>.</summary>
     public DbSet<CanaryRow> Canaries => Set<CanaryRow>();
 
-    /// <summary>What failed runs left behind, kept with the person's leave or for the operator's own runs. See <see cref="JobArtifactRow"/>.</summary>
     public DbSet<JobArtifactRow> JobArtifacts => Set<JobArtifactRow>();
 
     public DbSet<JobTraceRow> JobTraces => Set<JobTraceRow>();
 
-    /// <summary>
-    /// Applies migrations when the assembly carries any, and falls back to
-    /// <c>EnsureCreated</c> otherwise.
-    ///
-    /// The migrations this assembly carries are scaffolded for Npgsql, so
-    /// Postgres - production - is brought forward properly, key changes and
-    /// all. Every other provider takes <c>EnsureCreated</c>, which creates
-    /// missing tables and touches nothing that already exists. That is the
-    /// whole reason <see cref="AssertSchemaMatchesModelAsync"/> follows it:
-    /// on that path the database is the only thing that knows what it really
-    /// holds, so it gets asked rather than assumed.
-    /// </summary>
+    /// migrations are scaffolded for Npgsql only; other providers take EnsureCreated, which creates missing tables
+    /// and touches nothing existing, hence AssertSchemaMatchesModelAsync follows it
     public async Task EnsureCreatedOrMigrateAsync(CancellationToken ct = default)
     {
-        // Migrations only where they exist, and they are scaffolded for Npgsql
-        // alone: a migration carries the SQL of the provider it was generated
-        // for, so replaying Postgres DDL onto Sqlite would fail on the first
-        // statement. Sqlite therefore takes EnsureCreated - and it is NOT the
-        // fresh file per run this comment once claimed: a developer's
-        // bank-connector.dev.db is a path in appsettings.Development.json and
-        // outlives every schema change made after it. Which is exactly how a
-        // key that moved got to sit there unmentioned until a fetch failed.
+        // a migration carries one provider's SQL, so Sqlite takes EnsureCreated; a dev .db persists and keeps an old schema
         if (Database.IsNpgsql() && Database.GetMigrations().Any())
         {
             await Database.MigrateAsync(ct);
@@ -73,28 +45,9 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
         await AssertSchemaMatchesModelAsync(ct);
     }
 
-    /// <summary>
-    /// Refuses to start against a database that is missing something the model
-    /// has, or that keys a table differently from the way the model does.
-    ///
-    /// <c>EnsureCreated</c> creates missing TABLES and nothing else. A column
-    /// added to an entity after the database exists is simply never created, so
-    /// the service starts perfectly happily and then throws a 500 the first
-    /// time a request writes that column - which reads to whoever hit it as a
-    /// broken provider rather than a schema that was never brought forward.
-    /// That happened: two columns landed in one afternoon and the first user to
-    /// press Connect got "Something broke on our side."
-    ///
-    /// One empty SELECT per table, naming every column the model expects. It
-    /// costs a handful of round trips at start-up, uses the database's own
-    /// answer rather than a hand-rolled diff, and works on any relational
-    /// provider because it is just SQL. A mismatch becomes a refusal to start
-    /// with the table named - the same call this file's neighbours make about
-    /// a manifest that lies.
-    ///
-    /// Then the key, per table, because that SELECT cannot see one - see
-    /// <see cref="AssertPrimaryKeyMatchesModelAsync"/>.
-    /// </summary>
+    /// EnsureCreated adds no columns to existing tables: a stale database boots, then 500s on the first write of one
+    /// one empty SELECT per table naming every model column; a mismatch refuses start-up with the table named
+    /// the key is checked separately: that SELECT cannot see it
     private async Task AssertSchemaMatchesModelAsync(CancellationToken ct)
     {
         foreach (var entity in Model.GetEntityTypes())
@@ -109,11 +62,7 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
 
             if (columns.Count == 0) continue;
 
-            // Built here rather than interpolated at the call site so it is
-            // plain that nothing in it came from a request: every identifier is
-            // read off the EF model this assembly was compiled with, and each
-            // one goes through Quote. WHERE 1 = 0 so this reads nothing and
-            // still has to resolve every name.
+            // WHERE 1 = 0 reads nothing but resolves every name; identifiers come from the compiled EF model via Quote
             var probe = "SELECT " + string.Join(", ", columns) + " FROM " + Quote(table) + " WHERE 1 = 0";
 
             try
@@ -137,27 +86,9 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
         }
     }
 
-    /// <summary>
-    /// Refuses to start against a table whose primary key has moved on.
-    ///
-    /// The probe above cannot see this one. <c>SELECT "Id", "Resource" FROM
-    /// results WHERE 1 = 0</c> resolves perfectly well against a table still
-    /// keyed on <c>Id</c> alone, so a key that changed after the database was
-    /// created stays invisible right up to the first write the new key was
-    /// widened to allow - which comes back as a 500 that reads like a broken
-    /// provider. That happened the night the results key became
-    /// <c>(Id, Resource)</c>: a developer whose <c>bank-connector.dev.db</c>
-    /// predated it started HEAD, was told nothing, and then hit "UNIQUE
-    /// constraint failed: results.Id" on the accounts-then-transactions
-    /// fetch - the exact failure that key change exists to fix, on the very
-    /// machine it had been reproduced on.
-    ///
-    /// Deliberately scoped to this path and to the providers this build knows
-    /// how to ask - see <see cref="ReadPrimaryKeyAsync"/>. A stale key can
-    /// only survive a start-up that never rewrites it, and Postgres never
-    /// reaches here: it migrates, and the migration carries its own
-    /// DropPrimaryKey/AddPrimaryKey pair.
-    /// </summary>
+    /// the column probe cannot see a moved primary key: it resolves against a table still keyed on Id alone
+    /// that hit a dev .db when results became keyed (Id, Resource): UNIQUE constraint failed: results.Id
+    /// only on the EnsureCreated path: Postgres migrates and its migration carries the key change
     private async Task AssertPrimaryKeyMatchesModelAsync(IEntityType entity, string table, CancellationToken ct)
     {
         if (entity.FindPrimaryKey() is not { } key) return;
@@ -165,10 +96,7 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
         var actual = await ReadPrimaryKeyAsync(table, ct);
         if (actual is null) return;
 
-        // IKey.Properties is in key order, and so is what the database gives
-        // back, because (Id, Resource) and (Resource, Id) are not the same
-        // key: they index differently and a composite lookup on the wrong one
-        // scans. Ordinal, since these are identifiers this assembly emitted.
+        // key order matters: (Id, Resource) and (Resource, Id) index differently; ordinal compare, these are our identifiers
         var wanted = key.Properties.Select(p => p.GetColumnName()).ToList();
 
         if (wanted.SequenceEqual(actual, StringComparer.Ordinal)) return;
@@ -182,40 +110,21 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             "holds nothing worth keeping.");
     }
 
-    /// <summary>
-    /// The database's own answer to what a table is keyed on, in key order -
-    /// or <c>null</c> when this build has no way to put the question to this
-    /// provider, which leaves the column probe as the only guard rather than
-    /// refusing a start-up over an answer nobody asked for.
-    ///
-    /// There is no portable SQL for this. A key lives in <c>pg_index</c> on
-    /// Postgres and behind a PRAGMA on Sqlite, and Sqlite has no
-    /// <c>information_schema</c> to meet halfway. So what is general here is
-    /// the seam - one method, one dialect per provider, an honest <c>null</c>
-    /// for anything else - rather than one query pretending to be portable.
-    /// Sqlite is the only dialect written because Sqlite is the only provider
-    /// that arrives here holding a database it did not just create: Npgsql
-    /// migrates instead, and a third provider would be a branch here.
-    /// </summary>
+    /// null when this build cannot ask the provider, leaving the column probe as the only guard
+    /// no portable SQL for keys (pg_index vs a PRAGMA); only Sqlite is written, the only one arriving with an old database
     private async Task<IReadOnlyList<string>?> ReadPrimaryKeyAsync(string table, CancellationToken ct)
     {
         if (!Database.IsSqlite()) return null;
 
         var columns = new List<(long Ordinal, string Name)>();
 
-        // ADO rather than ExecuteSqlRaw because this one reads rows back, and
-        // the connection is opened and closed around it: at start-up EF holds
-        // nothing open, and OpenConnection/CloseConnection count their nesting
-        // so this leaves the facade exactly as it found it.
+        // ADO because this reads rows back; Open/CloseConnection nest, so the facade is left as found
         await Database.OpenConnectionAsync(ct);
         try
         {
             await using var command = Database.GetDbConnection().CreateCommand();
 
-            // pragma_table_info is the table-valued form of PRAGMA
-            // table_info, which is what lets the table name go in as a
-            // parameter instead of into the text. Its `pk` is 0 for a column
-            // outside the key and its 1-based position within it otherwise.
+            // pragma_table_info takes the table name as a parameter; pk is 0 outside the key, else its 1-based position
             command.CommandText = "SELECT \"name\", \"pk\" FROM pragma_table_info($table) WHERE \"pk\" > 0";
 
             var parameter = command.CreateParameter();
@@ -234,23 +143,17 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             await Database.CloseConnectionAsync();
         }
 
-        // Sorted here rather than in the statement: a subquery's ORDER BY is
-        // the sort of thing a planner is entitled to drop, and key order is
-        // the whole point of reading the ordinal.
+        // sorted here: a planner may drop a subquery's ORDER BY, and key order is the point
         return columns.OrderBy(c => c.Ordinal).Select(c => c.Name).ToList();
     }
 
-    /// <summary>A key as an operator would write it, and "nothing" for a table that has none.</summary>
     private static string Describe(IReadOnlyList<string> columns) =>
         columns.Count == 0 ? "nothing" : "(" + string.Join(", ", columns) + ")";
 
     private static string Quote(string identifier) =>
         '"' + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + '"';
 
-    /// <summary>
-    /// The provider switch, exposed so a test can build a context without the
-    /// whole platform.
-    /// </summary>
+    /// exposed so a test can build a context without the whole platform
     public static void Configure(DbContextOptionsBuilder builder, ConnectorDatabaseOptions database)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -297,8 +200,7 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.ProfileId).HasMaxLength(64);
             e.Property(x => x.Label).HasMaxLength(128);
             e.Property(x => x.ConsentTermsVersion).HasMaxLength(32);
-            // Every authorisation check is (subject, provider); nothing else
-            // may reach a session, so this is the index that matters.
+            // every authorisation check is (subject, provider); nothing else reaches a session
             e.HasIndex(x => new { x.Subject, x.ProviderId });
             e.HasIndex(x => x.ExpiresAt);
         });
@@ -320,14 +222,11 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.Step).HasConversion<string>().HasMaxLength(32);
             e.Property(x => x.Trigger).HasMaxLength(16);
             e.Property(x => x.ErrorCode).HasConversion<string>().HasMaxLength(32);
-            // The leasing query filters on exactly this pair, and a lease
-            // that scans the table is a lease that loses races.
+            // the leasing query filters on this pair; a lease that scans loses races
             e.HasIndex(x => new { x.State, x.ProviderId });
             e.HasIndex(x => x.SessionId);
             e.HasIndex(x => x.LeaseExpiresAt);
-            // The operator reads the history by provider, newest first, and
-            // health is a month of one provider's rows (#441 L1): without this
-            // pair both are a scan of a table that is never purged.
+            // the operator reads history by provider newest first, and health is a month of one provider's rows (#441 L1)
             e.HasIndex(x => new { x.ProviderId, x.CreatedAt });
         });
 
@@ -346,21 +245,9 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
         {
             e.ToTable("results");
 
-            // A RECORD ID IS UNIQUE PER RESOURCE OF A SESSION, not per session,
-            // and the key has to say the same thing as the index below it. The
-            // id is minted from (session, external_id) alone - deliberately,
-            // because a transaction names its account by that id and the tie
-            // only holds if the account staged alongside the transactions
-            // carries the id it carried on the accounts page. So the same
-            // account lands under two resources of one session, once each,
-            // and every bank provider does exactly that on its second fetch.
-            //
-            // The key was the id alone, which refused that second row: the
-            // fetch failed as internal, the inline host expired the session
-            // and an agent host left the job on the queue until its lease
-            // burned. Nothing else in the dedupe, the index or the readers
-            // ever looked a row up by id without its resource, so this is the
-            // only line that said something different.
+            // a record id is unique per resource of a session: minted from (session, external_id) so a transaction's account tie holds
+            // the same account lands under two resources, once each, on every bank provider's second fetch
+            // the key was the id alone, which refused that row and failed the fetch as internal
             e.HasKey(x => new { x.Id, x.Resource });
             e.Property(x => x.Id).HasMaxLength(64);
             e.Property(x => x.JobId).HasMaxLength(64);
@@ -369,8 +256,7 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.ExternalId).HasMaxLength(256);
             e.Property(x => x.ContentHash).HasMaxLength(80);
             e.Property(x => x.Cursor).HasMaxLength(64);
-            // (session, resource, external_id) uniqueness is what makes a
-            // re-run free for the caller: a repeat never duplicates.
+            // makes a re-run free for the caller: a repeat never duplicates
             e.HasIndex(x => new { x.SessionId, x.Resource, x.ExternalId }).IsUnique();
             e.HasIndex(x => x.Cursor);
             e.HasIndex(x => x.CreatedAt);
@@ -399,17 +285,8 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.Subject).HasMaxLength(128);
             e.HasIndex(x => x.AgentId);
 
-            // ONE PROFILE PER MACHINE, PROVIDER AND ACCOUNT HOLDER, held here
-            // rather than asserted in a comment. A persistent profile IS a
-            // browser directory: two of them for the same person and provider
-            // on one agent means two browsers, and a bank that trusts one of
-            // them does not trust the other.
-            //
-            // Null subjects stay distinct, on both providers this runs on, and
-            // that is load-bearing rather than tolerated: a heartbeat inserts
-            // profiles the agent derived on its own, has no subject to give
-            // them, and must never be refused by this index. The last time a
-            // profile insert could fail it took the agent's liveness with it.
+            // one profile per machine, provider and account holder: two for one person on one agent are two browsers
+            // null subjects stay distinct: a heartbeat inserts agent-derived profiles with no subject and must never be refused
             e.HasIndex(x => new { x.AgentId, x.ProviderId, x.Subject }).IsUnique();
         });
 
@@ -426,8 +303,7 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
         {
             e.ToTable("canaries");
 
-            // One per provider. A second canary for the same provider would
-            // double the schedule and halve the meaning of its verdict.
+            // one per provider: a second canary would double the schedule and halve the meaning of its verdict
             e.HasKey(x => x.ProviderId);
             e.Property(x => x.ProviderId).HasMaxLength(64);
             e.Property(x => x.Subject).HasMaxLength(128);

@@ -1,15 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { localAwareFetch } from './insecure-fetch.mjs';
 
-/**
- * GlitchTip as code: ONE GlitchTip per platform (the shared stack) with
- * one organization and team per platform (`munni-<platform>`) and six
- * projects per environment (pwa, admin, lab, api, android, ios, connector). The API
- * token the shared stack's deploy created inside the container
- * (GLITCHTIP_API_TOKEN) is mirrored into every environment of the
- * platform, so each environment's bootstrap ensures its own projects and
- * writes its DSNs back. Sentry-shaped API: /api/0/…, Bearer auth.
- */
+// ONE GlitchTip per platform, org and team `munni-<platform>`; the shared stack's GLITCHTIP_API_TOKEN is mirrored into every
+// environment so each bootstrap ensures its own projects and writes its DSNs back
 
 async function api(base, token, path, init = {}, fetchImpl = localAwareFetch) {
   const res = await fetchImpl(`${base}/api/0${path}`, { ...init, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000) });
@@ -44,7 +37,6 @@ async function projectDsn(base, token, org, project, fetchImpl) {
 
 export const PROJECTS = [['web', 'pwa', 'javascript'], ['api', 'api', 'csharp'], ['admin', 'admin', 'javascript'], ['lab', 'lab', 'javascript'], ['android', 'android', 'javascript'], ['ios', 'ios', 'javascript'], ['connector', 'connector', 'csharp']];
 
-/** ensure the platform's org/team and this environment's projects; returns {web, api, admin, lab, android, ios, connector} DSNs */
 export async function applyGlitchTip(shared, stack, token, { fetchImpl = localAwareFetch } = {}) {
   const base = shared.urls.glitchtip;
   const slug = orgSlug(stack.platform);
@@ -58,7 +50,6 @@ export async function applyGlitchTip(shared, stack, token, { fetchImpl = localAw
   return dsns;
 }
 
-/** GitHub write-back (nas): the api's and the connector's DSNs as secrets, the frontends' as variables */
 export function writeBackDsns(stack, dsns) {
   const env = stack.githubEnvironment;
   execFileSync('gh', ['secret', 'set', 'API_SENTRY_DSN', '--env', env, '--body', dsns.api]);
@@ -71,7 +62,6 @@ export function writeBackDsns(stack, dsns) {
   execFileSync('gh', ['variable', 'set', 'NATIVE_GLITCHTIP_DSN_IOS', '--env', env, '--body', dsns.ios]);
 }
 
-/** true once GlitchTip accepts the token — the shared stack's seed has landed */
 export async function glitchtipAnswers(shared, token, fetchImpl = localAwareFetch) {
   try {
     const res = await fetchImpl(`${shared.urls.glitchtip}/api/0/organizations/`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) });
@@ -81,7 +71,6 @@ export async function glitchtipAnswers(shared, token, fetchImpl = localAwareFetc
   }
 }
 
-/** delete the environment's projects in the platform's org; returns {removed, absent} */
 export async function removeProjects(shared, stack, token, { fetchImpl = localAwareFetch } = {}) {
   const base = shared.urls.glitchtip;
   const wanted = PROJECTS.map(([, suffix]) => `${stack.stack}-${suffix}`);

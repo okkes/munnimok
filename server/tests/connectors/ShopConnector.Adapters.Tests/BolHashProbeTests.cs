@@ -4,17 +4,11 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The sign-in making bol's own page say the orders operation's hash. On
-/// 2026-10-05 the page the sign-in landed on said nothing within the probe,
-/// the configured hash stood, bol refused it, and every fetch failed as
-/// provider_changed (user ss). The probe now opens the overview itself and,
-/// failing that, presses "Toon meer" - each step drivable here.
-/// </summary>
+// prod 2026-10-05: the landing page said nothing within the probe, the configured hash stood and bol refused it;
+// the probe now opens the overview itself and, failing that, presses "Toon meer"
 public sealed class BolHashProbeTests
 {
-    // Written out, not read off the options (the fixture rule): what bol's
-    // overview carries, and where it lives.
+    // written out, not read off the options: what bol's overview carries, and where
     private const string Overview = "https://www.bol.com/nl/nl/account/bestellingen/overzicht/";
     private const string LoadMore = "button:has-text(\"Toon meer\")";
 

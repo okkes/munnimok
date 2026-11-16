@@ -1,31 +1,9 @@
 import type { AccountRow } from '@/db/types';
 import { monthlyPaymentCents, paymentsPerYear } from './debts';
 
-/**
- * The payoff planner's engine (#413, 2026-10-01) — pure, cents, monthly.
- *
- * Three orders decide which debt the spare money hits first:
- *   avalanche — highest interest first (the least interest overall),
- *   snowball  — smallest balance first (the quickest wins),
- *   tsunami   — the debt that weighs on the person most first (relief
- *               first; each debt carries a 1..5 "weighs on you" rank, a
- *               debt without one sits in the middle).
- *
- * Every month: interest accrues on the opening balance, every live debt
- * pays its own minimum, and the pool — the extra per month, the one-off
- * extra in month 1, the minimums of debts already paid off and whatever a
- * capped minimum left over (the rollover every planner assumes) — goes to
- * the first debt of the order that still owes, then the next. The
- * baseline the planner compares against pays the minimums only, nothing
- * rolls over: what happens when nothing changes. The rollover is a
- * switch on the screen (user 2026-10-09: "I haven't made any change and
- * yet somehow it differs from minimums — why is it being paid
- * instantly?"): off, with no extras, the plan IS the baseline.
- *
- * A single debt's own picture comes from simulateDebtAlone: that debt
- * walked by itself, nothing from the others (user 2026-10-09: "when I
- * change one, it impacts the other graphs — that should not happen").
- */
+// payoff engine (#413): pure, cents, monthly; the pool (extra, one-off, freed minimums) feeds the first debt still owing
+// baseline = minimums only, no rollover; with the rollover switch off and no extras the plan IS the baseline
+// one debt's card is simulateDebtAlone: a change on one debt must never move another's graph
 
 export type PayoffStrategy = 'avalanche' | 'snowball' | 'tsunami';
 export const STRATEGIES: readonly PayoffStrategy[] = ['avalanche', 'snowball', 'tsunami'];
@@ -51,17 +29,9 @@ export interface PlanDebt {
 
 export interface PlanOptions {
   strategy: PayoffStrategy;
-  /** on top of the minimums, every month */
   extraMonthlyCents?: number;
-  /** paid in the first month, once */
   lumpSumCents?: number;
-  /**
-   * an extra per month aimed at ONE debt, by id (user 2026-10-08: "if I
-   * finetune the payment of a specific debt, I want to see the impact"):
-   * paid to that debt right after its minimum every month while it owes,
-   * outside the order; once the debt is gone it feeds the pool like a
-   * freed minimum (with the rollover)
-   */
+  /** extra aimed at ONE debt by id: paid after its minimum while it owes, outside the order; once gone it feeds the pool */
   extraByDebtCents?: Record<string, number>;
   /** freed minimums and the extra feed the next debt (the planner); off = minimums only (the baseline) */
   rollover?: boolean;
@@ -74,7 +44,6 @@ export interface DebtOutcome {
   paidOffMonth: number | null;
   interestCents: number;
   paidCents: number;
-  /** position in the payoff order, 1-based */
   order: number;
   /** its own minimum does not cover its monthly interest — at this payment it never shrinks */
   stuck: boolean;
@@ -87,15 +56,9 @@ export interface PlanResult {
   totalPaidCents: number;
   /** total owed after each month; index 0 is today */
   balances: number[];
-  /**
-   * every debt's balance after each month, by id, index 0 today — how
-   * each debt fares INSIDE the combined plan (the per-debt cards do not
-   * read this since 2026-10-09: they walk their debt alone)
-   */
+  /** every debt's balance per month inside the combined plan, index 0 today (per-debt cards walk their debt alone) */
   balancesByDebt: Record<string, number[]>;
-  /** in payoff order */
   debts: DebtOutcome[];
-  /** the minimums alone, per month */
   minimumsCents: number;
 }
 
@@ -103,7 +66,6 @@ const DEFAULT_HORIZON = 600; // fifty years: beyond that no plan is a plan
 
 const byName = (a: PlanDebt, b: PlanDebt) => a.name.localeCompare(b.name);
 
-/** the debts in the order the spare money reaches them */
 export function orderDebts(debts: readonly PlanDebt[], strategy: PayoffStrategy): PlanDebt[] {
   const list = [...debts];
   if (strategy === 'snowball') {
@@ -122,18 +84,12 @@ interface Live {
   interest: number;
   paid: number;
   paidOffMonth: number | null;
-  /** the extra per month aimed at this debt alone, on top of its minimum */
   extra: number;
 }
 
 const monthlyInterest = (balance: number, aprPct: number) => Math.round((balance * aprPct) / 100 / 12);
 
-/**
- * one month's interest on the opening balances, then every live debt's
- * own payment — its minimum and the extra aimed at it; returns what those
- * payments leave for the pool (a capped payment's remainder, and the
- * whole payment of a debt already gone)
- */
+/** interest on opening balances, then each live debt's minimum + aimed extra; returns what is left for the pool */
 function accrueAndPayMinimums(live: Live[], rollover: boolean): number {
   let freed = 0;
   for (const l of live) {
@@ -154,7 +110,6 @@ function accrueAndPayMinimums(live: Live[], rollover: boolean): number {
   return freed;
 }
 
-/** the pool hits the first debt of the order that still owes, then the next */
 function spendPool(live: Live[], pool: number): void {
   let left = pool;
   for (const l of live) {
@@ -182,10 +137,8 @@ const outcomeOf = (l: Live, index: number): DebtOutcome => ({
   stuck: l.paidOffMonth === null && Math.max(0, l.debt.minMonthlyCents) + l.extra <= monthlyInterest(l.debt.balanceCents, l.debt.aprPct),
 });
 
-/** the extra aimed at one debt, as cents or nothing */
 const ownExtra = (extras: Record<string, number> | undefined, id: string): number => Math.max(0, Math.round(extras?.[id] ?? 0));
 
-/** walk the months */
 export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): PlanResult {
   const rollover = options.rollover ?? true;
   const extra = Math.max(0, Math.round(options.extraMonthlyCents ?? 0));
@@ -230,31 +183,19 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
   };
 }
 
-/** what happens when nothing changes: minimums only, nothing rolls over */
 export const simulateBaseline = (debts: readonly PlanDebt[], maxMonths?: number): PlanResult =>
   simulatePlan(debts, { strategy: 'avalanche', rollover: false, maxMonths });
 
-/** one debt walked by itself */
 export interface AloneResult {
-  /** its balance after each month, index 0 today */
   balances: number[];
-  /** 1-based month it reached zero; null when it never did */
   months: number | null;
   interestCents: number;
   paidCents: number;
-  /** its payment does not beat its interest — it never shrinks */
   stuck: boolean;
-  /** what it pays per month: its minimum and the extra aimed at it */
   monthlyCents: number;
 }
 
-/**
- * one debt on its own (user 2026-10-09: "the individual loan … should
- * only focus on itself"): its minimum plus the extra aimed at it, every
- * month, nothing else — no strategy pool, no freed minimum of another
- * debt rolling in — so a change on one debt never moves another's card;
- * the combined plan (simulatePlan) is where the debts meet
- */
+/** minimum + aimed extra only, no pool or freed minimums: a change on one debt never moves another's card */
 export function simulateDebtAlone(debt: PlanDebt, extraMonthlyCents = 0, maxMonths?: number): AloneResult {
   const extra = Math.max(0, Math.round(extraMonthlyCents));
   const r = simulatePlan([debt], { strategy: 'avalanche', rollover: false, extraByDebtCents: { [debt.id]: extra }, maxMonths });
@@ -268,30 +209,21 @@ export function simulateDebtAlone(debt: PlanDebt, extraMonthlyCents = 0, maxMont
   };
 }
 
-/** a loan's payment raised by a monthly extra, in the loan's own cadence */
 export interface RaisedPayment {
-  /** the payment to store: what it is now plus the extra per payment */
   paymentCents: number;
-  /** the monthly extra as an amount per payment of the loan's cadence */
   extraCents: number;
   /** payments a year — 12 is monthly, where the extra needs no converting */
   perYear: number;
 }
 
-/**
- * "Apply to the loan" (user 2026-10-09): the extra the planner counts
- * per month lands on the loan's stored payment, which is per week, month
- * or year (paymentEvery × paymentEveryN) — a €50-a-month extra on a
- * weekly payer is €11.54 a week; a loan without a stored payment gets
- * the extra as its payment
- */
+// "Apply to the loan": the monthly extra is converted to the loan's stored cadence (€50 a month = €11.54 a week);
+// a loan without a stored payment gets the extra as its payment
 export function raisedPayment(loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN'>, extraMonthlyCents: number): RaisedPayment {
   const perYear = paymentsPerYear(loan.paymentEvery, loan.paymentEveryN);
   const extraCents = Math.max(0, Math.round((Math.max(0, extraMonthlyCents) * 12) / perYear));
   return { paymentCents: Math.max(0, loan.paymentCents ?? 0) + extraCents, extraCents, perYear };
 }
 
-/** the three orders side by side, same extras (the per-debt ones included) */
 export function compareStrategies(debts: readonly PlanDebt[], options: Omit<PlanOptions, 'strategy'>): Record<PayoffStrategy, PlanResult> {
   return {
     avalanche: simulatePlan(debts, { ...options, strategy: 'avalanche' }),
@@ -301,13 +233,11 @@ export function compareStrategies(debts: readonly PlanDebt[], options: Omit<Plan
 }
 
 export interface LadderStep {
-  /** on top of the current extra */
   moreCents: number;
   months: number | null;
   totalInterestCents: number;
 }
 
-/** what a little more per month buys, relative to the plan as it stands (its per-debt extras stay in) */
 export function extraLadder(debts: readonly PlanDebt[], options: PlanOptions, moreCents: readonly number[]): LadderStep[] {
   const base = Math.max(0, options.extraMonthlyCents ?? 0);
   return moreCents.map((more) => {
@@ -316,16 +246,12 @@ export function extraLadder(debts: readonly PlanDebt[], options: PlanOptions, mo
   });
 }
 
-/** yyyy-mm of the month `n` months after `today` (yyyy-mm-dd); n = 0 is this month */
 export function monthAfter(today: string, n: number): string {
   const [y, m] = today.split('-').map(Number);
   const end = new Date(y, m - 1 + n, 1);
   return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/* ── the chart's axis ──────────────────────────────────────────────── */
-
-/** at most this many points per line: the chart stays light, the paths short */
 const CHART_POINTS = 120;
 /** the months past the plan's end, so the landing reads as a landing and not a wall */
 const HORIZON_ROOM = 6;
@@ -333,27 +259,14 @@ const HORIZON_ROOM = 6;
 const EVEN_REACH = 3;
 /** the share of the width the plan's even scale keeps when a compressed tail follows */
 export const FOCUS_SHARE = 0.72;
-/** the year strides a chart may label by — the smallest that keeps the labels apart wins */
 const YEAR_STRIDES: readonly number[] = [1, 2, 5, 10, 20, 50];
-/** the month strides for a horizon too short for years */
 const MONTH_STRIDES: readonly number[] = [1, 2, 3, 6];
-/** under this many months a chart labels months, not years */
 export const MONTH_TICKS_BELOW = 24;
-/** a tail of at least this many months gets a year mark in its middle as well */
 const TAIL_MID_FROM = 120;
 
-/**
- * A payoff chart's time axis (#513, user: "always show the end point of
- * the minimum line … represent the years a bit better"). The plan keeps
- * an even scale with room past its end (2026-10-08: a short plan against
- * a thirty-year minimums line was a cliff at the left edge); the axis then
- * always runs on to where the minimums line ends. When that end lies
- * within three plan horizons the whole axis stays even; further out, the
- * plan's months take most of the width and the remaining years follow on
- * a compressed tail — broken on the axis, its own year marks under it.
- */
+// #513: the axis always runs to where the minimums line ends; within three plan horizons it stays even, further out the
+// plan's months take most of the width and the rest follows on a compressed tail with its own year marks
 export interface ChartAxis {
-  /** the months on the even scale, from today */
   focusMonths: number;
   /** where the axis ends; past focusMonths the tail is compressed */
   totalMonths: number;
@@ -367,10 +280,8 @@ export function chartAxis(planMonths: number, baselineMonths: number): ChartAxis
   return total <= focus * EVEN_REACH ? { focusMonths: total, totalMonths: total } : { focusMonths: focus, totalMonths: total };
 }
 
-/** the axis carries a compressed tail */
 export const hasTail = (axis: ChartAxis): boolean => axis.totalMonths > axis.focusMonths;
 
-/** where a month sits across the axis, 0 … 1 */
 export function axisFraction(axis: ChartAxis, month: number): number {
   const m = Math.min(Math.max(0, month), axis.totalMonths);
   if (!hasTail(axis)) return axis.totalMonths > 0 ? m / axis.totalMonths : 0;
@@ -378,18 +289,12 @@ export function axisFraction(axis: ChartAxis, month: number): number {
   return FOCUS_SHARE + ((m - axis.focusMonths) / (axis.totalMonths - axis.focusMonths)) * (1 - FOCUS_SHARE);
 }
 
-/** one sample of a walk on the axis */
 export interface WalkPoint {
   month: number;
   value: number;
 }
 
-/**
- * A walk sampled onto the axis — finer on the even scale than on the tail,
- * within the point budget. A walk that pays off ends where it lands (#513,
- * user: "the green line should stop after … it's done paying"); one that
- * never does holds its last value to the axis end.
- */
+/** a walk that pays off ends where it lands (#513); one that never does holds its last value to the axis end */
 export function sampleWalk(values: readonly number[], landed: boolean, axis: ChartAxis): WalkPoint[] {
   if (values.length === 0) return [];
   const end = landed ? Math.min(values.length - 1, axis.totalMonths) : axis.totalMonths;
@@ -405,7 +310,6 @@ export function sampleWalk(values: readonly number[], landed: boolean, axis: Cha
 }
 
 export interface ChartTick {
-  /** the month from today the label sits under */
   month: number;
   label: string;
 }
@@ -422,14 +326,8 @@ function marksEvery(totalMonths: number, stride: number, maxTicks: number, label
   return ticks;
 }
 
-/**
- * year marks (user 2026-10-08: every sampled year got a label and they
- * overlapped): each mark stands where its year BEGINS (#513: a mark at
- * today's month each year put a June payoff left of its own year's
- * label), on round years — every year, every second, fifth or tenth, the
- * smallest stride that keeps at most `maxTicks` of them — and the start
- * names this year when it stands clear of the first mark
- */
+// year marks stand where their year BEGINS (#513: a mark at today's month put a June payoff left of its own year's label);
+// round years, the smallest stride that keeps at most maxTicks
 export function yearTicks(totalMonths: number, today: string, maxTicks = 6): ChartTick[] {
   const months = Math.max(0, totalMonths);
   const [year, month] = today.split('-').map(Number);
@@ -442,23 +340,13 @@ export function yearTicks(totalMonths: number, today: string, maxTicks = 6): Cha
   return [...start, ...marks].filter((tick, i, all) => i === 0 || tick.month - all[i - 1].month >= minGap);
 }
 
-/**
- * month marks for a short horizon (a year mark or two says nothing about
- * a nine-month plan): every 1, 2, 3 or 6 months from the start; the label
- * is that month as yyyy-mm, for the screen to word in the person's language
- */
+// month marks for a short horizon (year marks say nothing about a nine-month plan); labels are yyyy-mm
 export function monthTicks(totalMonths: number, today: string, maxTicks = 6): ChartTick[] {
   const months = Math.max(0, totalMonths);
   const stride = MONTH_STRIDES.find((n) => Math.floor(months / n) + 1 <= maxTicks) ?? MONTH_STRIDES.at(-1) ?? 1;
   return marksEvery(months, stride, maxTicks, (month) => monthAfter(today, month));
 }
 
-/**
- * The axis's labels: months or years over the even scale (fewer when a
- * tail shares the width), and on a tail the year it ends in — with a year
- * near its middle too (where that year begins) when it spans ten years or
- * more. Month labels come as yyyy-mm, years as yyyy.
- */
 export function axisTicks(axis: ChartAxis, today: string): ChartTick[] {
   const room = hasTail(axis) ? 4 : 6;
   const even = axis.focusMonths < MONTH_TICKS_BELOW ? monthTicks(axis.focusMonths, today, room) : yearTicks(axis.focusMonths, today, room);
@@ -471,21 +359,13 @@ export function axisTicks(axis: ChartAxis, today: string): ChartTick[] {
   return [...even, ...middle, yearAt(axis.totalMonths)];
 }
 
-/* ── an end date instead of an amount (#514) ──────────────────────── */
-
-/** the whole months from today's month to a yyyy-mm (0 = this month) */
 export function monthsUntil(today: string, yyyymm: string): number {
   const [y, m] = today.split('-').map(Number);
   const [ty, tm] = yyyymm.split('-').map(Number);
   return (ty - y) * 12 + (tm - m);
 }
 
-/**
- * the smallest extra per month, in whole euros, that ends a walk within
- * `targetMonths` — 0 when it already does; null when no amount can (a
- * month already here). More extra never ends later, so a halving search
- * over [0, ceiling] finds it in a handful of walks.
- */
+// more extra never ends later: a halving search finds the smallest whole-euro extra; null when the month is already here
 function smallestExtra(endsBy: (extraCents: number) => number | null, targetMonths: number, ceilingCents: number): number | null {
   if (targetMonths < 1) return null;
   const done = (extraCents: number) => {
@@ -508,15 +388,13 @@ function smallestExtra(endsBy: (extraCents: number) => number | null, targetMont
 const ceilingOf = (debts: readonly PlanDebt[]): number =>
   debts.reduce((sum, d) => sum + Math.max(0, d.balanceCents) + monthlyInterest(Math.max(0, d.balanceCents), d.aprPct), 0);
 
-/** #514 (user: "provide an end date and get the calculation"): the extra one debt needs, walked alone, to be paid off by then */
+/** #514: the extra one debt needs, walked alone, to be paid off by then */
 export const extraForDebtBy = (debt: PlanDebt, targetMonths: number): number | null =>
   smallestExtra((extra) => simulateDebtAlone(debt, extra).months, targetMonths, ceilingOf([debt]));
 
-/** the extra per month the combined plan needs, its other settings kept, to be debt-free by then */
 export const extraForPlanBy = (debts: readonly PlanDebt[], options: PlanOptions, targetMonths: number): number | null =>
   smallestExtra((extra) => simulatePlan(debts, { ...options, extraMonthlyCents: extra }).months, targetMonths, ceilingOf(debts));
 
-/** the debts the planner works with: the active tracked loans, as the engine sees them */
 export function toPlanDebts(loans: readonly { account: AccountRow; remainingCents: number }[]): PlanDebt[] {
   return loans
     .filter(({ account, remainingCents }) => account.archived !== 1 && remainingCents > 0)

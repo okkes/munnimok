@@ -2,13 +2,8 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { MinaLedgerEntry } from './steps';
 
-/**
- * Undo everything a tutorial run created (user ruling): ledgered spaces
- * fall with ALL their contents (the normal space-scoped entity sweep, so
- * synced identities converge on every device); loose accounts and
- * transactions in surviving spaces tombstone individually. Bank-fed rows
- * are never in the ledger by construction.
- */
+// ledgered spaces fall with all their contents (the normal entity sweep, so synced devices converge)
+// loose rows tombstone individually; bank-fed rows are never in the ledger by construction
 export async function revertMinaRun(store: StorageBackend, repo: Repo, ledger: readonly MinaLedgerEntry[]): Promise<void> {
   const deadSpaces = new Set(ledger.filter((e) => e.entity === 'space').map((e) => e.id));
   for (const spaceId of deadSpaces) await sweepSpace(store, repo, spaceId);

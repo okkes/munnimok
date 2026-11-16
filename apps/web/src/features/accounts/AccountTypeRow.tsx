@@ -9,19 +9,8 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { ACCOUNT_TYPES, typeDef } from './accountTypes';
 
-/**
- * #212 (user): the account TYPE, visible after creation and changeable
- * behind a destructive confirm — the type decides the stamping rules,
- * so changing it resets every affected transaction back to review with
- * a fresh interpretation ("as if added for the first time"); balances,
- * links and pairs are physical facts and survive.
- *
- * r2: the type is a SPACE-scoped fact. A space-owned account carries it
- * on its row (no `link` prop — the manual editor's mode); an ATTACHED
- * account carries it on the accountLink, so pass the `link` and the
- * change lands on this space alone — other spaces keep their own
- * reading, and only THIS space's rows re-review.
- */
+// #212: changing the type resets the affected transactions to review; balances, links and pairs survive
+// the type is space-scoped: a space-owned account carries it on its row, an attached one on its accountLink (pass `link`)
 export function AccountTypeRow({
   account,
   link,

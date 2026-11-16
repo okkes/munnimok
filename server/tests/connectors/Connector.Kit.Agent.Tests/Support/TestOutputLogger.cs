@@ -3,14 +3,8 @@ using Xunit.Abstractions;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// A logger that writes into the test's output.
-///
-/// It exists for one reason: the live view's per-second cost is written down by
-/// a log line, and a measurement nobody can read is not a measurement. Running
-/// the session under <c>NullLogger</c> would throw away the only number the
-/// feature is judged on.
-/// </summary>
+// the live view's per-second cost is written as a log line: NullLogger would discard the only number the feature
+// is judged on
 internal sealed class TestOutputLogger(ITestOutputHelper output) : ILogger
 {
     public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
@@ -34,9 +28,7 @@ internal sealed class TestOutputLogger(ITestOutputHelper output) : ILogger
         }
         catch (InvalidOperationException)
         {
-            // A background loop that logs after the test has finished is not a
-            // test failure, and an exception from here would surface as one in
-            // whatever unrelated test is running next.
+            // a background loop logging after the test finished must not fail whatever unrelated test runs next
         }
     }
 

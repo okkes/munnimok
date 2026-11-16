@@ -31,7 +31,6 @@ describe('apiFeedGateway.register', () => {
   it('other failures throw — the import must not proceed on a broken registration', async () => {
     apiFetchMock.mockResolvedValueOnce(respond(500));
     await expect(apiFeedGateway('s').register('feed-x', 'IBAN')).rejects.toThrow('500');
-    // 409 whose personal retry also fails throws too
     apiFetchMock.mockReset();
     apiFetchMock.mockResolvedValueOnce(respond(409)).mockResolvedValueOnce(respond(400));
     await expect(apiFeedGateway('s').register('feed-x', 'IBAN')).rejects.toThrow('409');

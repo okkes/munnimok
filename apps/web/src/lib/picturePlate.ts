@@ -1,6 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-/** the backdrop a see-through picture is given */
 export type Plate = 'light' | 'dark';
 type Theme = 'light' | 'dark';
 
@@ -8,7 +7,6 @@ type Theme = 'light' | 'dark';
 export interface PictureStats {
   /** a real part of it is see-through (a logo on nothing) — not just a rounded icon's corners */
   cutout: boolean;
-  /** the share of its ink that stands out on a light ground, and on a dark one */
   onLight: number;
   onDark: number;
 }
@@ -31,7 +29,6 @@ const linear = (v: number) => {
 const luminance = (r: number, g: number, b: number) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
 const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 
-/** the stats of RGBA pixels (unpremultiplied, as a canvas hands them out) */
 export function pictureStats(rgba: Uint8ClampedArray): PictureStats {
   const pixels = rgba.length / 4;
   let seeThrough = 0;
@@ -54,7 +51,6 @@ export function pictureStats(rgba: Uint8ClampedArray): PictureStats {
   };
 }
 
-/** a plate only where the picture would vanish into the theme's ground — the other ground, when the picture reads better there */
 export function plateFor(stats: PictureStats | null, theme: Theme): Plate | null {
   if (!stats?.cutout) return null;
   const here = theme === 'light' ? stats.onLight : stats.onDark;
@@ -63,7 +59,6 @@ export function plateFor(stats: PictureStats | null, theme: Theme): Plate | null
   return theme === 'light' ? 'dark' : 'light';
 }
 
-// ── measuring, once per picture ─────────────────────────────────────────
 const MAX_REMEMBERED = 400;
 const measured = new Map<string, PictureStats | null>();
 const measuring = new Map<string, Promise<PictureStats | null>>();
@@ -113,7 +108,7 @@ function statsOf(src: string): Promise<PictureStats | null> {
   return pending;
 }
 
-// ── the theme, without a provider (pictures render everywhere) ──────────
+// the theme is read without a provider: pictures render everywhere
 const themeListeners = new Set<() => void>();
 let themeObserver: MutationObserver | null = null;
 const themeNow = (): Theme => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
@@ -131,7 +126,6 @@ function subscribeTheme(listener: () => void): () => void {
   };
 }
 
-/** #522: the plate this picture needs on the current theme — measured once per picture, remembered for the session */
 export function usePicturePlate(src: string | null | undefined): Plate | null {
   const theme = useSyncExternalStore(subscribeTheme, themeNow, () => 'light' as Theme);
   const [answer, setAnswer] = useState<{ src: string; stats: PictureStats | null } | null>(null);

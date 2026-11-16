@@ -8,53 +8,28 @@ import { HlcClock } from '@/sync/hlc';
 import { applyOp } from '@/sync/merge';
 import { perfBudget } from '@/lib/perf';
 
-/**
- * A large, deterministic dataset for timing hot paths (user 2026-10-09:
- * "3–4 seconds on Confirm"): 1 500 transactions, 300 receipts and 40
- * recurring rows in a real Dexie store (fake-indexeddb), every row
- * carrying a proper sync envelope (built through the merge, written in
- * bulk so the seed itself stays cheap). The same seed yields the same
- * rows on every run, so timings compare across runs. PERF_BANK_SIZE adds
- * the shape a connected household has: a bank feed joined through an
- * accountLink with txMeta overlays, and a second space.
- *
- * From a *.test.ts (a budget assertion with CI headroom):
- *
- *   const data = await buildPerfStore();
- *   const { ms } = await timeIt('planning.build', () => buildPlanningModel(data.store, data.spaceId, ...));
- *   expect(ms).toBeLessThan(perfBudget['planning.build'] * 4);
- *   data.close();
- *
- * From a *.bench.ts (`npm run perf`), build the store in a `beforeAll`
- * and call the hot path inside `bench(...)`. Both stay out of the
- * coverage report (src/test/** is excluded).
- */
+// 1 500 transactions, 300 receipts, 40 recurring rows in a real Dexie store; the same seed, the same rows: timings compare
+// PERF_BANK_SIZE adds a connected household: a bank feed joined through an accountLink with txMeta overlays, a second space
 
 export const PERF_SPACE_ID = 'perf_space';
-/** the receipts' owner feed, like the demo's store feed */
 export const PERF_FEED_ID = 'perf_store_feed';
 export const PERF_ACCOUNT_ID = 'perf_main';
 export const PERF_CONNECTION_ID = 'perf_conn_ah';
-/** a connected bank's feed and its one account (the tail the receipts' payment names) */
 export const PERF_BANK_FEED_ID = 'perf_bank_feed';
 export const PERF_BANK_ACCOUNT_ID = 'perf_bank';
 export const perfOtherSpaceId = (n: number): string => `perf_space_${n}`;
 
 export interface PerfDatasetSize {
-  /** the space's own rows (manual entries, statement imports) */
   transactions: number;
   receipts: number;
   recurring: number;
-  /** bank rows in an attached feed — the shape a connected bank lands in: joined
-   *  through an accountLink, the reviewed ones dressed by the space's txMeta */
+  /** bank rows in an attached feed: joined through an accountLink, the reviewed ones dressed by the space's txMeta */
   feedTransactions: number;
-  /** further real spaces attaching the same bank account and shop (a shared household) */
   otherSpaces: number;
 }
 
 export const PERF_DEFAULT_SIZE: Readonly<PerfDatasetSize> = Object.freeze({ transactions: 1500, receipts: 300, recurring: 40, feedTransactions: 0, otherSpaces: 0 });
 
-/** a connected household (2026-11, #554): three years of a bank's rows, the shops' receipts, a second space */
 export const PERF_BANK_SIZE: Readonly<PerfDatasetSize> = Object.freeze({ transactions: 300, receipts: 600, recurring: 40, feedTransactions: 4000, otherSpaces: 1 });
 
 export interface PerfStore {
@@ -94,10 +69,6 @@ const deleteDatabase = (name: string): Promise<void> =>
     req.onblocked = () => resolve();
   });
 
-/**
- * Opens a fresh store named `name` and fills it. Sizes default to the
- * dataset above; smaller sizes keep a smoke test quick.
- */
 export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name = 'munni_perf'): Promise<PerfStore> {
   await deleteDatabase(name);
   const db = new MunniDB(name);
@@ -132,7 +103,6 @@ export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name =
     }) as RecurringRow;
   });
 
-  // eighteen months of history; the newest sixty await review (a deck)
   const transactions: TransactionRow[] = Array.from({ length: want.transactions }, (_, i) => {
     const merchant = pick(MERCHANTS);
     const income = i % 25 === 0;
@@ -154,10 +124,6 @@ export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name =
     }) as TransactionRow;
   });
 
-  // a bank's three years, newest first: the newest sixty await review (no
-  // overlay yet — the join reads them as unreviewed), the rest were filed
-  // in every space that attaches the account; every third charge is a till
-  // line of the shop whose receipts the store feed holds
   const otherSpaceIds = Array.from({ length: want.otherSpaces }, (_, n) => perfOtherSpaceId(n + 1));
   const viewers = want.feedTransactions > 0 ? [PERF_SPACE_ID, ...otherSpaceIds] : [];
   // the seeded pick only where neither the salary nor the till line names it (the same rows every run)
@@ -190,13 +156,10 @@ export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name =
   const ahFeed = feedTxs.filter((tx) => tx.amountCents < 0 && tx.merchant?.startsWith('Albert Heijn'));
   const twinOf = (i: number): TransactionRow | undefined => {
     if (i % 2 !== 0) return undefined;
-    // with a bank attached, every other twin is one of its till lines
     if (ahFeed.length > 0 && i % 4 === 0) return ahFeed[(i / 4) % ahFeed.length];
     return transactions[(i * 5) % transactions.length];
   };
 
-  // half the receipts mirror a transaction (same day, same total: the
-  // matcher has work), the other half have no counterpart
   const receipts: ReceiptRow[] = Array.from({ length: want.receipts }, (_, i) => {
     const twin = twinOf(i);
     const totalCents = twin ? Math.abs(twin.amountCents) : 200 + Math.floor(random() * 9_000);
@@ -215,7 +178,6 @@ export async function buildPerfStore(size: Partial<PerfDatasetSize> = {}, name =
     }) as ReceiptRow;
   });
 
-  // the shop's connection and its inclusion in every space: what the matcher walks
   const spaces = otherSpaceIds.map(
     (id, n) => row('space', id, id, { name: `Perf ${n + 2}`, kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 }) as SpaceRow,
   );
@@ -251,12 +213,7 @@ export interface Timing<T> {
   result: T;
 }
 
-/**
- * Run `fn` once and say how long it took (`[perf] label: 123 ms`), with
- * the budget beside it when `label` has one (lib/perf perfBudget) or one
- * is given. The caller asserts; CI boxes are slower than a laptop, so
- * leave headroom (3–4× the budget).
- */
+/** CI boxes are slower than a laptop: assert with 3–4× the budget as headroom */
 export async function timeIt<T>(label: string, fn: () => T | Promise<T>, budget: number | undefined = perfBudget[label]): Promise<Timing<T>> {
   const started = performance.now();
   const result = await fn();

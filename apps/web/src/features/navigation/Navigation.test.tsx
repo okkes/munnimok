@@ -10,11 +10,9 @@ import { DEMO_SPACE_ID } from '@/db/seed';
 import { useNavOps, useNavTabs } from './useNavTabs';
 import type { NavOps } from './useNavTabs';
 
-/** the phone bar's entries, left to right */
 const barIds = () =>
   [...screen.getByTestId('tab-bar').querySelectorAll('a[data-testid^="tab-"]')].map((el) => el.getAttribute('data-testid')!.replace('tab-', ''));
 
-/** a viewport answer for the side panel's breakpoint only */
 function stubSideNav(shown: boolean): () => void {
   const original = window.matchMedia;
   window.matchMedia = ((query: string) => ({
@@ -48,7 +46,6 @@ describe('navigation (demo identity)', () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     expect(barIds()).toEqual(['home', 'transactions', 'planning', 'portfolio', 'settings']);
-    // the shortcuts stand in only for what the bar dropped
     expect(screen.queryByTestId('home-shortcuts')).toBeNull();
   });
 
@@ -169,7 +166,6 @@ describe('navigation (demo identity)', () => {
     renderWithData(<Probe />);
     await waitFor(() => expect(seen.at(-1)).toEqual(['transactions', 'planning', 'portfolio', 'settings']));
     expect(seen[0]).toEqual(['goals']);
-    // and the device remembers what it drew for the next cold start
     expect(JSON.parse(localStorage.getItem('munni_nav_tabs')!).demo.demo_space).toEqual(['transactions', 'planning', 'portfolio', 'settings']);
   });
 

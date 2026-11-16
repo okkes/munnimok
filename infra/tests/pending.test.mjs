@@ -1,6 +1,3 @@
-// What runs versus what is configured: the pure half of the wizard's
-// "changes waiting to be applied" strip — the leaves that differ, the run
-// that applies them, the line a person reads.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { configChanges, describeChange, documentDiff, flattenConfig, leafDiff, needsFor, pendingFrom, secretPath } from '../modules/pending.mjs';
@@ -68,7 +65,6 @@ test('pending: platform-level keys read with their prefix and a missing side rea
   assert.equal(needsFor(configChanges(before, after)), 'bootstrap');
 });
 
-/* ── the difference the person reads before publishing (user 2026-10-09) ── */
 test('secretPath: a leaf named like a manifest secret or a secret word is masked; the platform domain only when a real name replaced its placeholder; plain config keys are shown', () => {
   assert.equal(secretPath('platform.ghcrPat', 'x'), true, 'GHCR_PAT by its camelCase twin');
   assert.equal(secretPath('platform.GLITCHTIP_API_TOKEN', 'x'), true);

@@ -9,14 +9,8 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The operator's view of what happened (#441 L1): the job history and the
-/// per-provider health behind the lab's screens.
-///
-/// The history is the one place a consumer's runs are visible to somebody
-/// who is not that consumer, so the first test is about what a row does NOT
-/// carry. The rest is arithmetic a person will read numbers off.
-/// </summary>
+// the operator's job history and per-provider health (#441 L1); a history row is visible to a non-consumer,
+// so it must not carry what was typed
 [Collection(ShopApiCollection.Name)]
 public sealed class OperatorJobTests(ShopApiFactory factory)
 {
@@ -48,13 +42,10 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
         Assert.True(login.GetProperty("credential_submitted").GetBoolean());
         Assert.NotEqual(JsonValueKind.Undefined, login.GetProperty("progress").ValueKind);
 
-        // The password went upstream once and is on no view afterwards -
-        // not as a field, not as a value, not under any name.
         Assert.DoesNotContain(Credentials["password"], body, StringComparison.Ordinal);
         Assert.DoesNotContain("inputs", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("material", body, StringComparison.OrdinalIgnoreCase);
 
-        // Alone, the same row.
         using var one = await http.GetAsync($"/v1/admin/jobs/{login.Text("job_id")}");
         Assert.Equal(HttpStatusCode.OK, one.StatusCode);
         Assert.Equal(login.Text("job_id"), (await one.JsonAsync()).Text("job_id"));
@@ -78,7 +69,6 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
         var (_, both) = await ListAsync(http, $"subject={subject}");
         Assert.Equal(2, both.Count);
 
-        // #441 L4: narrowed by the agent that ran it - the inline runner here
         var (_, inline) = await ListAsync(http, $"subject={subject}&agent=agt_inline");
         Assert.Equal(2, inline.Count);
         var (_, nobody) = await ListAsync(http, $"subject={subject}&agent=agt_nobody");
@@ -103,11 +93,6 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
         await ErrorEnvelope.AssertAsync(badLimit, HttpStatusCode.BadRequest, "invalid_request");
     }
 
-    /// <summary>
-    /// A fetch the party refuses with <c>provider_changed</c> shows up in
-    /// the provider's health as a failure, under its code, under the trigger
-    /// that asked, and as one person affected.
-    /// </summary>
     [Fact]
     public async Task Health_counts_the_months_runs_by_outcome_code_and_trigger_and_the_people_behind_them()
     {
@@ -149,10 +134,6 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
         }
     }
 
-    /// <summary>
-    /// The operator runs a canary now: a real job, stamped as the canary's,
-    /// read back as the canary's verdict without waiting for the interval.
-    /// </summary>
     [Fact]
     public async Task A_canary_runs_on_demand_and_its_job_is_stamped_as_the_canarys()
     {
@@ -197,10 +178,7 @@ public sealed class OperatorJobTests(ShopApiFactory factory)
         return (body, [.. parsed.RootElement.GetProperty("jobs").EnumerateArray().Select(j => j.Clone())]);
     }
 
-    /// <summary>
-    /// The provider's health once its status reads <paramref name="state"/>. The job that failed writes the
-    /// status a moment after the fetch returns, so the report is read until it settles.
-    /// </summary>
+    // the failing job writes the provider status a moment after the fetch returns, so the report is read until it settles
     private static async Task<JsonElement> HealthOnceAsync(HttpClient http, string providerId, string state)
     {
         var clock = Stopwatch.StartNew();

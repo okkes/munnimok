@@ -40,17 +40,6 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
   debt: 'var(--m-special)',
 };
 
-/**
- * One category, in place: period total, per-period mini bars doubling as
- * the period selector, and the plain list of the transactions behind the
- * number — each row navigating straight to its transaction page (#168
- * r5: the in-between peek sheet is retired; back returns here). Replaces
- * the old forward to the filtered Transactions tab, which lost the
- * analysis context.
- */
-/** #351/#355: the drill's session period memory — the back door from a
- *  transaction page carries no ?from */
-
 export function CategoryDrillScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -58,9 +47,7 @@ export function CategoryDrillScreen() {
   const { from } = useSearch({ strict: false }) as { from?: string };
   const cats = useCategories();
   const navigate = useNavigate();
-  // #351 (user): the transaction opens UNDER the overview tree — at lg
-  // this drill stays the master pane beside the detail (the recurring
-  // tx/$txId precedent); on mobile, back lands right back here
+  // the transaction opens UNDER the overview tree: at lg this drill stays the master pane beside the detail (#351)
   const openTx = (txId: string) =>
     void navigate({ to: '/overview/$kind/$catId/tx/$txId', params: { kind, catId, txId }, search: { from } });
 
@@ -72,9 +59,7 @@ export function CategoryDrillScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_COUNT),
     [space?.periodType, space?.periodDay],
   );
-  // land on the period the overview was looking at; without ?from (the
-  // back door from a transaction page, #351) the drill's own memory
-  // wins over snapping to the current period
+  // without ?from (back from a transaction page, #351) the drill's own memory wins over snapping to the current period
   const memoKey = `${kind}:${catId}`;
   const initialIndex = useMemo(() => {
     const found = from ? periods.findIndex((p) => p.start === from) : -1;
@@ -84,18 +69,13 @@ export function CategoryDrillScreen() {
   useEffect(() => {
     rememberDrillPeriod(memoKey, periodIndex);
   }, [memoKey, periodIndex]);
-  // user request 2026-10-06: the counterpart legs of linked pairs hide by
-  // default (they are out of the total); the toggle shows each pair as one
-  // unit, remembered like the period
+  // counterpart legs of linked pairs are out of the total, so they hide by default; the toggle is remembered like the period
   const [showLinked, setShowLinked] = useState(() => recallDrillLinked(memoKey) ?? false);
   useEffect(() => {
     rememberDrillLinked(memoKey, showLinked);
   }, [memoKey, showLinked]);
-  // the space row loads async: the first render computes periods with
-  // default month boundaries, so a custom period start makes `from`
-  // unmatchable and the drill snapped back to the CURRENT period (user
-  // bug). Re-anchor when the real config lands — unless the user already
-  // picked a bar themselves (render-time prev-value pattern).
+  // the space row loads async: default month boundaries on first render make a custom period `from` unmatchable
+  // (the drill snapped to the CURRENT period); re-anchor when the real config lands unless a bar was already picked
   const touched = useRef(false);
   const lastInitial = useRef(initialIndex);
   if (lastInitial.current !== initialIndex) {
@@ -151,7 +131,6 @@ export function CategoryDrillScreen() {
           </div>
         </div>
 
-        {/* the mini bars double as the period selector */}
         <div className="mt-2 rounded-card border border-line bg-surface px-4 pt-3 pb-2">
           <BarChart
             values={perPeriod.map((entry) => entry.totalCents)}
@@ -180,9 +159,7 @@ export function CategoryDrillScreen() {
               // the full net amount stays visible small when they differ
               const slice = categoryContributionCents(kind, tx, catId, cats);
               const signed = tx.amountCents < 0 ? -slice : slice;
-              // #126 r8 (user request): a split shows only ITS matching
-              // parts here — normal-looking rows with the split glyph;
-              // #168 r5: they open the parent transaction's page
+              // a split shows only ITS matching parts here (#126); they open the parent transaction's page (#168)
               const rowParts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');
               // #149: every multi-part row branches, labels or not
               if (rowParts.length > 1) {
@@ -214,8 +191,6 @@ export function CategoryDrillScreen() {
                   onClick={() => openTx(tx.id)}
                 />
               );
-              // the linked view: the counted leg and its counterpart as one
-              // unit — the pattern the transactions list uses for a pair
               const counterpart = showLinked ? selected.counterparts.get(tx.id) : undefined;
               if (!counterpart) return row;
               return (

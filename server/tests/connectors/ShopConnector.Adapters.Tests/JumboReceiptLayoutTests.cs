@@ -6,23 +6,14 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The in-store receipt text parser.
-///
-/// This is the unpleasant half of Jumbo. <c>GetDigitalReceipt</c> answers with
-/// a receipt-<em>printer</em> layout, not with line items, so the only way to
-/// itemise a till receipt is to read a picture of a paper receipt written in
-/// text. Text parsing is guesswork by nature, which is exactly why it sits
-/// behind a seam with recorded fixtures: these tests are the contract, and a
-/// till template change shows up here rather than in somebody's groceries.
-/// </summary>
+// GetDigitalReceipt answers with a receipt-printer layout, not line items: itemising means parsing text,
+// so recorded fixtures pin the contract and a till template change shows up here
 public sealed class JumboReceiptLayoutTests
 {
     private static readonly JumboOptions Options = new();
 
     private static readonly JumboPrintLayoutParser Parser = new();
 
-    /// <summary>The recorded till receipt's four lines, as printed.</summary>
     private static readonly string[] PrintedItemNames = ["MELK HALFVOL", "BANANEN", "KIPFILET", "STATIEGELD"];
 
     private static readonly long[] PrintedItemTotals = [188L, 189L, 699L, 30L];
@@ -63,16 +54,11 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal(4, contents.Items.Count);
         Assert.Equal(PrintedItemNames, contents.Items.Select(i => i.Name));
 
-        // Dutch comma decimals, read as euros - the printed amounts are what a
-        // human read at the till, so they are major units by construction.
+        // Dutch comma decimals are major units (euros) by construction
         Assert.Equal(PrintedItemTotals, contents.Items.Select(i => i.Total.Value));
     }
 
-    /// <summary>
-    /// <c>2 X 0,94</c> is not a purchase. It restates the line above it as a
-    /// count and a unit price, and turning it into an item of its own would
-    /// add 94 cents of groceries that nobody bought.
-    /// </summary>
+    // "2 X 0,94" restates the line above as count and unit price; as an item it would add 94 cents nobody bought
     [Fact]
     public void A_quantity_line_amends_the_item_above_it_rather_than_adding_one()
     {
@@ -83,17 +69,11 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal(2m, milk.Quantity);
         Assert.Equal(94, milk.UnitPrice?.Value);
 
-        // The line's own total is untouched: 2 x 0,94 is the 1,88 printed
-        // beside the description.
         Assert.Equal(188, milk.Total.Value);
     }
 
-    /// <summary>
-    /// The layout prints a promoted line at its discounted price and never
-    /// prints the promotion's own value. A discount invented from the flag
-    /// would be subtracted a second time and break the very reconciliation it
-    /// was meant to explain.
-    /// </summary>
+    // the layout prints a promoted line at its discounted price, never the promotion's value;
+    // an invented discount would be subtracted twice
     [Fact]
     public void A_promotion_flag_becomes_neither_an_item_nor_a_discount()
     {
@@ -133,7 +113,6 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal(1106, contents.Total?.Value);
         Assert.Empty(contents.Items);
 
-        // Named, so the next person knows which half of the template moved.
         Assert.NotNull(contents.Shortfall);
         Assert.Contains("OMSCHRIJVING", contents.Shortfall, StringComparison.Ordinal);
     }
@@ -148,11 +127,7 @@ public sealed class JumboReceiptLayoutTests
         Assert.Contains("Totaal", contents.Shortfall, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A description that turns into a price is the quietest way to break a
-    /// receipt, so the amount match is anchored: only a field that is nothing
-    /// but a number is money.
-    /// </summary>
+    // the amount match is anchored: only a field that is nothing but a number is money
     [Fact]
     public void A_description_containing_a_number_is_not_read_as_a_price()
     {
@@ -171,11 +146,7 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal(contents.Total?.Value, contents.Items.Sum(i => i.Total.Value));
     }
 
-    /// <summary>
-    /// A till prints a credit with the sign on the right, and a big shop
-    /// without a thousands separator. Both are money and both keep the
-    /// receipt adding up.
-    /// </summary>
+    // a till prints a credit with the sign on the right, and a big shop without a thousands separator; both are money
     [Fact]
     public void A_trailing_minus_is_a_credit_and_a_four_digit_amount_is_still_an_amount()
     {
@@ -193,7 +164,6 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal(contents.Total?.Value, contents.Items.Sum(i => i.Total.Value));
     }
 
-    /// <summary>Builds a print layout the way a till would lay one out.</summary>
     private static string Build(params string[][] lines)
     {
         var textObjects = new System.Text.Json.Nodes.JsonArray();
@@ -251,8 +221,7 @@ public sealed class JumboReceiptLayoutTests
     [Fact]
     public void The_fixtures_this_parser_is_pinned_to_are_all_present()
     {
-        // The fixtures are part of the contract, not a test convenience: one
-        // that rots has to break the offline suite immediately.
+        // the fixtures are part of the contract: one that rots must break the offline suite
         foreach (var name in new[]
                  {
                      "jumbo/digital-receipt.json",

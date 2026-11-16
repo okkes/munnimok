@@ -6,11 +6,6 @@ import { sharedOf } from './stack.mjs';
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
 const OUT_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
-/**
- * The stack's runbook, rendered with the actual values: what the setup
- * did by itself, the few things that stay manual, and where everything
- * lives. Steady-state deploys need none of it.
- */
 export function renderRunbook(stack, { minted = [], missingOperator = [] } = {}) {
   const dir = join(OUT_DIR(), stack.stack);
   mkdirSync(dir, { recursive: true });

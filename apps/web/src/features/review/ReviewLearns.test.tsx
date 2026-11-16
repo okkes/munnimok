@@ -9,12 +9,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
-/**
- * What the person files on one card reaches the cards still waiting: the
- * Confirm asks for the space's suggestions again. The card already on
- * screen keeps what it showed (nothing reshuffles under the person); the
- * one after it opens with what was just taught.
- */
+// the card on screen keeps what it showed (nothing reshuffles); the next one opens with what was just taught
 describe('the review learns from the card just confirmed', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -64,7 +59,6 @@ describe('the review learns from the card just confirmed', () => {
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
 
     await waitFor(async () => expect((await suggested('zk-3'))?.predictedCatId).toBe('groceries'), { timeout: 8000 });
-    // the card that came up meanwhile is passed over; the next one opens filed as the person taught
     fireEvent.click(screen.getByTestId('review-skip-btn'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocer'), { timeout: 8000 });
   }, 40_000);

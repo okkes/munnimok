@@ -10,23 +10,12 @@ using Connector.Kit.Security;
 
 namespace RegistryConnector.Adapters.Mock;
 
-/// <summary>
-/// The offline backbone for the registry service. No network, no browser, no
-/// account.
-///
-/// This exists before BKR does and stays useful afterwards, because it is the
-/// only way to exercise the shape a credit registry actually has - a stored
-/// password plus a fresh authenticator code on EVERY sync - end to end. That
-/// combination is new to this platform: every provider before it either syncs
-/// unattended or needs nobody after the first login, and this one needs six
-/// digits from a human every single time.
-/// </summary>
+// offline: the only way to exercise a stored password plus a fresh authenticator code on EVERY sync end to end
 public static class MockRegistryAdapters
 {
     public const string Simple = "mock-registry-simple";
     public const string TwoFactor = "mock-registry-2fa";
 
-    /// <summary>The code the fixture accepts. Anything else is refused.</summary>
     public const string AcceptedCode = "314159";
 
     public static IReadOnlyList<IProviderAdapter> All(TimeProvider? time = null) =>
@@ -80,15 +69,7 @@ public sealed class MockRegistryAdapter : IProviderAdapter
         };
     }
 
-    /// <summary>
-    /// The part worth having offline: a fetch that stops to ask for six
-    /// digits.
-    ///
-    /// A registry that re-authenticates per sync exercises a path nothing else
-    /// on this platform does - the consumer has to render a challenge during a
-    /// FETCH rather than only during a connect, and a scheduled sync has to be
-    /// refused outright rather than silently failing at 3am.
-    /// </summary>
+    // the consumer must render a challenge during a FETCH, and a scheduled sync must be refused outright rather than fail at 3am
     public async Task<FetchResult> FetchAsync(IJobContext ctx, ResourceRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ctx);
@@ -118,21 +99,14 @@ public sealed class MockRegistryAdapter : IProviderAdapter
 
         if (!string.Equals(answer.Value?.Trim(), MockRegistryAdapters.AcceptedCode, StringComparison.Ordinal))
         {
-            // A wrong code is not a wrong password: the credential is fine and
-            // the person simply mistyped six digits or let them expire.
-            // Telling them to reset a password would send them somewhere that
-            // cannot help.
+            // a wrong code is not a wrong password: the credential is fine, and a reset would send them somewhere that cannot help
             throw new ConnectorException(
                 ErrorCode.MfaFailed,
                 $"{_id}: the fixture accepts only {MockRegistryAdapters.AcceptedCode}");
         }
     }
 
-    /// <summary>
-    /// Deterministic given the session, so a test can assert on ids and
-    /// content hashes rather than on shapes. The four kinds are the ones a
-    /// Dutch credit register actually distinguishes.
-    /// </summary>
+    // deterministic per session so a test asserts on ids and content hashes
     private static IEnumerable<CreditRegistration> Credits(string sessionId)
     {
         yield return Credit(sessionId, new MockCredit(
@@ -146,9 +120,7 @@ public sealed class MockRegistryAdapter : IProviderAdapter
             To = new DateOnly(2028, 1, 15),
         });
 
-        // The one that matters most to whoever reads it. Carried verbatim and
-        // never interpreted: what an A2 means for somebody's mortgage
-        // application is not a connector's judgement to make.
+        // carried verbatim, never interpreted: what an A2 means for a mortgage is not a connector's judgement
         yield return Credit(sessionId, new MockCredit(
             "MOCK-0003", "Mock Finance B.V.", CreditKind.Instalment, 530_400, CreditStatus.Ended, "Aflopend krediet")
         {
@@ -158,11 +130,6 @@ public sealed class MockRegistryAdapter : IProviderAdapter
         });
     }
 
-    /// <summary>
-    /// One fixture row: the credit as the register would state it, minus the
-    /// session it is read in. The term and the arrears code are the parts most
-    /// rows do without.
-    /// </summary>
     private sealed record MockCredit(
         string ExternalId, string Creditor, CreditKind Kind, long Minor, CreditStatus Status, string Label)
     {

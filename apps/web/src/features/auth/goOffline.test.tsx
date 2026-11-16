@@ -22,8 +22,6 @@ vi.mock('./offlineProfiles', async (importOriginal) => {
   };
 });
 
-/** online → offline conversion (OO1-OO3): identity rebind adopting the
- *  existing store, per-space triage, bank accounts → manual */
 describe('Go offline (user identity, scripted server)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -55,7 +53,6 @@ describe('Go offline (user identity, scripted server)', () => {
   /** the roles the server names: own space, a shared space, the own bank feed, and a partner's feed reached only through the shared space */
   const ROLES = { 's-user': 'owner', 'sh-1': 'contributor', 'feed-1': 'owner', 'feed-partner': 'reader' } as const;
 
-  /** the partner's connected account attached to the shared space, with the roles the device learned on its last round */
   const seedPartnerAccount = () =>
     seedStore(async (repo, db) => {
       await repo.upsert('account', 'feed-partner', 'partneracct-1', {
@@ -95,30 +92,24 @@ describe('Go offline (user identity, scripted server)', () => {
 
     await screen.findByTestId('screen-go-offline');
     expect(screen.getByTestId('gooffline-keep-card')).toBeTruthy();
-    // the shared space offers keep/remove — choose remove
     fireEvent.click(await screen.findByTestId('gooffline-drop-sh-1', {}, { timeout: 5000 }));
 
     fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
-    // danger sheet (cooldown 0 in tests)
     fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
 
-    // the app relaunches as the offline profile on Home
     await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
     await screen.findByTestId('screen-home', {}, { timeout: 8000 });
 
-    // server: clean exit
     await waitFor(() => expect(calls).toContain('delete-me'));
 
     // the worker keeps no session of the account to sync the adopted store with
     const { readSwSession } = await import('@/sync/swSync');
     await waitFor(async () => expect(await readSwSession()).toBeNull());
 
-    // registry: ONE profile, adopting the user store
     const profile = listOfflineProfiles()[0];
     expect(profile?.storeKey).toBe(`user_${USER_TEST_SUB}`);
     expect(identityKey({ kind: 'offline', profileId: profile.id })).toBe(`user_${USER_TEST_SUB}`);
 
-    // the SAME database: bank account flipped to manual, dropped space purged
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
     await waitFor(
@@ -140,7 +131,7 @@ describe('Go offline (user identity, scripted server)', () => {
     renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api(calls) });
 
     await screen.findByTestId('screen-go-offline');
-    await screen.findByTestId('gooffline-keep-sh-1', {}, { timeout: 5000 }); // default = keep
+    await screen.findByTestId('gooffline-keep-sh-1', {}, { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
     fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
@@ -149,7 +140,6 @@ describe('Go offline (user identity, scripted server)', () => {
     // always a clean exit (user ruling) — but keepIdentity spares the login
     await waitFor(() => expect(calls).toContain('delete-me'));
 
-    // the snapshot survives in the adopted store
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
     await waitFor(async () => {
@@ -234,7 +224,6 @@ describe('Go offline (user identity, scripted server)', () => {
     const { MunniDB, identityDbName } = await import('@/db/schema');
     const fresh = identityDbName(identityKey({ kind: 'user', sub: USER_TEST_SUB }));
     expect(fresh).not.toBe(USER_TEST_DB);
-    // the binding check ran against the fresh account, on the fresh store
     const own = new MunniDB(fresh);
     await waitFor(async () => expect((await own.meta.get('boundUserId'))?.value).toBe('00000000-0000-0000-0000-000000000002'), { timeout: 8000 });
     own.close();
@@ -300,7 +289,6 @@ describe('Go offline (user identity, scripted server)', () => {
     );
     renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api([]) });
 
-    // the one-per-device refusal is gone: no blocked note, the confirm arms
     await screen.findByTestId('screen-go-offline');
     expect(screen.queryByTestId('gooffline-blocked')).toBeNull();
     expect((screen.getByTestId('gooffline-open-confirm') as HTMLButtonElement).disabled).toBe(false);

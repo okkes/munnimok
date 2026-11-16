@@ -9,13 +9,6 @@ using Munni.Api.Accounts;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The relay against the real control plane (docs/connectors/relay.md, #367
-/// M1): subjects minted here, sessions bound to their user, bundles passing
-/// through and never resting, the catalogue in the app's casing, the sync
-/// landing records in the feeds. The mock providers are the ones the
-/// shipped catalogue carries.
-/// </summary>
 public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string MockStore = "mock-store-simple";
@@ -64,7 +57,6 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.NotNull(store["auth"]!["flow"]);
         Assert.Contains(providers, p => p!["kind"]!.GetValue<string>() == "bank");
         Assert.Contains(providers, p => p!["kind"]!.GetValue<string>() == "registry");
-        // nothing from the connector's casing leaks
         Assert.DoesNotContain("manifest_version", catalogue.ToJsonString(), StringComparison.Ordinal);
         Assert.Contains("kinds", catalogue["service"]!.ToJsonString(), StringComparison.Ordinal);
 
@@ -90,11 +82,9 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         var bundle = view["bundle"]!.GetValue<string>();
         Assert.StartsWith("sb_v1.", bundle, StringComparison.Ordinal);
         Assert.Equal("Shop of mine", view["label"]!.GetValue<string>());
-        // the app's casing throughout
         Assert.NotNull(view["providerAccount"]!["displayName"]);
         Assert.Null(view["session_id"]);
 
-        // bound: ids and state, never the bundle
         var row = factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId));
         Assert.Equal("conn-1", row.ConnectionId);
         Assert.Equal(MockStore, row.Provider);
@@ -102,13 +92,11 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.Equal("Shop of mine", row.Label);
         AssertNothingStoredResembles(bundle);
 
-        // the owner's list and view
         var mine = await client.GetFromJsonAsync<JsonArray>("/connectors/sessions");
         Assert.Contains(mine!, s => s!["sessionId"]!.GetValue<string>() == sessionId);
         using var read = await client.GetAsync($"/connectors/{MockStore}/login/{sessionId}");
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
 
-        // a re-login of the same connection replaces the row
         var (_, second) = await LoginAsync(client, MockStore, "conn-1");
         var secondId = second["sessionId"]!.GetValue<string>();
         Assert.NotEqual(sessionId, secondId);
@@ -285,7 +273,6 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.NotNull(outcome!["loggedOut"]);
         Assert.False(factory.Read(db => db.ConnectorSessions.Any(s => s.Id == sessionId)));
 
-        // and the connector no longer serves it either
         using var gone = await owner.GetAsync($"/connectors/{MockStore}/login/{sessionId}");
         Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
     }
@@ -293,9 +280,7 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
     [Fact]
     public async Task The_binding_tables_hold_ids_and_state_only()
     {
-        // the write-path scan: nothing the relay persists has a field a bundle,
-        // an input or a credential could ride in — with the one documented
-        // exception: the household-agent pointer §5.5 lets the relay keep,
+        // write-path scan: no persisted field may carry a bundle, input or credential, except the household-agent pointer (§5.5),
         // which the client-custody flows above prove stays empty
         var entities = factory.Read(db => db.Model.GetEntityTypes()
             .Where(e => e.ClrType.Namespace == typeof(ConnectorSession).Namespace)
@@ -364,17 +349,8 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.False(factory.Read(db => db.ConnectorSessions.Any(s => s.ConnectionId == "conn-stolen" && s.UserId != db.Users.Single(u => u.Sub == "bundle-owner").Id)));
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// A sync, followed to its data whichever way the relay chose to answer.
-    /// A fetch that finishes inside the control plane's window comes back
-    /// 200 with the counts; one that does not comes back 202 with a job the
-    /// app polls and then collects with its bundle. BOTH are correct, and
-    /// which one arrives depends on how loaded the machine is — the test
-    /// host's one-second window makes the second routine on a CI runner. The
-    /// answer is the sum: what landed inline plus what the job landed.
-    /// </summary>
+    /// 200 inline or 202 with a job are both correct, and which arrives depends on load (the test host's one-second
+    /// window makes 202 routine on CI); the answer is the sum of both.
     private static async Task<JsonObject> SyncToTheEndAsync(HttpClient client, string provider, string connectionId, string bundle, string? since = null)
     {
         using var sync = await client.PostAsJsonAsync($"/connectors/{provider}/sync", new { connectionId, bundle, since });
@@ -425,7 +401,6 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         return (response.StatusCode, view!);
     }
 
-    /// <summary>No row of any table the API owns carries the bundle — not the binding, not a feed, not an op.</summary>
     private void AssertNothingStoredResembles(string bundle)
     {
         var fingerprint = bundle[..Math.Min(40, bundle.Length)];

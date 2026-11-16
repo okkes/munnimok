@@ -1,9 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import base from './playwright.config';
 
-// The user guide's and the gallery's screens that are not critical flows:
-// captured on demand (`npm run shots`, before a release), never in CI.
-// A scene that broke fails here, where it costs nobody a deploy.
+// guide and gallery screens that are not critical flows: captured on demand (`npm run shots`), never in CI
 export default defineConfig({
   ...base,
   testDir: 'tests/shots',

@@ -12,12 +12,8 @@ import {
   setAccessTokenGetter,
 } from '@/app/authToken';
 
-/**
- * #222: the app opens, Logto answers the refresh with `invalid_grant`
- * (grant family revoked), the SDK swallows it into the shared context
- * error — and the app used to show "server not available" forever.
- * The bridge must name the state and silently re-enter sign-in once.
- */
+// #222: the SDK swallows invalid_grant into the shared context error; the bridge must name the state and silently
+// re-enter sign-in once
 let mockError: Error | null = null;
 const mockSignIn = vi.fn(async () => undefined);
 /** what the SDK's getAccessToken answers: a token, undefined (the hook swallowed a failure) or a throw (a client that does not) */
@@ -87,7 +83,6 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     await waitFor(() => expect(isSessionExpired()).toBe(true));
     await waitFor(() => expect(mockSignIn).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/auth-callback` }));
     expect(sessionStorage.getItem('munni_grant_reheal')).toBe('1');
-    // an expired session short-circuits the bridge — no more IdP hammering
     expect(await getAccessToken()).toBeUndefined();
   });
 
@@ -117,7 +112,6 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
     mockError = new TypeError('Failed to fetch');
     const { LogtoAppProvider } = await import('./logto');
     render(<LogtoAppProvider>{null}</LogtoAppProvider>);
-    // give the effect a beat — nothing must change
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(isSessionExpired()).toBe(false);
     expect(mockSignIn).not.toHaveBeenCalled();
@@ -163,7 +157,6 @@ describe('TokenBridge invalid_grant handling (#222)', () => {
       vi.advanceTimersByTime(REFRESH_RETRY_AFTER_MS);
       expect(await getAccessToken()).toBe('tok-fresh');
       expect(isRefreshBackedOff()).toBe(false);
-      // the token ended the cooldown — the next call goes straight through
       expect(await getAccessToken()).toBe('tok-fresh');
       expect(mockGetAccessToken).toHaveBeenCalledTimes(3);
     });

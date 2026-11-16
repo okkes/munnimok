@@ -36,7 +36,6 @@ const GROUP_TITLE: Partial<Record<InsightKind, TranslationKey>> = {
   budget: 'ins.budget.group',
 };
 
-/** the one piece of advice a card of several gives */
 const GROUP_HINT: Partial<Record<InsightKind, TranslationKey>> = {
   missed: 'ins.missed.groupHint',
   salary: 'ins.salary.groupHint',
@@ -64,16 +63,13 @@ const noon = (iso: string): Date => {
 
 export interface InsightText {
   title: (group: InsightGroup) => string;
-  /** the line under the title: what is at stake, or what the card is about */
   sub: (group: InsightGroup) => string;
   topic: (group: InsightGroup) => string;
   detail: (insight: Insight) => string;
-  /** one finding inside a card of several */
   line: (insight: Insight) => string;
   hint: (group: InsightGroup) => string;
 }
 
-/** the words of an insight card, shared by the Insights screen and Home's block */
 export function useInsightText(currency: string): InsightText {
   const { t, lang } = useLang();
   const cats = useCategories();

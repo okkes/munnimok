@@ -8,31 +8,9 @@ using ShopConnector.Adapters;
 
 namespace Connector.Kit.Agent.Tests.Deployment;
 
-/// <summary>
-/// The household's own agent says where it is, and what it says is enough for
-/// every provider it exists to run.
-///
-/// <para>
-/// <b>What was missing.</b> <c>deploy/byo/docker-compose.yml</c> set no egress
-/// at all - not the country, not the kind - which was harmless for exactly as
-/// long as nothing compared the claim to what a manifest asks for. The day
-/// <c>CanServe</c> began comparing them, an agent that claims nothing became an
-/// agent with an address nobody can vouch for, and DUO, BKR and half the
-/// shopping catalogue stopped being offered to the one machine in this
-/// platform whose address is genuinely residential. The file that carries DUO -
-/// the provider that has no fleet to fall back to - was the file most exposed
-/// to it.
-/// </para>
-///
-/// <para>
-/// <b>Why every provider and not most.</b> This image carries every adapter the
-/// platform has and advertises all of them to each connector it attaches to, so
-/// "what it might be asked for" is the whole catalogue. Own-machine providers
-/// are INCLUDED here where <see cref="LocalStackEgressTests"/> excludes them,
-/// and that is the point of the two files: this is the machine those providers
-/// mean.
-/// </para>
-/// </summary>
+/// deploy/byo/docker-compose.yml set no egress; once CanServe compared the claim with the manifest, DUO, BKR and
+/// much of the shopping catalogue stopped being offered to the one residential machine. Own-machine providers are
+/// INCLUDED here, excluded in LocalStackEgressTests: this is the machine they mean
 public sealed class ByoAgentEgressTests
 {
     [Fact]
@@ -52,10 +30,6 @@ public sealed class ByoAgentEgressTests
         {
             Assert.NotEmpty(service.MergedEnvironment);
 
-            // The image the file names, with the compose environment laid over
-            // its appsettings exactly as the host lays environment variables
-            // over a file, bound through the same AddConnectorAgent the
-            // agent's own Program.cs calls.
             var configuration = new ConfigurationBuilder()
                 .AddJsonFile(
                     Path.Combine(ByoCompose.AgentProject, "appsettings.json"),
@@ -74,8 +48,7 @@ public sealed class ByoAgentEgressTests
                 .GetRequiredService<ConnectorAgentOptions>()
                 .BuildCapabilities(manifests);
 
-            // Asserted so a run where the compose override never arrived - and
-            // the appsettings' own pooled class stood - cannot pass.
+            // so a run where the compose override never arrived, and the appsettings' pooled class stood, cannot pass
             Assert.Equal(AgentClass.Byo, capabilities.Class);
 
             foreach (var manifest in manifests)
@@ -92,11 +65,6 @@ public sealed class ByoAgentEgressTests
         }
     }
 
-    /// <summary>
-    /// A shipped manifest with the adapter behind it removed - see
-    /// <c>LocalStackEgressTests</c>, which reads the other compose file the
-    /// same way.
-    /// </summary>
     private sealed class ManifestOnlyAdapter(ProviderManifest manifest) : IProviderAdapter
     {
         public ProviderManifest Describe() => manifest;

@@ -10,7 +10,6 @@ import { drive, isDriven } from './retentionDriver';
 import type { Phase, StepWrite } from './retentionDriver';
 import { isPersistent, readAgent, runChip, runVerdict, STEPS, stepChip } from './retentionFacts';
 
-/** the run's report and the pen that writes it */
 function useRun(call: Call, id: string) {
   const [run, setRun] = useState<RetentionRun | null | 'unreachable' | 'loading'>('loading');
   useEffect(() => {
@@ -36,7 +35,6 @@ function useRun(call: Call, id: string) {
   return { run, write, finish, setRun };
 }
 
-/** the party's manifest and the agent's listing, read once */
 function useRunContext(call: Call, run: RetentionRun | null) {
   const [party, setParty] = useState<ProviderEntry | null>(null);
   const [agent, setAgent] = useState<AgentView | undefined>(undefined);
@@ -53,7 +51,6 @@ function useRunContext(call: Call, run: RetentionRun | null) {
   return { party, agent };
 }
 
-/** the steps as the report shows them: every step of the scenario, taken or not yet */
 function StepList({ run }: Readonly<{ run: RetentionRun }>) {
   const byName = new Map(run.steps.map((s) => [s.name, s]));
   return (
@@ -79,7 +76,6 @@ function StepList({ run }: Readonly<{ run: RetentionRun }>) {
   );
 }
 
-/** the run's facts: the agent, the party and how it keeps its session, the label, the start, the session */
 function RunFacts({ run, party }: Readonly<{ run: RetentionRun; party: ProviderEntry | null }>) {
   return (
     <div className="facts">
@@ -110,12 +106,6 @@ function RunFacts({ run, party }: Readonly<{ run: RetentionRun; party: ProviderE
   );
 }
 
-/**
- * One retention run (#441 L4), driven here while it runs: the sign-in on
- * the pinned agent through the bench's own connect flow, then the fetch,
- * the inventory, the second fetch and the optional release, each verdict
- * written to the relay as it lands. A finished run is its report.
- */
 export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const query = useRouteQuery();
   const wantsRelease = query.get('release') === '1';
@@ -126,7 +116,6 @@ export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: strin
   const [sessionId, setSessionId] = useState<string | null>(null);
   const driving = useRef<Phase | null>(null);
 
-  // the sign-in's outcome, told by the embedded connect flow
   const onSettled = useCallback(
     (view: SessionView) => {
       if (view.state === 'active') {
@@ -139,14 +128,12 @@ export function RetentionRunScreen({ id, call, busy, act }: Readonly<{ id: strin
     [write, finish],
   );
 
-  // the scenario after the sign-in, one phase at a time, each handing over to the next
   useEffect(() => {
     if (live?.state !== 'running' || !party || !sessionId || !isDriven(phase) || driving.current === phase) return;
     driving.current = phase;
     void drive(phase, { call, run: live, sessionId, party, agent, wantsRelease, write, finish }).then(setPhase);
   }, [phase, live, party, sessionId, agent, wantsRelease, call, write, finish]);
 
-  // the end: the verdict from the steps, written once
   useEffect(() => {
     if (phase !== 'done' || live?.state !== 'running') return;
     void finish(runVerdict(live.steps));

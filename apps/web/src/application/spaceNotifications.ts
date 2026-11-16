@@ -2,18 +2,12 @@ import type { StorageBackend } from '@/db/backend';
 import { apiFetch } from '@/lib/api';
 import { forgetPendingClear } from './inboxClear';
 
-/**
- * #549: notifications are chosen per space — the person's own choice (not
- * the space's data, so a reader makes it too and nothing is logged), kept by
- * the server because it decides which pushes go out, and mirrored here so
- * the device's own alerts (budgets, the plan, reminders, the digest) follow
- * it offline as well. A space nobody switched off notifies.
- */
+// #549: the choice is the person's own (not space data: a reader makes it too, nothing is logged); the server keeps it
+// because it decides which pushes go out, the device mirrors it so its own alerts follow it offline; unset = notifies
 type MetaStore = Pick<StorageBackend, 'metaGet' | 'metaPut'>;
 
 const OFF_KEY = 'notifyOffSpaces';
 
-/** the spaces switched off, as this device last heard */
 export async function readSpacesNotifyOff(store: MetaStore): Promise<string[]> {
   const value = (await store.metaGet(OFF_KEY))?.value;
   return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
@@ -34,10 +28,7 @@ export async function refreshSpacesNotifyOff(store: MetaStore): Promise<string[]
   return off;
 }
 
-/**
- * Going offline keeps this store for the new profile: what the account's
- * server said would mute spaces there that no switch reaches any more.
- */
+// going offline keeps this store for the new profile: the old server's list would mute spaces no switch reaches
 export async function forgetSpacesNotifyOff(store: Pick<StorageBackend, 'metaDelete'>): Promise<void> {
   await store.metaDelete(OFF_KEY);
   await forgetPendingClear(store);
@@ -55,12 +46,7 @@ export async function setSpaceNotify(store: MetaStore, spaceId: string, on: bool
   return true;
 }
 
-/**
- * Whether the device may show an OS notification about one space: the
- * browser allows it and the space is not switched off. The in-app list
- * records the event either way — it is the app's own record, not an
- * interruption.
- */
+/** the in-app list records the event either way: it is the app's own record, not an interruption */
 export async function osNotifyAllowed(store: MetaStore, spaceId: string): Promise<boolean> {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return false;
   return spaceNotifyOn(store, spaceId);

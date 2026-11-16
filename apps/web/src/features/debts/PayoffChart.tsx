@@ -4,38 +4,19 @@ import { useUserInk } from '@/ui/userInk';
 import { axisFraction, hasTail } from '@/domain/debtPlan';
 import type { ChartAxis, ChartTick, WalkPoint } from '@/domain/debtPlan';
 
-/**
- * The payoff planner's balance chart (user 2026-10-08): one line per walk
- * on a shared month axis — the plan solid, the minimums-only walk dashed
- * — over a dashed zero line, the debt-free line every walk aims for. A
- * walk that pays off ends where it lands (#513: no line running on along
- * zero): the plan with its dot, the minimums line with a smaller one, so
- * its end is always on the chart. When the minimums run on for decades
- * the axis breaks after the plan's months and the remaining years follow
- * compressed (domain chartAxis) — a break mark on the axis says so. The
- * x labels arrive as ticks, already thinned by the engine; the ones near
- * an edge anchor inward so no label ever clips. With an `amount`
- * formatter the scale gets its two cues — the top of the scale at the
- * top right, zero at the bottom left (user 2026-10-09: "I want to see how
- * much we are talking about") — each with a surface halo, so a line
- * crossing one stays readable. Decorative: the card around it carries the
- * dates and amounts in text, so the svg is hidden from assistive tech.
- */
+// decorative: the svg is aria-hidden, the card around it carries the dates and amounts in text
+// a walk that pays off ends where it lands (#513); long minimums tails are compressed (domain chartAxis)
 
 const WIDTH = 320;
 /** room for the r=4 landing dot and its surface ring, top and bottom */
 const PAD = 7;
-/** the same room left and right: an end dot on the edge stays whole */
 const PAD_X = 5;
 const LABEL_ZONE = 16;
-/** a label within this share of the width from an edge anchors inward */
 const EDGE = 0.08;
-/** the amount cues' inset from the edge */
 const CUE_INSET = 2;
 const CUE_FONT = 9;
 
 export interface PayoffSeries {
-  /** the walk sampled onto the axis, today first */
   points: readonly WalkPoint[];
   /** it reaches zero at its last point (else it never does and runs to the axis end) */
   landed: boolean;
@@ -44,7 +25,6 @@ export interface PayoffSeries {
   testId?: string;
 }
 
-/** the break between the even scale and the compressed tail: two slanted strokes across the zero line */
 function AxisBreak({ x, zero, top, testId }: Readonly<{ x: number; zero: number; top: number; testId?: string }>) {
   return (
     <g data-testid={testId}>
@@ -62,7 +42,6 @@ function anchorFor(x: number): 'start' | 'middle' | 'end' {
   return 'middle';
 }
 
-/** one amount cue on the scale */
 function AmountCue({ x, y, anchor, text, testId }: Readonly<{ x: number; y: number; anchor: 'start' | 'end'; text: string; testId?: string }>) {
   return <HaloText x={x} y={y} anchor={anchor} size={CUE_FONT} fill="var(--m-ink-4)" text={text} testId={testId} />;
 }
@@ -80,7 +59,6 @@ export function PayoffChart({
   ticks: readonly ChartTick[];
   height?: number;
   testId?: string;
-  /** words an amount of cents for the scale's two cues; none = no cues */
   amount?: (cents: number) => string;
 }>) {
   const ink = useUserInk();
@@ -115,7 +93,6 @@ export function PayoffChart({
               strokeDasharray={s.dashed ? '5 4' : undefined}
               data-testid={s.testId}
             />
-            {/* the plan's landing (or where it stands at the axis end); the minimums line's own end */}
             {!s.dashed && <circle cx={end.x} cy={end.y} r={4} fill={s.color} stroke="var(--m-surface)" strokeWidth={2} />}
             {s.dashed && s.landed && (
               <circle cx={end.x} cy={end.y} r={3} fill={s.color} stroke="var(--m-surface)" strokeWidth={1.5} data-testid={s.testId ? `${s.testId}-end` : undefined} />

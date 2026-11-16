@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installKeyboardReveal } from './keyboardReveal';
 
-/** a controllable stand-in for window.visualViewport */
 function makeViewport(height: number) {
   const listeners = new Set<() => void>();
   return {
@@ -49,9 +48,9 @@ describe('installKeyboardReveal (#129)', () => {
   };
 
   it('scrolls a field the keyboard swallowed back into view once the viewport settles', () => {
-    placeField(700, 760); // visible at 800…
+    placeField(700, 760);
     field.focus();
-    viewport.shrink(400); // …but the keyboard halves the viewport
+    viewport.shrink(400);
     vi.advanceTimersByTime(350);
     expect(scrolled).toBe(1);
   });
@@ -66,9 +65,9 @@ describe('installKeyboardReveal (#129)', () => {
 
   it('reveals on focus hops while the keyboard is already up (no resize fires)', () => {
     viewport.shrink(400);
-    vi.advanceTimersByTime(350); // settle the shrink with nothing focused
-    placeField(500, 560); // below the 400px fold
-    field.focus(); // focusin schedules its own pass
+    vi.advanceTimersByTime(350);
+    placeField(500, 560);
+    field.focus();
     vi.advanceTimersByTime(350);
     expect(scrolled).toBe(1);
   });

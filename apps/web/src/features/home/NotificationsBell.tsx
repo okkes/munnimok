@@ -35,7 +35,6 @@ interface PendingInvite {
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
-/** per-kind history line + icon (unknown kinds render the generic line) */
 const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   review: { key: 'act.review', icon: 'check-decagram-outline' },
   note: { key: 'act.note', icon: 'note-edit-outline' },
@@ -78,7 +77,6 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   planStart: { key: 'act.planStart', icon: 'clipboard-text-outline' },
   planFund: { key: 'act.planFund', icon: 'clipboard-text-outline' },
   planEdit: { key: 'act.planEdit', icon: 'clipboard-text-outline' },
-  // #618: one kind per plan command, so a line can say which subject and how much
   planSet: { key: 'act.planSet', icon: 'clipboard-arrow-down-outline' },
   planEmpty: { key: 'act.planEmpty', icon: 'clipboard-arrow-up-outline' },
   planFill: { key: 'act.planFill', icon: 'clipboard-arrow-down-outline' },
@@ -100,7 +98,6 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   planAhead: { key: 'act.planAhead', icon: 'calendar-sync-outline' },
   planBlueprint: { key: 'act.planBlueprint', icon: 'content-copy' },
   planSandbox: { key: 'act.planSandbox', icon: 'flask-outline' },
-  // #541: which accounts and set-asides safe to spend counts
   spendEdit: { key: 'act.spendEdit', icon: 'calendar-arrow-right' },
   holdingAdd: { key: 'act.holdingAdd', icon: 'chart-line' },
   holdingEdit: { key: 'act.holdingEdit', icon: 'chart-line' },
@@ -120,16 +117,13 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   deviceRevoke: { key: 'act.deviceRevoke', icon: 'cellphone-remove' },
   reconcile: { key: 'act.reconcile', icon: 'bank-check' },
   importRollback: { key: 'act.importRollback', icon: 'file-undo' },
-  // user 2026-10-08: the custom trend graphs on the space row
   trendGraphAdd: { key: 'act.trendGraphAdd', icon: 'chart-bar' },
   trendGraphEdit: { key: 'act.trendGraphEdit', icon: 'chart-bar' },
   trendGraphRemove: { key: 'act.trendGraphRemove', icon: 'chart-bar' },
-  // #577: the space's phone bar
   navEdit: { key: 'act.navEdit', icon: 'dock-bottom' },
 };
 const GENERIC_VISUAL: { key: TranslationKey; icon: string } = { key: 'act.generic', icon: 'history' };
 
-/** the in-app inbox rows (arc 6): icon + destination per kind */
 const INBOX_VISUAL: Record<InboxKind, { icon: string; to?: '/recurring' | '/debts' | '/insights' | '/planning' }> = {
   whatsnew: { icon: 'bullhorn-variant-outline' },
   recurringDue: { icon: 'autorenew', to: '/recurring' },
@@ -144,7 +138,6 @@ function spaceLabel(names: Map<string, string> | undefined, entry: InboxEntry): 
   return name ? `${name} · ` : '';
 }
 
-/** one localized line per inbox kind — reusing the OS-notification copy */
 function inboxLine(t: TFunc, entry: InboxEntry): string {
   const p = entry.payload ?? {};
   if (entry.kind === 'whatsnew') return t('notif.whatsnewRow', { version: p.version ?? '' });
@@ -154,7 +147,6 @@ function inboxLine(t: TFunc, entry: InboxEntry): string {
   return t('ins.digestBody', { n: p.n ?? '' });
 }
 
-/** the space's newest-first action history (YNAB-style, user request) */
 function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'members') => void }>) {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -183,13 +175,10 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
     <div className="flex flex-col" data-testid="history-list">
       {rows.map((row) => {
         const visual = ACT_VISUAL[row.kind] ?? GENERIC_VISUAL;
-        // "You" whenever the row is provably mine — or on single-user
-        // identities (offline/demo), where every action IS yours; other
-        // members show their frozen display name
+        // "You" when provably mine, or on single-user identities (offline/demo) where every action is yours
         const mine = row.actorSub ? row.actorSub === mySub : !mySub;
         const actor = mine ? t('act.you') : (row.actorName ?? t('act.someone'));
-        // the actor sits mid-sentence in some languages (TR) — split on a
-        // marker so the highlighted name lands wherever {actor} does
+        // the actor sits mid-sentence in some languages (TR): split on a marker so the name lands where {actor} does
         const [before, after] = t(visual.key, {
           actor: '\u0000',
           detail: row.detail ?? '',
@@ -209,8 +198,7 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] leading-snug text-ink">
                 {before}
-                {/* only the person is tappable (user rule): it opens their
-                    profile — the rest of the line is plain text */}
+                {/* only the person is tappable: it opens their profile */}
                 <button
                   data-testid={`history-actor-${row.id}`}
                   onClick={() => onNavigate(mine ? '/profile' : 'members')}
@@ -229,19 +217,13 @@ function HistoryList({ onNavigate }: Readonly<{ onNavigate: (to: '/profile' | 'm
   );
 }
 
-/**
- * Home inbox: everything waiting on the user (friend requests, space
- * invites) plus the space's action history behind one bell. Alerts are
- * server-mediated (signed-in only); history is local-first and shows
- * for every identity.
- */
+/** requests and invites are server-mediated (signed-in only); history is local-first for every identity */
 export function NotificationsBell() {
   const { t, lang } = useLang();
   const isUser = useSession((s) => s.identity?.kind === 'user');
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  // Notifications | Activity for EVERY identity (arc 6) — the inbox is
-  // local and works offline; activity stays the audit trail it was
+  // Notifications | Activity for every identity: the inbox is device-local and works offline
   const [tab, setTab] = useState<'notifications' | 'activity'>('notifications');
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
@@ -250,8 +232,7 @@ export function NotificationsBell() {
   const { store, spaceId } = useData();
   const markWhatsNewSeen = useMarkWhatsNewSeen();
 
-  // a fresh release drops a What's-new row into the inbox (once per
-  // version — dedupe key) and the Home banner is retired
+  // a fresh release drops one What's-new row into the inbox, deduped per version
   const whatsnewUnseen = useWhatsNewUnseen();
   useEffect(() => {
     const version = latestWhatsNewVersion();
@@ -350,8 +331,6 @@ export function NotificationsBell() {
       </button>
 
       <Sheet open={open} onOpenChange={setOpen} title={t('notif.title')} size="tall">
-        {/* Notifications | Activity for every identity (arc 6): the
-            inbox is device-local, activity stays the audit trail */}
         <div className="mb-2 flex gap-1 rounded-input border border-line bg-surface p-1" role="tablist">
           {(
             [
@@ -447,8 +426,6 @@ export function NotificationsBell() {
                   <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
                 </button>
               ))}
-              {/* the local inbox (arc 6): what's-new, due reminders, the
-                  rate nudge, the weekly digest — identical offline */}
               {(inbox ?? []).map((entry) => (
                 <button
                   key={entry.id}

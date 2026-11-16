@@ -14,14 +14,6 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The relay's half of open banking as parties (plan §15, slice O2), walked
-/// against the consent mock: a consent the relay keeps and the scheduler
-/// fetches in the bank's own hour, the party's budget on the operator's
-/// status document, the pending mirror and the prediction overlay, the
-/// lookup and inventory routes relayed, and a feed's deletion reaching the
-/// party.
-/// </summary>
 public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Consent = MockBankConsentAdapter.ProviderId;
@@ -47,17 +39,14 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var reference = factory.Read(db => db.ConnectorAccountRefs.First(a => a.UserId == userId && a.AccountRef == ImportIds.Normalize(MockBankLedger.CurrentIban)));
         Assert.Equal("conn-consent", reference.ConnectionId);
 
-        // the party said something about its budget: the operator sees it on the status document
         using var operatorClient = factory.ClientFor("the-quota-operator", scope: Admin);
         var status = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/status");
         var party = status!["providers"]!.AsArray().OfType<JsonObject>().Single(p => p["providerId"]!.GetValue<string>() == Consent);
         Assert.Equal(4, party["quota"]!["limit"]!.GetValue<int>());
         Assert.Equal(3, party["quota"]!["remaining"]!.GetValue<int>());
 
-        // within the party's interval nothing runs again
         Assert.Equal(0, await service.RunOnceAsync(CancellationToken.None));
 
-        // past the interval, only in the bank's preferred hour, in the bank's zone; a retry-after stands in the way
         using var scope = factory.Services.CreateScope();
         var relay = scope.ServiceProvider.GetRequiredService<ConnectorRelay>();
         var manifest = await relay.Catalogue.ProviderAsync(relay.Client, Consent, CancellationToken.None);
@@ -67,7 +56,7 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var probe = new ConnectorSession { Id = "ses_probe", Provider = Consent, ConnectionId = "c", State = "active", LastScheduledSyncAt = clock.GetUtcNow().AddHours(-21) };
         var amsterdam = BankZones.ZoneFor(MockBankLedger.CurrentIban);
         Assert.True(timed.IsDue(probe, manifest, amsterdam));
-        probe.LastScheduledSyncAt = clock.GetUtcNow();                          // it ran in the hour
+        probe.LastScheduledSyncAt = clock.GetUtcNow();
         clock.Advance(TimeSpan.FromHours(2));                                   // 05:00 local: not the hour, and today's run is done
         Assert.False(timed.IsDue(probe, manifest, amsterdam));
         clock.Advance(TimeSpan.FromHours(22));                                  // 03:00 local, the next day
@@ -76,7 +65,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.False(timed.IsDue(probe, manifest, amsterdam));
         Assert.Equal(amsterdam, await ConnectorScheduleService.ZoneOfAsync(relay.Db, row, manifest, CancellationToken.None));
 
-        // the party's budget: rate_limited sets the not-before from its retry-after, or the day's stand-down; an ended consent asks the person
         timed.Refused(probe, "rate_limited", 1800);
         Assert.Equal(clock.GetUtcNow().AddSeconds(1800), probe.ScheduleNotBefore);
         Assert.Equal("active", probe.State);
@@ -106,8 +94,7 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
             [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("Floor") }, ServerHlc.Now(0))]));
         Assert.True((await client.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(reference.FeedSpaceId, reference.AccountEntityId, "2026-01-01"))).IsSuccessStatusCode);
 
-        // the person filed the row BEFORE the party's facts landed (a device that
-        // attached the account itself, or the 2026-10-05 re-overlay of a whole history)
+        // filed BEFORE the party's facts landed (a device attached the account itself, or a whole-history re-overlay)
         var bookedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-F1");
         var metaId = ImportIds.TxMetaId(spaceId, bookedId);
         var filed = new Dictionary<string, JsonElement> { ["txId"] = JsonSerializer.SerializeToElement(bookedId), ["catId"] = JsonSerializer.SerializeToElement("tuition"), ["needsReview"] = JsonSerializer.SerializeToElement(0) };
@@ -146,7 +133,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         JsonObject Account(string id, long balance) => new() { ["id"] = id, ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current", ["balance"] = new JsonObject { ["amount"] = new JsonObject { ["value"] = balance, ["currency"] = "EUR" } } };
         string Row() => factory.Read(db => db.EntityRows.Single(r => r.Entity == "account" && r.EntityId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_eb").AccountEntityId && r.SpaceId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_eb").FeedSpaceId).DataJson);
 
-        // Enable Banking feeds the account first
         await ingest.IngestAsync(userId, "enablebanking", "Enable Banking", "conn-eb", "account", [Account("acc_rank_eb", 10_000)], ct);
         Assert.Contains("\"provider\":\"enablebanking\"", Row());
         Assert.Contains("\"connectionId\":\"conn-eb\"", Row());
@@ -166,7 +152,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Contains("\"connectionId\":\"conn-gc\"", Row());
         Assert.Contains("\"provider\":\"gocardless\"", Row());
 
-        // a bank login that feeds an account nobody else does owns it as before
         const string own = "NL91MOCK0000000780";
         await ingest.IngestAsync(userId, "ing-nl", "ING", "conn-ing", "account", [new JsonObject { ["id"] = "acc_rank_solo", ["external_id"] = own, ["iban"] = own, ["display_name"] = "Spaar", ["currency"] = "EUR", ["type"] = "savings" }], ct);
         var solo = factory.Read(db => db.EntityRows.Single(r => r.Entity == "account" && r.EntityId == db.ConnectorAccountRefs.Single(a => a.Id == "acc_rank_solo").AccountEntityId).DataJson);
@@ -194,7 +179,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         // the institution the lookup listed rides the account row, so the app shows the same logo
         Assert.Contains("\"bankId\":\"MOCK_NL\"", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == reference.AccountEntityId).DataJson));
 
-        // the account attached to a space: where the overlay goes
         var spaceId = $"space_{Guid.NewGuid():N}";
         await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
             [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("Mirror") }, ServerHlc.Now(0))]));
@@ -211,29 +195,24 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Contains("\"pending\":1", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == pendingId).DataJson));
         var bookedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-1");
         var meta = factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == ImportIds.TxMetaId(spaceId, bookedId)));
-        // the keyword rules know Albert Heijn — a suggestion the person still confirms: every fetched row waits in the review (user 2026-10-09)
+        // every fetched row waits in the review, keyword suggestion included: the person still confirms
         Assert.Contains("\"catId\":\"groceries\"", meta.DataJson);
         Assert.Contains("\"needsReview\":1", meta.DataJson);
         Assert.DoesNotContain("uncategorized", meta.DataJson);
         Assert.Empty(factory.Read(db => db.EntityRows.Where(r => r.SpaceId == spaceId && r.Entity == "txMeta" && r.EntityId == ImportIds.TxMetaId(spaceId, pendingId)).ToList()));
 
-        // the same pending row again: nothing to tombstone, and it is remembered
         Assert.Equal(0, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", ["acc_mirror"], landed.PendingRows, ct));
         Assert.Equal(1, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
         // a pass that did not carry the account says nothing about its reserved rows
         Assert.Equal(0, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", [], [], ct));
         Assert.Equal(1, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
-        // the bank stopped reporting it: tombstoned and forgotten
         Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", ["acc_mirror"], [], ct));
         Assert.True(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == pendingId).Deleted));
         Assert.Equal(0, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
     }
 
-    /// <summary>
-    /// #610: a nightly fetch told every space attached to any account of the connection that the fetch's whole
-    /// count had arrived — also the space whose account brought nothing new, and with a reserved row counted
-    /// that the bank books under a new reference later (the same payment announced twice).
-    /// </summary>
+    /// #610: a nightly fetch told every space attached to any account of the connection the whole count - also a space
+    /// whose account brought nothing new, and a reserved row the bank books later under a new reference.
     [Fact]
     public async Task A_fetch_counts_for_each_space_the_booked_rows_that_are_new_to_it()
     {
@@ -272,7 +251,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var first = await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "transaction", [Interest()], ct);
         Assert.Equal(1, Assert.Single(first.NewBySpace, s => s.Key == savings).Value);
 
-        // the next night: two booked rows and a reserved one on the paying account, and the savings row served again
         var night = await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "transaction",
         [
             On("acc_pay", Tx("txn_p1", "REF-P1", "2026-09-28", -1250, "Albert Heijn", "Albert Heijn 1350 AMSTERDAM")),
@@ -285,13 +263,11 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         // a space that shows the account from a later day on is not told about rows it does not show
         Assert.DoesNotContain(sinceOctober, night.NewBySpace.Keys);
 
-        // the same page again brings nothing new to anybody
         var again = await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "transaction",
             [On("acc_pay", Tx("txn_p1", "REF-P1", "2026-09-28", -1250, "Albert Heijn", "Albert Heijn 1350 AMSTERDAM")), Interest()], ct);
         Assert.Empty(again.NewBySpace);
     }
 
-    /// <summary>#610, at the phone: the scheduler's fetch is the one that speaks, to the space that got rows and with that space's own count.</summary>
     [Fact]
     public async Task The_schedulers_fetch_tells_a_space_its_own_count_and_says_nothing_about_a_deleted_one()
     {
@@ -301,7 +277,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var endpoint = $"https://push.test/{sub}";
         Assert.True((await client.PostAsJsonAsync("/me/push-subscriptions", new Munni.Api.Push.SubscribeRequest(endpoint, "p", "a"))).IsSuccessStatusCode);
 
-        // the account is known before the scheduler runs, so two spaces can show it: one that stays, one the person deletes
         using var scope = factory.Services.CreateScope();
         var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
         const string iban = MockBankLedger.CurrentIban;
@@ -329,7 +304,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal("new-transactions", payload.RootElement.GetProperty("type").GetString());
         Assert.Equal(household, payload.RootElement.GetProperty("spaceId").GetString());
         Assert.Equal("Household", payload.RootElement.GetProperty("spaceName").GetString());
-        // its count is the rows that wait in that space's review: the booked ones of the account it shows
         var waiting = factory.Read(db => db.EntityRows.Count(r => r.SpaceId == household && r.Entity == "txMeta"));
         Assert.True(waiting > 0);
         Assert.Equal(waiting, payload.RootElement.GetProperty("count").GetInt32());
@@ -376,7 +350,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.True(refs.Count > 1, "the mock consent reaches several accounts");
         using var client = factory.ClientFor(sub);
 
-        // one feed of several: the account leaves the consent, the consent lives on for the rest
         var currentFeed = ImportIds.FeedSpaceId(MockBankLedger.CurrentIban);
         using (var deleted = await client.DeleteAsync($"/me/feeds/{currentFeed}"))
         {
@@ -388,7 +361,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));
         Assert.True(factory.Read(db => db.ConnectorAccountRefs.Single(a => a.UserId == userId && a.FeedSpaceId == currentFeed).Excluded), "a fetch does not invent the dropped account back");
 
-        // the rest of them: the consent ends at the party and the binding is forgotten
         foreach (var feed in factory.Read(db => db.ConnectorAccountRefs.Where(a => a.UserId == userId && !a.Excluded).Select(a => a.FeedSpaceId).Distinct().ToList()))
         {
             using var deleted = await client.DeleteAsync($"/me/feeds/{feed}");
@@ -402,26 +374,18 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
     }
 
-    /// <summary>
-    /// Prod 2026-10-08: a reconnect that made a new connection left the old
-    /// session bound and scheduled beside it, and the two burnt the bank's
-    /// daily budget between them. The new session's accounts pass retires
-    /// every other session of the party that reached the same accounts: its
-    /// binding and its references go, the control plane ends it, and the
-    /// scheduler never runs it again.
-    /// </summary>
+    /// Prod 2026-10-08: a reconnect into a new connection left the old session bound and scheduled, and the two burnt
+    /// the bank's daily budget; the new session's accounts pass retires every other session reaching the same accounts.
     [Fact]
     public async Task A_reconnect_into_a_new_session_supersedes_the_old_one_that_reached_the_same_accounts()
     {
         const string sub = "consent-reconnector";
         var (first, userId) = await ConnectAsync(sub, "conn-first");
         var service = factory.Services.GetRequiredService<ConnectorScheduleService>();
-        Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));   // the first consent's accounts land
+        Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));
         var currentIban = ImportIds.Normalize(MockBankLedger.CurrentIban);
         Assert.Equal("conn-first", factory.Read(db => db.ConnectorAccountRefs.Single(a => a.UserId == userId && a.AccountRef == currentIban).ConnectionId));
 
-        // the person connects the same bank again as a NEW connection (the app's door before 2026-10-08),
-        // and the connect's own first sync — the person's, as the app runs it — reaches the same IBANs
         var (second, _) = await ConnectAsync(sub, "conn-second");
         Assert.Equal(2, factory.Read(db => db.ConnectorSessions.Count(s => s.UserId == userId)));
         using var client = factory.ClientFor(sub);
@@ -429,7 +393,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.NotNull(bundle);
         await SyncToTheEndAsync(client, "conn-second", bundle);
 
-        // the old session is gone from the relay — the scheduler reads this table — and so is nothing of the new one
         Assert.Equal([second], factory.Read(db => db.ConnectorSessions.Where(s => s.UserId == userId).Select(s => s.Id).ToList()));
         var refs = factory.Read(db => db.ConnectorAccountRefs.Where(a => a.UserId == userId).ToList());
         var ibans = refs.Where(r => !r.AccountRef.StartsWith("CONN:", StringComparison.Ordinal)).ToList();
@@ -440,15 +403,12 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Contains(refs, r => r.AccountRef.StartsWith("CONN:", StringComparison.Ordinal) && r.ConnectionId == "conn-first");
         var listed = await client.GetFromJsonAsync<JsonArray>("/connectors/sessions");
         Assert.Equal([second], listed!.OfType<JsonObject>().Select(s => s["sessionId"]!.GetValue<string>()));
-        // the new session is the scheduler's only one now
         Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));
-        // the control plane was told to end the old one — without touching the consent at the party — and the new one is untouched
         Assert.Equal(Connector.Kit.Sessions.SessionState.Disabled, await factory.ControlPlane.SessionStateAsync(first));
         Assert.Equal(Connector.Kit.Sessions.SessionState.Active, await factory.ControlPlane.SessionStateAsync(second));
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/connectors/{Consent}/login/{first}")).StatusCode);
     }
 
-    /// <summary>A person's sync of a connection, followed and collected through every pass that became a job, to its 200.</summary>
     private static async Task SyncToTheEndAsync(HttpClient client, string connectionId, string bundle)
     {
         using var sync = await client.PostAsJsonAsync($"/connectors/{Consent}/sync", new { connectionId, bundle });
@@ -487,7 +447,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         static JsonObject Card(string id) => new() { ["id"] = id, ["external_id"] = "card-1", ["display_name"] = "Card", ["currency"] = "EUR", ["type"] = "credit_card" };
         List<string> Sessions() => factory.Read(db => db.ConnectorSessions.Where(s => s.UserId == userId).OrderBy(s => s.Id).Select(s => s.Id).ToList());
 
-        // two consents reaching different accounts: both stay
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-a", "account", [Account("acc_sib_a", "NL91MOCK0000000781")], ct);
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-b", "account", [Account("acc_sib_b", "NL91MOCK0000000782")], ct);
         Assert.Equal(["ses_sib_a", "ses_sib_b"], Sessions());
@@ -497,19 +456,14 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-b", "account", [Card("acc_sib_card_b")], ct);
         Assert.Equal(["ses_sib_a", "ses_sib_b"], Sessions());
 
-        // the second consent now reaches the first one's IBAN: the first is superseded, its references for it gone
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-sib-b", "account", [Account("acc_sib_b2", "NL91MOCK0000000781")], ct);
         Assert.Equal(["ses_sib_b"], Sessions());
         var refs = factory.Read(db => db.ConnectorAccountRefs.Where(a => a.UserId == userId).Select(a => a.Id).OrderBy(id => id).ToList());
         Assert.Equal(["acc_sib_b", "acc_sib_b2", "acc_sib_card_a", "acc_sib_card_b"], refs);
     }
 
-    /// <summary>
-    /// #508: the tracking of a reserved row went with the references of a
-    /// superseded or disconnected connection, and nothing settled the row
-    /// again - once booked, it stood beside its twin for good. The new
-    /// connection's references take it over; with none left, it is tombstoned.
-    /// </summary>
+    /// #508: a superseded or disconnected connection's references took the reserved row's tracking with them, so once
+    /// booked it stood beside its twin; the new connection's references take it over, else it is tombstoned.
     [Fact]
     public async Task A_reserved_row_outlives_its_connection_only_as_long_as_another_one_tracks_it()
     {
@@ -544,15 +498,12 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         var reservedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:R-1");
         Assert.Equal(["acc_res_a"], TrackedBy(reservedId));
 
-        // a reconnect into a new connection reaches the same IBAN: the old one is superseded, its row handed over
         await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-b", "account", [Account("acc_res_b")], ct);
         Assert.Equal(["acc_res_b"], TrackedBy(reservedId));
         Assert.False(Deleted(reservedId));
-        // the new connection's complete pass no longer reports it: settled
         Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", ["acc_res_b"], [], ct));
         Assert.True(Deleted(reservedId));
 
-        // the last connection reaching the account is disconnected: its reserved row has nobody left to settle it
         var second = await ingest.IngestAsync(userId, Consent, "Mock", "conn-res-b", "transaction", [Reserved("acc_res_b", "R-2")], ct);
         await ingest.SettlePendingAsync(userId, Consent, "conn-res-b", ["acc_res_b"], second.PendingRows, ct);
         var lastId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:R-2");
@@ -563,9 +514,6 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Empty(TrackedBy(lastId));
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
-
-    /// <summary>A login through the relay: the redirect challenge, answered with the bank's return, settles to an active consent.</summary>
     private async Task<(string SessionId, Guid UserId)> ConnectAsync(string sub, string connectionId)
     {
         using var client = factory.ClientFor(sub);

@@ -16,14 +16,7 @@ internal sealed record RecordedRequest(
     public string? Header(string name) => Headers.TryGetValue(name, out var value) ? value : null;
 }
 
-/// <summary>
-/// A provider, recorded.
-///
-/// The responder sees the request and its zero-based ordinal, so a test can
-/// say "the first list call 401s and the second succeeds" without a mutable
-/// counter of its own - which is exactly the shape the refresh-and-retry
-/// path has to be driven through.
-/// </summary>
+/// the responder gets the zero-based ordinal: "first call 401s, second succeeds" needs no counter of its own
 internal sealed class StubHttpHandler : HttpMessageHandler
 {
     private readonly Func<RecordedRequest, int, HttpResponseMessage> _respond;
@@ -39,13 +32,8 @@ internal sealed class StubHttpHandler : HttpMessageHandler
 
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
 
-        // NonValidated, not the typed collections. Enumerating request.Headers
-        // re-renders structured headers from their PARSED form, which splits a
-        // User-Agent into its product tokens and rejoins them with ", " - so a
-        // test reading it that way sees "Appie/9.28, (iPhone17,3; …)" and fails
-        // against a header that goes onto the wire perfectly intact (verified
-        // against a raw socket). NonValidated reports what was actually set,
-        // which is the only thing worth asserting on.
+        // NonValidated: enumerating the typed Headers re-renders a User-Agent split into tokens joined by ", ",
+        // failing against a header that is intact on the wire (verified against a raw socket)
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, values) in request.Headers.NonValidated)
         {
@@ -67,13 +55,7 @@ internal sealed class StubHttpHandler : HttpMessageHandler
     }
 }
 
-/// <summary>
-/// The handler a provider that must never be contacted gets.
-///
-/// It counts as well as throws: an adapter that swallowed the exception
-/// would still be caught by the count, and "made zero network calls" is the
-/// claim, not "did not crash".
-/// </summary>
+/// counts as well as throws: a swallowed exception is still caught, since the claim is zero network calls
 internal sealed class ThrowingHttpHandler : HttpMessageHandler
 {
     public int Calls { get; private set; }
@@ -103,22 +85,11 @@ internal static class Stub
     public static HttpResponseMessage Html(string body = "<html><body>blocked</body></html>") =>
         new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/html") };
 
-    /// <summary>A page, at whatever status. For an account page that answers a document fetch.</summary>
     public static HttpResponseMessage Page(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "text/html") };
 
-    /// <summary>
-    /// Bytes, with the provider's own content type on them.
-    ///
-    /// The default carries bol's charset parameter on purpose. It is wrong of
-    /// bol - a charset on a binary document is meaningless - but it is what
-    /// bol sends, and an adapter that compares the raw header instead of the
-    /// parsed media type rejects every invoice there is. A stub that quietly
-    /// sent a clean "application/pdf" would hide exactly that bug.
-    ///
-    /// Set via TryAddWithoutValidation so the parameter survives; the typed
-    /// setter normalises it away.
-    /// </summary>
+    /// the default carries bol's charset parameter on a PDF (wrong, but what bol sends): an adapter comparing the raw
+    /// header rejects every invoice; TryAddWithoutValidation keeps it, the typed setter normalises it away
     public static HttpResponseMessage Bytes(
         byte[] body,
         string contentType = "application/pdf;charset=UTF-8",
@@ -131,7 +102,6 @@ internal static class Stub
         return new HttpResponseMessage(status) { Content = content };
     }
 
-    /// <summary>A fixture's raw bytes - a PDF, not text.</summary>
     public static byte[] FixtureBytes(string name)
     {
         using var stream = Adapters.Fixtures.FixtureCatalog.Open(name);

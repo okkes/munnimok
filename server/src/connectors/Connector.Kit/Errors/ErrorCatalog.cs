@@ -1,15 +1,7 @@
 namespace Connector.Kit.Errors;
 
-/// <summary>
-/// The single source of truth for how each error behaves.
-///
-/// Retry policy lives here rather than in adapters on purpose. The rule
-/// that matters most in the whole system - <b>a failed login is never
-/// retried automatically</b> - is only trustworthy if an adapter author
-/// cannot override it. Three retries locks a real bank account, and an
-/// account lockout is a support incident no amount of good architecture
-/// makes up for.
-/// </summary>
+// retry policy lives here so an adapter cannot override it: a failed login is never retried automatically
+// (three retries lock a real bank account, a support incident nothing else makes up for)
 public static class ErrorCatalog
 {
     private static readonly Dictionary<ErrorCode, ErrorBehaviour> Behaviours = new()
@@ -24,10 +16,8 @@ public static class ErrorCatalog
         [ErrorCode.ProviderUnavailable] = new(503, Retriable: true, UserAction.Retry),
         [ErrorCode.RateLimited] = new(429, Retriable: true, UserAction.Wait),
         [ErrorCode.AgentUnavailable] = new(503, Retriable: true, UserAction.StartYourAgent),
-        // 403 and never retried, where an unavailable agent is 503 and
-        // retriable: nothing about repeating this call can change the answer,
-        // because the machine it needs has been de-authorised rather than
-        // merely switched off. Reconnect is the only exit.
+        // 403 and never retried, unlike an unavailable agent (503): the machine was de-authorised, not switched off;
+        // Reconnect is the only exit
         [ErrorCode.AgentRevoked] = new(403, Retriable: false, UserAction.Reconnect),
         [ErrorCode.UnsupportedResource] = new(400, Retriable: false, UserAction.None),
         [ErrorCode.InvalidRequest] = new(400, Retriable: false, UserAction.None),
@@ -36,11 +26,7 @@ public static class ErrorCatalog
         [ErrorCode.Internal] = new(500, Retriable: true, UserAction.Retry),
     };
 
-    /// <summary>
-    /// Codes that must never be retried by any mechanism - not the job
-    /// queue, not an agent, not a scheduler, not a lease expiry, not a
-    /// deploy. Asserted by tests so the list cannot quietly shrink.
-    /// </summary>
+    // never retried by any mechanism (job queue, agent, scheduler, lease expiry, deploy); tests assert the list cannot shrink
     public static readonly IReadOnlySet<ErrorCode> NeverRetry = new HashSet<ErrorCode>
     {
         ErrorCode.InvalidCredentials,
@@ -66,13 +52,9 @@ public static class ErrorCatalog
 
     public static UserAction ActionFor(ErrorCode code) => Behaviour(code).UserAction;
 
-    /// <summary>
-    /// The consumer-owned copy key. A connector never emits user-facing
-    /// prose; it names a key and the consuming app translates it.
-    /// </summary>
+    // a connector never emits user-facing prose; it names a key and the consuming app translates it
     public static string MessageKey(ErrorCode code) => $"connect.error.{SnakeCase(code)}";
 
-    /// <summary>Wire form: <c>invalid_credentials</c>.</summary>
     public static string Wire(ErrorCode code) => SnakeCase(code);
 
     private static string SnakeCase(ErrorCode code)

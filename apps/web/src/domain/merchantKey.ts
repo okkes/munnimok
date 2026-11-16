@@ -1,13 +1,6 @@
-/**
- * Normalizes a bank counterparty string into a stable key, so the same
- * merchant matches across statements and devices: payment-processor
- * prefixes go (CCV*, Zettle_*, SumUp*, PayPal*), store/terminal numbers
- * and dates go, punctuation collapses. "CCV*ALBERT HEIJN 1470 AMS" and
- * "Albert Heijn 1470" both become "albert heijn …".
- */
+/** same merchant, same key across statements and devices: processor prefixes, store/terminal numbers and dates go */
 const PROCESSOR_PREFIXES = ['ccv', 'zettle', 'sumup', 'payl.', 'ideal', 'paypal', 'bck', 'sepa'];
 
-/** drops a leading payment-processor tag ("ccv*", "zettle_", "sepa ") */
 function stripProcessorPrefix(value: string): string {
   for (const prefix of PROCESSOR_PREFIXES) {
     if (!value.startsWith(prefix)) continue;
@@ -18,10 +11,7 @@ function stripProcessorPrefix(value: string): string {
   return value;
 }
 
-// common NL place names as they appear behind merchant names on bank
-// lines ("AH DELFT", "JUMBO S GRAVENHAGE") — only TRAILING tokens are
-// stripped, so a merchant actually NAMED after a city ("Café Amsterdam"
-// alone) keeps its identity through the leading tokens
+// only TRAILING city tokens strip, so a merchant named after a city ("Café Amsterdam" alone) keeps its identity
 const TRAILING_CITIES = new Set([
   'amsterdam', 'rotterdam', 'den haag', 's gravenhage', "'s gravenhage", "'s hertogenbosch", 'utrecht', 'eindhoven', 'tilburg', 'groningen',
   'almere', 'breda', 'nijmegen', 'enschede', 'haarlem', 'arnhem', 'zaandam', 'amersfoort', 'apeldoorn',
@@ -32,13 +22,10 @@ const TRAILING_CITIES = new Set([
   'middelburg', 'diemen', 'hengelo', 'lelystad', 'duivendrecht',
 ]);
 
-// #201 r2: banks spell the same city three ways ("S GRAVENHAGE",
-// "SGRAVENHAGE", "'s gravenhage") — comparisons squash spacing and
-// punctuation so every spelling strips identically
+// #201: banks spell one city several ways ("S GRAVENHAGE", "SGRAVENHAGE", "'s gravenhage"): compare squashed
 const squashCity = (value: string): string => value.replaceAll(/[^\p{L}]/gu, '');
 const SQUASHED_CITIES = new Set([...TRAILING_CITIES].map(squashCity));
 
-/** drops trailing city tokens: "albert heijn delft" → "albert heijn" */
 function stripTrailingCity(value: string): string {
   const tokens = value.split(' ');
   // cities can be two tokens ("den haag") — try the longer match first
@@ -57,10 +44,7 @@ function stripTrailingCity(value: string): string {
   return tokens.join(' ');
 }
 
-// #346: legal forms behind a name are spelled differently per bank line
-// ("ODIDO NEDERLAND B.V." on one statement, "Odido Nederland BV" on the
-// next) — trailing tokens only, one or two words after the punctuation
-// collapse ("b v")
+// #346: legal forms are spelled differently per bank line ("B.V." vs "BV"): trailing tokens only, one or two words ("b v")
 const LEGAL_FORMS = new Set(['bv', 'b v', 'nv', 'n v', 'vof', 'v o f', 'ltd', 'llc', 'inc', 'gmbh', 'plc', 'sarl']);
 
 function stripLegalForms(value: string): string {
@@ -74,13 +58,8 @@ function stripLegalForms(value: string): string {
   return tokens.join(' ');
 }
 
-/**
- * #578 (user ss): a card line names the place behind a ">" — ING's
- * "Albert Heijn 1842 >S-GRAVENH30.10.2026 18U08 KV007 …", cut to forty
- * characters by the feed — so the city (truncated), the date, the time and
- * the terminal all ride behind it. The name is what stands before; a line
- * that is nothing but place keeps its text.
- */
+// #578: ING card lines put the place behind ">" and the feed cuts them at forty characters; the name stands before it
+// a line that is nothing but place keeps its text
 function cutAtPlaceMarker(value: string): string {
   const at = value.indexOf('>');
   if (at <= 0) return value;
@@ -91,10 +70,7 @@ function cutAtPlaceMarker(value: string): string {
 function normalize(merchant: string, since578: boolean): string {
   const lowered = merchant.toLowerCase().trim();
   const cleaned = stripProcessorPrefix(since578 ? cutAtPlaceMarker(lowered) : lowered)
-    // #450 (user): the date and the clock time of the charge are the one
-    // thing that differs between two visits to the same till ("8.08.2026
-    // 10U53", "11.09.2026 18U57"), and they come glued to the name as often
-    // as not - a word boundary never caught "GRAVEN11.09.2026"
+    // #450: date and time differ between visits to the same till and come glued to the name, which a word boundary never caught
     .replaceAll(/\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/g, ' ') // 8.08.2026, 11-09-26
     .replaceAll(/\d{4}-\d{2}-\d{2}/g, ' ') // 2026-09-11
     .replaceAll(/\d{1,2}[:uh.]\d{2}(?!\d)/g, ' ') // 10u53, 18:57, 9.05
@@ -103,8 +79,7 @@ function normalize(merchant: string, since578: boolean): string {
   // #578: a lone digit is what the forty-character cut left of a time or
   // a store number ("…30.10.2026 1") - glued to a word ("3fm") it stays
   const base = (since578 ? cleaned.replaceAll(/(?<=^|\s)\d(?=\s|$)/g, ' ') : cleaned).replaceAll(/\s+/g, ' ').trim();
-  // branch cities differ per charge, the merchant doesn't (user request);
-  // the legal form behind the name neither (#346)
+  // branch cities and legal forms (#346) differ per charge; the merchant doesn't
   return stripLegalForms(stripTrailingCity(base)).slice(0, 40);
 }
 
@@ -112,9 +87,7 @@ export function merchantKey(merchant: string): string {
   return normalize(merchant, true);
 }
 
-/** the key as it was spelled before #578 — read only by the stored-key
- *  migration (application/merchantKeyRekey.ts), which maps the keys that
- *  recurrings, loans and dismissed suggestions carry onto today's */
+/** the key as spelled before #578; read only by the stored-key migration (application/merchantKeyRekey.ts) */
 export function merchantKeyBefore578(merchant: string): string {
   return normalize(merchant, false);
 }

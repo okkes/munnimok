@@ -3,12 +3,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// A manifest is the only contract a consumer codes against, so a manifest
-/// that lies - claiming unattended operation it cannot deliver, or storing
-/// a secret it cannot use without a human - makes the consuming app promise
-/// things to users and then fail. Worse than not supporting the provider.
-/// </summary>
+// a manifest that lies makes the consuming app promise things to users and then fail
 public sealed class ManifestValidatorTests
 {
     private static InvalidOperationException Rejects(ProviderManifest manifest) =>
@@ -17,33 +12,20 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void The_baseline_fixture_is_valid()
     {
-        // Every rejection test below mutates exactly one thing off this, so
-        // if the baseline were invalid the whole file would prove nothing.
         ManifestValidator.Validate(Make.Manifest());
     }
-
-    // ── custody ──────────────────────────────────────────────────────────
 
     [Fact]
     public void Rejects_server_custody_without_unattended()
     {
-        // Storing a secret that needs a human present to use buys risk and
-        // no feature.
+        // a stored secret that needs a human present buys risk and no feature
         var ex = Rejects(Make.Manifest() with { SecretCustody = SecretCustody.Server, UnattendedFetch = false });
 
-        // Named for the axis it is actually about. The rule is a claim on the
-        // FETCH loop - a stored secret nothing can use without a human is pure
-        // risk - and the old name let it read as one about the login.
+        // the rule concerns the FETCH loop, not the login, hence the axis name in the message
         Assert.Contains("unattended_fetch: true", ex.Message, StringComparison.Ordinal);
     }
 
-    // ── the two axes ─────────────────────────────────────────────────────
-
-    /// <summary>
-    /// "A human must be at the browser" is meaningless where there is no
-    /// browser, and a manifest that says it is describing a routing constraint
-    /// nothing can satisfy.
-    /// </summary>
+    // no browser exists for a human to sit at: the flag would be a routing constraint nothing can satisfy
     [Fact]
     public void Rejects_a_headed_login_requirement_on_a_provider_with_no_browser()
     {
@@ -53,11 +35,7 @@ public sealed class ManifestValidatorTests
         Assert.Contains("there is no browser for anyone to sit at", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// The combination the split exists for: a provider whose stored token
-    /// fetches on its own overnight AND whose login can still meet a wall only
-    /// somebody at that machine can pass. One flag could not say both.
-    /// </summary>
+    // the split exists for a token that fetches unattended while its login may meet a wall only someone at that machine passes
     [Fact]
     public void Accepts_a_provider_that_fetches_unattended_but_needs_a_human_at_the_browser_to_connect()
     {
@@ -75,18 +53,11 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void A_manifest_says_nothing_happens_upstream_on_disconnect_unless_it_says_so()
     {
-        // The default is the safe claim: most adapters inherit a logout that
-        // does nothing, and a consumer must not tell a user otherwise.
+        // the default is the safe claim: most adapters inherit a no-op logout
         Assert.Equal(LogoutSupport.None, Make.Manifest().Logout);
     }
 
-    // ── the credential store ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Jumbo's shape, and the only one it is for: client custody, a password
-    /// form to store, and a session that cannot be refreshed - so without it
-    /// the same human types the same password every morning.
-    /// </summary>
+    // Jumbo's shape: client custody, password form, unrefreshable session; without the store the human retypes it daily
     [Fact]
     public void Accepts_a_credential_store_on_a_password_login_whose_session_cannot_be_refreshed()
     {
@@ -96,16 +67,11 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void A_manifest_offers_no_credential_store_unless_it_says_so()
     {
-        // A stored password is the heaviest thing this platform holds on
-        // somebody's behalf. Opting in has to be written down.
+        // a stored password is the heaviest thing held for somebody; opting in must be written down
         Assert.False(Make.Manifest().OffersCredentialStore);
     }
 
-    /// <summary>
-    /// The refresh is what already stops the human being asked again, so
-    /// storing a password on top buys nothing and adds the one credential that
-    /// does not rotate and cannot be revoked from here.
-    /// </summary>
+    // refresh already spares the human; a stored password adds the one credential that neither rotates nor can be revoked here
     [Fact]
     public void Rejects_a_credential_store_where_the_session_refreshes_itself()
     {
@@ -116,11 +82,7 @@ public sealed class ManifestValidatorTests
         Assert.Contains("offers_credential_store is refused on a refreshable session", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A streamed login collects nothing, so there is nothing to seal. A
-    /// manifest offering a store here advertises a bundle that always arrives
-    /// empty.
-    /// </summary>
+    // a streamed login collects nothing to seal; a store offer would advertise a bundle that always arrives empty
     [Fact]
     public void Rejects_a_credential_store_on_a_login_that_collects_nothing()
     {
@@ -158,8 +120,7 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Rejects_agent_custody_outside_a_persistent_browser_profile()
     {
-        // Agent custody means the control plane holds nothing at all, which
-        // only makes sense when a specific machine holds the session.
+        // agent custody means the control plane holds nothing, which only works when a specific machine holds the session
         var ex = Rejects(Make.Manifest() with { SecretCustody = SecretCustody.Agent });
 
         Assert.Contains("browser_persistent", ex.Message, StringComparison.Ordinal);
@@ -182,8 +143,7 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Accepts_the_full_byo_persistent_shape()
     {
-        // The ASN edge-login case: authenticated once into a profile on the
-        // user's own hardware, no login endpoint after, no secret held here.
+        // ASN edge login: authenticated once into a profile on the user's own hardware, no login endpoint after, no secret here
         ManifestValidator.Validate(Make.Manifest() with
         {
             Runtime = ProviderRuntime.BrowserPersistent,
@@ -199,16 +159,13 @@ public sealed class ManifestValidatorTests
         });
     }
 
-    // ── agent routing ────────────────────────────────────────────────────
-
     [Theory]
     [InlineData(ProviderRuntime.BrowserOnce)]
     [InlineData(ProviderRuntime.BrowserInteractive)]
     [InlineData(ProviderRuntime.BrowserPersistent)]
     public void Rejects_a_browser_runtime_without_an_agent(ProviderRuntime runtime)
     {
-        // The control plane has no browser binaries, and running one there
-        // would put provider traffic on the wrong egress entirely.
+        // the control plane has no browser binaries; running one there would put provider traffic on the wrong egress
         var ex = Rejects(Make.Manifest() with { Runtime = runtime });
 
         Assert.Contains("needs an agent", ex.Message, StringComparison.Ordinal);
@@ -244,13 +201,10 @@ public sealed class ManifestValidatorTests
         ManifestValidator.Validate(Make.Manifest() with { Runtime = ProviderRuntime.Http });
     }
 
-    // ── auth ─────────────────────────────────────────────────────────────
-
     [Fact]
     public void Rejects_a_password_field_that_is_not_marked_secret()
     {
-        // Redaction keys off exactly this flag, so an unmarked password
-        // would be logged and screenshotted.
+        // redaction keys off this flag, so an unmarked password would be logged and screenshotted
         var ex = Rejects(Make.Manifest().WithFields(
             new FieldSpec { Key = "username", Type = FieldType.Text },
             new FieldSpec { Key = "password", Type = FieldType.Password, Secret = false }));
@@ -262,7 +216,6 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Rejects_unattended_without_a_refreshable_session()
     {
-        // Without a refresh path a human is needed every time, by definition.
         var ex = Rejects((Make.Manifest() with { UnattendedFetch = true })
             .WithSession(new SessionSpec { TtlSeconds = 86_400, Refreshable = false }));
 
@@ -308,8 +261,7 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Rejects_a_select_field_with_no_options()
     {
-        // A consumer renders this as a picker; no options is an empty
-        // dropdown a user cannot get past.
+        // a consumer renders a picker; no options is an empty dropdown nobody can get past
         var ex = Rejects(Make.Manifest().WithFields(
             new FieldSpec { Key = "country", Type = FieldType.Select, Options = null }));
 
@@ -328,16 +280,14 @@ public sealed class ManifestValidatorTests
             },
         });
 
-        // Inputs arrive as one flat dictionary, so a duplicate key means one
-        // of the two fields silently never reaches the adapter.
+        // inputs arrive as one flat dictionary: a duplicate key means one field silently never reaches the adapter
         Assert.Contains("duplicate field key 'username'", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Rejects_a_field_pattern_that_is_not_a_regex()
     {
-        // The consumer compiles this client-side; an invalid one blocks the
-        // whole form rather than one field.
+        // the consumer compiles it client-side; an invalid pattern blocks the whole form
         var ex = Rejects(Make.Manifest().WithFields(
             new FieldSpec { Key = "username", Type = FieldType.Text, Pattern = "^[a-" }));
 
@@ -351,14 +301,8 @@ public sealed class ManifestValidatorTests
             new FieldSpec { Key = "username", Type = FieldType.Text, Pattern = "^.{3,64}$" }));
     }
 
-    // ── the hosts a streamed login may be photographed on ────────────────
-
-    /// <summary>
-    /// A federated login is not one site, which is why this list exists: DUO
-    /// sends the human to login.digid.nl to prove who they are and back again,
-    /// and without both hosts declared the live view stops at the identity
-    /// provider - the exact moment the picture is needed.
-    /// </summary>
+    // a federated login spans hosts: DUO sends the human to login.digid.nl and back;
+    // without both declared the live view stops at the IdP
     [Fact]
     public void Accepts_the_exact_hosts_a_federated_login_spans()
     {
@@ -368,10 +312,7 @@ public sealed class ManifestValidatorTests
         });
     }
 
-    /// <summary>
-    /// Declaring nothing is the default and stays legal. It pins the stream to
-    /// wherever the page already is, which is the stricter rule.
-    /// </summary>
+    // declaring none is legal and pins the stream to wherever the page already is, the stricter rule
     [Fact]
     public void Accepts_a_provider_that_declares_no_login_origins()
     {
@@ -385,9 +326,8 @@ public sealed class ManifestValidatorTests
     [InlineData("mijn.*.nl")]
     public void Rejects_a_wildcard_host(string origin)
     {
-        // The one refusal that is not tidiness. A stream that follows a login
-        // wherever it goes keeps running after the login succeeds, which makes
-        // it a live remote view of somebody's authenticated account.
+        // the one refusal that is not tidiness: a stream following a login anywhere keeps running after success,
+        // a live remote view of an authenticated account
         var ex = Rejects(Make.Manifest() with
         {
             Auth = Make.Manifest().Auth with { LoginOrigins = [origin] },
@@ -402,10 +342,8 @@ public sealed class ManifestValidatorTests
     [InlineData("http://login.digid.nl/inloggen")]
     public void Rejects_a_host_carrying_a_scheme_or_a_path(string origin)
     {
-        // The latch compares bare hosts, so one of these would never match -
-        // and the stream would silently pin to the opening host and stop at the
-        // identity provider, which is the failure this list was added to fix
-        // arriving with no error at all.
+        // the latch compares bare hosts: a scheme or path never matches, so the stream silently pins to the opening host
+        // and stops at the IdP
         Rejects(Make.Manifest() with
         {
             Auth = Make.Manifest().Auth with { LoginOrigins = [origin] },
@@ -426,20 +364,8 @@ public sealed class ManifestValidatorTests
         });
     }
 
-    // ── the hosts whose session a kept profile must not carry ────────────
-
-    /// <summary>
-    /// The same list shape, for the opposite reason: a host here is one whose
-    /// session a browser profile must NOT bring back.
-    /// </summary>
-    /// <remarks>
-    /// DUO names login.digid.nl in both lists at once, and that pair is the
-    /// clearest statement of what a federated login is. The stream MUST follow
-    /// the human to DigiD or the picture dies exactly when they need it; the
-    /// profile must NOT bring DigiD's session home, because DUO's SAML request
-    /// carries ForceAuthn=true and that session cannot save an authentication
-    /// while it does change the page a typed sign-in meets.
-    /// </remarks>
+    // opposite list: DUO names login.digid.nl in both; the stream must follow to DigiD, but the profile must not bring DigiD's
+    // session home, because DUO's SAML request carries ForceAuthn=true and that session cannot save an authentication
     [Fact]
     public void Accepts_the_identity_provider_whose_session_is_not_worth_keeping()
     {
@@ -453,10 +379,7 @@ public sealed class ManifestValidatorTests
         });
     }
 
-    /// <summary>
-    /// Declaring nothing is the default and stays legal - it keeps the whole
-    /// session, which is what every provider did before the field existed.
-    /// </summary>
+    // declaring none is legal and keeps the whole session
     [Fact]
     public void Accepts_a_provider_that_names_no_session_to_drop()
     {
@@ -473,23 +396,16 @@ public sealed class ManifestValidatorTests
     [InlineData("")]
     public void Rejects_a_dropped_host_that_is_not_a_bare_lowercase_host(string host)
     {
-        // A cookie's domain is a bare host, so any of these would match no
-        // cookie that has ever been set - and the session nobody meant to keep
-        // would go on being kept, with no error anywhere to read. That is the
-        // same silent failure the list above refuses, arriving from the other
-        // direction.
+        // a cookie domain is a bare host: any of these matches no cookie, so the session nobody meant to keep stays kept,
+        // with no error
         var ex = Rejects(Make.Manifest() with
         {
             Auth = Make.Manifest().Auth with { DropsKeptSessionFor = [host] },
         });
 
-        // And the message names WHICH list, because the two are now checked by
-        // the same code and "must be a bare host" would otherwise send somebody
-        // to the wrong line of a manifest.
+        // the message names WHICH list, since both go through the same code
         Assert.Contains("drops_kept_session_for", ex.Message, StringComparison.Ordinal);
     }
-
-    // ── identity and resources ───────────────────────────────────────────
 
     [Theory]
     [InlineData("Jumbo")]
@@ -500,8 +416,7 @@ public sealed class ManifestValidatorTests
     [InlineData("")]
     public void Rejects_an_id_that_is_not_kebab_case(string id)
     {
-        // The id is a route namespace, so anything else changes the URL
-        // shape the consumer was told to expect.
+        // the id is a route namespace; anything else changes the URL shape consumers were told to expect
         Rejects(Make.Manifest() with { Id = id });
     }
 
@@ -529,8 +444,7 @@ public sealed class ManifestValidatorTests
     [InlineData(-3)]
     public void Rejects_a_manifest_version_below_one(int version)
     {
-        // The version is sealed into every bundle as AAD; zero would make
-        // "no version" and "version zero" indistinguishable.
+        // the version is sealed into every bundle as AAD; zero would make "no version" and "version zero" indistinguishable
         var ex = Rejects(Make.Manifest() with { ManifestVersion = version });
 
         Assert.Contains("manifest_version", ex.Message, StringComparison.Ordinal);
@@ -594,7 +508,6 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Rejects_a_param_that_is_both_required_and_internal()
     {
-        // Internal means a caller may not set it; required means they must.
         var ex = Rejects(Make.Manifest() with
         {
             Resources =
@@ -618,8 +531,7 @@ public sealed class ManifestValidatorTests
     [Fact]
     public void Reports_every_problem_at_once()
     {
-        // A validator that stops at the first error turns fixing a manifest
-        // into a guessing game one round trip at a time.
+        // stopping at the first error makes fixing a manifest a guessing game
         var ex = Rejects(Make.Manifest() with
         {
             Id = "Jumbo",

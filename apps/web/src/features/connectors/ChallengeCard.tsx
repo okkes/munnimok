@@ -9,12 +9,6 @@ import { challengeKey, encodeTaps, ownReturn } from './manifestForm';
 import { openPartyPage } from './redirect';
 import type { ChallengeView } from './types';
 
-/**
- * One question a party asks mid-login or mid-fetch, rendered by its
- * typed kind (docs/connectors/contract.md): a code to type, a code to
- * enter elsewhere, a QR to scan, an approval to wait for, a picture to
- * read or tap, a choice, a page to finish on, or the page itself.
- */
 export interface ChallengeCardProps {
   provider: string;
   sessionId: string;
@@ -23,7 +17,6 @@ export interface ChallengeCardProps {
   onAnswer: (value: string) => void;
   /** the streamed page offers its own close: a full-height sheet leaves no backdrop to tap */
   onClose?: () => void;
-  /** the platform ended the streamed page — the host reads the session again */
   onEnded?: () => void;
   /** the streamed page's own size (a desktop party's page is landscape) */
   onFrame?: (size: { width: number; height: number }) => void;
@@ -31,7 +24,6 @@ export interface ChallengeCardProps {
 
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
 
-/** the challenge's picture, fetched with the caller's credentials and held as an object URL */
 function useChallengeImage(provider: string, sessionId: string, challenge: ChallengeView): string | null {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -54,7 +46,6 @@ function useChallengeImage(provider: string, sessionId: string, challenge: Chall
   return url;
 }
 
-/** seconds until the question expires, ticking */
 function useCountdown(expiresAt: string): number {
   const [left, setLeft] = useState(() => Math.max(0, Math.round((Date.parse(expiresAt) - Date.now()) / 1000)));
   useEffect(() => {
@@ -174,8 +165,7 @@ export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer, 
   const image = useChallengeImage(provider, sessionId, challenge);
   const left = useCountdown(challenge.expiresAt);
 
-  // the party's page takes the whole sheet (user request 2026-10-01): no
-  // card chrome around it, the prompt only where there is room for it
+  // the party's page takes the whole sheet: no card chrome, the prompt only where there is room
   if (challenge.type === 'live_view') {
     return (
       <LiveView

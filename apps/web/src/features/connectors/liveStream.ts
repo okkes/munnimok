@@ -1,20 +1,9 @@
 import type { LiveFrame } from './types';
 
-/**
- * The live view pushed (#429): one response from the munni API carrying
- * every picture as the agent takes it, instead of one request per frame.
- *
- *   id: 12
- *   event: frame
- *   data: {"sequence":12,"width":390,"height":844,"origin":"https://login.ah.nl","jpeg":"/9j/4AAQ…"}
- *
- * plus `: keep-alive` comments in the quiet, `event: end` when the platform
- * says the live view is over, and `event: superseded` when a newer stream of
- * the same viewer took its place. Read over fetch (EventSource cannot send
- * the bearer), which is the path /sync/events already proves in the shells.
- */
+// the live view pushed (#429): one response carrying every picture; read over fetch (EventSource cannot send the bearer)
+// besides `event: frame`: `: keep-alive` comments, `event: end` (platform says over), `event: superseded` (a newer
+// stream of the same viewer took its place)
 
-/** how a read ended: the platform's word, another viewer, a stream that never spoke, or a connection that closed */
 export type LiveStreamEnd = 'over' | 'superseded' | 'mute' | 'closed';
 
 export interface LiveStreamRead {
@@ -34,7 +23,6 @@ export const LIVE_STREAM_TIMING: LiveStreamTiming = { firstByteMs: 6_000, idleMs
 
 type Chunk = ReadableStreamReadResult<Uint8Array> | 'timeout';
 
-/** one read, or 'timeout' when nothing came within `ms` */
 function readWithin(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number): Promise<Chunk> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<Chunk>((resolve) => {
@@ -43,7 +31,6 @@ function readWithin(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number)
   return Promise.race([reader.read(), timeout]).finally(() => clearTimeout(timer));
 }
 
-/** a frame event's data as a picture to draw; null when it is not one */
 export function frameOf(data: string): LiveFrame | null {
   try {
     const body = JSON.parse(data) as { sequence?: unknown; width?: unknown; height?: unknown; origin?: unknown; jpeg?: unknown };
@@ -57,7 +44,6 @@ export function frameOf(data: string): LiveFrame | null {
   }
 }
 
-/** the event in one block of lines: its name and its data (multi-line data joined), or null for a comment or a retry */
 function eventOf(block: string): { name: string; data: string } | null {
   let name = 'message';
   const data: string[] = [];
@@ -72,10 +58,6 @@ function eventOf(block: string): { name: string; data: string } | null {
   return name === 'message' && data.length === 0 ? null : { name, data: data.join('\n') };
 }
 
-/**
- * Hands on every complete event in the buffer: the pictures to `onFrame`,
- * the platform's last word as `end`. What is left is the start of the next.
- */
 function takeEvents(buffer: string, onFrame: (frame: LiveFrame) => void): { rest: string; end?: 'over' | 'superseded' } {
   let rest = buffer;
   for (let boundary = rest.indexOf('\n\n'); boundary !== -1; boundary = rest.indexOf('\n\n')) {
@@ -89,7 +71,6 @@ function takeEvents(buffer: string, onFrame: (frame: LiveFrame) => void): { rest
   return { rest };
 }
 
-/** one chunk, or what the wait for it amounted to: the time ran out, or the connection broke */
 async function nextChunk(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number): Promise<Chunk | 'broken'> {
   try {
     return await readWithin(reader, ms);
@@ -98,10 +79,7 @@ async function nextChunk(reader: ReadableStreamDefaultReader<Uint8Array>, ms: nu
   }
 }
 
-/**
- * Reads the stream until it ends, handing every picture to `onFrame`.
- * Never throws: a broken connection is just a stream that closed.
- */
+/** never throws: a broken connection is just a stream that closed */
 export async function readLiveStream(
   response: Response,
   onFrame: (frame: LiveFrame) => void,

@@ -10,15 +10,11 @@ import { sessionChip } from './BenchScreen';
 
 const POLL_MS = 1_500;
 
-/** the control plane's own provider for an explore run (#441 L3): a browser the operator drives, recorded throughout */
 export const EXPLORE = 'explore';
 
-/** what another screen fixes before the form is shown (#441 L4: the retention bench pins the agent and records) */
 export interface ConnectPreset {
-  /** `fleet` or an agent id; the runs-on select becomes a fact */
   runOn?: string;
   runOnLabel?: string;
-  /** recording forced on; the switch is hidden */
   record?: boolean;
 }
 
@@ -30,7 +26,6 @@ interface FormState {
   record: boolean;
 }
 
-/** the picture a challenge carries, fetched with the lab's credentials */
 function useChallengeImage(call: Call, provider: string, sessionId: string | null, challenge: ChallengeView | null | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null);
   const wanted = !!challenge?.imageUrl && (challenge.type === 'image' || challenge.type === 'qr_display' || challenge.type === 'code_display');
@@ -58,7 +53,6 @@ function useChallengeImage(call: Call, provider: string, sessionId: string | nul
   return url;
 }
 
-/** the run's recording, found in the history once the run has settled (#441 L3) */
 function useRecordingJob(call: Call, view: SessionView | null, wanted: boolean): string | null {
   const [jobId, setJobId] = useState<string | null>(null);
   const settled = !!view && TERMINAL.has(view.state);
@@ -77,7 +71,6 @@ function useRecordingJob(call: Call, view: SessionView | null, wanted: boolean):
   return jobId;
 }
 
-/** the party and the agents to pick from, read once */
 function usePartyAndAgents(call: Call, provider: string): { party: ProviderEntry | null | 'loading'; agents: AgentView[] } {
   const [party, setParty] = useState<ProviderEntry | null | 'loading'>('loading');
   const [agents, setAgents] = useState<AgentView[]>([]);
@@ -96,13 +89,11 @@ function usePartyAndAgents(call: Call, provider: string): { party: ProviderEntry
   return { party, agents };
 }
 
-/** what the start button says */
 function startLabel(sending: boolean, explore: boolean): string {
   if (sending) return 'starting…';
   return explore ? 'open' : 'sign in';
 }
 
-/** the form's heading: an explore run starts at an address, a connection signs in */
 function FormIntro({ explore, party }: Readonly<{ explore: boolean; party: ProviderEntry }>) {
   if (explore) {
     return (
@@ -133,7 +124,6 @@ export const pinsAMachine = (party: ProviderEntry): boolean => party.runtime ===
 /** a party only an account holder's own machine may run — never the fleet */
 const ownMachineOnly = (party: ProviderEntry): boolean => party.agent?.required === true && party.agent.class === 'byo';
 
-/** where an agent runs, as the operator reads it (#576) */
 export function agentWhere(agent: AgentView): string {
   if (agent.class === 'pooled') return 'munni’s pooled agent';
   if (agent.hosted) return 'hosted private slot';
@@ -144,13 +134,8 @@ export function agentWhere(agent: AgentView): string {
 const names = (agents: AgentView[]): string =>
   agents.length === 0 ? 'none' : agents.map((a) => `${a.name} (${a.online ? 'online' : 'offline'})`).join(', ');
 
-/**
- * Where the run happens: a pick, or the fact another screen fixed. Only what
- * the queue honours is offered (#576): a party that pins no machine runs on
- * the first free agent of the choice, so naming one would be a promise the
- * platform does not keep; people's own computers and the hosted slots never
- * take the lab's work at all.
- */
+/** only what the queue honours (#576): a party pinning no machine runs on the first free agent of the choice, so naming
+one would be a false promise; people's own computers and hosted slots never take lab work */
 function RunsOn({ party, form, patch, agents, preset }: Readonly<{ party: ProviderEntry; form: FormState; patch: (p: Partial<FormState>) => void; agents: AgentView[]; preset?: ConnectPreset }>) {
   if (preset?.runOn) {
     return (
@@ -197,7 +182,6 @@ function RunsOn({ party, form, patch, agents, preset }: Readonly<{ party: Provid
   );
 }
 
-/** the sign-in form: the manifest's fields, the party's config, a label, where it runs, whether it is recorded */
 function SignInForm({
   party,
   explore,
@@ -266,7 +250,6 @@ function SignInForm({
   );
 }
 
-/** an explore run's two words: done, or another window */
 function ExploreControls({ sending, send }: Readonly<{ sending: boolean; send: (value: string) => void }>) {
   return (
     <div className="row" style={{ marginTop: 8 }}>
@@ -280,7 +263,6 @@ function ExploreControls({ sending, send }: Readonly<{ sending: boolean; send: (
   );
 }
 
-/** a picture to tap: the taps gathered as fractions, submitted as the control plane reads them */
 function TapPanel({ image, taps, setTaps, sending, send }: Readonly<{ image: string | null; taps: { x: number; y: number }[]; setTaps: (t: { x: number; y: number }[]) => void; sending: boolean; send: (value: string) => void }>) {
   return (
     <div>
@@ -318,7 +300,6 @@ function TapPanel({ image, taps, setTaps, sending, send }: Readonly<{ image: str
   );
 }
 
-/** whatever the party asks, answered here */
 function ChallengePanel({
   challenge,
   provider,
@@ -409,7 +390,6 @@ function ChallengePanel({
   );
 }
 
-/** the run's facts: the session, the step and the queue position, the account */
 function RunFacts({ view }: Readonly<{ view: SessionView }>) {
   return (
     <div className="facts">
@@ -432,7 +412,6 @@ function RunFacts({ view }: Readonly<{ view: SessionView }>) {
   );
 }
 
-/** what a run that has not reached the party's question yet is doing — and that leaving does not stop it */
 export function waitingLine(view: SessionView, explore: boolean): string {
   const ahead = view.progress?.ahead ?? 0;
   let first: string;
@@ -442,13 +421,7 @@ export function waitingLine(view: SessionView, explore: boolean): string {
   return `${first} The run keeps going if you leave: the Bench lists it, and opening it there brings this view back.`;
 }
 
-/**
- * A sign-in as it runs (#441 L2): the step, the notes, and whatever the party
- * asks — a code, a picture to tap, a choice, a page to open, the live
- * browser — answered here. The connect screen shows it once a run starts; a
- * session's own screen shows it while that session is still signing in, so a
- * run left behind — an explore run's live view above all — stays in reach (#576).
- */
+/** shown by the connect screen once a run starts, and by a session screen while it is still signing in (#576) */
 export function RunCard({
   provider,
   call,
@@ -464,9 +437,7 @@ export function RunCard({
   busy: boolean;
   view: SessionView;
   onView: (view: SessionView) => void;
-  /** the run is recorded: its recording opens once it settles */
   recorded?: boolean;
-  /** offer the session's own screen once it is connected */
   sessionLink?: boolean;
   onAgain?: () => void;
 }>) {
@@ -485,7 +456,6 @@ export function RunCard({
     };
   }, []);
 
-  // the run, read afresh every second and a half while it is not settled
   const refresh = useCallback(
     async (sessionId: string) => {
       const next = await getJson<SessionView>(call, `${base}/${encodeURIComponent(sessionId)}`);
@@ -579,12 +549,6 @@ export function RunCard({
   );
 }
 
-/**
- * Connect in the lab (#441 L2): the manifest's own sign-in form, the party's
- * config, a label, where the run happens — then the run as it goes (the run
- * card). Embedded (#441 L4), another screen fixes the agent and the recording
- * and is told when the run has settled.
- */
 export function ConnectScreen({
   provider,
   call,
@@ -607,7 +571,6 @@ export function ConnectScreen({
   const [sending, setSending] = useState(false);
   const settledFor = useRef<string | null>(null);
 
-  // the settled run, told once to whoever embedded this screen
   useEffect(() => {
     if (!onSettled || !view || !TERMINAL.has(view.state) || settledFor.current === view.sessionId) return;
     settledFor.current = view.sessionId;

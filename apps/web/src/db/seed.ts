@@ -17,12 +17,7 @@ export const isoDaysAgo = (daysAgo: number): string => {
 
 const txTypeFor = (catId: string): TxType => CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? 'expense';
 
-/**
- * Seed the demo identity's database from the bundled dataset (idempotent).
- * Dates are relative to "now" so the demo always looks alive. Logging out
- * of demo deletes the whole database, so the next login reseeds a pristine
- * state — demo changes never leave the device.
- */
+/** idempotent; logout deletes the whole database, so the next login reseeds a pristine state */
 export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
   if (await repo.store.metaGet(SEED_FLAG)) return;
 
@@ -51,9 +46,6 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     });
   }
 
-  // one custom main + sub so the category system is visible in demo:
-  // "Padel Club" (expense main with its locked Other) and a credit-only
-  // sub under the builtin Income parent
   await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_padel', {
     name: 'Padel Club',
     icon: 'tennis',
@@ -97,19 +89,15 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
       description: tx.desc,
       catId: tx.cat,
       splits: tx.splits,
-      // kind model: a transfer-family row always names its counterparty —
-      // the demo's savings transfers move demo_main → demo_save
+      // a transfer-family row names its counterparty: the demo's savings transfers move demo_main → demo_save
       ...(kindOf(txType) === 'transfer' ? { linkedAccountId: 'demo_save' } : {}),
       needsReview: tx.needsReview ? 1 : 0,
       reimbursements: tx.reimbursements?.map((r) => ({ txId: r.txId, amountCents: r.amountCents })),
     });
   }
 
-  // every other feature (budgets, goals, debts, events, the plan,
-  // recurring + subscription price history, portfolio) so the demo shows
-  // each surface working — date-relative, wiped on logout. Skipped under
-  // the unit-test runner: feature specs assert against the lean demo and
-  // control their own budgets/goals/etc.; demo-rich.test.ts covers this.
+  // skipped under the unit-test runner: feature specs assert against the lean demo and set up their own budgets/goals;
+  // demo-rich.test.ts covers this
   if (!import.meta.env.VITEST) {
     const { seedRichDemo } = await import('./demo-rich');
     await seedRichDemo(repo);

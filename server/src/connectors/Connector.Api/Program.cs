@@ -8,18 +8,14 @@ using ShopConnector.Adapters;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Crash reports to GlitchTip (2026-10-05): every unhandled failure and every
-// LogError — an adapter that threw, a party whose site changed, a
-// reconciliation that failed. Typed refusals a person can act on (sign in
-// again, wait, start your agent) stay Information/Warning and never report.
-// An empty DSN (local, tests) disables the SDK entirely.
+// crash reports to GlitchTip: unhandled failures and every LogError; typed refusals a person can act on stay
+// Information/Warning and never report. An empty DSN (local, tests) disables the SDK
 builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
 {
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
     options.SendDefaultPii = false;
     options.CaptureFailedRequests = false;
-    // performance tracing (docs/observability.md): health probes and agent heartbeats never count, a trace
-    // the api continued keeps its decision, and no trace header leaves this process (a party's site is no peer)
+    // health probes and agent heartbeats are never traced, and no trace header leaves this process (a party's site is no peer)
     var tracesSampleRate = ConnectorTracing.SampleRate(builder.Configuration["Sentry:TracesSampleRate"]);
     options.TracesSampler = context => ConnectorTracing.Sample(context.TransactionContext, tracesSampleRate);
     options.TracePropagationTargets.Clear();
@@ -27,16 +23,9 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     options.SetBeforeSend((e, _) => ConnectorNoise.Quiet(e));
 });
 
-// The one control plane of a munni environment hosts every provider pack —
-// banks, shops and registries — under one catalogue, one database and one
-// consumer credential. Provider ids are unique across the packs, so the
-// routes and the catalogue keep their shape; each manifest carries its own
-// kind and the consumer groups by it.
-//
-// Every unconfirmed provider fact — endpoints, client ids, login selectors,
-// money units — hangs off these three sections, so correcting one after a
-// provider moves is a deploy-time edit rather than a release. The same
-// sections bind on the agent, which is where a selector actually gets used.
+// one control plane per environment hosts every provider pack under one catalogue, database and consumer credential;
+// provider ids are unique across packs. Unconfirmed provider facts hang off these sections so a correction is a
+// deploy-time edit
 var banks = builder.Configuration.GetSection("BankAdapters").Get<BankAdapterOptions>()
             ?? new BankAdapterOptions();
 var shops = builder.Configuration.GetSection("ShopAdapters").Get<ShopAdapterOptions>()
@@ -46,16 +35,12 @@ var registries = builder.Configuration.GetSection("RegistryAdapters").Get<Regist
 
 builder.Services.AddConnectorPlatform(builder.Configuration, platform =>
 {
-    // The image stamps its tag here, so an operator reading a catalogue
-    // response can tell which build answered the call.
+    // the image stamps its tag so an operator can tell which build answered a catalogue call
     if (builder.Configuration["BUILD_NUMBER"] is { Length: > 0 } build) platform.ServiceVersion = build;
 
-    // The whole fleet, mocks included. The catalogue is the only contract the
-    // consumer codes against, and a provider missing from it cannot be
-    // connected at all — not even through an agent that could serve it. The
-    // inline runner filters itself down to `agent.required: false` providers,
-    // so registering a browser tier here never means this process leasing
-    // work it has no browser for.
+    // the whole fleet, mocks included: a provider missing from the catalogue (the consumer's only contract) cannot be
+    // connected, not even through an agent; the inline runner filters itself to agent.required:false providers, so it
+    // never leases browser work
     foreach (var adapter in BankAdapters.All(banks)) platform.AddAdapter(adapter);
     foreach (var adapter in ShopAdapters.All(shops)) platform.AddAdapter(adapter);
     foreach (var adapter in RegistryAdapters.All(registries)) platform.AddAdapter(adapter);

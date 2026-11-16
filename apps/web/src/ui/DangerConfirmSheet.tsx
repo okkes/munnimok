@@ -3,12 +3,7 @@ import { useLang } from '@/i18n';
 import { Button } from './Button';
 import { Sheet } from './Sheet';
 
-/**
- * Destructive confirms share ONE shape (user request: an instantly
- * pressable Confirm right under Delete felt scary): a bottom sheet, the
- * consequences spelled out, and a short cooldown before Confirm arms so
- * a stray double-tap can never destroy anything.
- */
+// a cooldown before Confirm arms: a stray double-tap must not destroy anything
 const DEFAULT_COOLDOWN = import.meta.env.MODE === 'test' ? 0 : 5;
 
 export function DangerConfirmSheet({
@@ -35,8 +30,7 @@ export function DangerConfirmSheet({
   error?: string | null;
   onConfirm: () => void;
   testId: string;
-  /** seconds before Confirm arms — 0 for low-stakes deletes (user
-   *  ruling: a single transaction never warrants the wait) */
+  /** seconds before Confirm arms; 0 for low-stakes deletes (a single transaction never warrants the wait) */
   cooldown?: number;
 }>) {
   const { t } = useLang();

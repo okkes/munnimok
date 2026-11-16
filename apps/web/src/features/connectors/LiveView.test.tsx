@@ -6,7 +6,6 @@ import { LangProvider } from '@/i18n';
 import '@/test/harness';
 import type { LiveInputEvent } from './types';
 
-/** an API without the pushed stream: what the poll path is for */
 const noStream = () => Promise.reject(Object.assign(new Error('no such route'), { status: 404, envelope: { code: 'unsupported_resource' } }));
 
 const mocks = vi.hoisted(() => ({
@@ -23,11 +22,6 @@ import { LiveView } from './LiveView';
 const rect = (width: number, height: number): DOMRect =>
   ({ left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}) }) as DOMRect;
 
-/**
- * A response whose body the test writes as it goes, the way the API pushes
- * it; `close` ends it as a dropped connection would, and an abort of the
- * view's signal ends it too.
- */
 function pushedStream(signal?: AbortSignal) {
   const encoder = new TextEncoder();
   const queued: Uint8Array[] = [];

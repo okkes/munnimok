@@ -11,7 +11,6 @@ export const failedToday = (report: HealthReport): number => day(report).reduce(
 export const peopleToday = (report: HealthReport): number => day(report).reduce((n, w) => n + w.peopleAffected, 0);
 export const reportsToRead = (report: HealthReport): number => report.providers.reduce((n, p) => n + p.reports, 0);
 
-/** the environment's connector platform at a glance: the fleet, the queue, the parties' health */
 export function DashboardScreen({ call }: Readonly<ScreenProps>) {
   // null = this environment runs no connectors (404); 'unreachable' = the control plane did not answer
   const [status, setStatus] = useState<ConnectorStatus | null | 'unreachable' | 'loading'>('loading');
@@ -149,7 +148,6 @@ export function DashboardScreen({ call }: Readonly<ScreenProps>) {
   );
 }
 
-/** an environment without connectors: the relay is not configured, nothing to see yet */
 export function AbsentCard() {
   return (
     <section className="card" data-testid="lab-absent">

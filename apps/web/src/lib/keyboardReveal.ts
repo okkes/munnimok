@@ -1,27 +1,11 @@
-/**
- * iOS keyboard reveal (#129): focusing a field low on the screen left it
- * BURIED under the keyboard. WebKit runs its scroll-into-view the moment
- * a field takes focus — while the viewport is still full height — and
- * only THEN does the keyboard shrink the webview (Capacitor shell,
- * resize "native") or inset the visual viewport (Safari/PWA). Nothing
- * re-scrolls after the shrink, so the field ends up hidden. Android
- * resizes first and re-scrolls, which is why it behaves.
- *
- * The fix is one late pass: whenever the visual viewport resizes (the
- * keyboard arriving) or focus moves while it's already up, check the
- * focused editable and scroll it back into the visible half if the
- * keyboard swallowed it. scrollIntoView walks nested overflow parents,
- * which our screens use everywhere.
- *
- * Viewport injected for tests (happy-dom has no visualViewport).
- */
+// iOS (#129): WebKit scrolls a focused field into view while the viewport is still full height, then the keyboard shrinks it
+// and nothing re-scrolls, burying the field (Android resizes first); one late pass after a resize or focus hop fixes it
+// viewport injected for tests (happy-dom has no visualViewport)
 
 const isEditable = (el: EventTarget | null): el is HTMLElement =>
   el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 
-/** the keyboard animation window — reveal after it settles */
 const FOCUS_SETTLE_MS = 300;
-/** breathing room between the field and the keyboard's edge */
 const MARGIN_PX = 8;
 
 interface ViewportLike {

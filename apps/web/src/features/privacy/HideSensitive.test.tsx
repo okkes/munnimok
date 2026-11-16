@@ -125,7 +125,6 @@ describe('hide sensitive figures (#530)', () => {
   }, 20_000);
 });
 
-/** what owns a balance, wherever it shows — the lens decides once, every screen asks it */
 describe('hide sensitive figures beyond Home (#530)', () => {
   beforeEach(() => {
     localStorage.clear();

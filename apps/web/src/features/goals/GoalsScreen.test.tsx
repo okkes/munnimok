@@ -46,7 +46,6 @@ describe('Goals (demo identity)', () => {
     await screen.findByTestId('screen-goals');
     await screen.findByTestId('goals-empty');
 
-    // the form offers the goal-themed covers, not the event scenes
     fireEvent.click(await screen.findByTestId('goals-add'));
     await screen.findByTestId('goalform-pic-house');
     expect(screen.queryByTestId('goalform-pic-beach')).toBeNull();
@@ -134,7 +133,6 @@ describe('Goals (demo identity)', () => {
     fireEvent.click(card);
     await screen.findByTestId('goaldetail-hero');
     await fund('goaldetail-fund', '8000', /€8[.,]000[.,]00/);
-    // the car was bought: the savings account dropped to €2,000
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await db.accounts.update('demo_save', { balanceCents: 200_000 });
@@ -186,7 +184,6 @@ describe('Goals (demo identity)', () => {
     const card = await createGoal('Car', '1000');
     fireEvent.click(card);
     await screen.findByTestId('goaldetail-hero');
-    // user 2026-11-12: cash out whenever you want — a quiet door until the goal is reached, the card once it is
     expect(screen.getByTestId('goaldetail-cashout')).toBeTruthy();
     expect(screen.queryByTestId('goaldetail-reached')).toBeNull();
     await fund('goaldetail-fund', '1000', /€1[.,]000[.,]00/);
@@ -209,7 +206,6 @@ describe('Goals (demo identity)', () => {
       catId: 'savingWithdraw',
       needsReview: 0,
     });
-    // …and paid the dealer from the checking account
     await repo.upsert('transaction', 'demo_space', 'car-purchase', {
       accountId: 'demo_main',
       date: localToday(),
@@ -228,14 +224,12 @@ describe('Goals (demo identity)', () => {
     expect(screen.getByTestId('goalcashout-fig-selected').textContent).toMatch(/€900[.,]00/);
     expect(screen.getByTestId('goalcashout-fig-back').textContent).toMatch(/€100[.,]00/);
     expect(screen.queryByTestId('goalcashout-over')).toBeNull();
-    // what it bought is the second, optional pick: spending only — the move out of savings is not on offer there
     expect(screen.queryByTestId('goalcashout-buy-car-withdrawal')).toBeNull();
     expect(screen.queryByTestId('goalcashout-bought-total')).toBeNull();
     fireEvent.click(await screen.findByTestId('goalcashout-buy-car-purchase'));
     expect(screen.getByTestId('goalcashout-bought-total').textContent).toMatch(/€900[.,]00/);
     fireEvent.click(confirm);
 
-    // the goal page says what paid for it and where the rest went
     const done = await screen.findByTestId('goaldetail-cashedout', {}, { timeout: 5000 });
     expect(screen.getByTestId('goaldetail-cashedout-sum').textContent).toMatch(/€900[.,]00/);
     expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€100[.,]00/);
@@ -245,14 +239,12 @@ describe('Goals (demo identity)', () => {
     const activity = (await db.activities.toArray()).map((row) => row.kind);
     expect(activity).toContain('goalCashOut');
 
-    // the period's saving does not count it — the drill names the goal instead
     cleanup();
     renderApp('/overview/saving');
     const cashouts = await screen.findByTestId('overview-cashouts', {}, { timeout: 5000 });
     expect(cashouts.textContent).toContain('Car');
     expect(cashouts.textContent).toMatch(/€900[.,]00/);
     expect(screen.queryByTestId('overview-sub-savingWithdraw')).toBeNull();
-    // …and Home's tile and the Periods card mark it without counting it
     cleanup();
     renderApp('/home');
     expect(await screen.findByTestId('home-overview-cashout', {}, { timeout: 5000 })).toBeTruthy();
@@ -260,7 +252,6 @@ describe('Goals (demo identity)', () => {
     renderApp('/periods');
     expect((await screen.findByTestId('periods-cashout-saving', {}, { timeout: 5000 })).textContent).toMatch(/€900[.,]00/);
 
-    // undo: the goal is back as it was
     cleanup();
     renderApp('/goals');
     fireEvent.click(await screen.findByTestId(card.getAttribute('data-testid')!, {}, { timeout: 5000 }));
@@ -296,12 +287,10 @@ describe('Goals (demo identity)', () => {
 
     await screen.findByTestId('goaldetail-cashedout', {}, { timeout: 5000 });
     expect(screen.getByTestId('goaldetail-cashedout-rest').textContent).toMatch(/€400[.,]00.*unallocated savings/);
-    // nothing named yet — the goal page offers to; the screen opens on that pick alone
     expect(screen.queryByTestId('goaldetail-bought-txs')).toBeNull();
     fireEvent.click(screen.getByTestId('goaldetail-name-bought'));
     await waitFor(() => expect(screen.getByTestId('screen-goal-cashout').getAttribute('data-mode')).toBe('bought'));
     expect(screen.queryByTestId('goalcashout-list')).toBeNull();
-    // the search narrows the list; a pick made before stays
     fireEvent.change(screen.getByTestId('goalcashout-search'), { target: { value: 'no such shop' } });
     await screen.findByTestId('goalcashout-bought-empty');
     fireEvent.change(screen.getByTestId('goalcashout-search'), { target: { value: 'Fietsenwinkel' } });
@@ -377,7 +366,6 @@ describe('Goals, signed in', () => {
   });
 
   it('a deadline and a picture taken off a goal reach the server as null', async () => {
-    // what the server is sent for the goal, as the JSON it arrives in
     const sent: Record<string, unknown>[] = [];
     renderAppAsUser('/goals', {
       api: {

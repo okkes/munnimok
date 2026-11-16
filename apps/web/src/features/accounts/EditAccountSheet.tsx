@@ -29,12 +29,10 @@ import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 import { DecimalInput } from '@/ui/DecimalInput';
 
-/** an emptied field must CLEAR the row (null); undefined would drop from
- *  the op and leave the stale value standing */
+/** an emptied field must clear the row (null): undefined would drop from the op and leave the stale value */
 const orClear = <T,>(value: T | undefined): T | null => value ?? null;
 
-/** #269: the signed cents a save would ADD to the stored balance — null
- *  while the field is unparseable or matches the row (nothing to record) */
+/** #269: the signed cents a save would add to the stored balance; null while unparseable or unchanged */
 const balanceDelta = (account: AccountRow, balance: string, negative: boolean): number | null => {
   const cents = parseCents(balance || '');
   if (cents === null) return null;
@@ -42,8 +40,6 @@ const balanceDelta = (account: AccountRow, balance: string, negative: boolean): 
   return signed === account.balanceCents ? null : signed - account.balanceCents;
 };
 
-/** the sheet's whole draft, computed from the row (S3776: the seeding
- *  branches live out of the component) */
 const seedFrom = (account: AccountRow) => ({
   name: account.name,
   balance: (Math.abs(account.balanceCents) / 100).toFixed(2),
@@ -52,7 +48,7 @@ const seedFrom = (account: AccountRow) => ({
   iban: account.iban ?? '',
   original: account.originalCents ? (account.originalCents / 100).toFixed(2) : '',
   apr: account.interestPctYear === undefined ? '' : String(account.interestPctYear),
-  // #413: the weight the payoff planner's tsunami order reads (0 = unranked)
+  // #413: weight the payoff planner's tsunami order reads (0 = unranked)
   stress: account.debtStress ?? 0,
   payment: account.paymentCents ? (account.paymentCents / 100).toFixed(2) : '',
   payDay: account.paymentDay ? String(account.paymentDay) : '',
@@ -64,16 +60,8 @@ const seedFrom = (account: AccountRow) => ({
   track: isDebtTracked(account),
 });
 
-/**
- * The one editing surface for an account — name, balance (with an
- * explicit −/+ sign: an overpaid credit card IS positive, user ruling
- * 2026-07-31), icon, delete. Liability types carry their debt story
- * here too (loans v2): interest, original size, payment plan, note and
- * the "track as debt" switch. Bank-fed accounts keep name/icon/story
- * editable but their balance is the bank's and the row can't be
- * deleted from here. Writes target the ACCOUNT's own space.
- */
-/** dirty vs the row-derived seed (S3776: out of the component) */
+// explicit −/+ sign: an overpaid credit card IS positive. Bank-fed accounts keep their balance (the bank's)
+// and cannot be deleted from here.
 function editedVsSeed(
   seed: ReturnType<typeof seedFrom>,
   now: {
@@ -93,9 +81,7 @@ function editedVsSeed(
   );
 }
 
-/** #348: manual accounts delete — the cash wallet included; the other
- *  defaults are the space's fixtures. S3776. */
-/** #413: the weight chips read light … heavy at the ends and the number between */
+// #348: manual accounts delete, the cash wallet included; the other defaults are the space's fixtures
 const stressLabel = (t: (key: 'debtplan.stress1' | 'debtplan.stress5') => string, level: number): string => {
   if (level === 1) return t('debtplan.stress1');
   if (level === 5) return t('debtplan.stress5');
@@ -105,17 +91,11 @@ const stressLabel = (t: (key: 'debtplan.stress1' | 'debtplan.stress5') => string
 const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
   manual && (!defaultFor || defaultFor === 'cash');
 
-/** #530: a money field reads as dots while the device hides them (S3776) */
 const moneyInputType = (hide: boolean, plain: 'text' | 'number'): 'password' | 'text' | 'number' => (hide ? 'password' : plain);
 
-/** the icon row without a logo: the account type's own icon (S3776) */
 const typeIconOf = (account: AccountRow | null): string => (account ? typeDef(account.type).icon : 'bank-outline');
 
-/** #445/#528: a row nothing fetches any more, or whose connection lost its
- *  consent, says so and leads to that connection (on the screen that
- *  manages it). Only when the row's feed is known to be the viewer's own
- *  (user ss 2026-10-09: the feed set decides, never a default — a friend's
- *  row that reaches this editor stays quiet). */
+/** #445/#528: the feed set decides ownership, never a default: a friend's row reaching this editor stays quiet */
 function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onClose: () => void }>) {
   const reader = useReconnectReader();
   const myFeeds = useMyFeedIds();
@@ -136,7 +116,7 @@ function UncoveredRow({ account, onClose }: Readonly<{ account: AccountRow; onCl
 
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
   const { t } = useLang();
-  // #530: the balance and a loan's size stay editable, read as dots while the device hides them
+  // #530: sensitive fields read as dots while the device hides them
   const { fmtSensitive, hideSensitive } = useDisplayMoney();
   const { store, repo } = useData();
   // #505: the account's own space decides — a manual row of a space this identity only reads, or a feed someone else owns
@@ -148,7 +128,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [logo, setLogo] = useState<string | undefined>(undefined);
   const [logoOpen, setLogoOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  // the debt story (loans v2) — liability accounts only
   const [iban, setIban] = useState('');
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
@@ -161,8 +140,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [track, setTrack] = useState(false);
   const [stress, setStress] = useState(0);
 
-  // seed during render, keyed on the account id (house rule: no effect —
-  // a late flush could clobber typing that landed right after the open)
+  // seed during render keyed on the account id, no effect: a late flush could clobber typing right after open
   if (account && account.id !== seedId) {
     setSeedId(account.id);
     const seed = seedFrom(account);
@@ -182,25 +160,20 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     setTrack(seed.track);
     setStress(seed.stress);
   }
-  if (!account && seedId !== null) setSeedId(null); // reopening reseeds
+  if (!account && seedId !== null) setSeedId(null);
 
   const manual = account?.source === 'manual';
   const liability = !!account && isLiability(account.type);
-  // #269: the delta the save would record as an adjustment row — the
-  // note below the field makes the side effect known BEFORE saving
+  // #269: the note below the field names the adjustment side effect before saving
   const adjustDelta = account && manual ? balanceDelta(account, balance, negative) : null;
-  // #205: the newest transaction on the account, for the About section
   const newest = useQuery(store, async () => (account ? newestTxDate(store, account.id) : undefined), [account?.id]);
 
-  // dirty vs the row-derived seed: an untouched sheet closes freely, an
-  // edited one asks (user request 2026-08-01); the logo saves on pick
-  // and stays out of the comparison
+  // an untouched sheet closes freely, an edited one asks; the logo saves on pick and stays out of the comparison
   const seedNow = account ? seedFrom(account) : null;
   const dirty =
     !!seedNow &&
     editedVsSeed(seedNow, { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track, stress }, manual, liability);
 
-  /** what the liability form asks of the row — empties null-clear */
   const storyChanges = (): Partial<AccountRow> => {
     const originalCents = parseCents(original);
     const paymentCents = parseCents(payment);
@@ -218,7 +191,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
       paymentDay: orClear(hasPayment && payEvery !== 'week' ? parsedDueDay(payDay) : undefined) as never,
       note: orClear(note.trim() || undefined) as never,
       trackAsDebt: track ? 1 : 0,
-      // #413: the weight, 1..5; unranked clears it
       debtStress: orClear(stress >= 1 && stress <= 5 ? (stress as 1 | 2 | 3 | 4 | 5) : undefined) as never,
     };
   };
@@ -231,15 +203,12 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
       const delta = balanceDelta(account, balance, negative);
       if (delta !== null) {
         changes.balanceCents = account.balanceCents + delta;
-        // #509 (user): typed back to its original amount, a loan holds no
-        // payment — no cut-off date, every payment linked to it counts
+        // #509: typed back to its original amount, a loan holds no payment: no cut-off date, every linked payment counts
         const originalCents = liability ? (story.originalCents ?? undefined) : account.originalCents;
         changes.balanceAsOf = isPristineLoan({ originalCents, balanceCents: changes.balanceCents })
           ? (null as never)
           : manualBalanceDate();
-        // #269 (grown from #221's defaults-only rule): EVERY manual
-        // balance edit records its delta as an adjustment row, so the
-        // ledger explains the jump instead of silently rewriting
+        // #269: every manual balance edit records its delta as an adjustment row, so the ledger explains the jump
         void repo.upsert('transaction', account.spaceId, repo.newId(), {
           accountId: account.id,
           date: manualBalanceDate(),
@@ -273,8 +242,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     <>
       <Sheet open={!!account} onOpenChange={(open) => !open && onClose()} title={t('acct.editAccount')} size={liability ? 'tall' : 'form'} dirty={dirty}>
         <div className="flex flex-col gap-3 pt-1">
-          {/* #208: labeled sections, the overview's caption style — the
-              form reads as Basics / Balance / loan story / About */}
           <div className="m-cap px-1">{t('acct.sectionBasics')}</div>
           <label className="text-[12px] text-ink-3">
             {t('acct.accountName')}
@@ -298,14 +265,12 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             <span className="flex-1">{t('acct.changeIcon')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
-          {/* #212: the type, visible and changeable (destructive) */}
           {account && <AccountTypeRow account={account} />}
           {manual && (
             <>
               <div className="m-cap px-1 pt-1">{t('acct.sectionBalance')}</div>
               <div className="flex gap-2">
-                {/* #327 r3 (user): halves own their corners — the inset
-                    focus ring follows the group's rounding */}
+                {/* #327: halves own their corners so the inset focus ring follows the group's rounding */}
                 <div className="flex overflow-hidden rounded-input border border-line">
                   <button
                     data-testid="acctedit-neg"
@@ -347,7 +312,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           )}
           {liability && (
             <>
-              {/* the debt story (loans v2): the account IS the loan */}
               <div className="m-cap px-1 pt-1">{t('debts.loanDetails')}</div>
               {manual && (
                 <input
@@ -429,8 +393,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                 rows={2}
                 className="w-full resize-none rounded-input border border-line bg-surface px-4 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-4"
               />
-              {/* membership switch: a loan/mortgage is a debt by nature,
-                  a credit card only when the user says so */}
+              {/* a loan/mortgage is a debt by nature, a credit card only when the user says so */}
               <label className="flex items-center justify-between rounded-input border border-line bg-surface px-4 py-3 text-[14px] text-ink">
                 <span>{t('debts.trackAsDebt')}</span>
                 <input
@@ -451,7 +414,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   <span className="text-ink-3">{t('acct.source')}</span>
                   <span className="text-ink-2">{t(sourceKeyFor(account), sourceParamsFor(account))}</span>
                 </div>
-                {/* #205: where the data ends and the last real movement */}
                 {account.dataThroughDate && (
                   <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-datathrough">
                     <span className="text-ink-3">{t('acct.dataThroughLabel')}</span>
@@ -470,10 +432,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim() || !canEdit}>
             {t('action.save')}
           </Button>
-          {/* #221: the default accounts are the space's fixtures — no
-              delete door; their balance stays adjustable above.
-              #348: the cash wallet is the user's own — deletable (and
-              the boot heal no longer re-mints a deliberate delete) */}
+          {/* #221: default accounts are the space's fixtures, no delete; #348: the cash wallet is deletable */}
           {canEdit && deletableAccount(manual, account?.defaultFor) && (
             <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
               {t('action.delete')}
@@ -494,8 +453,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           setLogoOpen(false);
         }}
       />
-      {/* aligned destructive confirm (user request): one-tap deletes are
-          gone everywhere — sheet + cooldown, same as space/store/bank */}
       <DangerConfirmSheet
         open={confirmRemove}
         onOpenChange={setConfirmRemove}

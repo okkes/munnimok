@@ -2,36 +2,23 @@ import { create } from 'zustand';
 import { identityKey, readSessionIdentity, useSession } from '@/app/session';
 import { isNativeApp, nativeBiometricAvailable, nativeBiometricVerify } from '@/lib/platform';
 
-/**
- * App lock, scoped to the SIGNED-IN identity: WebAuthn platform
- * authenticator (fingerprint / face via the OS) with a hashed PIN
- * fallback, required again after a configurable period out of sight.
- * Signed out -> no lock: the gate protects a person's session, and it
- * must never brick the login screen for the next user of a shared
- * machine. The config survives sign-out, so the same person's lock
- * re-arms when they sign back in. This is a UI gate in front of the
- * app — IndexedDB itself is not encrypted (no PWA can do that), which
- * is the same trade-off banking PWAs make.
- */
+// signed out means no lock: the gate must never brick the login screen of a shared machine; the config survives sign-out
+// a UI gate only: IndexedDB is not encrypted (no PWA can do that)
 
 export type BiometricKind = 'webauthn' | 'native';
 
 export interface LockConfig {
   enabled: boolean;
-  /** WebAuthn credential id (base64url), when biometrics are set up */
   credentialId?: string;
-  /** which biometric path unlocks: 'native' = the
-   * OS prompt via the Capacitor plugin (nothing to store), 'webauthn' =
-   * the platform passkey in credentialId; absent = PIN only */
+  // 'native' = the OS prompt via the Capacitor plugin (nothing stored); 'webauthn' = the passkey in credentialId
+  // absent = PIN only
   biometricKind?: BiometricKind;
   pinSalt: string;
   pinHash: string;
   /** seconds hidden before the app locks again (0 = immediately) */
   timeoutSec: number;
-  /** #315 (user): last moment this identity was seen unlocked (epoch ms).
-   * Written on unlock and cheaply while unlocked, so a page refresh
-   * within timeoutSec boots unlocked. Same trust domain as the config
-   * itself (a UI gate, not crypto); missing/invalid/future -> locked. */
+  // #315: last moment seen unlocked (epoch ms), so a refresh within timeoutSec boots unlocked
+  // missing/invalid/future = locked
   lastActiveAt?: number;
 }
 
@@ -42,7 +29,7 @@ const keyForIdentity = (): string | null => {
 
 export function readLockConfig(): LockConfig | null {
   const key = keyForIdentity();
-  if (!key) return null; // signed out — never locked
+  if (!key) return null;
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
@@ -55,12 +42,12 @@ export function readLockConfig(): LockConfig | null {
 
 export function writeLockConfig(config: LockConfig | null): void {
   const key = keyForIdentity();
-  if (!key) return; // lock settings only exist inside a session
+  if (!key) return;
   if (config) localStorage.setItem(key, JSON.stringify(config));
   else localStorage.removeItem(key);
 }
 
-// ── PIN hashing (SHA-256 with a random salt; local gate, not a vault) ──
+// SHA-256 with a random salt: a local gate, not a vault
 const toHex = (buffer: ArrayBuffer) =>
   [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
 
@@ -73,7 +60,6 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
 
 export const validPin = (pin: string): boolean => /^\d{4,8}$/.test(pin);
 
-// ── WebAuthn platform authenticator ────────────────────────────────────
 const b64url = (buffer: ArrayBuffer) =>
   // '=' is base64 padding and only ever appears at the end
   btoa(String.fromCodePoint(...new Uint8Array(buffer))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
@@ -82,8 +68,7 @@ const fromB64url = (value: string) =>
   Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), (c) => c.codePointAt(0)!);
 
 export async function biometricAvailable(): Promise<boolean> {
-  // native shell: WKWebView has no WebAuthn platform authenticator, so
-  // availability means the OS biometric prompt
+  // WKWebView has no WebAuthn platform authenticator: on native, availability means the OS biometric prompt
   if (isNativeApp()) return nativeBiometricAvailable();
   try {
     return (
@@ -97,12 +82,9 @@ export async function biometricAvailable(): Promise<boolean> {
 
 export interface BiometricRegistration {
   kind: BiometricKind;
-  /** present only for 'webauthn' */
   credentialId?: string;
 }
 
-/** sets up the unlock factor: the OS prompt on native (nothing stored),
- * a device-bound passkey on web/PWA */
 export async function registerBiometric(): Promise<BiometricRegistration | null> {
   if (isNativeApp()) {
     // prove the prompt actually works before promising it as the factor
@@ -112,7 +94,6 @@ export async function registerBiometric(): Promise<BiometricRegistration | null>
   return credentialId ? { kind: 'webauthn', credentialId } : null;
 }
 
-/** creates a device-bound passkey used purely as an unlock factor */
 async function registerWebauthn(): Promise<string | null> {
   try {
     const credential = (await navigator.credentials.create({
@@ -125,8 +106,8 @@ async function registerWebauthn(): Promise<string | null> {
           displayName: 'munni app lock',
         },
         pubKeyCredParams: [
-          { type: 'public-key', alg: -7 }, // ES256
-          { type: 'public-key', alg: -257 }, // RS256
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
         ],
         authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
         timeout: 60_000,
@@ -138,9 +119,7 @@ async function registerWebauthn(): Promise<string | null> {
   }
 }
 
-/** OS-level user verification along the config's biometric path.
- *  #202: the signal lets the PIN pad dismiss an in-flight passkey sheet
- *  the moment the user starts typing — they chose the other factor. */
+/** #202: the signal lets the PIN pad dismiss an in-flight passkey sheet once the user starts typing */
 export async function verifyBiometric(
   config: Pick<LockConfig, 'credentialId' | 'biometricKind'>,
   reason = 'munni',
@@ -165,24 +144,18 @@ export async function verifyBiometric(
   }
 }
 
-// ── lock state ──────────────────────────────────────────────────────────
-/** pure decision: should the app lock after `elapsedMs` out of sight? */
 export const shouldLock = (config: LockConfig | null, elapsedMs: number): boolean =>
   config !== null && elapsedMs >= config.timeoutSec * 1000;
 
-/** #315 (user): boot decision — a refresh within the configured timeout of
- * the persisted last-active stamp stays unlocked. Fail closed: a missing
- * or corrupted stamp, and a stamp from the future (the clock moved
- * backward), cannot prove recent activity. */
+/** #315: fail closed: a missing/corrupted stamp, or one from the future (clock moved back), cannot prove recent activity */
 export const bootLocked = (config: LockConfig | null, now: number): boolean => {
-  if (!config) return false; // no lock armed — nothing to gate
+  if (!config) return false;
   const stamp = config.lastActiveAt;
   if (typeof stamp !== 'number' || !Number.isFinite(stamp) || stamp > now) return true;
   return shouldLock(config, now - stamp);
 };
 
-/** refresh the last-active stamp — only an UNLOCKED page extends trust
- * (a refresh under the lock screen must come back locked) */
+/** only an unlocked page extends trust: a refresh under the lock screen must come back locked */
 function touchLockStamp(): void {
   if (useLock.getState().locked) return;
   const config = readLockConfig();
@@ -191,15 +164,13 @@ function touchLockStamp(): void {
 
 function clearLockStamp(): void {
   const config = readLockConfig();
-  // JSON.stringify drops the explicit undefined — the stamp is gone
   if (config?.lastActiveAt !== undefined) writeLockConfig({ ...config, lastActiveAt: undefined });
 }
 
 interface LockState {
   locked: boolean;
-  /** #202: the auto passkey prompt fires ONCE per lock cycle — remounts
-   *  (the OS sheet backgrounding the page re-locks with timeout 0) used
-   *  to re-prompt forever while the user was trying to type the PIN */
+  // #202: the auto passkey prompt fires once per lock cycle: the OS sheet backgrounds the page, which re-locks (timeout 0),
+  // and every remount used to re-prompt forever
   promptSpent: boolean;
   lock: () => void;
   unlock: () => void;
@@ -211,11 +182,11 @@ export const useLock = create<LockState>((set) => ({
   promptSpent: false,
   lock: () => {
     set({ locked: true, promptSpent: false });
-    clearLockStamp(); // #315: locking outlives any refresh
+    clearLockStamp();
   },
   unlock: () => {
     set({ locked: false });
-    touchLockStamp(); // #315: unlocking IS fresh activity
+    touchLockStamp();
   },
   spendPrompt: () => set({ promptSpent: true }),
 }));
@@ -223,13 +194,12 @@ export const useLock = create<LockState>((set) => ({
 /** low-frequency safety net for pages killed without a pagehide */
 const STAMP_INTERVAL_MS = 30_000;
 
-/** watches visibility and re-locks after the configured timeout */
 export function initLockWatcher(): void {
   let hiddenAt: number | null = null;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
-      touchLockStamp(); // #315: going out of sight is the last active moment
+      touchLockStamp();
     } else if (hiddenAt !== null) {
       if (shouldLock(readLockConfig(), Date.now() - hiddenAt)) useLock.getState().lock();
       else touchLockStamp();
@@ -237,16 +207,13 @@ export function initLockWatcher(): void {
     }
   });
 
-  // #315 (user): a refresh keeps its unlock only through the persisted
-  // stamp — pagehide catches the reload itself, the slow tick covers
-  // hard kills that never fire it. Any tab may stamp (shared storage).
+  // pagehide catches the reload itself, the slow tick covers hard kills that never fire it; any tab may stamp (shared storage)
   window.addEventListener('pagehide', touchLockStamp);
   setInterval(() => {
     if (document.visibilityState === 'visible') touchLockStamp();
   }, STAMP_INTERVAL_MS);
 
-  // signing in or out is itself fresh verification — never keep a stale
-  // lock across an identity change (logout must free a shared machine)
+  // an identity change is fresh verification: never keep a stale lock across it (logout must free a shared machine)
   let lastIdentity = useSession.getState().identity;
   useSession.subscribe((state) => {
     if (state.identity !== lastIdentity) {

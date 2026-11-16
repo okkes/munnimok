@@ -2,14 +2,7 @@ using System.Net;
 
 namespace Connector.Kit.Agent.Networking;
 
-/// <summary>
-/// The handler every adapter's outbound provider traffic goes through.
-///
-/// It is installed on the <see cref="Adapters.IJobContext.Http"/> client the
-/// job hands the adapter, which is why that client is the only legitimate one:
-/// an adapter that news up its own <c>HttpClient</c> silently opts out of the
-/// per-provider rate limit the whole posture section of the design rests on.
-/// </summary>
+// installed on IJobContext.Http, the only legitimate client: an adapter with its own HttpClient opts out of the limit
 public sealed class PolitenessLimiter : DelegatingHandler
 {
     /// <summary>Used when a provider says "slow down" without saying how much.</summary>

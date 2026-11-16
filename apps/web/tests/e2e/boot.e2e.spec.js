@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Critical flow: the demo sign-in lands on Home with the seeded data, every
-// tab mounts, and the browser's back button returns to the previous tab
-// (the history API — only a real browser proves it).
+// only a real browser proves the history API: back returns to the previous tab
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;

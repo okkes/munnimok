@@ -1,12 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Guide capture (npm run shots — never in CI): the planning tab (#128)
-// in a real browser on the rich demo — the plan with its segments, the
-// circle and the left-to-give head, a subject opened, and the periods
-// ahead. It produces the gallery/guide screenshots 70-72. The arithmetic
-// and the flows are unit-tested (domain/planning.test.ts,
-// application/planningModel.test.ts, features/planning/PlanningScreen.test.tsx).
+// guide capture (npm run shots, never in CI): planning tab (#128), screenshots 70-72; the arithmetic and flows
+// are unit-tested (planning.test.ts, planningModel.test.ts, PlanningScreen.test.tsx)
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
@@ -16,7 +12,6 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await page.click('[data-testid="tab-planning"]');
     await expect(page.locator('[data-testid="screen-planning"]')).toBeVisible();
-    // the rich demo seeds this period's plan: the head and the segments render
     await expect(page.locator('[data-testid="plan-header"]')).toBeVisible();
     await expect(page.locator('[data-testid="plan-segment-expenses"]')).toBeVisible();
     await page.waitForTimeout(400); // the circle's fill animation settles

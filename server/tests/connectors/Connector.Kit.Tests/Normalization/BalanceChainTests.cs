@@ -4,12 +4,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// A bank's running balances are its own arithmetic restated. Checking them
-/// is free and catches the four failures that otherwise produce believable
-/// garbage: rows out of order, a misread separator, an inverted debit flag,
-/// and a dropped row.
-/// </summary>
+// a bank's running balances restate its own arithmetic; the check catches reordered rows, a misread separator,
+// an inverted debit flag and a dropped row
 public sealed class BalanceChainTests
 {
     /// <summary>Oldest first, as the contract requires. 100.00 -> 90.00 -> 140.00.</summary>
@@ -42,8 +38,7 @@ public sealed class BalanceChainTests
         var rows = Consistent();
         (rows[1], rows[2]) = (rows[2], rows[1]);
 
-        // Newest-first output handed to an oldest-first check is a common
-        // adapter mistake and it must not pass silently.
+        // newest-first output handed to an oldest-first check is a common adapter mistake
         Assert.Equal(1, BalanceChain.FindBreak(rows));
     }
 
@@ -53,8 +48,7 @@ public sealed class BalanceChainTests
         var rows = Consistent();
         rows.RemoveAt(1);
 
-        // The failure a paginating fetch produces when a page boundary eats
-        // a row - invisible in the output, obvious in the chain.
+        // what a paginating fetch produces when a page boundary eats a row
         Assert.Equal(1, BalanceChain.FindBreak(rows));
     }
 
@@ -78,8 +72,7 @@ public sealed class BalanceChainTests
         var rows = Consistent();
         rows[1] = rows[1] with { ResultingBalance = Money.Eur(9_000 + drift) };
 
-        // A two-cent drift after a one-cent drift would cascade, so only the
-        // first break is reported and the rest of the list is not guessed at.
+        // a two-cent drift after a one-cent drift would cascade, so only the first break is reported
         var actual = BalanceChain.FindBreak(rows);
         Assert.Equal(expectedBreak, actual);
     }
@@ -91,17 +84,14 @@ public sealed class BalanceChainTests
         rows[1] = rows[1] with { ResultingBalance = null };
         rows[2] = rows[2] with { ResultingBalance = Money.Eur(999_999) };
 
-        // Carrying row 0's balance across the gap would "prove" row 2 wrong
-        // using a number the provider never stated. Both adjacent pairs are
-        // skipped instead: an unchecked fact is not a failed check.
+        // carrying row 0's balance across would prove row 2 wrong with a number the provider never stated; unchecked is not failed
         Assert.Null(BalanceChain.FindBreak(rows));
     }
 
     [Fact]
     public void A_chain_that_states_no_balances_at_all_is_simply_unchecked()
     {
-        // CAMT.053 states no per-entry balance. That is not a defect and
-        // must not fail every bank whose export is an ISO statement.
+        // CAMT.053 states no per-entry balance; that must not fail every bank whose export is an ISO statement
         List<Transaction> rows =
         [
             Make.Tx("t1", -2_500),
@@ -131,9 +121,8 @@ public sealed class BalanceChainTests
 
         var ex = Assert.Throws<ConnectorException>(() => BalanceChain.Verify(rows, "asn"));
 
-        // ProviderChanged, not Internal: the export's shape or ordering
-        // moved and an adapter needs fixing. It also degrades the provider,
-        // which is what stops the next user hitting the same bad data.
+        // ProviderChanged, not Internal: the export's shape or ordering moved;
+        // it also degrades the provider, so the next user avoids the bad data
         Assert.Equal(ErrorCode.ProviderChanged, ex.Code);
         Assert.False(ex.Retriable);
         Assert.Contains("asn", ex.Message, StringComparison.Ordinal);
@@ -149,8 +138,7 @@ public sealed class BalanceChainTests
     [Fact]
     public void The_first_row_is_never_checked_against_an_opening_balance_we_do_not_have()
     {
-        // Row 0's own amount has nothing before it. Inventing an opening
-        // balance to check it against would be checking our own arithmetic.
+        // row 0 has no opening balance; inventing one would check our own arithmetic
         var rows = Consistent();
         rows[0] = rows[0] with { Amount = Money.Eur(-999_999) };
 

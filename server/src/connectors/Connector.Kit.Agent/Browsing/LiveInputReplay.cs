@@ -5,22 +5,8 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>
-/// Everything replaying a live view's input needs from a browser, and nothing
-/// else.
-///
-/// Narrow for the same reason <see cref="IPointerSurface"/> is: the rules being
-/// implemented above it - what maps to what, and what is refused - are
-/// arithmetic and refusals, and a seam this small is what lets them be proved
-/// without a browser.
-///
-/// Note what the seam CANNOT express, because that is where half the safety
-/// lives. There is no method that takes a URL, a selector, a script or a path.
-/// There is no way to hold a key down. And <see cref="PressAsync"/> takes the
-/// <see cref="LiveKey"/> enum rather than a string, so the only place a key
-/// name exists as text is inside the implementation, one switch away from the
-/// call.
-/// </summary>
+// narrow on purpose: no method takes a URL, selector, script or path, nothing holds a key down,
+// and PressAsync takes the LiveKey enum, so a key name exists as text only inside the implementation
 internal interface ILiveSurface
 {
     Task MoveAsync(double x, double y, CancellationToken ct);
@@ -29,7 +15,6 @@ internal interface ILiveSurface
 
     Task UpAsync(CancellationToken ct);
 
-    /// <summary>Scrolls by a distance in page pixels at the pointer's current position.</summary>
     Task ScrollAsync(double deltaY, CancellationToken ct);
 
     /// <summary>Types the text one character at a time, each with its key events — literal characters, never a key name.</summary>
@@ -45,22 +30,8 @@ internal interface ILiveSurface
     Task ReloadAsync(CancellationToken ct);
 }
 
-/// <summary>
-/// The one place a <see cref="LiveKey"/> becomes a string.
-///
-/// A <c>switch</c> over the enum returning a compile-time constant, and it has
-/// to be visibly that, because it is the whole defence for the key channel.
-/// Playwright's <c>PressAsync</c> takes a string and its own documentation says
-/// shortcuts such as <c>Control+o</c> are supported - so a relayed value
-/// reaching it is a file dialog, and a table lookup keyed on relayed data is
-/// one refactor away from being one. There is no dictionary here, no
-/// <c>ToString()</c>, no <c>Enum.GetName</c>: those all take their answer from
-/// the input.
-///
-/// Null means "not a key this agent will press", which is what an enum value
-/// from a future version of the contract, or an integer cast into the enum by a
-/// deserialiser, arrives as. It is a refusal, never a fallback.
-/// </summary>
+// the only place a LiveKey becomes a string: a switch returning constants, since Playwright's PressAsync accepts
+// shortcuts like Control+o and a lookup keyed on relayed data is a file dialog away; null is a refusal, never a fallback
 internal static class LiveKeys
 {
     public static string? LiteralFor(LiveKey key) => key switch
@@ -80,16 +51,8 @@ internal static class LiveKeys
     };
 }
 
-/// <summary>
-/// The real surface: Playwright's mouse and keyboard, at the browser level.
-///
-/// <c>page.Mouse</c> and <c>page.Keyboard</c> rather than any locator, and that
-/// is the premise of the whole feature exactly as it was for the tap relay: a
-/// login form inside a cross-origin frame is reachable by no selector of ours,
-/// but a mouse or key event is dispatched at the browser, so it arrives where a
-/// real one would. We carry the picture out and the events back; the human
-/// logged in.
-/// </summary>
+// page.Mouse and Keyboard, not locators: a cross-origin login form is reachable by no selector,
+// but browser-level events arrive where a real one would
 internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard, IPage? page = null) : ILiveSurface
 {
     /// <summary>A navigation is given this long; a page that takes longer is left loading and the view carries on.</summary>
@@ -125,11 +88,7 @@ internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard, IP
         if (page is null) throw new InvalidOperationException("this surface has no page to navigate");
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.Commit, Timeout = NavigateMs }).ConfigureAwait(false);
     }
-    /// <summary>
-    /// How long the button stays down for a press the human made as one
-    /// gesture. Not used for <see cref="DownAsync"/>/<see cref="UpAsync"/>,
-    /// which carry the human's own timing.
-    /// </summary>
+    // how long the button stays down for a one-gesture press; Down/Up carry the human's own timing
     private const float PressMs = 40;
 
     /// <summary>The beat between two typed characters: long enough for a page to move its focus to the next box, short enough to feel typed.</summary>
@@ -139,22 +98,12 @@ internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard, IP
     {
         ct.ThrowIfCancellationRequested();
 
-        // Playwright takes floats. The coordinates were rounded to four
-        // decimals of the frame on the way in, so the cast cannot move a point
-        // across anything a human could see.
+        // coordinates were rounded to four decimals of the frame on the way in, so the float cast moves nothing visible
         return mouse.MoveAsync((float)x, (float)y);
     }
 
-    /// <summary>
-    /// Presses the PRIMARY button, and the only reason that is true is that
-    /// <c>Button</c> is never set: <c>MouseDownOptions</c> carries a button and
-    /// a click count and nothing else - no modifiers - so there is no way from
-    /// here to hold Ctrl while clicking, which is how a link opens in a new
-    /// tab. A secondary button is refused just as structurally: a context menu
-    /// renders in browser chrome, outside the page's own rendering surface, so
-    /// it appears in no frame at all and is then navigable with the arrow keys
-    /// this grammar does allow.
-    /// </summary>
+    // primary button only: MouseDownOptions has no modifiers, so no Ctrl-click
+    // a secondary button's context menu is browser chrome, in no frame
     public Task DownAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -167,39 +116,21 @@ internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard, IP
         return mouse.UpAsync();
     }
 
-    /// <summary>
-    /// <c>WheelAsync</c> takes no position and dispatches wherever the pointer
-    /// currently is, so the caller moves first. Getting that wrong scrolls
-    /// whatever the last click happened to be over, which on a login page is
-    /// usually the field the human was typing in.
-    /// </summary>
+    // WheelAsync takes no position and scrolls wherever the pointer is, so the caller moves first
     public Task ScrollAsync(double deltaY, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         return mouse.WheelAsync(0, (float)deltaY);
     }
 
-    /// <summary>
-    /// <c>TypeAsync</c> and never <c>PressAsync</c>: it types literal
-    /// characters one at a time and interprets nothing, so no arrangement of
-    /// the relayed string can name a key (only a press resolves key names).
-    /// Each character arrives with its own key events, a beat apart: a
-    /// segmented input (one box per digit of an SMS code) advances a box per
-    /// character instead of taking the whole string into the first one
-    /// (user ss 2026-10-05), and a submit button that enables on
-    /// <c>keydown</c> enables. Insert-text did neither.
-    /// </summary>
+    // TypeAsync, never PressAsync: it interprets nothing, so no relayed string can name a key
+    // one character at a time with key events: a segmented input (a box per SMS digit) advances per character
     public Task TypeTextAsync(string text, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         return keyboard.TypeAsync(text, new KeyboardTypeOptions { Delay = TypeMs });
     }
 
-    /// <summary>
-    /// The call site the whole key channel is designed around: the argument
-    /// handed to Playwright is a constant chosen by a switch over the enum, and
-    /// no part of it came from the wire.
-    /// </summary>
     public Task PressAsync(LiveKey key, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -211,54 +142,17 @@ internal sealed class PlaywrightLiveSurface(IMouse mouse, IKeyboard keyboard, IP
     }
 }
 
-/// <summary>
-/// Turns what the human did on their own screen back into events on the page
-/// they were looking at.
-///
-/// The mapping itself is <see cref="Tap.ToPagePixels"/> - the same function the
-/// still relay uses, on the wire type, so the two features cannot drift apart
-/// about what a coordinate means. A streamed frame is the whole viewport, so
-/// the region it maps into is <c>(0, 0, width, height)</c>, which is the case
-/// that method's own documentation names.
-///
-/// What lives here is everything around it: the refusals, and the order.
-/// </summary>
+// maps through Tap.ToPagePixels, shared with the still relay so a coordinate means the same in both
+// a streamed frame is the whole viewport, region (0, 0, width, height)
 internal static class LiveInputReplay
 {
-    /// <summary>
-    /// The furthest one scroll event may travel, in multiples of the frame's
-    /// height.
-    ///
-    /// A distance, not a position, which is why it is clamped where a
-    /// coordinate would be refused: a page clamps its own scroll at the end of
-    /// the document, so no human can tell twenty screens from two hundred, and
-    /// the only thing an unbounded value changes is that a large enough double
-    /// becomes <c>float.Infinity</c> on the way to Playwright and throws
-    /// halfway through a batch - which is the one outcome the whole-or-nothing
-    /// rule exists to prevent.
-    /// </summary>
+    // a distance, so clamped rather than refused: a page clamps its own scroll,
+    // and a huge double becomes float.Infinity and throws mid-batch
     private const double MaxScrollScreens = 20;
 
-    /// <summary>
-    /// Replays <paramref name="events"/> onto the page the frame was taken
-    /// from, and reports how many were actually dispatched.
-    ///
-    /// Zero is a real answer and not an error: it is what every refusal
-    /// returns. Every refusal is decided BEFORE the first event is dispatched,
-    /// for the reason the tap relay gives - never half-clicking a live page -
-    /// and here there is a second reason that is worse. A batch is
-    /// <c>[Down, Move, Move, Up]</c>; refusing only the offending event in the
-    /// middle of that leaves the button held down on a page the human is still
-    /// looking at, with no event left to release it. The contract already makes
-    /// the batch the unit - <see cref="LiveInputBatch.IsWellFormed"/> is "all
-    /// of them" - and this agrees with it rather than inventing a per-event
-    /// rule the connector does not share.
-    /// </summary>
-    /// <param name="frame">
-    /// The size of the picture these fractions were measured against - the
-    /// CAPTURED size, carried with the frame, never the viewport asked for
-    /// again afterwards.
-    /// </param>
+    // zero is a real answer: every refusal returns it, decided BEFORE the first event is dispatched
+    // a batch is [Down, Move, Move, Up]: refusing one midway leaves the button held down, so the batch is the unit
+    // frame is the CAPTURED size, never the viewport asked for again
     internal static async Task<int> ReplayAsync(
         IReadOnlyList<LiveInput> events,
         (int Width, int Height) frame,
@@ -273,10 +167,7 @@ internal static class LiveInputReplay
 
         if (events.Count == 0) return 0;
 
-        // No picture, nothing to be a fraction OF. This is the redactor's
-        // refusal arriving here exactly as it arrives in the tap relay: if no
-        // frame was ever posted, nobody saw anything, and these events cannot
-        // be answers to it.
+        // no posted frame means nothing was seen, so these events answer no picture (the redactor's refusal)
         if (frame.Width <= 0 || frame.Height <= 0)
         {
             logger.LogWarning(
@@ -287,11 +178,7 @@ internal static class LiveInputReplay
 
         var region = new CropRegion(0, 0, frame.Width, frame.Height);
 
-        // Everything is resolved before anything is dispatched: the whole batch
-        // is checked, every coordinate is mapped, and every key becomes a
-        // literal chosen by a switch. A key that this build has no literal for
-        // is refused HERE, where refusing costs a batch, rather than at the
-        // call site, where it would have to throw over a half-dispatched one.
+        // everything is resolved before dispatch: an unmapped key is refused here, costing a batch, not thrown mid-dispatch
         var points = new (double X, double Y)[events.Count];
         var scrolls = new double[events.Count];
 
@@ -309,45 +196,25 @@ internal static class LiveInputReplay
             var input = events[i];
             try
             {
-                // No gap between events, unlike the tap relay's 180 ms. Those
-                // were a batch of answers to a still picture, synthesised into
-                // a click sequence no human had timed; these arrived carrying
-                // the human's own rhythm, and re-spacing them would make a drag
-                // take longer than the drag did.
+                // no gap between events, unlike the tap relay's 180 ms: these carry the human's own rhythm
                 if (await DispatchAsync(input, points[i], scrolls[i], surface, ct).ConfigureAwait(false))
                 {
                     dispatched++;
                     continue;
                 }
 
-                // An event this build has no arm for. The pre-pass above and
-                // LiveInput.IsWellFormed both refuse one before it gets here, so
-                // this is belt and braces - and the braces are the point, because
-                // the belt broke once: the same case threw out of a `default:`
-                // commented "unreachable", escaped this catch, and faulted the
-                // input task for the rest of the login. Local to the one event,
-                // logged by KIND, and the rest of the batch still goes.
+                // an event with no arm: a `default:` marked unreachable once threw out of here and faulted the input task for the login
+                // so it is local to the event, logged by kind, and the rest of the batch goes
                 logger.LogWarning(
                     "live input: event {Index} of {Count} is a {Kind} this agent does not replay; " +
                     "it is skipped and the rest of the batch stands",
                     i, events.Count, input.Kind);
             }
-            // Every failure that is not cancellation, and not only the two
-            // Playwright raises when a page goes away. A batch is one human
-            // gesture and a login is a hundred of them: whatever went wrong with
-            // THIS one, the channel has to be able to carry the next, and an
-            // exception nobody predicted must not be the thing that decides
-            // otherwise. Cancellation still goes up, because that is the stream
-            // being stopped and there is nothing left to carry.
+            // every failure but cancellation: a login is a hundred gestures, and the channel must carry the next whatever went wrong
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // A text event's failure is logged WITHOUT the exception, on
-                // purpose. Relayed characters must never reach a string that
-                // can become a failure detail, and the usual protection does
-                // not apply here: the scrubber is built from the job's inputs,
-                // which are empty for a streamed login precisely because the
-                // password never entered the platform. So we construct our own
-                // message, from a length, and drop the reference.
+                // a text failure is logged without the exception: relayed characters must not reach a failure detail,
+                // and the scrubber is built from job inputs, empty for a streamed login (the password never entered the platform)
                 if (input.Kind is LiveInputKind.Text)
                 {
                     logger.LogWarning(
@@ -365,40 +232,15 @@ internal static class LiveInputReplay
             }
         }
 
-        // Counts and kinds, never coordinates and never text. Where on a login
-        // form a particular human put their finger is theirs, and it is also a
-        // fair guess at which field they were filling in.
+        // counts and kinds, never coordinates or text: where a human touched a login form hints which field they filled
         logger.LogDebug("replayed {Dispatched} of {Count} live input event(s)", dispatched, events.Count);
 
         return dispatched;
     }
 
-    /// <summary>
-    /// One event, dispatched whole. True when it reached the page, false when
-    /// this build has no way to deliver it.
-    ///
-    /// A press and a release move first, because Playwright's mouse has no
-    /// coordinates on either: they act wherever the pointer already is, which
-    /// after any pause is wherever the last event left it.
-    ///
-    /// <b>This method does not throw over an event it cannot read.</b> It used
-    /// to, out of a <c>default:</c> arm marked unreachable - and the arm was
-    /// reachable, because the enum converter takes an INTEGER as readily as a
-    /// name, so <c>"kind": 99</c> arrived as a value nothing had a word for.
-    /// The <see cref="ArgumentOutOfRangeException"/> matched no catch filter
-    /// around the call, escaped the replay loop and faulted the whole input
-    /// task: frames kept arriving, nothing the human did worked again for the
-    /// rest of the login, and the only trace was one debug line at disposal.
-    /// The contract now refuses an undefined kind before it ever gets here.
-    /// This stays anyway, as a false rather than a throw, because "unreachable"
-    /// was the claim that failed and a refusal that costs one event is worth
-    /// more than a comment.
-    ///
-    /// The nullable arms are the same argument. <c>Text</c> and <c>Key</c> are
-    /// checked rather than forgiven with <c>!</c>: a null one would otherwise
-    /// throw out of here too, from a line whose only defence was the same
-    /// pre-pass.
-    /// </summary>
+    // press and release move first: Playwright's mouse has no coordinates and acts where the pointer already is
+    // returns false, never throws, for an event it cannot read: an `unreachable` default once threw (the enum converter
+    // takes "kind": 99) and faulted the input task; Text and Key are checked, not forgiven with !
     internal static async Task<bool> DispatchAsync(
         LiveInput input, (double X, double Y) point, double scroll, ILiveSurface surface, CancellationToken ct)
     {
@@ -433,9 +275,7 @@ internal static class LiveInputReplay
                 return true;
 
             case LiveInputKind.Navigate:
-                // Re-checked here as the key is: the address is parsed by the
-                // kit's own rule and the Uri it produced is what the surface
-                // gets, never the relayed string.
+                // re-checked as the key is: the surface gets the Uri the kit's rule parsed, never the relayed string
                 if (!ExploreProvider.IsNavigable(input.Url, out var target)) return false;
 
                 await surface.NavigateAsync(target, ct).ConfigureAwait(false);
@@ -450,10 +290,7 @@ internal static class LiveInputReplay
                 return true;
 
             case LiveInputKind.Key:
-                // The literal is re-checked here for the same reason: the one
-                // implementation of PressAsync throws on a key it has no word
-                // for, and that throw is one refactor away from being the only
-                // thing between an unknown key and a faulted input channel.
+                // re-checked: PressAsync throws on an unknown key, which would fault the input channel
                 if (input.Key is not { } key || LiveKeys.LiteralFor(key) is null) return false;
 
                 await surface.PressAsync(key, ct).ConfigureAwait(false);
@@ -464,11 +301,7 @@ internal static class LiveInputReplay
         }
     }
 
-    /// <summary>
-    /// Checks one event and, for a pointer event, maps it onto the frame.
-    /// False refuses the whole batch; the reason is logged by kind and index,
-    /// never by value.
-    /// </summary>
+    // false refuses the whole batch; logged by kind and index, never by value
     private static bool TryResolve(
         IReadOnlyList<LiveInput> events,
         int i,
@@ -484,8 +317,7 @@ internal static class LiveInputReplay
 
         if (!input.IsWellFormed())
         {
-            // Kind and index, never the value: a malformed text event is
-            // still someone's typing.
+            // kind and index, never the value: a malformed text event is still someone's typing
             logger.LogWarning(
                 "no live input replayed: event {Index} of {Count} is a malformed {Kind}", i, events.Count, input.Kind);
             return false;
@@ -518,10 +350,8 @@ internal static class LiveInputReplay
         point = new Tap(input.X, input.Y).ToPagePixels(region);
         if (!Inside(point, region))
         {
-            // Unreachable while IsWellFormed bounds a fraction to [0,1],
-            // and kept for the reason the tap relay keeps its twin: this is
-            // the one place where a future change on either side of the
-            // wire would otherwise become an event somewhere nobody chose.
+            // unreachable while IsWellFormed bounds a fraction to [0,1]; kept as the tap relay's twin
+            // against a future change on either side of the wire
             logger.LogWarning(
                 "no live input replayed: event {Index} maps outside the {W}x{H} frame it was measured against",
                 i, region.Width, region.Height);

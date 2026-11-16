@@ -1,47 +1,8 @@
-/**
- * DSM 7 as code (IAC4): the same webapi the deploy pipeline already
- * drives for FileStation. Everything here is idempotent — re-runs
- * converge instead of duplicating:
- *   - reverse-proxy rules (matched by source FQDN)
- *   - the wildcard Let's Encrypt certificate the https hosts need
- *     (DSM's DDNS default covers only <domain> itself — found live
- *     2026-09-10; the wildcard rides in domain_name as "host;*.host",
- *     which is what DSM's own wizard sends), and the binding of the
- *     stack's rules to it (a rule keeps the certificate it was created
- *     with — making another one the default does not move it)
- *   - the live dir on the NAS (apply.sh + the published folder)
- *   - the Task Scheduler entry that applies uploaded bundles (the
- *     poller, root-owned: a password-confirm token stands in for the
- *     dialog DSM shows for root scripts)
- * Auth: SYNOLOGY_URL/USER/PASS env (the deploy account). Every call
- * here is administrator-only on DSM — a non-admin account gets 105,
- * an account that may not use the application a login names gets 402;
- * both are named by dsmAdvice(). Nothing below can grant an account
- * those rights: that is the ONE manual step (Control Panel → User &
- * Group). The login itself names NO session/application (like DSM's own
- * UI): a name DSM does not know — "Core", which this module used until
- * 2026-09-16 — is refused with 402 for EVERY account (found live on DSM
- * 7.3.2-86009 Update 4 with a correct account: v7/v6 session=Core
- * refused, no session and session=FileStation accepted). probeLoginShapes() prints that matrix
- * whenever the login is refused again.
- *
- * Ownership: the pair's prod twin owns the NAS-wide resources (one
- * certificate, one live dir, one poller task per NAS — both twins share
- * <domain> and SYNOLOGY_PATH); the staging twin only binds its own rules
- * to the certificate it finds. That is what keeps two bootstrap runs
- * from requesting the same certificate twice (Let's Encrypt counts
- * every request: 5 per name set per week).
- *
- * Firewall rules stay manual (the DSM firewall API is undocumented and
- * fragile) — `--verify` probes the outcome instead.
- *
- * API shapes (DSM publishes none) come from DSM's own admin_center.js
- * and open-source clients that captured it: N4S4/synology-api, acme.sh's
- * synology_dsm hook, KastnerRG/krg-infra, phoeluga/synology-proxy-operator,
- * RROrg/rr-addons, 007revad (researched + cross-checked 2026-09-10).
- */
+// the prod twin owns the NAS-wide resources (certificate, live dir, poller); the staging twin only binds its rules
+// the login names NO session: an unknown one ("Core") is refused with 402 for every account (DSM 7.3.2)
+// a rule keeps the certificate it was created with; Let's Encrypt allows 5 requests per name set per week
 
-/** DSM error codes as the operator meets them (the ONE text for 402 — validate.mjs reuses it) */
+/** the ONE text per DSM error code; validate.mjs reuses the 402 one */
 export const DSM_CODE_ADVICE = {
   402: 'DSM refused the login for the application it names (its password is right): either the account may not use it — Control Panel → User & Group → the deploy user → Applications → DSM: Allow, File Station: Allow (a group Deny beats Allow), and the administrators group (User groups tab) for the Control Panel APIs — or the login named a session DSM does not know (found live 2026-09-16: "Core" is refused for every account; the bootstrap names none, like DSM\'s own UI); --verify prints which login shapes DSM accepts',
   105: 'DSM treats this session as a non-administrator (its own init data says is_admin=false — verify prints it): Control Panel APIs are admin-only. Check User & Group → the deploy user → Edit → User groups → the administrators group is ticked AND saved, then sign in to DSM as this account once in a browser on the LAN: an administrator\'s desktop there but not here means Adaptive MFA (Control Panel → Security → Account; on by default for administrators without 2FA — a sign-in from GitHub\'s runners is "risky" and, with no e-mail on the account, gets a plain user\'s session): switch it off for administrators, or enroll the account in 2FA and give the pipeline its OTP secret (not supported yet)',
@@ -60,15 +21,7 @@ export function dsmAdvice(err) {
 }
 export const isPermissionError = (err) => DSM_PERMISSION_CODES.includes(dsmCode(err));
 
-/* ── transport ───────────────────────────────────────────────────────── */
-
-/**
- * A failure BEFORE DSM answered: no connection, a timeout, a 5xx from
- * DSM's front nginx (its own UI treats 504 on the slow Let's Encrypt
- * call as "still running"), a non-JSON body. Never a DSM-answered error
- * — those carry a code and are final. Only this kind is ever retried,
- * and only this kind makes a long-running request "unknown, look again".
- */
+/** a failure BEFORE DSM answered (no connection, timeout, 5xx from its front nginx, non-JSON): only this kind is retried */
 export class DsmTransportError extends Error {
   constructor(message, { cause, status = null } = {}) {
     super(message, cause ? { cause } : undefined);
@@ -118,13 +71,7 @@ async function dsmCall(base, path, params, fetchImpl = fetch, { timeoutMs = 3000
   }
 }
 
-/**
- * SYNO.FileStation.Upload: multipart, _sid in the QUERY (as a field DSM
- * answers 119), file last — and the session's SynoToken beside it (query +
- * X-SYNO-TOKEN header): a session that has one must carry it on the
- * upload too, or DSM answers 119 here as well (found live 2026-09-16 on
- * the first real run; upload.sh's v6 login has no token and needs none).
- */
+// _sid in the QUERY (as a field DSM answers 119), file last; a session with a SynoToken must carry it here too
 async function dsmUpload(base, sid, path, content, name, fetchImpl = fetch, { timeoutMs = 60000, token = null } = {}) {
   const form = new FormData();
   form.append('api', 'SYNO.FileStation.Upload');
@@ -139,17 +86,9 @@ async function dsmUpload(base, sid, path, content, name, fetchImpl = fetch, { ti
 }
 
 export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { session = null, retry = [], sleepImpl = sleep } = {}) {
-  // enable_syno_token: DSM 7 wants the CSRF token beside the sid on
-  // state-changing entry.cgi calls (per the documented v7 auth flow).
-  // session: only for a real DSM application (FileStation for uploads);
-  // the Control Panel APIs log in without one, like DSM's own UI — a
-  // name DSM does not know is refused with 402 (found live 2026-09-16)
-  // enable_syno_token rides the URL as well as the body: acme.sh's hook
-  // sends it in both, and a token is only worth having if DSM issues one
-  // entry.cgi, not auth.cgi: SYNO.API.Info names entry.cgi as the path of
-  // SYNO.API.Auth on DSM 7 (auth.cgi is the DSM 6 path upload.sh still
-  // uses for its FileStation session) — acme.sh and Home Assistant log in
-  // there and their admin sessions read the Control Panel APIs
+  // session only for a real DSM application (FileStation); the Control Panel APIs log in without one (an unknown name: 402)
+  // enable_syno_token rides URL and body (acme.sh does both); entry.cgi, not auth.cgi: SYNO.API.Info names it
+  // the DSM 7 path of SYNO.API.Auth
   const data = await dsmCall(base, 'entry.cgi', {
     api: 'SYNO.API.Auth',
     version: '7',
@@ -167,22 +106,14 @@ export async function dsmLogout(base, sid, fetchImpl = fetch, session = null) {
   await dsmCall(base, 'entry.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', ...(session ? { session } : {}), _sid: sid }, fetchImpl, { query: { _sid: sid } }).catch(() => undefined);
 }
 
-/**
- * one logged-in session: call(api, version, method, params, opts) with
- * sid + token; read() = the same with the restart-proof retry (reads are
- * safe to repeat, writes are not — a repeated create duplicates);
- * upload() for FileStation files; and a logout. `session` names a DSM
- * application (FileStation for files); none for the Control Panel APIs.
- */
+// read() adds the restart-proof retry: safe for reads only, a repeated create duplicates
+// `session` names a DSM application (FileStation for files); none for the Control Panel APIs
 export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { session = null, retry = DSM_RETRY, sleepImpl = sleep } = {}) {
   const base = url.replace(/\/$/, '');
   const { sid, token } = await dsmLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
   const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
-  // the sid and the CSRF token ride the QUERY STRING and the X-SYNO-TOKEN
-  // header (what DSM's own UI and upload.sh do): DSM 7.3 does not read
-  // them from a POST body — a body-only sid answered 119 "SID not found"
-  // on the first Control Panel read (found live 2026-09-16). The body
-  // carries them too; DSM ignores what it does not read.
+  // sid and token ride the QUERY STRING and X-SYNO-TOKEN header: DSM 7.3 does not read them from a POST body
+  // (a body-only sid answered 119 "SID not found")
   const carry = { query: auth, headers: token ? { 'X-SYNO-TOKEN': token } : null };
   const call = (api, version, method, params = {}, opts = {}) => dsmCall(base, 'entry.cgi', { api, version: String(version), method, ...params, ...auth }, fetchImpl, { sleepImpl, ...carry, ...opts });
   return {
@@ -197,21 +128,14 @@ export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { sessi
   };
 }
 
-/* ── reverse proxy ───────────────────────────────────────────────────── */
-
-/** DSM 7.3 lists a rule's id as `UUID` (found live 2026-09-16: 0 of 21 rules carried a lowercase uuid, so every rule collapsed onto one map key and 1 of 7 got bound); older captures say `uuid` */
+/** DSM 7.3 lists a rule's id as `UUID`, older captures `uuid`: only the lowercase collapsed every rule onto one key */
 const ruleId = (e) => e?.UUID ?? e?.uuid ?? null;
 
-/** the reverse-proxy rules a stack needs: source https host -> local port */
 export function proxyRules(stack) {
-  // every service of the stack gets a rule: an environment its five
-  // (web, api, admin, its own Logto + console), the platform's shared
-  // stack its four (glitchtip, vault, control, pgadmin). LAN-restrict the
-  // admin, console, vault, control and pgadmin hosts in the DSM firewall.
+  // LAN-restrict the admin, console, vault, control and pgadmin hosts in the DSM firewall (rules stay manual)
   return Object.keys(stack.hosts).map((key) => ({ key, host: stack.host(key), port: stack.ports[key] }));
 }
 
-/** upsert the stack's rules; returns {created, updated, unchanged} */
 export async function applyReverseProxy(stack, creds, fetchImpl = fetch, opts = {}) {
   const s = await dsmSession(creds, fetchImpl, opts);
   try {
@@ -247,8 +171,6 @@ export async function applyReverseProxy(stack, creds, fetchImpl = fetch, opts = 
   }
 }
 
-/* ── the wildcard certificate ────────────────────────────────────────── */
-
 /** does the certificate DSM serves cover this host? true / false / null (cannot tell) */
 export async function tlsCovers(host, fetchImpl = fetch) {
   try {
@@ -275,14 +197,8 @@ export const certValid = (c, now = Date.now()) => {
 const newest = (certs) => [...certs].sort((a, b) => new Date(b.valid_till ?? 0).getTime() - new Date(a.valid_till ?? 0).getTime())[0];
 const listCerts = async (s) => (await s.read('SYNO.Core.Certificate.CRT', 1, 'list')).certificates ?? [];
 
-/**
- * Bind the given reverse-proxy hosts to a certificate. DSM keeps a rule
- * on the certificate it was created with (the default only decides what
- * NEW services get), so a wildcard that arrived after the rules must be
- * moved onto them: SYNO.Core.Certificate.Service set with the service
- * descriptor DSM itself lists under the old certificate, verbatim (what
- * the Settings dialog sends). Returns {bound, migrated, unbound}.
- */
+// DSM's default certificate only decides what NEW services get: move a rule with SYNO.Core.Certificate.Service set,
+// sending the descriptor DSM lists under the old certificate verbatim
 export async function bindRulesToCertificate(s, { certId, hosts }) {
   if (!hosts?.length) return { bound: 0, migrated: [], unbound: [] };
   const entries = (await s.read('SYNO.Core.AppPortal.ReverseProxy', 1, 'list')).entries ?? [];
@@ -318,29 +234,14 @@ export async function bindRulesToCertificate(s, { certId, hosts }) {
 /** what DSM's own wizard waits for its Let's Encrypt call (its UI: six minutes) */
 export const LE_WAIT_MS = 360000;
 
-/**
- * Make DSM serve a certificate that covers *.<domain> on the given hosts.
- * EVERY host is probed first (a covered set means nothing to request —
- * never spends a Let's Encrypt request); otherwise DSM's certificate list
- * decides (a probe that cannot tell — DNS down, a runner DSM blocks — is
- * not a reason to stop): reuse a valid wildcard certificate DSM already
- * holds (set it default), else — as the owner — request one through DSM's
- * own Let's Encrypt wizard call; either way the hosts' rules are bound to
- * it, because a rule keeps the certificate it was created with (so a
- * covered web host is no proof the other rules are on the wildcard). An
- * expired wildcard counts as absent. Returns {state, ...}: covered |
- * present | set-default | created | absent (a non-owner waiting for the
- * prod twin's request); a request DSM never answered throws after the
- * wait, so the run is red and nothing is chained onto it.
- */
+// a covered set requests nothing (never spends a Let's Encrypt request); rules are bound either way;
+// a non-owner waits for the prod twin's request
 export async function ensureWildcardCertificate(creds, { domain, probeHost, email, hosts = [], owner = true, fetchImpl = fetch, probeImpl = null, sleepImpl = sleep, pollMs = 15000, pollTries = 24 } = {}) {
   const probeOne = probeImpl ?? ((h) => tlsCovers(h, fetchImpl));
   const targets = [...new Set([probeHost ?? domain, ...hosts])];
   const probes = await Promise.all(targets.map(async (h) => [h, await probeOne(h)]));
   const allCovered = probes.every(([, p]) => p.covers === true);
-  // covered and no rules to bind → nothing to do at all (not even a login)
   if (allCovered && !hosts.length) return { state: 'covered', detail: `the certificate DSM serves covers ${targets.join(', ')}` };
-  // the host that decides the story: the first provably uncovered one, else the first unprobeable one
   const [target, probe] = probes.find(([, p]) => p.covers === false) ?? probes.find(([, p]) => p.covers !== true) ?? probes[0];
   const why = allCovered
     ? `the certificate DSM serves covers all ${targets.length} host${targets.length === 1 ? '' : 's'}`
@@ -379,10 +280,8 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
     if (!owner) return { state: 'absent', detail: `${why}; no valid wildcard certificate on DSM yet — the prod twin's bootstrap requests it (one per NAS); this twin binds its rules on its next run` };
     const gone = expired.length ? ` (the wildcard DSM held, ${newest(expired).id}, expired ${newest(expired).valid_till})` : '';
     const started = Date.now();
-    // DSM's wizard call is synchronous and slow (its own UI waits six
-    // minutes). Only a request DSM never answered is waited out — a
-    // request DSM refused (rate limit 5524, validation 5503) is final and
-    // must NOT be repeated: every request counts against the rate limit
+    // DSM's wizard call is synchronous and slow (its UI waits six minutes): only a request DSM never answered is waited out
+    // a refused one (rate limit 5524, validation 5503) is final and must NOT be repeated: every request counts
     let outlived = null;
     try {
       await s.call('SYNO.Core.Certificate.LetsEncrypt', 1, 'create', {
@@ -395,12 +294,8 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
       if (!isTransport(e)) throw e;
       outlived = e;
     }
-    // DSM answering 504 means the request is STILL RUNNING (its own UI
-    // says so), and even an answered create may list the certificate a
-    // moment later (the web server restarts on a default change): poll the
-    // list for what is left of the six minutes instead of deciding too
-    // early — "created" without the binding would chain Deploy over rules
-    // that still serve the old certificate
+    // a 504 means the request is STILL RUNNING, and a created certificate may list a moment later: poll the list
+    // "created" without the binding would chain Deploy over rules still on the old certificate
     let later = [];
     for (let i = 0; ; i++) {
       later = wild(await listCerts(s).catch(() => [])).filter((c) => certValid(c));
@@ -408,7 +303,6 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
       await sleepImpl(pollMs);
     }
     if (!later.length) {
-      // not done: fail, and let the next run adopt whatever lands
       throw new Error(`the Let's Encrypt request for ${names} is still running on the NAS after the wait (${outlived ? outlived.message : 'DSM answered, but its list holds no wildcard certificate yet'}) — check Control Panel → Security → Certificate; the next bootstrap run adopts it and binds the rules, so never re-request by hand (5 requests per name set per week)`);
     }
     const c = newest(later);
@@ -419,10 +313,7 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
   }
 }
 
-/* ── the live dir and the poller task ────────────────────────────────── */
-
 export const POLLER_TASK_NAME = 'munni deploy poller';
-/** the command the task runs: a throwaway copy of apply.sh, told where the live dir and the published folder are */
 export const pollerScript = (liveDir, publishedDir = `${liveDir}/published`) =>
   `cd "${liveDir}" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="${liveDir}" MUNNI_PUBLISHED_DIR="${publishedDir}" sh .apply.run`;
 
@@ -442,24 +333,15 @@ export const POLLER_SCHEDULE = {
   repeat_hour_store_config: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
 };
 
-/**
- * The ONE rule for SYNOLOGY_PATH (the FileStation path bundles land in,
- * e.g. /docker/munni/published): the live dir is its PARENT — the same
- * rule deploy-nas.yml (dirname) and nas-diag.yml use. Throws when the
- * path has no parent inside a shared folder.
- */
+/** the live dir is the PARENT of SYNOLOGY_PATH, as deploy-nas.yml and nas-diag.yml also take it; throws without one */
 export function publishedPathParts(publishedPath) {
   const segments = String(publishedPath ?? '').split('/').filter(Boolean);
   if (segments.length < 2) throw new Error(`SYNOLOGY_PATH must be a folder inside a shared folder (the live dir is its parent), e.g. /docker/munni/published — yours: ${segments.length ? `/${segments.join('/')}` : '(empty)'}`);
   return { share: segments[0], publishedSharePath: `/${segments.join('/')}`, liveSharePath: `/${segments.slice(0, -1).join('/')}`, rest: segments.slice(1, -1), leaf: segments[segments.length - 1] };
 }
 
-/**
- * The FileStation share path → the dirs on disk (/volume1/docker/munni +
- * …/published) via the share's real path. Never guesses a volume: the
- * poller would run in the wrong place every five minutes. FileStation
- * may refuse a Core session — with creds a FileStation session is tried.
- */
+// FileStation share path → dirs on disk via the share's real path (never guess a volume)
+// a Core session may be refused, so a FileStation session is tried
 export async function resolveLiveDir(session, publishedPath, { creds = null, fetchImpl = fetch, sleepImpl = sleep } = {}) {
   const parts = publishedPathParts(publishedPath);
   const shareOf = async (s) => ((await s.call('SYNO.FileStation.List', 2, 'list_share', { additional: JSON.stringify(['real_path']) })).shares ?? []).find((x) => x.name === parts.share)?.additional?.real_path ?? null;
@@ -487,12 +369,8 @@ export async function resolveLiveDir(session, publishedPath, { creds = null, fet
   return { ...parts, liveDir, publishedDir: `${liveDir}/${parts.leaf}` };
 }
 
-/**
- * Put the poller's own script in the live dir and make sure the published
- * folder exists, so the task never runs into an empty dir before the
- * first Deploy (every deploy re-uploads apply.sh too — the task runs a
- * throwaway copy, so overwriting is safe). Returns {state, liveSharePath}.
- */
+// the published folder must exist before the first Deploy
+// the task runs a throwaway copy of apply.sh, so overwriting it is safe
 export async function ensureLiveDir(creds, { publishedPath, applyScript, fetchImpl = fetch, sleepImpl = sleep } = {}) {
   const parts = publishedPathParts(publishedPath);
   const s = await dsmSession(creds, fetchImpl, { session: 'FileStation', sleepImpl });
@@ -508,12 +386,7 @@ export async function ensureLiveDir(creds, { publishedPath, applyScript, fetchIm
 
 const liveDirOf = (script) => /MUNNI_LIVE_DIR="([^"]*)"/.exec(String(script ?? ''))?.[1] ?? null;
 
-/**
- * Ensure the Task Scheduler entry that applies uploaded bundles exists
- * (root, every 5 minutes, all day). Returns {state, id, liveDir}:
- * present | updated | created. When the live dir cannot be resolved an
- * existing task is left alone (never rewritten onto a guess).
- */
+// an existing task is left alone when the live dir cannot be resolved: never rewritten onto a guess
 export async function ensurePollerTask(creds, { publishedPath, fetchImpl = fetch, name = POLLER_TASK_NAME, sleepImpl = sleep } = {}) {
   const s = await dsmSession(creds, fetchImpl, { sleepImpl });
   try {
@@ -527,12 +400,8 @@ export async function ensurePollerTask(creds, { publishedPath, fetchImpl = fetch
     } catch (e) {
       dirsError = e;
     }
-    // a poller made by hand for THIS live dir (the README's one-liner,
-    // under any name) is adopted — renamed and pointed at the resolved
-    // dirs — never doubled: two tasks would take turns on one dir. A
-    // poller for ANOTHER dir is another pipeline's (the legacy live app's,
-    // say) and is left exactly as it is: on 2026-09-16 the first real run
-    // re-pointed the legacy "Munni Deploy" task at the IaC dir
+    // a hand-made poller for THIS live dir (any name) is adopted, never doubled: two tasks would take turns on one dir
+    // a poller for ANOTHER dir belongs to another pipeline (the legacy live app) and stays untouched
     if (!found && dirs) {
       for (const t of tasks) {
         if (t.type && t.type !== 'script') continue;
@@ -603,7 +472,6 @@ export async function systemInfo(creds, { fetchImpl = fetch, sleepImpl = sleep }
   }
 }
 
-/** read-only: what the NAS holds (for --verify) */
 export async function inspectNas(creds, { domain, publishedPath, hosts = [], fetchImpl = fetch, name = POLLER_TASK_NAME, sleepImpl = sleep } = {}) {
   const s = await dsmSession(creds, fetchImpl, { sleepImpl });
   try {
@@ -624,9 +492,7 @@ export async function inspectNas(creds, { domain, publishedPath, hosts = [], fet
     let ruleShape = null;
     if (pick && hosts.length) {
       const entries = (await s.read('SYNO.Core.AppPortal.ReverseProxy', 1, 'list').catch(() => ({}))).entries ?? [];
-      // field names only (a rule's fqdn is the domain): the binding and the
-      // verify match rules by `uuid` — if DSM names the id otherwise, every
-      // rule collapses onto one map key (seen live 2026-09-16: 1 of 7 bound)
+      // field names only (a rule's fqdn is the domain): a rule id named otherwise collapses every rule onto one map key
       ruleShape = entries.length ? { rules: entries.length, keys: Object.keys(entries[0]).sort(), frontend: Object.keys(entries[0].frontend ?? {}).sort(), withId: entries.filter((e) => ruleId(e)).length } : { rules: 0 };
       const uuidHost = new Map(entries.filter((e) => hosts.includes(e.frontend?.fqdn) && ruleId(e)).map((e) => [ruleId(e), e.frontend.fqdn]));
       const onWildcard = new Set((pick.services ?? []).filter((x) => x.subscriber === 'ReverseProxy').map((x) => x.service));
@@ -650,12 +516,8 @@ export async function inspectNas(creds, { domain, publishedPath, hosts = [], fet
   }
 }
 
-/**
- * The secret-free digest of inspectNas() the wizard's readiness card reads
- * (repo variable IAC_NAS_STATE, written by the prod twin's every verify
- * and apply): flags and counts only, never a host name — the domain is a
- * secret and repository variables are not.
- */
+// secret-free digest for the readiness card (repo variable IAC_NAS_STATE): flags and counts only, never a host name
+// the domain is a secret and repository variables are not
 export function summarizeNas(nas, hostsTotal = 0) {
   return {
     dsm: { ok: true },
@@ -666,16 +528,8 @@ export function summarizeNas(nas, hostsTotal = 0) {
   };
 }
 
-/**
- * Which login shapes DSM accepts for this account — printed when the
- * module's own login (v7, no session, SynoToken) is refused although the
- * account looks right. Found live 2026-09-16: an account with DSM + File
- * Station allowed AND in administrators got 402 from the shape this
- * module used to send (session=Core, v7 and v6 alike) while the deploy
- * script's (v6, session=FileStation) and DSM's own (no session) worked —
- * the shape, not the account, was the culprit. Every accepted session is
- * logged out again. Returns [{label, ok, code?, transport?}].
- */
+// printed when the login is refused though the account looks right: session=Core got 402 (DSM 7.3.2) while no session,
+// and v6 session=FileStation, worked — the shape, not the account, was the culprit
 export const LOGIN_SHAPES = [
   { label: 'v7 entry.cgi, no session (bootstrap)', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
   { label: 'v7 auth.cgi, no session', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
@@ -691,7 +545,6 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
   for (const s of shapes) {
     try {
       const data = await dsmCall(base, s.path ?? 'auth.cgi', { api: 'SYNO.API.Auth', method: 'login', account: user, passwd: pass, format: 'sid', ...s.params }, fetchImpl, { query: s.query ?? null });
-      // does DSM treat THIS session as an administrator? its own desktop init data says
       let admin = null;
       if (data.sid) {
         const auth = { _sid: data.sid, ...(data.synotoken ? { SynoToken: data.synotoken } : {}) };
@@ -706,25 +559,13 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
   }
   return out;
 }
-/** one line for the verify output */
 export const describeLoginShapes = (shapes) => shapes.map((s) => {
   if (!s.ok) return `${s.label}: ${s.transport ? 'no answer' : `refused ${s.code ?? '?'}`}`;
   const notes = [...(s.token === undefined ? [] : [s.token ? 'token' : 'NO token']), ...(typeof s.admin === 'boolean' ? [s.admin ? 'admin' : 'NOT admin'] : [])];
   return `${s.label}: ok${notes.length ? ` (${notes.join(', ')})` : ''}`;
 }).join('; ');
 
-/**
- * Which session DSM grants the Control Panel APIs to, and how a call may
- * carry it — tried when a read is refused (105/119) although the login
- * was accepted, so the verify output names what DSM reads instead of a
- * guess. Sessions are created four ways (the login path DSM 7 names for
- * SYNO.API.Auth vs the DSM 6 one, sid vs cookie format); each makes the
- * same read-only call (the certificate list) carried three ways: the
- * bootstrap's (sid + token in the query, token in the header), acme.sh's
- * (sid in the body, token in the header) and DSM's own UI's (id cookie,
- * token in the header). One logout per session. Flat list of
- * {label, ok, code?, transport?, token?}; describeCallShapes groups it.
- */
+// the session and call shapes DSM reads, tried when a read is refused (105/119) though the login was accepted
 export const SESSION_SHAPES = [
   { label: 'entry.cgi format=sid (bootstrap)', path: 'entry.cgi', params: { format: 'sid' } },
   { label: 'entry.cgi format=cookie', path: 'entry.cgi', params: { format: 'cookie' } },
@@ -765,7 +606,6 @@ export async function probeCallShapes({ url, user, pass }, fetchImpl = fetch, { 
   }
   return out;
 }
-/** one line per session */
 export function describeCallShapes(list) {
   const groups = new Map();
   for (const x of list) {
@@ -776,18 +616,8 @@ export function describeCallShapes(list) {
   return [...groups].map(([session, calls]) => `${session}: ${describeLoginShapes(calls)}`).join('\n     ');
 }
 
-/**
- * What DSM itself says about the deploy account's session — read when the
- * Control Panel APIs refuse it (105) although the login is accepted and
- * the account sits in administrators: the login answer's field names,
- * every flag of DSM's own desktop init data (Session — is_admin above
- * all —, ActionPrivilege, AppPrivilege), the versions DSM offers for the
- * APIs bootstrap uses, and every 2FA/MFA-related API DSM lists with what
- * its `get` answers (DSM 7.3 can enforce 2-factor authentication for
- * administrators, and an administrator without it then gets a session
- * DSM treats as a plain user's). Booleans, numbers and a few enum words
- * only — never a free string. One login, one logout.
- */
+// read when Control Panel APIs refuse (105) an accepted administrator login: DSM 7.3 can enforce 2FA for administrators
+// and one without it gets a plain user's session; booleans, numbers and a few enum words only, never a free string
 const ENUM_WORDS = /^(none|admin|admins|administrators|all|group|groups|specific|custom|user|users|enabled|disabled|on|off|yes|no|required|optional|forced|email|mail|otp|adaptive)$/i;
 const facts = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => typeof v === 'boolean' || typeof v === 'number' || (typeof v === 'string' && ENUM_WORDS.test(v))));
 export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch, { sweepLimit = 12 } = {}) {
@@ -807,7 +637,6 @@ export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch, 
     const info = await outcome(() => dsmCall(base, 'entry.cgi', { api: 'SYNO.API.Info', version: '1', method: 'query', query: 'all' }, fetchImpl));
     out.apis = info.error ? info : Object.fromEntries(wanted.map((k) => [k, info[k] ? `${info[k].minVersion}-${info[k].maxVersion}` : 'absent']));
     if (!info.error) {
-      // every 2FA/MFA-related API DSM lists, and what its `get` answers this session
       const names = Object.keys(info).filter((k) => /OTP|MFA|Adaptive|Enforce|TwoFactor|2FA/i.test(k)).sort().slice(0, sweepLimit);
       out.otp = {};
       for (const name of names) {
@@ -821,13 +650,7 @@ export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch, 
   return out;
 }
 
-/**
- * The poller's own log — the last lines of <live>/deploy.log, read through
- * FileStation (SYNO.FileStation.Download, mode open: the raw file, not a
- * JSON envelope) — so a bootstrap or verify run shows what the NAS did
- * with the bundles: unpacked, composed up, or failed and why. No SSH.
- * Returns {path, lines, bytes}; a missing log is an error (code 408).
- */
+/** the last lines of <live>/deploy.log via FileStation (mode open: the raw file, no JSON envelope); a missing log is 408 */
 export async function readPollerLog(creds, { publishedPath, lines = 15, fetchImpl = fetch, sleepImpl = sleep, maxBytes = 65536 } = {}) {
   const { path, text } = await readLiveFile(creds, { publishedPath, file: 'deploy.log', fetchImpl, sleepImpl });
   const tail = text.slice(-maxBytes).split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).slice(-lines);
@@ -859,9 +682,6 @@ export async function readLiveFile(creds, { publishedPath, file, fetchImpl = fet
   }
 }
 
-/* ── cleanup (2026-09-17): what bootstrap --cleanup takes off the NAS ──── */
-
-/** delete the stack's reverse-proxy rules (matched by source FQDN); returns {removed, absent} */
 export async function removeReverseProxy(stack, creds, fetchImpl = fetch, opts = {}) {
   const s = await dsmSession(creds, fetchImpl, opts);
   try {
@@ -881,7 +701,6 @@ export async function removeReverseProxy(stack, creds, fetchImpl = fetch, opts =
   }
 }
 
-/** delete the poller task (pair cleanup: nothing left to poll); returns {state: removed | absent} */
 export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER_TASK_NAME, sleepImpl = sleep } = {}) {
   const s = await dsmSession(creds, fetchImpl, { sleepImpl });
   try {
@@ -889,11 +708,8 @@ export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER
     const found = tasks.find((t) => t.name === name);
     if (!found) return { state: 'absent', detail: `no Task Scheduler entry "${name}"` };
     const real = found.real_owner || found.owner || 'root';
-    // DSM 7.3 deletes tasks with SYNO.Core.TaskScheduler `delete` whose one
-    // parameter is `tasks`: an array of {id, real_owner} — DSM's own 4800
-    // message spelled the shape out on 2026-09-16, while v4 (and the Root
-    // API) answer 103 "no such method": the version that has it is found
-    // by sweeping downwards. Root tasks included, no password confirm.
+    // DSM 7.3 deletes via SYNO.Core.TaskScheduler `delete` with `tasks`: [{id, real_owner}]; v4 and the Root API answer 103
+    // so the version is found by sweeping downwards; root tasks need no password confirm
     const tried = [];
     for (const v of [4, 3, 2, 1]) {
       try {
@@ -910,7 +726,6 @@ export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER
   }
 }
 
-/** delete the live dir (the parent of SYNOLOGY_PATH) with everything in it — pair cleanup, after the task is gone */
 export async function removeLiveDir(creds, { publishedPath, fetchImpl = fetch, sleepImpl = sleep } = {}) {
   const parts = publishedPathParts(publishedPath);
   const s = await dsmSession(creds, fetchImpl, { session: 'FileStation', sleepImpl });

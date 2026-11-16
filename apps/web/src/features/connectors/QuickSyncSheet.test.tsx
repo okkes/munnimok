@@ -22,7 +22,6 @@ const AH = manifestOf({ id: 'ah', name: 'Albert Heijn', kind: 'store', unattende
 
 const catalogue = (...providers: ProviderManifest[]) => ({ 'GET /connectors/providers': () => catalogueOf(...providers) });
 
-/** a connection made on this device, as adopt() leaves it, with the catalogue the hub cached */
 async function seed(rows: { id: string; manifest: ProviderManifest; device: Record<string, unknown> }[]) {
   const { MunniDB } = await import('@/db/schema');
   const { Repo } = await import('@/db/repo');
@@ -149,14 +148,12 @@ describe('the quick sync on Home (#548)', () => {
     });
     fireEvent.click(await screen.findByTestId('home-quick-sync', {}, { timeout: 5000 }));
     fireEvent.click(await screen.findByTestId('quick-sync-go-c-ing', {}, { timeout: 5000 }));
-    // the kept login is offered in place of the fields
     expect((await screen.findByTestId('connect-saved-login', {}, { timeout: 5000 })).textContent).toContain('saved login');
     expect(screen.queryByTestId('connect-field-username')).toBeNull();
     fireEvent.click(screen.getByTestId('connect-next'));
     await waitFor(() => expect(login.connectionId).toBe('c-ing'), { timeout: 5000 });
     expect(login.inputs).toBeUndefined();
     expect(login.credentialBundle).toBe('cb_v1.kept');
-    // the fresh sealed copy replaces the old one on the device
     await waitFor(async () => {
       const { MunniDB } = await import('@/db/schema');
       const db = new MunniDB(USER_TEST_DB);

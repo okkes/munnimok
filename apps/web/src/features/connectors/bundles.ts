@@ -2,13 +2,8 @@ import type { StorageBackend } from '@/db/backend';
 import { isNativeApp } from '@/lib/platform';
 import { ConnectorError } from './api';
 
-/**
- * Custody of a connection's credential bundle (docs/connectors/client.md,
- * "Custody"): on the phone it rests in the encrypted store's device-only
- * row; on the web it lives in sessionStorage and dies with the tab —
- * the row stays, the connection reads "sign in to sync" next time. The
- * bundle is never synced through spaces and never exported.
- */
+// device: the encrypted store's device-only row; web: sessionStorage, dies with the tab (the row stays and the
+// connection reads "sign in to sync"); the bundle is never synced through spaces and never exported
 
 export type Custody = 'device' | 'ephemeral';
 
@@ -48,7 +43,6 @@ export async function readBundle(store: StorageBackend, connectionId: string): P
   return row?.bundle ?? sessionRead(connectionId);
 }
 
-/** keep a bundle that just changed hands; the row's `refreshedAt` moves with it */
 export async function keepBundle(store: StorageBackend, connectionId: string, bundle: string): Promise<void> {
   const row = await store.connectorConnGet(connectionId);
   if (!row) return;
@@ -67,7 +61,6 @@ export async function dropBundle(store: StorageBackend, connectionId: string): P
   if (row?.bundle) await store.connectorConnPut({ ...row, bundle: undefined });
 }
 
-/** every trace of the connection on this device */
 export async function forgetConnection(store: StorageBackend, connectionId: string): Promise<void> {
   sessionWrite(connectionId, null);
   await store.connectorConnDelete(connectionId);

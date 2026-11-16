@@ -6,13 +6,8 @@ import { buildPlanning, hasCurrentPlan, loadPlanningData, localIsoToday } from '
 import type { Lang } from '@/i18n';
 import { readSwSession } from './swSync';
 
-/**
- * Planning alerts (#128): a subject of the current plan is in the red —
- * spent more than it holds. One notice per space per day, both as an
- * in-app inbox row and (permission allowing) an OS notification; the
- * app's layout and the service worker's push wake-up share this code
- * and the marker, so a day never hears it twice.
- */
+// #128: one notice per space per day (inbox row + OS notification); the app's layout and the service worker's push
+// wake-up share this code and the marker, so a day never hears it twice
 
 const LANGS: readonly Lang[] = ['en', 'nl', 'tr'];
 
@@ -32,10 +27,6 @@ export interface PlanAlert {
 
 const markerKey = (spaceId: string, today: string) => `planOverspentNotified_${spaceId}_${today}`;
 
-/**
- * The red subjects of `spaceId`'s current plan, if today has not been
- * told yet. Records the inbox row and stamps the marker when it returns one.
- */
 export async function collectPlanAlerts(store: StorageBackend, spaceId: string, lang: string, today = localIsoToday()): Promise<PlanAlert[]> {
   if (!(await hasCurrentPlan(store, spaceId))) return [];
   const key = markerKey(spaceId, today);
@@ -52,12 +43,10 @@ export async function collectPlanAlerts(store: StorageBackend, spaceId: string, 
     red.length === 1
       ? texts.one.replace('{name}', names[0])
       : texts.many.replace('{n}', String(red.length)).replace('{names}', names.join(', '));
-  // #551: the row and the notification say which space, and both open the plan in it
   await appendNotification(store, 'planOverspent', { n: String(red.length), names: names.join(', '), spaceId }, key);
   return [{ title: await notificationTitle(store, spaceId), body, tag: `plan-${spaceId}-${today}`, url: `./#/planning?space=${spaceId}` }];
 }
 
-/** worker entry: resolve the mirrored session's database, then collect */
 export async function evaluatePlanAlertsFromWorker(spaceId: string | undefined, lang: string): Promise<PlanAlert[]> {
   if (!spaceId) return [];
   const session = await readSwSession();

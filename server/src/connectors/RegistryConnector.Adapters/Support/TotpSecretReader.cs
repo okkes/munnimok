@@ -5,31 +5,8 @@ using Connector.Kit.Errors;
 
 namespace RegistryConnector.Adapters.Support;
 
-/// <summary>
-/// Whatever the user pasted, turned into one authenticator entry.
-///
-/// Three shapes reach this, because three shapes are what the world hands
-/// people:
-///
-///   1. A bare base32 secret. What a provider prints under "can't scan the
-///      code?".
-///   2. <c>otpauth://totp/...?secret=...</c> - one account, the thing a QR
-///      code actually encodes.
-///   3. <c>otpauth-migration://offline?data=...</c> - Google Authenticator's
-///      export. A protobuf that may carry MANY accounts.
-///
-/// The third is the one worth thinking about. Accepting it is a real
-/// kindness: Google Authenticator will not show a user their secret, and its
-/// export QR is the only way most people can get one out. Accepting it
-/// carelessly is a disaster: that blob can hold every second factor a person
-/// owns, and a form that swallows it would collect somebody's bank, their
-/// mail and their employer along with the one account we were asked about.
-///
-/// So a migration blob is accepted only when it contains EXACTLY ONE account.
-/// More than one is refused, by count, with the reason - because the honest
-/// response to "here is everything I have" is not to quietly keep the part we
-/// wanted.
-/// </summary>
+// a bare base32 secret, an otpauth:// URI, or a Google Authenticator otpauth-migration:// export
+// a migration blob can hold every second factor a person owns: accepted only with EXACTLY ONE account, else refused by count
 internal static class TotpSecretReader
 {
     private const string MigrationScheme = "otpauth-migration://";
@@ -50,9 +27,6 @@ internal static class TotpSecretReader
         return new TotpSecret { Secret = Totp.FromBase32(text) };
     }
 
-    /// <summary>
-    /// <c>otpauth://totp/Issuer:account?secret=...&amp;digits=6&amp;period=30</c>
-    /// </summary>
     private static TotpSecret FromUri(string text)
     {
         if (!Uri.TryCreate(text, UriKind.Absolute, out var uri))
@@ -62,8 +36,7 @@ internal static class TotpSecretReader
 
         if (!string.Equals(uri.Host, "totp", StringComparison.OrdinalIgnoreCase))
         {
-            // hotp is counter-based: there is no clock to derive a code from
-            // and a stored counter would desynchronise on the first retry.
+            // hotp is counter-based: there is no clock, and a stored counter would desynchronise on the first retry
             throw ConnectorException.InvalidRequest(
                 $"totp: '{uri.Host}' codes are not time-based, so they cannot be generated here");
         }
@@ -80,24 +53,8 @@ internal static class TotpSecretReader
         };
     }
 
-    /// <summary>
-    /// Google Authenticator's export, which is a protobuf and not a document
-    /// anybody published a schema for. The field numbers below are the ones
-    /// the format has always used and are stable across every version anyone
-    /// has seen:
-    ///
-    /// <code>
-    /// MigrationPayload { repeated OtpParameters otp_parameters = 1; ... }
-    /// OtpParameters {
-    ///   bytes  secret    = 1;
-    ///   string name      = 2;
-    ///   string issuer    = 3;
-    ///   enum   algorithm = 4;   1=SHA1 2=SHA256 3=SHA512 4=MD5
-    ///   enum   digits    = 5;   1=SIX  2=EIGHT
-    ///   enum   type      = 6;   1=HOTP 2=TOTP
-    /// }
-    /// </code>
-    /// </summary>
+    // Google Authenticator's export protobuf (no published schema): secret=1 name=2 issuer=3 algorithm=4 digits=5 type=6
+    // algorithm 1=SHA1 2=SHA256 3=SHA512 4=MD5, digits 1=SIX 2=EIGHT, type 1=HOTP 2=TOTP
     private static TotpSecret FromMigration(string text)
     {
         var query = HttpUtility.ParseQueryString(text[(text.IndexOf('?', StringComparison.Ordinal) + 1)..]);
@@ -136,9 +93,7 @@ internal static class TotpSecretReader
 
         if (accounts.Count > 1)
         {
-            // Named by count and never by issuer: listing what else the person
-            // exported would mean reading it, and this refuses precisely so
-            // that it is not read.
+            // by count, never by issuer: listing the other accounts would mean reading them, which this refuses
             throw ConnectorException.InvalidRequest(
                 $"totp: that export contains {accounts.Count} accounts, and this asks for one. " +
                 "It is the QR from your authenticator's 'transfer accounts' screen, which carries every " +
@@ -173,9 +128,7 @@ internal static class TotpSecretReader
                     break;
                 case 5 when value is ulong number: digits = number == 2 ? 8 : 6; break;
 
-                // 1 is HOTP, which is counter-based and cannot be generated
-                // from a clock. Skipped rather than refused: an export holding
-                // one HOTP entry beside one TOTP entry should still work.
+                // 1 is HOTP: skipped, not refused, so an export holding one HOTP and one TOTP entry still works
                 case 6 when value is ulong number: timeBased = number != 1; break;
                 default: break;
             }
@@ -189,18 +142,12 @@ internal static class TotpSecretReader
             Digits = digits,
             Algorithm = algorithm,
 
-            // The export URL-encodes spaces as '+', so an issuer arrives as
-            // "BKR+Consumenten". Decoded because it is shown to a human.
+            // the export URL-encodes spaces as '+' ("BKR+Consumenten"): decoded because it is shown to a human
             Issuer = issuer?.Replace('+', ' '),
         };
     }
 
-    /// <summary>
-    /// Enough protobuf to walk a message: varints and length-delimited
-    /// fields. Groups and fixed-width fields are skipped rather than parsed -
-    /// this format uses neither, and a decoder that guessed at them would be
-    /// inventing structure.
-    /// </summary>
+    // groups and fixed-width fields are skipped: this format uses neither
     private static IEnumerable<(int Field, object Value)> Fields(byte[] buffer)
     {
         var index = 0;
@@ -231,24 +178,14 @@ internal static class TotpSecretReader
         }
     }
 
-    /// <summary>
-    /// A length-delimited field: its length as a varint, then that many bytes.
-    /// False when the buffer does not hold what the length promises.
-    /// </summary>
     private static bool TryBytes(byte[] buffer, ref int index, out byte[] value)
     {
         value = [];
 
         if (!TryVarint(buffer, ref index, out var length)) return false;
 
-        // THE RANGE IS CHECKED BEFORE THE CAST, not after. A varint
-        // is 64 bits; casting one above int.MaxValue to int gives a
-        // NEGATIVE length, which sails through an `index + length >
-        // buffer.Length` guard and then throws
-        // ArgumentOutOfRangeException on the slice. What that means
-        // in practice is a pasted string that is not a migration
-        // payload crashing the parse instead of being refused, and
-        // the refusal is the entire contract of this reader.
+        // range checked before the cast: a varint above int.MaxValue casts to a negative length that passes the bounds guard
+        // and throws on the slice; a pasted non-payload must be refused, not crash the parse
         if (length > int.MaxValue) return false;
 
         var size = (int)length;

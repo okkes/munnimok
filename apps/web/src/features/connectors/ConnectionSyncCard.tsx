@@ -18,12 +18,8 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 
-/**
- * SC2: the opt-in "use my connections on my other devices" card.
- * Enabling publishes only ciphertext; a NEW device asks to join and any
- * enrolled device approves it after comparing the 6-digit fingerprint
- * both screens display — the human check against a server-swapped key.
- */
+// a new device asks to join and an enrolled one approves it after both show the same 6-digit fingerprint:
+// the human check against a server-swapped key; enabling publishes only ciphertext
 export function ConnectionSyncCard() {
   const { t } = useLang();
   const { store } = useData();
@@ -43,7 +39,6 @@ export function ConnectionSyncCard() {
     setMyFingerprint(await fingerprintOf(device.publicJwk));
     const entries = await Promise.all(list.map(async (d) => [d.deviceId, await fingerprintOf(d.publicJwk)] as const));
     setPrints(Object.fromEntries(entries));
-    // this device is registered but not yet approved by a sibling
     setPendingHere(!isEnabled && list.some((d) => d.deviceId === device.deviceId));
   }, [store]);
 
@@ -51,7 +46,6 @@ export function ConnectionSyncCard() {
     void reload().catch(() => undefined);
   }, [reload]);
 
-  // waiting for approval: poll until a sibling wraps the key for us
   useEffect(() => {
     if (!pendingHere) return;
     const timer = setInterval(() => {
@@ -107,8 +101,6 @@ export function ConnectionSyncCard() {
         {headerAction()}
       </div>
 
-      {/* the mechanics in three sentences (user: "a bit confusing") —
-          foldable so the card stays calm once understood */}
       <details className="border-t border-line-2 px-4 py-2.5" data-testid="conn-sync-how">
         <summary className="cursor-pointer list-none text-[12px] font-medium text-accent-deep">
           {t('connsync.howTitle')}

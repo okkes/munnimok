@@ -2,13 +2,8 @@ import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { Icon } from './Icon';
 
-/**
- * #283: a quiet door for explainer copy — the always-visible paragraphs
- * read as noise. A small round icon button; tapping folds the text open
- * and tapping again folds it away. Renders as a fragment: the button
- * joins the host's caption row, and the expansion's `basis-full` wraps
- * it onto its own full-width line — so give the host row `flex-wrap`.
- */
+// #283: renders a fragment: the button joins the host's caption row, the expansion wraps onto its own line
+// via `basis-full`, so the host row needs `flex-wrap`
 export function InfoHint({
   text,
   testId,

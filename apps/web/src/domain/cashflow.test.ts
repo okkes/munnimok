@@ -31,7 +31,6 @@ describe('nextPayday', () => {
       merchant: 'Demo Corp BV',
       amountCents: 220_000,
     });
-    // day already passed → next month
     expect(nextPayday(salaryTxs, '2026-07-26')?.date).toBe('2026-08-25');
   });
 

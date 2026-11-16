@@ -14,14 +14,8 @@ import type {
   SplitSummary,
 } from '@/application/splitsApi';
 
-/**
- * #538 (user): the demo shows splits too — running, planned, being settled
- * and archived, with enough in them to understand the feature — although
- * it has no account and no server. This stand-in keeps them in the page's
- * memory: what the visitor changes stays on the device and is gone with
- * the tab. The arithmetic is the app's own ledger; the fewest-payments
- * search is the server's, so here the plan pairs largest with largest.
- */
+/** #538: the demo shows splits too, kept in page memory (gone with the tab); the plan pairs largest with largest,
+ * the server's search finds the fewest payments */
 
 const ME = 'demo-me';
 const SAM = 'demo-sam';
@@ -164,7 +158,6 @@ function seed(): DemoSplit[] {
 
 let splits: DemoSplit[] = seed();
 
-/** tests start from the seed again */
 export function resetDemoSplits(): void {
   splits = seed();
 }
@@ -242,7 +235,6 @@ const entryOf = (draft: SplitEntryDraft, split: DemoSplit): SplitEntry => ({
   canEdit: true,
 });
 
-/** the change, when the event exists and is the visitor's to change that way */
 const change = async (splitId: string, ownerOnly: boolean, apply: (split: DemoSplit) => void): Promise<boolean> => {
   const split = find(splitId);
   if (!split || (ownerOnly && meIn(split)?.role !== 'owner')) return false;

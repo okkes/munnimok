@@ -8,16 +8,13 @@ import { HelpSlidesSheet } from './HelpSlidesSheet';
 import { SpotlightOverlay } from './SpotlightOverlay';
 
 interface HelpApi {
-  /** open the slide tour (layer 2) */
   openSlides: (tourId: TourId) => void;
-  /** start the interactive walkthrough (layer 3) on its own screen */
   startSpotlight: (tourId: TourId) => void;
 }
 
 const HelpContext = createContext<HelpApi>({ openSlides: () => {}, startSpotlight: () => {} });
 export const useHelp = (): HelpApi => useContext(HelpContext);
 
-/** hosts the two tutorial renderers above every screen */
 export function HelpProvider({ children }: Readonly<{ children: ReactNode }>) {
   const { store } = useData();
   const navigate = useNavigate();
@@ -36,8 +33,7 @@ export function HelpProvider({ children }: Readonly<{ children: ReactNode }>) {
       if (!tour.screen) return;
       setSlidesFor(null);
       markSeen(tourId);
-      // 'current' = run where the help button lives (param routes can't
-      // be navigated to blindly — e.g. a space's accounts screen)
+      // 'current' = run where the help button lives; param routes (a space's accounts screen) cannot be navigated to blindly
       if (tour.screen !== 'current') void navigate({ to: tour.screen });
       setSpotlight({ tourId, step: 0 });
     },

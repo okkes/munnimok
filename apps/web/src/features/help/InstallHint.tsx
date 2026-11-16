@@ -6,18 +6,12 @@ import { useHelp } from './HelpContext';
 import { useTipsDisabled } from './tipsPref';
 import { Icon } from '@/ui/Icon';
 
-/** true when munni already runs as an installed app */
 const isStandalone = (): boolean =>
   window.matchMedia?.('(display-mode: standalone)').matches ||
   ('standalone' in navigator && (navigator as { standalone?: boolean }).standalone === true);
 
-/**
- * Browser-tab-only nudge to install munni as a PWA. Installed apps get
- * a clean full-height viewport (no browser bars fighting the tab bar)
- * and — critically for a local-first app — exemption from iOS's
- * clear-storage-after-7-idle-days rule. Dismissal is device-level and
- * forever; the walkthrough stays available under Help → Install as app.
- */
+// installed apps are exempt from iOS's clear-storage-after-7-idle-days rule, which matters for a local-first app;
+// dismissal is device-level and forever
 export function InstallHint() {
   const { t } = useLang();
   const { store } = useData();

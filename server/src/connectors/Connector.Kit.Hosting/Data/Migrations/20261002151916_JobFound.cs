@@ -4,10 +4,8 @@
 
 namespace Connector.Kit.Hosting.Data.Migrations
 {
-    /// <inheritdoc />
     public partial class JobFound : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<int>(
@@ -17,7 +15,6 @@ namespace Connector.Kit.Hosting.Data.Migrations
                 nullable: true);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(

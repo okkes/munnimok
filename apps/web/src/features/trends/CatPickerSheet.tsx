@@ -4,11 +4,7 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-/**
- * The built-in card's scope: all expenses, one main, or one sub — mains
- * first, tapping a main offers its subs. The custom graphs have their own
- * multi-pick editor; this one-pick sheet stays for the quick look.
- */
+/** the custom graphs have their own multi-pick editor; this one-pick sheet stays for the quick look */
 export function CatPickerSheet({
   open,
   onOpenChange,

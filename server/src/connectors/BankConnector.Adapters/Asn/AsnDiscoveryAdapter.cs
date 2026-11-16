@@ -9,48 +9,8 @@ using Microsoft.Playwright;
 
 namespace BankConnector.Adapters.Asn;
 
-/// <summary>
-/// The session that turns ASN from a sketch into an adapter.
-///
-/// <para>
-/// <b>This types nothing and clicks nothing.</b> Every other adapter here drives
-/// a provider; this one opens the front door, streams the page to whoever asked
-/// for it, and gets out of the way. The account holder signs in themselves -
-/// in their own browser's view of the agent's browser, with their own phone -
-/// and while they work, this writes down what each screen is MADE of.
-/// </para>
-///
-/// <para>
-/// It works that way because the alternative does not. A discovery run that
-/// drove the form would have to guess the selectors, and guessing the selectors
-/// is the entire thing being discovered; a wrong guess would spend one of a
-/// small number of sign-in attempts and teach nobody anything.
-/// </para>
-///
-/// <para>
-/// <b>Nothing gates the human.</b> The first version of this asked them to press
-/// continue at four points, which was wrong twice over: it made them do
-/// bookkeeping while holding a phone, and it could only ever record the four
-/// screens somebody had thought of in advance. Sampling instead records every
-/// DISTINCT screen the session passes through, including the ones nobody
-/// predicted - which on an unknown bank is most of the value.
-/// </para>
-///
-/// <para>
-/// What comes out is a list of selectors, in notes, which somebody reads and
-/// pastes into <see cref="AsnOptions"/>. Nothing here writes that file and
-/// nothing here decides anything: a human reads "inputs: text #serienummer
-/// autocomplete=username" and makes the call.
-/// </para>
-///
-/// <para>
-/// What it must never carry out of somebody's bank is <see cref="PageShape"/>'s
-/// job - selectors, roles, counts and dimensions, and no text but headings and
-/// complaints. A QR is located by being a square of a couple of hundred pixels,
-/// never by its bytes; a number on screen is reported as its length, never as
-/// its digits.
-/// </para>
-/// </summary>
+/// Discovery run: types and clicks nothing; the human signs in through the live view while it records each distinct screen.
+/// PageShape keeps selectors, roles, counts and dimensions, never page text or digits.
 internal sealed class AsnDiscoveryAdapter(AsnOptions? options = null, TimeProvider? time = null) : IProviderAdapter
 {
     public const string ProviderId = "asn-discovery";
@@ -77,11 +37,7 @@ internal sealed class AsnDiscoveryAdapter(AsnOptions? options = null, TimeProvid
 
         ctx.Progress(JobStep.AwaitingHuman);
 
-        // NOT AWAITED, which is the whole shape of a live view: the challenge
-        // is a conversation rather than a question, so it is raised and left
-        // running while this watches. Cancelling the linked source is what ends
-        // it - see DuoAdapter, where the same pattern watches for a login to
-        // land rather than for a clock to run out.
+        // raised, not awaited: a live view is a conversation; cancelling the linked source ends it
         using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var asked = ctx.AskAsync(
@@ -99,48 +55,25 @@ internal sealed class AsnDiscoveryAdapter(AsnOptions? options = null, TimeProvid
         }
         finally
         {
-            // Ends the relay whatever happened, so an agent is released rather
-            // than held on somebody's open bank session.
+            // end the relay whatever happened, so the agent is released rather than held on an open bank session
             await view.CancelAsync().ConfigureAwait(false);
 
-            // Observed rather than awaited: it was cancelled on purpose, and
-            // the cancellation it throws is not news.
             _ = asked.ContinueWith(static t => t.Exception, TaskScheduler.Default);
         }
 
-        // NOT A CONNECTION. A discovery run has learned things and authenticated
-        // nothing this platform should keep - handing back a bundle would leave
-        // a usable ASN session sealed on somebody's device under a provider that
-        // cannot fetch.
+        // not a connection: a bundle would leave a usable ASN session sealed on a device under a provider that cannot fetch
         throw ConnectorException.Unsupported(
             $"{ProviderId}: this was a discovery run, not a connection. Read the notes above, put the "
             + "selectors into AsnOptions, and connect with the real adapter once it has them");
     }
 
-    /// <summary>
-    /// Samples the page while the human works, and keeps each screen once.
-    /// </summary>
-    /// <remarks>
-    /// DISTINCT SHAPES, NOT A TIMELINE. A bank's sign-in redraws constantly -
-    /// a spinner, a countdown, a field gaining focus - and a note per sample
-    /// would bury the four screens that matter under two hundred that do not.
-    /// So a screen is recorded the first time its description appears and never
-    /// again, which also means the natural end of the run is "nothing new for a
-    /// while".
-    /// </remarks>
+    /// Records each distinct screen once: a sign-in redraws constantly and a note per sample would bury the screens that matter.
     private async Task WatchAsync(IJobContext ctx, IPage page, CancellationToken ct)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var deadline = _time.GetUtcNow().AddSeconds(_options.DiscoverySeconds);
 
-        // Whether ANY screen ever offered somewhere to type.
-        //
-        // Judged over the whole run rather than on the first screen, which is
-        // what the first version did and immediately got wrong: ASN's sign-in
-        // page renders its bank tabs before its method buttons and its method
-        // buttons before any form, so the first sample of a perfectly good
-        // login page has no input on it. The warning fired on a page that was
-        // simply still arriving.
+        // judged over the whole run: the sign-in page renders tabs and method buttons before any form, so sample one has no input
         var typed = false;
         var quiet = false;
         var lastNew = _time.GetUtcNow();
@@ -158,17 +91,8 @@ internal sealed class AsnDiscoveryAdapter(AsnOptions? options = null, TimeProvid
                 lastNew = _time.GetUtcNow();
             }
 
-            // NOTHING NEW FOR A WHILE MEANS SOMEBODY HAS FINISHED.
-            //
-            // A live view is passive - there is no button for "I am done" - so
-            // without this the run holds the browser for its full twelve
-            // minutes after the last screen, with nothing on the caller's
-            // screen and no way to end it. A person who downloaded their
-            // statement and closed the tab was left watching a progress trail.
-            //
-            // Only once something HAS been seen: a run that has recorded
-            // nothing is a run whose page is still arriving, and cutting that
-            // short would end the session before it began.
+            // nothing new for a while means done: a live view has no "done" button, so the run would hold the browser
+            // for its full window; only once something was seen, since nothing recorded yet means the page is still arriving
             if (seen.Count > 0
                 && _time.GetUtcNow() - lastNew >= TimeSpan.FromSeconds(_options.QuietSeconds))
             {
@@ -194,9 +118,6 @@ internal sealed class AsnDiscoveryAdapter(AsnOptions? options = null, TimeProvid
             + ". Read them in order: the sign-in form, the QR, the first page inside, and the statement "
             + "download");
 
-        // Said at the END, once the whole run has been seen. A sign-in that
-        // never offered anywhere to type is a run that never reached a sign-in
-        // page, and the address is the first thing to doubt.
         if (!typed)
         {
             ctx.Note(
@@ -215,10 +136,7 @@ internal sealed class AsnDiscoveryAdapter(AsnOptions? options = null, TimeProvid
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
-            // A page mid-navigation cannot be evaluated, and mid-navigation is
-            // most of what a login does. Skipped rather than reported: the next
-            // sample is a second or two away, and a note per failed probe would
-            // be a note per navigation.
+            // a page mid-navigation cannot be evaluated; skipped, the next sample is seconds away
             return null;
         }
     }

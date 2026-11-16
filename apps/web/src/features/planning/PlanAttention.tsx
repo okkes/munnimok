@@ -8,12 +8,7 @@ import { useLang } from '@/i18n';
 import { hapticNotify } from '@/lib/platform';
 import { collectPlanAlerts } from '@/sync/swPlanning';
 
-/**
- * The tab bar lives outside the data provider, so the planning tab's dot
- * travels through a module store: this headless component (inside the
- * provider) keeps it current and, once per day, records the "in the red"
- * notice — the in-app inbox row always, the OS notification when allowed.
- */
+/** the tab bar lives outside the data provider, so the planning dot travels through a module store */
 interface PlanDotState {
   dot: boolean;
   set: (dot: boolean) => void;

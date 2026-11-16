@@ -12,14 +12,8 @@ namespace BankConnector.Adapters.OpenBanking;
 /// <summary>One institution as an aggregator lists it; <c>MaxConsentDays</c> is the longest consent the bank grants, where the party says.</summary>
 public sealed record Institution(string Id, string Name, string? LogoUrl, int? HistoryDays, int? MaxConsentDays = null);
 
-/// <summary>
-/// An open-banking aggregator as a bank party: the person picks the bank
-/// from the party's own list, consents at the bank through a redirect, and
-/// the aggregator hands the accounts over on HTTPS ever after — no browser,
-/// no agent, the operator's key in configuration and a consent id in the
-/// session. The two aggregators differ only in their wire, which the
-/// abstract members carry; everything a person or the platform sees is here.
-/// </summary>
+// no browser, no agent: the operator's key in configuration and a consent id in the session
+// the two aggregators differ only in their wire, which the abstract members carry
 public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
 {
     private static readonly TimeSpan InstitutionsFor = TimeSpan.FromHours(24);
@@ -46,11 +40,10 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
 
     protected abstract Task<IReadOnlyList<Institution>> InstitutionsAsync(HttpClient http, string country, CancellationToken ct);
 
-    /// <summary>Asks the aggregator for a consent of <paramref name="consentDays"/>; returns where to send the person, what to complete with, and when the consent that was asked for ends.</summary>
+    // returns where to send the person, what to complete with, and when the consent asked for ends
     protected abstract Task<(string Url, string PendingId, DateTimeOffset ExpiresAt)> StartConsentAsync(
         HttpClient http, Institution institution, string returnUrl, string reference, int consentDays, CancellationToken ct);
 
-    /// <summary>The bank came back: the consent's id at the aggregator and the accounts it reaches.</summary>
     protected abstract Task<(string ConsentId, IReadOnlyList<string> AccountIds)> CompleteConsentAsync(
         HttpClient http, string pendingId, IReadOnlyDictionary<string, string> landing, CancellationToken ct);
 
@@ -72,17 +65,12 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
     protected abstract Task<IReadOnlyList<(string Type, string Amount, string Currency, string? Date)>> BalancesAsync(
         HttpClient http, string accountId, CancellationToken ct);
 
-    /// <summary>
-    /// One account's rows from <paramref name="from"/>, up to <paramref name="to"/>
-    /// when the caller named an end (a backfill pass, #460); <c>Complete</c> is
-    /// false when the party held more than the walk took.
-    /// </summary>
+    // rows up to `to` only when the caller named an end (a backfill pass, #460)
+    // Complete is false when the party held more than the walk took
     protected abstract Task<(IReadOnlyList<AggregatorTransaction> Rows, ProviderQuota? Quota, bool Complete)> TransactionsAsync(
         HttpClient http, string accountId, DateOnly from, DateOnly? to, CancellationToken ct);
 
     protected abstract Task RevokeAsync(HttpClient http, string consentId, CancellationToken ct);
-
-    // ── login: the consent ─────────────────────────────────────────────
 
     public async Task<LoginResult> LoginAsync(IJobContext ctx, CancellationToken ct)
     {
@@ -137,8 +125,6 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
             ExpiresAt = expiresAt,
         };
     }
-
-    // ── fetch: accounts and transactions over the consent ──────────────
 
     public async Task<FetchResult> FetchAsync(IJobContext ctx, ResourceRequest request, CancellationToken ct)
     {
@@ -198,21 +184,9 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         return (accounts, learned ? (consent with { Accounts = detailed }).ToMaterial() : null);
     }
 
-    /// <summary>
-    /// The account's balance now — or none when the party's budget refused
-    /// it, which is a fact about the day, not about the consent.
-    /// </summary>
-    /// <remarks>
-    /// The aggregators budget every endpoint on its own, and a bank like ING
-    /// allows a handful of balance reads per account per day. A refusal here
-    /// used to fail the whole pass (prod 2026-10-08: the second accounts pass
-    /// of one minute — the reconnect's and the scheduler's — hit the budget,
-    /// the session was ended for it, and the transactions, whose budget was
-    /// untouched, were never asked for). An account without a balance is
-    /// emitted without one: the consumer keeps the last balance it had, the
-    /// pass goes on to the next account and to the transactions, and the
-    /// note says why the figure did not move.
-    /// </remarks>
+    // a budget refusal gives no balance, a fact about the day not the consent: it once failed the whole pass (prod 2026-10-08)
+    // two accounts passes in one minute hit the budget, the session ended, and the transactions were never asked for
+    // the account is emitted without a balance: the consumer keeps its last one
     private async Task<Balance?> BalanceAsync(IJobContext ctx, ConsentAccount account, DateOnly today, CancellationToken ct)
     {
         try
@@ -227,11 +201,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         }
     }
 
-    /// <summary>
-    /// One account's rows over the window; a pending row is kept whatever its
-    /// day — except on a backfill pass (#460), which ends long before today —
-    /// and what the party said about its budget is reported.
-    /// </summary>
+    // a pending row is kept whatever its day, except on a backfill pass (#460), which ends long before today
     private async Task<(List<Transaction> Rows, bool Complete)> RowsAsync(IJobContext ctx, Account account, FetchWindow window, bool backfill, CancellationToken ct)
     {
         var (rows, quota, complete) = await TransactionsAsync(ctx.Http, account.ExternalId, window.From, backfill ? window.To : null, ct).ConfigureAwait(false);
@@ -259,8 +229,6 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         var consent = ConsentMaterial.From(ctx.Material, PartyId);
         await RevokeAsync(ctx.Http, consent.ConsentId, ct).ConfigureAwait(false);
     }
-
-    // ── the institution list ───────────────────────────────────────────
 
     public async Task<IReadOnlyList<LookupOption>> LookupAsync(HttpClient http, string field, LookupQuery query, CancellationToken ct)
     {
@@ -295,8 +263,6 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
         var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
         return bytes.Length is 0 or > MaxLogoBytes ? null : new LookupLogo(bytes, type);
     }
-
-    // ── helpers ─────────────────────────────────────────────────────────
 
     /// <summary>The account with its details, when the party will say them now; a budget refusal leaves it undetailed for the next fetch.</summary>
     private async Task<ConsentAccount> DetailedAsync(IJobContext ctx, ConsentAccount account, CancellationToken ct)

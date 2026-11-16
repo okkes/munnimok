@@ -7,14 +7,7 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// A session that waits says how long the line is (user request
-/// 2026-10-01: a login sat on "opening the party's site" with no sign of
-/// whether anything was happening). The view of a queued job carries
-/// <c>progress.ahead</c>: how many queued jobs are older than it, any
-/// party's, because the fleet drains the queue oldest first whatever the
-/// party. Once the job runs the number is gone - it would be a lie.
-/// </summary>
+// progress.ahead counts queued jobs older than this one, any party's (the fleet drains oldest first); absent once it runs
 [Collection(ShopApiCollection.Name)]
 public sealed class QueuePositionTests(ShopApiFactory factory)
 {

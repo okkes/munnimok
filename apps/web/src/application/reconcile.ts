@@ -7,14 +7,9 @@ import type { ReconcileMatch, ReconcilePlan } from '@/domain/reconcile';
 import { logActivity } from './activity';
 import { isLinkedTo, linkedTxIds } from './receiptLinks';
 
-/**
- * Applies an imported-vs-linked reconciliation (master plan requirement
- * x): the connection is the truth — matched imports hand their edits to
- * the truth row (unless the user opted a match out), then every judged
- * import inside the coverage is deleted. Pre-coverage history survives.
- */
+// the connection is the truth: matched imports hand their edits to the truth row (unless opted out),
+// then every judged import inside the coverage is deleted; pre-coverage history survives
 
-/** every raw row of one account, wherever it lives (feed or merged space) */
 export async function buildReconcilePlan(
   store: StorageBackend,
   accountId: string,
@@ -24,8 +19,7 @@ export async function buildReconcilePlan(
   return reconcilePlan(rows);
 }
 
-/** #311 r4 (user): the merge plan spans BOTH accounts of the pair — the
- *  classifier splits the union by row provenance exactly as before */
+/** spans both accounts of the pair; the classifier splits the union by row provenance */
 export async function buildMergePlan(
   store: StorageBackend,
   importedAccountId: string,
@@ -38,7 +32,6 @@ export async function buildMergePlan(
   return reconcilePlan(rows);
 }
 
-/** the fields that make up a space's opinion about a transaction */
 const OPINION_FIELDS = [
   'catId',
   'needsReview',
@@ -62,7 +55,6 @@ const pickOpinions = (source: Partial<TxMetaRow> & Partial<TransactionRow>) => {
 };
 
 async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileMatch, spaceIds: string[]): Promise<void> {
-  // merged rows (demo/offline) carry their opinions directly
   const direct = pickOpinions(match.imported);
   if (Object.keys(direct).length > 0) {
     await repo.upsert('transaction', match.linked.spaceId, match.linked.id, direct);
@@ -75,13 +67,8 @@ async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileM
         ...pickOpinions(meta),
       });
     }
-    // #311 r2 (user): the import's REVIEW VERDICT travels with the
-    // match. An import the space never reviewed (no overlay, or an
-    // explicit 1) must not come out "reviewed" just because the bank
-    // row arrived wearing a prediction overlay that claims 0 — the
-    // prediction's category may stay, the review claim resets.
-    // unreviewed = no overlay, an explicit 1, or an overlay that never
-    // spoke about review (the joined view defaults those to 1)
+    // the import's review verdict travels: an import never reviewed (no overlay, an explicit 1, or one silent about review)
+    // must not come out reviewed because the bank row wore a prediction overlay claiming 0; the category may stay (#311)
     const importedUnreviewed = !metas.some((m) => m.needsReview === 0);
     if (importedUnreviewed) {
       const linkedMeta = await store.get('txMeta', txMetaId(spaceId, match.linked.id));
@@ -89,15 +76,12 @@ async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileM
         await repo.upsert('txMeta', spaceId, txMetaId(spaceId, match.linked.id), { txId: match.linked.id, needsReview: 1 });
       }
     }
-    // receipts follow the surviving row — as their first attachment or as one of the further ones (user 2026-10-08)
     for (const link of (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0 && isLinkedTo(l, match.imported.id))) {
       await repo.upsert('receiptLink', spaceId, link.id, repointedLink(link, match.imported.id, match.linked.id));
     }
   }
 }
 
-/** a receipt link's attachments with one transaction replaced by its surviving twin — `txId` stays the first,
- *  the rest ride `alsoTxIds` (dropped when nothing is left of them) */
 function repointedLink(link: ReceiptLinkRow, from: string, to: string): Pick<ReceiptLinkRow, 'txId' | 'alsoTxIds'> {
   const [txId, ...alsoTxIds] = [...new Set(linkedTxIds(link).map((id) => (id === from ? to : id)))];
   return { txId, alsoTxIds: alsoTxIds.length > 0 ? alsoTxIds : (null as never) };
@@ -105,8 +89,6 @@ function repointedLink(link: ReceiptLinkRow, from: string, to: string): Pick<Rec
 
 type ReimbLink = { txId: string; amountCents: number };
 
-/** re-point links at a replacement row, drop links whose row is gone;
- *  undefined when nothing referenced a replaced id */
 function rewriteLinks(
   links: ReimbLink[] | undefined,
   replacements: ReadonlyMap<string, string | null>,
@@ -120,7 +102,6 @@ function rewriteLinks(
     }
     const target = replacements.get(link.txId);
     if (target) next.push({ ...link, txId: target });
-    // null target: the row is gone — the link goes with it
   }
   return next;
 }
@@ -139,7 +120,6 @@ async function repointIn(
   }
 }
 
-/** reimbursement links pointing at a replaced/deleted row get re-pointed or dropped */
 async function repointReimbursements(
   store: StorageBackend,
   repo: Repo,
@@ -167,7 +147,6 @@ export async function applyReconcile(
   activeSpaceId: string,
   plan: ReconcilePlan,
   ignoredImportedIds: ReadonlySet<string>,
-  // #311 r3 (user): long runs narrate — (done, total) after every step
   onProgress?: (done: number, total: number) => void,
 ): Promise<ReconcileResult> {
   const spaceIds = await writableSpaceIds(store, repo);
@@ -176,8 +155,6 @@ export async function applyReconcile(
   let done = 0;
   const step = () => onProgress?.(++done, total);
 
-  // links referencing a matched import re-point to its truth row; links
-  // referencing a deleted mismatch are dropped
   const replacements = new Map<string, string | null>();
   let migrated = 0;
   for (const match of plan.matches) {
@@ -192,8 +169,7 @@ export async function applyReconcile(
   await repointReimbursements(store, repo, spaceIds, replacements);
   step();
 
-  // the truth stands — every judged import goes (ignored matches too:
-  // ignoring only skips the EDIT migration, the duplicate still falls)
+  // ignoring a match only skips the edit migration; the duplicate still falls
   for (const row of toDelete) {
     await repo.remove('transaction', row.spaceId, row.id);
     step();
@@ -207,13 +183,8 @@ export interface MergeResult extends ReconcileResult {
   moved: number;
 }
 
-/**
- * #311 r4 (user): the explicit MERGE of a statement-imported account
- * into its bank-fed twin. The reconcile runs as part of it; surviving
- * pre-coverage history MOVES onto the bank account, every space link
- * naming the imported account repoints, and the imported row retires —
- * the bank twin becomes the one face.
- */
+/** explicit MERGE of a statement-imported account into its bank twin (#311): surviving pre-coverage history MOVES,
+ *  space links repoint, the imported account retires */
 export async function applyMerge(
   store: StorageBackend,
   repo: Repo,
@@ -229,8 +200,7 @@ export async function applyMerge(
     await repo.upsert('transaction', row.spaceId, row.id, { accountId: pair.bankAccountId });
     moved++;
   }
-  // links share their id (spaceId+feedId) across the pair — only the
-  // accountId fact changes hands
+  // links share their id across the pair; only the accountId fact changes hands
   for (const spaceId of await writableSpaceIds(store, repo)) {
     const links = (await store.bySpace('accountLink', spaceId)).filter(
       (l) => l.deleted === 0 && l.accountId === pair.importedAccountId,

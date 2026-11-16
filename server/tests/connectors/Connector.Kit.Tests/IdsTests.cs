@@ -2,11 +2,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests;
 
-/// <summary>
-/// Prefixes are not decoration: they make passing a job id where a session
-/// id belongs impossible to miss in review, and several endpoints take an
-/// id as their only lookup key - so an id must also be unguessable.
-/// </summary>
+// prefixes make a job id passed where a session id belongs obvious in review; ids are lookup keys, so unguessable
 public sealed class IdsTests
 {
     public static TheoryData<string> EveryPrefix()
@@ -25,8 +21,7 @@ public sealed class IdsTests
     [Fact]
     public void The_prefixes_are_the_published_ones()
     {
-        // connector-api-spec.md names these in its conventions section; a
-        // consumer that pattern-matches an id is matching on these strings.
+        // connector-api-spec.md publishes these; consumers pattern-match on them
         Assert.Equal("ses", Ids.Session);
         Assert.Equal("job", Ids.Job);
         Assert.Equal("chl", Ids.Challenge);
@@ -44,8 +39,6 @@ public sealed class IdsTests
     [Fact]
     public void Every_prefix_is_distinct()
     {
-        // Two kinds sharing a prefix would defeat the whole point: the
-        // mix-up the prefix exists to make visible becomes invisible again.
         Assert.Equal(All.Length, All.Distinct(StringComparer.Ordinal).Count());
     }
 
@@ -70,8 +63,8 @@ public sealed class IdsTests
     [Theory]
     [InlineData("ses_abc", "ses", true)]
     [InlineData("job_abc", "ses", false)]
-    [InlineData("session_abc", "ses", false)]   // the underscore is part of the check
-    [InlineData("ses", "ses", false)]           // a bare prefix is not an id
+    [InlineData("session_abc", "ses", false)]
+    [InlineData("ses", "ses", false)]
     [InlineData("SES_abc", "ses", false)]       // ordinal, never case-insensitive
     [InlineData("", "ses", false)]
     [InlineData(null, "ses", false)]
@@ -83,9 +76,7 @@ public sealed class IdsTests
     [Fact]
     public void A_record_id_is_deterministic_for_the_same_inputs()
     {
-        // Together with content hashing this is what makes a retry free for
-        // the caller: the same upstream data produces the same ids, so a
-        // re-run never duplicates.
+        // with content hashing, the same upstream data gives the same ids, so a re-run never duplicates
         var first = Ids.ForRecord(Ids.Transaction, Make.SessionId, "NL91-2026-07-19-0001");
         var second = Ids.ForRecord(Ids.Transaction, Make.SessionId, "NL91-2026-07-19-0001");
 
@@ -107,8 +98,7 @@ public sealed class IdsTests
     [Fact]
     public void The_same_external_id_in_two_sessions_is_two_records()
     {
-        // A provider's ids are unique per account, not globally. Two users
-        // whose bank numbers receipts from 1 must not collide.
+        // provider ids are unique per account, not globally: two users' receipts numbered from 1 must not collide
         var mine = Ids.ForRecord(Ids.Receipt, "ses_" + new string('a', 32), "1");
         var theirs = Ids.ForRecord(Ids.Receipt, "ses_" + new string('b', 32), "1");
 
@@ -118,9 +108,7 @@ public sealed class IdsTests
     [Fact]
     public void A_record_id_is_not_a_minted_id()
     {
-        // Both are 128 bits of hex behind the same prefix, deliberately: a
-        // caller must not be able to tell a derived id from a random one and
-        // start deriving its own.
+        // derived and random ids look alike on purpose, so a caller cannot tell and start deriving its own
         Assert.Matches("^rcp_[0-9a-f]{32}$", Ids.ForRecord(Ids.Receipt, Make.SessionId, "e-1"));
         Assert.Matches("^rcp_[0-9a-f]{32}$", Ids.New(Ids.Receipt));
     }

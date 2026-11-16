@@ -2,12 +2,7 @@ using System.Net;
 
 namespace Connector.Kit.Agent.Transport;
 
-/// <summary>
-/// A control-plane call did not go through. Distinct from
-/// <see cref="Errors.ConnectorException"/> on purpose: that one describes what
-/// a PROVIDER did and travels to the caller, this one describes our own link
-/// to the control plane and never leaves the agent.
-/// </summary>
+/// our own link to the control plane, never leaves the agent; ConnectorException describes a provider's behaviour instead
 public sealed class ControlPlaneException : Exception
 {
     public ControlPlaneException(HttpStatusCode? status, string message, Exception? inner = null)

@@ -1,11 +1,6 @@
 import { create } from 'zustand';
 
-/**
- * #173 (user): being kicked out of a space must not be a silent vanish.
- * The sync engine's 403 → purge path records the eviction here; the
- * layout shows the takeover sheet and the data provider hops the active
- * space to a surviving one. Module store — the engine has no React.
- */
+/** #173: being kicked out of a space must not be a silent vanish; a module store, the engine has no React */
 export interface EvictedInfo {
   spaceId: string;
   spaceName: string;
@@ -29,5 +24,4 @@ export const useEvicted = create<EvictedState>((set) => ({
   clear: () => set({ evicted: null }),
 }));
 
-/** engine-side door (no hooks there) */
 export const reportEviction = (info: EvictedInfo): void => useEvicted.getState().report(info);

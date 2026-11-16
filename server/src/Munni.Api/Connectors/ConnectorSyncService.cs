@@ -6,40 +6,21 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// One sync of a connection (docs/connectors/relay.md, "Routes"): the
-/// bundle the client holds, and the window. <c>Until</c> makes it a backfill
-/// pass (#460): only the history resources, up to that day.
-/// </summary>
+// Until makes it a backfill pass (#460): only the history resources, up to that day
 public sealed record ConnectorSyncRequest(string ConnectionId, string Bundle, string? Since = null, string? Until = null);
 
-/// <summary>
-/// Following a fetch that did not finish inside the connector's window: the
-/// newest bundle the client holds, and the window the sync asked with, for
-/// the resources the walk goes on to after the job's.
-/// </summary>
 public sealed record ConnectorCollectRequest(string Bundle, string? Since = null, string? Until = null);
 
-/// <summary>What a collect runs as: the app's request, who asked (<c>user</c> or <c>schedule</c>) and the device class the walk's fetches ride on.</summary>
 public sealed record ConnectorCollectCall(ConnectorCollectRequest Request, string Trigger = "user", string DeviceClass = "native");
 
-/// <summary>What a relay operation answers: a status and the body the app reads.</summary>
 public sealed record ConnectorOutcome(int Status, JsonObject Body);
 
 internal sealed record WireResume(string Subject, string Bundle);
 
 internal sealed record WireAck(string Cursor);
 
-/// <summary>
-/// The sync the app cannot see the inside of: resume the session from the
-/// bundle, fetch every resource the manifest declares, ingest what came
-/// back, acknowledge it, and hand the rotated bundle back in the same
-/// answer. A crash between fetch and ack costs one sync and never a
-/// connection: the connector re-serves what was not acknowledged and the
-/// ingest is idempotent. A fetch that stops — for a question, or for a
-/// window the provider outran — comes back as a job the app follows, and
-/// <see cref="CollectAsync"/> finishes the same sequence for it.
-/// </summary>
+// a crash between fetch and ack costs one sync, never a connection: the connector re-serves what was not acknowledged
+// and the ingest is idempotent
 public sealed class ConnectorSyncService(
     ConnectorRelay relay,
     ConnectorCatalogue catalogue,
@@ -48,14 +29,9 @@ public sealed class ConnectorSyncService(
     ILogger<ConnectorSyncService> logger,
     Munni.Api.Push.PushNotifier? notifier = null)
 {
-    /// <summary>
-    /// The includes a sync asks for when a resource offers them; <c>raw</c> is
-    /// never one of them. <c>ledger</c> (#566): DUO states its instalment and
-    /// its booked movements only there, and a debt without them read as €0.
-    /// </summary>
+    // raw is never one; ledger (#566): DUO states its instalment and booked movements only there,
+    // and a debt without them read as €0
     private static readonly string[] WantedIncludes = ["items", "invoice", "ledger"];
-
-    /// <summary>How many passes one sync makes over a resource the provider paginates.</summary>
 
     private const string SessionField = "session";
     private const string ResourceField = "resource";
@@ -66,7 +42,7 @@ public sealed class ConnectorSyncService(
 
     private static readonly HashSet<string> SettledJobStates = new(StringComparer.Ordinal) { "succeeded", "failed", "expired" };
 
-    /// <param name="trigger"><c>user</c> for a person's call, <c>schedule</c> for the relay's own scheduler, <c>backfill</c> for its pass over older history — the connector holds the last two to the provider's interval, each on its own clock.</param>
+    // the connector holds schedule and backfill to the provider's interval, each on its own clock
     public async Task<ConnectorOutcome> SyncAsync(
         Guid userId, string subject, string provider, ConnectorSyncRequest request, string deviceClass, CancellationToken ct, string trigger = "user")
     {
@@ -111,23 +87,13 @@ public sealed class ConnectorSyncService(
         return new ConnectorOutcome(StatusCodes.Status200OK, body);
     }
 
-    /// <summary>
-    /// The day down to which a partial pass is whole: where the next older pass asks up to.
-    /// Absent when the pass was whole or brought nothing older.
-    /// </summary>
     private static void StampOldest(JsonObject body, SyncRun run)
     {
         if (run.Partial && run.Oldest is { } oldest) body[OldestField] = oldest.ToString(DayFormat, CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// One resource, one pass. The connector runs every fetch as a job of its
-    /// own and the adapters walk newest first and cap themselves, so asking
-    /// again after a partial pass would only fetch the same newest rows a
-    /// second time (it used to, up to twenty times); a partial pass is said
-    /// so on the outcome instead. Null when the page landed; the 202 outcome
-    /// when the pass became a job.
-    /// </summary>
+    // every fetch is a job of its own and the adapters walk newest first and cap themselves: asking again after a partial
+    // pass would refetch the same newest rows, so a partial pass is said on the outcome instead
     private async Task<ConnectorOutcome?> FetchResourceAsync(SyncRun run, JsonObject resource, CancellationToken ct)
     {
         var resourceId = resource.Text("id");
@@ -168,7 +134,6 @@ public sealed class ConnectorSyncService(
         return null;
     }
 
-    /// <summary>A page: ingest it, take the bundle it rotated, acknowledge it.</summary>
     private async Task LandPageAsync(SyncRun run, string resourceId, string shape, JsonObject page, CancellationToken ct)
     {
         var landed = await ingest.IngestAsync(
@@ -193,7 +158,6 @@ public sealed class ConnectorSyncService(
         }
     }
 
-    /// <summary>A run still in flight, or parked on a question: the app follows the job and collects it with the bundle it holds.</summary>
     private ConnectorOutcome Accepted(SyncRun run, JsonObject accepted)
     {
         var jobId = accepted.Text("job_id") ?? throw new InvalidOperationException("a 202 without a job id");
@@ -207,7 +171,7 @@ public sealed class ConnectorSyncService(
         return new ConnectorOutcome(StatusCodes.Status202Accepted, pending);
     }
 
-    /// <summary>The job as the connector shows it, in this API's casing and without its page of records: those land through sync.</summary>
+    // without its page: records land through sync
     public async Task<ConnectorOutcome> JobAsync(Guid userId, string subject, string provider, string jobId, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync($"v1/{provider}/jobs/{jobId}", new ConnectorCall { Subject = subject }, ct);
@@ -231,15 +195,7 @@ public sealed class ConnectorSyncService(
         return new ConnectorOutcome((int)reply.Status, ViewOf(reply.Object));
     }
 
-    /// <summary>
-    /// Finishes a job the app followed to its end: ingests its page, resumes
-    /// with the bundle the app holds to acknowledge it, walks on to the
-    /// resources after the one the job fetched, and hands back the bundle
-    /// the connector rotated, if it did. A job that is not finished yet
-    /// answers 202 with its view; a job that failed answers with its error;
-    /// a pass further down the walk that became a job of its own answers
-    /// 202 with THAT job's view, for the caller to follow and collect in turn.
-    /// </summary>
+    // a pass further down the walk that became a job answers 202 with THAT job's view, to follow and collect in turn
     public async Task<ConnectorOutcome> CollectAsync(
         Guid userId, string subject, string provider, string jobId, ConnectorCollectCall call, CancellationToken ct)
     {
@@ -268,13 +224,8 @@ public sealed class ConnectorSyncService(
         var bundle = (job[SessionField] as JsonObject)?.Text("bundle") ?? call.Request.Bundle;
         var ticket = await AckJobAsync(subject, provider, job, bundle, ct);
 
-        // The job was ONE resource's pass; the walk goes on from the resource
-        // after it. Prod, 2026-10-04: a bank's accounts pass took a second
-        // longer than its window and became a job, the app collected it, and
-        // the transactions were never asked for - the balance moved, the list
-        // did not, sync after sync. Each pass after it may become a job of its
-        // own: the app (or the scheduler) follows that one and collects again,
-        // and the walk goes on from there.
+        // the job was ONE resource's pass, so the walk goes on after it (prod 2026-10-04: a bank's accounts pass became a job and
+        // the transactions were never asked for: the balance moved, the list did not)
         var run = new SyncRun(
             userId, subject, provider,
             new ConnectorSyncRequest(row?.ConnectionId ?? sessionId, bundle, call.Request.Since, call.Request.Until),
@@ -294,12 +245,8 @@ public sealed class ConnectorSyncService(
         return pending ?? await FinishAsync(run, row, view, ct);
     }
 
-    /// <summary>
-    /// The job's page landed, and the pending mirror settled when the job was a
-    /// complete pass over the transactions (§15). A page that still carries its
-    /// accounts is the party's word, also when it holds no reserved row; a page
-    /// that is gone - collected before, swept, taken over by a later job - is not.
-    /// </summary>
+    // a page that still carries its accounts is the party's word, also with no reserved row;
+    // a gone page (collected, swept, taken over) is not
     private async Task<ConnectorIngestResult?> LandJobAsync(JobPage page, bool backfill, CancellationToken ct)
     {
         var landed = await LandJobPageAsync(page, ct);
@@ -312,7 +259,6 @@ public sealed class ConnectorSyncService(
         return landed;
     }
 
-    /// <summary>Resumes with the bundle in hand and acknowledges the job's page; the ticket the walk goes on with.</summary>
     private async Task<string> AckJobAsync(string subject, string provider, JsonObject job, string bundle, CancellationToken ct)
     {
         var resumed = await ResumeAsync(subject, provider, bundle, ct);
@@ -324,7 +270,6 @@ public sealed class ConnectorSyncService(
         return ticket;
     }
 
-    /// <summary>The walk, on from the resource the job fetched: null once every pass after it landed; the 202 of the first pass that became a job of its own.</summary>
     private async Task<ConnectorOutcome?> WalkOnAsync(SyncRun run, ConnectorSession? row, string? resourceId, CancellationToken ct)
     {
         if (resourceId is null) return null;
@@ -343,7 +288,6 @@ public sealed class ConnectorSyncService(
         return null;
     }
 
-    /// <summary>The walk is done: the session active again, the spaces woken, a scheduled run's push sent, the view carrying the walk's totals.</summary>
     private async Task<ConnectorOutcome> FinishAsync(SyncRun run, ConnectorSession? row, JsonObject view, CancellationToken ct)
     {
         if (row is not null)
@@ -374,21 +318,18 @@ public sealed class ConnectorSyncService(
         return landed;
     }
 
-    /// <summary>The shape of the resource a job fetched, from the manifest's resources.</summary>
     private static string? ShapeOf(JsonObject? manifest, JsonObject job)
     {
         var resourceId = job.Text(ResourceField);
         return resourceId is null ? null : Resources(manifest).FirstOrDefault(r => r.Text("id") == resourceId)?.Text("returns");
     }
 
-    /// <summary>A scheduled fetch tells each space how many rows are new to it, and a space it brought nothing says nothing; a person's own sync needs no push.</summary>
+    // a space it brought nothing says nothing; a person's own sync needs no push
     private async Task NotifyAsync(string trigger, IReadOnlyDictionary<string, int> newBySpace, CancellationToken ct)
     {
         if (notifier is null || trigger != "schedule") return;
         foreach (var (spaceId, count) in newBySpace) await notifier.NotifyNewTransactionsAsync(spaceId, count, ct);
     }
-
-    // ── the connector's calls ────────────────────────────────────────────
 
     private async Task<JsonObject> ResumeAsync(string subject, string provider, string bundle, CancellationToken ct)
     {
@@ -431,15 +372,12 @@ public sealed class ConnectorSyncService(
         foreach (var spaceId in touched) events.Publish(spaceId);
     }
 
-    /// <summary>The job in the app's casing, without its page: records reach the app through the feeds.</summary>
     private static JsonObject ViewOf(JsonObject job)
     {
         var view = (JsonObject)ConnectorJson.ToCamel(job)!;
         view.Remove("data");
         return view;
     }
-
-    // ── the manifest, read ───────────────────────────────────────────────
 
     private static IEnumerable<JsonObject> Resources(JsonObject? manifest) =>
         manifest?["resources"] is JsonArray resources ? resources.OfType<JsonObject>() : [];
@@ -448,12 +386,6 @@ public sealed class ConnectorSyncService(
     internal static IEnumerable<JsonObject> PassResources(JsonObject? manifest, string? until) =>
         until is null ? Resources(manifest) : Resources(manifest).Where(r => Param(r["params"] as JsonArray ?? [], "until") is not null);
 
-    /// <summary>
-    /// The query a resource takes: <c>since</c> when it declares one (the
-    /// caller's date, else as far back as the provider allows), <c>until</c>
-    /// on a backfill pass, the includes it offers among the ones munni wants.
-    /// Nothing else — accounts are all of them.
-    /// </summary>
     internal static string QueryFor(JsonObject resource, JsonObject manifest, string? since, string? until = null)
     {
         var parameters = resource["params"] as JsonArray ?? [];
@@ -498,10 +430,7 @@ public sealed class ConnectorSyncService(
                || from <= to;
     }
 
-    /// <summary>
-    /// The day down to which a partial page is whole. A party caps each account by itself, so the
-    /// accounts stop on different days: the frontier is the NEWEST of their oldest days.
-    /// </summary>
+    // a party caps each account by itself, so accounts stop on different days: the frontier is the NEWEST of their oldest days
     internal static DateOnly? OldestOf(JsonArray? records, DateOnly? until = null)
     {
         var perAccount = new Dictionary<string, DateOnly>(StringComparer.Ordinal);
@@ -563,8 +492,6 @@ public sealed class ConnectorSyncService(
         },
     });
 
-    /// <summary>One sync's state as it walks the manifest: the ticket in hand, the bundle to persist, what landed.</summary>
-    /// <summary>A collected job's page and whose it is: the connection it lands under is the session's own, or the session itself before it had one.</summary>
     private sealed record JobPage(Guid UserId, string Provider, JsonObject? Manifest, ConnectorSession? Row, JsonObject Job, string SessionId)
     {
         public string ConnectionId => Row?.ConnectionId ?? SessionId;
@@ -601,7 +528,6 @@ public sealed class ConnectorSyncService(
 
         public required string Ticket { get; set; }
 
-        /// <summary>A resource's pass came back incomplete: the party holds more than one fetch brings.</summary>
         public bool Partial { get; set; }
 
         /// <summary>The day down to which an incomplete pass is whole: the next older pass asks up to it.</summary>
@@ -613,14 +539,12 @@ public sealed class ConnectorSyncService(
             if (day is { } d && (Oldest is null || d > Oldest)) Oldest = d;
         }
 
-        /// <summary>What the fetches declare themselves as: a person's call, or the scheduler's.</summary>
         public string Trigger { get; init; } = "user";
 
         public string Bundle { get; set; } = request.Bundle;
 
         public bool Rotated { get; set; }
 
-        /// <summary>What has landed so far, over every resource and pass.</summary>
         public ConnectorIngestCounts Landed { get; set; } = ConnectorIngestCounts.None;
 
         public HashSet<string> Touched { get; } = new(StringComparer.Ordinal);

@@ -9,19 +9,7 @@ import { creditRemainingCents, givenCents, netAmountCents, remainingCents, total
 import { useReimburseLinks } from './useReimburseLinks';
 import { Icon } from '@/ui/Icon';
 
-// #237 (user): the intermediate "Linked transaction" sheet is gone —
-// a reimbursement row IS the other side's card and tapping it goes
-// straight to that transaction.
-
-/**
- * Reimbursement links on a transaction: the linked list + unlink here;
- * FINDING the counterpart lives on its own full screen (user redesign
- * 2026-07-28 — search, suggestions, more room). Candidates come from
- * what the SPACE sees, so reimbursements can only ever pair
- * transactions of accounts attached to the same space (user rule).
- */
-/** #270 r2 (user): the linked rows say WHEN — "Sat 1 Aug", like the
- *  list's own day headers */
+/** candidates come from what the SPACE sees: reimbursements pair only transactions of accounts in the same space */
 const fmtLinkDay = (iso: string, lang: keyof typeof LOCALES): string =>
   new Date(iso).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' });
 
@@ -33,7 +21,6 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const { unlink } = useReimburseLinks(allTxs);
   const linkedIds = useMemo(() => (tx.reimbursements ?? []).map((r) => r.txId), [tx.reimbursements]);
   const linkedTxs = useMemo(() => allTxs?.filter((c) => linkedIds.includes(c.id)), [allTxs, linkedIds]);
-  // the reverse direction: expenses that name THIS credit as their refund
   const reimburses = useMemo(
     () =>
       allTxs
@@ -45,8 +32,6 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const openPicker = () => void navigate({ to: '/transactions/$txId/link-reimb', params: { txId: tx.id } });
   const openTx = (txId: string) => void navigate({ to: '/transactions/$txId', params: { txId } });
 
-  // a credit that reimburses something shows its own side of the story —
-  // and can start a link itself (user request: income side too)
   if (tx.amountCents >= 0) {
     const given = givenCents(allTxs ?? [], tx.id);
     const giveable = creditRemainingCents(tx, given);
@@ -127,15 +112,12 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
           </button>
         )}
       </div>
-      {/* #231 r2 (user): the section is the LINKS, nothing else — the
-          netted headline and the Details card's original amount already
-          tell the money story; no original/net/of rows here */}
+      {/* the section is the links only: the netted headline and the Details card already tell the money story (#231) */}
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="reimb-list">
         {(linkedTxs ?? []).map((linked) => {
           const link = (tx.reimbursements ?? []).find((r) => r.txId === linked.id);
           return (
             <div key={linked.id} className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
-              {/* the row itself IS the other side — tap goes straight there */}
               <button
                 data-testid={`reimb-row-${linked.id}`}
                 onClick={() => openTx(linked.id)}

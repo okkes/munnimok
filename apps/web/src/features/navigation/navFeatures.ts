@@ -1,10 +1,6 @@
 import type { TranslationKey } from '@/i18n';
 
-/**
- * The navigation's one feature catalogue (#523, #577): the desktop side
- * panel lists every entry, the mobile bar shows Home plus the space's picks
- * (SpaceRow.navTabs), Home shortcuts and the editor read the same table.
- */
+// one catalogue (#523, #577): the side panel lists every entry, the mobile bar shows Home plus SpaceRow.navTabs
 
 export const NAV_FEATURE_IDS = [
   'transactions',
@@ -79,7 +75,6 @@ export const SIDE_NAV_GROUPS: readonly { capKey?: TranslationKey; ids: readonly 
 const KNOWN = new Set<string>(NAV_FEATURE_IDS);
 export const isNavFeatureId = (id: unknown): id is NavFeatureId => typeof id === 'string' && KNOWN.has(id);
 
-/** whether this identity can open the feature at all */
 export const navUsableFor =
   (identityKind: string | undefined) =>
   (id: NavFeatureId): boolean =>
@@ -113,10 +108,8 @@ export function storedNavTabs(saved: unknown, next: readonly NavFeatureId[], usa
   return [...next, ...hidden.filter((id, i) => hidden.indexOf(id) === i)];
 }
 
-/** the shortcut features that are not in the bar (Home lists them) */
 export const homeShortcuts = (tabs: readonly NavFeatureId[]): NavFeatureId[] => SHORTCUT_FEATURES.filter((id) => !tabs.includes(id));
 
-/** labels stay while the widest fits its slot with room to breathe; one that does not turns the whole bar into icons */
 export function labelsFit(slotWidth: number, labelWidths: readonly number[], gutter: number): boolean {
   return labelWidths.every((width) => width + gutter * 2 <= slotWidth);
 }

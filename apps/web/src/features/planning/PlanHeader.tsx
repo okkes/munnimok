@@ -7,14 +7,6 @@ import type { PlanningModel } from '@/application/planning';
 import { Button } from '@/ui/Button';
 import { AheadCircle } from './AheadCircle';
 
-/**
- * The plan's head: what is left to give a job (green at zero, amber while
- * money idles, red when more was given than the pool holds), the one-tap
- * fill and take-back, and the circle of periods funded ahead. The small
- * line under the number says what it is made of (user 2026-10-08): what
- * the period started with — the balances plus what already left — once
- * anything was spent, the plain pool before that.
- */
 export function PlanHeader({
   model,
   plan,
@@ -83,7 +75,7 @@ export function PlanHeader({
       {plan.kind === 'actual' && (
         <AheadCircle count={model.aheadCount} suggested={model.aheadSuggested} label={t('plan.ahead')} testId="plan-ahead" onClick={onAhead} />
       )}
-      {/* every subject back to zero is a big move: it asks first, with no countdown (user ruling 2026-10-02) */}
+      {/* every subject back to zero is a big move: it asks first, with no countdown */}
       <DangerConfirmSheet
         open={confirmWithdraw}
         onOpenChange={setConfirmWithdraw}

@@ -11,7 +11,6 @@ import { MunniDB } from '@/db/schema';
 import { HlcClock } from '@/sync/hlc';
 import { compactMoney, recallGraphView, rememberGraphView, truncateLabel } from './format';
 
-/** the demo space row as the store holds it right now */
 async function readSpace() {
   const db = new MunniDB('munni_demo');
   try {
@@ -34,22 +33,19 @@ describe('TrendsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-trends-row'));
     await screen.findByTestId('screen-trends');
 
-    // the Periods view: bars with their amounts on top, the current period picked
     const chart = await screen.findByTestId('trends-cat-chart');
     await waitFor(() => expect(screen.getByTestId('trends-cat-current').textContent).toMatch(/€[1-9]/));
-    // an amount on every bar that has one; an empty period carries no "€0" (gallery 2026-10-08)
+    // an empty period carries no "€0"
     const amounts = within(chart).getAllByText(/€/);
     expect(amounts.length).toBeGreaterThan(0);
     expect(amounts.length).toBeLessThanOrEqual(12);
     expect(amounts.every((node) => /€[1-9]/.test(node.textContent ?? ''))).toBe(true);
     expect(screen.getByTestId('trends-cat-chart-selected')).toBeTruthy();
-    // tapping a bar picks that period: the footer names its range and the door follows
     fireEvent.click(screen.getByTestId('trends-cat-chart-bar-10'));
     expect(screen.getByTestId('trends-cat-current').textContent).not.toContain('This period');
     fireEvent.click(screen.getByTestId('trends-cat-chart-bar-11'));
     expect(screen.getByTestId('trends-cat-current').textContent).toContain('This period');
 
-    // narrowing to a main uses the picker (per-space hidden mains apply)
     fireEvent.click(screen.getByTestId('trends-cat-picker'));
     fireEvent.click(await screen.findByTestId('trends-cat-consumption'));
     await waitFor(() => expect(screen.getByTestId('trends-cat-picker').textContent).toContain('Consumption'));
@@ -60,8 +56,7 @@ describe('TrendsScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('trends-view-networth'));
     await screen.findByTestId('trends-worth-chart');
-    // the line ends at the sum of today's balances (LEAN demo — the rich
-    // seed with its v2 loan accounts is e2e-only; the specs pin 8,080.55)
+    // the line ends at the sum of today's balances: lean demo (the rich seed's loan accounts are e2e-only)
     expect(screen.getByTestId('trends-worth-now').textContent).toContain('11,570.55');
   }, 15_000);
 
@@ -73,7 +68,6 @@ describe('TrendsScreen (demo identity)', () => {
     expect(callout.textContent).toMatch(/(less|more) than last period at day [0-9]|Level with last period at day [0-9]/);
     const rows = screen.getByTestId('trends-compare-rows-all');
     expect(within(rows).getAllByTestId(/trends-compare-row-all-/)).toHaveLength(4);
-    // the view is remembered per card on this device
     expect(recallGraphView(DEMO_SPACE_ID, 'all')).toBe('compare');
 
     fireEvent.click(screen.getByTestId('trends-graph-view-breakdown-all'));
@@ -81,7 +75,6 @@ describe('TrendsScreen (demo identity)', () => {
     const first = within(breakdown).getAllByRole('button')[0];
     expect(first.textContent).toMatch(/€[1-9]/);
     expect(first.textContent).toMatch(/%/);
-    // a subcategory row opens the transactions behind it, newest first
     fireEvent.click(first);
     const list = await screen.findByTestId('trends-graph-txlist-all');
     await waitFor(() => expect(within(list).getAllByTestId(/^tx-row-/).length).toBeGreaterThan(0));
@@ -105,23 +98,20 @@ describe('TrendsScreen (demo identity)', () => {
     await screen.findByTestId('trends-cat-chart');
     fireEvent.click(screen.getByTestId('trends-graph-new'));
     const save = await screen.findByTestId('trends-graph-save');
-    expect(save.hasAttribute('disabled')).toBe(true); // a name and a category first
+    expect(save.hasAttribute('disabled')).toBe(true);
     fireEvent.change(screen.getByTestId('trends-graph-name'), { target: { value: 'Food' } });
     fireEvent.click(screen.getByTestId('trends-graph-cat-consumption'));
-    // unfolding a main shows its subs ticked through the main
     fireEvent.click(screen.getByTestId('trends-graph-fold-consumption'));
     expect(screen.getByTestId('trends-graph-cat-groceries')).toBeTruthy();
     expect(save.hasAttribute('disabled')).toBe(false);
     fireEvent.click(save);
 
-    // the card appears with the graph's name and charts its scope
     const title = await screen.findByText('Food', {}, { timeout: 5000 });
     const card = title.closest('section')!;
     const id = card.dataset.testid!.replace('trends-graph-', '');
     await waitFor(() => expect(within(card).getByTestId(`trends-graph-txs-${id}`).textContent).toMatch(/Transactions · [1-9]/));
     await waitFor(async () => expect((await readSpace())?.trendGraphs).toEqual([{ id, name: 'Food', catIds: ['consumption'] }]));
 
-    // edit: rename and take groceries out of the main (the other subs stay ticked)
     fireEvent.click(screen.getByTestId(`trends-graph-edit-${id}`));
     const name = await screen.findByTestId('trends-graph-name');
     await waitFor(() => expect((name as HTMLInputElement).value).toBe('Food'));
@@ -137,7 +127,6 @@ describe('TrendsScreen (demo identity)', () => {
       expect(graph?.catIds).toContain('coffee');
     });
 
-    // delete asks once, then the card is gone
     fireEvent.click(screen.getByTestId(`trends-graph-edit-${id}`));
     fireEvent.click(await screen.findByTestId('trends-graph-delete'));
     fireEvent.click(await screen.findByTestId('trends-graph-delete-confirm'));
@@ -152,10 +141,8 @@ describe('TrendsScreen (demo identity)', () => {
     await screen.findByTestId('trends-graph-save');
     fireEvent.change(screen.getByTestId('trends-graph-name'), { target: { value: 'Savings spend' } });
     fireEvent.click(screen.getByTestId('trends-graph-cat-consumption'));
-    // every account to start with — the ones added later too
     expect(screen.getByTestId('trends-graph-accounts-all').getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByTestId('trends-graph-accounts-demo_main').getAttribute('aria-pressed')).toBe('true');
-    // none ticked is no graph; the savings account alone is
     fireEvent.click(screen.getByTestId('trends-graph-accounts-all'));
     expect(screen.getByTestId('trends-graph-save').hasAttribute('disabled')).toBe(true);
     fireEvent.click(screen.getByTestId('trends-graph-accounts-demo_save'));
@@ -187,7 +174,6 @@ describe('TrendsScreen (demo identity)', () => {
 
     renderApp('/trends');
     await screen.findByTestId('trends-cat-chart');
-    // two graphs over the same categories: one leaves the goal's purchase out, the other counts everything
     const makeGraph = async (name: string, skipGoals: boolean) => {
       fireEvent.click(screen.getByTestId('trends-graph-new'));
       const field = await screen.findByTestId('trends-graph-name');
@@ -212,14 +198,12 @@ describe('TrendsScreen (demo identity)', () => {
         { id: whole, name: 'Everything', catIds: ['consumption'] },
       ]),
     );
-    // the door's own span: the period's dates follow it in the button
     const rowsCounted = (id: string) => Number(/· (\d+)$/.exec(screen.getByTestId(`trends-graph-txs-${id}`).querySelector('span')?.textContent ?? '')?.[1] ?? 0);
     await waitFor(() => {
       expect(rowsCounted(whole)).toBeGreaterThan(1);
       expect(rowsCounted(lean)).toBe(rowsCounted(whole) - 1);
     });
 
-    // the option taken off again: the coffee counts, the note is gone
     fireEvent.click(screen.getByTestId(`trends-graph-edit-${lean}`));
     const again = (await screen.findByTestId('trends-graph-skip-goals')) as HTMLInputElement;
     await waitFor(() => expect(again.checked).toBe(true));
@@ -237,7 +221,6 @@ describe('TrendsScreen (demo identity)', () => {
     await screen.findByTestId('trends-flow-chart');
     fireEvent.click(screen.getByTestId('trends-flow-new'));
     await screen.findByTestId('trends-graph-save');
-    // a balance line starts from the money in hand — checking, savings and the cash wallet — and has no "every account" choice
     expect(screen.queryByTestId('trends-graph-accounts-all')).toBeNull();
     const wallet = `trends-graph-accounts-${cashWalletId(DEMO_SPACE_ID)}`;
     expect(screen.getByTestId('trends-graph-accounts-demo_main').getAttribute('aria-pressed')).toBe('true');
@@ -251,11 +234,9 @@ describe('TrendsScreen (demo identity)', () => {
     const title = await screen.findByText('Rainy day', {}, { timeout: 5000 });
     const card = title.closest('section')!;
     const id = card.dataset.testid!.replace('trends-flow-graph-', '');
-    // the line ends at the savings balance alone
     await waitFor(() => expect(within(card).getByTestId(`trends-flow-scrub-${id}`).textContent).toMatch(/Now €8,150\.00/));
     expect(within(card).getByTestId(`trends-flow-accounts-${id}`).textContent).toBe('Demo Savings · ING');
     await waitFor(async () => expect((await readSpace())?.cashflowGraphs).toEqual([{ id, name: 'Rainy day', accountIds: ['demo_save'] }]));
-    // the built-in card stays the money in hand
     expect(screen.getByTestId('trends-flow-card').textContent).toContain('Money in hand');
 
     fireEvent.click(screen.getByTestId(`trends-flow-edit-${id}`));
@@ -270,7 +251,6 @@ describe('TrendsScreen (demo identity)', () => {
     await screen.findByTestId('trends-cat-chart');
     fireEvent.click(screen.getByTestId('trends-graph-view-compare-all'));
     const chart = await screen.findByTestId('trends-compare-chart-all');
-    // the demo's rows first: today's callout carries an amount
     await waitFor(() => expect(screen.getByTestId('trends-compare-callout-all').textContent).toMatch(/€[1-9]/));
     const today = screen.getByTestId('trends-compare-callout-all').textContent;
     fireEvent.keyDown(chart, { key: 'Home' });
@@ -288,7 +268,6 @@ describe('TrendsScreen (demo identity)', () => {
     const chart = await screen.findByTestId('trends-flow-chart');
     expect(screen.getByTestId('trends-flow-chart-today')).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('trends-flow-scrub').textContent).toMatch(/^Now €/));
-    // the keys scrub too — the footer mirrors the day under the guide
     fireEvent.keyDown(chart, { key: 'ArrowLeft' });
     expect(screen.getByTestId('trends-flow-scrub').textContent).not.toMatch(/^Now/);
     expect(screen.getByTestId('trends-flow-scrub').textContent).toMatch(/€/);
@@ -299,7 +278,6 @@ describe('TrendsScreen (demo identity)', () => {
     const range = await screen.findByTestId('trends-flow-range-chart');
     expect(screen.getByTestId('trends-flow-range-chart-band')).toBeTruthy();
     expect(screen.getByTestId('trends-flow-typical').textContent).toMatch(/Typical payday peak €[1-9].*typical pre-payday low €/);
-    // a tapped period names its own low and high
     fireEvent.click(within(range).getByTestId('trends-flow-range-chart-dot-0-1'));
     expect(screen.getByTestId('trends-flow-range-sel').textContent).toMatch(/Low €.* on .* · High €.* on /);
   }, 15_000);

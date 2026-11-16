@@ -17,15 +17,12 @@ import { useQuery } from '@/db/useQuery';
 import type { Repo } from '@/db/repo';
 import type { AccountRow, RecurringRow } from '@/db/types';
 
-/** Application layer for recurring costs (architecture R1). */
-
 const pad = (n: number) => String(n).padStart(2, '0');
 export const localToday = (): string => {
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
-/** the active space's recurring rows, alphabetical */
 export function useRecurrings(): RecurringRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -42,14 +39,8 @@ export function useRecurrings(): RecurringRow[] | undefined {
   );
 }
 
-/**
- * The recurring OWNS its transactions' category (user rule 2026-07-28):
- * changing it re-files every linked transaction. The reimbursement
- * exception survives: rows the user filed as EXPECTED reimbursement and
- * rows settlement filed as REIMBURSED keep their attribution — those
- * default back to the recurring's category only when the link/settling
- * goes away, which the reimbursement flow already handles.
- */
+/** the recurring OWNS its transactions' category: changing it re-files every linked transaction,
+ *  except rows filed as expected reimbursement or settled as reimbursed */
 export async function propagateRecurringCategory(
   store: StorageBackend,
   repo: Repo,
@@ -62,31 +53,20 @@ export async function propagateRecurringCategory(
   for (const tx of await visibleTransactions(store, spaceId)) {
     if (tx.deleted !== 0 || tx.recurringId !== recurringId) continue;
     if (tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
-    // #274 (user): the recurring's counterparty rides to its rows — the
-    // choke mints the manual counter leg per row ("bulk create")
+    // #274: the recurring's counterparty rides to its rows; the choke mints the manual counter leg per row
     const linkField =
       linkedAccountId && tx.linkedAccountId !== linkedAccountId ? { linkedAccountId } : {};
     if (tx.catId === catId && !('linkedAccountId' in linkField)) continue;
-    // the refile leaves the review flag alone (user 2026-10-09: every
-    // transaction passes the review; only a category change on the
-    // transaction's own detail takes it out). The person edited the
-    // RECURRING here, not these rows: a reviewed row stays reviewed, an
-    // unreviewed one waits in the deck wearing the recurring's category.
-    // (#260 r2 once counted the refile as the review — superseded.)
+    // the refile leaves the review flag alone: the person edited the RECURRING, not these rows;
+    // only a category change on the transaction's own detail takes a row out of the review
     await writeTxTransform(repo, tx, { catId, ...linkField });
     touched++;
   }
   return touched;
 }
 
-/**
- * Every boot (user ss 2026-10-06, the Amazon Prime row filed as Shopping
- * under a Streaming recurring): a linked row whose category disagrees
- * with its recurring — a fetch's overlay once buried the recurring's
- * pick — takes the recurring's category back. The recurring OWNS the
- * category (user rule 2026-07-28); the reimbursement exception and
- * split/spread rows stay as they are. Idempotent and cheap.
- */
+/** every boot: a linked row whose category disagrees with its recurring (a fetch's overlay once buried it) takes it back;
+ *  reimbursement and split/spread rows stay */
 export async function realignRecurringCategories(store: StorageBackend, repo: Repo): Promise<number> {
   const recs = (await store.allRows('recurring')).filter((r) => r.deleted === 0 && !!r.catId);
   if (recs.length === 0) return 0;
@@ -97,9 +77,7 @@ export async function realignRecurringCategories(store: StorageBackend, repo: Re
       const rec = tx.recurringId ? byId.get(tx.recurringId) : undefined;
       if (!rec?.catId || tx.deleted !== 0 || tx.splits?.length || tx.cats?.length) continue;
       if (tx.catId === rec.catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
-      // an AUTOMATIC heal: the category comes back, the review flag stays
-      // whatever it was (user 2026-10-09: no machine takes a row out of
-      // the review; #260 r2's "the refile is the review" is superseded)
+      // an automatic heal never takes a row out of the review
       await writeTxTransform(repo, tx, { catId: rec.catId });
       touched++;
     }
@@ -107,7 +85,6 @@ export async function realignRecurringCategories(store: StorageBackend, repo: Re
   return touched;
 }
 
-/** merchant patterns this space already rejected as suggestions */
 export function useDismissedKeys(): ReadonlySet<string> | undefined {
   const { store, spaceId } = useData();
   return useQuery(
@@ -145,22 +122,14 @@ export function useRecurringOps(): RecurringOps {
     dismissSuggestion: (key) =>
       repo.upsert('recurringDismiss', spaceId, recurringDismissId(spaceId, key), { merchantKey: key }),
     linkTx: async (tx, recurringId) => {
-      // the recurring OWNS the category (user rule 2026-07-28): linking
-      // re-files the transaction — unless the user filed it as expected
-      // reimbursement or settlement filed it as reimbursed
+      // the recurring OWNS the category: linking re-files, unless filed as expected reimbursement or reimbursed
       const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
-      // #260 r2 (user): the refile counts as the review — linked rows
-      // must not keep wearing the unreviewed badge. Kept under the
-      // 2026-10-09 rule: this is the PERSON linking THIS transaction from
-      // its detail or a link sheet — a category decision on the row
-      // itself, the one thing that takes a row out of the review. The
-      // automatic linker (reconcileRecurringLinks) never writes the flag.
+      // linking by the person counts as the review (a category decision on the row); the automatic linker never writes the flag
       const refile =
         rec?.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
           ? { catId: rec.catId, needsReview: 0 as const }
           : {};
-      // #274 (user): the recurring's counterparty rides to its rows —
-      // for a manual counter the choke mints the leg right here
+      // #274: the recurring's counterparty rides to its rows; for a manual counter the choke mints the leg here
       const counter =
         rec?.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId
           ? { linkedAccountId: rec.linkedAccountId }
@@ -172,13 +141,9 @@ export function useRecurringOps(): RecurringOps {
   };
 }
 
-/** rows the auto-linker considers at all — unlinked outgoing expense or
- *  funding money (#264: pot top-ups are recurring-shaped too). S3776. */
 const reconcilableRow = (tx: SpaceTx): boolean =>
   !tx.recurringId && tx.amountCents < 0 && (tx.txType === 'expense' || tx.txType === 'funding');
 
-/** which billing cycles each recurring already has a linked payment in
- *  (one payment per cycle). S3776. */
 function linkedCyclesOf(txs: readonly SpaceTx[], recs: readonly RecurringRow[]): Map<string, Set<string>> {
   const cycles = new Map<string, Set<string>>();
   for (const tx of txs) {
@@ -192,9 +157,7 @@ function linkedCyclesOf(txs: readonly SpaceTx[], recs: readonly RecurringRow[]):
   return cycles;
 }
 
-/** #360: the facts a freshly auto-linked row adopts from its recurring —
- *  category (unless reimbursement-filed) and counterparty; the row stays
- *  unreviewed, the user still confirms. S3776. */
+/** #360: category (unless reimbursement-filed) and counterparty; the row stays unreviewed, the user confirms */
 const adoptionPatch = (rec: RecurringRow, tx: SpaceTx): { catId?: string; linkedAccountId?: string } => ({
   ...(rec.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
     ? { catId: rec.catId }
@@ -202,12 +165,7 @@ const adoptionPatch = (rec: RecurringRow, tx: SpaceTx): { catId?: string; linked
   ...(rec.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId ? { linkedAccountId: rec.linkedAccountId } : {}),
 });
 
-/**
- * Auto-link unlinked expenses to active recurrings by merchant pattern:
- * same normalized merchant, amount within 25% of the estimate, at most
- * one transaction per billing cycle. Idempotent — runs after imports
- * and on opening the Recurring screen.
- */
+/** same normalized merchant, amount within 25% of the estimate, at most one transaction per billing cycle; idempotent */
 export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
   if (!repo.canWrite(spaceId)) return 0; // #505: the linker of a space this identity only reads runs on its writers' devices
   const recs = (await store.bySpace('recurring', spaceId)).filter(
@@ -249,7 +207,6 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
 /** #551: the space a debt is held in — the attachment's for a linked account, its own otherwise */
 const holdingSpace = (loan: AccountRow & { link?: { spaceId: string } }): string => loan.link?.spaceId ?? loan.spaceId;
 
-/** one reminder per due date for every recurring whose reminder window has started (S3776: out of the hook) */
 async function remindDueRecurrings(store: StorageBackend, registration: ServiceWorkerRegistration | undefined, t: TFunc, lang: Lang): Promise<void> {
   const today = localToday();
   const recs = (await store.allRows('recurring')).filter(
@@ -259,7 +216,7 @@ async function remindDueRecurrings(store: StorageBackend, registration: ServiceW
     const next = nextDueDate(rec, today);
     if (!next || next > addDays(today, rec.notifyDaysBefore ?? 0)) continue;
     const key = `recNotified_${rec.id}_${next}`;
-    if (await store.metaGet(key)) continue; // one reminder per due date
+    if (await store.metaGet(key)) continue;
     await store.metaPut(key, Date.now());
     const date = new Date(next).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
     // #551: the row and the notification say which space, and open its recurring costs
@@ -277,19 +234,13 @@ async function remindDueRecurrings(store: StorageBackend, registration: ServiceW
   }
 }
 
-/**
- * Loans saved without an interest rate get a WEEKLY nudge to fill it in —
- * 0% is an answer, an empty rate is a question (user rule 2026-07-28);
- * quick-add now, find out the rate later. Loans v2: the tracked liability
- * ACCOUNTS are the debts now. #536: only a debt a space holds — never a
- * global account nobody attached.
- */
+// a weekly nudge for a loan saved without an interest rate: 0% is an answer, an empty rate a question;
+// only debts a space holds (#536)
 async function nudgeMissingRates(store: StorageBackend, registration: ServiceWorkerRegistration | undefined, t: TFunc): Promise<void> {
   const loans = await debtsMissingRate(store);
   for (const loan of loans) {
     const key = `debtPctReminded_${loan.id}`;
-    // metaGet returns the {key, value} row — reading the row itself as
-    // a number made the 7-day check NaN and the nudge fired every open
+    // metaGet returns the {key, value} row; reading it as a number made the 7-day check NaN and the nudge fire every open
     const last = (await store.metaGet(key))?.value as number | undefined;
     if (last && Date.now() - last < 7 * 86_400_000) continue;
     await store.metaPut(key, Date.now());
@@ -307,19 +258,12 @@ async function nudgeMissingRates(store: StorageBackend, registration: ServiceWor
   }
 }
 
-/**
- * Local reminders: while the app is open (or being opened), recurrings
- * with a reminder window that has started fire one notification per due
- * date. Best-effort by design — reliable killed-app reminders would
- * need server-side scheduling, which recurring data deliberately avoids.
- */
+/** best-effort: killed-app reminders would need server-side scheduling, which recurring data deliberately avoids */
 export function useRecurringReminders(): void {
   const { store } = useData();
   const { t, lang } = useLang();
   useEffect(() => {
     void (async () => {
-      // the in-app inbox records every event (arc 6) — the OS
-      // notification is the optional second outlet, permission allowing
       const granted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
       const registration = granted ? await navigator.serviceWorker?.ready.catch(() => undefined) : undefined;
       await remindDueRecurrings(store, registration, t, lang);

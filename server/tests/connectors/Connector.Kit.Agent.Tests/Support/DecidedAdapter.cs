@@ -6,11 +6,6 @@ using Connector.Kit.Security;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// An adapter whose every answer is decided by the test: what a fetch
-/// returns, which error a login refuses with, whether a logout breaks, and
-/// whether a login parks until its token is cancelled.
-/// </summary>
 internal sealed class DecidedAdapter : IProviderAdapter
 {
     public static readonly SessionMaterial Material = new() { AccessToken = "at_1", StorageState = "{}" };

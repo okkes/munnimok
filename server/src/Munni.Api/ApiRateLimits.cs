@@ -2,38 +2,22 @@ using System.Threading.RateLimiting;
 
 namespace Munni.Api;
 
-/// <summary>The buckets a person gets: the global one, the streamed login's own, and the opens of its pushed stream.</summary>
 public sealed record RateLimitBudgets(
     int GlobalTokens, int GlobalRefillPer10S, int LiveTokens, int LiveRefillPer10S, int LiveStreamOpens, int LiveStreamOpensPer10S);
 
-/// <summary>
-/// The abuse guard's partitions, per user (per IP before auth).
-///
-/// The global bucket is sized for the sync engine polling every ten seconds
-/// across many spaces. The streamed login is different traffic: one long-poll
-/// per frame and a POST per batch of taps — a minute of signing in is more
-/// requests than the global bucket allows a person, and a 429 there drops
-/// keystrokes on the floor (the Amazon puzzle and the DUO page "froze", user
-/// ss 2026-10-01). So the live routes ride their own bucket, sized for the
-/// agent's shutter (12.5 frames/s in a burst) plus the input batches, and
-/// still bounded.
-/// </summary>
+// the streamed login is a long-poll per frame plus a POST per batch of taps: the global bucket would 429 it and
+// drop keystrokes, so live routes get their own bucket, sized for the agent's shutter (12.5 frames/s burst) plus input
 public static class ApiRateLimits
 {
     public static string KeyFor(HttpContext http) =>
         http.User.FindFirst("sub")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anon";
 
-    /// <summary>The app's streamed login and the lab's (its bench and explore runs, #576) — the same traffic, the same bucket.</summary>
     public static bool IsLiveViewRoute(PathString path) =>
         (path.StartsWithSegments("/connectors") || path.StartsWithSegments("/lab/bench"))
         && (path.Value ?? string.Empty).Contains("/live/", StringComparison.Ordinal);
 
-    /// <summary>
-    /// The pushed live view (#429): one request for the whole login, so the
-    /// per-frame bucket means nothing to it. What is worth bounding is how
-    /// often a person opens one - a reconnect after a dropped network, never a
-    /// stream a second - and each open holds a stream to the control plane.
-    /// </summary>
+    // #429: the pushed live view is one request per login, so a per-frame bucket means nothing;
+    // what is bounded is how often one opens, as each holds a stream to the control plane
     public static bool IsLiveStreamRoute(PathString path) =>
         IsLiveViewRoute(path) && (path.Value ?? string.Empty).EndsWith("/live/stream", StringComparison.Ordinal);
 

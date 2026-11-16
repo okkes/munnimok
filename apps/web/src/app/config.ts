@@ -1,14 +1,5 @@
-/**
- * App configuration: runtime overlay first, build-time Vite env second.
- *
- * The docker image bakes VITE_* values for the LIVE stacks at build time;
- * every other deployment of the SAME public image (the iac pair, a local
- * twin, a fork's self-host) overrides them through /runtime-config.js,
- * which the nginx entrypoint renders from MUNNI_* container env vars into
- * `window.__MUNNI_CONFIG__` (deploy/nginx/40-runtime-config.sh). The
- * committed public/runtime-config.js stub sets nothing, so dev servers,
- * native shells and env-less containers keep the baked behavior.
- */
+// runtime overlay (/runtime-config.js from MUNNI_* env, deploy/nginx/40-runtime-config.sh) first, baked VITE_* second:
+// one public image serves every stack; the committed stub sets nothing
 type RuntimeKey =
   | 'API_URL'
   | 'LOGTO_ENDPOINT'
@@ -42,23 +33,17 @@ export const config = {
   logto: {
     endpoint: runtime('LOGTO_ENDPOINT') ?? (import.meta.env.VITE_LOGTO_ENDPOINT as string | undefined) ?? '',
     appId: runtime('LOGTO_APP_ID') ?? (import.meta.env.VITE_LOGTO_APP_ID as string | undefined) ?? '',
-    /** API resource indicator, e.g. https://munni-api.<your-domain> */
     resource: runtime('LOGTO_RESOURCE') ?? (import.meta.env.VITE_LOGTO_RESOURCE as string | undefined) ?? '',
   },
   glitchtipDsn: runtime('GLITCHTIP_DSN') ?? (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '',
-  /** performance tracing (user 2026-10-09): the share of pageloads,
-   *  navigations and sync rounds that reach GlitchTip's Performance view
-   *  (0 = errors only). The environment's `tracing.sampleRate` arrives
-   *  through the overlay; without one, production samples a fifth and
-   *  staging/local every trace — the test ground wants them all. */
+  /** share of pageloads, navigations and sync rounds traced to GlitchTip (0 = errors only);
+   *  default a fifth on production, all elsewhere */
   tracesSampleRate: sampleRate(
     runtime('TRACES_SAMPLE_RATE') ?? (import.meta.env.VITE_TRACES_SAMPLE_RATE as string | undefined),
     channel === 'production' ? 0.2 : 1,
   ),
   channel,
-  /** deep-link scheme of the app this bundle belongs to: 'munni' for
-   *  production, 'munni-dev' for staging (app.munni.dev). Native shells
-   *  bake VITE_NATIVE_SCHEME; a bundle without one takes the channel's. */
+  /** deep-link scheme: 'munni' production, 'munni-dev' staging; native shells bake VITE_NATIVE_SCHEME */
   nativeScheme:
     runtime('NATIVE_SCHEME') ??
     (import.meta.env.VITE_NATIVE_SCHEME as string | undefined) ??
@@ -67,23 +52,13 @@ export const config = {
 
 export const logtoConfigured = Boolean(config.logto.endpoint && config.logto.appId);
 
-/**
- * The canonical https origin of the HOSTED web app. Inside the native
- * shell `window.location.origin` is the local webview (localhost) —
- * useless as a bank redirect target — so shell builds set
- * VITE_PUBLIC_ORIGIN. Web/PWA builds fall back to their own origin.
- */
+/** canonical https origin of the hosted app: in a native shell location.origin is the localhost
+ * webview, useless as a bank redirect */
 export const publicOrigin = (): string =>
   runtime('PUBLIC_ORIGIN') ?? (((import.meta.env.VITE_PUBLIC_ORIGIN as string | undefined) ?? '') || window.location.origin);
 
-/**
- * The family-CA download for LOCAL native builds, or null anywhere else.
- * Sign-in rides the SYSTEM browser, which does not inherit the app's
- * bundled trust anchor — the phone installs this root once (user
- * request 2026-08-31: a login-screen button instead of a remembered
- * url). Derived from the public origin: munni-<env>.<ip-dashed>.sslip.io
- * → http://ca.<ip-dashed>.sslip.io/root.crt
- */
+// family-CA download for local native builds, else null: sign-in rides the system browser, which lacks the app's
+// trust anchor (munni-<env>.<ip-dashed>.sslip.io → http://ca.<ip-dashed>.sslip.io/root.crt)
 export const localCaUrl = (): string | null => {
   if (!config.nativeScheme.startsWith('munni-local')) return null;
   let host = '';

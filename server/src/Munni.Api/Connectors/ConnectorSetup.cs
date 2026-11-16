@@ -2,29 +2,19 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>Whether this environment relays to a control plane, and if not yet, why.</summary>
 public enum ConnectorPresence
 {
-    /// <summary>No <c>Connectors:BaseUrl</c>: this environment runs no connectors.</summary>
     Absent,
 
-    /// <summary>
-    /// A control plane is named but the machine credential the platform's
-    /// Logto module writes back after the first bootstrap is not there yet;
-    /// the relay stays off until the next start finds it.
-    /// </summary>
+    // the machine credential the platform's Logto module writes back after the first bootstrap is missing:
+    // off until a restart finds it
     WaitingForCredential,
 
     Enabled,
 }
 
-/// <summary>
-/// Registers the relay when — and only when — this environment names a
-/// control plane and holds a credential for it. Follows
-/// <c>BankingSetup.Register</c>: an unconfigured connector is simply absent,
-/// never a silent stand-in; a configured one with a setting that cannot be
-/// right refuses to start with the setting's name.
-/// </summary>
+// follows BankingSetup.Register: an unconfigured connector is absent, never a stand-in; a setting that cannot be right
+// refuses to start with its name
 public static class ConnectorSetup
 {
     public static ConnectorPresence Register(IServiceCollection services, IConfiguration config)
@@ -58,7 +48,6 @@ public static class ConnectorSetup
         return ConnectorPresence.Enabled;
     }
 
-    /// <summary>Maps the relay and its operator routes when the environment runs connectors; says so when it is waiting; nothing otherwise.</summary>
     public static void Map(WebApplication app, ConnectorPresence presence)
     {
         switch (presence)

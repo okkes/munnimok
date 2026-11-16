@@ -10,13 +10,8 @@ import { usePwa } from './pwa';
 export type LazyScreen<P = object> = FunctionComponent<P> & { preload?: () => Promise<void> };
 type ScreenProps<C> = C extends ComponentType<infer P> ? P : never;
 
-/**
- * #554: a screen in a chunk of its own, fetched on its first visit. The
- * router awaits `preload` before it shows the route, so a navigation keeps
- * the current screen until the next one is there. A chunk that cannot load
- * (a deploy replaced the files under an open app) never leaves the screen
- * blank: it moves to the build the server serves now.
- */
+/** #554: a screen in its own chunk; a chunk that cannot load (a deploy replaced the files)
+ * moves to the current build, never a blank screen */
 export function lazyScreen<M, K extends keyof M & string>(load: () => Promise<M>, name: K): LazyScreen<ScreenProps<M[K]>> {
   type P = ScreenProps<M[K]>;
   let Screen: ComponentType<object> | undefined;
@@ -27,17 +22,16 @@ export function lazyScreen<M, K extends keyof M & string>(load: () => Promise<M>
       (loaded) => {
         Screen = loaded[name] as ComponentType<object>;
         failure = undefined;
-        Lazy.preload = undefined; // nothing left to wait for: later visits render at once
+        Lazy.preload = undefined;
       },
       (error: unknown) => {
-        loading = undefined; // the next visit tries again
+        loading = undefined;
         failure = error ?? new Error(`${name} did not load`);
       },
     );
     return loading;
   };
   const Lazy: LazyScreen<P> = (props) => {
-    // rendered before the router loaded it (inside a layout): suspend until it is there
     if (!Screen && !failure) use(start());
     return Screen ? <Screen {...(props as object)} /> : <ScreenLoadFailed error={failure} />;
   };
@@ -62,12 +56,8 @@ const RELOAD_WINDOW_MS = 60_000;
 /** once per page life: a second failed screen waits for the reload already on its way */
 let reloadIssued = false;
 
-/**
- * A screen's chunk is gone: reload into the current build — through the
- * waiting service worker when there is one (the UpdateToast's path), else
- * a plain reload. False when it must not: offline, no storage to guard the
- * loop with, or such a reload happened moments ago.
- */
+/** reloads into the current build (via the waiting service worker if any); false when offline,
+ * no storage for the loop guard, or a reload just happened */
 export function recoverFromMissingChunk(): boolean {
   if (reloadIssued) return true;
   if (navigator.onLine === false) return false;
@@ -89,7 +79,6 @@ function reloadIntoCurrentBuild(): void {
   else globalThis.location.reload();
 }
 
-/** the outlet while a slow chunk is on its way (the router's pending UI, after its delay) */
 export function ScreenPending() {
   const { t } = useLang();
   return (
@@ -107,7 +96,6 @@ function ScreenLoadFailed({ error }: Readonly<{ error: unknown }>) {
   useEffect(() => {
     if (recoverFromMissingChunk()) return;
     setReloading(false);
-    // a reload did not bring it back (or could not run): worth a look
     if (navigator.onLine !== false) reportWarning('chunk', 'a screen failed to load', { error: String(error) });
   }, [error]);
   if (reloading) return <ScreenPending />;

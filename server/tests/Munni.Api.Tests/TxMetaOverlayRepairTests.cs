@@ -10,11 +10,7 @@ using Xunit;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// The 2026-10-05 repair: a prediction overlay the server stamped with its
-/// live clock buried what a device had filed before it — the repair puts
-/// the device's value back, once, and leaves every other row alone.
-/// </summary>
+/// <summary>A server-clock prediction overlay buried what a device had filed; the repair restores it once.</summary>
 public class TxMetaOverlayRepairTests : IClassFixture<FeedsApiFactory>
 {
     private readonly FeedsApiFactory _factory;
@@ -35,7 +31,6 @@ public class TxMetaOverlayRepairTests : IClassFixture<FeedsApiFactory>
     private static SyncOpDto Device(string spaceId, string entityId, string hlc, params (string Name, object Value)[] fields) =>
         new(Guid.NewGuid().ToString("N"), spaceId, "txMeta", entityId, Fields(fields), hlc);
 
-    /// <summary>What the ingest used to write: the overlay with the server's live clock.</summary>
     private async Task OverlayAsync(string spaceId, string entityId, int counter, params (string Name, object Value)[] fields)
     {
         using var scope = _factory.Services.CreateScope();
@@ -71,7 +66,6 @@ public class TxMetaOverlayRepairTests : IClassFixture<FeedsApiFactory>
 
         await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
             [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, Fields(("name", "Repair")), "000000100-0000-dev1")]));
-        // the person filed four rows, then the overlay landed with the server's live clock
         await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
         [
             Device(spaceId, buried, "000000200-0000-dev1", ("txId", "t1"), ("catId", "tuition"), ("needsReview", 0)),
@@ -95,20 +89,15 @@ public class TxMetaOverlayRepairTests : IClassFixture<FeedsApiFactory>
         Assert.Contains("\"needsReview\":0", repaired.DataJson);
         Assert.Contains("\"txType\":\"expense\"", repaired.DataJson);   // nobody had said otherwise
         Assert.EndsWith($"-{ServerHlc.DeviceId}", JsonSerializer.Deserialize<Dictionary<string, string>>(repaired.FieldVersionsJson)!["catId"]);
-        // only the field the device had carried comes back
         Assert.Contains("\"catId\":\"groceries\"", Row(spaceId, partial).DataJson);
         Assert.Contains("\"needsReview\":0", Row(spaceId, partial).DataJson);
-        // a device op the overlay beat on the clock alone is still the person's latest word
         Assert.Contains("\"catId\":\"commute\"", Row(spaceId, later).DataJson);
-        // a row no device ever filed keeps its prediction
         Assert.Contains("\"catId\":\"groceries\"", Row(spaceId, untouched).DataJson);
 
-        // the devices pull the repair as ordinary ops
         var pull = await client.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
         var repairOp = Assert.Single(pull!.Ops, o => o.EntityId == buried && o.Fields.ContainsKey("catId") && o.Fields["catId"].GetString() == "tuition" && o.Hlc.EndsWith($"-{ServerHlc.DeviceId}", StringComparison.Ordinal));
         Assert.Equal(ImportIds.OpId($"repair:txmeta-overlay:{spaceId}:{buried}"), repairOp.OpId);
 
-        // idempotent: the second pass finds nothing to do
         Assert.Equal(0, await RepairAsync());
     }
 

@@ -23,17 +23,13 @@ import { LoanTile, paymentLabelKey } from './DebtsScreen';
 import { LoanMatchSheet } from './LoanMatchSheet';
 import { OthersLoanNote, useLoanWritable } from './sharedLoan';
 
-/** One loan: the payoff story — numbers, projection, payment history.
- *  The account row IS the loan (v2); Edit opens the account editor. */
 export function DebtDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const { debtId } = useParams({ strict: false }) as { debtId: string };
   const statuses = useLoanStatuses();
-  // the FULL history: the match sheet deliberately links pre-start
-  // payments (count-optional), and a payment list that can't show them
-  // would look like the link vanished (review finding)
+  // the full history: the match sheet links pre-start payments, and a list that hid them would look like the link vanished
   const txs = useSpaceHistoryTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [editing, setEditing] = useState<AccountRow | null>(null);
@@ -48,13 +44,8 @@ export function DebtDetailScreen() {
   }, [statuses, status, navigate]);
   const today = localToday();
 
-  // payment history (typed-splits v2: the loan's OWN ledger is the
-  // record): rows ON the account first — minted mirrors, bank rows,
-  // hand-typed legs — plus unpeered transfers naming it as counterparty
-  // (legacy links without a mirror) and, for handoff-created loans,
-  // debt payments matching the remembered merchant. A PEERED source leg
-  // is represented by its mirror on the account — listing both would
-  // double-count the same payment.
+  // payments: rows on the account, unpeered transfers naming it as counterparty, handoff loans' debt payments by merchant
+  // a peered source leg is represented by its mirror on the account: listing both double-counts
   const payments = useMemo(() => {
     if (!status || !txs) return [];
     const { account } = status;
@@ -78,15 +69,13 @@ export function DebtDetailScreen() {
   const money = (cents: number) => fmt(cents, currency);
   // #530: what is owed and the loan's size hide with the sensitive figures; payments stay
   const owed = (cents: number) => fmtSensitive(cents, currency);
-  // the explicit plan wins; with the fields empty, ≥3 payments speak for
-  // themselves ("estimated from payments", arc 3) — never stored
+  // the explicit plan wins; with empty fields, 3+ payments give an estimate that is never stored
   const estimate = account.paymentCents ? null : estimatePaymentPlan(payments);
   const projection = account.paymentCents
     ? projectPayoff(remainingCents, account.paymentCents, account.interestPctYear, today, paymentsPerYear(account.paymentEvery, account.paymentEveryN))
     : projectPayoff(remainingCents, estimate?.paymentCents, account.interestPctYear, today, estimate?.perYear ?? 12);
 
-  // the way out (v2): a paid-off loan ARCHIVES (milestone, history kept);
-  // a credit card just stops tracking — the card is still a live account
+  // a paid-off loan archives (history kept); a credit card just stops tracking, it is still a live account
   const isCredit = account.type === 'credit';
   const wayOut = () => {
     const fields = isCredit ? { trackAsDebt: 0 as const } : { archived: account.archived === 1 ? (0 as const) : (1 as const) };
@@ -121,8 +110,7 @@ export function DebtDetailScreen() {
           testId="debtdetail-hero"
           tile={<LoanTile account={account} size={48} />}
           number={<span data-testid="debtdetail-remaining">{owed(remainingCents)}</span>}
-          // without the original size there is no "of …" story and no
-          // honest progress — the hero stays a plain remaining figure
+          // without the original size there is no "of …" story and no honest progress
           sub={account.originalCents ? t('debts.remainingOf', { amount: owed(account.originalCents) }) : undefined}
           right={
             account.originalCents ? (
@@ -162,8 +150,6 @@ export function DebtDetailScreen() {
           </p>
         )}
 
-        {/* a hand-entered payment, pre-staged onto this loan (arc 3):
-            the manual form opens as a transfer to the loan account */}
         {canEdit && (
         <div className="mt-4 flex gap-2">
           <Button
@@ -175,7 +161,6 @@ export function DebtDetailScreen() {
           >
             <Icon name="plus" size={16} /> {t('debts.addPayment')}
           </Button>
-          {/* re-run the payment search any time (user request) */}
           <Button
             variant="outline"
             className="min-w-0 flex-1"

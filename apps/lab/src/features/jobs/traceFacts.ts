@@ -1,9 +1,7 @@
 import type { TraceEntry } from '../../types';
 
-/** the browser's resource types an adapter author skips: scripts, styles, pictures, fonts, media, beacons */
 const NOISE = new Set(['script', 'stylesheet', 'image', 'font', 'media', 'manifest', 'texttrack', 'ping', 'beacon', 'preflight', 'other']);
 
-/** `mm:ss.d` from milliseconds since the recording started */
 export function clock(ms: number): string {
   const total = Math.max(0, Math.floor(ms));
   const minutes = Math.floor(total / 60_000);
@@ -12,7 +10,6 @@ export function clock(ms: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${tenths}`;
 }
 
-/** a size as the eye reads it */
 export function kb(size: number | null | undefined): string {
   if (size == null) return '';
   if (size < 1024) return `${size} B`;
@@ -20,7 +17,6 @@ export function kb(size: number | null | undefined): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** the host of an address, or the address itself when it is not one */
 export function hostOf(url: string | null | undefined): string {
   if (!url) return '';
   try {
@@ -30,7 +26,6 @@ export function hostOf(url: string | null | undefined): string {
   }
 }
 
-/** the path and query of an address, so a table column stays readable */
 export function pathOf(url: string | null | undefined): string {
   if (!url) return '';
   try {
@@ -41,7 +36,6 @@ export function pathOf(url: string | null | undefined): string {
   }
 }
 
-/** whether an entry is a browser call nobody reads: a script, a picture, a font … */
 export const isNoise = (entry: Pick<TraceEntry, 'kind' | 'via' | 'resourceType'>): boolean =>
   (entry.kind === 'request' || entry.kind === 'response') && entry.via === 'browser' && !!entry.resourceType && NOISE.has(entry.resourceType);
 
@@ -51,7 +45,6 @@ export interface TraceFilters {
   worthReading: boolean;
 }
 
-/** the entries the operator asked to see */
 export function filterEntries(entries: readonly TraceEntry[], filters: TraceFilters): TraceEntry[] {
   const needle = filters.text.trim().toLowerCase();
   return entries.filter((e) => {
@@ -63,7 +56,6 @@ export function filterEntries(entries: readonly TraceEntry[], filters: TraceFilt
   });
 }
 
-/** one line that says what an entry is */
 export function entryLine(entry: TraceEntry): string {
   switch (entry.kind) {
     case 'navigation':
@@ -81,7 +73,6 @@ export function entryLine(entry: TraceEntry): string {
   }
 }
 
-/** a JSON body pretty-printed when it parses, as it came otherwise */
 export function pretty(body: string | null | undefined): string {
   if (!body) return '';
   try {

@@ -16,45 +16,36 @@ export interface TxFilter {
   /** inclusive yyyy-mm-dd bounds (overview drill-down scopes to a period) */
   from?: string;
   to?: string;
-  /** inclusive bounds on the amount's SIZE, in cents — "between €10 and
-   *  €50" finds a purchase and a refund of that size alike (user 2026-10-06) */
+  /** bounds on the amount's SIZE in cents: "between €10 and €50" finds a purchase and a refund alike */
   minCents?: number;
   maxCents?: number;
 }
 
-/** text hit on merchant/description — part labels included (typed-splits
- *  v2: "Sarah's loan" finds the payment it names) — or, for numeric
- *  queries ('10', '10,99'), a digit-substring hit on the amount: '10'
- *  finds 10,99 and 210,15 alike (user request) */
+/** part labels are searched too; a numeric query also hits the amount by digit substring ('10' finds 10,99 and 210,15) */
 function matchesQuery(tx: TxView, q: string, amountQ: string | null, signQ: -1 | 0 | 1): boolean {
   const labels = (tx.splits ?? []).map((s) => s.label ?? '').join(' ');
   const haystack = `${tx.titleOverride ?? ''} ${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)} ${labels}`.toLowerCase();
   if (haystack.includes(q)) return true;
   if (!amountQ || !String(Math.abs(tx.amountCents)).includes(amountQ)) return false;
-  // #267 r2 (user): a leading +/- constrains the money's direction —
-  // "+13,91" finds only the incoming 13,91s
+  // #267: a leading +/- constrains the money's direction
   return signQ === 0 || Math.sign(tx.amountCents) === signQ;
 }
 
-/** a row answers a category/type filter through its PARTS (typed-splits
- *  v2): the phone bill with a loan part shows under Debt payment too */
+/** a row answers a category/type filter through its parts: the phone bill with a loan part shows under Debt payment too */
 const anySlice = (tx: TxView, hit: (view: ReturnType<typeof txSliceViews>[number]) => boolean): boolean =>
   txSliceViews(tx).some(hit);
 
-/** transfers carry no category by design — they never count as
- *  uncategorized. Slice-aware (#126 r8): an unfinished PART keeps its
- *  split findable under the quick filter. */
+/** transfers carry no category by design: never uncategorized; an unfinished PART keeps its split findable (#126) */
 const isUncategorized = (tx: TxView): boolean =>
   anySlice(tx, (v) => (v.catId === 'uncategorized' || v.catId == null) && v.effType !== 'transfer');
 
-/** #267 r2: the direction a leading +/- constrains (0 = both) */
+/** a leading +/- constrains the direction (0 = both) */
 function querySign(q: string | undefined): -1 | 0 | 1 {
   if (q?.startsWith('+')) return 1;
   if (q?.startsWith('-')) return -1;
   return 0;
 }
 
-/** the date bounds and the amount's size (inclusive on every edge) */
 const withinBounds = (tx: TxView, filter: TxFilter): boolean => {
   if (filter.from && tx.date < filter.from) return false;
   if (filter.to && tx.date > filter.to) return false;
@@ -92,14 +83,7 @@ export const hasActiveFilter = (f: TxFilter): boolean =>
       f.maxCents !== undefined,
   );
 
-/**
- * #126 r8 (user request): a filtered list shows only the parts a filter
- * actually matches — the split's OTHER pieces stay out of view. Returns
- * the matching part indexes for the part-partitioning filters (category,
- * type, uncategorized); every part matches when none of those are on.
- * Query/date/account filters keep whole-row semantics — a merchant hit
- * belongs to every part.
- */
+// #126: a filtered list shows only the parts a filter matches; query/date/account filters keep whole-row semantics
 export function matchingPartIndexes(
   tx: Pick<TxView, 'splits' | 'txType' | 'catId'>,
   filter: Pick<TxFilter, 'catIds' | 'txTypes' | 'onlyUncategorized'>,

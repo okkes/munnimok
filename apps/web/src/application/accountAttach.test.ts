@@ -44,7 +44,6 @@ describe('reconcileSpaceLinks', () => {
     expect(mirrors).toHaveLength(2);
     const a = mirrors.find((l) => l.feedSpaceId === 'feedA');
     expect(a?.accountId).toBe('accA');
-    // the SERVER link's own gate and type seed the mirror
     expect(a?.historyFrom).toBe('2026-02-01');
     expect(a?.type).toBe('savings');
   });
@@ -62,7 +61,7 @@ describe('reconcileSpaceLinks', () => {
     expect(await reconcileSpaceLinks(store, repo, SPACE)).toBe(0);
     const mirrors = (await store.bySpace('accountLink', SPACE)).filter((l) => l.deleted === 0);
     expect(mirrors).toHaveLength(1);
-    expect(mirrors[0].historyFrom).toBe('2025-06-01'); // untouched
+    expect(mirrors[0].historyFrom).toBe('2025-06-01');
   });
 
   it('an empty server answer changes nothing', async () => {

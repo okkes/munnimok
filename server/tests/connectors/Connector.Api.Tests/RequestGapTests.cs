@@ -12,31 +12,14 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// How fast an agent is told it may call a provider.
-///
-/// The number reaches the agent on the lease, and until now it came from one
-/// place: the operator's own politeness setting, the same for every provider in
-/// the fleet. That is the right floor and the wrong ceiling. A provider that
-/// answers six calls per fetch is fine at 800ms; amazon.nl walks an order list
-/// and then an invoice per order - fifty of them on a first connect - and a day
-/// of that at 800ms is what preceded Amazon answering 503 and continuing to.
-///
-/// So a manifest may now ask for more of its own, and the larger of the two
-/// wins. The direction matters: an operator tuning the fleet cannot quietly
-/// undo a gap an adapter author widened for a reason, and an adapter author
-/// cannot undercut an operator who has decided to be slower than the manifests.
-/// </summary>
+// the lease's gap is the larger of the operator's floor and the manifest's own: neither can undercut the other
+// amazon.nl walks an invoice per order (~50 on a first connect); a day of that at 800ms preceded Amazon answering 503
 [Collection(ShopApiCollection.Name)]
 public sealed class RequestGapTests(ShopApiFactory factory)
 {
-    /// <summary>The one provider that declares a gap of its own.</summary>
     private const string PacedProvider = "amazon-nl";
 
-    /// <summary>
-    /// A browser provider that declares none. Chosen over an HTTP one on
-    /// purpose: this must not read as "the gap only applies to page walks".
-    /// </summary>
+    // a browser provider declaring none, chosen over an HTTP one so this does not read as "page walks only"
     private const string UnpacedProvider = "ah";
 
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(2);
@@ -46,7 +29,6 @@ public sealed class RequestGapTests(ShopApiFactory factory)
     {
         var leased = await LeaseFetchAsync(PacedProvider);
 
-        // The manifest's own 3s, not the operator's 800ms.
         Assert.Equal(3_000, leased.Limits.PolitenessMs);
     }
 
@@ -58,13 +40,7 @@ public sealed class RequestGapTests(ShopApiFactory factory)
         Assert.Equal(Floor(), leased.Limits.PolitenessMs);
     }
 
-    /// <summary>
-    /// And the two are actually different.
-    ///
-    /// Without this the pair above would both pass on a manifest that declared
-    /// exactly the floor - a field that is read, plumbed, tested, and changes
-    /// nothing whatsoever.
-    /// </summary>
+    // without this the pair above passes on a manifest declaring exactly the floor
     [Fact]
     public async Task The_declared_gap_is_longer_than_the_floor_it_replaced()
     {
@@ -76,23 +52,13 @@ public sealed class RequestGapTests(ShopApiFactory factory)
             "a gap at or below the floor would change nothing");
     }
 
-    // ---- setup -------------------------------------------------------------
-
     private int Floor()
     {
         using var scope = factory.Services.CreateScope();
         return scope.ServiceProvider.GetRequiredService<IOptions<ConnectorOptions>>().Value.Timeouts.PolitenessMs;
     }
 
-    /// <summary>
-    /// Queues a fetch for this provider and leases until it is the one handed
-    /// over.
-    ///
-    /// A fetch rather than a login because amazon.nl's login needs a headed
-    /// agent, and the gap has nothing to do with that. Leasing in a loop
-    /// because the suite shares one host: other classes leave queued jobs for
-    /// these providers behind, and candidates come back oldest first.
-    /// </summary>
+    // a fetch, since amazon.nl's login needs a headed agent; leases in a loop as the shared host holds other queued jobs
     private async Task<LeasedJob> LeaseFetchAsync(string provider)
     {
         var queued = await QueueFetchAsync(provider);
@@ -105,10 +71,7 @@ public sealed class RequestGapTests(ShopApiFactory factory)
             var leased = await queue.TryLeaseAsync(
                 Ids.New(Ids.Agent),
                 ownerSubject: null,
-                // Residential NL, because amazon.nl and AH both ask for it and
-                // CanServe compares the claim: an agent that states no address
-                // is handed neither, and this suite would measure the pacing of
-                // a job nobody ever leased.
+                // residential NL: amazon.nl and AH ask for it and CanServe compares the claim; an agent stating no address is never leased
                 new AgentCapabilities
                 {
                     Providers = [provider],
@@ -137,8 +100,7 @@ public sealed class RequestGapTests(ShopApiFactory factory)
         {
             Id = Ids.New(Ids.Session),
             ProviderId = provider,
-            // A subject of its own per job: per-session concurrency is 1, so
-            // two jobs sharing one session would hide each other.
+            // a subject per job: per-session concurrency is 1, so jobs sharing a session would hide each other
             Subject = $"u_gap_{Guid.NewGuid():N}",
             State = SessionState.Queued,
             ExpiresAt = now.AddHours(1),

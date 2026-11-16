@@ -2,9 +2,7 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import type { SpaceRow } from '@/db/types';
 
-/** one custom graph as the space row stores it */
 export type TrendGraph = NonNullable<SpaceRow['trendGraphs']>[number];
-/** #531: one custom balance line of the Cash flow tab */
 export type CashflowGraph = NonNullable<SpaceRow['cashflowGraphs']>[number];
 
 export interface TrendGraphDraft {
@@ -25,22 +23,16 @@ export interface CashflowGraphDraft {
 }
 
 export interface GraphOps<D> {
-  /** create or update; resolves with the graph's id */
   save: (draft: D) => Promise<string>;
   remove: (id: string) => Promise<void>;
 }
 
-/** the list with one graph replaced in place, or appended when it is new */
 function withGraph<G extends { id: string }>(current: readonly G[], row: G): G[] {
   if (!current.some((graph) => graph.id === row.id)) return [...current, row];
   return current.map((graph) => (graph.id === row.id ? row : graph));
 }
 
-/**
- * The custom graphs live on the space row (user 2026-10-08) — one list
- * field, written whole through the Repo so it syncs like homeBlocks.
- * Every change leaves a line in the space's history.
- */
+// the custom graphs live on the space row as one list written whole through the Repo, so it syncs like homeBlocks
 export function useTrendGraphOps(space: SpaceRow | undefined): GraphOps<TrendGraphDraft> {
   const { store, repo, spaceId } = useData();
   const current = space?.trendGraphs ?? [];
@@ -69,7 +61,6 @@ export function useTrendGraphOps(space: SpaceRow | undefined): GraphOps<TrendGra
   };
 }
 
-/** #531: the Cash flow tab's graphs, the same way — a list on the space row, a line in the history per change */
 export function useCashflowGraphOps(space: SpaceRow | undefined): GraphOps<CashflowGraphDraft> {
   const { store, repo, spaceId } = useData();
   const current = space?.cashflowGraphs ?? [];

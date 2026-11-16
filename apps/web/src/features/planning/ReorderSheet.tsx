@@ -9,7 +9,6 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { SEGMENT_COLOR, SEGMENT_META } from './planningUi';
 
-/** the drag list: the pressed row hides, a ghost follows the finger, the move commits on release */
 function SubjectList({ rows, onMove }: Readonly<{ rows: PlanSubjectRow[]; onMove: (from: number, to: number) => void }>) {
   const { t } = useLang();
   const { drag, ghostRect, setRowRef, setGhostRef, rowStyle, handleProps } = useDragReorder(rows.length, onMove);
@@ -49,7 +48,6 @@ function SubjectList({ rows, onMove }: Readonly<{ rows: PlanSubjectRow[]; onMove
   );
 }
 
-/** the subjects of one segment in the order the plan lists (and fills) them */
 export function ReorderSheet({
   segment,
   model,

@@ -8,16 +8,7 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// A recorded amazon.nl page.
-///
-/// The fixtures for this provider are page captures rather than API payloads,
-/// because amazon.nl has no API: <c>{ url, status, html }</c>, with the markup
-/// stored one line per array entry so a recorded page still reads as HTML in a
-/// diff. The status is kept alongside the body deliberately - on this provider
-/// a 200 can be a bot wall and a 503 can be one too, and the two need
-/// different answers.
-/// </summary>
+/// captures are { url, status, html }: the status is kept because a 200 and a 503 can each be a bot wall
 internal static class AmazonFixture
 {
     public static AmazonPage Page(string name)
@@ -35,26 +26,15 @@ internal static class AmazonFixture
     }
 }
 
-/// <summary>
-/// amazon.nl, answering from its recorded pages.
-///
-/// A URL the test did not map is an assertion failure rather than an empty
-/// page: the walk deciding to fetch somewhere unexpected - a year nobody asked
-/// for, a page past the end - is exactly the bug this stands in for.
-/// </summary>
+/// an unmapped URL is an assertion failure, not an empty page: an unexpected fetch is the bug being stood in for
 internal sealed class StubAmazonPages : IAmazonPages
 {
     private readonly Dictionary<string, string> _map = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Queue<string>> _once = new(StringComparer.Ordinal);
     private readonly List<string> _opened = [];
 
-    /// <summary>Every URL the adapter asked for, in order.</summary>
     public IReadOnlyList<string> Opened => _opened;
 
-    /// <summary>
-    /// A shared log to note each load in, so a pacing test can see the loads
-    /// and the gaps in one sequence. Null when nobody is watching.
-    /// </summary>
     public List<string>? Trace { get; init; }
 
     public string this[string url]
@@ -64,11 +44,7 @@ internal sealed class StubAmazonPages : IAmazonPages
 
     public void Replace(string url, string fixture) => _map[url] = fixture;
 
-    /// <summary>
-    /// Serves <paramref name="fixture"/> for the next request to
-    /// <paramref name="url"/> only, and the mapped page after that. How a wall
-    /// behaves: it stands once, and the page is there when it comes down.
-    /// </summary>
+    /// serves the fixture for the next request only, then the mapped page: a wall stands once
     public void Once(string url, string fixture)
     {
         if (!_once.TryGetValue(url, out var queue))
@@ -98,29 +74,21 @@ internal sealed class StubAmazonPages : IAmazonPages
                 $"mapped urls are [{string.Join(", ", _map.Keys)}]");
         }
 
-        // The capture keeps the URL it was RECORDED at, not the one that was
-        // asked for. That is the point: a fetch of the order list that comes
-        // back from /ap/signin is how a dead session presents, and a stub that
-        // echoed the request would hide it.
+        // the capture keeps the URL it was recorded at: a dead session shows as a fetch landing on /ap/signin
         return Task.FromResult(AmazonFixture.Page(fixture));
     }
-
-    // ---- invoice documents -------------------------------------------------
 
     private readonly Dictionary<string, string> _fragments = new(StringComparer.Ordinal);
     private readonly Dictionary<string, AmazonDownload> _downloads = new(StringComparer.Ordinal);
 
-    /// <summary>Every fragment and document URL asked for, in order.</summary>
     public List<string> Fetched { get; } = [];
 
-    /// <summary>Serves this fixture's markup as the AJAX invoice list.</summary>
     public StubAmazonPages Fragment(string url, string fixture)
     {
         _fragments[url] = FixtureCatalog.Read($"amazon/{fixture}.html");
         return this;
     }
 
-    /// <summary>Serves these exact bytes for a document URL.</summary>
     public StubAmazonPages Document(string url, int status, string mediaType, byte[] bytes)
     {
         _downloads[url] = new AmazonDownload(status, mediaType, bytes);
@@ -152,16 +120,6 @@ internal sealed class StubAmazonPages : IAmazonPages
     }
 }
 
-/// <summary>
-/// Amazon's sign-in page as a fixture.
-///
-/// The shared <c>StubLoginPage</c> covers a form whose shape does not change;
-/// Amazon's does. It asks for the e-mail address, and only then - on a
-/// different screen - for the password, so a stub that shows both from the
-/// start cannot tell the two-screen path from the one-screen path, and the
-/// ordering that matters most (the credential is latched BEFORE the first
-/// button that sends anything upstream) is unreachable.
-/// </summary>
 internal sealed class AmazonStubPage : ILoginPage
 {
     public const string OrderList = "https://www.amazon.nl/your-orders/orders?timeFilter=year-2026&startIndex=0";
@@ -197,39 +155,25 @@ internal sealed class AmazonStubPage : ILoginPage
     public static AmazonStubPage Showing(params string[] selectors) =>
         new(new HashSet<string>(selectors, StringComparer.Ordinal));
 
-    /// <summary>
-    /// The second screen: these selectors do not exist until
-    /// <paramref name="trigger"/> has been clicked.
-    /// </summary>
     public AmazonStubPage RevealingAfter(string trigger, params string[] selectors)
     {
         _reveals[trigger] = selectors;
         return this;
     }
 
-    /// <summary>
-    /// Clicking <paramref name="trigger"/> lands the browser on the order
-    /// list: the URL changes and the whole sign-in form is gone. That pair is
-    /// the only thing the adapter treats as "we are in", so a stub that moved
-    /// one without the other would let a half-finished login pass.
-    /// </summary>
+    /// URL changed and form gone together are the only thing the adapter treats as signed in
     public AmazonStubPage SignedInAfter(string trigger, string url = OrderList)
     {
         _signInOnClick[trigger] = url;
         return this;
     }
 
-    /// <summary>The same, for a captcha whose answer submits the form.</summary>
     public AmazonStubPage SignedInAfterAnswer(string url = OrderList)
     {
         _signInOnAnswer = url;
         return this;
     }
 
-    /// <summary>
-    /// The human acted somewhere we cannot observe - they passed a widget in
-    /// the window in front of them - and the provider carried on.
-    /// </summary>
     public void SignIn(string url = OrderList)
     {
         _present.Clear();
@@ -249,17 +193,7 @@ internal sealed class AmazonStubPage : ILoginPage
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// A look at the page, RECORDED like every other call.
-    /// </summary>
-    /// <remarks>
-    /// It used to be the one thing this fixture did silently, and a look is not
-    /// free: the already-signed-in check is two of them at
-    /// <c>AmazonOptions.ProbeMs</c> each, and whether they were spent is
-    /// exactly what the gate on that check decides. A stub that does not record
-    /// a look cannot say they were not made, so the test for the gate would
-    /// have been asserting an outcome both branches produce.
-    /// </remarks>
+    /// a look is recorded: the already-signed-in gate decides whether its two ProbeMs looks happen, so silence would hide it
     public Task<PageMatch?> FindAsync(IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct)
     {
         _calls.Add("find");
@@ -308,12 +242,7 @@ internal sealed class AmazonStubPage : ILoginPage
     private string? Match(IReadOnlyList<string> selectors) => selectors.FirstOrDefault(_present.Contains);
 }
 
-/// <summary>
-/// A browser lease that keeps the redactor's rule: a page still holding a
-/// secret produces no bytes at all, exactly as the agent's screenshot redactor
-/// does. A test that gets a picture back has therefore proved the password
-/// left the DOM first.
-/// </summary>
+/// a page holding a secret yields no bytes, like the redactor: a picture back proves the password left the DOM first
 internal sealed class AmazonStubBrowser : IBrowserLease
 {
     private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47];

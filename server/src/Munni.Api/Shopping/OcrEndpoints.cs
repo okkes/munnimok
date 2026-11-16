@@ -3,11 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Munni.Api.Shopping;
 
-/// <summary>
-/// Receipt-photo OCR via the Tesseract sidecar container (receipts
-/// ruling #3): the image passes through, the extracted text comes back,
-/// nothing is stored. Mapped only when Ocr:BaseUrl is configured.
-/// </summary>
+// receipt-photo OCR via the Tesseract sidecar (receipts ruling #3): the image passes through, nothing is stored
 public static class OcrEndpoints
 {
     public const string HttpClientName = "ocr";

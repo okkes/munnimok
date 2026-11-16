@@ -6,43 +6,15 @@ using Connector.Kit.Security;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// The queue that makes outbound-only agents possible.
-///
-/// Its retry policy is the highest-consequence code in the platform, so it
-/// lives here where an adapter author cannot reach it. Two rules are
-/// absolute:
-///
-/// <list type="bullet">
-/// <item>A job whose lease expires returns to the queue <b>exactly once</b>,
-/// and only while no credential has gone upstream. After
-/// <c>CredentialSubmitted</c> a lost lease fails permanently - retrying a
-/// login that may already have counted is how bank accounts get locked.</item>
-/// <item>No code in <see cref="ErrorCatalog.NeverRetry"/> is ever retried by
-/// any path through this type.</item>
-/// </list>
-/// </summary>
+// the retry policy is the highest-consequence code in the platform, so it lives here out of an adapter author's reach
+// a lost lease requeues the job exactly once, only while no credential went upstream (a retried login locks accounts);
+// no code in ErrorCatalog.NeverRetry is ever retried
 public interface ILeasedJobQueue
 {
     Task<JobRow> EnqueueAsync(NewJob job, CancellationToken ct);
 
-    /// <summary>
-    /// Hands one job to an agent, or null when nothing matches.
-    ///
-    /// Respects, in order: provider status <c>AcceptsWork</c>, the agent's
-    /// declared capabilities, T4 profile affinity, ownership, and per-session
-    /// concurrency of one. Claiming is a conditional update guarded on the
-    /// state and lease columns, so two agents racing for the same job produce
-    /// one winner and one retry rather than one job run twice.
-    /// </summary>
-    /// <param name="ownerSubject">
-    /// When non-null, only jobs belonging to a session with this subject may
-    /// be leased. This is the enforcement point for the invariant the
-    /// enrollment endpoint states - an agent may only ever serve the user who
-    /// enrolled it - and it is a parameter rather than something read off the
-    /// agent row so that the one caller allowed to opt out, the in-process
-    /// runner, has to say so explicitly by passing null.
-    /// </param>
+    // claiming is a conditional update: two racing agents give one winner and one retry
+    // ownerSubject non-null: only that subject's sessions; null is the in-process runner's explicit opt-out
     Task<LeasedJob?> TryLeaseAsync(
         string agentId,
         string? ownerSubject,
@@ -51,29 +23,15 @@ public interface ILeasedJobQueue
         TimeSpan leaseTtl,
         CancellationToken ct);
 
-    /// <summary>Extends a lease the caller still owns. Null when it no longer does.</summary>
     Task<DateTimeOffset?> RenewLeaseAsync(string jobId, string agentId, TimeSpan leaseTtl, CancellationToken ct);
 
     Task<JobRow> CompleteAsync(string jobId, string? leaseOwner, CancellationToken ct);
 
-    /// <summary>
-    /// Records a failure and decides - here, once - whether it may be tried
-    /// again. Returns the job in its new state.
-    /// </summary>
     Task<JobRow> FailAsync(string jobId, string? leaseOwner, ErrorCode code, string? detail, CancellationToken ct);
 
-    /// <summary>
-    /// Reclaims jobs whose agent went away. Returns how many rows moved, in
-    /// either direction.
-    /// </summary>
     Task<int> RequeueExpiredLeasesAsync(CancellationToken ct);
 
-    /// <summary>
-    /// Fails jobs nobody ever leased, and takes their credentials with them.
-    ///
-    /// The backstop for the one case every other cleanup path misses: they all
-    /// key on a lease that expired, and a job that was never leased has none.
-    /// </summary>
+    // the backstop for jobs never leased: every other cleanup keys on an expired lease
     Task<int> ExpireAbandonedAsync(CancellationToken ct);
 
     /// <summary>Records typed progress and the credential latch. Never prose.</summary>
@@ -100,25 +58,15 @@ public sealed record NewJob
 
     public SessionMaterial? Material { get; init; }
 
-    /// <summary>T4: routes this job to exactly one agent.</summary>
     public string? ProfileId { get; init; }
 
-    /// <summary>
-    /// The caller asked for the operator's fleet by name, so this job is
-    /// offered to no machine of theirs. The mirror of
-    /// <see cref="ProfileId"/>: one names the only agent that may have the
-    /// work, the other names the only ones that may not.
-    /// </summary>
+    // the caller chose the operator's fleet by name: offered to no machine of theirs; mirror of ProfileId
     public bool FleetOnly { get; init; }
 
     /// <summary>Record this run (#441 L3). The lab's alone; the endpoints refuse it on every other trigger.</summary>
     public bool Record { get; init; }
 
-    /// <summary>
-    /// Who asked: <see cref="JobRow.UserTrigger"/> for a person, <see cref="JobRow.ScheduleTrigger"/>
-    /// for the relay's scheduler, null for the platform's own work. The provider's interval
-    /// between syncs is measured between SCHEDULED jobs only (prod 2026-10-04: a person's own
-    /// syncs kept refusing the nightly one as rate_limited).
-    /// </summary>
+    // who asked: UserTrigger, ScheduleTrigger (relay's scheduler), null = platform work; a provider's sync interval counts
+    // SCHEDULED jobs only (prod 2026-10-04: a person's syncs kept refusing the nightly one as rate_limited)
     public string? Trigger { get; init; }
 }

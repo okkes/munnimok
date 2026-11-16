@@ -19,7 +19,6 @@ const ACCOUNT = { source: 'manual' as const, currency: 'EUR', balanceCents: 0 };
 
 const plainRepo = (db: MunniDB) => new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
 
-/** a transfer's two legs nobody paired yet: checking → pot */
 async function openPair(repo: Repo, spaceId: string, prefix: string) {
   const leg = { date: '2026-07-25', currency: 'EUR', needsReview: 0 as const };
   await repo.upsert('transaction', spaceId, `${prefix}-out`, { ...leg, accountId: `${prefix}-chk`, amountCents: -50_000, merchant: 'To the pot', linkedAccountId: `${prefix}-pot` });

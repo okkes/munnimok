@@ -1,9 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Critical flow: entering money by hand — a manual transaction is created,
-// shows in the list, opens on its detail and is edited in place.
-
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
 
@@ -26,7 +23,6 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="part-cat-save"]');
     await shot(page, k('27-tx-create') + '--s1');
     await page.click('[data-testid="txform-save"]');
-    // saving opens the new transaction's own page
     await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('12.50');
     await shot(page, k('09-tx-detail'));
     await page.goBack();

@@ -54,7 +54,6 @@ interface AttachedAccountEntry {
   link?: AccountLinkRow;
 }
 
-/** manual · imported · bank-linked at a glance (user redesign ss13) */
 const SOURCE_ICONS: Record<AccountRow['source'], string> = {
   manual: 'pencil-outline',
   camt053: 'file-document-outline',
@@ -66,8 +65,7 @@ interface AttachCandidate {
   feedSpaceId: string;
   name: string;
   ibanTail?: string;
-  /** #536: what the bank reported the account to be — the attach step's
-   *  first suggestion only; the space's pick is the account's type here */
+  /** #536: the bank's reported type: only the attach step's first suggestion, the space's pick decides */
   reportedType: AccountType;
 }
 
@@ -85,15 +83,12 @@ function linkProvenance(t: T, link: AccountLinkRow, mySub?: string): string | un
   return undefined;
 }
 
-/** one feed attachment as a display row (S3776: out of the query fn) —
- *  the row itself stays calm (iban · source); the rest of the story
- *  moved into the tap-through info sheet (user redesign ss13) */
 function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined): AttachedAccountEntry {
   return {
     key: link.id,
     // #239: the space's own name wins here — the global one stays global
     name: link.displayName || (account?.name ?? t('acct.bank')),
-    // #212 r2: the SPACE's type decides — #550: it names the row's segment
+    // the SPACE's type decides, and names the row's segment (#212, #550)
     type: account ? linkEffectiveType(link, account) : (link.type ?? 'checking'),
     subtitle: [
       ibanTail(account?.iban),
@@ -108,34 +103,20 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
   };
 }
 
-/** the info sheet's facts as label/value pairs — an absent fact drops
- *  out (S3776: out of the screen) */
 function infoFacts(t: T, lang: Lang, info: AttachedAccountEntry, mySub: string | undefined, newestTx: string | undefined): (readonly [string, string])[] {
   return [
-    // #239 r2 (user): the GLOBAL name, next to the space's own
     info.link && info.account ? ([t('acct.globalName'), info.account.name] as const) : null,
     info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,
-    // #177 (user "what does the - mean"): an absent gate SAYS
-    // it shows the full history instead of a bare dash
+    // an absent gate says it shows the full history, not a bare dash (#177)
     info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? t('acct.historyFromAll')] as const) : null,
     info.link && linkProvenance(t, info.link, mySub) ? ([t('acct.attachedBy'), linkProvenance(t, info.link, mySub)!] as const) : null,
     syncLine(t, lang, info.account) ? ([t('acct.lastSyncedLabel'), syncLine(t, lang, info.account)!] as const) : null,
-    // #205: where the DATA ends (imports stamp it) and the
-    // newest transaction actually on the account — different
-    // facts from "last synced"
+    // #205: where the data ends (imports stamp it) and the newest actual transaction are not "last synced"
     info.account?.dataThroughDate ? ([t('acct.dataThroughLabel'), info.account.dataThroughDate] as const) : null,
     [t('acct.newestTx'), newestTx ?? '—'] as const,
   ].filter((row): row is readonly [string, string] => row !== null);
 }
 
-/**
- * The financial accounts this space sees (redesign 2026-07-22): the
- * list shows last-sync freshness, every feed attachment detaches HERE
- * (danger sheet + cooldown), and "+ attach" offers the user's not-yet-
- * attached accounts (#207: the history start is the space's own fact,
- * not a per-attach ask) — and #527: a bank is connected, a statement
- * imported or a manual account added from here too.
- */
 export function SpaceAccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo } = useData();
@@ -145,31 +126,24 @@ export function SpaceAccountsScreen() {
   const { spaceId } = useParams({ strict: false }) as { spaceId: string };
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const syncing = identity?.kind === 'user';
-  // #284: readers look but don't touch — every mutating affordance on
-  // this screen stands down (the server enforces; the UI stops promising)
+  // #284: readers look but don't touch; the server enforces, the UI stops promising
   const myRole = useMyRole(spaceId, syncing);
   const readOnly = myRole === 'reader';
 
   const [attachOpen, setAttachOpen] = useState(false);
   const [picked, setPicked] = useState<AttachCandidate | null>(null);
-  // #310 (user): an attach door elsewhere forwarded here — read once at
-  // mount, resolved against the candidates the moment they load (below)
+  // #310: an attach door elsewhere forwarded here; read once at mount, resolved when the candidates load
   const [pendingAttach, setPendingAttach] = useState(() => takeSpaceAttachIntent());
-  // #310: the intent named THIS account — the sheet skips the pick list
-  // and opens on the final step (type + attach only)
+  // #310: the intent named THIS account: the sheet skips the pick list and opens on the final step
   const [attachFocus, setAttachFocus] = useState(false);
   // #152: the account's type is a SPACE-level decision, made here
   const [attachType, setAttachType] = useState<AccountType>('checking');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  // AE1: creation goes through the shared chooser now. #179: arriving
-  // with a pending add intent opens it right away (read-once at mount)
+  // #179: a pending add intent opens the chooser on arrival (read once at mount)
   const [addOpen, setAddOpen] = useState(() => takeSpaceAddAccountIntent());
-  // the tap-through info sheet (user redesign ss13) — feed rows only
-  // since #206: manual rows go straight to the editor
   const [info, setInfo] = useState<AttachedAccountEntry | null>(null);
-  // #205: the newest transaction on the shown account, from raw rows
   const infoAccountId = info?.account?.id;
   const infoNewestTx = useQuery(
     store,
@@ -178,15 +152,10 @@ export function SpaceAccountsScreen() {
   );
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
-  // #305: whose attachment is this? my own feeds come from /me/feeds —
-  // anything else in the list was shared INTO the space by someone else
-  // and wears the shared badge (offline the set stays unknown: no badge
-  // beats a wrong one)
+  // #305: my own feeds come from /me/feeds; anything else was shared INTO the space and wears the shared badge
+  // (offline the set is unknown: no badge beats a wrong one)
   const myFeeds = useMyFeedIds();
-  // #445/#528: only the person whose connection feeds the account can tell whether it still does —
-  // a friend's attachment reads nothing here (user ss 2026-10-08: "shared by Elo" under a reconnect
-  // banner; 2026-10-09: the same banner on a friend's account whose link carried no name — the
-  // feed set decides now, not the link)
+  // #445/#528: only the owner of the feeding connection can tell if it still feeds; the feed set decides, not the link
   const reconnect = useReconnectReader();
   const reconnectOf = (entry: AttachedAccountEntry): ReconnectNeed | null => {
     if (!entry.account || !reconnect) return null;
@@ -194,9 +163,7 @@ export function SpaceAccountsScreen() {
     return reconnect.needOf(entry.account, owned);
   };
   const infoNeed = info ? reconnectOf(info) : null;
-  // #527: the archived accounts wait behind a toggle below the list
   const [showArchived, setShowArchived] = useState(false);
-  // #527: a bank connected from here, in place — no detour through another screen
   const [bankConnectOpen, setBankConnectOpen] = useState(false);
 
   const entries = useQuery(store, async () => {
@@ -213,8 +180,6 @@ export function SpaceAccountsScreen() {
     for (const account of linked) {
       if (account) feedAccounts.set(account.id, account);
     }
-    // rows stay calm (iban · source); provenance, sync freshness and the
-    // history gate live in the tap-through sheet (user redesign ss13)
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
@@ -231,7 +196,6 @@ export function SpaceAccountsScreen() {
     return list;
   }, [spaceId, mySub]);
 
-  // "+ attach": my feeds' accounts that this space does NOT have yet
   const candidates = useQuery(
     store,
     async () => {
@@ -251,10 +215,8 @@ export function SpaceAccountsScreen() {
     [spaceId, syncing, attachOpen],
   );
 
-  // #310 (user): the arrival intent opens the attach sheet by itself.
-  // A named account that IS a candidate lands pre-picked on the final
-  // step; an unknown or already-attached one falls back to the pick
-  // list (today's behavior). Waits for the candidates query on purpose.
+  // #310: a named account that is a candidate lands pre-picked on the final step;
+  // an unknown or already-attached one falls back to the pick list; waits for the candidates query
   useEffect(() => {
     if (!pendingAttach || candidates === undefined) return;
     const target = pendingAttach.accountId
@@ -271,8 +233,7 @@ export function SpaceAccountsScreen() {
     if (!picked || busy) return;
     setBusy(true);
     try {
-      // #207: no per-attach history date — the space's own history start
-      // (else the app default) decides inside attachFeedToSpace
+      // #207: no per-attach history date; the space's own history start decides inside attachFeedToSpace
       await attachFeedToSpace(store, repo, spaceId, picked.feedSpaceId, picked.accountId, undefined, attachType);
       setPicked(null);
       setAttachType('checking');
@@ -307,14 +268,11 @@ export function SpaceAccountsScreen() {
       <button
         key={entry.key}
         data-testid={`space-account-${entry.key}`}
-        // #206: a space-owned (manual) row edits directly — its
-        // info sheet had nothing the editor doesn't say better
-        // (#284: readers get the read-only info sheet instead)
+        // #206: a manual row edits directly; readers get the read-only info sheet instead (#284)
         onClick={() => (entry.manual && !readOnly ? setEditing(entry.manual) : setInfo(entry))}
         className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
       >
-        {/* the real bank mark where we have it (user request);
-            a 404 must not leave a broken square (#176) */}
+        {/* a 404 on the bank mark must not leave a broken square (#176) */}
         {logo && (
           <Picture
             src={logo}
@@ -333,19 +291,15 @@ export function SpaceAccountsScreen() {
           <span className="block truncate text-[15px] font-medium text-ink">{entry.name}</span>
           <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>
         </span>
-        {/* #305 (user): say it IS a shared account, right on
-            the consumer's row */}
         {entry.link && myFeeds && !myFeeds.has(entry.link.feedSpaceId) && (
           <SharedSpaceBadge testId={`space-account-shared-${entry.key}`} />
         )}
-        {/* #528: only when the connection truly needs the person — the row's tap leads on to it */}
         {reconnectOf(entry) && (
           <Pill tone="warning" testId={`space-account-stale-${entry.key}`}>
             {t('acct.reconnectHint')}
           </Pill>
         )}
         {entry.archived && <Pill>{t('acct.archived')}</Pill>}
-        {/* manual · imported · linked at a glance */}
         {entry.account && (
           <Icon name={SOURCE_ICONS[entry.account.source]} size={16} color="var(--m-ink-4)" />
         )}
@@ -376,7 +330,6 @@ export function SpaceAccountsScreen() {
           )}
           {!!entries?.length && (
             <div className="flex flex-col gap-2.5" data-testid="space-accounts-list">
-              {/* #550 (user): one segment per account type instead of one long list */}
               {groupByAccountType(entries.filter((entry) => !entry.archived)).map((group) => (
                 <section key={group.type} className="flex flex-col gap-2.5" data-testid={`space-accounts-group-${group.type}`}>
                   <div className="m-cap px-1 pt-2">{t(typeDef(group.type).groupKey)}</div>
@@ -385,7 +338,6 @@ export function SpaceAccountsScreen() {
               ))}
             </div>
           )}
-          {/* #527 (user): the archived ones fold away below — beside the others they bloated the list */}
           {archived.length > 0 && (
             <div className="mt-3" data-testid="space-accounts-archived">
               <button
@@ -400,7 +352,6 @@ export function SpaceAccountsScreen() {
               {showArchived && <div className="mt-1.5 flex flex-col gap-2.5">{archived.map(renderRow)}</div>}
             </div>
           )}
-          {/* #284: attach/add are mutations — readers see neither */}
           {!readOnly &&
             (syncing ? (
               <Button
@@ -439,13 +390,9 @@ export function SpaceAccountsScreen() {
         </div>
       </div>
 
-      {/* #527 (user): connect, import or add right from the space — a manual
-          account lives here, a connected or imported one is attached here */}
       <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} onConnect={() => setBankConnectOpen(true)} />
       {syncing && <BankConnect open={bankConnectOpen} onOpenChange={setBankConnectOpen} />}
 
-      {/* tap-through info: the full story per account, with the actions
-          (edit / detach) moved off the row (user redesign ss13) */}
       <Sheet open={info !== null} onOpenChange={(next) => !next && setInfo(null)} title={info?.name} size="form">
         {info && (
           <div className="flex flex-col gap-3 pt-1" data-testid="space-account-info">
@@ -453,8 +400,7 @@ export function SpaceAccountsScreen() {
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
               {info.account ? t(sourceKeyFor(info.account), sourceParamsFor(info.account)) : t('acct.bank')}
             </div>
-            {/* #528: why it needs its connection again, and the way to that connection —
-                its card brought into view, where signing in again reuses it (prod 2026-10-08) */}
+            {/* #528: why it needs its connection again; its card is brought into view, where signing in again reuses it */}
             {info.account && infoNeed && reconnect && (
               <ReconnectNote
                 account={info.account}
@@ -465,8 +411,7 @@ export function SpaceAccountsScreen() {
                 actionTestId="space-account-reconnect"
               />
             )}
-            {/* #239 (user): this SPACE's own name for the account — the
-                global name stays untouched; clearing falls back to it */}
+            {/* #239: this SPACE's own name for the account; the global name stays untouched, clearing falls back to it */}
             {info.link && (
               <label className="flex items-center gap-3 text-[13px] text-ink-2">
                 {t('acct.spaceName')}
@@ -476,7 +421,6 @@ export function SpaceAccountsScreen() {
                   placeholder={info.account?.name ?? ''}
                   readOnly={readOnly}
                   onBlur={(e) => {
-                    // #284: readers read the field, never write it
                     if (readOnly) return;
                     const trimmed = e.target.value.trim();
                     if (trimmed === (info.link!.displayName ?? '')) return;
@@ -489,11 +433,7 @@ export function SpaceAccountsScreen() {
                 />
               </label>
             )}
-            {/* #212 r2 (user): the TYPE is this space's own fact for an
-                attached account — import/linked rows were missing it
-                here entirely; changing re-reviews THIS space only.
-                #284: the change row is a mutation — readers keep the
-                type reading in the row subtitle instead */}
+            {/* #212: the type is this space's own fact; changing re-reviews THIS space only (#284: readers don't) */}
             {info.link && info.account && !readOnly && <AccountTypeRow account={info.account} link={info.link} />}
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {infoFacts(t, lang, info, mySub, infoNewestTx).map(([label, value]) => (
@@ -503,8 +443,6 @@ export function SpaceAccountsScreen() {
                 </div>
               ))}
             </div>
-            {/* #239 r2 (user): straight to the account in the global
-                overview — its sheet opens on arrival */}
             {info.link && info.account && (
               <Button
                 variant="outline"
@@ -534,12 +472,8 @@ export function SpaceAccountsScreen() {
         )}
       </Sheet>
 
-      {/* manual rows edit/delete in place — same surface as the global
-          screen (user ss 2026-07-31: they were view-only here) */}
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
 
-      {/* pick an existing account, choose its type here, attach (#207:
-          the history start is the space's own, no per-attach ask) */}
       <Sheet
         open={attachOpen}
         onOpenChange={(next) => {
@@ -550,7 +484,6 @@ export function SpaceAccountsScreen() {
         size="tall"
       >
         <div className="flex flex-col gap-3 pt-1">
-          {/* #310: arrived FOR this account — say which one, skip the list */}
           {attachFocus && picked && (
             <div
               className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3"
@@ -569,7 +502,6 @@ export function SpaceAccountsScreen() {
                   data-testid={`space-attach-pick-${candidate.accountId}`}
                   onClick={() => {
                     setPicked(candidate);
-                    // #536: the bank's word starts the type pick — the space's choice stands
                     setAttachType(candidate.reportedType);
                   }}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
@@ -592,8 +524,6 @@ export function SpaceAccountsScreen() {
 
           {picked && (
             <>
-              {/* #152: the type lives on the ATTACHMENT — this space
-                  decides what the account is to it */}
               <p className="px-1 text-[13px] text-ink-2">{t('acct.attachTypeLabel')}</p>
               <div className="grid grid-cols-2 gap-2" data-testid="space-attach-types">
                 {ACCOUNT_TYPES.map((def) => (
@@ -610,7 +540,6 @@ export function SpaceAccountsScreen() {
                   </button>
                 ))}
               </div>
-              {/* the conscious yes before a funding attachment (#152) */}
               {attachType === 'funding' && (
                 <p
                   className="rounded-card bg-accent-soft/30 px-3 py-2 text-[12px] leading-snug text-ink-2"
@@ -619,13 +548,7 @@ export function SpaceAccountsScreen() {
                   {t('acct.fundingAttachNote')}
                 </p>
               )}
-              {/* #207: no history-date ask — the space's own history
-                  start governs; the info sheet still shows the fact */}
-              {/* #308 (user): the shared-space heads-up lives HERE now —
-                  connect/import are global and never auto-attach, so the
-                  moment the data reaches other people is this attach.
-                  kind='shared' flips only once someone actually joined
-                  (pending invites alone keep a space personal). */}
+              {/* #308: connect/import never auto-attach: this attach is when data reaches others; kind='shared' needs a joined member */}
               {space?.kind === 'shared' && (
                 <div
                   className="flex items-start gap-2.5 rounded-card bg-warning-soft px-3 py-2.5"
@@ -645,7 +568,6 @@ export function SpaceAccountsScreen() {
           <Button data-testid="space-attach-save" disabled={!picked || busy} onClick={() => void attach()}>
             {t('acct.attach')}
           </Button>
-          {/* need a NEW account? creation lives on the manage screen */}
           <button
             data-testid="space-attach-manage"
             onClick={() => {
@@ -659,7 +581,6 @@ export function SpaceAccountsScreen() {
         </div>
       </Sheet>
 
-      {/* aligned destructive confirm: sheet + cooldown (user request) */}
       <DangerConfirmSheet
         open={detachTarget !== null}
         onOpenChange={(open) => !open && setDetachTarget(null)}

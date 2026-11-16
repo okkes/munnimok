@@ -43,7 +43,6 @@ interface SearchHits {
   coins: { id: string; name: string; symbol: string }[];
 }
 
-/** create/edit a holding: live search when signed in, manual always */
 export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: HoldingRow | 'new' | null; onClose: () => void }>) {
   const { t } = useLang();
   const ops = usePortfolioOps();
@@ -74,7 +73,6 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
     setAttempted(false);
   }, [initial, editing]);
 
-  // debounced symbol search through the quotes proxy (signed-in only)
   useEffect(() => {
     if (!quotesAvailable() || query.trim().length < 2) {
       setHits(null);
@@ -176,7 +174,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
           aria-invalid={attempted && !name.trim()}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
-        {/* #195 r2 (user): the blocker sits AT the field */}
+        {/* #195: the blocker sits at the field */}
         <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="pf-save-blocker" />
         <ScrollRow scrollerClassName="gap-1.5 pb-1">
           {ASSET_CLASSES.map((candidate) => (
@@ -233,7 +231,6 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
   );
 }
 
-/** The portfolio: what you own, what it's worth, whether you're winning. */
 export function PortfolioScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -259,7 +256,6 @@ export function PortfolioScreen() {
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-portfolio">
-      {/* a bottom tab like Home — same large left-aligned header, no back */}
       <AppBar
         large
         title={t('pf.title')}
@@ -291,7 +287,6 @@ export function PortfolioScreen() {
                 {money(model.totals.gainCents, { sign: true })} {t('pf.total')}
               </span>
             </div>
-            {/* allocation as a stacked bar — the mix at a glance */}
             {model.totals.totalCents > 0 && (
               <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-track" data-testid="pf-allocation">
                 {model.totals.allocation.map((slice) => (

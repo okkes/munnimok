@@ -29,7 +29,6 @@ const toggled = (set: ReadonlySet<string>, id: string): Set<string> => {
   return next;
 };
 
-/** one row of a pick list: the tick and the transaction, either one toggles */
 function PickRow({ tx, checked, testId, onToggle }: Readonly<{ tx: SpaceTx; checked: boolean; testId: string; onToggle: () => void }>) {
   return (
     <div className="flex items-center gap-2">
@@ -51,20 +50,9 @@ function PickRow({ tx, checked, testId, onToggle }: Readonly<{ tx: SpaceTx; chec
   );
 }
 
-/**
- * #455 (user): "cash out and select the transaction(s)". A full screen
- * like attaching to an event: the money that left the savings pool lines
- * up, newest first, nothing ticked — the person names what paid for the
- * goal. Cashing out archives the goal; the picked rows stay in the history
- * but leave the saving of their period, and what the goal held beyond them
- * is back in the savings pool.
- *
- * User 2026-11-12: any time, reached or not; ticking more than the goal
- * held says what that does to the unallocated savings (no other goal is
- * touched); and a second, optional pick names what the money bought — real
- * spending the plan files under the goal and a graph can leave out. A goal
- * already cashed out opens on that second pick alone.
- */
+// #455: cashing out archives the goal; the picked rows stay in history but leave the saving of their period,
+// and what the goal held beyond them returns to the savings pool. Ticking more than it held says what that does
+// to the unallocated savings; a goal already cashed out opens on the second pick (what it bought) alone
 export function GoalCashOutScreen() {
   const { t } = useLang();
   const navigate = useNavigate();

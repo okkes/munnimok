@@ -30,12 +30,8 @@ function Notice({ icon, text, testId, children }: Readonly<{ icon: string; text:
   );
 }
 
-/**
- * The join screen (#538): an invitee sees ONLY the split's name, its
- * picture and who invited them — design rule — and where they stand with
- * this link: their own, already in, waiting for an owner, or taken out
- * before. A link that asks for approval says so before it is used.
- */
+// #538: an invitee sees ONLY the split's name, picture and inviter (design rule);
+// a link that asks for approval says so first
 export function SplitJoinScreen() {
   const { t } = useLang();
   const navigate = useNavigate();

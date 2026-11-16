@@ -5,13 +5,8 @@ import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-/**
- * The flat structure's loan question (typed-splits v2, Q1): labeling a
- * row "Loan payment"/"Borrowed" asks — optionally — WHICH loan.
- * Declining files it under the default loan (the unassigned-payments
- * bucket); picking a tracked loan links the row, and the mint engine
- * writes the loan's own leg.
- */
+// declining files the row under the default loan (the unassigned-payments bucket)
+// picking a tracked loan links the row and the mint engine writes the loan's leg
 export function LoanPickSheet({
   open,
   onOpenChange,

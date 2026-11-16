@@ -2,10 +2,6 @@ using Connector.Kit.Agent.Execution;
 
 namespace Connector.Kit.Agent.Tests;
 
-/// <summary>
-/// The rule, in isolation: parked time is not spent time, and nothing else
-/// buys an extension.
-/// </summary>
 public class JobBudgetTests
 {
     private static readonly TimeSpan Budget = TimeSpan.FromMilliseconds(300);
@@ -32,8 +28,6 @@ public class JobBudgetTests
 
         using (budget.Park())
         {
-            // Four times the whole budget, parked. A wall-clock deadline would
-            // have killed this three times over.
             await Task.Delay(Budget * 4);
             Assert.False(budget.Expired);
         }
@@ -53,8 +47,6 @@ public class JobBudgetTests
 
         using (budget.Park()) await Task.Delay(200);
 
-        // Still alive, and now working again rather than parked: the reported
-        // wait must stop growing once the scope is gone.
         var afterPark = budget.HumanWait;
         await Task.Delay(200);
 
@@ -77,7 +69,6 @@ public class JobBudgetTests
         var inner = budget.Park();
         inner.Dispose();
 
-        // One scope still open, so the clock is still stopped.
         await Task.Delay(Budget * 2);
         Assert.False(budget.Expired);
 

@@ -13,13 +13,8 @@ public sealed record DeviceDto(
     bool Revoked);
 public sealed record RenameDeviceRequest(string Name);
 
-/// <summary>
-/// Logged-in devices (user rulings 2026-07-24): see
-/// every device this account is signed in on, rename it, and remotely
-/// disconnect one — enforcement + last-seen stamping live in
-/// UserResolution.TouchDeviceAsync; the revoked device wipes itself on
-/// its next request (user ruling: disconnect = wipe).
-/// </summary>
+// disconnect = wipe: a revoked device wipes itself on its next request;
+// enforcement and last-seen stamping live in UserResolution.TouchDeviceAsync
 public static class DeviceEndpoints
 {
     public static void MapDevices(this IEndpointRouteBuilder app)

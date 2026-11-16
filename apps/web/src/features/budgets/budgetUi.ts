@@ -19,7 +19,6 @@ export const CADENCE_KEYS: Record<'week' | '2weeks' | 'month' | 'period', Transl
   month: 'budgets.resetsMonth',
 };
 
-/** icon choices for the create/edit screen */
 export const BUDGET_ICONS = [
   'wallet-outline',
   'food-fork-drink',

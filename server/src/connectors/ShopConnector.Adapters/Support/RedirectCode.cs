@@ -2,32 +2,15 @@ using System.Text.RegularExpressions;
 
 namespace ShopConnector.Adapters.Support;
 
-/// <summary>
-/// Lifts the authorization code out of whatever the caller hands back.
-///
-/// Shared because every OAuth provider here ends the same way: the browser is
-/// sent to a scheme it cannot open - <c>appie://login-exit</c>,
-/// <c>com.lidlplus.app://callback</c> - and something on the consumer's side
-/// reports where it was sent. What arrives depends entirely on what caught it:
-///
-///   * a native shell intercepting its own scheme hands over the whole URL
-///   * a human copying an address bar hands over the whole URL, sometimes
-///     with a stray space or a trailing newline
-///   * a consumer that already parsed the query hands over the bare code
-///
-/// All three are the same intent, so all three are accepted rather than making
-/// a person's successful sign-in fail on the shape of a paste.
-/// </summary>
+/// OAuth ends in a scheme the browser cannot open (appie://login-exit); what reaches us is a full URL,
+/// a pasted address with a stray space or newline, or the bare code - all accepted,
+/// so a successful sign-in never fails on the shape of a paste
 internal static partial class RedirectCode
 {
     [GeneratedRegex(@"[?&]code=([^&\s]+)")]
     private static partial Regex InUrl { get; }
 
-    /// <summary>
-    /// The unreserved set from RFC 3986, which is what an authorization code
-    /// is drawn from. Eight characters is well below any real code and well
-    /// above anything typed by accident.
-    /// </summary>
+    /// RFC 3986 unreserved set; 8+ characters is below any real code and above accidental typing
     [GeneratedRegex(@"^[A-Za-z0-9._~-]{8,}$")]
     private static partial Regex Bare { get; }
 

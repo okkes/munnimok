@@ -2,11 +2,7 @@ using Connector.Kit.Adapters;
 
 namespace ShopConnector.Adapters.Mock;
 
-/// <summary>
-/// The registered mock providers. Named constants rather than literals
-/// because these ids appear in test assertions, seeded fixtures and stack
-/// configuration, and a typo in any of them is a silent "unknown provider".
-/// </summary>
+/// ids are constants: they appear in assertions, fixtures and stack config, and a typo is a silent "unknown provider"
 public static class MockStoreAdapters
 {
     public const string Simple = "mock-store-simple";
@@ -18,11 +14,8 @@ public static class MockStoreAdapters
 
     public static IReadOnlyList<string> Ids { get; } = [Simple, Sms, Captcha, Slow, Broken, Persistent];
 
-    /// <summary>
-    /// How often the fixture's receipts repeat: four weeks, from the days the
-    /// file states, so a Sunday shop stays a Sunday shop. Any window this
-    /// long that ends yesterday holds each of the file's receipts exactly once.
-    /// </summary>
+    /// four weeks from the file's days, so a Sunday shop stays a Sunday shop; a window this long ending
+    /// yesterday holds each receipt once
     public const int ReceiptCycleDays = 28;
 
     public static IReadOnlyList<IProviderAdapter> All(MockStoreOptions? options = null, TimeProvider? time = null) =>

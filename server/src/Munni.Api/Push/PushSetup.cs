@@ -2,12 +2,7 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Push;
 
-/// <summary>
-/// Push transport registration, each enabled by its own config: VAPID
-/// keys for the browsers, a Firebase service account for the native
-/// shells (native-apps design N4). The routing sender delivers every
-/// subscription through whichever transport its kind has.
-/// </summary>
+// the routing sender delivers every subscription through its kind's transport
 public static class PushSetup
 {
     /// <summary>which push transports the running config enables (the /health flags).</summary>

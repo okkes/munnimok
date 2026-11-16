@@ -5,15 +5,8 @@ import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 import { ReceiptBody, receiptTitle } from './ReceiptBody';
 
-/**
- * A look at a receipt WITHOUT leaving the flow (user 2026-10-09: "whenever
- * we open a receipt and return we have to start over again"): a sheet at
- * full height — the PDF wants every pixel — with the receipt's body as the
- * screen shows it (head, picture, items, invoices in place), read-only,
- * plus the pick at its foot. Over the picker (#496: a tap on a row opens
- * it) the list underneath keeps its search, its party chip and its scroll
- * position; on the review card the eye opens it straight away.
- */
+// a look at a receipt without leaving the flow: the picker keeps its search, party chip and scroll
+// full height: the PDF wants every pixel
 export function ReceiptPeekSheet({
   open,
   onOpenChange,
@@ -29,7 +22,6 @@ export function ReceiptPeekSheet({
   currency: string;
   /** "Attach this one": the receipt is picked and the host closes both sheets; absent = a look only */
   onPick?: (receipt: ReceiptRow) => void;
-  /** each host's peek wears its own ids, so two can stand at once */
   testIdPrefix?: string;
 }>) {
   const { t } = useLang();

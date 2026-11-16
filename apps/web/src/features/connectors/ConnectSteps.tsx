@@ -22,13 +22,8 @@ export interface FlowRequest {
   resume?: ResumeLogin;
 }
 
-/**
- * What follows a pick (#527: shared by the hubs and the space's own
- * Connect door): the sign-in itself, naming a fresh connection right away
- * (user ruling), and for a shop the spaces its receipts reach — none until
- * picked (user ruling 2026-10-02). A sign-in that settles while its sheet
- * is closed is adopted here too.
- */
+// shared by the hubs and the space's own Connect door (#527): a fresh connection is named right away, and a shop's spaces
+// are picked after it, none until picked
 export function ConnectSteps({
   flow,
   onFlowChange,
@@ -46,7 +41,6 @@ export function ConnectSteps({
   const afterConnect = async (result: AdoptResult, reconnect: boolean) => {
     onFlowChange(null);
     if (reconnect) return;
-    // fresh connection: ask for a display name right away (user ruling)
     const meta = (await store.allRows('storeConn')).find((c) => c.id === result.connectionId);
     setNameDraft(meta?.displayName ?? '');
     setAttempted(false);
@@ -58,7 +52,7 @@ export function ConnectSteps({
     const named = naming.connectionId;
     await ops.rename(named, nameDraft);
     setNaming(null);
-    // a shop's receipts reach no space until picked (user ruling 2026-10-02): the step follows the name
+    // a shop's receipts reach no space until picked: the step follows the name
     const meta = (await store.allRows('storeConn')).find((c) => c.id === named && c.deleted === 0);
     const kind = meta?.kind ?? (meta ? catalogue.byId.get(meta.store)?.kind : undefined) ?? 'store';
     if (meta && kind === 'store' && (allSpaces ?? []).length > 0) setSpacesStep({ connectionId: named, picked: [] });
@@ -73,7 +67,6 @@ export function ConnectSteps({
   const togglePicked = (spaceId: string) =>
     setSpacesStep((step) => step && { ...step, picked: step.picked.includes(spaceId) ? step.picked.filter((id) => id !== spaceId) : [...step.picked, spaceId] });
 
-  // a sign-in that settles while its sheet is closed is adopted right here
   usePendingLoginFollower({
     exclude: flow?.resume?.connectionId ?? null,
     onActive: async (login, view) => {
@@ -97,7 +90,6 @@ export function ConnectSteps({
         onDone={(result, reconnect) => void afterConnect(result, reconnect)}
       />
 
-      {/* name-the-connection step right after a successful connect */}
       <Sheet
         open={naming !== null}
         onOpenChange={(open) => {
@@ -138,7 +130,6 @@ export function ConnectSteps({
         </div>
       </Sheet>
 
-      {/* the step after naming: which spaces a shop's receipts reach — none until picked (user ruling 2026-10-02) */}
       <Sheet open={spacesStep !== null} onOpenChange={(open) => !open && setSpacesStep(null)} title={t('conn.spacesTitle')} size="tall">
         {spacesStep && (
           <div className="flex flex-col gap-3 pt-1" data-testid="conn-spaces-step">

@@ -7,11 +7,9 @@ import { Sheet } from '@/ui/Sheet';
 import { itemsFromRead, readReceiptPhotos, receiptAiChoice, setReceiptAiChoice } from './receiptAi';
 import type { ReadCategory, ReceiptReadReply } from './receiptAi';
 
-/** what the reader found, as the receipt takes it */
 export interface ReceiptReadOutcome {
   items: ReceiptItem[];
   reconciled: boolean;
-  /** what the receipt itself says was paid */
   totalCents: number;
   currency?: string;
   /** the shop and the day as printed — a receipt kept without a transaction has no other source for them */
@@ -19,7 +17,6 @@ export interface ReceiptReadOutcome {
   date?: string;
 }
 
-/** the expense categories the reader may choose from: every sub under its main, and a main that stands alone */
 function useReadCategories(): ReadCategory[] {
   const { t } = useLang();
   const cats = useCategories();
@@ -34,12 +31,8 @@ function useReadCategories(): ReadCategory[] {
   }, [cats, t]);
 }
 
-/**
- * #567 (user): the photo is read by a vision model through munni's API.
- * The first time, a notice names where the photo goes and asks; "no"
- * is remembered and the door stays shut until the person opens it again
- * in the same notice. Reading again replaces the lines a reader made.
- */
+// #567: first use shows a notice naming where the photo goes; "no" is remembered
+// reading again replaces the reader's lines
 export function ReceiptAiRead({
   images,
   hasItems,
@@ -98,7 +91,6 @@ export function ReceiptAiRead({
           {note[reply.state]}
         </p>
       )}
-      {/* user: a switch to turn it off again — where the reading happens, so it is found */}
       {agreed && (
         <p className="text-center text-[11px] leading-snug text-ink-4" data-testid="receipt-ai-on">
           {t('receipt.ai.onNote')}{' '}

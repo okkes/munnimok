@@ -32,7 +32,6 @@ describe('application/spaces (#277 r2)', () => {
     expect(row?.kind).toBe('shared');
     expect(row?.createdByName).toBe('Bob');
 
-    // idempotent — and an established creator is never overwritten
     expect(await ensureSpaceShared(store, repo, SPACE, 'Mallory')).toBe(false);
     expect((await store.get('space', SPACE))?.createdByName).toBe('Bob');
   });
@@ -85,7 +84,6 @@ describe('application/spaces (#277 r2)', () => {
     const joined = await store.get('space', 'sp-joined');
     expect(joined?.kind).toBe('shared');
     expect(joined?.createdByName).toBe('Cara');
-    // the known personal space and the name-mismatched arrival stay put
     expect((await store.get('space', 'sp-personal'))?.kind).toBe('personal');
     expect((await store.get('space', 'sp-other'))?.kind).toBe('personal');
   });

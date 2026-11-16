@@ -5,20 +5,12 @@ import { logActivity } from './activity';
 import { settleSpaceReimbursements } from './catalogMaintenance';
 import { requestReceiptMatching } from './receiptMatching';
 
-/**
- * Moving a space's history start (arc 5) is impactful and the numbers
- * must be on the table BEFORE the write: newer hides attached feed rows
- * (recoverable — stored in full) and DELETES the space's own manual
- * rows before the new date (tombstoned, with a warning count); older
- * surfaces stored rows that may ask for review again.
- */
+// the numbers must be shown BEFORE the write: newer hides feed rows (stored in full) and tombstones the space's own
+// manual rows before the date; older surfaces stored rows that may ask for review again
 export interface HistoryMoveImpact {
   direction: 'newer' | 'older' | 'none';
-  /** newer: attached feed rows that will hide — recoverable */
   feedHiddenCount: number;
-  /** newer: the space's own rows that will tombstone */
   manualDeleteCount: number;
-  /** older: stored rows (feed + own) that will surface */
   surfacedCount: number;
 }
 
@@ -33,7 +25,6 @@ export async function historyMoveImpact(store: StorageBackend, spaceId: string, 
 
   const ownLive = own.filter((t) => t.deleted === 0);
   if (newDate > oldDate) {
-    // per-link gates govern feed visibility — count what falls out of them
     let feedHidden = 0;
     for (const link of links) {
       const rows = await store.bySpace('transaction', link.feedSpaceId);
@@ -44,8 +35,7 @@ export async function historyMoveImpact(store: StorageBackend, spaceId: string, 
     return {
       direction: 'newer',
       feedHiddenCount: feedHidden,
-      // every own row before the new start goes — including ones an
-      // older start had already hidden (honest total)
+      // every own row before the new start goes, including ones an older start had already hidden
       manualDeleteCount: ownLive.filter((t) => t.date < newDate).length,
       surfacedCount: 0,
     };
@@ -62,11 +52,7 @@ export async function historyMoveImpact(store: StorageBackend, spaceId: string, 
   return { direction: 'older', feedHiddenCount: 0, manualDeleteCount: 0, surfacedCount: surfaced };
 }
 
-/**
- * The write half: the space's date moves, every attachment's gate moves
- * with it (the settings sheet is the space-wide control), and — moving
- * newer — the space's own rows before the new start tombstone.
- */
+/** every attachment's gate moves with the space date (the settings sheet is the space-wide control) */
 export async function applyHistoryMove(store: StorageBackend, repo: Repo, spaceId: string, newDate: string): Promise<void> {
   const [space, own, links] = await Promise.all([
     store.get('space', spaceId),
@@ -85,7 +71,7 @@ export async function applyHistoryMove(store: StorageBackend, repo: Repo, spaceI
     // #617: a reimbursement that named one of those rows is none any more
     await settleSpaceReimbursements(store, repo, spaceId);
   } else if (newDate < oldDate) {
-    // older: stored rows surface — the shops' receipts meet them now, not when the review opens (user 2026-10-09)
+    // older: stored rows surface; receipt matching runs now, not when the review opens
     requestReceiptMatching(spaceId);
   }
   void logActivity(store, repo, spaceId, 'spaceEdit', space?.name ?? '');

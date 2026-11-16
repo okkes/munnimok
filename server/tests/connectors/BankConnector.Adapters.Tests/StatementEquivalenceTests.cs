@@ -4,15 +4,8 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// One statement, three exports.
-///
-/// The ASN camt.053 fixture and both CSV fixtures describe the SAME June
-/// statement. That is the strongest assertion available offline: two
-/// completely independent parsers, fed two completely different file
-/// formats, have to agree on every amount, sign and date. A bug in either
-/// one shows up here even when each file's own internal checks pass.
-/// </summary>
+// the ASN camt.053 and both CSV fixtures are the SAME June statement: two independent parsers on different formats
+// must agree
 public sealed class StatementEquivalenceTests
 {
     private const string SessionId = "ses_0123456789abcdef0123456789abcdef";
@@ -68,8 +61,7 @@ public sealed class StatementEquivalenceTests
             TransactionKind.Transfer, TransactionKind.CardPayment,
         ];
 
-        // The camt file states these as proprietary Prtry codes and the CSVs
-        // as a mutation-code column; both resolve to the same classification.
+        // camt states proprietary Prtry codes, the CSVs a mutation-code column; both resolve to one classification
         Assert.Equal(expected, FromCamt().Select(t => t.Kind));
         Assert.Equal(expected, FromCsv(BankFixtures.StatementCsvDutch).Select(t => t.Kind));
     }
@@ -79,9 +71,7 @@ public sealed class StatementEquivalenceTests
     {
         var accountId = BankRecords.AccountId(SessionId, Account);
 
-        // The id is derived from (session, external_id), so a camt export and
-        // a CSV export of one account converge on one account id and the
-        // consumer sees a single account rather than two.
+        // the id derives from (session, external_id), so camt and CSV of one account converge on one account id
         Assert.All(FromCamt(), t => Assert.Equal(accountId, t.AccountId));
         Assert.All(FromCsv(BankFixtures.StatementCsvDutch), t => Assert.Equal(accountId, t.AccountId));
     }
@@ -92,15 +82,11 @@ public sealed class StatementEquivalenceTests
         var camt = FromCamt();
         var csv = FromCsv(BankFixtures.StatementCsvDutch);
 
-        // camt.053 states the batch as two TxDtls under one entry, so there
-        // is no single counterparty to name and inventing one would be a
-        // fabrication. The CSV has only a name column, so the bank's own
-        // batch label lands in it. Both are correct; the difference is the
-        // formats', not the parsers'.
+        // camt states the batch as two TxDtls under one entry: no single counterparty, and inventing one would be a
+        // fabrication; the CSV has only a name column, so the bank's batch label lands in it
         Assert.Null(camt[2].Counterparty);
         Assert.Equal("VERZAMELBOEKING", csv[2].Counterparty?.Name);
 
-        // Everywhere the formats state the same fact, they agree.
         foreach (var index in (int[])[0, 1, 3, 4])
         {
             Assert.Equal(camt[index].Counterparty?.Name, csv[index].Counterparty?.Name);
@@ -117,9 +103,6 @@ public sealed class StatementEquivalenceTests
 
         var csv = FromCsv(BankFixtures.StatementCsvDutch);
 
-        // The camt statement's CLBD and the CSV's last "saldo na mutatie" are
-        // the same number arrived at two different ways: one stated by the
-        // bank, one accumulated row by row.
         Assert.NotNull(statement.Closing);
         Assert.Equal(319_369, statement.Closing.Amount.Value);
         Assert.Equal(statement.Closing.Amount.Value, csv[^1].ResultingBalance?.Value);

@@ -2,16 +2,8 @@ using Connector.Kit.Browsing;
 
 namespace RegistryConnector.Adapters.Tests;
 
-/// <summary>
-/// A sign-in page with only the boxes it was told it has.
-///
-/// The point is the WIZARD. BKR asks for the e-mail and the password on two
-/// screens, so the password box genuinely does not exist until the first
-/// button is clicked - and an adapter that filled both up front looked
-/// perfectly correct offline against a stub that showed everything at once.
-/// This one reveals the second screen only when the button is pressed, which
-/// is what the live page does and what the first version failed against.
-/// </summary>
+// BKR asks for e-mail and password on two screens: the password box does not exist until the first button is clicked,
+// which a stub showing everything at once hid
 internal sealed class StubLoginPage : ILoginPage
 {
     private readonly HashSet<string> _present;
@@ -28,7 +20,6 @@ internal sealed class StubLoginPage : ILoginPage
 
     public string Url { get; set; } = "https://login.mijnkredietregistratie.nl/";
 
-    /// <summary>Called on every click, so a test can advance the wizard.</summary>
     public Action<StubLoginPage, string>? WhenClicked { get; set; }
 
     /// <summary>True until the page is cleared for a photograph.</summary>
@@ -47,13 +38,7 @@ internal sealed class StubLoginPage : ILoginPage
 
     public void Hide(params string[] selectors) => _present.ExceptWith(selectors);
 
-    /// <summary>
-    /// Puts an element on the page carrying one attribute.
-    ///
-    /// Needed because DUO's QR is read rather than clicked: DigiD draws it as a
-    /// PNG inline in the markup, so what an adapter relays is the value of an
-    /// attribute and not a screenshot.
-    /// </summary>
+    // DUO's QR is read, not clicked: DigiD draws it inline as a PNG, so the adapter relays an attribute value
     public void Carrying(string selector, string attribute, string value)
     {
         _present.Add(selector);
@@ -101,17 +86,8 @@ internal sealed class StubLoginPage : ILoginPage
         return Task.FromResult(true);
     }
 
-    /// <summary>
-    /// Selectors that are on the page but cannot be clicked.
-    /// </summary>
-    /// <remarks>
-    /// A real state, and one a stub that only knows "present" or "absent"
-    /// cannot express: DUO styles its sign-in radios as cards and parks the
-    /// real input off-screen, so Playwright finds the element, scrolls to it,
-    /// reports "element is outside of the viewport" and eventually raises a
-    /// TimeoutException. That is not a missing element and must not be tested
-    /// as one.
-    /// </remarks>
+    // DUO styles sign-in radios as cards with the real input off-screen: Playwright finds it, then times out
+    // ("outside of the viewport"), which is not a missing element
     public void Unclickable(params string[] selectors)
     {
         _present.UnionWith(selectors);
@@ -124,9 +100,7 @@ internal sealed class StubLoginPage : ILoginPage
 
         if (_unclickable.Contains(hit))
         {
-            // The type Playwright for .NET really raises, which is NOT a
-            // PlaywrightException - the distinction that let this escape a
-            // catch clause and fail a login live.
+            // Playwright for .NET raises TimeoutException, not PlaywrightException; that once escaped a catch and failed a login live
             throw new TimeoutException(
                 $"Timeout {timeoutMs}ms exceeded.\nCall log:\n  - attempting click action\n" +
                 "    - element is outside of the viewport");
@@ -152,7 +126,6 @@ internal sealed class StubLoginPage : ILoginPage
     }
 }
 
-/// <summary>Reports the sign-in as landed after a stated number of checks.</summary>
 internal sealed class StubSignedIn(string? url, int afterWaits) : IRedirectWaiter
 {
     private int _waits;

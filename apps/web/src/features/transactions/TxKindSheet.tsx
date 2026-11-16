@@ -26,18 +26,13 @@ import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 
-/** the three choices a person actually makes (user simplification) */
 export const TX_KIND_VISUAL: Record<TxKind, { icon: string; color: string }> = {
   standard: { icon: 'cash-multiple', color: '#27AE60' },
   transfer: { icon: 'swap-horizontal', color: '#2980B9' },
   adjustment: { icon: 'tune-variant', color: '#7F8C8D' },
 };
 
-/**
- * "Standard · Expense" / "Transfer · Saving": the kind carries the
- * resolved technical type along as quiet context. Plain transfers and
- * adjustments add nothing — the kind already says it all.
- */
+/** plain transfers and adjustments add no detail: the kind already says it */
 export function kindDetail(txType: TxType): TxType | null {
   const kind = kindOf(txType);
   if (kind === 'standard') return txType;
@@ -45,11 +40,7 @@ export function kindDetail(txType: TxType): TxType | null {
   return null;
 }
 
-/**
- * The kind picker: three rows with a sentence each. Adjustment is a
- * manual-bookkeeping tool and only offered on hand-entered rows (user
- * rule); bank rows can never be "corrections".
- */
+/** adjustment is a manual-bookkeeping tool: offered only on hand-entered rows, bank rows are never corrections */
 export function TxKindSheet({
   open,
   onOpenChange,
@@ -96,16 +87,8 @@ export function TxKindSheet({
   );
 }
 
-/**
- * The counterparty question (#133 step B): the accounts munni tracks
- * plus the ONE creation door — and, on the ATM pair's ask, the space's
- * cash wallet pinned on top (#546: the one default left; a pick revives a
- * deleted wallet). Bank-fed
- * accounts wear a badge: picking one means Transfer, the real arriving
- * row pairs with it. Picking a MANUAL account forks — quick-create the
- * counterpart (the mint), or point at the row that is already there
- * (the pick-existing door; nothing minted, nothing moves).
- */
+/** #133: the ATM pair's ask pins the space's cash wallet on top (#546); a bank-fed pick means Transfer,
+ *  a manual pick forks: mint the counterpart or point at the row already there */
 export function CounterpartySheet({
   open,
   onOpenChange,
@@ -122,28 +105,16 @@ export function CounterpartySheet({
   onOpenChange: (open: boolean) => void;
   excludeAccountId: string;
   currentLinkedId?: string;
-  /** the pick — `peer` set means the user pointed at an EXISTING row on
-   *  the counter account: carry it in the SAME write (no mint), and the
-   *  caller pairs the reciprocal via pairWithExistingRow */
+  // `peer` = an EXISTING row the user pointed at: carried in the same write (no mint);
+  // the caller pairs it via pairWithExistingRow
   onChoose: (account: { id: string; type: AccountType }, peer?: { txId: string }) => void;
-  /** #133 B: the asking category's family — the cash family pins the
-   *  space's wallet on top (#546: no other family has a default) */
   defaultFamily?: DefaultFamily;
-  /** #133 r5: the account types this ask may offer — the asking
-   *  category's side of the bijection ("Set aside" lists savings
-   *  accounts only, plain Transfer only regular ones). undefined =
-   *  every tracked account qualifies (the generic doors, which file
-   *  the category from whatever kind gets picked). */
+  /** #133: the asking category's side of the bijection ("Set aside" lists savings only); undefined = every account */
   counterTypes?: readonly AccountType[];
-  /** #133 B: the row being linked — enables the pick-existing fork on
-   *  manual counterparties */
   anchor?: { id: string; amountCents: number; date: string };
-  /** #218 (user): detach the current counterparty — offered only when
-   *  one is linked; the caller clears the link (and a transfer
-   *  category resets, since an unlinked transfer is unrepresentable) */
+  /** #218: the caller clears the link; a transfer category resets, since an unlinked transfer is unrepresentable */
   onDetach?: () => void;
-  /** #556: the money being linked, signed — an account whose payment it
-   *  is says so and leads the list */
+  /** #556: the signed money being linked; an account whose payment it is leads the list */
   amountCents?: number;
 }>) {
   const { t, lang } = useLang();
@@ -152,29 +123,19 @@ export function CounterpartySheet({
   const allAccounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
   const recurrings = useRecurrings();
-  // the FULL creation flow (bank connect / statement import / manual),
-  // one sheet deeper — search and quick-create retired (user redesign
-  // 2026-08-01: the field confused, and Create covers the missing-
-  // account case properly)
   const [chooserOpen, setChooserOpen] = useState(false);
-  // #133 B, widened by #237: the counter-match fork — pick the row that
-  // is already there, or explicitly create/await the counterpart
   const [forkFor, setForkFor] = useState<CounterForkTarget | null>(null);
 
   const pinsWallet = defaultFamily === 'cash';
   const candidates = useMemo(
-    // the cash wallet never lists as an ordinary row — the pinned entry
-    // is its one face (approved design). #133 r5: an asking category
-    // narrows the list to ITS account types — the counterparty must make
-    // sense for the category (user rule).
+    // the cash wallet never lists as an ordinary row: the pinned entry is its one face
     () =>
       (allAccounts ?? []).filter(
         (a) => a.id !== excludeAccountId && !a.archived && !a.defaultFor && (!counterTypes || counterTypes.includes(a.type)),
       ),
     [allAccounts, excludeAccountId, counterTypes],
   );
-  // #556 (user ss): what each account is regularly paid tells look-alikes
-  // apart; the one whose payment THIS is leads the list
+  // #556: what each account is regularly paid tells look-alikes apart; the one whose payment THIS is leads
   const rows = useMemo(() => {
     const money = amountCents ?? anchor?.amountCents;
     const withPlans = candidates.map((account) => {
@@ -190,18 +151,13 @@ export function CounterpartySheet({
     onOpenChange(false);
   };
 
-  // the wallet: mint (idempotently) and pick in one tap
   const pickWallet = async () => {
     const id = await ensureCashWallet(store, repo, spaceId);
     choose({ id, type: 'cash' });
   };
 
-  // #237 (user): no more silent mints. A MANUAL counter always opens the
-  // match sheet — pick the row that is already there, or explicitly
-  // create the leg. A bank-fed counter opens it only when it has
-  // something to offer (opposite twins, or the wallet's same-sign rows);
-  // otherwise the link simply awaits the feed. Funding pots and rows
-  // that don't exist yet (no anchor: the create form) choose directly.
+  // #237: a MANUAL counter always opens the match sheet (no silent mints); a bank-fed one only with something to offer,
+  // else the link awaits the feed; funding pots and a missing anchor (create form) choose directly
   const tap = (account: { id: string; type: AccountType; name: string; source?: string }) => {
     const target = counterForkTarget(account, anchor, allTxs ?? []);
     if (target) setForkFor(target);
@@ -214,7 +170,6 @@ export function CounterpartySheet({
       <p className="pb-2 text-[12px] text-ink-3">
         {t(counterTypes?.length === 1 && counterTypes[0] === 'funding' ? 'tx.counterFundingHint' : 'tx.counterAccountHint')}
       </p>
-      {/* the ATM pair's ask leads with the space's cash wallet (#546) */}
       {pinsWallet && (
         <button
           data-testid="counter-default"
@@ -242,8 +197,7 @@ export function CounterpartySheet({
               <Icon name={typeDef(account.type).icon} size={18} color="var(--m-ink-2)" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] text-ink">{account.name}</span>
-                {/* what the COUNTER ledger will record (its R1 stamp;
-                    #152: a funding pot records funding, not transfer) */}
+                {/* what the counter ledger will record: a funding pot records funding, not transfer (#152) */}
                 <span className="block text-[11px] text-ink-4">
                   {t(`tx.type.${accountStamp(account.type) ?? typeForLinkedAccount(account.type)}`)}
                   {accountTail(account) && <span data-testid={`counter-tail-${account.id}`}> · •••• {accountTail(account)}</span>}
@@ -259,8 +213,7 @@ export function CounterpartySheet({
                   {t('tx.counterPlanFits')}
                 </Pill>
               )}
-              {/* C2: a bank-fed pick means Transfer — the real arriving
-                  row on the other side pairs with it */}
+              {/* a bank-fed pick means Transfer: the real arriving row on the other side pairs with it */}
               {account.source !== 'manual' && <Pill tone="info">{t('tx.counterBankBadge')}</Pill>}
               <span className="m-num text-[12px] text-ink-3">{fmtSensitive(account.balanceCents, account.currency, { asRecorded: true })}</span>
               {currentLinkedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
@@ -272,8 +225,6 @@ export function CounterpartySheet({
             </p>
           )}
         </div>
-      {/* #218 (user): the way OUT — detach the linked counterparty to
-          free the category choice again */}
       {onDetach && currentLinkedId && (
         <button
           data-testid="counter-detach"
@@ -287,8 +238,6 @@ export function CounterpartySheet({
           {t('tx.counterDetach')}
         </button>
       )}
-      {/* the ONE creation door (user redesign 2026-08-01): the full
-          chooser — bank connect, statement import (in place) or manual */}
       <button
         data-testid="counter-full-setup"
         onClick={() => setChooserOpen(true)}
@@ -297,20 +246,16 @@ export function CounterpartySheet({
         <Icon name="plus-circle-outline" size={18} />
         {t('tx.counterFullSetup')}
       </button>
-      {/* #546/#555: a movement names a real account — an untracked one is
-          created above or attached to the space */}
       <p className="px-1 pt-2 text-[12px] leading-snug text-ink-4" data-testid="counter-special-hint">
         {t('tx.counterSpecialHint')}
       </p>
     </Sheet>
-    {/* #241: SIBLINGS, not children — nested sheets portal before their
-        parent and paint below it (flat z-50, body order decides) */}
+    {/* #241: SIBLINGS, not children: nested sheets portal before their parent and paint below it */}
     <AddAccountChooser
       open={chooserOpen}
       onOpenChange={setChooserOpen}
       onCreated={(account) => choose(account)}
     />
-    {/* #133 B / #237: the counter-match fork — pick, create or await */}
     {anchor && (
       <CounterMatchSheet
         open={forkFor !== null}
@@ -331,7 +276,6 @@ export function CounterpartySheet({
   );
 }
 
-/** what the counter-match fork is aimed at (#237) */
 export interface CounterForkTarget {
   id: string;
   type: AccountType;
@@ -340,12 +284,7 @@ export interface CounterForkTarget {
   bankFed: boolean;
 }
 
-/** #237 (user rule): the fork opens for every MANUAL counter (silent
- *  mints retire — creating the leg is an explicit choice), and for a
- *  bank-fed counter that has rows to point at. Null = choose directly:
- *  funding pots (nothing ever shows there), bank-fed counters with
- *  nothing to offer (the feed delivers), or no anchor (the row being
- *  created does not exist yet). */
+/** #237: null = choose directly: funding pots, bank-fed counters with nothing to offer (the feed delivers), no anchor yet */
 export function counterForkTarget(
   account: { id: string; type: AccountType; name: string; source?: string },
   anchor: { id: string; amountCents: number; date: string } | undefined,
@@ -360,20 +299,13 @@ export function counterForkTarget(
       counterSameSignCandidates(rows, account.id, anchor).length > 0;
     if (!offerable) return null;
   } else if (!createAllowed) {
-    return null; // funding: no rows to point at, nothing to mint
+    return null;
   }
   return { id: account.id, type: account.type, name: account.name, createAllowed, bankFed };
 }
 
-/**
- * #237: the counter-match sheet — the one place a counterpart gets
- * chosen. r3 (user): reimbursement-style — 1–3 suggestions on top (near
- * twins; the wallet's same-sign rows when no twin exists, user decision
- * "a"), the REST of the account's open rows always scrollable below,
- * and the explicit create/await exits. Reused by the CounterpartySheet
- * fork, the review card's Counter-transaction row and the detail
- * screen's pair doors.
- */
+// #237: 1-3 suggestions on top (near twins; the wallet's same-sign rows when no twin),
+// the rest of the open rows scrollable below
 export function CounterMatchSheet({
   open,
   onOpenChange,
@@ -392,35 +324,27 @@ export function CounterMatchSheet({
   /** the row looking for its other leg; its accountId lets the mirror row on the counter side qualify */
   anchor: { id: string; amountCents: number; date: string; accountId?: string };
   rows: readonly TransactionRow[];
-  /** the explicit mint door — manual, non-funding counters only */
   onCreate?: () => void;
-  /** bank-fed: link now, the feed delivers the other side later */
   onWait?: () => void;
   onPick: (txId: string) => void;
-  /** #268 (user): a bulk queue names WHICH transaction is matching */
   contextRow?: TransactionRow;
-  /** "2/5" alongside the context row */
   progress?: string;
 }>) {
   const { t, lang } = useLang();
-  // #255: search narrows both lists — by title or by price
   const [query, setQuery] = useState('');
   useEffect(() => {
     if (open) setQuery('');
   }, [open]);
   const near = target ? counterDuplicates(rows, target.id, anchor) : [];
   const sameSign = target && near.length === 0 ? counterSameSignCandidates(rows, target.id, anchor) : [];
-  // 1–3 suggestions (user sizing) — everything else scrolls below
   const allSuggested = [...near, ...sameSign].slice(0, 3);
   const listed = new Set(allSuggested.map((row) => row.id));
-  // every open row on the counter account, newest first, paged as it
-  // scrolls (#502: the old cap of 50 left an older day out of reach)
+  // paged as it scrolls (#502: the old cap of 50 left an older day out of reach)
   const allRest = target ? counterOpenRows(rows, target.id, anchor, Number.POSITIVE_INFINITY).filter((row) => !listed.has(row.id)) : [];
   const matches = (row: TransactionRow): boolean => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
     if (txTitle(row).toLowerCase().includes(needle)) return true;
-    // #267 r2 (user): a leading +/- constrains the direction here too
     let sign = 0;
     if (needle.startsWith('+')) sign = 1;
     else if (needle.startsWith('-')) sign = -1;
@@ -435,12 +359,9 @@ export function CounterMatchSheet({
     setShownRows(PAGE_ROWS);
   }, [open, query]);
   const showMore = useCallback(() => setShownRows((n) => n + PAGE_ROWS), []);
-  // #502 (user): jump to the anchor's day, then scroll up or down from there
   const { scrollerRef, jump, jumpedId } = useJumpToDate(rest, (index) => setShownRows((n) => Math.max(n, index + 40)));
   const shownRest = rest.slice(0, shownRows);
-  // #255 sized the sheet to its content; the user (ss 2026-10-07) wants the
-  // browse view at full height with its list reaching the bottom, so the
-  // short shape stays only for a sheet with nothing to browse
+  // the browse view is full height so its list reaches the bottom; the short shape only for a sheet with nothing to browse
   const size = allRest.length > 0 ? 'full' : 'form';
   const pick = (txId: string) => {
     onPick(txId);
@@ -473,7 +394,6 @@ export function CounterMatchSheet({
           data-jump-id={row.id}
           className={`transition-colors ${jumpedId === row.id ? 'bg-accent-soft' : ''}`}
         >
-          {/* #255 r2: the search's hits light up like everywhere else */}
           <TxRow tx={row} showDate hideUnreviewed highlight={query} onClick={() => pick(row.id)} />
         </div>
       ))}
@@ -483,8 +403,6 @@ export function CounterMatchSheet({
     <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size={size}>
       {target && (
         <div className="flex h-full min-h-0 flex-col pt-1" data-testid="counter-fork">
-          {/* #268 (user): while a bulk queue walks the siblings, the sheet
-              says exactly WHICH transaction it is matching right now */}
           {contextRow && (
             <div className="mb-2 rounded-card border border-accent/40 bg-accent-soft/30 px-3 py-2" data-testid="counter-queue-context">
               <div className="m-cap flex flex-wrap items-center gap-1 pb-0.5 text-accent-deep">
@@ -492,9 +410,7 @@ export function CounterMatchSheet({
                   {t('tx.counterQueueFor')}
                   {progress ? ` · ${progress}` : ''}
                 </span>
-                {/* #268 r2 (user): WHY every sibling asks again — the
-                    picked counter row is spoken for, so each transaction
-                    needs its own pick (or links and waits) */}
+                {/* #268: the picked counter row is spoken for, so each sibling needs its own pick (or links and waits) */}
                 <InfoHint text={t('tx.counterQueueWhy')} testId="counter-queue-why" />
               </div>
               <p className="truncate text-[13px] font-medium text-ink">{txTitle(contextRow)}</p>
@@ -506,8 +422,7 @@ export function CounterMatchSheet({
             </div>
           )}
           {onCreate && door('counter-fork-create', 'plus-circle-outline', t('tx.counterForkCreate'), t('tx.counterForkCreateSub'), onCreate)}
-          {/* #255 r2 (user): "link and wait" is the one honest exit —
-              the separate None door confused more than it solved */}
+          {/* #255: "link and wait" is the one honest exit; a separate None door confused more than it solved */}
           {onWait && door('counter-fork-wait', 'clock-outline', t('tx.counterForkWait'), t('tx.counterForkWaitSub'), onWait)}
           {(allSuggested.length > 0 || allRest.length > 0) && (
             <SearchField
@@ -540,7 +455,6 @@ export function CounterMatchSheet({
                 <span>{t('tx.counterAllRows')}</span>
                 <JumpToDateButton date={anchor.date} onJump={() => jump(anchor.date)} testId="counter-jump" />
               </div>
-              {/* the browse list fills what is left of the sheet and scrolls INSIDE it (sheet rules) */}
               <div
                 ref={scrollerRef}
                 className="min-h-[200px] flex-1 overflow-y-auto overscroll-contain pb-2"
@@ -565,13 +479,8 @@ export function CounterMatchSheet({
   );
 }
 
-/**
- * #268 (user): a bulk apply that carried a SPECIFIC counter pick cannot
- * copy that pick — each sibling gets its own match sheet in turn, the
- * context block naming which transaction is matching. Every step either
- * picks an existing row or links-and-waits; dismissing the sheet stops
- * the queue and leaves the remaining siblings untouched.
- */
+// #268: a bulk apply with a specific counter pick cannot copy it: each sibling gets its own
+// match sheet; dismissing stops the queue
 export function BulkCounterQueue({
   queue,
   target,

@@ -7,57 +7,18 @@ using Microsoft.OpenApi;
 
 namespace Connector.Kit.Hosting.Infrastructure;
 
-/// <summary>
-/// Puts the normalised records into the API document, so a consumer can read
-/// the shape of a row before it fetches one.
-///
-/// Without this the reference stops exactly where it gets interesting. Every
-/// route names the envelope it answers with - <c>DataResponse</c>, its cursor,
-/// its <c>complete</c> flag - and then describes <c>data</c> as an array of
-/// anything at all, because the handler really does hand back a
-/// <see cref="System.Text.Json.Nodes.JsonArray"/>: rows are staged as JSON and
-/// the envelope is one type for every resource of every provider. So the
-/// generator was telling the truth about the C#, and the truth about the C#
-/// was useless. "What comes back when I fetch receipts" had no answer in the
-/// document, and the only way to find out was to connect a real account to a
-/// real provider and look at what arrived.
-///
-/// The shape was never unknown. A manifest has always stated it per resource -
-/// <c>returns: "receipt"</c> - so a caller knows WHICH shape before it calls;
-/// what it could not do was look that name up anywhere. This registers the
-/// four records as components and points <c>data</c> at them, which turns
-/// <c>returns</c> into a resolvable reference and makes the pair of them a
-/// complete answer.
-/// </summary>
-/// <remarks>
-/// A <c>oneOf</c> rather than a discriminated union, because there is nothing
-/// on the wire to discriminate ON: a record carries no type field, and adding
-/// one to satisfy a schema would be putting a field in everybody's data to
-/// describe something the manifest already says. The resource decides, one
-/// resource only ever returns one shape, and the description says so.
-/// </remarks>
+// registers the records as components and points data at them: the handler returns a JsonArray, so data was "anything"
+// a oneOf, not a discriminated union: a record has no type field, and the manifest's returns already names the shape
 internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpenApiDocumentTransformer
 {
-    /// <summary>The envelopes carrying rows, and the property that holds them.</summary>
     private static readonly (string Schema, string Property)[] Carriers =
     [
         ("DataResponse", "data"),
         ("JobResponse", "data"),
     ];
 
-    /// <summary>
-    /// The shapes THIS service can return, in the platform's declaration
-    /// order.
-    ///
-    /// Read off the registered manifests rather than taken as the whole enum,
-    /// because the reference belongs to one service. A shop connector cannot
-    /// return a credit registration under any provider, resource or parameter,
-    /// and offering one in its document would be describing an API it does not
-    /// serve - which is the exact fault this whole change exists to fix, just
-    /// pointing the other way. The registry connector's document says
-    /// <c>CreditRegistration</c> and nothing else, so its fetch route has one
-    /// answer rather than a menu.
-    /// </summary>
+    // only the shapes the registered manifests return: the reference belongs to one service
+    // and must not describe an API it does not serve
     internal static IReadOnlyList<ResourceShape> Shapes(IProviderRegistry providers)
     {
         ArgumentNullException.ThrowIfNull(providers);
@@ -85,12 +46,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
         {
             var record = RecordShapes.Require(shape);
 
-            // Through the generator rather than hand-built, so a record's
-            // fields are described exactly as the service serialises them -
-            // snake_case names, enums as their wire strings, nested types
-            // registered as their own components. A schema written by hand
-            // here would be a second definition of the wire format, and the
-            // one that goes stale.
+            // through the generator, not hand-built: a hand-written schema would be a second, stale definition of the wire format
             var schema = await context.GetOrCreateSchemaAsync(record, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
@@ -100,9 +56,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
             legend.Add($"`{Wire(shape)}` → `{record.Name}`");
         }
 
-        // A service with no providers registered has nothing to promise, and
-        // an empty oneOf would say "this array may contain nothing that
-        // exists". Leave the generic array alone.
+        // no providers registered: an empty oneOf would claim the array holds nothing, so leave the generic array alone
         if (rows.Count == 0) return;
 
         var description =
@@ -114,14 +68,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
         foreach (var (name, property) in Carriers) Point(document, name, property, description, rows);
     }
 
-    /// <summary>
-    /// Repoints one envelope's row array at the records.
-    ///
-    /// Silent when the schema is not there. This runs over whatever document
-    /// the host actually produced, and a connector that never mapped the job
-    /// routes has no <c>JobResponse</c> to annotate - which is a smaller
-    /// service, not a broken one.
-    /// </summary>
+    // silent when the schema is absent: a connector that never mapped the job routes has no JobResponse to annotate
     private static void Point(
         OpenApiDocument document,
         string schemaName,
@@ -134,11 +81,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
         if (envelope is not OpenApiSchema { Properties: { } properties }) return;
         if (!properties.TryGetValue(propertyName, out var replaced)) return;
 
-        // Nullable on JobResponse and not on DataResponse, and that difference
-        // is real: a job that has not finished has no rows yet. Carried over
-        // from the schema being replaced rather than restated, so describing
-        // the rows cannot quietly change what the envelope promises about
-        // whether there are any.
+        // nullability carried over from the replaced schema (JobResponse is nullable: an unfinished job has no rows)
         var type = JsonSchemaType.Array;
         if (Nullable(replaced)) type |= JsonSchemaType.Null;
 
@@ -150,27 +93,14 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
         };
     }
 
-    /// <summary>
-    /// What one element of the array is.
-    /// </summary>
-    /// <remarks>
-    /// A <c>oneOf</c> of one is noise, and worse than noise in a reference
-    /// browser: it draws a chooser over a single option and puts the model
-    /// behind a click. A service with one shape - which the registry connector
-    /// is, and the shop connector is - says so flatly instead.
-    /// </remarks>
+    // a oneOf of one draws a chooser over a single option in a reference browser, so one shape is stated flatly
     internal static IOpenApiSchema Rows(IReadOnlyList<IOpenApiSchema> records)
     {
         ArgumentNullException.ThrowIfNull(records);
         return records.Count == 1 ? records[0] : new OpenApiSchema { OneOf = [.. records] };
     }
 
-    /// <summary>
-    /// Whether a schema admits null, in either of the two ways this generator
-    /// writes it: as a flag on a plain type, and as a <c>oneOf</c> beside a
-    /// <c>$ref</c> - which is the form a nullable reference to a component
-    /// takes, and therefore the form these properties are actually in.
-    /// </summary>
+    // null is a type flag, or a oneOf beside a $ref - the form a nullable component reference takes
     internal static bool Nullable(IOpenApiSchema schema)
     {
         ArgumentNullException.ThrowIfNull(schema);
@@ -179,11 +109,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
             || (schema.OneOf?.Any(option => option.Type?.HasFlag(JsonSchemaType.Null) ?? false) ?? false);
     }
 
-    /// <summary>
-    /// The shape's name as it appears in a manifest. Through the wire policy,
-    /// because the point of the legend is to be looked up against a real
-    /// manifest and <c>CreditRegistration</c> never appears in one.
-    /// </summary>
+    // through the wire policy: the legend is looked up against real manifests, where CreditRegistration never appears
     private static string Wire(ResourceShape shape) =>
         JsonSerializer.Serialize(shape, ConnectorWireJson.Options).Trim('"');
 }

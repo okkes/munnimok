@@ -11,7 +11,6 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>What one ingest wrote, by record kind, plus what it could not represent.</summary>
 public sealed record ConnectorIngestCounts(int Receipts, int Accounts, int Transactions, int Positions, int Dropped)
 {
     public static ConnectorIngestCounts None { get; } = new(0, 0, 0, 0, 0);
@@ -26,17 +25,13 @@ public sealed record ConnectorIngestCounts(int Receipts, int Accounts, int Trans
         Dropped + other.Dropped);
 }
 
-/// <summary>What an ingest landed and where, so the caller can wake the devices reading those feeds.</summary>
 public sealed record ConnectorIngestResult(
     ConnectorIngestCounts Counts,
     IReadOnlySet<string> TouchedSpaces,
-    /// <summary>The pending rows this ingest mirrored (§15): the sync settles the account's earlier ones against them once the fetch is complete.</summary>
+    /// <summary>The sync settles the account's earlier pending rows against these once the fetch is complete (§15).</summary>
     IReadOnlyList<ConnectorPendingTx>? Pending = null,
-    /// <summary>
-    /// The booked rows each space shows for the first time: what a scheduled fetch tells that space's members.
-    /// A reserved row is not counted — the bank books it under a new reference, and the same payment would be
-    /// announced twice — nor a row the feed already held, nor one from before the day the space shows the account from.
-    /// </summary>
+    // the booked rows each space shows for the first time; not counted: a reserved row (the bank rebooks it under a new
+    // reference), one the feed already held, one from before the day the space shows the account from
     IReadOnlyDictionary<string, int>? Fresh = null)
 {
     private static readonly Dictionary<string, int> None = [];
@@ -46,27 +41,15 @@ public sealed record ConnectorIngestResult(
     public IReadOnlyDictionary<string, int> NewBySpace => Fresh ?? None;
 }
 
-/// <summary>
-/// Turns the connector's normalised records into sync ops — the server
-/// acting as one more device, as the api's own open-banking ingest did
-/// before the banks became parties (docs/connectors/relay.md, "Ingest" and
-/// "Bank rows"). Receipts land in
-/// the owner's store feed, bank accounts and their transactions in the
-/// account's IBAN feed (a card or wallet without one in a personal feed),
-/// registry positions as liability accounts in a personal registry feed.
-/// Every op id is deterministic, so a re-fetch is a no-op and a crash
-/// between fetch and ack costs nothing. Attaching to a space stays the
-/// user's explicit step — ingest never writes a link.
-/// </summary>
+// the server acting as one more device; every op id is deterministic, so a re-fetch is a no-op
+// and a crash between fetch and ack costs nothing; ingest never writes a space link: attaching is the user's step
 public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ConnectorSupersession supersession, ILogger<ConnectorIngest> logger)
 {
-    /// <summary>The account-row source every connector-fed row carries (apps/web AccountSource gains it in M3).</summary>
     public const string Source = "connector";
 
     public const string StoreFeedRef = "STORES";
     public const string RegistryFeedRef = "REG";
 
-    // the entities the rows become, and the connector fields read by name
     private const string AccountEntity = "account";
     private const string TransactionEntity = "transaction";
     private const string ReceiptEntity = "receipt";
@@ -89,29 +72,19 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
 
     private const int EntityIdMaximumLength = 128;
 
-    /// <summary>
-    /// The open-banking parties: the strongest feed an account can have (user
-    /// rule 2026-10-05). A bank connector or a file import that reaches the same
-    /// account adds its facts but never takes the account over — its stamps
-    /// (provider, connectionId) stay the open-banking connection's, so the row
-    /// never reads as fed by a lesser source or as no longer covered.
-    /// </summary>
+    // open banking is the strongest feed (user rule): another connector or an import adds facts but never takes
+    // the account over, so the provider/connectionId stamps stay the open-banking connection's
     public static readonly IReadOnlySet<string> OpenBankingProviders = new HashSet<string>(StringComparer.Ordinal) { "enablebanking", "gocardless" };
 
-    /// <summary>How strongly a party feeds an account: open banking above everything else.</summary>
     public static int FeedRank(string? provider) => provider is not null && OpenBankingProviders.Contains(provider) ? 2 : 1;
 
-    /// <summary>The record kinds this ingest files, in the order a page is worked: accounts before the transactions that name them.</summary>
+    // worked in this order: accounts before the transactions that name them
     private static readonly string[] Shapes = [AccountEntity, TransactionEntity, ReceiptEntity, "credit_registration", "student_debt"];
 
     private int _counter;
 
-    /// <summary>
-    /// Files one page. A page is not one shape: a bank's transactions pass
-    /// carries the accounts it read them from, so every record is filed by
-    /// what it IS — the connector's own id prefix — and the resource's
-    /// declared shape only stands in for a record without one.
-    /// </summary>
+    // a page is not one shape (a transactions pass carries its accounts): records are filed by their own id prefix,
+    // the resource's declared shape only stands in for a record without one
     public async Task<ConnectorIngestResult> IngestAsync(
         Guid userId, string provider, string providerName, string connectionId, string shape, JsonArray records, CancellationToken ct)
     {
@@ -139,7 +112,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestResult(counts, touched, pending, fresh);
     }
 
-    /// <summary>The connector mints <c>acc_</c>, <c>txn_</c>, <c>rcp_</c>, <c>crd_</c> and <c>sdt_</c> ids; a record without one is what the resource says it returns.</summary>
     internal static string ShapeOf(JsonObject record, string declared) => record.Text("id") switch
     {
         { } id when id.StartsWith("acc_", StringComparison.Ordinal) => AccountEntity,
@@ -159,8 +131,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestCounts(0, 0, 0, 0, count);
     }
 
-    // ── receipts → the owner's store feed ────────────────────────────────
-
     private async Task<ConnectorIngestCounts> ReceiptsAsync(
         User user, string provider, string connectionId, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
     {
@@ -179,7 +149,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestCounts(accepted, 0, 0, 0, dropped);
     }
 
-    /// <summary>One receipt as the app's row, or null when the record lacks what a row needs.</summary>
     private SyncOpDto? ReceiptOp(string feedId, string provider, string connectionId, JsonObject receipt)
     {
         var externalId = receipt.Text(ExternalIdField);
@@ -241,7 +210,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         accountTail = payment.Text("card_last4") ?? payment.Text("iban_tail"),
     };
 
-    /// <summary>A provider's document, carried whole as a data URL the browser can open without a decoding step.</summary>
+    /// <summary>Carried whole as a data URL, so the browser opens it without a decoding step.</summary>
     private static object? Document(JsonObject document)
     {
         var mediaType = document.Text("media_type");
@@ -257,8 +226,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             dataUrl = $"data:{mediaType};base64,{content}",
         };
     }
-
-    // ── bank accounts and their transactions → the account's feed ────────
 
     private async Task<ConnectorIngestCounts> AccountsAsync(
         User user, string provider, string connectionId, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
@@ -280,34 +247,22 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             if (landed.AccountRef is { } accountRef && landed.NamesTheAccount) reached.Add(accountRef);
         }
 
-        // the accounts this connection reaches: another session of the same party that
-        // reached them is the one a reconnect left behind (prod 2026-10-08), and goes
+        // another session of the same party that reached these accounts is the one a reconnect left behind, and goes
         if (reached.Count > 0) await supersession.RetireAsync(user.Id, provider, connectionId, reached, ct);
 
         return new ConnectorIngestCounts(0, written, 0, 0, dropped);
     }
 
-    /// <summary>
-    /// What one account record left: how many ops landed, the reference it is
-    /// filed under (null when the party still lists an account the person
-    /// dropped), and whether that reference names the account itself — an
-    /// IBAN or a party's identity — so another session holding it reached the
-    /// same account.
-    /// </summary>
+    // NamesTheAccount: the ref is an IBAN or the party's identity, so another session holding it reached the same account;
+    // AccountRef is null when the person dropped the account
     private sealed record AccountLanding(int Accepted, string? AccountRef, bool NamesTheAccount = false);
 
-    /// <summary>One accounts pass: whose it is, and whether it lists a single wallet that states its identity.</summary>
     private sealed record AccountPass(User User, string Provider, string ConnectionId, DateTimeOffset Now, bool OneWallet);
 
     private static bool IsNamedWallet(JsonObject account) =>
         string.IsNullOrWhiteSpace(account.Text("iban")) && account.Text("identity") is { Length: > 0 };
 
-    /// <summary>
-    /// One account: its feed, its row, and the reference the transactions
-    /// will resolve it by. Null when the record lacks an id; otherwise how
-    /// many ops landed — zero when this minute already wrote the same row,
-    /// which is what a transactions pass carrying its accounts does.
-    /// </summary>
+    // Accepted is zero when this minute already wrote the same row, which a transactions pass carrying its accounts does
     private async Task<AccountLanding?> AccountAsync(AccountPass pass, JsonObject account, HashSet<string> touched, CancellationToken ct)
     {
         var (user, provider, connectionId, now, _) = pass;
@@ -343,9 +298,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             Identity = identity,
         };
         var fields = await AccountFieldsAsync(reference, account, ct);
-        // minute-grained seed, per party: a balance refresh must re-emit while the
-        // same minute's retry stays a no-op (the GcIngest rule) — and a second
-        // party reading the same account in that minute still lands its own facts
+        // minute-grained seed per party: a balance refresh re-emits, a same-minute retry is a no-op,
+        // and a second party reading the account still lands its facts
         var op = Op(feed.Id, AccountEntity, accountEntityId, fields, $"conn:{accountEntityId}:{provider}:{now:yyyy-MM-ddTHH:mm}");
         var accepted = await ApplyAsync(feed, [op], touched);
 
@@ -353,14 +307,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new AccountLanding(accepted, accountRef, isIban || identity is not null);
     }
 
-    /// <summary>
-    /// The reference a card or wallet without an IBAN is filed under. Its
-    /// external id is per session, so on its own every new consent filed the
-    /// same wallet as a new account (#491: a reconnected PayPal landed beside
-    /// the old one, its rows twice). The record's own earlier ref keeps its
-    /// reference (a consent from before identities were read), and otherwise
-    /// an earlier consent's ref with the same identity lends its own.
-    /// </summary>
+    // a card or wallet's external id is per session, so each new consent filed the same wallet as a new account (#491);
+    // an earlier ref with the same identity lends its reference
     private async Task<string> CardRefAsync(AccountPass pass, string id, string externalId, string? identity, CancellationToken ct)
     {
         var (user, provider, _, _, _) = pass;
@@ -377,11 +325,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                ?? $"CONN:{provider}:{identity}";
     }
 
-    /// <summary>
-    /// A consent that ended before identities were read never states its wallet's, so a sign-in of the same
-    /// connection cannot find it by identity. One wallet behind the connection and one in the pass is the
-    /// same wallet; anything else cannot be told apart. It is named from here on, so no later wallet lands on it too.
-    /// </summary>
+    // a consent from before identities were read states no wallet identity: one unnamed wallet behind the connection and
+    // one in the pass count as the same, anything else cannot be told apart; it is named from here on
     private async Task<string?> ContinuedWalletAsync(AccountPass pass, string identity, CancellationToken ct)
     {
         if (!pass.OneWallet) return null;
@@ -395,7 +340,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return earlier.AccountRef;
     }
 
-    /// <summary>The feed account row's fields: the party's facts, the seed-only name and type, the balance when stated.</summary>
     private async Task<Dictionary<string, JsonElement>> AccountFieldsAsync(ConnectorAccountRef reference, JsonObject account, CancellationToken ct)
     {
         var isIban = !reference.AccountRef.StartsWith("CONN:", StringComparison.Ordinal);
@@ -403,14 +347,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         {
             [SourceField] = Json(Source),
             [CurrencyField] = Json(reference.Currency),
-            // every device shows when this account last heard from its party
             ["lastSyncedAt"] = Json(reference.SeenAt.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)),
         };
-        // whose account this is: the party and the connection that fetched it
-        // (#445: when that connection is gone nothing fetches the row any more,
-        // and the app can say so). A lesser party never takes over an account an
-        // open-banking connection feeds (user rule 2026-10-05: the ING login
-        // re-stamped the Enable Banking account and its feed read as overruled)
+        // a lesser party never takes over an account an open-banking connection feeds (the ING login re-stamped the Enable Banking
+        // account and its feed read as overruled); provider and connectionId say who fetches it (#445)
         var existing = await db.EntityRows
             .Where(r => r.SpaceId == reference.FeedSpaceId && r.Entity == AccountEntity && r.EntityId == reference.AccountEntityId)
             .Select(r => r.DataJson)
@@ -424,12 +364,9 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         }
         if (isIban) fields["iban"] = Json(reference.AccountRef);
         if (account.Text("masked_number") is { } masked) fields["maskedNumber"] = Json(masked);
-        // the institution as the party lists it (§15): the app fetches the same logo the lookup showed
         if (account.Text("institution") is { Length: > 0 } institution) fields["bankId"] = Json(institution);
 
-        // the party's display name and type seed the row once; after that
-        // the fields belong to the user (GcIngest: re-asserting them every
-        // fetch clobbered renames made in the app)
+        // name and type only seed the row: re-asserting them every fetch clobbered renames made in the app
         if (existing is null)
         {
             fields[NameField] = Json(account.Text("display_name") ?? (isIban ? $"Bank · {reference.AccountRef[^4..]}" : "Card"));
@@ -495,7 +432,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestCounts(0, 0, written, 0, batch.Dropped);
     }
 
-    /// <summary>Which of the rows the spaces show the feeds hold already.</summary>
     private async Task<HashSet<(string FeedId, string EntityId)>> HeldRowsAsync(IReadOnlyCollection<ShownRow> shown, CancellationToken ct)
     {
         var held = new HashSet<(string, string)>();
@@ -511,17 +447,14 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return held;
     }
 
-    /// <summary>A booked row in a space that shows it: the feed it lies in says whether it is new.</summary>
     private sealed record ShownRow(string SpaceId, string FeedId, string EntityId);
 
-    /// <summary>One space's attachment of an account: where the overlay goes, and whether the space shows a row of that day.</summary>
     private sealed record Attachment(string SpaceId, string HistoryFrom, bool Archived)
     {
         /// <summary>An archived attachment shows nothing new, and a live one nothing from before its first day.</summary>
         public bool Shows(string bookedAt) => !Archived && string.CompareOrdinal(bookedAt, HistoryFrom) >= 0;
     }
 
-    /// <summary>One transactions pass sorted by where its rows go: the feed ops per feed, the overlays per attached space, and what was dropped.</summary>
     private sealed class TransactionBatch
     {
         public Dictionary<string, List<SyncOpDto>> ByFeed { get; } = new(StringComparer.Ordinal);
@@ -531,7 +464,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
 
         public Dictionary<string, List<Attachment>> SpacesOf { get; } = new(StringComparer.Ordinal);
 
-        /// <summary>The booked rows of the pass, once for every space that shows them.</summary>
         public HashSet<ShownRow> Shown { get; } = [];
 
         public int Dropped { get; set; }
@@ -541,12 +473,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         public string? OrphanAccount { get; set; }
     }
 
-    /// <summary>
-    /// One transaction into the batch: its feed row, then its pending mirror
-    /// or its overlays — or dropped, when it names an account the accounts
-    /// pass never did or one the person dropped (its rows are not invented
-    /// back), or lacks an id, a date or an amount.
-    /// </summary>
     private async Task PlaceAsync(
         JsonObject tx, Dictionary<string, ConnectorAccountRef> known, TransactionBatch batch, List<ConnectorPendingTx> pending,
         DerivedRowReconciler reconciler, CancellationToken ct)
@@ -585,15 +511,9 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         }
     }
 
-    /// <summary>A transaction as it lands: the feed's raw row, and what the overlay needs to know about it.</summary>
     private sealed record TransactionRow(SyncOpDto Op, string EntityId, bool Pending, string Direction, string Text, string BookedAt);
 
-    /// <summary>
-    /// One transaction as the feed's raw row — no opinion, just the party's
-    /// facts — or null when it lacks an id, a date or an amount. A row whose
-    /// external id the party prefixed <c>pending:</c> is mirrored as pending
-    /// (§15): the bank has not booked it, and may yet withdraw it.
-    /// </summary>
+    // an external id the party prefixed `pending:` is mirrored as pending (§15): the bank has not booked it, and may withdraw it
     private async Task<TransactionRow?> TransactionOpAsync(ConnectorAccountRef account, JsonObject tx, DerivedRowReconciler reconciler, CancellationToken ct)
     {
         var externalId = tx.Text(ExternalIdField);
@@ -630,20 +550,9 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new TransactionRow(op, entityId, pending, amount.Value.Value < 0 ? "debit" : CreditDirection, $"{merchant} {description}", bookedAt);
     }
 
-    /// <summary>
-    /// The predicted category and type for one booked row in one space, as
-    /// the api's own bank ingest wrote it: written once per row and space
-    /// (the op id is the pair) and stamped with the FLOOR clock, so it only
-    /// fills what nobody said yet — a person's choice, made before or after,
-    /// always outranks it. (2026-10-05: with the server's live clock the first
-    /// overlay the new op-id scheme wrote buried a whole evening's
-    /// categorisations; <see cref="TxMetaOverlayRepair"/> put them back.)
-    /// The prediction is a SUGGESTION: every fetched row waits in the review
-    /// with it prefilled, however sure the keyword rules are — only the person
-    /// takes a row out of the review (user 2026-10-09; a sure prediction used to
-    /// mark the row reviewed and 56 of 105 surfaced rows never reached the deck;
-    /// <see cref="NeedsReviewRepair"/> put the earlier marks back to review).
-    /// </summary>
+    // FLOOR clock: it only fills what nobody said yet, a person's choice (before or after) always outranks it;
+    // a live server clock once buried an evening's categorisations (TxMetaOverlayRepair)
+    // a SUGGESTION: every fetched row waits in the review prefilled, only the person takes one out (NeedsReviewRepair)
     private static SyncOpDto OverlayOp(string spaceId, TransactionRow row)
     {
         var predicted = KeywordPredictor.Predict(row.Text, row.Direction);
@@ -667,16 +576,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return [.. links.GroupBy(l => l.SpaceId, StringComparer.Ordinal).Select(g => g.OrderBy(l => l.Archived).ThenBy(l => l.HistoryFrom, StringComparer.Ordinal).First())];
     }
 
-    /// <summary>The account records a page carries, by the id their references are kept under.</summary>
     internal static List<string> AccountIdsOf(JsonArray? records) =>
         [.. (records ?? []).OfType<JsonObject>().Where(r => ShapeOf(r, string.Empty) == AccountEntity).Select(r => r.Text("id")).OfType<string>()];
 
-    /// <summary>
-    /// A complete fetch settles the pending mirror (§15): every pending row
-    /// the connection's accounts carried that the party no longer reports
-    /// is tombstoned — booked under a new reference, or withdrawn — and the
-    /// ones it reported now are remembered for the next time.
-    /// </summary>
+    // a complete fetch settles the pending mirror (§15): pending rows the party no longer reports are tombstoned
     /// <param name="carried">The account records the pass itself carried; only their accounts are judged.</param>
     public async Task<int> SettlePendingAsync(
         Guid userId, string provider, string connectionId, IReadOnlyCollection<string> carried, IReadOnlyList<ConnectorPendingTx> seen, CancellationToken ct)
@@ -736,7 +639,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>The kit's account type as the app names it.</summary>
     internal static string AccountTypeOf(string? type) => type switch
     {
         "savings" => "savings",
@@ -745,11 +647,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         _ => AccountTypes.Default,
     };
 
-    /// <summary>
-    /// #311 r4: the canonical id, unless a statement import already owns that
-    /// row on the feed — then the party forks to its own row and the user
-    /// merges the two in the app. The same rule GcEndpoints applies.
-    /// </summary>
+    // the canonical id, unless a statement import already owns that row on the feed: then the party forks to its own row
+    // and the user merges the two in the app (#311)
     private async Task<string> BankAccountEntityIdAsync(string feedId, string accountRef)
     {
         var canonical = ImportIds.AccountId(accountRef);
@@ -761,8 +660,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                             && source.GetString() is "gocardless" or Source;
         return providerOwned ? canonical : ImportIds.BankAccountId(accountRef);
     }
-
-    // ── registry positions → liability accounts in the registry feed ─────
 
     private async Task<ConnectorIngestCounts> RegistrationsAsync(
         User user, string provider, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
@@ -840,7 +737,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                 [NoteField] = Json(StudentDebtNote(debt)),
             };
             if (debt["interest_rate"]?.GetValue<decimal>() is { } rate) fields["interestPctYear"] = Json(rate);
-            // #566: the record's day (DUO's "rente is berekend tot") is as_of — the name read before never existed
+            // #566: the record's day (DUO's "rente is berekend tot") is as_of
             if (debt.Text("as_of") is { } asOf) fields[BalanceAsOfField] = Json(asOf);
             AddRepaymentPlan(debt, fields);
 
@@ -851,7 +748,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestCounts(0, 0, 0, accepted, dropped);
     }
 
-    /// <summary>D9: the liability account IS the debt — its type from the registry's classification.</summary>
     internal static string LiabilityTypeOf(string? kind) => kind switch
     {
         "mortgage" => "mortgage",
@@ -869,7 +765,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return string.Join(" · ", parts);
     }
 
-    /// <summary>The registry's own words for where the debt stands: its phase and its regime (#566: no wording of ours in one language).</summary>
+    /// <summary>The registry's own words, so there is no wording of ours in one language (#566).</summary>
     private static string StudentDebtNote(JsonObject debt)
     {
         var parts = new List<string>();
@@ -878,12 +774,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return string.Join(" · ", parts);
     }
 
-    /// <summary>
-    /// #566: the loan facts the registry states beside the balance — what was
-    /// owed when repayment began (the size the progress measures against), the
-    /// monthly instalment and the day it falls due — so the debt reads as the
-    /// loan it is rather than a bare figure.
-    /// </summary>
+    /// <summary>#566: original = what was owed when repayment began, the size the progress measures against.</summary>
     private static void AddRepaymentPlan(JsonObject debt, Dictionary<string, JsonElement> fields)
     {
         var started = (debt["history"] as JsonArray ?? [])
@@ -900,9 +791,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         }
     }
 
-    // ── feeds ────────────────────────────────────────────────────────────
-
-    /// <summary>The user's own feed for a reference: registered the way <c>POST /feeds</c> registers it, owner and member.</summary>
     private async Task<Space> EnsurePersonalFeedAsync(User user, string accountRef, CancellationToken ct)
     {
         var feedId = ImportIds.PersonalFeedSpaceId(accountRef, user.Sub);
@@ -913,11 +801,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return await EnsureSpaceAsync(feedId, user.Id, ct);
     }
 
-    /// <summary>
-    /// An IBAN feed is shared by construction: whoever connects the same
-    /// account first owns it, and everyone whose own connection covers it
-    /// afterwards co-owns it (#240: the IBAN proves it is the same account).
-    /// </summary>
+    // an IBAN feed is shared by construction: the first to connect the account owns it, later connectors co-own it
+    // (#240: the IBAN proves it is the same account)
     private async Task<Space> EnsureIbanFeedAsync(User user, string iban, CancellationToken ct)
     {
         var feedId = ImportIds.FeedSpaceId(iban);
@@ -950,8 +835,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return space;
     }
 
-    // ── ops ──────────────────────────────────────────────────────────────
-
     private async Task<int> ApplyAsync(Space space, List<SyncOpDto> ops, HashSet<string> touched)
     {
         if (ops.Count == 0) return 0;
@@ -964,11 +847,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
     private SyncOpDto Op(string spaceId, string entity, string entityId, Dictionary<string, JsonElement> fields, string seed) =>
         new(ImportIds.OpId(seed), spaceId, entity, entityId, fields, ServerHlc.Now(_counter++));
 
-    /// <summary>
-    /// The op's seed: the record's own content hash when the connector
-    /// stated one, else a hash of what this ingest wrote — either way the
-    /// same fact fetched twice is one op.
-    /// </summary>
+    // the record's content hash, else a hash of what was written: the same fact fetched twice is one op
     private static string Seed(string entityId, JsonObject record, Dictionary<string, JsonElement> fields)
     {
         var hash = record.Text("content_hash");

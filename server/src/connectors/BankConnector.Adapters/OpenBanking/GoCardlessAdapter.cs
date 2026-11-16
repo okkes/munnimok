@@ -4,14 +4,8 @@ using Connector.Kit.Manifests;
 
 namespace BankConnector.Adapters.OpenBanking;
 
-/// <summary>
-/// GoCardless as a bank party. The consent is a requisition: created with an
-/// end-user agreement for up to two years of history when the institution
-/// offers it, confirmed after the bank's return by reading it back as
-/// <c>LN</c>. The operator's account holds every requisition ever made from
-/// any environment, so this adapter is also the inventory the admin portal
-/// revokes foreign and legacy consents from.
-/// </summary>
+// the consent is a requisition, with an end-user agreement for up to two years of history when the institution offers it
+// the operator's account holds every requisition from any environment, so this is also the admin portal's revoke inventory
 public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
 {
     public const string ProviderId = "gocardless";
@@ -111,8 +105,6 @@ public sealed class GoCardlessAdapter : OpenBankingAdapter, IRemoteInventory
 
     protected override Task RevokeAsync(HttpClient http, string consentId, CancellationToken ct) =>
         _client.DeleteRequisitionAsync(http, consentId, ct);
-
-    // ── the operator's inventory ───────────────────────────────────────
 
     public async Task<IReadOnlyList<RemoteConsent>> ListRemoteAsync(HttpClient http, CancellationToken ct) =>
         [.. (await _client.ListRequisitionsAsync(http, ct).ConfigureAwait(false)).Select(r => new RemoteConsent

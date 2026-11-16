@@ -2,13 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The per-user budget on the two calls that reach a provider — logins and
-/// syncs — on top of the connector's own per-provider interval
-/// (docs/connectors/relay.md, "Configuration"). A sliding hour per user per
-/// kind, in memory: the API is a single instance, and a budget that did
-/// not survive a restart is a budget that resets on deploy, which is fine.
-/// </summary>
+/// Sliding hour per user per kind, in memory: the API is a single instance, and a budget that resets on deploy is fine.
 public sealed class ConnectorBudget(ConnectorOptions options, TimeProvider time)
 {
     public const string Login = "login";
@@ -18,7 +12,6 @@ public sealed class ConnectorBudget(ConnectorOptions options, TimeProvider time)
 
     private readonly ConcurrentDictionary<(Guid User, string Kind), Queue<DateTimeOffset>> _spent = new();
 
-    /// <summary>Spends one unit when the budget allows it; otherwise says how long until it would.</summary>
     public bool TrySpend(Guid userId, string kind, out int retryAfterSeconds)
     {
         var limit = kind == Login ? options.LoginsPerHour : options.SyncsPerHour;

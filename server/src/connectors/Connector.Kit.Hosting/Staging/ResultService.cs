@@ -8,15 +8,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Staging;
 
-/// <summary>
-/// Staging, not storage.
-///
-/// Rows land here so a caller can pick them up over its own authenticated
-/// channel, and leave on ack or after a hard TTL - whichever comes first.
-/// The connector is a pipe, and the reason that matters is stated plainly in
-/// the design: neither service may become the honeypot holding both retail
-/// credentials and everyone's purchase history.
-/// </summary>
+/// staging, not storage: rows leave on ack or a hard TTL;
+/// neither service may become a honeypot of credentials plus purchase history
 public sealed class ResultService(
     ConnectorDbContext db,
     IOptions<ConnectorOptions> options,
@@ -24,23 +17,9 @@ public sealed class ResultService(
 {
     private readonly ConnectorOptions _options = options.Value;
 
-    /// <summary>
-    /// Writes a job's output under a fresh cursor and returns it.
-    ///
-    /// Re-emitting a record the session already has updates it in place
-    /// rather than duplicating: <c>(session, resource, external_id)</c> is
-    /// unique, and with the content hash that is what makes a re-run - and
-    /// therefore the settlement-lag widening every adapter relies on - free.
-    ///
-    /// Per RESOURCE, and a record id may therefore appear once under each
-    /// resource of a session. The id is minted from the session and the
-    /// external id alone, without the resource, because a transaction names
-    /// its account by that id: a transactions fetch stages the accounts
-    /// alongside the rows precisely so a consumer can tie the two, and the tie
-    /// only holds if the account under <c>transactions</c> carries the same
-    /// <c>acc_</c> id it carried under <c>accounts</c>. The results table is
-    /// keyed on <c>(id, resource)</c> to admit exactly that and nothing wider.
-    /// </summary>
+    /// re-emitting updates in place ((session, resource, external_id) is unique): re-runs and settlement-lag widening are free
+    /// the id ignores the resource so a transaction's account tie holds: the account under transactions keeps its acc_ id
+    /// hence the table is keyed (id, resource)
     public async Task<string> StageAsync(JobRow job, JobResultRequest result, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -63,15 +42,12 @@ public sealed class ResultService(
         {
             var position = sequence++;
 
-            // Null unless this pass asked for it. Assigned rather than merged,
-            // so a later fetch without include=raw does not leave an older
-            // pass's raw sitting on a row nobody asked to keep it on.
+            // assigned, not merged: a later fetch without include=raw must not leave an older pass's raw on the row
             var raw = result.Raw.GetValueOrDefault(record.ExternalId);
 
             if (existing.TryGetValue(record.ExternalId, out var row))
             {
-                // Same content means the caller already has an identical row;
-                // it still moves onto this cursor so one ack clears the pass.
+                // same content still moves onto this cursor so one ack clears the pass
                 row.PayloadJson = record.PayloadJson;
                 row.RawJson = raw;
                 row.ContentHash = record.ContentHash;
@@ -102,24 +78,13 @@ public sealed class ResultService(
         return cursor;
     }
 
-    /// <summary>
-    /// The records a job produced, newest cursor first, as raw JSON for the
-    /// response.
-    ///
-    /// The provider's own payload is grafted on under <c>raw</c> only where one
-    /// was staged, which happens only where the fetch asked for it. A record
-    /// the adapter could not hand raw back for simply has no such field, rather
-    /// than a null that reads like the provider sent nothing.
-    /// </summary>
+    /// raw is grafted only where staged: absent rather than null, which would read as the provider sending nothing
     public async Task<StagedPage> ReadAsync(string jobId, CancellationToken ct)
     {
         var rows = await db.Results
             .AsNoTracking()
             .Where(r => r.JobId == jobId)
-            // The order the ADAPTER chose. CreatedAt is identical across a
-            // batch, so ordering by it alone handed the caller whatever
-            // sequence the database happened to return - and a purchase
-            // history with its dates shuffled reads as a bug in the data.
+            // the adapter's order: CreatedAt is identical across a batch, so ordering by it shuffled purchase history
             .OrderBy(r => r.Sequence)
             .ThenBy(r => r.Id)
             .ToListAsync(ct);
@@ -142,11 +107,7 @@ public sealed class ResultService(
         return new StagedPage(data, rows.Count == 0 ? null : rows[^1].Cursor);
     }
 
-    /// <summary>
-    /// "Delivered, purge it." Acknowledged rows go immediately; that is what
-    /// keeps the connector a pipe rather than a second copy of the consumer's
-    /// database.
-    /// </summary>
+    /// acknowledged rows go at once: the connector is a pipe, not a second copy of the consumer's database
     public async Task<int> AckAsync(string sessionId, string resource, string cursor, CancellationToken ct) =>
         await db.Results
             .Where(r => r.SessionId == sessionId && r.Resource == resource && r.Cursor == cursor)
@@ -159,11 +120,7 @@ public sealed class ResultService(
         return await db.Results.Where(r => r.CreatedAt < cutoff).ExecuteDeleteAsync(ct);
     }
 
-    /// <summary>
-    /// Ids and content hashes are minted here, not by adapters: an adapter
-    /// that invents its own would break the idempotency the whole pipeline
-    /// depends on, and it is not the kind of mistake that shows up in a test.
-    /// </summary>
+    /// ids and hashes are minted here, never by adapters: an adapter inventing its own breaks idempotency and no test shows it
     internal static IEnumerable<StagedRecord> Enumerate(JobResultRequest result, string sessionId)
     {
         foreach (var account in result.Accounts)
@@ -190,8 +147,7 @@ public sealed class ResultService(
 
         foreach (var receipt in result.Receipts)
         {
-            // Reconciliation is applied here so the flag is a platform fact
-            // rather than an adapter's opinion of its own output.
+            // reconciliation applied here so the flag is a platform fact, not the adapter's opinion
             var verified = receipt.WithReconciliation();
             var hash = ContentHash.Of(verified);
             var withIds = verified with

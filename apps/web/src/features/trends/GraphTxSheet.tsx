@@ -11,13 +11,6 @@ export interface ScopedTx {
   netCents: number;
 }
 
-/**
- * The transactions behind a card's number (user 2026-10-08: "the
- * associated transactions like in recurring"): the picked period's rows
- * inside the scope, newest first, the same rows as the transactions list.
- * A row the scope takes only partly shows its share as the headline with
- * the row's own total under it.
- */
 export function GraphTxSheet({
   open,
   onOpenChange,

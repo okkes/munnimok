@@ -12,11 +12,7 @@ export interface FriendProfile {
   picture?: string | null;
 }
 
-/**
- * #165: one friend, up close — large avatar (tap opens the fullscreen
- * viewer when a real picture exists), the FULL id with one-tap copy,
- * and the remove door. The remove CONFIRM stays with the caller.
- */
+/** #165: the remove CONFIRM stays with the caller */
 export function FriendProfileSheet({
   friend,
   onOpenChange,
@@ -29,7 +25,6 @@ export function FriendProfileSheet({
   const { t } = useLang();
   const [copied, setCopied] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
-  // reopening for another friend must not inherit the copied flash
   useEffect(() => {
     setCopied(false);
     setViewerOpen(false);
@@ -63,7 +58,6 @@ export function FriendProfileSheet({
           <div className="max-w-full truncate text-[17px] font-semibold text-ink">
             {friend?.displayName ?? `${friend?.userId.slice(0, 8) ?? ''}…`}
           </div>
-          {/* the full id — tapping anywhere on the row copies it */}
           <div className="w-full rounded-card border border-line bg-surface px-4 py-3">
             <div className="m-cap">{t('friends.friendId')}</div>
             <button data-testid="friend-profile-copy" onClick={copyId} className="m-tap mt-1 flex w-full items-center gap-2 border-none bg-transparent p-0 text-left">
@@ -85,8 +79,7 @@ export function FriendProfileSheet({
           </Button>
         </div>
       </Sheet>
-      {/* fullscreen picture viewer — any click closes; portaled to body
-          so sheet transforms can't re-anchor the fixed overlay */}
+      {/* fullscreen viewer, portaled to body so sheet transforms cannot re-anchor the fixed overlay */}
       {viewerOpen &&
         hasPicture &&
         createPortal(

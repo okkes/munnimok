@@ -2,29 +2,9 @@ import { euAmountToCents, parseCsv } from './csv';
 import type { CamtEntry } from '@/lib/camt053/parse';
 import type { ParsedStatement } from './ing';
 
-/**
- * PayPal activity exports (Reports → Activity download, CSV). Verified
- * against the user's real 2026 export: comma-separated, quoted headers,
- * EU decimal commas, DD/MM/YYYY dates, and a BOM up front.
- *
- * A PayPal export mixes real payments with PayPal's own bookkeeping:
- * every purchase is followed by a "Bank Deposit to PP Account" funding
- * leg (the bank tops the balance back to zero), card authorizations
- * appear as Memo rows, and cross-currency charges add a pair of
- * "General Currency Conversion" legs. Only the real payments import:
- *
- * - Status must be Completed and Balance Impact Debit/Credit (Memo rows
- *   are authorizations/holds, never money moving).
- * - Internal types (funding legs, conversions, holds) are skipped.
- * - A payment in a foreign currency imports at the amount of its
- *   same-day Completed conversion leg in the account's main currency —
- *   that is what the purchase actually cost; the original amount stays
- *   in the description.
- *
- * PayPal accounts have no IBAN: a stable synthetic id derived from the
- * owner's email keeps re-imports and multi-file imports on one account.
- * The "Transaction ID" column is a true bank-side ref — dedupe is exact.
- */
+// only Status Completed with Balance Impact Debit/Credit import (Memo = holds); funding legs, conversions, holds skipped;
+// a foreign-currency payment imports at its same-day Completed conversion leg in the main currency (what it cost)
+// no IBAN: an id from the owner's email keeps re-imports on one account; "Transaction ID" is a true bank-side ref
 
 const INTERNAL_TYPES = new Set([
   'Bank Deposit to PP Account',
@@ -40,7 +20,6 @@ const INTERNAL_TYPES = new Set([
 export const looksLikePaypalCsv = (head: string): boolean =>
   head.includes('"TimeZone"') && head.includes('"Gross"') && head.includes('"Fee"');
 
-/** "06/01/2026" → "2026-01-06" (PayPal exports are DD/MM/YYYY) */
 const paypalDate = (raw: string): string | null => {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw.trim());
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
@@ -107,7 +86,6 @@ function readRows(content: string): PaypalRow[] {
   return out;
 }
 
-/** the account owner appears on every row — payer on debits, payee on credits */
 function ownerEmail(rows: PaypalRow[]): string {
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -125,7 +103,6 @@ function ownerEmail(rows: PaypalRow[]): string {
   return best;
 }
 
-/** most frequent currency across the whole file = the account's currency */
 function mainCurrency(rows: PaypalRow[]): string {
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(row.currency, (counts.get(row.currency) ?? 0) + 1);
@@ -144,8 +121,7 @@ export function parsePaypalCsv(content: string): ParsedStatement[] {
   const rows = readRows(content);
   const currency = mainCurrency(rows);
   const owner = ownerEmail(rows);
-  // no IBAN exists: a deterministic id keeps every export of this
-  // PayPal account converging on ONE app account (feeds dedupe by iban)
+  // no IBAN: a deterministic id keeps every export of this PayPal account converging on ONE app account (feeds dedupe by iban)
   const iban = `PAYPAL${owner.toUpperCase().replaceAll(/[^A-Z0-9]/g, '')}`;
 
   const payments = rows.filter(

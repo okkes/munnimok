@@ -5,15 +5,8 @@ using Xunit;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The last leg: a record that reaches the wire still has to be written down.
-///
-/// <see cref="RecordsReachTheWireTests"/> in the kit pins the leg before this
-/// one. This pins the leg after it, because they fail identically and silently:
-/// the fetch succeeds, answers "complete", stages nothing, and the caller is
-/// shown an empty list. On a page whose job is to say what somebody owes, an
-/// empty list does not read as a defect - it reads as "you owe nothing".
-/// </summary>
+// pins the leg after RecordsReachTheWireTests: a fetch that stages nothing answers "complete" with an empty list,
+// which on a page about what somebody owes reads as "you owe nothing"
 public sealed class StagingCoverageTests
 {
     private const string Session = "ses_staging_fixture";
@@ -29,17 +22,11 @@ public sealed class StagingCoverageTests
         Assert.StartsWith("sdt_", staged.Id, StringComparison.Ordinal);
         Assert.StartsWith("sha256:", staged.ContentHash, StringComparison.Ordinal);
 
-        // And the payload is the record, not a placeholder: the figure a
-        // consumer renders has to survive serialisation.
         Assert.Contains("\"total\"", staged.PayloadJson, StringComparison.Ordinal);
         Assert.Contains("1243477", staged.PayloadJson, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Ids and hashes are minted by the platform, never by the adapter - an
-    /// adapter that invented its own would break the idempotency the whole
-    /// pipeline rests on.
-    /// </summary>
+    // ids and hashes are minted by the platform: an adapter's own would break the pipeline's idempotency
     [Fact]
     public void The_platform_overwrites_whatever_the_adapter_put_in_the_id()
     {
@@ -57,9 +44,7 @@ public sealed class StagingCoverageTests
     [Fact]
     public void Every_list_on_the_wire_is_staged_by_something()
     {
-        // One record of every shape at once, and the count has to match. A
-        // list added to the wire without a loop in Enumerate is exactly the
-        // gap that shipped, one leg further along.
+        // a list added to the wire without a loop in Enumerate is the gap that shipped
         var result = new JobResultRequest
         {
             Accounts =

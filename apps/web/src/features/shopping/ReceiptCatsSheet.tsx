@@ -11,7 +11,6 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
-/** a line while the sheet is open: its category once it has one, and what of the transaction it stands for */
 interface LineState {
   catId?: string;
   amountCents: number;
@@ -27,13 +26,11 @@ const seedLines = (lines: readonly ReceiptLine[], initial: readonly ReceiptPick[
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 
-/** what the three figures at the top say about the money still open */
 const leftTone = (leftCents: number): string => {
   if (leftCents < 0) return 'text-negative';
   return leftCents === 0 ? 'text-positive' : 'text-ink';
 };
 
-/** the value a line stands for: as printed, after the discount, typed, or whatever the transaction still has open */
 function ValueEditor({
   line,
   state,
@@ -47,7 +44,6 @@ function ValueEditor({
     setTyped(toText(cents));
     onAmount(cents);
   };
-  // what the line could take without the transaction running over: its own amount plus what is open
   const fill = state.catId ? state.amountCents + leftCents : leftCents;
   return (
     <div className="flex flex-wrap items-center gap-1.5 pb-2 pl-8" data-testid={`receiptcats-values-${line.index}`}>
@@ -82,14 +78,8 @@ function ValueEditor({
   );
 }
 
-/**
- * #567 (user): the transaction is what gets categorised — the receipt's
- * lines are the handles. Tick lines, give them a category, and each
- * stands for a chunk of the transaction: what was paid for it after the
- * discount, what the receipt prints, or a typed amount. The sheet keeps
- * count of what the transaction still has open and never lets the lines
- * claim more than it holds (a payment partly paid back has less to file).
- */
+/** #567: the transaction is what gets categorised, receipt lines are handles; they never claim more than it holds
+ * (a partly paid-back payment has less to file) */
 export function ReceiptCatsSheet({
   open,
   onOpenChange,
@@ -106,13 +96,11 @@ export function ReceiptCatsSheet({
   onOpenChange: (open: boolean) => void;
   items: readonly ReceiptItem[] | undefined;
   currency: string;
-  /** the transaction's money the lines may claim */
   netCents: number;
   /** what of the transaction was paid back — said, so the smaller amount explains itself */
   settledCents?: number;
   /** where the money no line claims stays */
   restCatId: string;
-  /** the picks the sheet opens with */
   initial: readonly ReceiptPick[];
   /** by line index: the category to suggest */
   suggestions: ReadonlyMap<number, string>;

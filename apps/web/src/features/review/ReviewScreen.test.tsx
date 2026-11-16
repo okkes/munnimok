@@ -17,8 +17,7 @@ describe('ReviewScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  // #330 r2: the demo cards wear their seeded category, so the split
-  // door warns on the FIRST press now — walk through to the editor
+  // #330: the demo cards wear their seeded category, so the split door warns on the first press: walk through to the editor
   const openSplitEditor = async () => {
     fireEvent.click(await screen.findByTestId('review-split-row'));
     fireEvent.click(await screen.findByTestId('split-reset-continue', {}, { timeout: 10_000 }));
@@ -28,7 +27,6 @@ describe('ReviewScreen (demo identity)', () => {
   it('walks the queue with progress: confirm clears the flag and advances', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // demo seed ships 3 flagged transactions, all different merchants
     expect(screen.getByText('1 / 3')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
@@ -38,7 +36,6 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByText('3 / 3')).toBeTruthy(), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
-    // queue drained — the empty state replaces the card
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
@@ -47,10 +44,8 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     const first = screen.getByTestId('review-card').textContent;
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
-    // no ghost while the writes run — the card stands until the swap
     expect(document.querySelector('.m-card-out')).toBeNull();
     await waitFor(() => expect(screen.getByText('2 / 3')).toBeTruthy(), { timeout: 5000 });
-    // the ghost mounts with the swap, wearing the OLD card; it is gone after its flight
     await waitFor(() => expect(document.querySelector('.m-card-out')).toBeTruthy());
     expect(screen.getByTestId('review-card').textContent).not.toBe(first);
     await waitFor(() => expect(document.querySelector('.m-card-out')).toBeNull(), { timeout: 2000 });
@@ -60,34 +55,24 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // the kind concept is gone from the card; #228 feedback: the
-    // counterparty is the card's OWN row again, empty-faced for now
     expect(screen.queryByTestId('review-kind-row')).toBeNull();
     expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
 
-    // #211: the chip opens the split-CATEGORIES editor — pure categories
     fireEvent.click(screen.getByTestId('review-category-chip'));
     await screen.findByTestId('part-cats-editor');
     expect(screen.queryByTestId('split-counter-row')).toBeNull();
     expect(screen.queryByTestId('split-type-row')).toBeNull();
     fireEvent.click(screen.getByTestId('part-cat-0'));
-    await screen.findByTestId('speccat-savingDeposit'); // the diamond mark
-    // #133 r5 matrix: a regular account's OUTGOING row sees exactly ONE
-    // saving sub — Take out and Fees live on the pot's own ledger (the
-    // user's screenshot: "in this use case I was expecting only one")
+    await screen.findByTestId('speccat-savingDeposit');
+    // #133: a regular account's outgoing row sees exactly one saving sub; Take out and Fees live on the pot's own ledger
     expect(screen.queryByTestId('catpicker-savingWithdraw')).toBeNull();
     expect(screen.queryByTestId('catpicker-savingFees')).toBeNull();
     expect(screen.queryByTestId('catpicker-savingInterest')).toBeNull();
     fireEvent.click(screen.getByTestId('catpicker-savingDeposit'));
 
-    // #133 r4: the ◆ pick asks its counterparty ON THE SPOT; the pot
-    // answers it (#228 feedback: no counter line under the entry anymore
-    // — the card row will tell the story)
     await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
-    // Done stages category + link together; the card's Counterparty row
-    // names the pot — no "→ account" subline under the category
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect(screen.queryByTestId('review-cat-counter-savingDeposit')).toBeNull();
@@ -99,10 +84,7 @@ describe('ReviewScreen (demo identity)', () => {
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revpick'), { trackOutbox: false });
-    // two same-merchant cards (the bulk offer's fuel), dated OLDEST so
-    // they lead the queue; each has its own pickable twin on the pot. No
-    // category is predicted for them, so the counterparty may come first
-    // (#565: an ordinary category, suggested or picked, takes none)
+    // dated OLDEST so they lead the queue; no category is predicted, so the counterparty may come first (#565)
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rv1', {
       accountId: 'demo_main', date: '2026-01-02', amountCents: -500, currency: 'EUR',
       merchant: 'Weekgeld Sam', needsReview: 1,
@@ -111,7 +93,7 @@ describe('ReviewScreen (demo identity)', () => {
       accountId: 'demo_main', date: '2026-01-03', amountCents: -500, currency: 'EUR',
       merchant: 'Weekgeld Sam', needsReview: 1,
     });
-    // the pot's twin in another currency: the card's row wears the LEG's currency (user ss 2026-10-05)
+    // the pot's twin in another currency: the card's row wears the leg's currency
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rvc', {
       accountId: 'demo_save', date: '2026-01-02', amountCents: 500, currency: 'USD',
       merchant: 'Pot side', catId: 'uncategorized', needsReview: 0,
@@ -124,18 +106,15 @@ describe('ReviewScreen (demo identity)', () => {
     cleanup();
     renderApp('/review');
     await screen.findByTestId('review-card');
-    await screen.findByTestId('review-bulk'); // the sibling offer is up
+    await screen.findByTestId('review-bulk');
 
     fireEvent.click(screen.getByTestId('review-counter-row'));
-    // #237 r3: ONE tap — the sheet closes, no fork; the card's own
-    // Counter-transaction row appears with the create default
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     const counterTxRow = await screen.findByTestId('review-countertx-row');
     expect(counterTxRow.textContent).toContain('created on confirm');
     fireEvent.click(counterTxRow);
-    // #268 (user): picking the pot's twin no longer warns or silences
-    // the bulk — the siblings will queue for their own counters
+    // #268: picking the pot's twin neither warns nor silences the bulk; the siblings queue for their own counters
     fireEvent.click((await screen.findByTestId('counter-dup-rvc')).querySelector('button')!);
     await waitFor(() => expect(screen.getByTestId('review-countertx-row').textContent).toContain('Pot side'));
     expect(screen.getByTestId('review-countertx-row').textContent).toContain('$');
@@ -144,23 +123,19 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.getByTestId('review-bulk')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
-    // the per-sibling queue opens, naming WHICH transaction is matching
     const context = await screen.findByTestId('counter-queue-context', undefined, { timeout: 10_000 });
     expect(context.textContent).toContain('Weekgeld Sam');
     expect(context.textContent).toContain('1/1');
-    // #268 r2 (user): the deck HOLDS behind the queue — the confirmed
-    // card stays frozen (no advance, no exit flight) while it runs
+    // #268: the deck holds behind the queue: the confirmed card stays frozen (no advance, no exit flight)
     expect(screen.getByTestId('review-card').getAttribute('data-held')).toBe('1');
     const heldMeta = screen.getByTestId('review-card-meta').textContent;
     expect(heldMeta).toContain('2 January'); // rv1's own face, not rv2's
-    // #268 r2: the info bulb says WHY every sibling asks again
     fireEvent.click(screen.getByTestId('counter-queue-why-toggle'));
     expect((await screen.findByTestId('counter-queue-why')).textContent).toContain('needs its own');
     fireEvent.click(screen.getByTestId('counter-queue-why-toggle'));
     expect(screen.queryByTestId('counter-queue-why')).toBeNull();
     // the sibling picks ITS OWN twin (rv1's pick is spoken for)
     fireEvent.click((await screen.findByTestId('counter-dup-rvc2')).querySelector('button')!);
-    // queue done — the hold releases and the deck moves on
     await waitFor(() => expect(screen.queryByTestId('counter-queue-context')).toBeNull(), { timeout: 10_000 });
     await waitFor(() => {
       expect(screen.getByTestId('review-card').getAttribute('data-held')).toBeNull();
@@ -173,9 +148,7 @@ describe('ReviewScreen (demo identity)', () => {
       expect(source?.needsReview).toBe(0);
       expect(source?.linkedAccountId).toBe('demo_save');
       expect(source?.transferPeerId).toBe('rvc');
-      // the reciprocal landed; nothing was minted
       expect((await db.transactions.get('rvc'))?.transferPeerId).toBe('rv1');
-      // #268: the sibling rode along WITH its own picked pair
       const sibling = await db.transactions.get('rv2');
       expect(sibling?.needsReview).toBe(0);
       expect(sibling?.linkedAccountId).toBe('demo_save');
@@ -191,8 +164,7 @@ describe('ReviewScreen (demo identity)', () => {
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revwalk'), { trackOutbox: false });
-    // the user's "7 paypals" walk in miniature: three same-merchant
-    // unreviewed rows, oldest first (categorized so Confirm is live)
+    // three same-merchant unreviewed rows, oldest first; categorized so Confirm is live
     const base = { accountId: 'demo_main', currency: 'EUR', merchant: 'Metro Market', catId: 'groceries', needsReview: 1 as const };
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rw1', { ...base, date: '2026-01-02', amountCents: -500 });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rw2', { ...base, date: '2026-01-03', amountCents: -600 });
@@ -202,29 +174,24 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card', undefined, { timeout: 10_000 });
 
-    // card 1 of 3: the offer counts the OTHER two — never itself
     await waitFor(() => expect(screen.getByTestId('review-bulk-toggle').getAttribute('aria-label')).toContain('2 similar'), { timeout: 10_000 });
     fireEvent.click(screen.getByTestId('review-bulk-expand'));
     await screen.findByTestId('review-bulk-list');
-    expect(screen.queryByTestId('review-bulk-rw1')).toBeNull(); // the current card itself
+    expect(screen.queryByTestId('review-bulk-rw1')).toBeNull();
     expect(screen.getByTestId('review-bulk-rw2')).toBeTruthy();
     expect(screen.getByTestId('review-bulk-rw3')).toBeTruthy();
 
-    // confirm WITHOUT the bulk (untick all): only this card is written
     fireEvent.click(screen.getByTestId('review-bulk-toggle'));
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
-    // card 2: the count dropped by exactly the reviewed one
     await waitFor(() => expect(screen.getByTestId('review-card-meta').textContent).toContain('3 January'), { timeout: 10_000 });
     await waitFor(() => expect(screen.getByTestId('review-bulk-toggle').getAttribute('aria-label')).toContain('1 similar'), { timeout: 10_000 });
-    // the sheet remounts with the card — open it again for the list
     fireEvent.click(screen.getByTestId('review-bulk-expand'));
     await screen.findByTestId('review-bulk-list', undefined, { timeout: 10_000 });
     expect(screen.queryByTestId('review-bulk-rw1')).toBeNull(); // reviewed — must never ride again
-    expect(screen.queryByTestId('review-bulk-rw2')).toBeNull(); // now the current card
+    expect(screen.queryByTestId('review-bulk-rw2')).toBeNull();
     expect(screen.getByTestId('review-bulk-rw3')).toBeTruthy();
 
-    // skip card 2: a skipped card left the deck on purpose — the last
-    // card has nobody left to offer, so the bulk row stands down
+    // a skipped card left the deck on purpose: the last card has nobody left to offer, so the bulk row stands down
     fireEvent.click(screen.getByTestId('review-skip-btn'));
     await waitFor(() => expect(screen.getByTestId('review-card-meta').textContent).toContain('4 January'), { timeout: 10_000 });
     await waitFor(() => expect(screen.queryByTestId('review-bulk')).toBeNull(), { timeout: 10_000 });
@@ -236,7 +203,7 @@ describe('ReviewScreen (demo identity)', () => {
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revpair'), { trackOutbox: false });
-    // the oldest card: a top-up whose counterparty and pair survived (the memory, another device) but whose category did not
+    // the oldest card: counterparty and pair survived (the memory, another device) but its category did not
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp1', {
       accountId: 'demo_main', date: '2026-01-01', amountCents: -2500, currency: 'EUR',
       merchant: 'Pot top-up', catId: 'uncategorized', needsReview: 1, linkedAccountId: 'demo_save', transferPeerId: 'rp1peer',
@@ -250,14 +217,12 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
-    // the counter's kind files the category — no "Pick a category" next to a labelled pair
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
-    // the stored pair shows, and the row is a door, not a label
     const counterTxRow = await screen.findByTestId('review-countertx-row');
     expect(counterTxRow.textContent).toContain('Pot side');
     expect((counterTxRow as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(counterTxRow);
-    // the pot is manual: the create door releases the stored pair — the card reads the default again
+    // the pot is manual: the create door releases the stored pair
     fireEvent.click(await screen.findByTestId('counter-fork-create'));
     await waitFor(() => expect(screen.getByTestId('review-countertx-row').textContent).toContain('created on confirm'));
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
@@ -291,7 +256,7 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
-    // not a transfer after all: the counterparty goes, and the counter-transaction row stands empty (#565: disabled, never hidden)
+    // not a transfer after all: the counter-transaction row stands empty (#565: disabled, never hidden)
     fireEvent.click(screen.getByTestId('review-counter-row'));
     fireEvent.click(await screen.findByTestId('counter-detach'));
     await waitFor(() => expect((screen.getByTestId('review-countertx-row') as HTMLButtonElement).disabled).toBe(true));
@@ -334,8 +299,7 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(row);
     await screen.findByTestId('review-receipt-proposal');
     fireEvent.click(screen.getByTestId('review-receipt-accept'));
-    // the row now reads the attached receipt; the deck is otherwise untouched (the card is still to confirm)
-    // (both in one wait: between "to check" and attached the row reads nothing for a moment)
+    // both in one wait: between "to check" and attached the row reads nothing for a moment
     await waitFor(() => {
       const text = screen.getByTestId('review-receipt-row').textContent ?? '';
       expect(text).toContain('Albert Heijn');
@@ -356,7 +320,7 @@ describe('ReviewScreen (demo identity)', () => {
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revfirst'), { trackOutbox: false });
-    // the oldest card wears no category yet — the counterparty may come first
+    // the oldest card wears no category: the counterparty may come first
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'cf1', {
       accountId: 'demo_main', date: '2026-01-01', amountCents: -2500, currency: 'EUR', merchant: 'Onbekende overboeking', catId: 'uncategorized', needsReview: 1,
     });
@@ -364,11 +328,7 @@ describe('ReviewScreen (demo identity)', () => {
     cleanup();
     renderApp('/review');
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('Onbekende overboeking'));
-    // "the user can also first modify the counterparty and the special
-    // category will be selected automatically" (user, issue comment)
     fireEvent.click(screen.getByTestId('review-counter-row'));
-    // #237 r3: no fork — one tap picks, the Counter-transaction row
-    // carries the create default on the card itself
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
@@ -380,8 +340,6 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     expect(screen.getByTestId('review-recurring-row')).toBeTruthy();
 
-    // Loan payment (◆) → the ask opens ON THE PICK (#133 r4) → the
-    // Create door (full chooser); the manual loan built in place answers
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
@@ -393,14 +351,12 @@ describe('ReviewScreen (demo identity)', () => {
     // v2: a loan account's current value is required (it IS the debt)
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
-    // the fresh loan answers the ask; Done stages both
     await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBeTruthy(), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Car loan'), { timeout: 5000 });
 
-    // #236: no separate debt row — the Counterparty row above already
-    // names the loan (1:1 with its account); a payoff is still not a
-    // recurring cost, so that row stands disabled (#565: never hidden)
+    // #236: no separate debt row, the Counterparty row names the loan
+    // a payoff is no recurring cost, so that row stands disabled
     await waitFor(() => expect((screen.getByTestId('review-recurring-row') as HTMLButtonElement).disabled).toBe(true), { timeout: 5000 });
     expect(screen.queryByTestId('review-debt-row')).toBeNull();
   }, 15_000);
@@ -410,26 +366,20 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     const chipBefore = screen.getByTestId('review-category-chip').textContent;
 
-    // pick the locked Transfer sub — the MANDATORY ask opens on the
-    // pick itself (#133 r4), NOTHING staged yet. #546: no default bank
-    // account answers for the person; #133 r5: the savings pot is OFF the
-    // real list (that movement IS the saving category), and the demo has
-    // no other regular account — empty
+    // #546: no default bank account answers the mandatory ask; #133: the pot is off the real list
+    // the demo has no other regular account
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-transferOut'));
     await screen.findByTestId('counter-accounts');
     expect(screen.queryByTestId('counter-default')).toBeNull();
-    expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull(); // r5: not a transfer counter
+    expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull(); // the pot is not a transfer counter (#133)
     await screen.findByTestId('counter-empty');
     fireEvent.keyDown(window, { key: 'Escape' });
-    // dismissed: the ENTRY rolled back — an unlinked transfer is
-    // unrepresentable; Done stages the untouched category
+    // dismissed: the entry rolls back, an unlinked transfer is unrepresentable
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toBe(chipBefore));
 
-    // answering it through the one Create door: a fresh REGULAR account
-    // satisfies the mandatory ask; Done stages sub + link together
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
@@ -439,11 +389,9 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Second checking' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
-    // the mandatory ask answered: Done arms once the transfer is linked
     await waitFor(() => expect((screen.getAllByTestId('part-cat-save').at(-1)! as HTMLButtonElement).disabled).toBe(false), { timeout: 5000 });
     fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
-    // #228 feedback: the card's Counterparty row reads the link
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Second checking'));
   }, 15_000);
 
@@ -453,35 +401,28 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    // the ask opens on the pick (#133 r4); walking away keeps the bare
-    // story staged — but it can no longer CONFIRM bare (#309)
+    // walking away keeps the bare story staged, but it can no longer confirm bare (#309)
     await screen.findByTestId('counter-accounts');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
-    // #228 feedback: the card's Counterparty row shows the bare state
     expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // #309 (user): "we should not be able to continue" — the click marks
-    // the field red instead of silently linking the default
+    // #309: the click marks the field red instead of silently linking the default
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     expect((await screen.findByTestId('review-counter-required')).textContent).toContain('Counterparty required');
     expect(screen.getByTestId('review-counter-row').className).toContain('ring-negative');
-    // #316 (user): the ring draws INSET — the row spans the card's full
-    // inner width, and the card's overflow-hidden clipped a box-edge ring
+    // #316: the ring draws inset: the row spans the card's full width and the card's overflow-hidden clips a box-edge ring
     expect(screen.getByTestId('review-counter-row').className).toContain('ring-inset');
-    expect(screen.getByTestId('review-card')).toBeTruthy(); // still here
+    expect(screen.getByTestId('review-card')).toBeTruthy();
 
-    // answering through the field clears the red on the spot — one tap on
-    // the real pot (#546: no default pot answers for the person)
     fireEvent.click(screen.getByTestId('review-counter-row'));
     // the card's own ask stacks above the editor's (a closed sheet keeps its children)
     fireEvent.click((await screen.findAllByTestId('counter-pick-demo_save')).at(-1)!);
     await waitFor(() => expect(screen.queryByTestId('review-counter-required')).toBeNull());
 
-    // the confirm carries the picked pot: THIS card's row lands linked and reviewed, its leg on the pot
-    // (the seed's own savings transfers already name the pot, so only the card's row can tell)
+    // the seed's own savings transfers already name the pot, so only the card's row can tell
     const cardId = screen.getByTestId('review-card').closest('[data-card-id]')!.getAttribute('data-card-id')!;
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const { MunniDB } = await import('@/db/schema');
@@ -503,8 +444,7 @@ describe('ReviewScreen (demo identity)', () => {
         name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0,
       });
     }
-    // a server-style prediction: Transfer Out stamped, no counterparty,
-    // oldest date so the review queue leads with it
+    // a server-style prediction: Transfer Out stamped, no counterparty; oldest date so the queue leads with it
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, over.id, {
       accountId: 'demo_main', date: '2026-01-05', amountCents: -799, currency: 'EUR',
       merchant: over.merchant, description: over.description, counterIban: over.counterIban,
@@ -527,7 +467,6 @@ describe('ReviewScreen (demo identity)', () => {
     cleanup();
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // the clue-matcher pointed the transfer at the PayPal account
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('PayPal'), { timeout: 5000 });
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
@@ -549,13 +488,11 @@ describe('ReviewScreen (demo identity)', () => {
     cleanup();
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // the card stands down: no transfer without a real counterparty
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Pick a category'), { timeout: 5000 });
     expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Transfer');
     expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
-    // and Confirm waits for a human decision — the old one-tap default
-    // link for bare transfers is gone (#228 r3); #410 (user): the button
-    // stays tappable and the tap names the missing category under its row
+    // Confirm waits for a human decision: no one-tap default link for bare transfers (#228)
+    // the tap names the missing category (#410)
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await screen.findByTestId('review-cat-required');
@@ -566,15 +503,12 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     const db = new MunniDB('munni_demo');
     const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
-      .sort((a, b) => a.date.localeCompare(b.date))[0]; // oldest first (user rule)
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
 
-    // the row opens the split-categories editor (#211); a single entry
-    // saves as a plain category
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    // staged, not yet written — the chip shows the choice
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((await db.transactions.get(current.id))?.catId).not.toBe('coffee');
 
@@ -592,9 +526,7 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // two more flagged charges from the same merchant as the first card;
-    // oldest-first queue: bulk1 (2020) becomes the CURRENT card, bulk2 and
-    // the demo row are its "similar" companions
+    // bulk1 (2020) becomes the CURRENT card; bulk2 and the demo row are its similar companions
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-rev'), { trackOutbox: false });
     const first = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
@@ -611,22 +543,16 @@ describe('ReviewScreen (demo identity)', () => {
       });
     }
 
-    // both extra rows must be visible AND selected before confirming
     await waitFor(
       () => expect(screen.getByTestId('review-bulk').textContent).toContain('2'),
       { timeout: 5000 },
     );
-    // "View all" opens the sheet with the internally-scrollable list;
-    // each row can expand into a read-only detail with the description
     fireEvent.click(screen.getByTestId('review-bulk-expand'));
     const bulkList = await screen.findByTestId('review-bulk-list');
     expect(bulkList.className).toContain('overflow-y-auto');
-    // bulk1 IS the card now; bulk2 sits in the similar list
     expect(screen.getByTestId('review-bulk-bulk2')).toBeTruthy();
-    // row tap (TxRow style now) opens the stacked read-only detail sheet
     fireEvent.click(screen.getByTestId('tx-row-bulk2'));
     await screen.findByTestId('review-bulk-detail');
-    // select/unselect all lives inside the sheet
     expect(screen.getByTestId('review-bulk-select-all')).toBeTruthy();
     // the async prediction arms the confirm — wait before clicking
     await waitFor(() =>
@@ -647,7 +573,6 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // a Netflix subscription + a flagged Netflix charge arrive
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-link'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-nfx', {
@@ -680,7 +605,6 @@ describe('ReviewScreen (demo identity)', () => {
       needsReview: 0,
     });
 
-    // the newest card is the Netflix charge; the recurring ROW pre-links it
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('NETFLIX.COM'), { timeout: 5000 });
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Netflix'), { timeout: 5000 });
 
@@ -701,7 +625,6 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // an active recurring with a non-matching merchant arms the manual chip
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-manual-2'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-spotify', {
@@ -720,7 +643,6 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('recpick-rec-spotify', {}, { timeout: 5000 }));
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Spotify'), { timeout: 5000 });
 
-    // …and unpick it: the row returns to None
     fireEvent.click(screen.getByTestId('review-recurring-row'));
     fireEvent.click(await screen.findByTestId('recpick-none'));
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).not.toContain('Spotify'), { timeout: 5000 });
@@ -748,16 +670,13 @@ describe('ReviewScreen (demo identity)', () => {
       });
     }
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('APRES SKI BAR'), { timeout: 5000 });
-    await screen.findByTestId('review-bulk'); // the sibling has landed too — the offer is up
+    await screen.findByTestId('review-bulk');
 
-    // pick the event on the card (staged, not yet written)
     fireEvent.click(screen.getByTestId('review-event-row'));
     fireEvent.click(await screen.findByTestId('review-event-ev-trip'));
     await waitFor(() => expect(screen.getByTestId('review-event-row').textContent).toContain('Ski trip'));
     expect((await db.transactions.get('evt-a'))?.eventId).toBeUndefined();
 
-    // confirm: the event reaches the card AND the selected sibling (user
-    // rule: bulk carries the whole decision, not just the category)
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(async () => {
       expect((await db.transactions.get('evt-a'))?.eventId).toBe('ev-trip');
@@ -771,7 +690,6 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // a gym membership whose merchantKey does NOT match the current card
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-manual'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-gym', {
@@ -786,7 +704,6 @@ describe('ReviewScreen (demo identity)', () => {
     const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
       .sort((a, b) => a.date.localeCompare(b.date))[0];
 
-    // the recurring row starts at None (no auto-detected match here)
     fireEvent.click(await screen.findByTestId('review-recurring-row'));
     fireEvent.click(await screen.findByTestId('recpick-rec-gym', {}, { timeout: 5000 }));
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Gym'), { timeout: 5000 });
@@ -802,10 +719,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('the split door opens the VALUES editor — pure money, no category rows (#126 v2)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // visible row, not hidden under the category pencil
     await openSplitEditor();
-    // the split as transactions: label + amount, value/pct modes —
-    // categories belong to the deck, not this sheet
     await screen.findByTestId('split-label-0');
     expect(screen.queryByTestId('split-cat-0')).toBeNull();
     expect(screen.getByTestId('split-mode-pct')).toBeTruthy();
@@ -815,7 +729,6 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // stage a 6/4 split through the values door
     await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
@@ -826,8 +739,6 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the deck: part 0 expanded (its category row is live), part 1 a
-    // slim header — tapping it brings it on top
     await screen.findByTestId('review-part-deck');
     await screen.findByTestId('deck-cat-0');
     expect(screen.queryByTestId('deck-cat-1')).toBeNull();
@@ -835,8 +746,6 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('deck-cat-1');
     expect(screen.queryByTestId('deck-cat-0')).toBeNull();
 
-    // part 1 takes its categories through the whole-transaction editor
-    // (r7 parity): its category row IS the door — one row, pick, Done
     fireEvent.click(screen.getByTestId('deck-cat-1'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
@@ -845,24 +754,18 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Coffee'));
 
-    // its label is editable in place and rides the staged draft
     fireEvent.change(screen.getByTestId('deck-label-1'), { target: { value: 'Office snacks' } });
     await waitFor(() => expect((screen.getByTestId('deck-label-1') as HTMLInputElement).value).toBe('Office snacks'));
 
-    // #133 C: no Type row on parts; #228 feedback: the part card's own
-    // Counterparty row is BACK — honest about "none"
     expect(screen.queryByTestId('deck-kind-row-1')).toBeNull();
     expect(screen.getByTestId('deck-counter-1').textContent).toContain('No counter account');
 
-    // the part's event row opens its picker; None stages a clean part.
-    // #251: the quick-create door is here too (whole-card parity)
     fireEvent.click(screen.getByTestId('deck-event-1'));
     await screen.findByTestId('deck-event-list');
     expect(screen.getByTestId('deck-event-create')).toBeTruthy();
     fireEvent.click(screen.getByTestId('deck-event-none'));
 
-    // r7: the part links recurring costs right on the card — review
-    // parity; the deck carries NO notes row (review never had one)
+    // the deck carries no notes row (review never had one)
     fireEvent.click(screen.getByTestId('deck-rec-1'));
     await screen.findByTestId('deck-rec-list');
     expect(screen.getByTestId('deck-rec-create')).toBeTruthy();
@@ -875,7 +778,7 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // a 6/4 split, part 1 labeled — the label must seed the form's name
+    // part 1 labeled: the label must seed the form's name
     await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
@@ -888,7 +791,7 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-part-deck');
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Gym half' } });
-    // #331: give the part a category first — it must ride into the form
+    // #331: the part's category rides into the form
     fireEvent.click(screen.getByTestId('deck-cat-1'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
@@ -897,24 +800,20 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Coffee'));
 
-    // the create door opens the recurring form, prefilled from the part
     fireEvent.click(screen.getByTestId('deck-rec-1'));
     await screen.findByTestId('deck-rec-list');
     fireEvent.click(screen.getByTestId('deck-rec-create'));
     const name = (await screen.findByTestId('recform-name')) as HTMLInputElement;
     await waitFor(() => expect(name.value).toBe('Gym half'));
-    // #331 (user): the part's picked category came along
     expect(screen.getByTestId('recform-cat').textContent).toContain('Coffee');
     fireEvent.click(screen.getByTestId('recform-save'));
 
-    // the created cost is linked on the part row — create-and-return
     await waitFor(() => expect(screen.getByTestId('deck-rec-1').textContent).toContain('Gym half'));
   }, 15_000);
 
   it('#331: a category picked upfront rides into the quick-created recurring form', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // stage Coffee through the chip's cats editor
     fireEvent.click(screen.getByTestId('review-category-chip'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
@@ -922,7 +821,6 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
 
-    // the recurring picker's Create door opens the form WITH the category
     fireEvent.click(screen.getByTestId('review-recurring-row'));
     await screen.findByTestId('recpick-list');
     fireEvent.click(screen.getByTestId('recpick-create'));
@@ -940,16 +838,13 @@ describe('ReviewScreen (demo identity)', () => {
       merchantKey: 'spotify', logo: 'data:image/png;base64,abc',
     });
     db.close();
-    // nothing linked yet: the generic autorenew icon, no visual
     expect(screen.queryByTestId('review-recurring-visual')).toBeNull();
     fireEvent.click(await screen.findByTestId('review-recurring-row', {}, { timeout: 10_000 }));
     await screen.findByTestId('recpick-list');
     fireEvent.click(await screen.findByTestId('recpick-rec-logo', {}, { timeout: 10_000 }));
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Spotify'), { timeout: 10_000 });
-    // the row now leads with the recurring's OWN face — its logo
     const visual = await screen.findByTestId('review-recurring-visual');
     expect(visual.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,abc');
-    // …and unpicking restores the generic icon
     fireEvent.click(screen.getByTestId('review-recurring-row'));
     fireEvent.click(await screen.findByTestId('recpick-none'));
     await waitFor(() => expect(screen.queryByTestId('review-recurring-visual')).toBeNull(), { timeout: 10_000 });
@@ -968,16 +863,14 @@ describe('ReviewScreen (demo identity)', () => {
       });
     }
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('PADEL CLUB'), { timeout: 10_000 });
-    await screen.findByTestId('review-bulk'); // the sibling offer is up
+    await screen.findByTestId('review-bulk');
 
-    // the card's own notes field — staged only, nothing written yet
     fireEvent.change(screen.getByTestId('review-notes'), { target: { value: 'Court 4, with Jan' } });
     expect((await db.transactions.get('note-a'))?.notes).toBeUndefined();
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(async () => {
       expect((await db.transactions.get('note-a'))?.notes).toBe('Court 4, with Jan');
-      // the selected sibling receives the same note with its decision
       expect((await db.transactions.get('note-b'))?.notes).toBe('Court 4, with Jan');
       expect((await db.transactions.get('note-b'))?.needsReview).toBe(0);
     }, { timeout: 8000 });
@@ -990,7 +883,7 @@ describe('ReviewScreen (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-none'), { trackOutbox: false });
     const first = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
-      .sort((a, b) => a.date.localeCompare(b.date))[0]; // the current card
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
     await repo.upsert('transaction', DEMO_SPACE_ID, 'none-1', {
       accountId: first.accountId, date: '2030-01-01', amountCents: first.amountCents, currency: 'EUR',
       merchant: first.merchant, catId: first.catId, needsReview: 1,
@@ -998,11 +891,9 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
     await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Also apply to 1 similar'), { timeout: 10_000 });
 
-    // untick all: the odd "…to 0 similar" swaps for the short line
     fireEvent.click(screen.getByTestId('review-bulk-toggle'));
     await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Similar found — none selected'), { timeout: 10_000 });
     expect(screen.getByTestId('review-bulk').textContent).not.toContain('0 similar');
-    // re-tick: the honest count returns
     fireEvent.click(screen.getByTestId('review-bulk-toggle'));
     await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Also apply to 1 similar'), { timeout: 10_000 });
   }, 15_000);
@@ -1020,9 +911,6 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // part 1 → Set aside (◆ pulls saving through the part editor) —
-    // #133 C: the pick opens the per-part counterparty ask; walking away
-    // keeps the bare story
     await screen.findByTestId('review-part-deck');
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
@@ -1035,8 +923,7 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Set aside'));
 
-    // the SAME pick on part 0: r7 allows the honest repeat — no warning
-    // exists anymore, and Confirm arms with both parts categorized
+    // the same pick on part 0: a repeat is allowed, no warning
     fireEvent.click(screen.getByTestId('deck-part-0'));
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
     await screen.findByTestId('part-cats-editor');
@@ -1044,7 +931,7 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click((await screen.findAllByTestId('catpicker-savingDeposit')).at(-1)!);
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    fireEvent.keyDown(window, { key: 'Escape' }); // the ask again — still bare, still fine
+    fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Set aside'));
     await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
   }, 15_000);
@@ -1058,8 +945,7 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '50' } });
     fireEvent.blur(amount0);
-    // every added row seeds the remaining PERCENTAGE (a '0,00' euro text
-    // inside a percentage list was the r6 glitch)
+    // every added row seeds the remaining PERCENTAGE, not a '0,00' euro text
     fireEvent.click(screen.getByTestId('split-add-row'));
     await waitFor(() => expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('50'));
     const amount1 = screen.getByTestId('split-amount-1') as HTMLInputElement;
@@ -1068,12 +954,10 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.blur(amount1);
     fireEvent.click(screen.getByTestId('split-add-row'));
     await waitFor(() => expect((screen.getByTestId('split-amount-2') as HTMLInputElement).value).toBe('20'));
-    // three parts, two of them still uncategorized — the shared
-    // placeholder no longer jams Done (the "can't add past two" report)
+    // three parts, two uncategorized: the shared placeholder must not jam Done
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the deck holds all three; tapping a strip shuffles it on top
     await screen.findByTestId('review-part-deck');
     await screen.findByTestId('deck-label-0');
     fireEvent.click(screen.getByTestId('deck-part-2'));
@@ -1081,17 +965,14 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('deck-part-1'));
     await screen.findByTestId('deck-label-1');
 
-    // r7: Confirm stays TAPPABLE while parts are uncategorized — the tap
-    // writes nothing and marks the offenders on their number circles
+    // Confirm stays tappable while parts are uncategorized: the tap writes nothing and marks the offenders
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await screen.findByTestId('deck-attention');
     await screen.findByTestId('deck-attn-1');
     await screen.findByTestId('deck-attn-2');
-    expect(screen.queryByTestId('deck-attn-0')).toBeNull(); // part 0 has its category
-    await screen.findByTestId('review-card'); // nothing was written
+    expect(screen.queryByTestId('deck-attn-0')).toBeNull();
+    await screen.findByTestId('review-card');
 
-    // categorizing clears each badge; three parts — two plain expense —
-    // confirm fine (r7: no kind restrictions)
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
@@ -1123,14 +1004,11 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the category row IS the door to the part-scoped whole-transaction
-    // editor (r7) — seeded with the part's category owning its full share
     await screen.findByTestId('review-part-deck');
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
     await screen.findByTestId('part-cats-editor');
 
-    // euros ⇄ percentages, the pre-split editor's two gears (r7): a
-    // full-owning row converts round-trip without drift
+    // a full-owning row converts between euros and percentages round-trip without drift
     fireEvent.click(screen.getByTestId('part-cat-mode-pct'));
     await waitFor(() => expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('100'));
     fireEvent.click(screen.getByTestId('part-cat-mode-amount'));
@@ -1143,13 +1021,11 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.focus(spread0);
     fireEvent.change(spread0, { target: { value: '2,00' } });
     fireEvent.blur(spread0);
-    // the pill drops the leftover on the still-open entry
     fireEvent.click(await screen.findByTestId('part-cat-remainder'));
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // #217 (user): the deck shows EACH category as its own row — value
-    // included, "the same way as if there no split"
+    // #217: the deck shows each category as its own row, value included
     await waitFor(() => expect(screen.getByTestId('deck-cat-0-1').textContent).toContain('Coffee'));
     expect(screen.getByTestId('deck-cat-0-1').textContent).toMatch(/4[.,]00/);
     expect(screen.getByTestId('deck-cat-0').textContent).toMatch(/2[.,]00/);
@@ -1169,23 +1045,17 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-part-deck');
     const catBefore = screen.getByTestId('deck-cat-0').textContent;
 
-    // pick the locked Transfer sub on part 0 — the MANDATORY ask opens
-    // on the pick itself (#133 r4), NOTHING patched yet; #546: no default
-    // bank account answers for the person; #133 r5: the savings pot is
-    // OFF the transfer list. Walking away rolls the ENTRY back and Done
-    // keeps the part exactly as it was
+    // the mandatory ask opens on the pick, nothing patched; #546: no default account answers; walking away rolls the entry back
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
     fireEvent.click((await screen.findAllByTestId('part-cat-0')).at(-1)!);
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
     await screen.findByTestId('counter-accounts');
     expect(screen.queryByTestId('counter-default')).toBeNull();
-    expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull(); // r5: not a transfer counter
+    expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull(); // the pot is not a transfer counter (#133)
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toBe(catBefore));
 
-    // answering it through the Create door (the demo has no second
-    // regular account): the fresh checking satisfies the mandatory ask
     fireEvent.click(screen.getByTestId('deck-cat-0'));
     fireEvent.click(screen.getAllByTestId('part-cat-0').at(-1)!);
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
@@ -1195,18 +1065,13 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Second checking' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
-    // the mandatory ask answered: Done arms once the transfer is linked
     await waitFor(() => expect((screen.getAllByTestId('part-cat-save').at(-1)! as HTMLButtonElement).disabled).toBe(false), { timeout: 5000 });
     fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Transfer Out'));
-    // #228 feedback: the part card's OWN Counterparty row carries the
-    // link — no "→ account" subline under the category anymore
     await waitFor(() => expect(screen.getByTestId('deck-counter-0').textContent).toContain('Second checking'));
     expect(screen.queryByTestId('deck-cat-counter-0-0')).toBeNull();
-    // #133 r5: that row's own door asks within the transfer's account
-    // types — the linked account listed, the savings pot off the list
-    // (sheets stay mounted in tests: the ask's list is still there — the
-    // door's own is the one the tap adds)
+    // #133: the row's door asks within the transfer's account types
+    // sheets stay mounted in tests, so the door's list is the one the tap adds
     const asked = new Set(screen.getAllByTestId('counter-accounts'));
     fireEvent.click(screen.getByTestId('deck-counter-0'));
     await waitFor(() => expect(screen.getAllByTestId('counter-accounts')).toHaveLength(asked.size + 1));
@@ -1218,35 +1083,29 @@ describe('ReviewScreen (demo identity)', () => {
   it('splitting warns first — the reset waits for the editor\'s Done; cancelling keeps the staged picks (#126 r7, #330)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // an active recurring so the card can stage a manual link too
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-splitreset'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-yoga', {
       name: 'Yoga studio', kind: 'subscription', amountCents: 2500, every: 'month', dueDay: 3, active: 1, merchantKey: 'yoga',
     });
     db.close();
-    // stage a deliberate category pick through the chip's cats editor
     fireEvent.click(await screen.findByTestId('review-category-chip'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
-    // …and a manual recurring link on top
     fireEvent.click(screen.getByTestId('review-recurring-row'));
     fireEvent.click(await screen.findByTestId('recpick-rec-yoga', {}, { timeout: 10_000 }));
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Yoga studio'));
 
-    // the split door warns; cancelling the WARNING changes nothing
     fireEvent.click(screen.getByTestId('review-split-row'));
     await screen.findByTestId('split-reset-continue');
     fireEvent.click(screen.getByTestId('split-reset-cancel'));
     expect(screen.queryByTestId('split-label-0')).toBeNull();
 
-    // #330 (user): continue opens the VALUES editor with everything
-    // still staged — the reset now waits for Done, so Escape-dismissing
-    // the editor keeps category and recurring exactly as staged (test
-    // sheets stay mounted after close — the CARD's rows are the signal)
+    // #330: the reset waits for Done: Escape keeps category and recurring as staged
+    // test sheets stay mounted, so the card's rows are the signal
     fireEvent.click(screen.getByTestId('review-split-row'));
     fireEvent.click(await screen.findByTestId('split-reset-continue'));
     await screen.findByTestId('split-label-0');
@@ -1254,23 +1113,17 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
     expect(screen.getByTestId('review-recurring-row').textContent).toContain('Yoga studio');
-    expect(screen.queryByTestId('review-part-deck')).toBeNull(); // no split landed
+    expect(screen.queryByTestId('review-part-deck')).toBeNull();
 
-    // through the warning again — Done is where the reset finally
-    // lands: the single-collapse keeps the seeded category as the
-    // split's shape while the staged recurring link is reversed
     fireEvent.click(screen.getByTestId('review-split-row'));
     fireEvent.click(await screen.findByTestId('split-reset-continue'));
     await screen.findByTestId('split-label-0');
     fireEvent.click(screen.getByTestId('split-save'));
-    // the seeded category stays as the collapse's shape while the
-    // staged recurring link is reversed by the landed reset
+    // the seeded category stays as the collapse's shape while the staged recurring link is reversed
     await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).not.toContain('Yoga studio'));
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
 
-    // a REAL split's Done resets the card to the split shape: the deck
-    // (the collapse above left a staged category, so the warning asks
-    // once more — the arm rides through to this Done)
+    // the collapse left a staged category, so the warning asks once more; the arm rides through to this Done
     fireEvent.click(screen.getByTestId('review-split-row'));
     fireEvent.click(await screen.findByTestId('split-reset-continue'));
     fireEvent.click(await screen.findByTestId('split-add-row'));
@@ -1285,18 +1138,13 @@ describe('ReviewScreen (demo identity)', () => {
   }, 20_000);
 
   it('#330 r2 (user): the FIRST split press warns when the card only wears its ROW category — and stays silent on a bare card', async () => {
-    // the user's real card: the category came with the ROW (an imported/
-    // predicted fill — their ATM card wore "Cash Withdraw · Transfer"),
-    // NOTHING user-staged. r1 keyed the warning on user staging only, so
-    // the first press silently opened the split sheet; only after
-    // splitting + removing (which stages) did the warning appear.
+    // #330: the category came with the ROW (imported/predicted fill), nothing user-staged: the first press must warn
     renderApp('/home');
     await screen.findByTestId('screen-home');
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('splitwarn'), { trackOutbox: false });
-    // a story-less card dated OLDEST so it leads the queue: uncategorized,
-    // no counterparty, no note — the one shape that may open directly
+    // a story-less card dated OLDEST: uncategorized, no counterparty, no note, the one shape that opens directly
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'bare-split', {
       accountId: 'demo_main', date: '2020-01-01', amountCents: -1000, currency: 'EUR',
       merchant: 'Storyless Stall', catId: 'uncategorized', needsReview: 1,
@@ -1306,24 +1154,19 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // card 1 = the bare row: no story to reset — the editor opens directly
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('Storyless Stall'), { timeout: 10_000 });
     fireEvent.click(await screen.findByTestId('review-split-row'));
     await screen.findByTestId('split-editor');
     expect(screen.queryByTestId('split-reset-continue')).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    // skip to the demo card that WEARS its seeded row category (Hobby)
     fireEvent.click(screen.getByTestId('review-skip-btn'));
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toContain('Storyless Stall'), { timeout: 10_000 });
 
-    // the FIRST press must warn — no user staging happened at all
-    // (the earlier card's editor stays mounted in tests, so the warning
-    // sheet's own button is the honest signal here)
+    // the earlier card's editor stays mounted in tests, so the warning sheet's own button is the signal
     fireEvent.click(screen.getByTestId('review-split-row'));
     await screen.findByTestId('split-reset-continue', {}, { timeout: 10_000 });
 
-    // cancel keeps everything: the row category still stands on the chip
     fireEvent.click(screen.getByTestId('split-reset-cancel'));
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Hobby');
   }, 25_000);
@@ -1334,14 +1177,12 @@ describe('ReviewScreen (demo identity)', () => {
     await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     fireEvent.click(screen.getByTestId('split-mode-pct'));
-    // the report's exact flow: type 50 into the SECOND row…
     const amount1 = (await screen.findByTestId('split-amount-1')) as HTMLInputElement;
     fireEvent.focus(amount1);
     fireEvent.change(amount1, { target: { value: '50' } });
     fireEvent.blur(amount1);
-    // …then FOCUS the first row (it empties, stash holds 100) and tap
-    // the pill: pointerdown arms the target, blur restores 100, click
-    // must still fill THIS row with the open 50 — not zero the other
+    // focusing row 0 empties it (stash holds 100); pointerdown arms the pill, blur restores 100
+    // the click must still fill THIS row (#130)
     const amount0 = screen.getByTestId('split-amount-0') as HTMLInputElement;
     fireEvent.focus(amount0);
     // the empty-for-typing lands one frame after focus (#134 iOS fix)
@@ -1361,7 +1202,6 @@ describe('ReviewScreen (demo identity)', () => {
     await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     fireEvent.click(screen.getByTestId('split-mode-pct'));
-    // the report's shape: TOP row empty, second row 50
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '0' } });
@@ -1371,7 +1211,6 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(amount1, { target: { value: '50' } });
     fireEvent.blur(amount1);
     fireEvent.click(await screen.findByTestId('split-remainder'));
-    // the open 50% lands on row 0 — row 1 keeps its value
     await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('50'));
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('50');
     expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false);
@@ -1386,9 +1225,9 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '50' } });
     fireEvent.blur(amount0);
-    // #195: Done stays tappable — the lone 50% tap refuses in place
+    // #195: Done stays tappable, the tap refuses in place
     fireEvent.click(screen.getByTestId('split-save'));
-    expect(screen.getByTestId('split-editor')).toBeTruthy(); // still open
+    expect(screen.getByTestId('split-editor')).toBeTruthy();
     expect(screen.getByTestId('split-save').getAttribute('aria-invalid')).toBe('true');
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '100' } });
@@ -1400,7 +1239,6 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // a controlled newest card with a long description
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-split'), { trackOutbox: false });
     const iso = '2020-03-01'; // oldest-first queue: an old date makes this the CURRENT card
@@ -1416,46 +1254,37 @@ describe('ReviewScreen (demo identity)', () => {
     });
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE'), { timeout: 5000 });
 
-    // the full description shows on tap (clamped by default). The clamp
-    // lives on the INNER span: display on the button itself killed
-    // -webkit-box and the toggle never visually worked
+    // the clamp lives on the inner span: display on the button itself killed -webkit-box
     const desc = screen.getByTestId('review-description');
     expect(screen.getByTestId('review-description-text').className).toContain('line-clamp-2');
     fireEvent.click(desc);
     // waitFor: under coverage instrumentation the expand re-render can lag the click
     await waitFor(() => expect(screen.getByTestId('review-description-text').className).not.toContain('line-clamp-2'));
 
-    // #211: the category chip opens the split-CATEGORIES editor with ONE
-    // entry — a second is added explicitly; the row stays ONE transaction
     fireEvent.click(screen.getByTestId('review-category-chip'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(await screen.findByTestId('part-cat-add'));
-    // the fresh entry is uncategorized + 0 — no THIRD until it's done
+    // the fresh entry is uncategorized + 0: no third until it is done
     await screen.findByTestId('part-cat-amount-1');
     expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
     const amount0 = (await screen.findByTestId('part-cat-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
 
-    // focus empties the field so typing replaces (one frame later — the
-    // #134 iOS fix); blank blur restores
+    // focus empties the field one frame later (#134 iOS fix); a blank blur restores
     fireEvent.focus(amount0);
     await waitFor(() => expect(amount0.value).toBe(''));
     fireEvent.blur(amount0);
     expect(amount0.value).toBe('10,00');
 
-    // 6,00 + auto-balanced 4,00 = a valid spread
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '6,00' } });
     fireEvent.blur(amount0);
     fireEvent.click(await screen.findByTestId('part-cat-remainder'));
-    // the fresh entry starts Uncategorized — Done holds until it's real
     fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // draft model: the spread STAGES — the card lists one row per
-    // category, NO part deck (this is not a split transaction), and the
-    // row keeps its recurring/event affordances (it is still ONE event)
+    // the spread stages: one row per category, no part deck (not a split), recurring/event affordances stay
     await waitFor(() => expect(screen.getByTestId('review-cat-coffee')).toBeTruthy());
     expect(screen.getByTestId('review-cat-groceries')).toBeTruthy();
     expect(screen.queryByTestId('review-part-deck')).toBeNull();
@@ -1463,8 +1292,6 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
     expect((await db.transactions.get('tx-split'))?.cats).toBeUndefined();
 
-    // Confirm lands the whole draft in one write — the row's own cats,
-    // never a split container
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(async () => {
       const row = await db.transactions.get('tx-split');
@@ -1483,7 +1310,6 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // stage a deliberate category — the chip's cats editor (#211)
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
@@ -1491,10 +1317,8 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // re-pick Set aside (◆) — the ask opens on the pick; the savings
-    // pot answers it. The user's category STAYS the story ("we are not
-    // bound to transaction type anymore"); the link makes it a movement
-    // and the view derives transfer from the real counterparty.
+    // the person's category stays the story; the link makes it a movement
+    // the view derives transfer from the real counterparty
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
@@ -1503,7 +1327,6 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
-    // #228 feedback: the card's Counterparty row names the pot
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
@@ -1518,14 +1341,12 @@ describe('ReviewScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('review-skip-btn'));
     fireEvent.click(screen.getByTestId('review-skip-btn'));
-    // everything skipped: the pile note offers a second pass
     const note = await screen.findByTestId('review-skipped-note');
     expect(note.textContent).toContain('3');
     fireEvent.click(screen.getByTestId('review-reset-skipped'));
     expect(await screen.findByTestId('review-card')).toBeTruthy();
 
-    // leaving review and coming back starts the deck from the top again
-    // (user ruling 2026-07-19: skips are per-visit, not per-session)
+    // leaving review and coming back starts the deck from the top: skips are per-visit, not per-session
     fireEvent.click(screen.getByTestId('review-skip-btn'));
     cleanup();
     renderApp('/review');
@@ -1541,7 +1362,6 @@ describe('ReviewScreen (user identity, split settlements)', () => {
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
 
-    // my local queue holds an incoming €15.00 needing review
     const db = new MunniDB(USER_TEST_DB);
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('transaction', 's-user', 'tx-in', {
@@ -1581,9 +1401,8 @@ describe('ReviewScreen (user identity, split settlements)', () => {
     expect(chip.textContent).toContain('Barcelona');
 
     fireEvent.click(chip);
-    // a settlement is money from a PERSON — R2 makes transfer strictly
-    // account-to-account, so the chip stages the app's own concept for
-    // money-back-from-people: received reimbursement
+    // a settlement is money from a person and transfer is strictly account-to-account (R2)
+    // so the chip stages received reimbursement
     await waitFor(() =>
       expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false),
     );
@@ -1621,8 +1440,6 @@ describe('ReviewScreen (own-account transfers)', () => {
       api: { 'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
     });
 
-    // #219: no chip; #228 feedback: the card's Counterparty row tells
-    // the auto-applied link
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Credit card'));
     expect(screen.queryByTestId('review-own-transfer')).toBeNull();
     expect(screen.queryByTestId('review-cat-counter-transferOut')).toBeNull();
@@ -1635,7 +1452,7 @@ describe('ReviewScreen (own-account transfers)', () => {
       const check = new MunniDB(USER_TEST_DB);
       const tx = await check.transactions.get('tx-topup');
       check.close();
-      // credit counter-account: a transfer between own accounts (user ruling)
+      // a credit counter-account makes a transfer between own accounts
       expect(tx).toMatchObject({ linkedAccountId: 'acct-cc', needsReview: 0 });
     });
   }, 15_000);
@@ -1661,22 +1478,18 @@ describe('ReviewScreen (own-account transfers)', () => {
       api: { 'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
     });
 
-    // the auto-link pre-applied; the card's Counterparty row shows it
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Credit card'));
     fireEvent.click(screen.getByTestId('review-category-chip'));
     await screen.findByTestId('part-cats-editor');
-    // #218: with the credit counter attached the picker narrows to what
-    // it can mean — transfer or debt payment, nothing else
+    // #218: with a credit counter attached the picker narrows to transfer or debt payment
     fireEvent.click(screen.getByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-loanRepayment');
     expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
-    // …and a pick the counter can ALSO mean keeps the link, no re-ask
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
     await waitFor(() => expect(screen.getByTestId('part-cat-0').textContent).toContain('Repaid'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Credit card'));
-    // the way out (#228 feedback): the card row's detach door — removal
-    // RESETS the category, and the full picker is free again
+    // removing the counterparty resets the category and frees the full picker (#228)
     fireEvent.click(screen.getByTestId('review-counter-row'));
     fireEvent.click(await screen.findByTestId('counter-detach'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account'));
@@ -1698,7 +1511,6 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  /** two shops in the space with an unlinked receipt each, and the flagged card the Amazon one fits */
   async function seedShopsAndCard() {
     renderApp('/home');
     await screen.findByTestId('screen-home');
@@ -1726,7 +1538,6 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Amazon.nl'), { timeout: 5000 });
     expect(screen.getByTestId('review-receipt-row').textContent).toContain('suggested');
 
-    // the sheet: the suggestion is marked; every receipt sits behind the search and the parties' chips
     fireEvent.click(screen.getByTestId('review-receipt-row'));
     await screen.findByTestId('review-receipt-sheet');
     expect(screen.getByTestId('review-receipt-pick-rcpt:amazon-nl:demo_conn_amz:a1').getAttribute('aria-pressed')).toBe('true');
@@ -1739,7 +1550,6 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Coolblue'));
     expect(screen.getByTestId('review-receipt-row').textContent).not.toContain('suggested');
 
-    // confirm attaches the pick
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -1823,7 +1633,6 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     expect(screen.getByTestId('review-cats').textContent).toMatch(/Grocery/);
   }, 25_000);
 
-  /** the card's Amazon receipt, attached already */
   async function attachAmazonToCard() {
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revatt'), { trackOutbox: false });
@@ -1841,14 +1650,12 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await screen.findByTestId('review-card');
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Amazon.nl'), { timeout: 5000 });
 
-    // the eye: the receipt itself, straight away, in a sheet over the card — a look only
     fireEvent.click(screen.getByTestId('review-receipt-look'));
     await waitFor(() => expect(screen.getByTestId('review-receipt-look-head').textContent).toContain('Amazon.nl'));
     expect(screen.getByTestId('review-receipt-look-view-total').textContent).toMatch(/€[1-9]/);
     expect(screen.queryByTestId('review-receipt-look-attach')).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    // the rest of the row: the list — the attached one first, marked, and one more beside it
     fireEvent.click(screen.getByTestId('review-receipt-row'));
     await screen.findByTestId('review-receipt-sheet');
     const suggestions = screen.getByTestId('review-receipt-pick-list').querySelectorAll('[data-testid$="-row"]');
@@ -1859,7 +1666,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     fireEvent.click(await screen.findByTestId('review-receipt-peek-attach'));
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Coolblue'));
 
-    // staged until the confirm, which swaps: Coolblue holds the payment, Amazon is free again but never offered back to it
+    // staged until the confirm, which swaps: Amazon is free again but never offered back to this payment
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -1909,7 +1716,6 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await screen.findByTestId('review-bulk', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
 
-    // the walk: the sibling named, its fit marked; the confirmed card stays up meanwhile
     const context = await screen.findByTestId('receipt-queue-context', {}, { timeout: 8000 });
     expect(context.textContent).toContain('1/1');
     expect(screen.getByTestId('review-card').getAttribute('data-held')).toBe('1');
@@ -1942,7 +1748,7 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     await waitFor(() => expect(screen.getByTestId('review-receipt-row').textContent).toContain('Amazon.nl'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('review-receipt-row'));
     await screen.findByTestId('review-receipt-sheet');
-    // no suggestion (it is attached), but in the whole list with the note — and still pickable for this card
+    // an attached receipt is no suggestion but stays in the whole list with a note, still pickable for this card
     expect(screen.queryByTestId(`review-receipt-pick-${COOLBLUE}`)).toBeNull();
     const note = await screen.findByTestId(`review-receipt-all-${COOLBLUE}-attached`);
     expect(note.textContent).toContain('Attached to');
@@ -1968,7 +1774,6 @@ describe('the receipt on the review card (user 2026-10-06)', () => {
     expect(receiptSettlement({ kind: 'none' }, null, undefined, r('c'))).toEqual({ kind: 'keep' });
     expect(receiptSettlement(AUTO_STAGE, null, undefined, r('c'))).toEqual({ kind: 'pick', receipt: r('c') });
     expect(receiptSettlement(AUTO_STAGE, null, undefined, null)).toEqual({ kind: 'keep' });
-    // what the sheet marks: the person's pick, nothing after None, else the attached one or the best match
     expect(markedReceiptId(picked('b'), 'a', 'c')).toBe('b');
     expect(markedReceiptId({ kind: 'none' }, 'a', 'c')).toBeNull();
     expect(markedReceiptId(AUTO_STAGE, 'a', 'c')).toBe('a');

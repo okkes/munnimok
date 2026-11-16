@@ -1,5 +1,3 @@
-// .github/scripts/play-publish.mjs (#596): a publish that the store answered with a temporary error is
-// tried again on a fresh edit; a failure another try cannot cure ends the run at once.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -8,7 +6,6 @@ import { publishWithRetries, setupGap } from '../../.github/scripts/play-publish
 
 const at = (path) => fileURLToPath(new URL(path, import.meta.url));
 
-/** a publish that fails with the given messages in turn, then gets through */
 function store(failures) {
   let tries = 0;
   const slept = [];

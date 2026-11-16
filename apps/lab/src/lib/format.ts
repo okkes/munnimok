@@ -1,7 +1,5 @@
-/** a moment as the operator's locale writes it, or a dash */
 export const when = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
 
-/** "3 min ago" / "2 h ago" / "4 d ago" — a glance at freshness, with the exact moment on hover */
 export function ago(iso: string | null | undefined, now: number = Date.now()): string {
   if (!iso) return '—';
   const ms = now - Date.parse(iso);
@@ -14,10 +12,8 @@ export function ago(iso: string | null | undefined, now: number = Date.now()): s
   return `${Math.round(h / 24)} d ago`;
 }
 
-/** the first dozen characters of an id — enough to recognise, short enough to read */
 export const shortId = (id: string, n = 12): string => (id.length > n ? `${id.slice(0, n)}…` : id);
 
-/** "60 min" / "1 h 30 min" / "2 d" */
 export function minutes(total: number): string {
   if (total < 60) return `${total} min`;
   if (total % 1440 === 0) return `${total / 1440} d`;

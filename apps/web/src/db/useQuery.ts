@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StorageBackend } from './backend';
 
-/** #361: last-emitted values by explicit cacheKey — a REMOUNT renders
- * the previous data instantly instead of flashing the loading state
- * while the subscription warms (every home-tab return re-created the
- * hooks from scratch). Session-scoped; keys must carry the space id so
- * a space switch never shows another space's rows. */
+// #361: last-emitted values by cacheKey: a remount renders them at once instead of flashing loading;
+// keys must carry the space id so a space switch never shows another space's rows
 const LAST_VALUES = new Map<string, unknown>();
 
-/** #363: the cache belongs to ONE identity — the data provider clears it
- *  on every sign-in/out and wipe, so a new account never renders the last
- *  user's rows; the test harness clears it between specs (fresh databases
- *  under the same space id) */
+// #363: the cache belongs to ONE identity: cleared on every sign-in/out and wipe,
+// and between test specs (fresh databases, same space id)
 export function clearQueryCache(): void {
   LAST_VALUES.clear();
 }
@@ -21,7 +16,6 @@ interface Listener {
   onError: (error: unknown) => void;
 }
 
-/** one live query serving every hook that asked for the same key */
 interface SharedQuery {
   listeners: Set<Listener>;
   unsubscribe: () => void;
@@ -29,17 +23,8 @@ interface SharedQuery {
   last?: { value: unknown };
 }
 
-/**
- * 2026-10-09 (user: Confirm stalled 3–4 s on the review): the review alone
- * mounted FIVE hooks over the space's transactions — the deck, the part
- * cards, the bulk sheet — and every one of them was its own live query, so
- * one write re-ran the whole join five times (measured: 83 joins for one
- * bulk confirm). Hooks that name a cacheKey now SHARE one live query per
- * backend and key: the first hook opens it, later ones join (and read the
- * last answer at once), the last one leaving closes it. The key is the
- * contract — it must determine the query (space id included), exactly as
- * the remount cache above already demands.
- */
+// hooks that name a cacheKey SHARE one live query per backend and key (one write re-ran the review's join five times);
+// the key must determine the query, space id included
 const SHARED = new WeakMap<StorageBackend, Map<string, SharedQuery>>();
 
 function joinShared(
@@ -81,14 +66,8 @@ function joinShared(
   };
 }
 
-/**
- * Live query over the storage seam (replaces dexie-react-hooks'
- * useLiveQuery on the way to E2): undefined while loading, then the
- * result, re-emitted on every relevant data change. Errors rethrow into
- * the render so boundaries see them — same contract as useLiveQuery.
- * An optional `cacheKey` opts into the remount cache above and into the
- * shared subscription (one live query per key).
- */
+// undefined while loading; errors rethrow into the render so boundaries see them (as useLiveQuery);
+// cacheKey opts into the remount cache and the shared query
 export function useQuery<T>(backend: StorageBackend, query: () => Promise<T>, deps: unknown[]): T | undefined;
 export function useQuery<T, I>(
   backend: StorageBackend,

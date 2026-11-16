@@ -8,7 +8,6 @@ import { runChip, runSummary } from '../bench/retention/retentionFacts';
 import { outcomeLine, stateChip } from '../jobs/jobFacts';
 import { agentHealth } from './AgentsScreen';
 
-/** the agent's own claims, in words */
 export function capabilityLines(agent: AgentView): { label: string; value: string }[] {
   const c = agent.capabilities;
   if (!c) return [{ label: 'Claims', value: 'none recorded' }];
@@ -20,17 +19,11 @@ export function capabilityLines(agent: AgentView): { label: string; value: strin
   ];
 }
 
-/** a hosted slot's holder, in words */
 export function holderLine(agent: AgentView, holder: string | null): string {
   if (agent.bound) return `${holder ?? 'somebody'} since ${when(agent.boundAt)}`;
   return agent.resetting ? 'wiping…' : 'free';
 }
 
-/**
- * One agent in full (#441 L4): what it claims, the logins it keeps, the
- * runs it took, the retention runs made on it, and the doors — revoke,
- * take a hosted slot back, run the retention bench on it.
- */
 export function AgentScreen({ id, call, busy, act }: Readonly<{ id: string } & ScreenProps>) {
   const [agent, setAgent] = useState<AgentView | null | 'unreachable' | 'loading'>('loading');
   const [holder, setHolder] = useState<string | null>(null);

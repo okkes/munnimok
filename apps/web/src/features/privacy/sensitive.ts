@@ -1,15 +1,8 @@
 import { create } from 'zustand';
 import type { OverviewKind } from '@/domain/overview';
 
-/**
- * #530 (user): hide the sensitive figures while showing munni to someone —
- * the balances, what comes in and what is put aside read as stars. A device
- * preference, never synced: it is about THIS screen being watched (the app
- * lock that guards switching it off is per device too), and a demo on the
- * phone must not blank the numbers on the laptop. Stored like the theme and
- * the language — read synchronously, so the first paint never shows the
- * figures it should hide.
- */
+// #530: a device preference, never synced: it is about THIS screen being watched, and a phone demo must not blank the laptop
+// read synchronously, so the first paint never shows figures it should hide
 const KEY = 'munni_hide_sensitive';
 
 /** what a hidden figure reads — one width for every amount, so its length says nothing */
@@ -44,7 +37,6 @@ export const useHideSensitive = create<HideSensitiveState>((set) => ({
   },
 }));
 
-// another tab of this device switched it
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (event) => {
     if (event.key === KEY || event.key === null) useHideSensitive.setState({ on: readStored() });

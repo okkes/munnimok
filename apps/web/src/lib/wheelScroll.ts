@@ -1,13 +1,6 @@
-/**
- * #153 (user): desktop mice without a horizontal wheel — vertical
- * wheeling over a horizontal-only scroller (icon strips, chip rows,
- * filter bars) drives it sideways. ONE bubble-phase listener covers the
- * whole app; the first scrollable ancestor decides: a vertical scroller
- * keeps the wheel, a horizontal one consumes it, and at either end the
- * event falls through so the page keeps scrolling naturally.
- */
+// #153: desktop mice without a horizontal wheel: ONE bubble-phase listener; the first scrollable ancestor decides
+// (a vertical scroller keeps the wheel, a horizontal one consumes it, at either end the event falls through)
 export function wheelToHorizontal(e: WheelEvent): void {
-  // ctrl+wheel is zoom; pure-horizontal wheels already work
   if (e.deltaY === 0 || e.ctrlKey || e.defaultPrevented) return;
   let el = e.target instanceof Element ? e.target : null;
   for (; el && el !== document.body; el = el.parentElement) {

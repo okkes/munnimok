@@ -10,12 +10,8 @@ using Xunit;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// Deleting one financial account (its feed), ruling revoke-mine-only:
-/// my consent always goes (its end at the party is ConnectorOpenBankingTests'
-/// walk); raw feed + per-space overlays are erased only when no other user
-/// still covers the account.
-/// </summary>
+// revoke-mine-only: my consent always goes; raw feed and per-space overlays
+// are erased only when no other user covers the account
 public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
 {
     private readonly FeedsApiFactory _factory;
@@ -64,7 +60,6 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
         var result = await response.Content.ReadFromJsonAsync<FeedDeletionResult>();
         Assert.True(result!.Erased);
 
-        // the feed is gone entirely; the viewing space received tombstones
         Assert.Equal(HttpStatusCode.Forbidden, (await alice.GetAsync($"/sync/{feed}/pull?since=0")).StatusCode);
         var pull = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
         Assert.Contains(pull!.Ops, o => o.Entity == "txMeta" && o.EntityId == ImportIds.TxMetaId(spaceId, txId) && o.Deleted);
@@ -96,7 +91,7 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
         await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId, "2026-01-01"));
         // bob's own consent covered the same IBAN (family shared account): the
         // relay's ingest made him a co-owner of the feed (#240)
-        await bob.GetAsync("/me/spaces"); // ensures bob's user row exists
+        await bob.GetAsync("/me/spaces");
         var aliceId = await UserIdAsync(aliceSub);
         var bobId = await UserIdAsync(bobSub);
         using (var scope = _factory.Services.CreateScope())
@@ -117,7 +112,6 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
         Assert.Equal(bobId, feedRow.OwnerUserId);
         Assert.False(await verifyDb.FeedOwners.AnyAsync(o => o.FeedSpaceId == feed));
         Assert.True(await verifyDb.EntityRows.AnyAsync(r => r.SpaceId == feed));
-        // alice's attachment is gone
         Assert.False(await verifyDb.SpaceAccountLinks.AnyAsync(l => l.FeedSpaceId == feed && l.AttachedBy == aliceId));
     }
 

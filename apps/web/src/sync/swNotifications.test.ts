@@ -8,21 +8,18 @@ describe('buildNotification', () => {
     expect(buildNotification({ type: 'test' }, 'en')).toMatchObject({ title: 'munni', body: 'Test notification — push reaches this device ✓', tag: 'test', url: './#/settings', pull: false });
     expect(buildNotification({ type: 'test' }, 'nl')!.body).toContain('Testmelding');
     expect(buildNotification({ type: 'test' }, 'tr')!.body).toContain('Test bildirimi');
-    // #551: sent from a space's settings it names that space and returns there
     expect(buildNotification({ type: 'test', spaceId: 's2', spaceName: 'Trip' }, 'en')).toMatchObject({ title: 'Trip', url: './#/settings?space=s2' });
   });
 
   it('announces new transactions with count, per-space tag and a pre-sync pull', () => {
     const one = buildNotification({ type: 'new-transactions', spaceId: 's1', spaceName: 'Household', count: 1 }, 'en')!;
     expect(one).toMatchObject({ body: '1 new transaction arrived', tag: 'new-tx-s1', pull: true, pullSpaceId: 's1' });
-    // #551: the lock screen says which space the transactions landed in
     expect(one.title).toBe('Household');
-    // #132: the tap lands in the announced space's REVIEW — the space
-    // rides the hash query so cold starts carry it too
+    // #132: the space rides the hash query so cold starts carry it too
     expect(one.url).toBe('./#/review?space=s1');
     const many = buildNotification({ type: 'new-transactions', count: 7 }, 'nl')!;
     expect(many.body).toBe('7 nieuwe transacties ontvangen');
-    expect(many.title).toBe('munni'); // no name to give
+    expect(many.title).toBe('munni');
     expect(many.tag).toBe('new-tx-all');
     expect(many.url).toBe('./#/review');
   });
@@ -43,7 +40,6 @@ describe('buildNotification', () => {
 
     const join = buildNotification({ type: 'space-join', spaceName: 'Big Family' }, 'nl')!;
     expect(join.body).toBe('Iemand doet nu mee in "Big Family"'); // missing name falls back
-    // #551: with the space named, the tap opens that space's members
     expect(buildNotification({ type: 'space-join', fromName: 'Bob', spaceId: 'sp7', spaceName: 'Big Family' }, 'en')!.url).toBe('./#/spaces/sp7/members');
   });
 
@@ -59,13 +55,11 @@ describe('buildNotification', () => {
     expect(buildNotification({ ...split, kind: 'settled', cents: -20_450 }, 'nl')!.body).toBe('"Ski trip" is afgerekend: je betaalt 204.50 EUR');
     expect(buildNotification({ ...split, kind: 'settled', cents: 0 }, 'tr')!.body).toBe('"Ski trip" hesaplaşıldı: borcun da alacağın da yok');
     expect(buildNotification({ ...split, kind: 'payment-paid', cents: 1500 }, 'en')!.body).toBe('Anna marked a payment of 15.00 EUR as paid in "Ski trip"');
-    // every kind the server sends has its words in every language
     for (const lang of ['en', 'nl', 'tr']) {
       for (const kind of ['join-request', 'refused', 'invite-accepted', 'invite-declined', 'delete-planned', 'delete-stopped', 'made-owner']) {
         expect(buildNotification({ ...split, kind }, lang)!.body).toContain('Ski trip');
       }
     }
-    // a kind this build does not know shows nothing; a split id that is no id never rides into a route
     expect(buildNotification({ ...split, kind: 'something-new' }, 'en')).toBeNull();
     expect(buildNotification({ ...split, splitId: '../x?y', kind: 'approved', fromName: undefined }, 'en')!.url).toBe('./#/splits');
   });
@@ -75,7 +69,6 @@ describe('buildNotification', () => {
     expect(removed.body).toBe('You were removed from "Big Family" by Alice');
     expect(removed).toMatchObject({ url: './#/spaces', pull: false, tag: 'member-removed' });
 
-    // the role NAME localizes too, and unknown roles pass through raw
     const role = buildNotification({ type: 'member-role', spaceName: 'Aile', role: 'reader' }, 'tr')!;
     expect(role.body).toBe('"Aile" alanındaki rolün artık okuyucu');
     const roleNl = buildNotification({ type: 'member-role', spaceName: 'Huis', role: 'wizard' }, 'nl')!;
@@ -87,7 +80,7 @@ describe('buildNotification', () => {
     expect(buildNotification({ type: 'mystery' }, 'en')).toBeNull();
     expect(buildNotification({}, 'en')).toBeNull();
     const fallback = buildNotification({ type: 'friend-accept', fromName: 'Bob' }, 'xx')!;
-    expect(fallback.body).toBe('Bob accepted your friend request'); // en fallback
+    expect(fallback.body).toBe('Bob accepted your friend request');
   });
 });
 

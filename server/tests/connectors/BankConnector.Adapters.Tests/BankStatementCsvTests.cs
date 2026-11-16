@@ -5,17 +5,8 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// The same statement, exported twice.
-///
-/// A Dutch bank's export differs by the user's interface language, and the
-/// two files differ in every mechanical way there is: delimiter, decimal
-/// separator, date format, quoting, and whether the amount is signed or
-/// paired with a separate Af/Bij column. They still describe one statement,
-/// so they must normalise to one set of amounts, dates and counterparties -
-/// and that equivalence is the assertion that catches a column-shift bug no
-/// single-file test can see.
-/// </summary>
+// a Dutch bank's export varies with the interface language (delimiter, decimal, date, quoting, Af/Bij vs signed):
+// both must normalise equal, which catches column-shift bugs a single-file test cannot see
 public sealed class BankStatementCsvTests
 {
     private const string SessionId = "ses_0123456789abcdef0123456789abcdef";
@@ -80,9 +71,7 @@ public sealed class BankStatementCsvTests
 
         Assert.Equal(dutch.Count, english.Count);
 
-        // Everything the consumer matches and reconciles on is identical.
-        // Only the free-text description differs, because that is the part
-        // the bank itself localised.
+        // only the free-text description differs: the bank localised it
         Assert.Equal(dutch.Select(t => t.BookedAt), english.Select(t => t.BookedAt));
         Assert.Equal(dutch.Select(t => t.Amount.Value), english.Select(t => t.Amount.Value));
         Assert.Equal(dutch.Select(t => t.Amount.Currency), english.Select(t => t.Amount.Currency));
@@ -108,10 +97,8 @@ public sealed class BankStatementCsvTests
     [Fact]
     public void The_export_s_own_running_balance_is_verified_end_to_end()
     {
-        // Where a bank hands over a redundant fact, check it. This is the
-        // chain that catches a reordered file, a misread separator, an
-        // inverted sign or a dropped row - all of which otherwise produce
-        // believable garbage.
+        // a redundant fact from the bank is checked: the chain catches a reordered file, misread separator, inverted sign
+        // or dropped row
         BalanceChain.Verify(Dutch(), "test-bank");
         BalanceChain.Verify(English(), "test-bank");
 
@@ -171,8 +158,6 @@ public sealed class BankStatementCsvTests
 
         Assert.NotEqual(baseline, altered[0].ExternalId);
     }
-
-    // ---- defensive parsing -------------------------------------------------
 
     [Fact]
     public void An_unresolvable_required_column_names_the_column_and_the_headers_it_saw()
@@ -265,7 +250,6 @@ public sealed class BankStatementCsvTests
         var error = Assert.Throws<ConnectorException>(() => BankStatementCsv.ReadTransactions(
             NoAccount, new BankStatementCsvOptions { SessionId = SessionId, ProviderId = "test-bank" }));
 
-        // The transactions would have nowhere to attach.
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Contains("account", error.Detail, StringComparison.Ordinal);
     }

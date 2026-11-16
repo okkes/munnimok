@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 import { syncNativeStatusBar } from '@/lib/platform';
 
 export type Theme = 'light' | 'dark';
-/** 'system' follows the device live */
 export type ThemeMode = Theme | 'system';
 const LS_KEY = 'munni_theme';
 
@@ -21,7 +20,7 @@ const deviceTheme = (): Theme => (window.matchMedia('(prefers-color-scheme: dark
 function readStoredMode(): ThemeMode {
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'light' || stored === 'dark') return stored;
-  return 'system'; // first launch and "follow device" both live here
+  return 'system';
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -29,7 +28,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [device, setDevice] = useState<Theme>(deviceTheme);
   const theme: Theme = mode === 'system' ? device : mode;
 
-  // system mode tracks the OS live (the user may toggle dark mode mid-session)
   useEffect(() => {
     if (mode !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -56,8 +54,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setModeState(next);
   }, []);
 
-  // the quick toggle keeps its two-state simplicity: it always pins an
-  // explicit theme (leaving "system" is a deliberate act, like entering it)
+  // the quick toggle always pins an explicit theme: leaving "system" is a deliberate act
   const toggle = useCallback(() => {
     setModeState((prev) => {
       const current = prev === 'system' ? deviceTheme() : prev;

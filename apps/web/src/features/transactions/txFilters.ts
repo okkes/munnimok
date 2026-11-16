@@ -1,12 +1,7 @@
 import { EMPTY_FILTERS } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
 
-/**
- * #140 (user): the list's filters survive a detour into a transaction
- * (mobile unmounts the list screen) but reset on a fresh app start and
- * whenever another TAB is chosen. Module state gives exactly that
- * lifetime — same idea as the scroll memory, minus the persistence.
- */
+/** filters survive a detour into a transaction but reset on a fresh start or another tab: module state (#140) */
 export interface TxFilterState {
   query: string;
   uncatOnly: boolean;
@@ -32,7 +27,6 @@ export const readTxFilters = (): TxFilterState => snapshot;
 export const writeTxFilters = (next: TxFilterState): void => {
   snapshot = next;
 };
-/** a different tab was chosen — the lens resets (user rule, #140) */
 export const clearTxFilters = (): void => {
   snapshot = EMPTY_TX_FILTERS;
 };

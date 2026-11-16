@@ -7,11 +7,7 @@ import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { cachedCatalog } from '@/sync/catalogSync';
 import { localToday } from './recurring';
 
-/**
- * Per-space attention (arc 7): what a space would ask of you if you
- * switched into it — unreviewed transactions and busted budgets.
- * Computed lazily when a surface opens; never a background cost.
- */
+/** computed lazily when a surface opens; never a background cost */
 export interface SpaceAttention {
   reviewCount: number;
   budgetOver: boolean;
@@ -23,7 +19,6 @@ export async function spaceAttention(store: StorageBackend, spaceId: string): Pr
   const budgets = (await store.bySpace('budget', spaceId)).filter((b) => b.deleted === 0);
   let budgetOver = false;
   if (budgets.length > 0) {
-    // the same per-space catalog recipe the retro linkers use
     const allSpaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
     const allCats = (await store.allRows('category')).filter((c) => c.deleted === 0);
     const vis = visibleCategoryRows(allSpaces, allCats, spaceId);
@@ -35,7 +30,6 @@ export async function spaceAttention(store: StorageBackend, spaceId: string): Pr
   return { reviewCount, budgetOver };
 }
 
-/** the Home avatar's dot: does any OTHER space need attention? */
 export async function anyOtherSpaceNeedsAttention(store: StorageBackend, activeSpaceId: string): Promise<boolean> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && s.id !== activeSpaceId);
   for (const space of spaces) {
@@ -45,7 +39,6 @@ export async function anyOtherSpaceNeedsAttention(store: StorageBackend, activeS
   return false;
 }
 
-/** one lazy pass over every space the moment `active` turns true */
 export function useAttentionMap(active: boolean): ReadonlyMap<string, SpaceAttention> | undefined {
   const { store } = useData();
   const [map, setMap] = useState<ReadonlyMap<string, SpaceAttention> | undefined>(undefined);
@@ -64,7 +57,6 @@ export function useAttentionMap(active: boolean): ReadonlyMap<string, SpaceAtten
   return map;
 }
 
-/** the avatar dot, computed once per Home mount / space switch */
 export function useOtherSpacesDot(): boolean {
   const { store, spaceId } = useData();
   const [dot, setDot] = useState(false);

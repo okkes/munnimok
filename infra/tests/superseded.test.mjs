@@ -1,5 +1,3 @@
-// infra/ci/superseded.mjs: an image-triggered Deploy steps aside only for a newer Deploy run of the same
-// image channel that provably deploys the stack — and deploys whenever GitHub cannot be asked.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';

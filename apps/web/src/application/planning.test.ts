@@ -14,7 +14,6 @@ const TODAY = '2026-03-15';
 const MARCH = { start: '2026-03-01', end: '2026-03-31' };
 const march = planId(SPACE, 'actual', MARCH.start);
 
-/** a checking account, a monthly rent and the rent paid in March (planningModel.test's fixture, trimmed) */
 async function fixture() {
   const store = new DexieBackend(new MunniDB(`munni_ops_${Math.random().toString(36).slice(2)}`));
   const repo = new Repo(store, new HlcClock('ops'), { trackOutbox: false });
@@ -43,15 +42,13 @@ describe('planning ops (#128)', () => {
     await ops.snooze(id, true);
     expect(await store.get('planSubject', id)).toMatchObject({ snoozed: 1, fundedCents: 50_000, icon: 'home-outline', deleted: 0 });
 
-    // Start over tombstones the row — and the plan with it, so the start screen comes back (#557);
-    // the deterministic ids mean starting again and adding the source revives those very rows
+    // Start over tombstones the plan too (#557); ids are deterministic, so adding the source again revives those very rows
     await ops.clearPlan((await modelOf(store)).plan!);
     expect((await store.get('planSubject', id))?.deleted).toBe(1);
     expect((await modelOf(store)).plan).toBeNull();
     await ops.startPlan(MARCH, { kind: 'empty' });
     await ops.addMirrored(march, 'recurring', { id: 'rent', name: 'Rent' });
     const revived = await store.get('planSubject', id);
-    // every field written anew: the skip and the funding did not come back, nor the face it no longer has
     expect(revived).toMatchObject({ deleted: 0, snoozed: 0, fundedCents: 0, name: 'Rent', sourceId: 'rent', segment: 'recurring', order: 0 });
     expect(revived?.icon ?? null).toBeNull();
     expect(revived?.catIds ?? null).toBeNull();
@@ -62,7 +59,6 @@ describe('planning ops (#128)', () => {
     const { store, repo, ops } = await fixture();
     stores.push(store);
     const february = planId(SPACE, 'actual', '2026-02-01');
-    // a yearly insurance: February set 30k aside for it and spent none
     await repo.upsert('recurring', SPACE, 'ins', { name: 'Insurance', kind: 'fixed', amountCents: 120_000, every: 'year', dueDay: 15, dueMonth: 9, active: 1 });
     await repo.upsert('plan', SPACE, february, { kind: 'actual', periodStart: '2026-02-01' });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(february, 'recurring', 'ins'), { planId: february, segment: 'recurring', order: 0, name: 'Insurance', sourceId: 'ins', fundedCents: 30_000 });
@@ -74,39 +70,32 @@ describe('planning ops (#128)', () => {
       return model.viewsOf(model.plan!).find((v) => v.subject.id === id)!;
     };
     const stored = async (id: string) => (await store.get('planSubject', id))?.fundedCents;
-    // born holding what rolled over, with nothing of its own
     expect(await view(ins)).toMatchObject({ fundedCents: 30_000, carriedCents: 30_000 });
     expect(await stored(ins)).toBe(0);
 
-    // the screens speak in what the subject holds: 40k in all is 10k of this period's own
     await ops.fund(ins, 40_000);
     expect(await stored(ins)).toBe(10_000);
     expect((await view(ins)).fundedCents).toBe(40_000);
 
-    // covering the rent from it can take rolled-over money too — the row goes below zero
     await ops.cover(ins, rent, 25_000);
     expect(await stored(ins)).toBe(-15_000);
     expect((await view(ins)).fundedCents).toBe(15_000);
     expect((await view(rent)).fundedCents).toBe(25_000);
-    // …and never more than it holds
     await ops.cover(ins, rent, 9_999_900);
     expect((await view(ins)).fundedCents).toBe(0);
     expect((await view(rent)).fundedCents).toBe(40_000);
 
-    // Fund all gives it back what it should hold: the 30k that rolled over and this period's share
     await ops.fundSegment((await modelOf(store)).plan!, 'recurring');
     const filled = await view(ins);
     expect(filled.fundedCents).toBe(filled.targetCents);
     expect(filled.fundedCents).toBeGreaterThan(30_000);
     expect(filled.status).toBe('funded');
 
-    // Take all back lets go of everything, the rolled-over money too: all of it is money to give again
     await ops.withdrawAll((await modelOf(store)).plan!);
     expect((await view(ins)).fundedCents).toBe(0);
     expect((await view(rent)).fundedCents).toBe(0);
     const after = await modelOf(store);
     expect(after.toAllocateOf(after.plan!)).toBe(after.startedWithOf(after.plan!));
-    // a period ahead keeps what rolls into it when its own funding is taken back
     await ops.fund(ins, 35_000);
     await ops.fundAhead(after.nextAheadPeriod);
     const ahead = (await modelOf(store)).ahead[0];
@@ -138,7 +127,6 @@ describe('planning ops (#128)', () => {
     expect(await last()).toMatchObject({ kind: 'planSet', detail: 'Rent', amountCents: 80_000, fromCents: 60_000 });
     await ops.cover(rent, fun, 5_000);
     expect(await last()).toMatchObject({ kind: 'planCover', detail: 'Fun', detail2: 'Rent', amountCents: 5_000 });
-    // #613: everything a subject holds goes back in one command
     await ops.fund(fun, 0);
     expect(await last()).toMatchObject({ kind: 'planEmpty', detail: 'Fun', amountCents: 5_000 });
     await ops.fillSubject((await modelOf(store)).plan!, rent);
@@ -172,7 +160,6 @@ describe('planning ops (#128)', () => {
     await repo.upsert('plan', SPACE, feb, { kind: 'actual', periodStart: '2026-02-01', segments: [{ kind: 'goals' }] });
     await repo.upsert('planSubject', SPACE, 'gro', { planId: feb, segment: 'expenses', order: 0, name: 'Groceries', catIds: ['groceries'], targetCents: 15_000, fundedCents: 9_000 });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(feb, 'recurring', 'rent'), { planId: feb, segment: 'recurring', order: 0, name: 'Rent', sourceId: 'rent', fundedCents: 100_000 });
-    // a party that was over in February stays behind
     await repo.upsert('event', SPACE, 'party', { name: 'Party', from: '2026-02-10', to: '2026-02-11', budgetCents: 5_000 });
     await repo.upsert('planSubject', SPACE, mirroredSubjectId(feb, 'events', 'party'), { planId: feb, segment: 'events', order: 0, name: 'Party', sourceId: 'party', fundedCents: 5_000 });
 
@@ -185,7 +172,6 @@ describe('planning ops (#128)', () => {
     expect(carried.every((s) => s.fundedCents === 0)).toBe(true);
     expect(carried.find((s) => s.name === 'Groceries')).toMatchObject({ id: `psub:${march}:expenses:gro`, targetCents: 15_000 });
     expect(byBirth(carried).map((s) => s.name)).toEqual(['Groceries', 'Rent']);
-    // a second look: nothing more happens
     expect(await ops.continuePlan()).toBe(false);
     expect((await modelOf(store)).subjectsOf(model.plan!)).toHaveLength(2);
   });
@@ -223,7 +209,6 @@ describe('planning ops (#128)', () => {
     expect(model.sandbox).toBeNull();
     expect(model.continuable).toBe(false);
     expect(await ops.continuePlan()).toBe(false);
-    // starting again revives the row clean: no one-off comes back
     await ops.startPlan(MARCH, { kind: 'empty' });
     model = await modelOf(store);
     expect(model.plan?.oneOffs).toEqual([]);
@@ -247,14 +232,12 @@ describe('planning ops (#128)', () => {
     expect(model.ahead[0].plan.oneOffs).toEqual([]);
     expect(model.blueprints.find((b) => b.id === (saved as { id: string }).id)?.oneOffs).toBeUndefined();
 
-    // Plan it: the subject is born with the money the row had
     const id = await ops.addMirrored(march, 'recurring', { id: 'rent', name: 'Rent' });
     model = await modelOf(store);
     expect(model.plan?.oneOffs).toEqual([]);
     expect(model.viewsOf(model.plan!).find((v) => v.subject.id === id)).toMatchObject({ fundedCents: 100_000, status: 'funded' });
     expect(model.toAllocateOf(model.plan!)).toBe(started - 100_000);
 
-    // 0 takes a one-off back; Take all back empties them all
     await ops.fundOneOff(model.plan!, 'goal:x', 3_000);
     await ops.withdrawAll((await modelOf(store)).plan!);
     expect((await modelOf(store)).plan?.oneOffs).toEqual([]);
@@ -277,7 +260,6 @@ describe('planning ops (#128)', () => {
     expect(model.subjectsOf(model.ahead[0].plan).map((s) => [s.name, s.fundedCents])).toEqual([['Food', 15_000], ['Fun', 0]]);
     expect(model.subjectsOf(model.ahead[0].plan)[0].id).toBe(food.id);
 
-    // the sandbox finds its twin the same way
     const current = model.subjectsOf(model.plan!).find((s) => s.name === 'Food')!;
     await ops.fund(current.id, 12_000);
     await ops.createSandbox();

@@ -10,13 +10,8 @@ import { nl } from '@/i18n/nl';
 import { tr } from '@/i18n/tr';
 import { releaseAccountReferences } from './accountRelease';
 
-/**
- * #546 (user 2026-10-22): the cash wallet is the one default account a
- * space keeps — minted with the space, the ATM pair's counterparty. The
- * other family defaults of #221 retire: nothing mints them any more and
- * the boot's retire pass folds the stored ones away. The id math lives in
- * domain/defaultAccounts.
- */
+// #546: the cash wallet is the one default a space keeps (the ATM pair's counterparty)
+// the other #221 defaults retire on boot
 export { cashWalletId, defaultAccountId } from '@/domain/defaultAccounts';
 export type { DefaultFamily } from '@/domain/defaultAccounts';
 
@@ -25,15 +20,13 @@ const DICTS = { en, nl, tr } as const;
 /** #348: the cash default's pre-rename dict names (all languages) */
 const OLD_CASH_NAMES = new Set(['Default cash', 'Standaard contant', 'Varsayılan nakit']);
 
-/** the space's cash wallet, minted idempotently — the deterministic id lets
- *  two devices converge by LWW; an explicit pick revives a deleted one */
+/** the deterministic id converges two devices by LWW; an explicit pick revives a deleted one */
 export async function ensureCashWallet(store: StorageBackend, repo: Repo, spaceId: string): Promise<string> {
   const id = cashWalletId(spaceId);
   const existing = await store.get('account', id);
   const freshName = DICTS[getCurrentLang()]?.['acct.defaultCash'] ?? en['acct.defaultCash'];
   if (existing?.deleted === 0) {
-    // #348: pre-rename cash wallets heal to the new name — but only
-    // when the row still wears an old DICT name (a user rename stands)
+    // #348: pre-rename wallets heal to the new name, but a user rename stands
     if (OLD_CASH_NAMES.has(existing.name) && existing.name !== freshName) {
       await repo.upsert('account', spaceId, id, { name: freshName });
     }
@@ -80,7 +73,6 @@ async function madeOwn(store: StorageBackend, account: AccountRow): Promise<bool
   return (await store.bySpace('holding', account.spaceId)).some((h) => h.deleted === 0 && h.accountId === account.id);
 }
 
-/** the space's account lists drop a retired default (pool, goals, balance band) */
 async function dropFromSpaceLists(store: StorageBackend, repo: Repo, spaceId: string, accountId: string): Promise<void> {
   const space = await store.get('space', spaceId);
   if (space?.deleted !== 0) return;
@@ -93,15 +85,8 @@ async function dropFromSpaceLists(store: StorageBackend, repo: Repo, spaceId: st
   if (Object.keys(patch).length > 0) await repo.upsert('space', spaceId, spaceId, patch);
 }
 
-/**
- * #546 (user 2026-10-22: "just cleanup those default accounts — none of us
- * leans on them"): the retired family defaults leave their spaces. One the
- * person made their own stays as an ordinary account. Every other one lets
- * go of the rows that named it — they keep their category and go back to
- * the review, which asks for the real account (#555) — its generated legs
- * leave with those links, and it is deleted. Every boot, idempotent: a
- * default this device pulls later retires on the boot after.
- */
+// #546: retired family defaults leave their spaces every boot: one the person made their own stays ordinary; the rest
+// release their rows (kept category, back to review, #555), their legs and links go, then the account is deleted
 export async function retireDefaultAccounts(store: StorageBackend, repo: Repo): Promise<number> {
   // a deleted space's debris is nobody's to fold (#295: it renders nowhere)
   const liveSpaces = new Set((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.id));

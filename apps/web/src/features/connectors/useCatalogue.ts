@@ -23,12 +23,8 @@ export function useRelayInfo(): RelayInfo | null | undefined {
   return info;
 }
 
-/**
- * The relay's own bindings, by connection id (§5.5) — undefined until the
- * relay answered (offline, demo: never), so "no binding" means none is kept.
- * A new refresh key (a connection made since) reads as unknown again until
- * the relay answers for it: a fresh connection never reads as one it dropped.
- */
+// undefined until the relay answered (offline, demo: never), so "no binding" means none is kept;
+// a new refresh key reads as unknown again, so a fresh connection never reads as one it dropped
 export function useRelayBindingsRead(refresh?: string | number): ReadonlyMap<string, BindingView> | undefined {
   const [bindings, setBindings] = useState<ReadonlyMap<string, BindingView> | undefined>(undefined);
   useEffect(() => {
@@ -46,11 +42,7 @@ export function useRelayBindingsRead(refresh?: string | number): ReadonlyMap<str
   return bindings;
 }
 
-/**
- * #524: which of the person's connections fetch each account, by account
- * id, as the relay keeps it per person — undefined until it answers (and
- * on a demo or offline device, where the rows' own stamps stand in).
- */
+// #524: undefined until the relay answers (and on a demo or offline device, where the rows' own stamps stand in)
 export function useRelayAccountLinks(refresh?: string | number): ReachedBy | undefined {
   const [links, setLinks] = useState<ReachedBy | undefined>(undefined);
   useEffect(() => {
@@ -72,11 +64,8 @@ export function useRelayAccountLinks(refresh?: string | number): ReachedBy | und
   return links;
 }
 
-/**
- * The catalogue as the relay serves it, kept in the identity's meta store
- * so the hub renders names and logos offline and the next fetch rides the
- * ETag. Demo and offline identities get an empty catalogue and no call.
- */
+// cached in the identity's meta store so the hub renders offline and the next fetch rides the ETag;
+// demo and offline identities get no call
 export const CATALOGUE_META_KEY = 'connectorCatalogue';
 
 export interface Cached {
@@ -88,7 +77,6 @@ export interface Cached {
 export interface CatalogueState {
   providers: ProviderManifest[];
   byId: ReadonlyMap<string, ProviderManifest>;
-  /** the first load, or a refresh behind a cached copy */
   loading: boolean;
   error: ErrorEnvelope | null;
   reload: () => void;
@@ -107,7 +95,6 @@ const UNREACHABLE: ErrorEnvelope = {
   messageKey: 'connect.error.provider_unavailable',
 };
 
-/** The relay's catalogue into the identity's cache; null when the cached copy still holds (the ETag spared the body). */
 export async function refreshCatalogueCache(store: StorageBackend, cached: Cached | undefined): Promise<Catalogue | null> {
   const fresh = await connectorApi.catalogue(cached?.etag ?? null);
   if (!fresh) return null;

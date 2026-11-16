@@ -7,10 +7,6 @@ using Munni.Api.Push;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// The FCM HTTP v1 client against a scripted handler: service-account
-/// JWT exchange, token caching, message shape, unregistered pruning.
-/// </summary>
 public class FcmPushSenderTests
 {
     private sealed class ScriptedHandler : HttpMessageHandler
@@ -26,7 +22,6 @@ public class FcmPushSenderTests
                 TokenCalls++;
                 var form = await request.Content!.ReadAsStringAsync(ct);
                 Assert.Contains("jwt-bearer", form);
-                // the assertion is a three-part signed JWT
                 var assertion = System.Web.HttpUtility.ParseQueryString(form)["assertion"]!;
                 Assert.Equal(3, assertion.Split('.').Length);
                 return new HttpResponseMessage(HttpStatusCode.OK)
@@ -79,11 +74,10 @@ public class FcmPushSenderTests
         Assert.Contains("3 new transactions arrived", handler.LastSendBody);
         Assert.True(await sender.SendAsync(Row("tok-2"), """{"type":"friend-request","fromName":"Ayse"}""", CancellationToken.None));
 
-        Assert.Equal(1, handler.TokenCalls); // cached until expiry
+        Assert.Equal(1, handler.TokenCalls);
         Assert.Contains("\"token\":\"tok-2\"", handler.LastSendBody);
-        Assert.Contains("\"data\":", handler.LastSendBody); // in-app routing payload rides along
-        // the OS-rendered notification block: closed iOS apps show nothing
-        // for data-only messages (user report: friend requests never showed)
+        Assert.Contains("\"data\":", handler.LastSendBody);
+        // the OS-rendered notification block: closed iOS apps show nothing for data-only messages
         Assert.Contains("\"notification\":", handler.LastSendBody);
         Assert.Contains("sent you a friend request", handler.LastSendBody);
         Assert.Contains("apns-priority", handler.LastSendBody);
@@ -97,9 +91,8 @@ public class FcmPushSenderTests
         Assert.Contains("Bob heeft je een vriendschapsverzoek gestuurd", handler.LastSendBody);
 
         Assert.True(await sender.SendAsync(Row("tok-tr", "tr"), """{"type":"space-invite","fromName":"Bob","spaceName":"Ev"}""", CancellationToken.None));
-        Assert.Contains("alan", handler.LastSendBody); // "… \"Ev\" alanına davet etti"
+        Assert.Contains("alan", handler.LastSendBody);
 
-        // unknown types stay data-only (no notification block)
         Assert.True(await sender.SendAsync(Row("tok-x"), """{"type":"mystery"}""", CancellationToken.None));
         Assert.DoesNotContain("\"notification\":", handler.LastSendBody);
     }
@@ -113,16 +106,13 @@ public class FcmPushSenderTests
         // #551: the lock screen says which space the transactions landed in
         Assert.Equal(("Household", "2 new transactions arrived"), Text("""{"type":"new-transactions","spaceId":"s1","spaceName":"Household","count":2}"""));
         Assert.Equal("Trip", Text("""{"type":"test","spaceId":"s2","spaceName":"Trip"}""").Title);
-        // no readable name: the app's own
         Assert.Equal("munni", Text("""{"type":"new-transactions","spaceId":"s1","spaceName":null,"count":1}""").Title);
-        // a social one names its space in the sentence instead
         Assert.Equal(("munni", "Bob joined \"Household\""), Text("""{"type":"space-join","fromName":"Bob","spaceId":"s1","spaceName":"Household"}"""));
     }
 
     [Fact]
     public void Membership_changes_reach_the_phone_with_their_own_text_in_every_language()
     {
-        // these were data-only before — a closed iPhone showed nothing at all
         Assert.Equal("You were removed from \"Huis\" by Alice", Text("""{"type":"member-removed","fromName":"Alice","spaceName":"Huis"}""").Body);
         Assert.Equal("Je rol in \"Huis\" is nu lezer", Text("""{"type":"member-role","spaceName":"Huis","role":"reader"}""", "nl").Body);
         Assert.Contains("okuyucu", Text("""{"type":"member-role","spaceName":"Ev","role":"reader"}""", "tr").Body);

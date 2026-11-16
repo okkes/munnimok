@@ -2,14 +2,9 @@ import { apiFetch } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import type { Lang } from '@/i18n';
 
-/**
- * Display-currency conversion (currency plan CD2). Raw amounts are
- * NEVER converted in storage — conversion is a rendering aid, applied
- * at format time and marked ≈. Rates are the ECB daily reference via
- * our /rates endpoint; every day this device has seen is cached in
- * meta, so offline renders the last known rate. Offline profiles have
- * no rate source at all — they pin manual rates per currency pair.
- */
+// conversion is a rendering aid, never applied in storage, marked ≈; rates are the ECB daily reference via /rates,
+// every day seen is cached in meta so offline renders the last known rate;
+// offline profiles have no rate source and pin manual rates per pair
 
 export interface DayRates {
   /** the ECB fixing day actually used (≤ the requested day) */
@@ -21,7 +16,6 @@ export interface DayRates {
 interface RatesCache {
   /** keyed by request: 'latest' or the requested yyyy-mm-dd */
   days: Record<string, DayRates>;
-  /** when 'latest' was last fetched (epoch ms) — refresh cadence */
   latestAt?: number;
 }
 
@@ -48,12 +42,7 @@ export async function readManualRates(store: MetaStore): Promise<Record<string, 
   return raw && typeof raw === 'object' ? raw : {};
 }
 
-/**
- * Fetch any missing days into the cache. `dates` entries are yyyy-mm-dd
- * or the sentinel 'latest' (refreshes on a 12h cadence — historical
- * days never change, so they cache forever). Signed-in identities only:
- * callers guard, offline never calls out.
- */
+// 'latest' refreshes every 12h, dated days never change so they cache forever; signed-in identities only: callers guard
 export async function ensureRates(store: MetaStore, dates: readonly string[]): Promise<void> {
   const cache = await readRatesCache(store);
   const now = Date.now();
@@ -69,16 +58,14 @@ export async function ensureRates(store: MetaStore, dates: readonly string[]): P
     const day = (await res.json()) as DayRates;
     if (!day?.rates) continue;
     cache.days[d] = day;
-    // the actual fixing day doubles as a key: a weekend request for the
-    // 18th and a request for the 17th share one entry's data
+    // the actual fixing day doubles as a key: a weekend request and a request for the Friday share one entry's data
     cache.days[day.date] = day;
     if (d === 'latest') cache.latestAt = now;
     changed = true;
   }
   if (!changed) return;
 
-  // prune: 'latest' plus the newest dated keys — the cache must not
-  // grow unbounded on a long-lived device
+  // prune to 'latest' plus the newest dated keys: the cache must not grow unbounded on a long-lived device
   const dated = Object.keys(cache.days).filter((k) => k !== 'latest');
   if (dated.length > MAX_CACHED_DAYS) {
     dated.sort((a, b) => b.localeCompare(a));
@@ -87,11 +74,7 @@ export async function ensureRates(store: MetaStore, dates: readonly string[]): P
   await store.metaPut(RATES_META_KEY, cache);
 }
 
-/**
- * Convert integer cents between currencies via an EUR-based day, with
- * manual pairs as the fallback (offline profiles). Returns null when no
- * rate is known — callers then render the original amount unconverted.
- */
+/** null when no rate is known: callers then render the original amount unconverted */
 export function convertCents(
   cents: number,
   from: string,
@@ -110,12 +93,7 @@ export function convertCents(
   return null;
 }
 
-/**
- * Convert-then-sum for cross-currency totals (the balance band used to
- * add cents of differing currencies numerically). Unknown rates fall
- * back to the raw amount — same as before, but now the total says ≈
- * whenever any real conversion happened.
- */
+// unknown rates fall back to the raw amount; the total says ≈ whenever any real conversion happened
 export function sumCents(
   items: readonly { cents: number; currency: string }[],
   target: string,
@@ -143,12 +121,8 @@ export interface DisplayContext {
   manual: Record<string, number>;
 }
 
-/**
- * The one display formatter (plan: every converted value marked ≈, no
- * banner). `date` picks that day's cached fixing for historically
- * honest lists; totals and balances omit it and use the latest rate.
- * Unknown rate → the true amount in its own currency, unmarked.
- */
+// `date` picks that day's cached fixing for historically honest lists;
+// totals and balances omit it and use the latest rate
 export function fmtDisplay(
   cents: number,
   currency: string,

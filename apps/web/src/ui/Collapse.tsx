@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
-/**
- * Smooth expand/collapse for every tap-to-unfold section (user request:
- * folds were instant). The grid-rows 0fr→1fr trick animates to natural
- * height with no measuring. Children stay mounted through the CLOSING
- * transition (a brief tail) so the fold has something to shrink, then
- * unmount — queries and tests keep seeing closed sections as absent.
- */
+// children stay mounted through the closing transition so the fold has something to shrink, then unmount:
+// tests see closed sections as absent
 export function Collapse({ open, children }: Readonly<{ open: boolean; children: ReactNode }>) {
   const [mounted, setMounted] = useState(open);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

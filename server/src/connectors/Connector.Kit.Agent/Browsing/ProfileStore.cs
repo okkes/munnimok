@@ -7,15 +7,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Browsing;
 
-/// <summary>
-/// The T4 persistent-profile registry: one directory per connection, and the
-/// health the heartbeat reports so the control plane can route a session back
-/// to the machine that actually holds it.
-///
-/// Health is persisted rather than kept in memory, because "your ASN sync is
-/// stale because your VM has been off for three days" is only a real message
-/// if the agent still knows when the profile last worked after a restart.
-/// </summary>
+// health is persisted so "your VM has been off for three days" stays knowable after a restart;
+// the heartbeat reports it for routing
 public sealed partial class ProfileStore
 {
     private const string HealthFileName = "profiles.json";
@@ -42,12 +35,7 @@ public sealed partial class ProfileStore
 
     public string RootDirectory => _root;
 
-    /// <summary>
-    /// The directory this profile lives in, created on first use. The id comes
-    /// off the wire and becomes a path segment, so it is validated rather than
-    /// trusted - a profile id of <c>../../</c> would otherwise be a directory
-    /// traversal handed to us by whoever can reach the lease endpoint.
-    /// </summary>
+    // the id comes off the wire and becomes a path segment: validated, because ../../ would be a directory traversal
     public string DirectoryFor(string profileId, string providerId)
     {
         EnsureSafeId(profileId);
@@ -78,12 +66,8 @@ public sealed partial class ProfileStore
         Persist();
     }
 
-    /// <summary>
-    /// The profile no longer authenticates. Kept on disk rather than deleted:
-    /// only a human can re-authenticate a persistent profile, and throwing the
-    /// directory away would also throw away everything that made that login
-    /// cheap the next time they do.
-    /// </summary>
+    // kept on disk, not deleted: only a human can re-authenticate a persistent profile,
+    // and deleting loses what made that login cheap
     public void MarkUnhealthy(string profileId, string providerId)
     {
         EnsureSafeId(profileId);
@@ -101,12 +85,8 @@ public sealed partial class ProfileStore
     public IReadOnlyList<ProfileHealth> Snapshot() =>
         [.. _health.Values.OrderBy(p => p.Id, StringComparer.Ordinal)];
 
-    /// <summary>
-    /// What a revoked agent does. The profiles hold live provider sessions
-    /// that the control plane can no longer route to, and leaving them on disk
-    /// after the user has revoked the agent is exactly the residue this whole
-    /// custody model exists to avoid.
-    /// </summary>
+    // on revoke: the profiles hold live provider sessions the control plane can no longer route to,
+    // residue the custody model avoids
     public void WipeAll()
     {
         lock (_writeLock)

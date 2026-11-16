@@ -6,12 +6,8 @@ using Npgsql;
 
 namespace Connector.Kit.Hosting.Data;
 
-/// <summary>
-/// Waits for the database server before the start-up migration. Docker brings
-/// a stack back after a daemon or NAS restart without compose's depends_on
-/// order, so the connector could start before postgres resolved and crash in
-/// a loop (#573: "Name does not resolve", then "Connection refused").
-/// </summary>
+/// waits for the database server before the start-up migration: Docker restarts ignore depends_on, so the connector
+/// crash-looped before postgres resolved (#573)
 public static class DatabaseStartup
 {
     public static async Task WaitForServerAsync(

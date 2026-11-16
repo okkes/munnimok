@@ -8,23 +8,12 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// T4: the bring-your-own agent case, and the strongest privacy story in
-/// the platform.
-///
-/// The human authenticates once, ever, into a persistent browser profile on
-/// hardware they own. The sealed bundle that comes back contains no secret
-/// at all - only <c>{agent_id, profile_id}</c> - so the connector never
-/// holds a credential for this provider and a breach of the connector
-/// yields nothing. Jobs route exclusively to that agent; if it is off, the
-/// honest answer is <see cref="ErrorCode.AgentUnavailable"/> with
-/// <see cref="UserAction.StartYourAgent"/>, not a retry loop.
-/// </summary>
+// T4, bring-your-own agent: the sealed bundle holds only {agent_id, profile_id}, no secret, so a breach yields nothing
+// jobs route only to that agent; if it is off the answer is AgentUnavailable with StartYourAgent, not a retry loop
 public sealed class MockBankPersistentAdapter : MockBankAdapter
 {
     public const string ProviderId = "mock-bank-persistent";
 
-    /// <summary>Which enrolled agent holds the profile. Required at connect time.</summary>
     public const string AgentIdKey = "agent_id";
 
     private const int TtlSeconds = 31_536_000;   // a year
@@ -39,12 +28,9 @@ public sealed class MockBankPersistentAdapter : MockBankAdapter
         ManifestVersion = 1,
         Runtime = ProviderRuntime.BrowserPersistent,
         Agent = new AgentRequirement { Required = true, Class = AgentClass.Byo },
-        // The payoff: no human in the loop after the first authentication.
         UnattendedFetch = true,
         SecretCustody = SecretCustody.Agent,
-        // A bundle holding only a pointer is safe anywhere, so a web client
-        // with a BYO agent gets a fully persistent connection - strictly
-        // better than a native client without one.
+        // a bundle holding only a pointer is safe anywhere, so a web client with a BYO agent gets a fully persistent connection
         WebSupport = WebSupport.Ephemeral,
         LogoRef = MockBankManifests.LogoRef,
         NotesKey = "connect.mock_bank.persistent_notes",
@@ -65,11 +51,7 @@ public sealed class MockBankPersistentAdapter : MockBankAdapter
                             Type = FieldType.Text,
                             Secret = false,
 
-                            // REQUIRED, because LoginAsync requires it. The
-                            // manifest said optional while the adapter called
-                            // RequireInput, so leaving it blank passed the
-                            // form and failed the job - a form error dressed
-                            // up as a provider failure.
+                            // required because LoginAsync requires it: optional let a blank pass the form and fail the job
                             Required = true,
                             LabelKey = "connect.mock_bank.field.agent_id",
                             Pattern = "^agt_[0-9a-f]{32}$",
@@ -105,10 +87,7 @@ public sealed class MockBankPersistentAdapter : MockBankAdapter
 
         ctx.Progress(JobStep.OpeningProvider);
 
-        // Note what is absent: no CredentialSubmitted call. Nothing is
-        // submitted upstream here - the human already authenticated into the
-        // profile on their own machine, and this job only records which
-        // profile that was.
+        // no CredentialSubmitted: nothing goes upstream, the human already authenticated into the profile
         ctx.Progress(JobStep.Finalizing);
 
         return Task.FromResult(Connected(ctx, SessionMaterial.ForAgent(agentId, Ids.New(Ids.Profile)), TtlSeconds));

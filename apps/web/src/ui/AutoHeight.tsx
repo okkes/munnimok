@@ -4,15 +4,7 @@ import type { ReactNode } from 'react';
 /** how long a height change takes — the folds' pace (Collapse) */
 const GROW_MS = 240;
 
-/**
- * #540 (user: "the next graph suddenly jumps down or up"): a box whose
- * height follows its content smoothly. The content is measured as it
- * changes — another view, rows arriving — and the box eases from the old
- * height to the new one, clipping only while it moves; the global
- * reduced-motion rule collapses the transition. Before the first
- * measurement (and where nothing measures, as in tests) it is a plain
- * auto-height box.
- */
+/** #540: the box's height eases to its content's, clipping only while it moves; plain auto height until measured */
 export function AutoHeight({ children, className, testId }: Readonly<{ children: ReactNode; className?: string; testId?: string }>) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
@@ -26,7 +18,6 @@ export function AutoHeight({ children, className, testId }: Readonly<{ children:
       const next = content.getBoundingClientRect().height;
       if (next === last) return;
       if (last !== null) {
-        // grow or shrink from where it stands; nothing spills over the card below meanwhile
         box.style.overflow = 'hidden';
         clearTimeout(settle);
         settle = setTimeout(() => {

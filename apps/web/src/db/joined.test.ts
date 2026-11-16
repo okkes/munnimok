@@ -17,7 +17,6 @@ const SPACE = 'space_a';
 const OTHER_SPACE = 'space_b';
 
 async function seedFeed() {
-  // raw account + two raw txs inside the feed space
   await repo.upsert('account', FEED, 'acct1', {
     name: 'Bank · 6789',
     type: 'checking',
@@ -57,13 +56,13 @@ describe('feature B join layer', () => {
   it('a space sees feed transactions from its history-from date, with defaults', async () => {
     await seedFeed();
     const txs = await visibleTransactions(new DexieBackend(db), SPACE);
-    expect(txs.map((t) => t.id)).toEqual(['raw1']); // raw2 is before historyFrom
+    expect(txs.map((t) => t.id)).toEqual(['raw1']);
     const [tx] = txs;
-    expect(tx.spaceId).toBe(SPACE); // viewed through the space
+    expect(tx.spaceId).toBe(SPACE);
     expect(tx.feedSpaceId).toBe(FEED);
-    expect(tx.merchant).toBe('Albert Heijn'); // raw survives
-    expect(tx.txType).toBe('expense'); // default from sign
-    expect(tx.needsReview).toBe(1); // uncategorized until someone decides
+    expect(tx.merchant).toBe('Albert Heijn');
+    expect(tx.txType).toBe('expense');
+    expect(tx.needsReview).toBe(1);
   });
 
   it('a pending (reserved) feed transaction is visible but never review material', async () => {
@@ -97,7 +96,7 @@ describe('feature B join layer', () => {
     expect(againInA.needsReview).toBe(0);
 
     const inB = (await visibleTransactions(new DexieBackend(db), OTHER_SPACE)).find((t) => t.id === 'raw1');
-    expect(inB?.catId).toBeUndefined(); // space B holds its own opinion
+    expect(inB?.catId).toBeUndefined();
     expect(inB?.needsReview).toBe(1);
   });
 
@@ -115,20 +114,18 @@ describe('feature B join layer', () => {
 
   it('#305: the CONSUMER view — a link SOMEONE ELSE attached joins the feed rows, and an archived link keeps serving history', async () => {
     await seedFeed();
-    // re-shape the attachment as a foreign one: the viewing user never
-    // wrote it — visibleTransactions must not care WHO attached
+    // the attachment is foreign: the viewing user never wrote it, and visibleTransactions must not care who attached
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), {
       attachedBy: 'someone-else',
       attachedByName: 'Marie',
     });
     const store = new DexieBackend(db);
     const txs = await visibleTransactions(store, SPACE);
-    expect(txs).toHaveLength(1); // raw2 stays behind the history gate
+    expect(txs).toHaveLength(1);
     expect(txs[0].id).toBe('raw1');
-    expect(txs[0].feedSpaceId).toBe(FEED); // joined, not a legacy merge
+    expect(txs[0].feedSpaceId).toBe(FEED);
 
-    // the sharer LEFT the space: the link archives (sync-a6) but the
-    // stored history keeps serving — the freeze stops NEW data, not old
+    // the sharer left: the link archives but stored history keeps serving; the freeze stops new data, not old
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { archived: 1 });
     const after = await visibleTransactions(store, SPACE);
     expect(after).toHaveLength(1);
@@ -145,11 +142,10 @@ describe('feature B join layer', () => {
     await writeTxTransform(repo, tx, { catId: 'groceries', cats: spread, needsReview: 0 });
 
     const [again] = await visibleTransactions(new DexieBackend(db), SPACE);
-    // joinTx maps the overlay field; the view enriches each entry with
-    // its derived type (#133 r4) — the STORED overlay stays untouched
+    // the view enriches each entry with its derived type (#133 r4); the stored overlay stays untouched
     expect(again.cats).toEqual(spread.map((c) => ({ ...c, txType: 'expense' })));
     const metas = await db.txMeta.where('spaceId').equals(SPACE).toArray();
-    expect(metas[0].cats).toEqual(spread); // stored on the overlay, not the raw row
+    expect(metas[0].cats).toEqual(spread);
     expect((await db.transactions.get('raw1'))?.cats).toBeUndefined();
   });
 
@@ -164,27 +160,22 @@ describe('feature B join layer', () => {
     const store = new DexieBackend(db);
     const view = async () => (await visibleTransactions(store, SPACE)).find((t) => t.id === 'derive1');
 
-    // a bare ◆ movement row derives its family, whatever was stored
     expect((await view())?.txType).toBe('saving');
-    // a counter account makes the movement a transfer (the pot's own leg carries the saving)
     const tx = { id: 'derive1', spaceId: SPACE, feedSpaceId: undefined, txType: 'expense', needsReview: 0, amountCents: -1200 } as never;
     await writeTxTransform(repo, tx, { linkedAccountId: 'pot' });
     expect((await view())?.txType).toBe('transfer');
-    // an ordinary category signs; parts derive per part with the row sign
     await writeTxTransform(repo, tx, { linkedAccountId: null as never, catId: 'coffee' });
     expect((await view())?.txType).toBe('expense');
     await writeTxTransform(repo, tx, {
       splits: [
         { id: 'p1', catId: 'groceries', amountCents: 700 },
         { id: 'p2', catId: 'savingDeposit', amountCents: 500 },
-        // a linked part is a transfer, like a linked row
         { id: 'p3', catId: 'savingDeposit', amountCents: 0, linkedAccountId: 'pot' },
       ],
     });
     const parts = (await view())?.splits ?? [];
     expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving', 'transfer']);
 
-    // the adjustment marker outranks everything — flag and legacy alike
     await repo.upsert('transaction', SPACE, 'adj1', {
       accountId: 'chk', date: '2026-07-04', amountCents: -50, currency: 'EUR',
       merchant: 'Fix', catId: 'groceries', needsReview: 0, adjustment: 1,
@@ -197,9 +188,7 @@ describe('feature B join layer', () => {
   it('#228: spread entries derive with the ROW\'s one counterparty; the row link speaks for the whole', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', SPACE, 'pot', { name: 'Holiday pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    // the settled shape: a linked movement row whose spread holds the
-    // real entry + the settled bookkeeping entry (reimbursed passes
-    // through untouched — it is bookkeeping, not a story)
+    // settled shape: a linked movement row whose spread holds the real entry + a `reimbursed` entry, which passes untouched
     await repo.upsert('transaction', SPACE, 'spread1', {
       accountId: 'chk', date: '2026-07-05', amountCents: -10_000, currency: 'EUR',
       merchant: 'Mixed', catId: 'savingDeposit', needsReview: 0,
@@ -209,7 +198,6 @@ describe('feature B join layer', () => {
         { catId: 'reimbursed', amountCents: 4_000 },
       ],
     });
-    // a REGULAR spread without any link keeps deriving by sign per entry
     await repo.upsert('transaction', SPACE, 'spread2', {
       accountId: 'chk', date: '2026-07-06', amountCents: -5_000, currency: 'EUR',
       merchant: 'Plain', catId: 'groceries', needsReview: 0,
@@ -221,9 +209,7 @@ describe('feature B join layer', () => {
     const store = new DexieBackend(db);
     const rows = await visibleTransactions(store, SPACE);
     const settled = rows.find((t) => t.id === 'spread1');
-    // the real entry derives with the row's link; the settled entry rides untouched
     expect(settled?.cats?.map((c) => c.txType)).toEqual(['transfer', undefined]);
-    // the row's own link names the headline
     expect(settled?.txType).toBe('transfer');
     const plain = rows.find((t) => t.id === 'spread2');
     expect(plain?.cats?.map((c) => c.txType)).toEqual(['expense', 'expense']);
@@ -232,7 +218,6 @@ describe('feature B join layer', () => {
 
   it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {
     await seedFeed();
-    // this space says the checking feed is a SAVINGS pot: rows stamp
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { type: 'savings' });
     const store = new DexieBackend(db);
     const accounts = await visibleAccounts(store, SPACE);
@@ -257,10 +242,8 @@ describe('feature B join layer', () => {
     });
     const store = new DexieBackend(db);
     expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Our groceries card');
-    // the other space (and the global row) keep the global name
     expect((await visibleAccounts(store, OTHER_SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
     expect((await store.get('account', 'acct1'))?.name).toBe('Bank · 6789');
-    // clearing the override falls back to the global name
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: null as never });
     expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
   });
@@ -271,7 +254,6 @@ describe('feature B join layer', () => {
     const store = new DexieBackend(db);
     const raw = await store.get('account', 'acct1');
     expect((await asSpaceAccount(store, SPACE, raw))?.name).toBe('PayPal');
-    // a space that does not attach it, and the space's own rows, keep their own name
     expect((await asSpaceAccount(store, OTHER_SPACE, raw))?.name).toBe('Bank · 6789');
     await repo.upsert('account', SPACE, 'own1', { name: 'Cash wallet', type: 'cash', source: 'manual', currency: 'EUR', balanceCents: 0 });
     expect((await asSpaceAccount(store, SPACE, await store.get('account', 'own1')))?.name).toBe('Cash wallet');
@@ -286,11 +268,8 @@ describe('feature B join layer', () => {
     const store = new DexieBackend(db);
     const tx = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1')!;
     await writeTxTransform(repo, tx, { linkedAccountId: 'pot1' });
-    // #133 removal: nothing writes the type anymore — the VIEW derives
-    // funding from the counterparty
     const linked = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1');
     expect(linked?.txType).toBe('funding');
-    // no mirror leg — the pot shows no transactions, so none are written
     const potRows = (await store.bySpace('transaction', SPACE)).filter(
       (t) => t.accountId === 'pot1' && t.deleted === 0,
     );
@@ -313,8 +292,8 @@ describe('feature B join layer', () => {
     expect(ownRow.catId).toBe('groceries');
 
     await writeTxTransform(repo, ownRow, { notes: 'ok' });
-    expect((await db.transactions.get('legacy1'))?.notes).toBe('ok'); // written in place
-    expect(await db.txMeta.count()).toBe(0); // no overlay for own rows
+    expect((await db.transactions.get('legacy1'))?.notes).toBe('ok');
+    expect(await db.txMeta.count()).toBe(0);
   });
 
   it('visibleAccounts includes attached feed accounts with their link info', async () => {
@@ -326,7 +305,7 @@ describe('feature B join layer', () => {
   });
 
   it('feed and overlay ids are stable across devices/reconnects', () => {
-    expect(feedSpaceId('nl69 ingb 0123 4567 89')).toBe(FEED); // normalization
+    expect(feedSpaceId('nl69 ingb 0123 4567 89')).toBe(FEED);
     expect(txMetaId(SPACE, 'raw1')).toBe(txMetaId(SPACE, 'raw1'));
     expect(txMetaId(SPACE, 'raw1')).not.toBe(txMetaId(OTHER_SPACE, 'raw1'));
   });

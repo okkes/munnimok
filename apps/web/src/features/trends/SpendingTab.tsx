@@ -21,23 +21,16 @@ import type { TrendGraph } from './useTrendGraphs';
 const ACCENT = 'var(--m-accent)';
 const NO_ACCOUNTS: SpaceAccount[] = [];
 
-/** a category's own colour, or its parent's for a sub */
 function colorOf(cats: Catalog, catId: string): string {
   const cat = cats.byId(catId);
   return cat.color ?? (cat.parentId ? cats.byId(cat.parentId).color : undefined) ?? ACCENT;
 }
 
-/** a custom graph wears its one category's face; several share the chart glyph */
 function graphDef(cats: Catalog, graph: TrendGraph): GraphDef {
   const face = graph.catIds.length === 1 ? { icon: cats.byId(graph.catIds[0]).icon, color: colorOf(cats, graph.catIds[0]) } : { icon: 'chart-bar', color: ACCENT };
   return { id: graph.id, name: graph.name, catIds: graph.catIds, accountIds: graph.accountIds ?? null, skipGoalSpending: graph.skipGoalSpending === true, ...face };
 }
 
-/**
- * The Spending tab (user 2026-10-08): the built-in "All expenses" card
- * with its one-pick scope, one card per custom graph, and the door to
- * make another. Graphs live on the space row.
- */
 export function SpendingTab({
   space,
   periods,

@@ -5,26 +5,20 @@ import { Button } from './Button';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 
-/** #160: the webcam door shows only where it earns its place — desktop
- *  viewports (phones/native have the camera path already) whose browser
- *  actually exposes a mediaDevices camera API */
+/** #160: the webcam door; native shells keep their own photo chooser */
 export function useWebcamDoor(): boolean {
-  // #160 r3 (user): capability decides, not viewport size — a small
-  // desktop window still has its webcam. Native shells keep their own
-  // photo chooser instead.
+  // capability decides, not viewport size: a small desktop window still has its webcam
   return !isNativeApp() && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 }
 
 interface WebcamCaptureSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** the snapshot, ready for the host's existing downscale/attach path */
   onCapture: (file: File) => void;
 }
 
 type CamError = 'denied' | 'nocamera' | 'busy' | 'unavailable';
 
-/** map a getUserMedia rejection to the guidance the user can act on */
 const camErrorOf = (err: unknown): CamError => {
   const name = err instanceof Error ? err.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') return 'denied';
@@ -33,16 +27,8 @@ const camErrorOf = (err: unknown): CamError => {
   return 'denied';
 };
 
-/**
- * #160 (user): desktops have no camera-capable file input worth using —
- * a webcam snapshot sheet serves every own-picture upload site instead.
- * r2: Chromium suppresses permission prompts for gesture-less
- * getUserMedia (Edge/Chrome showed no popup while Firefox asked), so
- * the stream now starts from the explicit Start button — a real user
- * activation — with an auto-attempt on open kept for browsers that
- * allow it. Every failure names its cure (address-bar permission, no
- * camera, camera busy). Tracks stop on close/unmount, always.
- */
+// Chromium suppresses permission prompts for gesture-less getUserMedia (Edge/Chrome showed none, Firefox asked):
+// the stream starts from the Start button, with an auto-attempt on open; tracks stop on close/unmount
 export function WebcamCaptureSheet({ open, onOpenChange, onCapture }: Readonly<WebcamCaptureSheetProps>) {
   const { t } = useLang();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -72,8 +58,7 @@ export function WebcamCaptureSheet({ open, onOpenChange, onCapture }: Readonly<W
         try {
           video.srcObject = stream;
         } catch {
-          // happy-dom's <video> lacks a real srcObject sink — the
-          // preview simply stays blank there
+          // happy-dom's <video> has no srcObject sink: the preview stays blank there
         }
       }
     } catch (err) {
@@ -138,7 +123,7 @@ export function WebcamCaptureSheet({ open, onOpenChange, onCapture }: Readonly<W
           </Button>
         ) : (
           error !== 'unavailable' && (
-            // r2: the GESTURE start — Chromium only prompts from here
+            // the gesture start: Chromium only prompts from here
             <Button data-testid="webcam-start" onClick={() => void start()}>
               <Icon name="camera-outline" size={16} />
               {t('webcam.start')}

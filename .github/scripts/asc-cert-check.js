@@ -1,13 +1,5 @@
-// The persistent signing certificate (secret APPLE_DEV_CERT_P12) must
-// still be one of the team's Development certificates: a revoked or
-// expired p12 imports into the keychain without complaint, and Xcode
-// then silently mints a throwaway per build until Apple's cap ends the
-// builds (2026-09-09: ten piled up in a day after a mint had wiped the
-// hosted track's certificate). Fail fast and name the repair instead.
-//
-// Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID, CERT_SERIAL (hex, as
-// openssl prints it). Exit 0 = listed and unexpired (a warning under 30
-// days left); exit 1 = not listed / expired.
+// APPLE_DEV_CERT_P12 must still be a listed Development cert: a revoked/expired p12 imports silently, then Xcode
+// mints a throwaway per build until Apple's cap ends the builds. Exit 1 = not listed or expired; warning under 30 days left
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
@@ -24,8 +16,7 @@ function jwt() {
   return `${header}.${payload}.${b64url(sig)}`;
 }
 
-// exitCode instead of process.exit(): exiting while the fetch socket is
-// still closing trips a libuv assertion on Windows (seen 2026-09-09)
+// exitCode, not process.exit(): exiting while the fetch socket is closing trips a libuv assertion on Windows
 async function main() {
   const want = normSerial(process.env.CERT_SERIAL);
   if (!want) throw new Error('CERT_SERIAL is empty — the import step could not read the serial of APPLE_DEV_CERT_P12');

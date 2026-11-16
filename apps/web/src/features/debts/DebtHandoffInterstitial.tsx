@@ -4,19 +4,12 @@ import { useLang } from '@/i18n';
 import { Button } from '@/ui/Button';
 import { MINA_EXPR } from '@/features/mina/assets';
 
-/**
- * Fullscreen Mina moment between the recurring form's Debt chip and debt
- * creation (user redesign 2026-07-29: the in-screen note ended up hidden
- * behind the auto-opened create sheet). She explains why a payoff cost
- * is a debt, then the user chooses — continue into debt creation, or
- * stay a recurring cost. z-130 clears the sheet stack (Sheet portals at
- * z-50), matching the Mina fullscreen precedent.
- */
+// fullscreen because an in-screen note hid behind the auto-opened create sheet
+// z-130 clears the sheet stack (Sheet portals at z-50)
 export function DebtHandoffInterstitial({ onContinue, onStay }: Readonly<{ onContinue: () => void; onStay: () => void }>) {
   const { t } = useLang();
-  // browser back = "stay" (standing rule: every sub-flow answers the
-  // back button). The Stay button closes directly; its leftover history
-  // entry shares this URL, so the next back press consumes it invisibly.
+  // browser back = stay; the Stay button closes directly, and its leftover history entry
+  // shares this URL so the next back press consumes it invisibly
   const stayRef = useRef(onStay);
   stayRef.current = onStay;
   useEffect(() => {

@@ -61,8 +61,6 @@ describe('installKeyboardDismiss', () => {
   it('keyboardless inputs (checkbox) are not "editable" — no blur, no keyboard bookkeeping', () => {
     const el = mountInput('input');
     el.setAttribute('type', 'checkbox');
-    // a drag with a focused CHECKBOX must not blur it (it summons no
-    // keyboard; blurring would only fight the toggle)
     touch('touchstart', document.body, 10, 10);
     touch('touchmove', document.body, 10, 60);
     expect(document.activeElement).toBe(el);

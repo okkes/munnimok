@@ -7,24 +7,11 @@ using System.Text.RegularExpressions;
 
 namespace Munni.Api.Lab;
 
-/// <summary>What the operator asks the scaffold to call the new party.</summary>
 public sealed record LabScaffoldRequest(string Provider, string Name, string Product, string Country = "NL");
 
-/// <summary>
-/// The new-service scaffold (#441 L5): from a recording, the files an
-/// adapter author starts from — a manifest stub, an OBSERVED options class
-/// (every host and path the recording saw, as constants with what was
-/// observed in their doc comments), an adapter stub with a to-do per observed
-/// call, the JSON answers worth reading as redacted fixtures, a test
-/// skeleton wired to them, a README that says where to register it, and
-/// the digest. Every path is a repo path, so the zip unpacks at the root.
-///
-/// Nothing here guesses at what a party means by its JSON: the generator
-/// names what was seen and leaves the reading to the author. The recording
-/// was redacted before it was written, so the fixtures carry `«redacted:n»`
-/// where a secret stood - and a scaffold that found an unmasked credential
-/// would be a bug in the recorder, not a job for this file.
-/// </summary>
+// from a recording: the files an adapter author starts from; every path is a repo path, so the zip unpacks at the root
+// nothing guesses what a party's JSON means; the recording is redacted before it is written (`«redacted:n»`),
+// so a leaked credential would be the recorder's bug
 public static partial class LabScaffold
 {
     public static readonly IReadOnlySet<string> Products = new HashSet<string>(StringComparer.Ordinal) { "shop", "bank", "registry" };
@@ -53,7 +40,6 @@ public static partial class LabScaffold
 
     public sealed record ScaffoldFile(string Path, string Content);
 
-    /// <summary>The files, as repo paths with their text.</summary>
     public static IReadOnlyList<ScaffoldFile> Files(LabScaffoldRequest request, JsonObject trace, string digest)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -77,7 +63,6 @@ public static partial class LabScaffold
         return files;
     }
 
-    /// <summary>The files as one zip, each at its repo path; small enough to build in memory.</summary>
     public static byte[] Zip(IReadOnlyList<ScaffoldFile> files)
     {
         ArgumentNullException.ThrowIfNull(files);
@@ -95,7 +80,6 @@ public static partial class LabScaffold
         return packed.ToArray();
     }
 
-    /// <summary>A product's assembly and the record shape its resources return.</summary>
     private sealed record Product(string Assembly, string Kind, string Resource, string Returns, string RegisterIn)
     {
         public static Product Of(string product) => product switch
@@ -149,7 +133,6 @@ public static partial class LabScaffold
             Text(trace, "started_at") ?? string.Empty);
     }
 
-    /// <summary>The calls, the fixtures and the posted fields a recording's entries add up to, taken one entry at a time.</summary>
     private sealed class ObservationBook
     {
         private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
@@ -171,7 +154,6 @@ public static partial class LabScaffold
             else if (kind == "response") TakeResponse(entry, via);
         }
 
-        /// <summary>A write's posted field names, each once, in the order first seen.</summary>
         private void TakeRequest(JsonNode? entry)
         {
             if (!IsWrite(Text(entry, "method")) || Text(entry, "body") is not { Length: > 0 } posted) return;
@@ -181,7 +163,6 @@ public static partial class LabScaffold
             }
         }
 
-        /// <summary>An answer worth reading: one call per method and path, and a fixture when it was JSON and whole.</summary>
         private void TakeResponse(JsonNode? entry, string via)
         {
             var type = Text(entry, "resource_type");
@@ -204,8 +185,6 @@ public static partial class LabScaffold
             }
         }
     }
-
-    // ── the files ───────────────────────────────────────────────────────
 
     private static string Manifest(LabScaffoldRequest r, Product p, Observation o)
     {
@@ -468,8 +447,6 @@ public static partial class LabScaffold
         sb.AppendLine("Nothing in a scaffold is CONFIRMED. The recording says what a browser did once, on one account, on one day; an adapter says what the party promises. Write the second from the first, then pin it with the tests.");
         return sb.ToString();
     }
-
-    // ── helpers ─────────────────────────────────────────────────────────
 
     private static string? Text(JsonNode? node, string key) => node?[key] switch
     {

@@ -20,14 +20,7 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// The data plane's side of the wire.
-///
-/// Every call here is outbound from the agent - the control plane never
-/// initiates a connection to one. That single property is what lets an agent
-/// sit behind NAT on a residential line, in a home lab, or on a user's own
-/// machine, and it is why bring-your-own hardware needed no redesign.
-/// </summary>
+/// every call is outbound from the agent, the control plane never connects to one: that lets an agent sit behind NAT
 internal static class AgentApiEndpoints
 {
     public static void Map(IEndpointRouteBuilder root)
@@ -106,9 +99,7 @@ internal static class AgentApiEndpoints
         .Produces<ChallengeAnswer>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status204NoContent);
 
-        // The live view's agent leg, in this group and behind this group's
-        // auth: a streamed login is a job like any other, and its frames must
-        // not be reachable by anything that could not already lease it.
+        // inside the agent group's auth: a streamed login's frames must not be reachable by anything that could not lease the job
         LiveEndpoints.MapAgent(agents);
 
         agents.MapPost("/jobs/{jobId}/trace", (
@@ -152,13 +143,9 @@ internal static class AgentApiEndpoints
             Id = Ids.New(Ids.Agent),
             Name = string.IsNullOrWhiteSpace(request.Name) ? enrollment.Name : request.Name,
             Class = request.Capabilities.Class,
-            // The subject rides on the code, never on the request: an
-            // agent may only ever serve the user who enrolled it, and
-            // letting it name its own owner would undo that in one line.
+            // the subject rides on the code, never the request: an agent naming its own owner would undo the one-subject rule
             OwnerSubject = enrollment.Subject,
-            // A private slot (#420 A2) is told by the code it came in on - the
-            // operator's standing code under the slot subject - never by
-            // anything the agent claims about itself.
+            // a private slot (#420 A2) is told by the code it enrolled with, never by what the agent claims
             Hosted = string.Equals(enrollment.Subject, ConnectorOptions.PrivateSlotSubject, StringComparison.Ordinal),
             CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities),
             TokenHash = AgentAuth.Hash(token),
@@ -194,26 +181,13 @@ internal static class AgentApiEndpoints
         agent.CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities);
         agent.Class = request.Capabilities.Class;
 
-        // A released slot's wipe, confirmed (#420 A2): the slot is free again.
-        // Before the profile bookkeeping below, which must not re-record what
-        // the agent has just deleted - and it reports none after a wipe.
+        // a released slot's wipe is confirmed (#420 A2): the slot is free
+        // before the profile bookkeeping, which must not re-record deleted profiles
         var wiped = request.ResetDone && agent.ResetRequestedAt is not null;
         if (wiped) agent.ResetRequestedAt = null;
 
-        // LIVENESS FIRST, AND ON ITS OWN, because it used to share a
-        // transaction with the profile bookkeeping below and that cost an
-        // agent its existence.
-        //
-        // A BYO agent derived a profile id that turned out not to be unique
-        // between machines, so the second household's reconcile hit a
-        // duplicate key - and rolled the heartbeat back with it. Their agent
-        // ran perfectly for weeks while the control plane recorded it as
-        // offline: no fleet head-start, offline in every consumer, and the
-        // only trace a Debug line on a machine nobody reads.
-        //
-        // The id is fixed. This is the half that made it invisible, and it
-        // is the half worth keeping fixed: whether an agent is ALIVE is not
-        // a fact that profile bookkeeping gets a vote on.
+        // liveness is saved first, on its own: sharing a transaction with profile bookkeeping rolled a heartbeat back on a
+        // duplicate profile key, and a live agent showed offline for weeks
         await db.SaveChangesAsync(ct);
 
         if (wiped)
@@ -228,29 +202,14 @@ internal static class AgentApiEndpoints
         }
         catch (DbUpdateException ex)
         {
-            // LOUD, AND NOT FATAL. The agent is alive - that is already
-            // committed and is the answer this endpoint owes. What it
-            // cannot do is write down which browser profiles that agent
-            // holds, which is worth an operator's attention and is worth
-            // nobody's outage.
+            // loud, not fatal: the committed heartbeat is what this endpoint owes; only which profiles the agent holds is stale
             loggers.CreateLogger("Connector.Kit.Hosting.Agents").LogError(
                 ex,
                 "agent {AgentId}: its profiles could not be recorded. The agent is alive and this "
                 + "heartbeat stands; what is stale is which profiles it is holding",
                 agent.Id);
 
-            // NOTHING IS CLEARED HERE, and the reason is worth stating
-            // because the obvious instinct is wrong. A failed insert stays
-            // in the change tracker, so it looks like every later heartbeat
-            // would re-attempt it - but the context is registered with
-            // AddDbContext, which is scoped, so it dies with this request
-            // and the next heartbeat starts from the database anyway.
-            //
-            // A ChangeTracker.Clear() here was written, and then removed
-            // when a mutation showed it changed nothing: the collision test
-            // passed with and without it. Insurance that cannot be
-            // distinguished from its absence is a comment claiming a
-            // mechanism that is not there.
+            // nothing to clear: the scoped DbContext dies with the request, so the failed insert is not retried by the next heartbeat
         }
 
         return ConnectorResults.Json(new HeartbeatResponse
@@ -276,16 +235,11 @@ internal static class AgentApiEndpoints
         var agent = http.RequireAgent();
         var capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities());
 
-        // An agent on another adapter catalogue is not offered work: its
-        // forms, selectors and record shapes are not the ones this control
-        // plane documented, and a job it ran would fail in ways nobody can
-        // read. It keeps its poll - the heartbeat has already told it why.
+        // an agent on another adapter catalogue is offered no work (its forms and selectors differ)
+        // it keeps polling; the heartbeat told it why
         var stale = AgentCatalogue.IsStale(capabilities, registry);
 
-        // Which subject's work this agent is allowed to see. Null only for
-        // the operator's own fleet, named in configuration - never decided
-        // from anything the agent sends, because Class arrives on the
-        // agent's own heartbeat and it would simply claim to be pooled.
+        // null scope only for the operator's fleet (configuration), never from agent-sent data: Class arrives on its own heartbeat
         var ownerScope = agent.OwnerSubject is { } owner && !options.Value.IsFleet(owner)
             ? owner
             : null;
@@ -293,9 +247,7 @@ internal static class AgentApiEndpoints
         var ttl = TimeSpan.FromSeconds(options.Value.Timeouts.LeaseSeconds);
         var deadline = time.GetUtcNow().AddSeconds(options.Value.Timeouts.AgentPollSeconds);
 
-        // A long poll rather than a fixed-interval pull: an agent that
-        // polls every few seconds is both slower to start a job and
-        // noisier, and the connection is already open either way.
+        // long poll, not an interval pull: faster to start a job and quieter
         while (!ct.IsCancellationRequested)
         {
             var job = stale
@@ -385,9 +337,7 @@ internal static class AgentApiEndpoints
         var agent = http.RequireAgent();
         await RequireLeasedAsync(db, jobId, agent.Id, ct);
 
-        // The agent names the challenge it is waiting on. Optional so an
-        // older agent keeps working, but without it a job with two open
-        // questions hands back the answer to the wrong one.
+        // optional so an older agent works, but without it a job with two open questions returns the answer to the wrong one
         var waitingFor = http.Request.Query["challenge_id"].ToString();
 
         var window = TimeSpan.FromSeconds(options.Value.Timeouts.AgentPollSeconds);
@@ -396,21 +346,14 @@ internal static class AgentApiEndpoints
 
         if (answer is not null) return ConnectorResults.Json(answer);
 
-        // Nothing yet is not the same as expired. Only a challenge that
-        // ran out of time is a 408; an open one just means poll again,
-        // and telling the agent to fail the job would throw away a login
-        // the human is still working on.
+        // only an expired challenge is a 408; an open one means poll again, as failing the job would discard a login in progress
         var pending = await challenges.PendingAsync(jobId, ct);
         return pending is null
             ? ConnectorResults.Error(new ConnectorException(ErrorCode.MfaTimeout, "challenge expired unanswered"))
             : Results.NoContent();
     }
 
-    /// <summary>
-    /// The run's recording (#441 L3): gzipped JSON from the agent, posted
-    /// while the job is still leased. Unpacked here only to be read back
-    /// into a trace, so a body that is not one is refused before it is kept.
-    /// </summary>
+    /// the run's recording (#441 L3): gzipped JSON posted while leased; unpacked only to validate it before it is kept
     private static async Task<ConnectorJsonResult<TraceAckResponse>> TraceAsync(
         HttpContext http,
         string jobId,
@@ -493,11 +436,7 @@ internal static class AgentApiEndpoints
         return ConnectorResults.Json(new AgentFailResponse { State = job.State });
     }
 
-    /// <summary>
-    /// Profile rows follow what the agent reports. Rows for profiles it no
-    /// longer has are marked unhealthy rather than deleted - a vanished
-    /// profile is exactly what a user needs told about.
-    /// </summary>
+    /// profiles the agent no longer reports become unhealthy, not deleted: a vanished profile is what a user must be told
     private static async Task ReconcileProfilesAsync(
         ConnectorDbContext db, string agentId, IReadOnlyList<ProfileHealth> reported, CancellationToken ct)
     {
@@ -531,12 +470,7 @@ internal static class AgentApiEndpoints
         }
     }
 
-    /// <summary>
-    /// The one check every job-scoped agent route makes. Internal rather than
-    /// private so the live routes call THIS one: a second copy of "is this job
-    /// yours" is a second thing to get wrong, on the surface that carries live
-    /// pixels of somebody's login page.
-    /// </summary>
+    /// internal so the live routes use this same check: a second copy of "is this job yours" is one more thing to get wrong
     internal static async Task RequireLeasedAsync(ConnectorDbContext db, string jobId, string agentId, CancellationToken ct)
     {
         var leased = await db.Jobs.AsNoTracking()

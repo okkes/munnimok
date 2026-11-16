@@ -3,13 +3,6 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// What every relay handler needs, resolved once per request: the
-/// database for the bindings, the client to the control plane, the subject
-/// minter, the event bridge, the budget and the clock. One parameter in a
-/// handler's signature instead of six, and one place that says which
-/// collaborators the relay has.
-/// </summary>
 public sealed class ConnectorRelay(
     AppDbContext db,
     ConnectorClient client,
@@ -33,7 +26,6 @@ public sealed class ConnectorRelay(
 
     public TimeProvider Time { get; } = time;
 
-    /// <summary>The subject the control plane sees for the signed-in user of this request.</summary>
     public string SubjectOf(HttpContext http) => Minter.For(http.GetUserId());
 
     /// <summary>The caller's lab subject (#441): the operator's own runs, apart from the person's app connections.</summary>

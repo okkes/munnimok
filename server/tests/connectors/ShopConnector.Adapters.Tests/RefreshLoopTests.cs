@@ -8,29 +8,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The token loop, end to end and from the client's side of it.
-///
-/// Sign in once; the client stores a bundle carrying access + refresh; every
-/// later fetch sends it back; the connector refreshes silently when the access
-/// token has died and hands back rotated material to persist. The human is
-/// never asked to sign in again until the refresh token itself dies.
-///
-/// Every other suite tests a piece of that. This one tests the LOOP: the
-/// material that comes OUT of one fetch is the material that goes INTO the
-/// next, over and over, against an upstream that behaves like a real OAuth
-/// server - it retires what it rotates, so presenting a superseded refresh
-/// token is refused rather than quietly tolerated. That is the only way the
-/// two failures this design dies of can show up at all: material that is
-/// dropped between passes, and material that is carried forward when it
-/// should not be.
-///
-/// Lidl is the vehicle because it is the plainest <see cref="Support"/>
-/// <c>BearerSession</c> consumer in the fleet - one authorization-code login,
-/// then nothing but bearer HTTP - but nothing here is Lidl-specific: the
-/// refresh, the retry and the carry-forward all live in <c>BearerSession</c>
-/// and every T1 adapter shares them.
-/// </summary>
+// tests the token LOOP: material out of one fetch goes into the next, against an upstream that retires what it rotates;
+// Lidl is only the vehicle: refresh, retry and carry-forward live in BearerSession, shared by every T1 adapter
 public sealed class RefreshLoopTests
 {
     private static readonly DateTimeOffset Day0 = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
@@ -41,15 +20,12 @@ public sealed class RefreshLoopTests
     private static readonly IReadOnlyDictionary<string, string> DutchConfig =
         new Dictionary<string, string>(StringComparer.Ordinal) { ["country"] = "NL", ["language"] = "nl" };
 
-    // ── an expired access token and a live refresh token ─────────────────
-
     [Fact]
     public async Task An_expired_access_token_refreshes_silently_and_hands_back_material_to_persist()
     {
         var clock = new MovingClock(Day0);
         var upstream = new TokenServer(clock);
 
-        // What the client stored at connect time, an hour and a half ago.
         var stored = Material(upstream.AccessToken, upstream.RefreshToken, clock.GetUtcNow().AddMinutes(-30));
 
         var handler = new StubHttpHandler(upstream.Route);
@@ -57,8 +33,6 @@ public sealed class RefreshLoopTests
 
         var result = await Adapter(clock).FetchAsync(ctx, Requests.Receipts(since: Since), CancellationToken.None);
 
-        // The data came back. No challenge was raised, no browser was leased -
-        // FakeJobContext refuses both - so nothing asked the human anything.
         Assert.NotEmpty(result.Receipts);
         Assert.Empty(ctx.Asked);
         Assert.False(ctx.Browser.Started);
@@ -74,14 +48,10 @@ public sealed class RefreshLoopTests
         // in flight costs a wasted round trip and an avoidable 401.
         Assert.Equal(clock.GetUtcNow().AddSeconds(3600 - 60), rotated.AccessTokenExpiresAt);
 
-        // Everything the bundle carried that is not a token survives the
-        // rotation. Losing the country here would send the next fetch to
-        // another Lidl deployment.
+        // non-token fields survive rotation: losing the country would send the next fetch to another Lidl deployment
         Assert.Equal("NL", rotated.Extra["country"]);
         Assert.Equal("fixture-device", rotated.DeviceId);
     }
-
-    // ── the owner's sentence, as one test ────────────────────────────────
 
     [Fact]
     public async Task The_rotated_material_serves_the_next_fetch_and_the_one_it_replaced_is_dead()
@@ -99,11 +69,8 @@ public sealed class RefreshLoopTests
             second = Assert.IsType<SessionMaterial>(result.RefreshedMaterial);
         }
 
-        // The upstream rotated, exactly as `rotates_on_use` advertises.
         Assert.NotEqual(superseded.RefreshToken, second.RefreshToken);
 
-        // THE SENTENCE: next time the client wants receipts it provides what
-        // it was handed, and that is enough. No sign-in, no challenge.
         clock.Advance(TimeSpan.FromDays(1));
         using (var ctx = Context(new StubHttpHandler(upstream.Route), second))
         {
@@ -114,11 +81,7 @@ public sealed class RefreshLoopTests
             Assert.NotNull(result.RefreshedMaterial);
         }
 
-        // And the half that would otherwise go unnoticed: the bundle it
-        // replaced is genuinely spent. A real authorization server retires a
-        // rotated refresh token, so a client that kept persisting the OLD one
-        // would look fine for an hour and then be locked out - which is the
-        // failure this whole loop exists to prevent.
+        // the replaced bundle is spent: a client persisting the OLD refresh token looks fine for an hour, then is locked out
         clock.Advance(TimeSpan.FromDays(1));
         using (var ctx = Context(new StubHttpHandler(upstream.Route), superseded))
         {
@@ -131,16 +94,12 @@ public sealed class RefreshLoopTests
         Assert.Contains(superseded.RefreshToken!, upstream.Retired);
     }
 
-    // ── nothing rotated ──────────────────────────────────────────────────
-
     [Fact]
     public async Task A_fetch_that_rotated_nothing_reports_no_material_and_leaves_the_stored_bundle_current()
     {
         var clock = new MovingClock(Day0);
         var upstream = new TokenServer(clock);
 
-        // The access token is still good for another half hour, so there is
-        // nothing to refresh and nothing for the caller to persist.
         var stored = Material(upstream.AccessToken, upstream.RefreshToken, clock.GetUtcNow().AddMinutes(30));
 
         using (var ctx = Context(new StubHttpHandler(upstream.Route), stored))
@@ -149,15 +108,11 @@ public sealed class RefreshLoopTests
 
             Assert.NotEmpty(result.Receipts);
 
-            // Null is the whole signal: the control plane seals a new bundle
-            // only when this is non-null, so a session block that appeared
-            // here would be the connector handing back something it had merely
-            // been holding.
+            // null is the whole signal: the control plane seals a new bundle only when this is non-null
             Assert.Null(result.RefreshedMaterial);
             Assert.Equal(0, upstream.TokenCalls);
         }
 
-        // The caller's bundle is unchanged and still works.
         clock.Advance(TimeSpan.FromMinutes(5));
         using (var ctx = Context(new StubHttpHandler(upstream.Route), stored))
         {
@@ -168,17 +123,13 @@ public sealed class RefreshLoopTests
         }
     }
 
-    // ── the refresh token itself is dead ─────────────────────────────────
-
     [Fact]
     public async Task A_dead_refresh_token_is_session_expired_after_exactly_one_attempt()
     {
         var clock = new MovingClock(Day0);
         var upstream = new TokenServer(clock);
 
-        // The bundle was good when it was sealed. Then the user hit "sign out
-        // everywhere" upstream, which is the one thing no amount of refreshing
-        // can recover from.
+        // revoked upstream ("sign out everywhere"): the one thing refreshing cannot recover from
         var stored = Material(upstream.AccessToken, upstream.RefreshToken, clock.GetUtcNow().AddMinutes(-1));
         upstream.Revoke();
 
@@ -188,15 +139,12 @@ public sealed class RefreshLoopTests
         var failure = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter(clock).FetchAsync(ctx, Requests.Receipts(since: Since), CancellationToken.None));
 
-        // The one code the consumer can act on: sign in again.
         Assert.Equal(ErrorCode.SessionExpired, failure.Code);
         Assert.Equal(UserAction.Reauth, ErrorCatalog.ActionFor(failure.Code));
         Assert.False(ErrorCatalog.IsRetriable(failure.Code));
         Assert.Contains(failure.Code, ErrorCatalog.NeverRetry);
 
-        // Once. Presenting a refresh token that has already been refused,
-        // over and over, is how a provider starts treating a client as
-        // hostile - and it would lock the account rather than fix anything.
+        // once: re-presenting a refused refresh token makes a provider treat the client as hostile and lock the account
         Assert.Equal(1, upstream.TokenCalls);
         Assert.Equal(0, upstream.TicketCalls);
     }
@@ -206,10 +154,8 @@ public sealed class RefreshLoopTests
     {
         var clock = new MovingClock(Day0);
 
-        // The access token still looks live to us - the bundle says it has
-        // half an hour left - and it is refused upstream anyway, with the
-        // refresh grant gone too. This is the shape a revocation takes when
-        // the expiry clock knows nothing about it.
+        // looks live to us (30 min left) yet refused upstream with the refresh grant gone:
+        // how a revocation looks to the expiry clock
         var upstream = new TokenServer(clock);
         var stored = Material(upstream.AccessToken, upstream.RefreshToken, clock.GetUtcNow().AddMinutes(30));
         upstream.Revoke();
@@ -222,22 +168,13 @@ public sealed class RefreshLoopTests
 
         Assert.Equal(ErrorCode.SessionExpired, failure.Code);
 
-        // One rejected call, one refresh attempt, and then it stops. Not a
-        // page-by-page storm across the twenty pages the walk would allow.
+        // one rejected call, one refresh attempt: no page-by-page storm across the twenty pages the walk allows
         Assert.Equal(1, upstream.TicketCalls);
         Assert.Equal(1, upstream.TokenCalls);
     }
 
-    // ── the refresh token is carried forward ─────────────────────────────
-
-    /// <summary>
-    /// The failure that only surfaces a week later. A refresh answers with a
-    /// new access token and says nothing about the refresh token, which means
-    /// "the one you have still stands". A client that reads that as "no
-    /// refresh token" and persists the absence has turned a permanent
-    /// connection into a one-hour one - and everything keeps working until the
-    /// next access token expires, which is when the user finds out.
-    /// </summary>
+    /// a refresh that says nothing about the refresh token means "the old one stands"; persisting the absence turns a
+    /// permanent connection into a one-hour one that only fails when the next access token expires
     [Theory]
     [InlineData(RefreshReissue.Absent)]
     [InlineData(RefreshReissue.Null)]
@@ -258,12 +195,9 @@ public sealed class RefreshLoopTests
             rotated = Assert.IsType<SessionMaterial>(result.RefreshedMaterial);
         }
 
-        // The access token rotated; the refresh token was kept, verbatim.
         Assert.NotEqual(stored.AccessToken, rotated.AccessToken);
         Assert.Equal(original, rotated.RefreshToken);
 
-        // Proved rather than asserted: a month later the carried-forward token
-        // is still the thing that keeps the connection alive.
         clock.Advance(TimeSpan.FromDays(30));
         using (var ctx = Context(new StubHttpHandler(upstream.Route), rotated))
         {
@@ -274,16 +208,12 @@ public sealed class RefreshLoopTests
         }
     }
 
-    // ── a month of it ────────────────────────────────────────────────────
-
     [Fact]
     public async Task A_month_of_daily_fetches_never_asks_the_human_to_sign_in_again()
     {
         var clock = new MovingClock(Day0);
         var upstream = new TokenServer(clock);
 
-        // One sign-in, at the start, and never again. This is what the client
-        // put in its keychain that day.
         var stored = Material(upstream.AccessToken, upstream.RefreshToken, clock.GetUtcNow().AddSeconds(3600 - 60));
 
         var rotations = 0;
@@ -297,14 +227,10 @@ public sealed class RefreshLoopTests
 
             Assert.NotEmpty(result.Receipts);
 
-            // Nobody was asked anything and no browser was ever opened: an
-            // unattended sync is the entire promise of holding a refresh token.
             Assert.Empty(ctx.Asked);
             Assert.False(ctx.Browser.Started);
             Assert.False(ctx.CredentialWasSubmitted);
 
-            // The client persists whatever it is handed, exactly as
-            // JobOutcomeService seals it into the next bundle.
             if (result.RefreshedMaterial is { } fresh)
             {
                 stored = fresh;
@@ -312,32 +238,20 @@ public sealed class RefreshLoopTests
             }
         }
 
-        // Every day's access token had expired overnight, so every day
-        // refreshed - and every one of those handed the caller a new bundle.
         Assert.Equal(30, rotations);
         Assert.Equal(30, upstream.TokenCalls);
 
-        // The refresh chain never broke: what the client holds on day 30 is
-        // the newest grant the server issued, and every one of the thirty it
-        // replaced was retired behind it. A client that had dropped or replayed
-        // a single link would be holding a retired token here.
         Assert.Equal(upstream.RefreshToken, stored.RefreshToken);
         Assert.Equal(30, upstream.Retired.Count);
         Assert.DoesNotContain(stored.RefreshToken!, upstream.Retired);
     }
-
-    // ── the world under test ─────────────────────────────────────────────
 
     private static LidlPlusAdapter Adapter(TimeProvider clock) => new(new LidlPlusOptions(), clock);
 
     private static FakeJobContext Context(HttpMessageHandler handler, SessionMaterial material) =>
         new(handler) { Config = DutchConfig, Material = material };
 
-    /// <summary>
-    /// A bundle's worth of material. The device id and the country ride along
-    /// because a rotation that keeps only the tokens is a rotation that
-    /// silently drops them.
-    /// </summary>
+    /// the device id and country ride along: a rotation that keeps only the tokens silently drops them
     private static SessionMaterial Material(string access, string? refresh, DateTimeOffset expiresAt) => new()
     {
         AccessToken = access,
@@ -352,35 +266,21 @@ public sealed class RefreshLoopTests
     };
 }
 
-/// <summary>What a refresh response says about the refresh token.</summary>
 public enum RefreshReissue
 {
-    /// <summary>A new one, and the old one is retired. What a real rotating server does.</summary>
     Rotate,
 
-    /// <summary>No <c>refresh_token</c> property at all.</summary>
     Absent,
 
-    /// <summary><c>"refresh_token": null</c>.</summary>
     Null,
 
-    /// <summary><c>"refresh_token": ""</c> - absence spelled as a value.</summary>
     Blank,
 
-    /// <summary><c>"refresh_token": "   "</c> - the same, with padding.</summary>
     Whitespace,
 }
 
-/// <summary>
-/// An OAuth server with a memory.
-///
-/// The memory is the point. A stub that accepts any refresh token proves
-/// nothing about rotation, because dropping the new token and replaying the
-/// old one looks identical to doing it right. This one retires what it
-/// rotates and refuses a retired grant with the 400 the real endpoint sends,
-/// so "the client persisted the newest" is a property the tests can actually
-/// observe.
-/// </summary>
+/// a stub accepting any refresh token proves nothing about rotation: this one retires what it rotates
+/// and refuses a retired grant with the real endpoint's 400
 internal sealed class TokenServer
 {
     private readonly TimeProvider _clock;
@@ -408,11 +308,6 @@ internal sealed class TokenServer
 
     public IReadOnlyList<string> Retired => _retired;
 
-    /// <summary>
-    /// Everything this client holds stops working: the bearer token is
-    /// refused and the refresh grant is retired. The end of the road, and the
-    /// only case in the whole loop where a human has to sign in again.
-    /// </summary>
     public void Revoke()
     {
         _retired.Add(RefreshToken);
@@ -446,10 +341,7 @@ internal sealed class TokenServer
 
         var presented = FormValue(request.Body, "refresh_token");
 
-        // A retired grant is refused with the same 400 the real endpoint
-        // sends, and so is an empty one - a client that dropped its refresh
-        // token presents nothing and must not be told "unauthorized" as if
-        // the token were merely stale.
+        // a retired or empty grant gets the real 400, not "unauthorized": a client that dropped its refresh token presents nothing
         if (string.IsNullOrWhiteSpace(presented) || !string.Equals(presented, RefreshToken, StringComparison.Ordinal))
         {
             return Stub.Json("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest);
@@ -514,13 +406,8 @@ internal sealed class TokenServer
     }
 }
 
-/// <summary>
-/// A clock a test can push forward.
-///
-/// <c>FixedTimeProvider</c> cannot express the only thing that matters here -
-/// that an hour passed between two fetches - and only <c>GetUtcNow</c> is
-/// overridden, so nothing accidentally starts depending on a fake timer.
-/// </summary>
+/// FixedTimeProvider cannot express an hour passing between fetches;
+/// only GetUtcNow is overridden so nothing depends on a fake timer
 internal sealed class MovingClock(DateTimeOffset start) : TimeProvider
 {
     private DateTimeOffset _now = start;

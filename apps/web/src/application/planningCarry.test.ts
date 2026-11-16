@@ -38,7 +38,6 @@ function device(name: string, today = IN_MARCH): Device {
   return { wall, store, repo, ops: buildOps(store, repo, SPACE, today), shipped: new Set() };
 }
 
-/** a sync round's effect: what `from` wrote and has not sent yet merges on `to` */
 async function ship(from: Device, to: Device): Promise<void> {
   const ops = (await from.store.outboxAll()).filter((op) => !from.shipped.has(op.opId));
   for (const op of ops) from.shipped.add(op.opId);
@@ -47,7 +46,6 @@ async function ship(from: Device, to: Device): Promise<void> {
 
 const modelOf = async (d: Device, today = IN_MARCH) => buildPlanning(await loadPlanningData(d.store, SPACE), today);
 
-/** two devices that both hold February's plan: Groceries, Fun and the rent */
 async function twoDevices(): Promise<{ a: Device; b: Device }> {
   const a = device('devA');
   const b = device('devB');
@@ -62,7 +60,6 @@ async function twoDevices(): Promise<{ a: Device; b: Device }> {
   return { a, b };
 }
 
-/** what a device holds of a row, stamps included — two devices that converged hold the same */
 const rowOf = <E extends EntityName>(d: Device, entity: E, id: string) => d.store.get(entity, id);
 
 describe('the carry-over between devices (#557)', () => {
@@ -81,7 +78,6 @@ describe('the carry-over between devices (#557)', () => {
     await a.ops.updateSubject(gro, { targetCents: 20_000 });
     await a.ops.fundOneOff((await modelOf(a)).plan!, 'category:housing', 4_000);
 
-    // the second device has not pulled any of it when it opens Planning, hours later
     b.wall.now = NOON + 6 * HOUR;
     expect((await modelOf(b)).continuable).toBe(true);
     await b.ops.continuePlan();
@@ -110,7 +106,6 @@ describe('the carry-over between devices (#557)', () => {
       expect((await modelOf(d)).subjectsOf((await modelOf(d)).plan!).map((s) => s.name).sort((x, y) => x.localeCompare(y))).toEqual(['Groceries', 'Rent']);
     }
 
-    // Start over on the first device; a third look from a device that knows nothing of March
     const c = device('devC');
     devices.push(c);
     await c.repo.applyRemoteOps((await a.store.outboxAll()).filter((op) => !op.entityId.includes(march)));
@@ -127,7 +122,6 @@ describe('the carry-over between devices (#557)', () => {
   it('two devices that carry from different copies of last period’s plan end on the same rows: each field from the copy that knew it last', async () => {
     const { a, b } = await twoDevices();
     devices.push(a, b);
-    // late February on the first device only: a higher target and a new name the second never pulled
     a.wall.now = NOON - 2 * 24 * HOUR;
     await a.repo.upsert('planSubject', SPACE, 'gro', { targetCents: 20_000 });
     await a.repo.upsert('planSubject', SPACE, 'fun', { name: 'Fun and games' });
@@ -147,7 +141,6 @@ describe('the carry-over between devices (#557)', () => {
     for (const [entity, id] of [['planSubject', gro], ['planSubject', fun], ['planSubject', rent], ['plan', march]] as const) {
       expect(await rowOf(a, entity, id)).toEqual(await rowOf(b, entity, id));
     }
-    // February's first-come order came along
     const model = await modelOf(b);
     expect(byBirth(model.subjectsOf(model.plan!)).map((s) => s.id)).toEqual([gro, fun, rent]);
   });
@@ -244,7 +237,6 @@ describe('carried stamps', () => {
     expect(late < real(1)).toBe(true);
     expect(carriedStamp(real(1_000, 0, 'other'), { name: 'Rent' })).toBe(early);
     expect(carriedStamp(real(1_000), { name: 'Rent ' })).not.toBe(early);
-    // field order is no content
     expect(carriedStamp(real(1_000), { a: 1, b: [{ x: 1, y: 2 }] })).toBe(carriedStamp(real(1_000), { b: [{ y: 2, x: 1 }], a: 1 }));
     // the server takes stamps of at most 64 characters
     expect(late.length).toBeLessThanOrEqual(64);
@@ -257,7 +249,6 @@ describe('carried stamps', () => {
     const secondAgain = carriedStamp(second, { planId: 'april' });
     expect(firstAgain < secondAgain).toBe(true);
     expect(firstAgain).toHaveLength(first.length);
-    // an edit made in between is newer than anything carried
     expect(secondAgain < carriedStamp(real(3_000), { planId: 'april' })).toBe(true);
   });
 

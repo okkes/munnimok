@@ -31,11 +31,8 @@ describe('merchantKey', () => {
     expect(merchantKey('AH DELFT')).toBe('ah');
     expect(merchantKey("JUMBO 'S-GRAVENHAGE")).toBe('jumbo');
     expect(merchantKey('Restaurant Den Haag')).toBe('restaurant');
-    // #201 r2: every bank spelling of the same city strips identically —
-    // the squashed comparison keys these two rows together
     expect(merchantKey('Albert Heijn 1473 SGRAVENHAGE')).toBe('albert heijn');
     expect(merchantKey('ALBERT HEIJN 1473 S GRAVENHAGE')).toBe('albert heijn');
-    // a merchant that IS a city name keeps its identity
     expect(merchantKey('Delft')).toBe('delft');
   });
 });
@@ -44,8 +41,8 @@ describe('merchant memory', () => {
   it('learns only from human-confirmed rows', () => {
     const memory = buildMerchantMemory([
       confirmed({}),
-      confirmed({ needsReview: 1, catId: 'restaurants' }), // unreviewed guess — ignored
-      confirmed({ catId: undefined }), // uncategorized — ignored
+      confirmed({ needsReview: 1, catId: 'restaurants' }),
+      confirmed({ catId: undefined }),
     ]);
     const hit = predictFromMemory(memory, 'Albert Heijn 2201', -1800);
     expect(hit?.catId).toBe('groceries');
@@ -57,9 +54,8 @@ describe('merchant memory', () => {
       confirmed({ date: '2026-05-05' }),
       confirmed({ date: '2026-05-12' }),
       confirmed({ date: '2026-05-19' }),
-      confirmed({ date: '2026-06-20', catId: 'restaurants' }), // one dinner out
+      confirmed({ date: '2026-06-20', catId: 'restaurants' }),
     ]);
-    // "almost always groceries" survives the single dinner…
     expect(predictFromMemory(memory, 'Albert Heijn', -2000)?.catId).toBe('groceries');
   });
 
@@ -68,7 +64,6 @@ describe('merchant memory', () => {
       confirmed({ date: '2025-09-05' }),
       confirmed({ date: '2025-10-12' }),
       confirmed({ date: '2025-11-19' }),
-      // …but repeated RECENT choices take the lead over an old majority
       confirmed({ date: '2026-06-01', catId: 'restaurants' }),
       confirmed({ date: '2026-06-15', catId: 'restaurants' }),
     ]);
@@ -78,7 +73,7 @@ describe('merchant memory', () => {
   it('#161: a lone correction to a lone old entry still sticks', () => {
     const memory = buildMerchantMemory([
       confirmed({ date: '2026-01-05' }),
-      confirmed({ date: '2026-06-20', catId: 'sport' }), // deliberate re-categorization
+      confirmed({ date: '2026-06-20', catId: 'sport' }),
     ]);
     expect(predictFromMemory(memory, 'Albert Heijn', -2000)?.catId).toBe('sport');
   });
@@ -103,12 +98,10 @@ describe('merchant memory', () => {
       confirmed({ merchant: 'Hr MFA Aarnoutse', catId: 'reimbursed', amountCents: 2500, date: '2026-09-01' }),
     ]);
     expect(predictFromMemory(memory, 'Hr MFA Aarnoutse', 1391)).toBeNull();
-    // and the predictor as a whole never names the settlement category
     expect(predictTx({ memory: { own: memory, others: new Map() }, merchant: 'Hr MFA Aarnoutse', amountCents: 1391 })).toBeNull();
   });
 });
 
-/** #161: predictTx reads the layered shape — own space first */
 const layered = (own: ReturnType<typeof buildMerchantMemory>) => ({ own, others: buildMerchantMemory([]) });
 
 describe('predictTx layering', () => {
@@ -140,7 +133,6 @@ describe('predictTx layering', () => {
       confirmed({ catId: 'movie', date: '2026-07-08' }),
       confirmed({ merchant: 'Cinema City', catId: 'movie', date: '2026-07-01' }),
     ]);
-    // own history wins even against a heavier other-space majority
     expect(predictTx({ memory: { own, others }, merchant: 'Albert Heijn', amountCents: -1500 })?.catId).toBe('groceries');
     // a merchant the own space never saw falls through to the others
     expect(predictTx({ memory: { own, others }, merchant: 'Cinema City', amountCents: -1500 })?.catId).toBe('movie');

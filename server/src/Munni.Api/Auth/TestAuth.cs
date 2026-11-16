@@ -7,13 +7,8 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Auth;
 
-/// <summary>
-/// Header-based auth for CI/e2e (Auth:TestMode=true): the caller supplies
-/// X-User-Sub and is treated as that subject; X-User-Scope carries the
-/// space-separated `scope` claim a Logto access token would ("admin" for
-/// the operator routes, see AdminScope). Never enabled in production;
-/// Logto JWT bearer takes its place there.
-/// </summary>
+// CI/e2e only (Auth:TestMode): X-User-Sub is the subject, X-User-Scope the `scope` claim ("admin" for operator routes);
+// never enabled in production
 public sealed class TestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -41,7 +36,6 @@ public static class UserResolution
 {
     private const string ItemKey = "munni.userId";
 
-    /// <summary>JIT-provisions a user row for the authenticated subject.</summary>
     public static async Task ResolveUser(HttpContext http, AppDbContext db, Func<Task> next)
     {
         // "sub" with MapInboundClaims=false; NameIdentifier as a safety net
@@ -59,10 +53,8 @@ public static class UserResolution
                 }
                 catch (DbUpdateException)
                 {
-                    // a fresh app launch fires several requests at once and
-                    // they all JIT-provision the same sub — the unique index
-                    // (IX_Users_Sub) lets exactly one insert win; the losers
-                    // adopt that row instead of answering 500
+                    // a fresh launch fires parallel requests that all JIT-provision the same sub:
+                    // the unique index (IX_Users_Sub) lets one insert win, the losers adopt that row
                     db.Entry(user).State = EntityState.Detached;
                     user = await db.Users.FirstAsync(u => u.Sub == sub);
                 }
@@ -73,17 +65,8 @@ public static class UserResolution
         await next();
     }
 
-    /// <summary>
-    /// Logged-in devices: every authenticated request names the calling
-    /// device (X-Munni-Device, the client's HLC node id). A request that
-    /// names none is refused with 401 {device-required} — every client
-    /// has a device, and an unnamed one could never be disconnected. The
-    /// device is stamped (last-seen, throttled) and remote disconnect is
-    /// enforced: a revoked device answers 410 {device-revoked} and the
-    /// client wipes itself (user ruling: disconnect = wipe).
-    /// 410, not 403: the sync engine treats a 403 as "membership lost"
-    /// and would purge the space instead of the device.
-    /// </summary>
+    // every request must name its device (X-Munni-Device): an unnamed one could never be disconnected, so 401 device-required
+    // a revoked device gets 410, not 403: the sync engine reads 403 as "membership lost" and would purge the space
     private static async Task<bool> TouchDeviceAsync(HttpContext http, AppDbContext db, Guid userId)
     {
         var deviceId = http.Request.Headers["X-Munni-Device"].FirstOrDefault();
@@ -127,6 +110,5 @@ public static class UserResolution
     public static Guid GetUserId(this HttpContext http) =>
         http.Items[ItemKey] as Guid? ?? throw new InvalidOperationException("no resolved user");
 
-    /// <summary>null on anonymous requests (endpoints that allow them)</summary>
     public static Guid? TryGetUserId(this HttpContext http) => http.Items[ItemKey] as Guid?;
 }

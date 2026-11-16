@@ -1,9 +1,5 @@
-// What runs versus what is configured. The wizard's "changes waiting to be
-// applied" strip is computed from these, never from a flag the page
-// remembers: on the NAS the applied config is the commit the last successful
-// Bootstrap / Deploy run checked out, on this computer it is the config the
-// stack was last started with. Both sides are the same normalized shape
-// (saveEnv / loadPlatform write and read it), so a difference is a real one.
+// the wizard's pending strip is computed from what runs vs what is configured, never from a page-side flag
+// NAS: the commit of the last successful Bootstrap/Deploy run; this computer: the config the stack last started with
 
 import { MANIFEST } from './secrets.mjs';
 
@@ -33,7 +29,8 @@ export function configChanges(before, after) {
   return paths.filter((p) => !same(a[p], b[p])).map((p) => ({ path: p, from: Object.hasOwn(a, p) ? (a[p] ?? null) : undefined, to: Object.hasOwn(b, p) ? (b[p] ?? null) : undefined }));
 }
 
-/** which run applies a set of changes on a deployed platform — a key the applied side never had (absent → a value) is new to the stack and may need something minted, so it takes the Bootstrap even when its path is deploy-only (#420: an environment's first `agents` brings its fleet code); a null that becomes a value (the fingerprint) is the plain deploy-only case */
+// a key the applied side never had is new to the stack and may need something minted:
+// Bootstrap even when deploy-only (#420)
 export function needsFor(changes) {
   if (!changes.length) return null;
   return changes.every((c) => DEPLOY_ONLY.has(c.path) && c.from !== undefined && !firstPrivateSlot(c)) ? 'deploy' : 'bootstrap';
@@ -51,22 +48,15 @@ const show = (path, v) => {
   return text.length > 40 ? `${text.slice(0, 39)}…` : text;
 };
 
-/** one line a person reads: `features.connectors: off → on` */
 export const describeChange = ({ path, from, to }) => `${path}: ${show(path, from)} → ${show(path, to)}`;
 
-/** the verdict for one stack from its applied and current configs */
 export function pendingFrom(applied, current) {
   const changes = configChanges(applied, current);
   return { changes: changes.map(describeChange), needs: needsFor(changes) };
 }
 
-/* ── the difference the person reads BEFORE publishing (user 2026-10-09) ──
-   The strip said "the config differs from what runs — Publish puts it on GitHub" without showing
-   what. This is the platform document saved here against the one GitHub holds (config.mjs knows
-   both: platformDocument / fetchPlatformVariable), per environment and for the platform itself,
-   with every value in the open except what is named like a secret. The platform files carry no
-   secret by design (secrets live in the wizard's store and on GitHub), but a key named like one,
-   or a domain typed in place of its placeholder, is masked anyway — the manifest's names decide. */
+// the platform document saved here against GitHub's: every value open except secret-named ones (the manifest's names decide)
+// a typed-in domain is masked too
 
 /** the manifest's secret names, lower-cased, compared against a leaf's last segment (e.g. `ghcrPat` ↔ GHCR_PAT) */
 const SECRET_NAMES = new Set(MANIFEST.secrets.map((s) => s.name.toLowerCase().replaceAll('_', '')));
@@ -82,7 +72,6 @@ export function secretPath(path, value) {
 const MASK = '(secret)';
 const masked = (path, v) => (secretPath(path, v) ? MASK : (v ?? null));
 
-/** the leaves of one config side by side: added (only here), removed (only on GitHub), changed (both, different) — secrets masked, `secret` says so */
 export function leafDiff(published, local) {
   const changes = configChanges(published ?? {}, local ?? {});
   const out = { added: [], removed: [], changed: [] };
@@ -97,13 +86,8 @@ export function leafDiff(published, local) {
 
 const emptyDiff = (d) => !d.added.length && !d.removed.length && !d.changed.length;
 
-/**
- * The platform document saved here (`local`) against the one GitHub holds (`published`, null when
- * nothing was published yet), as the strip's "What changed?" table reads it: one entry for the
- * platform's own keys (id `shared`, keys `platform.<key>`, the shared stack's) and one per environment
- * (its own keys; the platform's are the shared entry's). `state`: new (not on GitHub yet), removed
- * (GitHub still lists it), changed, same.
- */
+// local vs published document: a `shared` entry for the platform's keys, one per environment
+// state: new | removed | changed | same
 export function documentDiff(published, local, platform) {
   const envs = [];
   const shared = leafDiff({ platform: published?.platform ?? {} }, { platform: local?.platform ?? {} });

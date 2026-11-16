@@ -41,12 +41,6 @@ function SuggestionRow({
   );
 }
 
-/**
- * #538 (user): the regular events a split belongs to, and what is in one
- * and not in the other — a payment the person put in the split that sits in
- * no event yet, and a payment of the event that is not in the split. Each
- * is added on a tap or ignored for good; nothing is moved for the person.
- */
 export function SplitEventsSection({ detail, onAddToSplit }: Readonly<{ detail: SplitDetail; onAddToSplit: (seed: EntrySeed) => void }>) {
   const { t } = useLang();
   const { store, repo } = useData();

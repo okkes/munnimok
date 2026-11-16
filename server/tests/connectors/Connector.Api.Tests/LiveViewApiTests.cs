@@ -19,41 +19,17 @@ using Connector.Api.Tests.Infrastructure;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The streamed login's transport, driven through the real host.
-///
-/// A live view is the provider's own login page, photographed on the agent
-/// several times a second and shown to the account's owner, who types their
-/// password into the picture. The connector's whole job in that is to hold the
-/// newest photograph and to carry the pointer and the keys back - and the
-/// reason the feature exists at all is that neither of those things is ever
-/// written down. A frame in a table would put the provider's authenticated
-/// pixels at rest in the control plane, which is exactly the custody problem
-/// streaming was built to remove, and a keystroke in a column would be the
-/// password we went to this trouble not to have.
-///
-/// So these tests are about four properties, in this order of importance:
-/// nothing reaches the database; nobody but the session's holder and the job's
-/// leaseholder can reach either leg; the newest picture wins over a backlog of
-/// stale ones; and a full input queue gives up stale pointer positions rather
-/// than the click somebody just made.
-///
-/// The provider is an agent-tier one on purpose. <c>InlineJobRunner</c> serves
-/// only manifests it can run in-process, so a job staged here for a browser
-/// tier stays exactly where it was put instead of racing the in-process pump.
-/// </summary>
+// a live view must reach no table: a frame at rest is the provider's authenticated pixels, a keystroke the password
+// agent-tier provider on purpose: InlineJobRunner serves only in-process manifests, so a staged job stays put
 [Collection(ShopApiCollection.Name)]
 public sealed class LiveViewApiTests(ShopApiFactory factory)
 {
     private const string Provider = "ah";
 
-    /// <summary>JPEG's start-of-image marker. Bytes that survive the channel are bytes a phone can draw.</summary>
     private static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
 
     /// <summary>390x844 at deviceScaleFactor 1 - a phone, which is what the agent renders at.</summary>
     private const string PhoneSize = "390x844";
-
-    // ------------------------------------------------------------------ frames
 
     [Fact]
     public async Task A_frame_the_agent_posts_is_served_to_the_consumer_with_its_sequence_and_its_shape()
@@ -73,25 +49,15 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Equal("image/jpeg", frame.ContentType()?.MediaType);
         Assert.Equal(Frame(0x11), await frame.Content.ReadAsByteArrayAsync());
 
-        // The shape travels with the bytes or the consumer cannot turn a tap on
-        // its own screen back into a fraction of the picture.
+        // the shape travels with the bytes so the consumer can turn a tap into a fraction of the picture
         Assert.Equal("1", Assert.Single(frame.RawHeader(LiveHeaders.Sequence)));
         Assert.Equal(PhoneSize, Assert.Single(frame.RawHeader(LiveHeaders.Size)));
 
-        // A photograph of somebody's login page is not something a proxy, a
-        // browser or a disk cache has any business keeping.
+        // no-store: a photograph of a login page must not be kept by a proxy, browser or disk cache
         Assert.Equal("no-store", frame.Headers.CacheControl?.ToString());
     }
 
-    /// <summary>
-    /// One slot, not a queue, and 204 rather than a picture the consumer is
-    /// already showing.
-    ///
-    /// Both halves are the same decision. A consumer whose connection stalled
-    /// for a second wants the login as it is now - it is about to be typed
-    /// into - and re-sending the frame it already has would spend its bandwidth
-    /// to change nothing on its screen.
-    /// </summary>
+    // one slot, not a queue; 204 for a frame the consumer already shows: the login is about to be typed into
     [Fact]
     public async Task The_slot_holds_only_the_newest_picture_and_a_caller_that_has_seen_it_is_told_so()
     {
@@ -112,19 +78,12 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             Assert.Equal(Frame(3), await caught.Content.ReadAsByteArrayAsync());
         }
 
-        // Nothing newer. This one really does hang for the poll window, which
-        // is the behaviour being asserted: the wait is what makes the stream
-        // arrive as it happens instead of on the consumer's timer.
+        // really hangs for the poll window: the wait is what makes the stream arrive as it happens
         using var nothing = await http.GetAsync(FrameUrl(run, after: 3));
         Assert.Equal(HttpStatusCode.NoContent, nothing.StatusCode);
     }
 
-    /// <summary>
-    /// Two POSTs can overtake each other on a mobile uplink. A picture from the
-    /// past replacing the present would show the human the login as it was -
-    /// with the cursor, the error banner and the field contents of that moment -
-    /// and they would act on it.
-    /// </summary>
+    // two POSTs can overtake each other on a mobile uplink; an older picture must never replace the present
     [Fact]
     public async Task A_frame_that_arrived_out_of_order_never_replaces_a_newer_one()
     {
@@ -137,9 +96,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             Assert.Equal(HttpStatusCode.OK, newest.StatusCode);
         }
 
-        // Accepted, and discarded. A late frame is the network's doing, not the
-        // agent's, and answering with an error would make it retry a photograph
-        // that is already out of date.
+        // accepted and discarded: a late frame is the network's doing, and an error would make the agent retry it
         using (var late = await PostFrameAsync(agent, run.JobId, sequence: 4, Frame(0x44)))
         {
             Assert.Equal(HttpStatusCode.OK, late.StatusCode);
@@ -151,11 +108,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Equal(Frame(0x55), await frame.Content.ReadAsByteArrayAsync());
     }
 
-    /// <summary>
-    /// A poll already in flight when the shutter fires gets that frame. Without
-    /// it the first picture of every login waits for the consumer's next
-    /// request, which is the difference between a live view and a slideshow.
-    /// </summary>
+    // a poll in flight when the first frame arrives gets it; else the first picture waits a request (a slideshow)
     [Fact]
     public async Task A_poll_waiting_on_an_empty_slot_is_answered_by_the_frame_that_arrives_during_it()
     {
@@ -206,13 +159,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Null(Channel.Frame(run.JobId));
     }
 
-    // ------------------------------------------------------- the pushed stream
-
-    /// <summary>
-    /// One response for the whole login (#429): every picture the agent posts
-    /// arrives as an event numbered by its sequence, with the shape it was
-    /// taken at - and the response is marked as one nothing may buffer or keep.
-    /// </summary>
+    // #429: one response for the whole login, an event per picture numbered by sequence, unbufferable and uncacheable
     [Fact]
     public async Task The_stream_pushes_each_picture_as_the_agent_posts_it()
     {
@@ -243,11 +190,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         AssertFrame(await events.UntilAsync(e => e.Name == LiveStream.FrameEvent, "the second picture"), 2, Frame(0x22));
     }
 
-    /// <summary>
-    /// A reconnect says which picture it drew and is handed the current one
-    /// only when that is newer: there is no backlog to replay, and a picture it
-    /// is already showing costs its bandwidth to change nothing.
-    /// </summary>
+    // a reconnect names the picture it drew and gets only a newer one: no backlog to replay
     [Fact]
     public async Task A_reconnect_names_the_picture_it_drew_and_is_handed_only_a_newer_one()
     {
@@ -261,14 +204,12 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
         }
 
-        // Behind the slot: the newest is there at once, never the backlog.
         using (var behind = await OpenStreamAsync(http, run, after: 1))
         {
             AssertFrame(await new EventReader(behind).UntilAsync(e => e.Name == LiveStream.FrameEvent, "the newest picture"), 3, Frame(3));
         }
 
-        // Level with it, by the header an EventSource sends: the first picture
-        // handed over is the next one the agent takes.
+        // level with the slot, by the Last-Event-ID an EventSource sends: the next picture is the agent's next
         using var level = await OpenStreamAsync(http, run, lastEventId: "3");
         var events = new EventReader(level);
 
@@ -280,10 +221,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         AssertFrame(await events.UntilAsync(e => e.Name == LiveStream.FrameEvent, "the picture after the one drawn"), 4, Frame(4));
     }
 
-    /// <summary>
-    /// A static login page writes nothing, and a reverse proxy reaps a
-    /// response that stays silent for a minute - so the quiet is filled.
-    /// </summary>
+    // a reverse proxy reaps a response silent for a minute, so a quiet stream sends keep-alives
     [Fact]
     public async Task A_quiet_stream_keeps_itself_open()
     {
@@ -296,11 +234,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Null(keepAlive.Name);
     }
 
-    /// <summary>
-    /// The stream ends on the platform's word, which is the word the poll
-    /// answers with: the adapter's success signal settles the challenge, and
-    /// the consumer is told the view is over instead of reconnecting into it.
-    /// </summary>
+    // the stream ends with the word the poll answers (challenge_expired) so the consumer does not reconnect into it
     [Fact]
     public async Task A_settled_live_view_ends_the_stream_with_the_word_the_poll_answers()
     {
@@ -328,12 +262,6 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Null(await events.NextAsync());
     }
 
-    // ------------------------------------------------------------------- input
-
-    /// <summary>
-    /// The events go one way, exactly once each, and a poll that says what it
-    /// has already taken is not handed it again.
-    /// </summary>
     [Fact]
     public async Task What_the_human_did_reaches_the_agent_and_a_later_poll_gets_only_what_came_after()
     {
@@ -353,18 +281,13 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             var events = (await collected.JsonAsync()).GetProperty("events").EnumerateArray().ToList();
             Assert.Equal(2, events.Count);
 
-            // Order is information the human made and nothing downstream can
-            // recover: a click replayed before the move that positioned it
-            // lands wherever the pointer happened to be.
+            // order is information nothing downstream recovers: a click replayed before its move lands wherever the pointer was
             Assert.Equal("move", events[0].Text("kind"));
             Assert.Equal("down", events[1].Text("kind"));
             Assert.Equal(0.25, events[0].GetProperty("x").GetDouble());
             Assert.Equal(2, events[1].GetProperty("sequence").GetInt64());
         }
 
-        // A poll naming what it has, made before anything new happens, and then
-        // the human types. It gets the keystroke and not the two events it has
-        // already replayed into the page.
         var next = agent.GetAsync(InputUrl(run.JobId, after: 2));
         await Task.Delay(150);
 
@@ -382,28 +305,21 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Equal("enter", later[1].Text("key"));
     }
 
-    /// <summary>
-    /// The batch is judged once, at the edge, and a batch that fails leaves
-    /// nothing behind. Everything further in - the queue, the agent's poll, the
-    /// dispatcher that touches a live browser - is entitled to assume what it
-    /// holds is answerable, and a second opinion deeper in would be a second
-    /// definition of what a legal gesture is.
-    /// </summary>
+    // a batch is judged once at the edge and a failing one queues nothing: deeper checks would be a second definition
+    // of a legal gesture
     [Fact]
     public async Task A_batch_that_is_not_answerable_is_refused_whole_and_queues_nothing()
     {
         var run = await ArrangeAsync();
         using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
-        // Off the picture. Refused rather than clamped: a clamped tap is a
-        // click somewhere the human did not choose.
+        // refused rather than clamped: a clamped tap clicks where the human did not choose
         using (var offPicture = await PostInputAsync(http, run, new { kind = "move", x = 1.5, y = 0.5, sequence = 1 }))
         {
             await ErrorEnvelope.AssertAsync(offPicture, HttpStatusCode.BadRequest, "invalid_request");
         }
 
-        // A control character is how "typed text" becomes something else - a
-        // newline that submits a form the human was still filling in.
+        // a control character turns typed text into something else, e.g. a newline submitting a half-filled form
         using (var control = await PostInputAsync(http, run, new { kind = "text", text = "hunter2\n", sequence = 2 }))
         {
             await ErrorEnvelope.AssertAsync(control, HttpStatusCode.BadRequest, "invalid_request");
@@ -414,8 +330,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             await ErrorEnvelope.AssertAsync(nothing, HttpStatusCode.BadRequest, "invalid_request");
         }
 
-        // One good event in a bad batch does not get through: a gesture is
-        // dispatched whole or refused whole, never half.
+        // a gesture is dispatched whole or refused whole
         using (var mixed = await PostInputAsync(http, run,
                    DownEvent(3, 0.5, 0.5), new { kind = "move", x = -0.1, y = 0.5, sequence = 4 }))
         {
@@ -425,14 +340,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Empty(Channel.Collect(run.JobId, long.MinValue).Events);
     }
 
-    /// <summary>
-    /// What gives way when the queue is full, and it is not symmetric.
-    ///
-    /// A pointer position the human has already moved past is worth nothing; a
-    /// click is something they chose to do exactly once. Bounding the queue the
-    /// obvious way - refuse the newest - would throw away the tap they just
-    /// made in favour of thirty stale hover positions.
-    /// </summary>
+    // stale pointer moves give way before a click: refusing the newest would drop the tap for thirty hover positions
     [Fact]
     public async Task A_full_queue_gives_up_stale_pointer_moves_before_it_gives_up_a_click()
     {
@@ -440,8 +348,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         using var agent = AgentClient(run);
         using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
-        // The click is the OLDEST event in the queue, so "drop the oldest"
-        // would take it and this test would be the one to notice.
+        // the click is the OLDEST event, so "drop the oldest" would take it
         using (var clicked = await PostInputAsync(http, run, DownEvent(1, 0.5, 0.5)))
         {
             Assert.Equal(HttpStatusCode.Accepted, clicked.StatusCode);
@@ -468,8 +375,6 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             .GetProperty("sequence").GetInt64());
     }
 
-    // ----------------------------------------------------------- authorisation
-
     [Fact]
     public async Task A_challenge_that_is_not_a_live_view_is_refused_on_both_legs()
     {
@@ -490,18 +395,8 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         await ErrorEnvelope.AssertAsync(input, HttpStatusCode.BadRequest, "unsupported_resource");
     }
 
-    /// <summary>
-    /// The answer route refuses a live view, and the refusal is the custody
-    /// argument holding.
-    ///
-    /// Everything a human does to a live view travels as pointer and key
-    /// events and is kept nowhere. But the ordinary answer route next door
-    /// persists whatever it is handed into <c>ChallengeRow.AnswerValue</c> -
-    /// so a consumer that posted the typed password there, by confusion or by
-    /// design, would put the credential into the one column this entire design
-    /// exists to keep it out of. There is no shape of answer that is correct
-    /// here, so there is no answer accepted.
-    /// </summary>
+    // the answer route persists into ChallengeRow.AnswerValue, so accepting a typed password there would break
+    // custody: a live view accepts no answer at all
     [Fact]
     public async Task The_answer_route_refuses_a_live_view_so_no_typed_value_can_be_stored()
     {
@@ -515,7 +410,6 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         using var response = await http.SendAsync(request);
         await ErrorEnvelope.AssertAsync(response, HttpStatusCode.BadRequest, "unsupported_resource");
 
-        // And nothing was written on the way to being refused.
         var stored = Db.Read(factory, db => db.Challenges
             .Where(c => c.Id == run.ChallengeId)
             .Select(c => new { c.AnswerValue, c.AnsweredAt })
@@ -525,13 +419,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Null(stored.AnsweredAt);
     }
 
-    /// <summary>
-    /// A live view that is over serves no further pixels and takes no further
-    /// keys - by the clock, or because the adapter's own success signal settled
-    /// it. That second one is where the agent's latch stops being a property of
-    /// one loop on one machine: after it, nothing gets through here whatever
-    /// the shutter is still doing.
-    /// </summary>
+    // an over live view (by the clock or the adapter's success signal) serves and takes nothing, whatever the shutter does
     [Fact]
     public async Task A_live_view_that_is_over_serves_nothing_and_accepts_nothing()
     {
@@ -579,11 +467,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         await ErrorEnvelope.AssertAsync(late, HttpStatusCode.Gone, "challenge_expired");
     }
 
-    /// <summary>
-    /// The id of somebody else's live view is not a way into it. A bug in a
-    /// consumer that mixed two users' ids has to produce a refusal, not a
-    /// screen-share of the other one's password entry.
-    /// </summary>
+    // another session's live view id must give a refusal, not a screen-share of someone's password entry
     [Fact]
     public async Task A_live_view_belonging_to_another_session_is_simply_not_found()
     {
@@ -614,11 +498,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         await ErrorEnvelope.AssertAsync(input, HttpStatusCode.BadRequest, "unsupported_resource");
     }
 
-    /// <summary>
-    /// The agent's legs sit behind the same lease check as every other
-    /// job-scoped agent route, because a token that could photograph any job
-    /// could photograph any user's login.
-    /// </summary>
+    // the agent legs sit behind the lease check: a token that could photograph any job could photograph any login
     [Fact]
     public async Task An_agent_that_does_not_hold_the_lease_can_neither_post_a_frame_nor_read_the_input()
     {
@@ -637,7 +517,6 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             await ErrorEnvelope.AssertAsync(input, HttpStatusCode.BadRequest, "unsupported_resource");
         }
 
-        // And no token at all reaches neither.
         using var anonymous = factory.CreateClient();
 
         using (var frame = await PostFrameAsync(anonymous, run.JobId, sequence: 1, Frame(0x33)))
@@ -651,16 +530,8 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Null(Channel.Frame(run.JobId));
     }
 
-    // ----------------------------------------------------------------- custody
-
-    /// <summary>
-    /// The claim the whole feature rests on: a streamed login puts no
-    /// photograph and no keystroke at rest anywhere in the control plane.
-    ///
-    /// It needs a test rather than a habit. Every other picture in this system
-    /// - the still relay's captcha - IS stored, in <c>ChallengeRow.ImageBytes</c>,
-    /// and the natural way to build this would have been to reuse that column.
-    /// </summary>
+    // the custody claim: no photograph or keystroke at rest in the control plane; the still relay's captcha IS stored
+    // in ChallengeRow.ImageBytes, the natural column to reuse
     [Fact]
     public async Task No_frame_and_no_keystroke_reaches_any_table()
     {
@@ -680,8 +551,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         }
 
-        // Both legs really did work, so this is a test about custody and not
-        // about a feature that quietly did nothing.
+        // both legs worked, so this tests custody and not a feature that quietly did nothing
         using (var frame = await http.GetAsync(FrameUrl(run, after: 0)))
         {
             Assert.Equal(HttpStatusCode.OK, frame.StatusCode);
@@ -715,20 +585,8 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         Assert.Equal(0, stored.Results);
     }
 
-    /// <summary>
-    /// The frame bytes are excluded from body logging by construction rather
-    /// than by anyone remembering.
-    ///
-    /// There is no body logger in this service today, and that is precisely why
-    /// this has to be structural: the day somebody adds one - the framework's
-    /// own, or anything that honours its metadata - the live routes are already
-    /// out of it. Both legs are declared as route GROUPS carrying
-    /// <c>HttpLoggingFields.None</c>, so a fifth live route inherits the
-    /// refusal instead of needing a reviewer to catch it.
-    ///
-    /// No scrubber can find a password in a JPEG, which is the one place the
-    /// streamed design is honestly worse than the form it replaces.
-    /// </summary>
+    // no body logger exists today; both legs are route groups with HttpLoggingFields.None, so a new live route inherits it
+    // no scrubber can find a password in a JPEG
     [Fact]
     public void Every_live_route_is_declared_outside_body_logging()
     {
@@ -737,9 +595,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             .Where(e => e.RoutePattern.RawText?.Contains("/live/", StringComparison.Ordinal) == true)
             .ToList();
 
-        // The five routes of the fixed wire - the pushed stream (#429) is the
-        // fifth. If this number moves, the list below moved with it and
-        // somebody has to look at the new one.
+        // the five routes of the fixed wire (the pushed stream #429 is the fifth); a changed count needs a look at the new one
         Assert.Equal(5, endpoints.Count);
 
         foreach (var endpoint in endpoints)
@@ -754,8 +610,6 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         }
     }
 
-    // ---------------------------------------------------------------- helpers
-
     private LiveChannel Channel => factory.Services.GetRequiredService<LiveChannel>();
 
     private static string FrameUrl(LiveRun run, long after) =>
@@ -764,7 +618,6 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     private static string InputUrl(string jobId, long after) =>
         $"/agent/v1/jobs/{jobId}/live/input?after={after}";
 
-    /// <summary>The stream opened the way a consumer opens it: headers first, the body read as it arrives.</summary>
     private static async Task<HttpResponseMessage> OpenStreamAsync(
         HttpClient http, LiveRun run, long? after = null, string? lastEventId = null)
     {
@@ -790,11 +643,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     /// <summary>One server-sent event as the consumer sees it; a comment block is how a keep-alive arrives.</summary>
     private sealed record StreamEvent(string? Name, string? Id, string? Data, bool Comment);
 
-    /// <summary>
-    /// Reads the pushed stream an event at a time. Every wait is bounded by a
-    /// generous deadline and ends the moment the awaited event arrives, so a
-    /// loaded build machine makes a slow test rather than a red one.
-    /// </summary>
+    /// every wait has a generous deadline and ends when the event arrives: a loaded machine gives a slow test, not a red one
     private sealed class EventReader(HttpResponseMessage response)
     {
         private static readonly TimeSpan Deadline = TimeSpan.FromSeconds(20);
@@ -885,15 +734,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         return await http.SendAsync(request);
     }
 
-    /// <summary>
-    /// Everything the agent can still collect, one bounded batch at a time.
-    /// Each poll acknowledges the last sequence it saw, which is how the queue
-    /// learns what it may forget.
-    ///
-    /// Bounded by what the caller expects rather than by polling until empty:
-    /// an empty queue is a thirty-second long poll, which is right for an agent
-    /// and wrong for a test that already knows how much there is.
-    /// </summary>
+    /// bounded by the expected count: an empty queue is a thirty-second long poll
     private static async Task<List<JsonElement>> DrainAsync(HttpClient agent, string jobId, int expected)
     {
         var drained = new List<JsonElement>();
@@ -922,15 +763,8 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
 
     private static object KeyEvent(long sequence, string key) => new { kind = "key", key, sequence };
 
-    /// <summary>
-    /// A session with a run parked on a live view, and the agent holding its
-    /// lease.
-    ///
-    /// Staged into the tables rather than driven through POST /login: no
-    /// shipped provider raises a live view yet, and the four routes under test
-    /// care about a session, a leased job and a challenge - not about how those
-    /// three came to exist.
-    /// </summary>
+    // staged into the tables: no shipped provider raises a live view yet, and the routes care only about a session,
+    // a leased job and a challenge
     private async Task<LiveRun> ArrangeAsync(ChallengeType type = ChallengeType.LiveView)
     {
         using var scope = factory.Services.CreateScope();
@@ -975,9 +809,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             Kind = JobKind.Login,
         }, CancellationToken.None);
 
-        // A live view is raised in the middle of a run the agent is holding.
-        // The lease is what both agent routes check, so the fixture has to be a
-        // leased job rather than merely a queued one.
+        // both agent routes check the lease, so the job must be leased, not merely queued
         var row = await db.Jobs.FirstAsync(j => j.Id == job.Id);
         row.State = JobState.Leased;
         row.LeaseOwner = agentId;

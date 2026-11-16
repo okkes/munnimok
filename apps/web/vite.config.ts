@@ -17,8 +17,7 @@ export default defineConfig(({ mode }) => {
     }
   }
 
-  // staging installs wear the white leaf on brand green so both apps can
-  // live on one home screen; production keeps the dark leaf on cream
+  // staging installs wear the white leaf on brand green so both apps can live on one home screen
   const staging = process.env.VITE_CHANNEL === 'staging';
   const icon = (size: number) => (staging ? `icon-staging-${size}.png` : `icon-${size}.png`);
 
@@ -52,31 +51,21 @@ export default defineConfig(({ mode }) => {
           ],
         },
         injectManifest: {
-          // json matters: the vendored brand SVGs were precached but their
-          // index (brands/index.json) was not — offline installs showed an
-          // empty logo picker. jpg: the bundled event pictures must work
-          // offline/demo too. js: every screen's own chunk (#554) — an
-          // offline start opens any screen.
+          // json: brands/index.json must be precached or offline installs show an empty logo picker; jpg: bundled event
+          // pictures must work offline/demo; js: every screen's own chunk (#554)
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,jpg}'],
           // never precache the runtime-config overlay: the nginx entrypoint
           // rewrites it per deployment, but the precache would pin the
           // build-time stub forever (sw.ts serves it network-first instead)
           globIgnores: ['runtime-config.js'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-          // iife, NOT the default es: the worker is registered as a classic
-          // script, but the es build kept `import.meta` (dynamic-import
-          // helpers, catalog-baseline import) — browsers threw
-          // "Cannot use 'import.meta' outside a module" at parse time and
-          // production ran with NO service worker at all: no offline, no
-          // web push (user ss 2026-07-19). iife inlines every chunk.
+          // iife, not es: the worker is a classic script and the es build kept `import.meta`, which threw at parse time
+          // and left production with no service worker (no offline, no web push)
           rollupFormat: 'iife',
         },
       }),
       {
-        // iOS home-screen installs read apple-touch-icon, not (reliably)
-        // the manifest icons — inject the channel's leaf. #230: the same
-        // leaf becomes the browser-tab favicon (there was NO icon link at
-        // all — tabs showed the generic globe).
+        // iOS home-screen installs read apple-touch-icon, not reliably the manifest icons; the same leaf is the favicon (#230)
         name: 'munni:apple-touch-icon',
         transformIndexHtml: () => [
           { tag: 'link', attrs: { rel: 'apple-touch-icon', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
@@ -104,10 +93,8 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, 'src'),
       },
     },
-    // absolute: a real-path landing two levels deep (/splits/join/<token>)
-    // must still load the bundle from the root — a relative base sent the
-    // browser to /splits/join/assets/…, which nginx answers with the shell
-    // (a blank page). The manifest keeps its own './' start_url/scope/id.
+    // absolute: a real-path landing like /splits/join/<token> must load the bundle from the root (a relative base got
+    // nginx's shell: a blank page); the manifest keeps its own './' start_url/scope/id
     base: '/',
     build: {
       outDir: 'dist',
@@ -117,7 +104,6 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __BUILD_NUMBER__: JSON.stringify(buildNumber),
-      // release-please bumps package.json; Settings shows it as vX.Y.Z
       __APP_VERSION__: JSON.stringify(
         (JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')) as { version: string }).version,
       ),

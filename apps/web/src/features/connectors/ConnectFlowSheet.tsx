@@ -36,19 +36,8 @@ import type { FieldProblem, FormField } from './manifestForm';
 import { pendingFromView, pendingStateOf, usePendingLogins } from './pendingLogins';
 import type { AgentView, ErrorEnvelope, ProviderManifest, SessionView } from './types';
 
-/**
- * The connect flow (§10.2): the manifest's steps as a form, then the run
- * — progress from the typed `step`, every question the party asks
- * rendered by its kind — until the session is active and its bundle is
- * in custody. A run in flight is followed through the connector frames
- * on `/sync/events`, with a poll as the safety net.
- *
- * Closing the sheet DETACHES (user question 2026-10-01): the session runs
- * on the platform either way, the hub lists it as pending with a way back
- * in (`resume`), and the hub's follower adopts it when it settles. A
- * streamed page that the platform ends — the sign-in landed — moves the
- * sheet on at once instead of leaving someone looking at a finished page.
- */
+// closing the sheet DETACHES: the session keeps running on the platform, the hub lists it as pending (`resume`)
+// a streamed page the platform ends (the sign-in landed) moves the sheet on at once
 type Phase =
   | { kind: 'form' }
   | { kind: 'running'; view: SessionView }
@@ -56,7 +45,6 @@ type Phase =
   | { kind: 'failed'; error: ErrorEnvelope; artifactsJobId?: string }
   | { kind: 'done' };
 
-/** a sign-in started earlier (and maybe closed) to pick up where it stands */
 export interface ResumeLogin {
   connectionId: string;
   sessionId: string;
@@ -66,22 +54,15 @@ export interface ResumeLogin {
 const POLL_MS = 2_500;
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
 
-/**
- * What was typed into the form, kept for this page load only (user
- * 2026-10-07: a refused sign-in or a closed sheet emptied the form, and the
- * person typed everything again). Keyed by the connection signing in again,
- * or by the party for a connection that does not exist yet. Never stored
- * anywhere — a password is in it — and dropped the moment a sign-in lands.
- */
+// typed values live for this page load only and are never stored (a password is in them); dropped when a sign-in lands
+// keyed by the connection signing in again, else by the party
 const typedDrafts = new Map<string, Record<string, string>>();
 const draftKeyOf = (reconnectId: string | null, provider: string): string => reconnectId ?? provider;
 
-/** a sign-in that landed while its sheet was closed (the hub's follower adopted it) needs its typed values no more */
 export const forgetTypedValues = (reconnectId: string | null, provider: string): void => {
   typedDrafts.delete(draftKeyOf(reconnectId, provider));
 };
 
-/** the sheet's word on the picture a failed sign-in left: not known yet, to ask, or the answer given */
 type ReportState = 'pending' | 'ask' | 'yes' | 'no';
 const answerOf = (report: ReportState): 'yes' | 'no' | null => (report === 'yes' || report === 'no' ? report : null);
 
@@ -95,8 +76,6 @@ const inputModeFor = (field: FormField): React.HTMLAttributes<HTMLInputElement>[
 const INPUT_TYPE: Partial<Record<FormField['type'], string>> = { password: 'password', date: 'date' };
 const inputTypeFor = (field: FormField): string => INPUT_TYPE[field.type] ?? 'text';
 
-/** seconds since the run started waiting — so a spinner that is really a
- *  queue, or a browser starting, visibly moves (user request 2026-10-01) */
 function useElapsedSeconds(active: boolean): number {
   const [since, setSince] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -127,9 +106,7 @@ export function ConnectFlowSheet({
 }: Readonly<{
   open: boolean;
   manifest: ProviderManifest | null;
-  /** an existing connection signing in again */
   reconnectId: string | null;
-  /** a sign-in in flight to pick up instead of starting one */
   resume?: ResumeLogin | null;
   onOpenChange: (open: boolean) => void;
   onDone: (result: AdoptResult, reconnect: boolean) => void;
@@ -149,12 +126,10 @@ export function ConnectFlowSheet({
   const [values, setValues] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
-  // #441 L1: where "report this failure?" stands for the failure on screen
   const [report, setReport] = useState<ReportState>('pending');
   // a party that only talks to a browser on the person's own machine: the agent that will hold the sign-in
   const [agents, setAgents] = useState<AgentView[] | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
-  // a landscape page (a party that wants a desktop browser) gets the wider dialog
   const [landscape, setLandscape] = useState(false);
   // #543: signing in again with the login this device keeps sealed (the party offers the store) — nothing to type
   const [savedLogin, setSavedLogin] = useState(false);
@@ -162,20 +137,17 @@ export function ConnectFlowSheet({
   const attempt = useRef(0);
   const stopFollowing = useRef<() => void>(() => {});
   const inFlight = useRef(false);
-  // the session whose landing this sheet has already finished on
   const landed = useRef('');
   // closed, or gone with the hub: whatever is still pending is the hub's to follow
   const released = useRef(true);
   const startedAt = useRef('');
   // the resumed session is read once the handlers below exist (they close over this render)
   const pickUp = useRef<(sessionId: string) => void>(() => {});
-  // the typed values' place in the page-load memory above
   const draftKey = draftKeyOf(reconnectId, manifest?.id ?? '');
 
   useEffect(() => {
     if (!open) return;
     setStepIndex(0);
-    // the form comes back as it was left (user 2026-10-07)
     setValues(typedDrafts.get(draftKey) ?? {});
     setAttempted(false);
     setBusy(false);
@@ -197,7 +169,6 @@ export function ConnectFlowSheet({
     return () => {
       stopFollowing.current();
       released.current = true;
-      // the sheet is gone (unmounted with the hub, or closed): whatever is still pending is the hub's to follow
       usePendingLogins.getState().patch(connectionId.current, { attached: false });
     };
   }, [open, reconnectId, resume, draftKey]);
@@ -238,14 +209,8 @@ export function ConnectFlowSheet({
   const problems: Record<string, FieldProblem> = step ? validateValues(step.fields, values) : {};
   const pending = usePendingLogins.getState();
 
-  /**
-   * The failure's word goes on the device row too (user 2026-10-07: "the
-   * tab closes and I cannot report it any more"): the question a picture
-   * waits on then survives this sheet, under the hub's card — and a
-   * standing "always report" shares it without asking. The sheet asks only
-   * once the row has had its say, so no question flashes before a standing
-   * answer.
-   */
+  // the failure's word goes on the device row too, so a picture question outlives this sheet; the sheet asks only once the
+  // row has had its say, so no question flashes before a standing "always report" answer
   const noteFailure = async (error: ErrorEnvelope, artifactsJobId?: string) => {
     const at = attempt.current;
     const noted = await noteSignInFailure(store, connectionId.current, error, artifactsJobId).catch((): FailureNoted => 'asked');
@@ -264,7 +229,6 @@ export function ConnectFlowSheet({
     void noteFailure(error, artifactsJobId);
   };
 
-  // #441 L1: the person's word on the picture a failed sign-in left behind
   const answerReport = async (jobId: string, share: boolean) => {
     setBusy(true);
     // a question the relay no longer holds has lapsed by itself
@@ -276,15 +240,13 @@ export function ConnectFlowSheet({
   };
 
   const notePending = (view: SessionView) => {
-    // attached: this sheet follows the session; the hub's follower takes
-    // over only once the sheet lets go (close), never alongside it
+    // attached: this sheet follows the session; the hub's follower takes over only once the sheet lets go
     pending.put({ ...pendingFromView({ connectionId: connectionId.current, provider, reconnect, startedAt: startedAt.current }, view), attached: true });
   };
 
   /** the sheet let go of the sign-in an answer belongs to — closed, or showing another one — while the answer was on its way */
   const letGo = (id: string) => released.current || id !== connectionId.current;
 
-  /** a sign-in that landed, under the connection it was started for */
   const land = async (view: SessionView, id: string): Promise<void> => {
     // the bundle is handed over exactly once: on the settling answer, or
     // on the first view read after it
@@ -295,7 +257,6 @@ export function ConnectFlowSheet({
     if (landed.current === full.sessionId) return;
     landed.current = full.sessionId;
     pending.remove(id);
-    // the sign-in landed: what was typed for it is forgotten
     typedDrafts.delete(draftKey);
     if (!letGo(id)) setPhase({ kind: 'done' });
     onDone(result, reconnect);
@@ -310,7 +271,6 @@ export function ConnectFlowSheet({
       return;
     }
     if (view.state === 'awaiting_input' && view.challenge) {
-      // a party that comes back to the app's own return page (§15): what that page needs to answer, written down first
       if (view.challenge.type === 'redirect' && view.challenge.code && ownReturn(view.challenge.returnPattern, publicOrigin())) {
         rememberReturn({
           provider,
@@ -352,7 +312,6 @@ export function ConnectFlowSheet({
     }
   };
 
-  /** a run in flight: every frame (and the poll) reads the view afresh */
   const follow = (sessionId: string) => {
     const id = connectionId.current;
     const refresh = () => {
@@ -429,18 +388,14 @@ export function ConnectFlowSheet({
       await handleView(await connectorApi.answer(provider, view.sessionId, view.challenge.id, value), id);
     });
 
-  // the party's own page needs every pixel: the sheet grows to the full
-  // height and the content owns every pointer (see Sheet.dragLock)
   const live = phase.kind === 'challenge' && phase.view.challenge?.type === 'live_view';
 
-  /** closing keeps the sign-in going: it is listed in the hub until it settles, and the hub follows it from here */
   const close = () => {
     stopFollowing.current();
     pending.patch(connectionId.current, { attached: false });
     onOpenChange(false);
   };
 
-  /** giving up: the platform is told, and the hub forgets the attempt */
   const cancel = () => {
     stopFollowing.current();
     if (phase.kind === 'running' || phase.kind === 'challenge') {
@@ -457,17 +412,14 @@ export function ConnectFlowSheet({
     setAttempted(false);
   };
 
-  /** the platform ended the streamed page: read where the session stands now */
   const liveEnded = (view: SessionView) => {
     stopFollowing.current();
     const id = connectionId.current;
     void guarded(async () => handleView(await connectorApi.login(provider, view.sessionId), id));
   };
 
-  /** the control a field is edited with: a party's own list, a fixed list, or a text box */
   const controlFor = (field: FormField, value: string, invalid: boolean, set: (v: string) => void) => {
     if (field.type === 'lookup') {
-      // the step's other values ride along as context (the country picks the list)
       const context = Object.fromEntries((step?.fields ?? []).filter((f) => f.key !== field.key).map((f) => [f.key, values[f.key] ?? '']));
       return <LookupField provider={provider} field={field.key} value={value} context={context} invalid={invalid} onChange={(v) => set(v)} />;
     }
@@ -500,18 +452,14 @@ export function ConnectFlowSheet({
   const renderField = (field: FormField) => {
     const problem = attempted ? problems[field.key] : undefined;
     const value = values[field.key] ?? '';
-    // remembered as typed: a refusal or a close must not empty the form (user 2026-10-07)
+    // remembered as typed: a refusal or a close must not empty the form
     const set = (v: string) => {
       const next = { ...values, [field.key]: v };
       typedDrafts.set(draftKey, next);
       setValues(next);
     };
-    // A lookup is a search box AND a list of buttons, and it must not sit in a
-    // <label>: Safari runs the label's activation for a tap on any descendant,
-    // so a bank tapped from the list was re-dispatched to the first labelable
-    // element — by then the just-picked button — and unpicked itself (user ss
-    // 2026-10-02: "the bank item is not selectable"). A plain field keeps the
-    // label, which is what gives its input a name.
+    // a lookup (search box + button list) must not sit in a <label>: Safari re-dispatches a tap on any descendant to the first
+    // labelable element, so a picked bank unpicked itself; a plain field keeps the label, which names its input
     const Wrapper = field.type === 'lookup' ? 'div' : 'label';
     return (
       <Wrapper key={field.key} className="flex flex-col gap-1 text-[12px] text-ink-3" data-testid={`connect-fieldset-${field.key}`}>
@@ -529,7 +477,6 @@ export function ConnectFlowSheet({
       <p className="text-[13px] leading-relaxed text-ink-2" data-testid="connect-notes">
         {t(copyKey(manifest.notesKey, 'connect.notes.generic'))}
       </p>
-      {/* what a fetch says about itself (a bank handing over its whole export, say) */}
       {manifest.resources
         .filter((r) => r.notesKey && r.notesKey in en)
         .map((r) => (
@@ -630,7 +577,6 @@ export function ConnectFlowSheet({
           {t('connect.progress.elapsed', { s: elapsed })}
         </p>
         {view.notes?.[0] && <p className="text-[12px] text-ink-4">{view.notes[0]}</p>}
-        {/* the sign-in does not need this sheet open: it is listed in the hub until it settles */}
         <p className="mt-2 text-[11px] text-ink-4" data-testid="connect-progress-closenote">
           {t('connect.progress.closeNote')}
         </p>
@@ -672,8 +618,7 @@ export function ConnectFlowSheet({
             {phase.artifactsJobId && report !== 'pending' && (
               <ReportAsk testId="connect-report" answered={answerOf(report)} busy={busy} onAnswer={(share) => void answerReport(phase.artifactsJobId ?? '', share)} />
             )}
-            {/* offered after EVERY refusal (user 2026-10-07): a party's "no" is as often a typo
-                as a dead account, and the form comes back with what was typed */}
+            {/* offered after EVERY refusal: a "no" is as often a typo as a dead account, and the form returns with what was typed */}
             <Button data-testid="connect-retry" onClick={retry}>
               {t('connect.action.retry')}
             </Button>

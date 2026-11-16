@@ -4,13 +4,9 @@ using Munni.Api.Social;
 
 namespace Munni.Api.Sync;
 
-/// <summary>
-/// A space its owner deleted is erased at once (#615, the person's ruling of 2026-11-16: "permanently delete
-/// right away"). Until then a deleted space was a tombstone on its own row and nothing else: its members, its
-/// account attachments and its place among the spaces every device syncs all stayed, so the nightly fetch kept
-/// writing into it. What is left afterwards is the id (<see cref="ErasedSpace"/>): a device that still holds
-/// the space is told it is gone, and its next push cannot bring an empty space of that id back to life.
-/// </summary>
+/// #615: a space its owner deleted is erased at once ("permanently delete right away"); before, it was only a tombstone,
+/// so members, attachments and the nightly fetch stayed. Only the id is kept (<see cref="ErasedSpace"/>): a device
+/// holding the space is told it is gone, and its push cannot revive it.
 public static class SpaceErasure
 {
     /// <summary>The 403 body that tells an erased space from one the caller was taken out of.</summary>
@@ -18,39 +14,26 @@ public static class SpaceErasure
 
     private const string SpaceEntity = "space";
 
-    /// <summary>
-    /// 403, so a device from before this still lets go of the space the way it does when it is removed from
-    /// one; the body says which of the two happened.
-    /// </summary>
+    /// 403, so a device from before this still lets go of the space as when removed from one; the body says which happened
     public static IResult Gone() => Results.Json(new { error = GoneError }, statusCode: StatusCodes.Status403Forbidden);
 
     public static Task<bool> IsErasedAsync(AppDbContext db, string spaceId, CancellationToken ct = default) =>
         db.ErasedSpaces.AnyAsync(e => e.SpaceId == spaceId, ct);
 
-    /// <summary>The op that deletes a space: a delete of the space's own row.</summary>
     public static bool Deletes(SyncOpDto op, string spaceId) =>
         op.Deleted && op.Entity == SpaceEntity && op.EntityId == spaceId;
 
-    /// <summary>
-    /// What a push may apply: deleting the space is its owner's to do — it erases the space for everyone — so
-    /// anybody else's delete of the space's row is left out.
-    /// </summary>
+    /// deleting a space is its owner's to do (it erases it for everyone): anybody else's delete of its row is left out
     public static List<SyncOpDto> Admitted(List<SyncOpDto> ops, string spaceId, bool owner) =>
         owner ? ops : ops.Where(o => !Deletes(o, spaceId)).ToList();
 
-    /// <summary>
-    /// Whether the ops just applied deleted the space: one of them is the delete, and the space's own row
-    /// stands as deleted — by the merge's rule, so an edit made after the delete keeps the space. Reads the
-    /// row the caller's unit of work holds, saved or not.
-    /// </summary>
+    /// the space's own row must stand as deleted by the merge's rule (an edit after the delete keeps the space); reads the
+    /// row the caller's unit of work holds, saved or not
     public static async Task<bool> DeletedByAsync(AppDbContext db, string spaceId, List<SyncOpDto> applied, CancellationToken ct = default) =>
         applied.Exists(o => Deletes(o, spaceId)) && (await db.EntityRows.FindAsync([spaceId, SpaceEntity, spaceId], ct))?.Deleted == true;
 
-    /// <summary>
-    /// Takes the space out of reach, in the caller's unit of work: nobody is a member, no account is attached
-    /// (an account only this space showed is unattached again, and still its owner's), no invitation waits,
-    /// and what pointed at the space from outside it lets go. The id is recorded. The caller saves.
-    /// </summary>
+    /// out of reach: no members, links or invites; an account only this space showed is unattached again, still its
+    /// owner's; the caller saves
     public static async Task SealAsync(AppDbContext db, string spaceId, CancellationToken ct = default)
     {
         db.SpaceMembers.RemoveRange(await db.SpaceMembers.Where(m => m.SpaceId == spaceId).ToListAsync(ct));
@@ -77,10 +60,7 @@ public static class SpaceErasure
         if (await db.ErasedSpaces.FindAsync([spaceId], ct) is null) db.ErasedSpaces.Add(new ErasedSpace { SpaceId = spaceId });
     }
 
-    /// <summary>
-    /// Removes what the space held: every row, every op, the space itself. Safe to run again — an erase cut
-    /// short is finished by <see cref="SweepAsync"/>.
-    /// </summary>
+    /// safe to run again: <see cref="SweepAsync"/> finishes an erase cut short
     public static async Task EraseRowsAsync(AppDbContext db, string spaceId, CancellationToken ct = default)
     {
         if (db.Database.IsRelational())
@@ -97,11 +77,8 @@ public static class SpaceErasure
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>
-    /// Every start: finishes an erase that was cut short, and erases the spaces that were deleted before the
-    /// server erased anything. Only a delete an owner wrote counts — the app offers Delete to owners alone, and
-    /// since this change the push refuses anybody else's. Returns how many spaces went.
-    /// </summary>
+    /// Every start: finishes an erase cut short and erases spaces deleted before the server erased anything. Only an owner's
+    /// delete counts: the app offers Delete to owners alone, and the push refuses anybody else's since #615.
     public static async Task<int> SweepAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
         var erased = 0;

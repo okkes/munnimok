@@ -31,7 +31,6 @@ interface ImportBatchView {
   importedBy?: string;
 }
 
-/** where an account's data comes from, for the settings section */
 export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
   manual: 'acct.sourceManual',
   camt053: 'acct.sourceImport',
@@ -41,32 +40,20 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
 /** the table read with a source as stored — a row written by an earlier build may carry one this build no longer lists */
 const sourceKeyOf = (source: string): TranslationKey | undefined => (SOURCE_KEYS as Record<string, TranslationKey | undefined>)[source];
 
-/**
- * The label of a row's source; a connector-fed row names its party through
- * {@link sourceParamsFor}. A source this build no longer lists (`gocardless`,
- * once a kind of its own, retired in #414) reads as fetched by that party
- * rather than taking the screen down (prod, user ss 2026-10-04).
- */
+// a source this build no longer lists (`gocardless`, retired in #414) reads as fetched by that party, not a crash
 export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
   sourceKeyOf(account.source) ?? 'acct.sourceConnector';
 
-/** #367: a connector-fed row names its party in the label (GoCardless, Enable Banking, ASN …); a row whose source is a party of its own names that party */
 export const sourceParamsFor = (account: Pick<AccountRow, 'source' | 'provider'>): Record<string, string> => {
   const listed = sourceKeyOf(account.source);
   if (listed && account.source !== 'connector') return {};
   return { party: partyName(account.provider ?? account.source) };
 };
 
-/** rows a party keeps current by itself (the connector platform, open banking included) — as
- *  opposed to statements a human uploads */
+/** rows a party keeps current by itself, as opposed to statements a human uploads */
 export const fetchesItself = (account: Pick<AccountRow, 'source'>): boolean => account.source === 'connector';
 
-/**
- * The global view of one of YOUR feed accounts: name/icon, source, the
- * spaces it is currently attached to (detach-only — attaching happens on
- * each space's own accounts screen now, redesign 2026-07-22), and the
- * delete danger zone.
- */
+/** global view of one of YOUR feed accounts: detach-only, attaching happens on each space's own accounts screen */
 export function AttachSheet({
   open,
   onOpenChange,
@@ -86,20 +73,16 @@ export function AttachSheet({
   const [detachSpaceId, setDetachSpaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [logoOpen, setLogoOpen] = useState(false);
-  // #239: a global rename with space-level names standing asks first
   const [renameAsk, setRenameAsk] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
-  // #185: a big account deletes in visible stages — server first, then
-  // the local purge; the confirm sheet's busy note names the current one
+  // #185: a big account deletes in visible stages: server first, then the local purge
   const [deleteStage, setDeleteStage] = useState<'server' | 'local'>('server');
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const readOnlySpaces = useReadOnlySpaceIds(); // #505
-  // LIVE link rows, not the entry snapshot: the checkboxes must flip the
-  // moment a toggle writes to Dexie (user bug: they only updated after
-  // leaving and re-entering the screen)
+  // live link rows, not the entry snapshot: the checkboxes must flip as soon as a toggle writes to Dexie
   const accountId = entry?.account.id;
   const liveLinks = useQuery(
     store,
@@ -107,15 +90,12 @@ export function AttachSheet({
       accountId ? (await store.allRows('accountLink')).filter((l) => l.deleted === 0 && l.accountId === accountId) : [],
     [accountId],
   );
-  // LIVE account row for the same reason: an icon pick must show up while
-  // the sheet stays open (user bug: it looked like nothing happened)
+  // live account row: an icon pick must show while the sheet stays open
   const liveAccount = useQuery(store, async () => (accountId ? await store.get('account', accountId) : undefined), [
     accountId,
   ]);
-  // #205: the newest transaction on the account, from raw rows
   const newestTx = useQuery(store, async () => (accountId ? newestTxDate(store, accountId) : undefined), [accountId]);
 
-  // master plan IB: batches derive from the stamped rows — no extra table
   const batches =
     useQuery(
       store,
@@ -143,8 +123,7 @@ export function AttachSheet({
   const [rollbackBatch, setRollbackBatch] = useState<ImportBatchView | null>(null);
   const rollback = async () => {
     if (!rollbackBatch) return;
-    // a batch removes only rows IT created: rows this upload merely
-    // re-encountered keep their first batch id and survive
+    // a batch removes only rows it created: rows an upload merely re-encountered keep their first batch id
     for (const tx of await store.allRows('transaction')) {
       if (tx.deleted === 0 && tx.importBatchId === rollbackBatch.id) await repo.remove('transaction', tx.spaceId, tx.id);
     }
@@ -163,16 +142,13 @@ export function AttachSheet({
   const account = liveAccount ?? entry.account;
   const viaBySpace = new Map((liveLinks ?? []).map((l) => [l.spaceId, l]));
 
-  // display name + icon live on the feed's account row — the owner's
-  // edit reaches every space the account is shared with (it's their
-  // account); raw bank facts (iban, balance) stay untouched
+  // name and icon live on the feed's account row: the owner's edit reaches every space it is shared with
   const saveName = () => {
     const trimmed = name.trim();
     if (trimmed && trimmed !== account.name) {
       void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
       void logActivity(store, repo, spaceId, 'accountEdit', trimmed);
-      // #239 (user): spaces may hold their OWN name for this account —
-      // a global rename asks whether those follow or stay
+      // #239: spaces may hold their own name for the account: a global rename asks whether those follow or stay
       if ((liveLinks ?? []).some((l) => l.displayName)) setRenameAsk(trimmed);
     }
   };
@@ -192,20 +168,16 @@ export function AttachSheet({
     setDeleteFailed(false);
     setDeleteStage('server');
     try {
-      // server first: consent revocation + cascade (or partial removal
-      // when someone else still covers the account — server ruling)
+      // server first: consent revocation + cascade, or partial removal when someone else still covers the account
       await deleteFeedAccount(feedSpaceId);
-      // my synced mirrors tombstone through the normal outbox path; the
-      // feed's local rows are purged directly — it is no longer ours.
-      // #505: a space this identity only reads gets the server's own
-      // tombstones (feed deletion writes them) — skipped here, never a halt
+      // my synced mirrors tombstone via the outbox; the feed's local rows are purged directly (no longer ours)
+      // #505: a space this identity only reads gets the server's own tombstones: skipped here, never a halt
       setDeleteStage('local');
       const upkeep = repo.upkeep();
       for (const link of liveLinks ?? []) {
         await upkeep.remove('accountLink', link.spaceId, link.id);
       }
-      // #279: the engine purge below is feed-keyed — member spaces keep
-      // their txMeta overlays and the space's own rows unless swept here
+      // #279: the engine purge is feed-keyed: member spaces keep txMeta overlays and own rows unless swept here
       await purgeAccountRemnants(store, upkeep, account.id, feedSpaceId);
       await engine?.purgeSpace(feedSpaceId);
       void logActivity(store, repo, spaceId, 'accountRemove', account.name);
@@ -231,12 +203,10 @@ export function AttachSheet({
     }
   };
 
-  // only the spaces this account currently feeds (archived = left the
-  // space once; reviving happens on the space's own accounts screen)
+  // only the spaces the account currently feeds (archived = left once; revive on the space's own accounts screen)
   const attachedSpaces = (spaces ?? [])
     .map((space) => ({ space, via: viaBySpace.get(space.id) }))
     .filter((row) => !!row.via);
-  // #318: the quick-attach door names the ACTIVE space
   const activeSpace = (spaces ?? []).find((s) => s.id === spaceId);
 
   return (
@@ -269,14 +239,11 @@ export function AttachSheet({
           </button>
         </div>
       )}
-      {/* #212 r2 (user): NO type here — a global account is just an
-          account; each space decides what it is at attach time and can
-          change it on its own accounts sheet */}
+      {/* #212: no type here: a global account is just an account, each space decides at attach time */}
       <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-source">
         <span className="text-ink-4">{t('acct.source')}</span>
         <span className="text-ink-2">{t(sourceKeyFor(account), sourceParamsFor(account))}</span>
       </div>
-      {/* #205: where the DATA ends vs when the sync ran — two facts */}
       {account.dataThroughDate && (
         <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-datathrough">
           <span className="text-ink-4">{t('acct.dataThroughLabel')}</span>
@@ -287,18 +254,13 @@ export function AttachSheet({
         <span className="text-ink-4">{t('acct.newestTx')}</span>
         <span className="font-mono text-ink-2">{newestTx ?? '—'}</span>
       </div>
-      {/* only what the account currently feeds — attaching moved to each
-          space's own accounts screen (checkboxes retired, user request) */}
       <p className="pb-2 text-[13px] text-ink-3">{t('acct.attachedSpaces')}</p>
       {attachedSpaces.length === 0 && (
         <p className="px-1 text-[13px] text-ink-4" data-testid="attach-none">
           {t('acct.notAttached')}
         </p>
       )}
-      {/* #318 (user): a truly link-less account offers the CURRENT space
-          by name — through the real flow: the intent pre-aims the space
-          accounts screen, whose attach sheet opens on the final step
-          (type pick + Attach, #310) — never a silent in-place attach */}
+      {/* #318: a link-less account offers the current space through the real attach flow, never a silent attach */}
       {canEdit && liveLinks?.length === 0 && activeSpace && !readOnlySpaces.has(activeSpace.id) && (
         <Button
           variant="outline"
@@ -323,7 +285,6 @@ export function AttachSheet({
               className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
             >
               <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{space.name}</span>
-              {/* #277: a shared space says so wherever it is listed */}
               {space.kind === 'shared' && <SharedSpaceBadge testId={`attach-space-shared-${space.id}`} />}
               {via?.historyFrom && <span className="font-mono text-[11px] text-ink-4">{via.historyFrom}</span>}
               {via?.archived && (
@@ -350,8 +311,6 @@ export function AttachSheet({
           ))}
         </div>
       )}
-      {/* master plan IB: statement uploads as rollback-able batches —
-          who uploaded what, and one tap to take a bad upload back out */}
       {canEdit && batches.length > 0 && (
         <>
           <div className="m-cap mt-4 mb-1 px-1">{t('imports.section')}</div>
@@ -380,8 +339,7 @@ export function AttachSheet({
           </div>
         </>
       )}
-      {/* danger zone: deletion exists for connected accounts too (user
-          request) — syncing identities only, the server owns the cascade */}
+      {/* deletion exists for connected accounts too: syncing identities only, the server owns the cascade */}
       {canEdit && engine && (
         <Button
           variant="danger"
@@ -396,11 +354,7 @@ export function AttachSheet({
         </Button>
       )}
     </Sheet>
-    {/* #241 (user ss): SIBLINGS, not children — a sheet nested inside
-        another sheet's children portals FIRST and paints BELOW its
-        parent (both live at z-50; body order decides). Beside the
-        parent, the later sibling lands later in <body> and stacks on
-        top — the EditAccountSheet pattern. */}
+    {/* #241: siblings, not children: a nested sheet portals first and paints below its parent (body order) */}
     <BrandIconPicker
       open={logoOpen}
       onOpenChange={setLogoOpen}
@@ -411,7 +365,6 @@ export function AttachSheet({
         setLogoOpen(false);
       }}
     />
-    {/* #239: the global rename found space-level names — follow or keep? */}
     <Sheet
       open={renameAsk !== null}
       onOpenChange={(next) => {
@@ -432,9 +385,7 @@ export function AttachSheet({
         </Button>
       </div>
     </Sheet>
-    {/* #288 (user ss): the destructive confirms are SIBLINGS too — nested
-        in the sheet's children they portaled FIRST and the delete popup
-        painted BEHIND the sheet (same #241 body-order rule as above) */}
+    {/* #288: the destructive confirms are siblings too (same #241 body-order rule) */}
     <DangerConfirmSheet
       open={rollbackBatch !== null}
       onOpenChange={(o) => !o && setRollbackBatch(null)}
@@ -443,7 +394,6 @@ export function AttachSheet({
       onConfirm={() => void rollback()}
       testId="attach-rollback"
     />
-    {/* aligned destructive confirm: sheet + cooldown, same as space side */}
     <DangerConfirmSheet
       open={detachSpaceId !== null}
       onOpenChange={(o) => !o && setDetachSpaceId(null)}

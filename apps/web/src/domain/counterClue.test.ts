@@ -2,12 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { matchCounterAccount } from './counterClue';
 import type { ClueAccount, ClueTx } from './counterClue';
 
-/** #228 r3: the transfer clue-reader — a predicted transfer must point
- *  at a real tracked account or stand down to uncategorized. */
-
 const paypalRow: ClueTx = {
-  // the user's exact report: a PayPal incasso predicted "Transfer Out"
-  // while the PayPal account sat unmatched in the picker
+  // reported case: a PayPal incasso predicted Transfer Out while the PayPal account sat unmatched in the picker
   merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A',
   description:
     'Incasso · Naam: PayPal Europe S.a.r.l. et Cie S.C.A Omschrijving: 1051635911097/PAYPAL IBAN: LU89751000135104200E Kenmerk: 1051635911097',

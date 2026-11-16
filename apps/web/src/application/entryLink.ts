@@ -7,21 +7,14 @@ import { autoLinks, countsInBalance, isEntry } from '@/domain/entryMatch';
 import { mirrorTxId, txMetaId } from '@/domain/feedIds';
 import { GIVE_UP_MS, carriedFields, repointReferences, tombstoneMs } from './reservedCarry';
 
-/**
- * #547 (user 2026-11-09/11): an entry typed by hand on a bank account and
- * the bank's own transaction read as one. Linking hands the entry's story
- * — category, split, note, event, counterparty, links — to the bank's row,
- * the one every list and total keeps showing, and hides the entry behind
- * it; taking them apart hands the story back and returns the bank's row to
- * what it was. Entries live in their space, so all of this does too.
- */
+// #547: a hand-typed entry on a bank account and the bank's transaction read as one: linking moves the entry's story onto
+// the bank's row and hides the entry; unlinking hands it back. Entries live in their space, so all of this does too
 
 /** the opinions a space can hold on a row — what moves at a link and comes back at an unlink */
 const STORY_KEYS = ['catId', 'cats', 'splits', 'notes', 'titleOverride', 'eventId', 'recurringId', 'linkedAccountId', 'reimbursements', 'transferPeerId'] as const;
 type StoryKey = (typeof STORY_KEYS)[number];
 type Story = Partial<Pick<TransactionRow, StoryKey>> & { needsReview?: 0 | 1 };
 
-/** a bank transaction as its space holds it: the raw row and where its opinions live */
 export interface BankRowRef {
   raw: TransactionRow;
   /** the feed the row comes from; absent for a row imported into the space itself */
@@ -60,18 +53,13 @@ function handedOver(story: Story, from: TransactionRow, to: TransactionRow): TxT
   return fields;
 }
 
-/** every story field, the ones a snapshot does not hold cleared */
 function restored(before: EntryBankBefore | null | undefined): TxTransformFields {
   const fields: Record<string, unknown> = {};
   for (const key of STORY_KEYS) fields[key] = before?.[key] ?? null;
   return fields as TxTransformFields;
 }
 
-/**
- * The entry and the bank's row become one. `auto` — made without asking —
- * sends the row back through the review, where the person can look, take
- * them apart or pick another (user: "manage it on the spot").
- */
+/** `auto` (made without asking) sends the row back through the review, where the person can unlink or pick another */
 export async function linkEntry(store: StorageBackend, repo: Repo, spaceId: string, entry: TransactionRow, bank: BankRowRef, auto: boolean): Promise<void> {
   const before = await bankStory(store, spaceId, bank);
   const needsReview = auto ? 1 : (before?.needsReview ?? 1);
@@ -86,12 +74,7 @@ export async function linkEntry(store: StorageBackend, repo: Repo, spaceId: stri
   });
 }
 
-/**
- * The two are taken apart: the story as it stands goes back to the entry
- * (sized to what was typed), the bank's row returns to what it was before
- * the link, and the pair is never made again without asking. A bank row
- * that is gone hands back whatever its overlay still holds.
- */
+// the story goes back to the entry, the bank's row to its pre-link state; the pair is never remade without asking
 export async function unlinkEntry(store: StorageBackend, repo: Repo, spaceId: string, entry: TransactionRow, bank: BankRowRef | undefined): Promise<void> {
   const bankId = entry.bankTxId;
   if (!bankId) return;
@@ -111,7 +94,6 @@ export async function unlinkEntry(store: StorageBackend, repo: Repo, spaceId: st
   });
 }
 
-/** the bank rows of a space's accounts that a hand-typed entry can pair with, by id — feed rows and rows imported into the space */
 export async function bankRowsOf(store: StorageBackend, spaceId: string, accounts: ReadonlyMap<string, AccountRow>): Promise<Map<string, BankRowRef>> {
   const rows = new Map<string, BankRowRef>();
   for (const raw of await store.bySpace('transaction', spaceId)) {
@@ -126,11 +108,7 @@ export async function bankRowsOf(store: StorageBackend, spaceId: string, account
   return rows;
 }
 
-/**
- * The bank row a new entry fits exactly, when there is one and only one —
- * asked about before the entry is saved (user: saving asks "link them?"
- * instead of linking silently).
- */
+// asked before the entry is saved ("link them?"), never linked silently
 export async function bankFitFor(
   store: StorageBackend,
   spaceId: string,
@@ -142,12 +120,7 @@ export async function bankFitFor(
   return bankId ? (rows.get(bankId) ?? null) : null;
 }
 
-/**
- * What the entries typed by hand still add on top of a bank account's
- * balance, over every space on this device — folded into the balance the
- * moment the account becomes hand-kept (going offline): from then on no
- * bank number is coming that could contain them.
- */
+// folded into the balance when the account becomes hand-kept (going offline): no bank number will contain them
 export async function entriesOnTopOf(store: StorageBackend, account: AccountRow): Promise<number> {
   let cents = 0;
   for (const row of await store.allRows('transaction')) {
@@ -158,7 +131,6 @@ export async function entriesOnTopOf(store: StorageBackend, account: AccountRow)
   return cents;
 }
 
-/** the accounts a space can type entries on, by id: its own and the attached ones */
 async function spaceAccounts(store: StorageBackend, spaceId: string): Promise<Map<string, AccountRow>> {
   const accounts = new Map<string, AccountRow>();
   for (const account of await store.bySpace('account', spaceId)) if (account.deleted === 0) accounts.set(account.id, account);
@@ -176,12 +148,8 @@ interface SpaceAt {
   now: number;
 }
 
-/**
- * An entry whose bank row is gone. A reserved row the bank is replacing
- * keeps its claim while its booked twin may still land (the carry moves
- * the link) — false; any other row that is gone, a rolled-back import or
- * a hold that never booked, frees the entry — true.
- */
+// a reserved row the bank is replacing keeps its claim while its booked twin may land (the carry moves the link): false;
+// any other gone row (rolled-back import, hold that never booked) frees the entry: true
 async function freedFromGoneRow({ store, repo, spaceId, now }: SpaceAt, entry: TransactionRow, bankId: string): Promise<boolean> {
   const gone = await store.get('transaction', bankId);
   if (gone?.pending === 1 && now - tombstoneMs(gone) <= GIVE_UP_MS) return false;
@@ -190,7 +158,6 @@ async function freedFromGoneRow({ store, repo, spaceId, now }: SpaceAt, entry: T
   return true;
 }
 
-/** the entries free to be linked, and the bank rows other entries hold — entries whose bank row is gone are freed on the way */
 async function freeAndTaken(at: SpaceAt, entries: readonly TransactionRow[], bankRows: ReadonlyMap<string, BankRowRef>) {
   const free: TransactionRow[] = [];
   const taken = new Set<string>();
@@ -202,7 +169,6 @@ async function freeAndTaken(at: SpaceAt, entries: readonly TransactionRow[], ban
   return { free, taken };
 }
 
-/** one space: entries whose bank row is gone are freed, and every free entry with one exact fit is linked; how many links were made */
 async function linkInSpace(store: StorageBackend, repo: Repo, spaceId: string, now: number): Promise<number> {
   const own = (await store.bySpace('transaction', spaceId)).filter((row) => row.deleted === 0);
   const accounts = await spaceAccounts(store, spaceId);
@@ -222,7 +188,6 @@ async function linkInSpace(store: StorageBackend, repo: Repo, spaceId: string, n
   return linked;
 }
 
-/** every real space's entries met with their bank rows; how many links were made */
 export async function linkEntries(store: StorageBackend, repo: Repo, now = Date.now()): Promise<number> {
   let linked = 0;
   for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind)) {
@@ -233,7 +198,6 @@ export async function linkEntries(store: StorageBackend, repo: Repo, now = Date.
 
 let running = false;
 
-/** the after-sync pass, one at a time: a pull may have brought the bank's version of something typed by hand */
 export async function linkEntriesAfterSync(store: StorageBackend, repo: Repo): Promise<number> {
   if (running) return 0;
   running = true;

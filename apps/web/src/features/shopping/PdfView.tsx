@@ -3,7 +3,6 @@ import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import { useLang } from '@/i18n';
 import { ZoomFrame } from './ZoomFrame';
 
-/** the bytes behind a base64 data URL */
 export function dataUrlBytes(dataUrl: string): Uint8Array {
   const comma = dataUrl.indexOf(',');
   const binary = atob(comma < 0 ? '' : dataUrl.slice(comma + 1));
@@ -12,14 +11,8 @@ export function dataUrlBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
-/**
- * pdf.js arrives only when an invoice is opened (the type import above costs
- * nothing); its worker is a bundled asset. The LEGACY build, both files: since
- * version 6 the default one is written for the newest browsers alone (it calls
- * Math.sumPrecise and Map.getOrInsert without a fallback), and a phone whose
- * web view is a year old would show "could not open" instead of the invoice.
- * This one runs from Safari 18 and Chrome 125.
- */
+// the LEGACY pdf.js build, both files: the default one since v6 calls Math.sumPrecise and Map.getOrInsert
+// without fallback, so an older web view shows "could not open"; legacy runs from Safari 18 and Chrome 125
 async function openPdf(dataUrl: string): Promise<PDFDocumentProxy> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
@@ -35,7 +28,6 @@ interface PageSize {
   height: number;
 }
 
-/** every page at the frame's width × the zoom, sharp for the device's pixel ratio */
 function PdfPages({
   doc,
   sizes,
@@ -73,7 +65,6 @@ function PdfPages({
       for (const task of tasks) task.cancel?.();
     };
   }, [doc, sizes, width, onFail]);
-  // the layout follows the zoom at once (the sizes are known); the pixels follow when drawn
   return sizes.map((size, i) => (
     <canvas
       key={`${testId}-${i + 1}`}
@@ -87,14 +78,8 @@ function PdfPages({
   ));
 }
 
-/**
- * The invoice drawn by pdf.js (user 2026-10-06): every page as wide as the
- * frame, so the reader only scrolls down; the shared zoom frame zooms in
- * and out (up to 4×, never under the width — #568 added the double tap,
- * the mouse drag and the zoom around its point). The browser's own PDF
- * plugin was the previous answer - it fit the page instead of the width,
- * zoomed as it pleased, and Android had none at all.
- */
+// every page as wide as the frame; zoom up to 4×, never under the width
+// the browser's PDF plugin fit the page and Android had none
 export function PdfView({ dataUrl, testId }: Readonly<{ dataUrl: string; testId: string }>) {
   const { t } = useLang();
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);

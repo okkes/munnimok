@@ -9,8 +9,8 @@ describe('split math', () => {
     expect(splitsTotalCents([])).toBe(0);
     expect(splitsTotalCents([split('a', 300), split('b', 700)])).toBe(1000);
     expect(splitRemainderCents(-1000, [split('a', 300)])).toBe(700);
-    expect(splitRemainderCents(-1000, [split('a', 300), split('b', 900)])).toBe(-200); // over-assigned
-    expect(splitRemainderCents(1000, [split('a', 1000)])).toBe(0); // income splits too
+    expect(splitRemainderCents(-1000, [split('a', 300), split('b', 900)])).toBe(-200);
+    expect(splitRemainderCents(1000, [split('a', 1000)])).toBe(0);
   });
 
   it('validates: needs 2+, positive, unique categories, exact balance', () => {
@@ -32,14 +32,11 @@ describe('split math', () => {
     expect(balanceOpenRow(-1000, [split('a', 300), split('b', 0)])).toEqual([split('a', 300), split('b', 700)]);
     expect(balanceOpenRow(-1000, [split('a', 1200), split('b', 500)])).toEqual([split('a', 1200), split('b', 0)]);
     expect(balanceOpenRow(-1000, [])).toEqual([]);
-    // a balanced result validates
     const balanced = balanceOpenRow(-1000, [split('a', 250), split('b', 1)]);
     expect(validateSplits(-1000, balanced)).toBeNull();
   });
 
   it('balanceOpenRow targets the row being worked on: the FIRST empty one (#130)', () => {
-    // the user filled the SECOND row and left the first open — the pill
-    // must fill the first, not clobber the second
     expect(balanceOpenRow(-1000, [split('a', 0), split('b', 500)])).toEqual([split('a', 500), split('b', 500)]);
     expect(balanceTargetIndex([0, 500])).toBe(0);
     expect(balanceTargetIndex([300, 700])).toBe(1);
@@ -58,10 +55,8 @@ describe('percentage splits', () => {
     const resolved = resolveSplitsFor(-1001, [pct('a', 50), pct('b', 50)]);
     expect(resolved.reduce((sum, s) => sum + s.amountCents, 0)).toBe(1001);
     expect(Math.max(...resolved.map((s) => s.amountCents))).toBe(501);
-    // thirds never lose a cent either
     const thirds = resolveSplitsFor(-1000, [pct('a', 34), pct('b', 33), pct('c', 33)]);
     expect(thirds.reduce((sum, s) => sum + s.amountCents, 0)).toBe(1000);
-    // absolute splits pass through untouched
     expect(resolveSplitsFor(-1000, [split('a', 400), split('b', 600)])).toEqual([split('a', 400), split('b', 600)]);
   });
 

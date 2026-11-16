@@ -16,8 +16,7 @@ export interface PushResult {
 export interface PullResult {
   ops: Op[];
   latestSeq: number;
-  /** the last returned op's seq — the honest page cursor (#305 bug 4);
-   *  absent on servers predating pagination */
+  /** the last returned op's seq, the honest page cursor (#305); absent on servers predating pagination */
   nextSince?: number;
 }
 
@@ -29,39 +28,26 @@ export interface SpaceHead {
   role?: string;
 }
 
-/**
- * Transport to the sync server. Demo/offline identities simply never get
- * an engine, so no network code can even run for them.
- */
+/** transport to the sync server; demo/offline identities never get an engine */
 export interface SyncBackend {
   push(spaceId: string, clientId: string, ops: Op[]): Promise<PushResult>;
   pull(spaceId: string, since: number): Promise<PullResult>;
-  /**
-   * #606: a page of the space's rows as they stand, for a device that holds nothing of it; null when there is
-   * no snapshot to take (a feed read up to an archive point) and the history is pulled from its start instead.
-   * A transport without the method has no snapshots at all.
-   */
+  // #606: a page of the space's rows for a device that holds nothing of it; null when there is no snapshot to take
+  // (a feed read up to an archive point) and the history is pulled from its start; a transport without it has none
   snapshot?(spaceId: string, after?: string): Promise<SnapshotPage | null>;
   /** space ids this user is a member of — how a fresh device discovers its data */
   listSpaces(): Promise<string[]>;
   /** #569: every space the user reaches with its head, in one call — a round pulls only what moved */
   heads(): Promise<SpaceHead[]>;
-  /**
-   * Optional long-lived change stream: resolves when the stream ends,
-   * rejects on connection errors; `onEvent` fires per frame — a changed
-   * space (`spaceId`) or a connector run in flight (`kind: "connector"`).
-   */
+  /** optional change stream: resolves when it ends, rejects on connection errors; frames: changed space or connector run */
   events?(signal: AbortSignal, onEvent: (frame: SyncEventFrame) => void): Promise<void>;
 }
 
 /** one `data:` line of `/sync/events`: a space changed, or a connector view moved */
 export type SyncEventFrame = { spaceId: string; kind?: undefined } | ({ kind: 'connector'; spaceId?: undefined } & Record<string, unknown>);
 
-/**
- * #594: a connection that stalls (a phone changing networks, a proxy that accepts and never answers) kept
- * its request, and with it the whole round, open for good — no later round could start. Past this limit the
- * request fails like any lost connection. The event stream is exempt: it is meant to stay open.
- */
+// #594: a stalled connection (network change, a proxy that never answers) held its round open for good
+// past this limit the request fails like a lost connection; the event stream is exempt
 export const SYNC_REQUEST_LIMIT_MS = 30_000;
 const withinLimit = (): AbortSignal => AbortSignal.timeout(SYNC_REQUEST_LIMIT_MS);
 
@@ -71,15 +57,13 @@ export const isLostConnection = (err: unknown): boolean =>
 
 interface ApiBackendOptions {
   baseUrl: string;
-  /** returns the bearer token (Logto access token) or test-mode subject */
   getAuth: () => Promise<{ bearer?: string; testSub?: string }>;
 }
 
 export class ApiSyncBackend implements SyncBackend {
   constructor(private readonly options: ApiBackendOptions) {}
 
-  /** the same device pair apiFetch sends — the server refuses calls
-   *  that name no device (401 device-required) */
+  /** the same device pair apiFetch sends: the server refuses calls naming no device (401 device-required) */
   private async headers(): Promise<Record<string, string>> {
     const auth = await this.options.getAuth();
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...deviceHeaders() };
@@ -88,9 +72,7 @@ export class ApiSyncBackend implements SyncBackend {
     return headers;
   }
 
-  /** a failed answer — a 410 device-revoked raises the remote-disconnect
-   *  event (this browser was disconnected) before the error surfaces; a
-   *  pause the server asked for carries how long */
+  /** a 410 device-revoked raises the remote-disconnect event before the error surfaces */
   private async failed(res: Response): Promise<SyncHttpError> {
     await noticeDeviceRevoked(res);
     return new SyncHttpError(res.status, retryAfterMs(res.headers.get('Retry-After')), await deniedReason(res));
@@ -139,11 +121,7 @@ export class ApiSyncBackend implements SyncBackend {
     return (await res.json()) as SpaceHead[];
   }
 
-  /**
-   * Server-sent events over fetch (EventSource cannot send auth
-   * headers). Lines look like `data: {"spaceId":"…"}` or
-   * `data: {"kind":"connector",…}`; comment lines (keepalives) are ignored.
-   */
+  /** server-sent events over fetch: EventSource cannot send auth headers */
   async events(signal: AbortSignal, onEvent: (frame: SyncEventFrame) => void): Promise<void> {
     const res = await fetch(`${this.options.baseUrl}/sync/events`, {
       headers: { ...(await this.headers()), Accept: 'text/event-stream' },
@@ -162,7 +140,6 @@ export class ApiSyncBackend implements SyncBackend {
   }
 }
 
-/** emits every complete SSE message in the buffer; returns the remainder */
 export function drainSseBuffer(buffer: string, onEvent: (frame: SyncEventFrame) => void): string {
   let boundary = buffer.indexOf('\n\n');
   while (boundary !== -1) {
@@ -190,10 +167,6 @@ function emitSseChunk(chunk: string, onEvent: (frame: SyncEventFrame) => void): 
 export const SPACE_DELETED = 'space-deleted';
 
 export class SyncHttpError extends Error {
-  /**
-   * `retryAfterMs`: the pause the server asked for (Retry-After), when it named one;
-   * `reason`: what a 403 says about itself in its body, when it says anything
-   */
   constructor(
     readonly status: number,
     readonly retryAfterMs?: number,

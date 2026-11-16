@@ -14,38 +14,17 @@ interface SnapshotMark {
 }
 
 export interface DrainOptions {
-  /** the cursor to resume from; absent, the stored one */
   since?: number;
-  /**
-   * when to stop paging (ms since epoch): the page that crosses it is the
-   * last, and the next pull resumes from it — a service worker's wake is short
-   */
+  /** ms since epoch; the page that crosses it is the last — a service worker's wake is short */
   deadline?: number;
   now?: () => number;
   /** told after each page is applied, with that page's count: a long first pull shows it is moving */
   onPage?: (applied: number) => void;
 }
 
-/**
- * Pulls a space page by page until the server has nothing more after the
- * cursor, applying each page before the cursor moves past it.
- *
- * #305 bug 4: the server pages at 1000 ops while it reports the space's
- * head (`latestSeq`); a cursor stamped at the head after one page skipped
- * every op in between for good. The cursor moves only to what was applied —
- * the server's explicit `nextSince`, or the dense per-space seqs of a server
- * predating it — so a pull cut short (a deadline, a closed worker, a lost
- * network) resumes where it stopped. The app's engine and the service
- * worker both pull through here: the worker's own copy of this loop kept
- * the old head stamp after the engine was fixed.
- *
- * #606: a pull from the very start is a device that holds nothing of the
- * space. It takes the rows as the server holds them first (`takeSnapshot`)
- * and pulls only what came after them — the history grows with every change
- * anyone makes, the rows do not.
- *
- * @returns how many rows and ops were applied
- */
+// the cursor moves only to what was applied, never to the server's head: the server pages at 1000 ops (#305)
+// the engine and the service worker both pull through here: a second copy of this loop kept the old head stamp
+// #606: a pull from the start takes the rows as they stand first, then only what came after: history outgrows the rows
 export async function drainPull(
   store: StorageBackend,
   repo: Repo,
@@ -60,7 +39,6 @@ export async function drainPull(
   return taken.applied + (await pullFrom(store, repo, backend, spaceId, taken.since, options));
 }
 
-/** the changes after `from`, page by page; returns how many were applied */
 async function pullFrom(store: StorageBackend, repo: Repo, backend: SyncBackend, spaceId: string, from: number, options: DrainOptions): Promise<number> {
   const now = options.now ?? Date.now;
   let since = from;
@@ -83,12 +61,8 @@ async function pullFrom(store: StorageBackend, repo: Repo, backend: SyncBackend,
   }
 }
 
-/**
- * The space's rows as the server holds them, page by page. `since` is where the pull goes on: the head the
- * FIRST page named (what is written while the pages are read lies after it), 0 when there is no snapshot to
- * take and the history is pulled from its start, null when the deadline came first — the mark left behind
- * makes the next call ask for the page this one stopped at.
- */
+// `since`: the head the FIRST page named, where the pull goes on; 0 when there is no snapshot (pull from the start);
+// null when the deadline came first: the mark left behind makes the next call resume at the page it stopped at
 async function takeSnapshot(
   store: StorageBackend,
   repo: Repo,

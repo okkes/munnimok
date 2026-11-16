@@ -1,14 +1,8 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 
-/**
- * #277 r2 (user): "the other side must also see that they joined a
- * shared space." The `kind: 'shared'` flip historically happened on the
- * OWNER's device only — a joiner whose copy predates the flip (or whose
- * row synced without it) kept `personal` and never grew the badge.
- * These helpers stamp/heal the fact from EITHER side; every write is an
- * idempotent LWW upsert.
- */
+// the `shared` flip used to happen on the owner's device only: a joiner's copy stayed `personal` without the badge (#277);
+// these helpers stamp/heal it from either side, every write an idempotent LWW upsert
 
 interface MemberLike {
   userId: string;
@@ -16,12 +10,7 @@ interface MemberLike {
   role: string;
 }
 
-/**
- * Make the local space row carry the shared fact, writing only the fields
- * that are actually missing. Returns whether the kind flipped (callers log
- * activity for deliberate shares only). Categories need no adoption any
- * more: every custom category belongs to the space it was created in (#387).
- */
+/** returns whether the kind flipped (callers log activity for deliberate shares only); writes only missing fields */
 export async function ensureSpaceShared(
   store: StorageBackend,
   repo: Repo,
@@ -39,11 +28,7 @@ export async function ensureSpaceShared(
   return flip;
 }
 
-/**
- * Heal at the members fetch: a space the server says has 2+ members IS
- * shared, whatever the local row claims. Either side may run it; the
- * owner row in the payload backfills a missing createdByName.
- */
+/** a space the server says has 2+ members IS shared whatever the local row claims; the owner row backfills createdByName */
 export async function healSharedKind(
   store: StorageBackend,
   repo: Repo,
@@ -64,26 +49,20 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 type JoinTarget = { spaceId: string } | { except: ReadonlySet<string>; name: string };
 
-/** the join's space row(s), once the sync delivered them */
 async function joinedRows(store: StorageBackend, target: JoinTarget) {
   if ('spaceId' in target) {
     const row = await store.get('space', target.spaceId);
     return row?.deleted === 0 ? [row] : [];
   }
-  // the friend-accept payload names no space id: the joined space is what
-  // `except` did NOT know AND wears the request's space name (the name
-  // gate keeps a still-syncing personal space from being mis-stamped)
+  // the friend-accept payload names no space id: the joined space is the one `except` did not know that wears the request's
+  // name (the name gate keeps a still-syncing personal space from being mis-stamped)
   return (await store.allRows('space')).filter(
     (row) => row.deleted === 0 && !target.except.has(row.id) && row.name === target.name,
   );
 }
 
-/**
- * Post-join stamp: sync until the joined row(s) arrive, then stamp them
- * shared. Bounded retries cover the engine's re-entrancy guard (a running
- * boot pass makes syncAll a no-op); best-effort throughout — the
- * members-fetch heal remains the backstop when the server stays away.
- */
+// bounded retries cover the engine's re-entrancy guard (a running boot pass makes syncAll a no-op);
+// the members-fetch heal is the backstop when the server stays away
 export async function stampJoinedSharedSpace(
   store: StorageBackend,
   repo: Repo,

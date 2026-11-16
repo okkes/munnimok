@@ -10,11 +10,7 @@ using Munni.Api.Auth;
 
 namespace Munni.Api.Tests.Admin;
 
-/// <summary>
-/// A stand-in Logto Management API: the token endpoint and the one-time-token
-/// routes as Logto 1.43 answers them, every request kept for the assertions.
-/// One instance per factory — the handler is the fixture's memory.
-/// </summary>
+/// a stand-in Logto Management API as Logto 1.43 answers it; one instance per factory: the handler is the fixture's memory
 public sealed class FakeLogtoHandler : HttpMessageHandler
 {
     public sealed record Seen(HttpMethod Method, string Path, string Query, string? Bearer, string? Body);
@@ -39,10 +35,8 @@ public sealed class FakeLogtoHandler : HttpMessageHandler
     /// <summary>a forced answer for every Management API route (the token endpoint keeps answering): a Logto that refuses the app</summary>
     public HttpStatusCode? ManagementAnswer { get; set; }
 
-    /// <summary>a forced answer for the token endpoint itself: a wrong app id or secret</summary>
     public HttpStatusCode? TokenAnswer { get; set; }
 
-    /// <summary>a Logto nobody can reach</summary>
     public bool Unreachable { get; set; }
 
     public int TokenLifetimeSeconds { get; set; } = 3600;
@@ -82,7 +76,6 @@ public sealed class FakeLogtoHandler : HttpMessageHandler
         new(status) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
 }
 
-/// <summary>the admin host with a machine app configured (unless told otherwise) and the fake Logto behind the logto-m2m client</summary>
 public class AdminInvitationFactory : AdminApiFactory
 {
     public FakeLogtoHandler Logto { get; } = new();
@@ -108,12 +101,8 @@ public class AdminInvitationFactory : AdminApiFactory
     }
 }
 
-/// <summary>
-/// user 2026-10-07: invitation-only sign-up. The portal's invitations are
-/// Logto one-time tokens: minted with a two-day expiry, listed with their
-/// magic links, revoked by status — and every way Logto can be missing or
-/// refuse the machine app is a 503 that names itself.
-/// </summary>
+/// invitations are Logto one-time tokens (two-day expiry, revoked by status);
+/// every way Logto can be missing or refuse the machine app is a named 503
 public class AdminInvitationTests : IClassFixture<AdminInvitationFactory>
 {
     private const string Route = "/admin/invitations";
@@ -267,7 +256,6 @@ public class AdminInvitationTests : IClassFixture<AdminInvitationFactory>
         Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync(Route)).StatusCode);
         Assert.Equal(2, refusing.Logto.TokenMints);
 
-        // anything else Logto answers is a 502 carrying its status
         refusing.Logto.ManagementAnswer = HttpStatusCode.InternalServerError;
         var failed = await admin.GetAsync(Route);
         Assert.Equal(HttpStatusCode.BadGateway, failed.StatusCode);
@@ -341,7 +329,6 @@ public class AdminInvitationTests : IClassFixture<AdminInvitationFactory>
 
         var session = await management.ConnectAsync(CancellationToken.None);
         Assert.NotNull(session);
-        // the endpoint is the authority without its /oidc
         Assert.Equal("https://logto.test", session.Endpoint);
         Assert.Equal("tok-1", session.AccessToken);
 
@@ -354,7 +341,6 @@ public class AdminInvitationTests : IClassFixture<AdminInvitationFactory>
         Assert.Equal("tok-2", (await management.ConnectAsync(CancellationToken.None))!.AccessToken);
         Assert.Equal(2, logto.TokenMints);
 
-        // forgotten = minted afresh even though time has not moved
         management.Forget();
         Assert.Equal("tok-3", (await management.ConnectAsync(CancellationToken.None))!.AccessToken);
     }

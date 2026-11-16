@@ -8,14 +8,8 @@ using Connector.Kit.Security;
 
 namespace BankConnector.Adapters.MockBank;
 
-/// <summary>
-/// The aggregator shape with nothing behind it (#414): an institution the
-/// person picks from a list the party serves, a consent as a redirect the
-/// return page answers, server custody, a nightly fetch, a budget the party
-/// reports, and an inventory the operator revokes from. Every piece the
-/// consumer builds for GoCardless and Enable Banking can be walked against
-/// this one with zero network — the local stack runs it.
-/// </summary>
+// the aggregator shape with nothing behind it (#414): the consumer's GoCardless and Enable Banking pieces
+// can be walked against it with zero network
 public sealed class MockBankConsentAdapter : MockBankAdapter, ILookupProvider, IRemoteInventory
 {
     public const string ProviderId = "mock-bank-consent";
@@ -46,7 +40,7 @@ public sealed class MockBankConsentAdapter : MockBankAdapter, ILookupProvider, I
         Limits = OpenBankingManifests.Limits(MockBankLedger.HistoryDays),
     };
 
-    /// <summary>When the inventory's consent was given: a listing's own record, nothing reads a window from it.</summary>
+    // a listing's own record; nothing reads a window from it
     private static readonly DateOnly Consented = new(2026, 7, 26);
 
     private readonly List<RemoteConsent> _inventory =

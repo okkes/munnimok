@@ -8,14 +8,9 @@ import { candidatesFor } from './receiptPick';
 /** a split container carries no receipt — its parts do */
 const carriesParts = (tx: Pick<SpaceTx, 'splits'>): boolean => (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
 
-/**
- * #495 (user): a bulk update settles the siblings without their own review
- * card, so the receipt walk after it asks what each card would have asked —
- * a proposal waiting for the transaction, or, while its review was still
- * open, the unmatched receipt that really fits. One that already holds a
- * receipt asks nothing. Read from the rows as they stood BEFORE the bulk
- * wrote them (the review flag is gone after).
- */
+// #495: a bulk update skips the siblings' review cards, so the walk asks what each card would have asked
+// (a waiting proposal, or the unmatched receipt that fits); one already holding a receipt asks nothing
+// read from the rows as they stood BEFORE the bulk wrote them: the review flag is gone after
 export function receiptsToVerify(
   siblings: readonly SpaceTx[],
   inventory: AttachableReceipts | undefined,

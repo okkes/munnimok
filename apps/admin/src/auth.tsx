@@ -3,18 +3,9 @@ import { useHandleSignInCallback, useLogto } from '@logto/react';
 import { AdminApp } from './AdminApp';
 import type { AdminConfig } from './config';
 
-/**
- * The portal's token path and its guard. Prod Logto logs 2026-10-08: the
- * portal asked Logto to refresh a DEAD grant 669 times between 20:02 and
- * 20:05 on 2026-10-06. Three things fed the storm: every render handed
- * AdminApp a new getToken, so its reload effect ran again; the SDK flips
- * isLoading on every token call and the gate unmounted AdminApp on each
- * flip and mounted it afresh — another reload; and nothing remembered that
- * the grant was dead, so every call ran the refresh once more. Now: one
- * getToken per session, the gate stays mounted once signed in, a dead
- * grant is a module flag that stops every refresh until the operator signs
- * in again, and any failed refresh is left alone for 15 s.
- */
+// prod Logto 2026-10-08: a DEAD grant was refreshed 669 times in 3 minutes (new getToken per render, remounts on isLoading
+// flips, no memory of the dead grant)
+// hence one getToken per session, a gate that stays mounted, a dead-grant flag, and a 15 s backoff on failures
 
 /** Logto's verdict on a spent refresh grant, in either error shape (the LogtoRequestError code, or the message the react proxy re-wraps) */
 export function isInvalidGrantError(err: unknown): boolean {
@@ -50,16 +41,9 @@ export const REFRESH_RETRY_AFTER_MS = 15_000;
 let retryAfter = 0;
 let inflight: Promise<string | undefined> | null = null;
 
-/**
- * The guarded token fetch: a dead grant asks nobody (the banner's Sign in
- * is the way back); a refresh that failed is not tried again for 15 s — the
- * request goes out without a bearer and the api's 401 is the honest answer;
- * concurrent callers share one in-flight fetch (Logto rotates the SPA's
- * refresh token — two refreshes at once revoke the whole grant family).
- * The SDK (4.x) swallows a failed refresh into its context error and answers
- * undefined, so an undefined answer counts as a failed attempt as much as a
- * throw does.
- */
+// a dead grant asks nobody; a failed refresh waits 15 s, the request goes out without a bearer (the api's 401 answers)
+// concurrent callers share one fetch: Logto rotates the refresh token, two at once revoke the grant family
+// the SDK (4.x) swallows a failed refresh into undefined: undefined counts as a failure like a throw
 export function fetchTokenGuarded(fetchToken: () => Promise<string | undefined>): Promise<string | undefined> {
   if (grantDead || Date.now() < retryAfter) return Promise.resolve(undefined);
   inflight ??= fetchToken()
@@ -85,14 +69,12 @@ export function resetAuthForTests(): void {
   inflight = null;
 }
 
-/** OIDC gate: the sign-in door, the callback, and the signed-in portal with its guarded token path */
 export function LogtoGate({ config }: Readonly<{ config: AdminConfig }>) {
   const { error, isAuthenticated, isLoading, signIn, signOut, getAccessToken } = useLogto();
   const dead = useSyncExternalStore(subscribeGrant, isGrantDead);
   useEffect(() => {
-    // the SDK swallows a failed refresh into this SHARED error; invalid_grant
-    // is Logto's verdict that the grant is spent — tokens never mint again
-    // without a fresh sign-in, so stop asking (a breadcrumb, not an event)
+    // the SDK swallows a failed refresh into this SHARED error; invalid_grant = the grant is spent and tokens never mint again
+    // without a fresh sign-in: stop asking (a breadcrumb, not an event)
     if (error && isInvalidGrantError(error) && markGrantDead()) {
       console.warn('refresh grant dead: invalid_grant on token refresh — no more refreshes until the operator signs in again');
     }

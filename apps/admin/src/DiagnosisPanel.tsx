@@ -1,7 +1,6 @@
 import { IdChip, SessionsTable, relativeText, shortId, whenText } from './sessionBits';
 import type { SessionRow } from './sessionBits';
 
-/** GET /admin/users/{sub}/diagnosis — the whole account→app chain of one user, labelled where the rows are readable */
 export interface UserDiagnosis {
   userId: string;
   memberSpaces: string[];
@@ -24,12 +23,6 @@ export interface UserDiagnosis {
 
 const spaceName = (name: string | null | undefined, id: string): string => name ?? `unnamed space ${shortId(id, 8)}`;
 
-/**
- * The diagnosis as cards (user 2026-10-09: "hard to understand" as bare
- * ids): spaces by name and role, feeds with where they show and when data
- * last landed, attachments by account and space, and the connector
- * sessions as the shared table — ids kept one click away, never leading.
- */
 export function DiagnosisPanel({
   data,
   busy,
@@ -152,7 +145,6 @@ export function DiagnosisPanel({
         )}
       </section>
 
-      {/* #367: what the connector relay binds for this user — the session ids, never a bundle */}
       <section className="diag-section" data-testid="user-diagnosis-connectors">
         <h3>
           Connector sessions <span className="count">{data.connectorSessions?.length ?? 0}</span>

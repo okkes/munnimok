@@ -8,30 +8,13 @@ using System.Text.RegularExpressions;
 
 namespace Connector.Kit.Tracing;
 
-/// <summary>
-/// What a recording may never contain, applied before anything is written
-/// into the book: a credential, a session token, a cookie value, a signed
-/// URL. The adapter author reads a trace to learn WHICH call carries the
-/// session and WHAT a response looks like; the value of a bearer token
-/// teaches them nothing and leaks the operator's own account if the trace
-/// is ever shared.
-///
-/// Two rules, by name and by value. By name: a header or a field whose name
-/// says secret (authorization, cookie, anything with token or password in
-/// it) is masked wherever it appears - headers, query strings, form posts,
-/// JSON bodies. By value: every string the run was handed as a secret input
-/// or as session material is replaced wherever it appears, which catches the
-/// password echoed back in an error page under a name nobody predicted.
-/// </summary>
+// nothing secret enters the book. By name: secret-named headers, query values, form and JSON fields are masked everywhere.
+// By value: every secret input or session string is replaced wherever it appears (a password echoed in an error page)
 public static partial class TraceRedaction
 {
     public const string Mask = "«redacted»";
 
-    /// <summary>
-    /// A rewritten JSON body keeps the mask as the characters it is rather
-    /// than as escapes: the book holds text for a person to read, and the
-    /// wire escapes what it must on the way out anyway.
-    /// </summary>
+    // the mask stays as characters, not escapes: the book is read by a person
     private static readonly JsonSerializerOptions Relaxed = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private const int MinimumSecretLength = 4;
@@ -57,14 +40,11 @@ public static partial class TraceRedaction
     [GeneratedRegex("(\"(?<key>[^\"]*(?:pass|pwd|pin|secret|token|otp|credential|auth|session|cookie|signature|private|api[-_]?key)[^\"]*)\"\\s*:\\s*\")(?<value>(?:[^\"\\\\]|\\\\.)*)\"", RegexOptions.IgnoreCase)]
     private static partial Regex JsonSecretPairPattern { get; }
 
-    /// <summary>Whether a header's value must be masked, by its name alone.</summary>
     public static bool IsSecretHeader(string name) =>
         SecretHeaderNames.Contains(name) || SecretKeyPattern.IsMatch(name);
 
-    /// <summary>Whether a field, query or JSON key names a secret.</summary>
     public static bool IsSecretKey(string key) => SecretKeyPattern.IsMatch(key);
 
-    /// <summary>A header as the book keeps it: the name always, the value only when it is nobody's secret.</summary>
     public static string Header(string name, string value)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -83,7 +63,6 @@ public static partial class TraceRedaction
         return IsSecretHeader(name) ? Masked(value.Length) : value;
     }
 
-    /// <summary>A URL without its user-info and with every secret-named query value masked.</summary>
     public static string Url(string url)
     {
         ArgumentNullException.ThrowIfNull(url);
@@ -119,10 +98,6 @@ public static partial class TraceRedaction
         return builder.ToString();
     }
 
-    /// <summary>
-    /// A body with its secret-named fields masked: JSON is walked, a form
-    /// post is split, anything else is left to the by-value scrub.
-    /// </summary>
     public static string Body(string? contentType, string body)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -134,7 +109,6 @@ public static partial class TraceRedaction
         return body;
     }
 
-    /// <summary>Every secret value, wherever it appears, replaced by the mask.</summary>
     public static string Values(string text, IReadOnlyCollection<string> secrets)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -152,7 +126,6 @@ public static partial class TraceRedaction
         return result;
     }
 
-    /// <summary>A cookie value's fingerprint: its length and a short hash. Never the value.</summary>
     public static (int Length, string Hash) Fingerprint(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
@@ -161,7 +134,6 @@ public static partial class TraceRedaction
         return (value.Length, Convert.ToHexStringLower(digest)[..12]);
     }
 
-    /// <summary>Whether a content type carries text the book may keep (JSON, XML, HTML, plain text, a form).</summary>
     public static bool IsText(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType)) return false;
@@ -242,9 +214,7 @@ public static partial class TraceRedaction
         }
         catch (JsonException)
         {
-            // Not JSON after all, or cut short: the by-name rule still
-            // runs as a pattern over the text, so a secret under a telling
-            // name is masked even when the document cannot be walked.
+            // not JSON after all, or cut short: the by-name rule still runs as a pattern over the text
             return JsonSecretPairPattern.Replace(body, m => $"{m.Groups[1].Value}{Masked(m.Groups["value"].Length)}\"");
         }
 

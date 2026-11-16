@@ -1,11 +1,7 @@
 import type { ConnectorSessionState } from '@/db/types';
 
-/**
- * The relay's documents as the app receives them (docs/connectors/relay.md,
- * docs/connectors/contract.md): field names in this API's camelCase, enum
- * values in the connector's own snake_case. Nothing here is invented by the
- * client — every shape is what `server/src/Munni.Api/Connectors` renders.
- */
+// the relay's documents as the app receives them (docs/connectors/relay.md, contract.md):
+// camelCase fields, snake_case enum values
 
 export type ProviderKind = 'bank' | 'store' | 'registry';
 export type ProviderState = 'healthy' | 'degraded' | 'paused' | 'retired';
@@ -34,7 +30,6 @@ export type ChallengeType =
 /** `lookup`: a value the party lists at connect time (an aggregator's institutions) — the app asks the relay's options route */
 export type FieldType = 'text' | 'password' | 'number' | 'date' | 'select' | 'iban' | 'phone' | 'lookup';
 
-/** one value a `lookup` field offers, as the relay lists it */
 export interface LookupOption {
   value: string;
   label: string;
@@ -177,7 +172,6 @@ export interface ProgressView {
   found?: number | null;
 }
 
-/** `{ error: { … } }` — the connector's envelope, kept by the relay */
 export interface ErrorEnvelope {
   code: string;
   retriable: boolean;
@@ -233,7 +227,6 @@ export interface JobView {
   session?: RotatedSession;
   notes?: string[];
   error?: ErrorEnvelope;
-  /** on a collect that ingested */
   ingested?: IngestedCounts;
   /** #460: on a collect that finished a partial walk, the oldest day it brought — the next pass asks up to it */
   oldest?: string;
@@ -241,7 +234,6 @@ export interface JobView {
   artifactsJobId?: string | null;
 }
 
-/** `POST …/sync` 200 */
 export interface SyncOutcome {
   sessionId: string;
   state: ConnectorSessionState;
@@ -253,7 +245,6 @@ export interface SyncOutcome {
   oldest?: string;
 }
 
-/** `GET /connectors/sessions` — one row per binding the relay holds for the caller */
 export interface BindingView {
   sessionId: string;
   provider: string;
@@ -272,7 +263,6 @@ export interface BindingView {
   artifactsJobId?: string | null;
 }
 
-/** `GET /connectors/accounts` — one account a connection of the caller's reaches (#524) */
 export interface ConnectionAccountLink {
   connectionId: string;
   provider: string;
@@ -280,7 +270,6 @@ export interface ConnectionAccountLink {
   accountId: string;
 }
 
-/** a household agent the caller enrolled, as the relay lists it */
 export interface AgentView {
   id: string;
   name: string;
@@ -300,7 +289,6 @@ export interface AgentView {
   platformBrowserVersion?: string | null;
 }
 
-/** `POST /connectors/agents/enrollment` — the code and the line that starts the agent */
 export interface EnrollmentView {
   code: string;
   expiresAt: string;
@@ -308,7 +296,6 @@ export interface EnrollmentView {
   composeCommand?: string | null;
 }
 
-/** a request for a hosted private agent (#420 A2) and what the admin decided */
 export interface PrivateAgentRequest {
   id: string;
   state: 'pending' | 'approved' | 'denied' | 'withdrawn' | 'released';
@@ -317,18 +304,14 @@ export interface PrivateAgentRequest {
   agentId?: string | null;
 }
 
-/** `GET /connectors/private-agents/mine` — the caller’s standing with the hosted private agents */
 export interface PrivateAgentStatus {
   /** whether this environment hosts any slot at all — false hides the whole offer */
   offered: boolean;
-  /** slots free right now */
   free: number;
   request?: PrivateAgentRequest | null;
-  /** the slot bound to the caller, if one is */
   agent?: AgentView | null;
 }
 
-/** a `{ kind: "connector" }` frame on `/sync/events`: the view without secrets or data */
 export interface ConnectorFrame {
   kind: 'connector';
   provider: string;

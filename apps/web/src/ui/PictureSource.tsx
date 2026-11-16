@@ -22,14 +22,9 @@ function useWebSearch(): boolean {
   return on;
 }
 
-/**
- * Where a picture comes from. In the phone apps (#522) the Camera plugin hands every picture over as a
- * JPEG, its library door included, so a see-through logo arrived on black: the library door is the file
- * input now — the file as it is — and only the camera goes through the plugin. Where the environment
- * searches the web (#521, user 2026-11-11: "wherever we can upload pictures") that is a third door, in
- * a browser too; `searchHint` is what the picture is for, the words the search starts from. With
- * nothing to choose between — a browser without web search — the file input is the door.
- */
+// #522: the Camera plugin hands every picture over as a JPEG (a see-through logo arrived on black): only the camera uses it
+// #521: where the environment searches the web that is a third door, in a browser too
+// with nothing to choose between, the file input is the door
 export function usePictureSource(onFile: (file: File) => void, openLibrary: () => void, searchHint = ''): { pick: () => void; sheet: ReactNode } {
   const { t } = useLang();
   const [open, setOpen] = useState(false);

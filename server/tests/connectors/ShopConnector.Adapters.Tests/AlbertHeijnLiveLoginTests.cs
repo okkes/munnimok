@@ -7,25 +7,9 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The login Albert Heijn actually performs, driven offline.
-///
-/// <see cref="AlbertHeijnOptions.LiveLogin"/> ships true, so this is the path
-/// every real connect takes - and until this file existed it was the one path
-/// nothing asserted. Every case in <see cref="AlbertHeijnAdapterTests"/> passes
-/// <c>liveLogin: false</c> and exercises the typed form, which production
-/// reaches only if an operator turns the default off.
-///
-/// What is pinned here is the whole reason the streamed login exists, because
-/// all of it is one line away from being untrue: that this adapter types
-/// nothing, asks for nothing, latches no credential - and that when the sign-in
-/// is over the view is ENDED rather than left photographing a page nobody is
-/// looking at. An agent runs one job at a time, so a login that never lets go
-/// wedges every later one behind it.
-///
-/// No browser and no network: the page and the redirect are the two seams a
-/// live login is met through.
-/// </summary>
+// LiveLogin ships true, so this is every real connect's path; AlbertHeijnAdapterTests cover only the typed form;
+// pinned: the adapter types nothing, asks for nothing, latches no credential, and ENDS the view at sign-in;
+// an agent runs one job at a time, so a login that never lets go wedges every later one
 public sealed class AlbertHeijnLiveLoginTests
 {
     private const string Code = "signed-in-on-ahs-own-page";
@@ -34,26 +18,15 @@ public sealed class AlbertHeijnLiveLoginTests
 
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
 
-    /// <summary>
-    /// The shipped options, deliberately: a test that hand-built its own would
-    /// stop describing the connect an actual user gets.
-    /// </summary>
+    // the shipped options on purpose: hand-built ones would stop describing the connect a user gets
     private static AlbertHeijnAdapter Adapter(AlbertHeijnOptions? options = null) =>
         new(options ?? new AlbertHeijnOptions(), new FixedTimeProvider(Now));
 
-    /// <summary>The redirect on the first poll - a human who signed in promptly.</summary>
     private static StubRedirectWaiter Arrives(int afterWaits = 0) => new(Redirect, afterWaits);
 
-    /// <summary>A wall nobody passes: the callback never comes.</summary>
     private static StubRedirectWaiter Never() => new(redirect: null, afterWaits: 0);
 
-    /// <summary>
-    /// Nothing on it. The streamed login looks for no selector at all, and a
-    /// page offering none is how that is asserted rather than assumed.
-    /// </summary>
     private static StubLoginPage Page() => StubLoginPage.Showing();
-
-    // ---- the shape of the thing --------------------------------------------
 
     [Fact]
     public async Task The_streamed_login_opens_ahs_own_page_and_finishes_on_the_redirect_alone()
@@ -63,15 +36,12 @@ public sealed class AlbertHeijnLiveLoginTests
 
         var code = await Adapter().LiveCodeAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // The code, not the URL: the callback carries a live credential and is
-        // never handed on whole.
+        // the code, not the URL: the callback carries a live credential and is never handed on whole
         Assert.Equal(Code, code);
 
-        // AH's own authorize endpoint, once. Nowhere else was navigated to.
         Assert.Equal(Adapter().AuthorizeUrl(), Assert.Single(page.Visited));
 
-        // OpeningProvider belongs to the caller that leases the browser; from
-        // the seam inwards the trail is the wait and then the exchange.
+        // OpeningProvider belongs to the caller that leases the browser
         Assert.Equal([JobStep.AwaitingHuman, JobStep.Authenticating], ctx.Steps);
     }
 
@@ -80,10 +50,8 @@ public sealed class AlbertHeijnLiveLoginTests
     {
         var page = Page();
 
-        // A consumer that sent them anyway. The manifest declares no fields
-        // and the validator refuses one that does, so this cannot arrive
-        // through the control plane - but the promise is that the path does
-        // not use a password, not that nobody ever supplies one.
+        // a consumer sent them anyway: the manifest declares no fields so this cannot arrive via the control plane,
+        // but the path must not use a password regardless
         using var ctx = new FakeJobContext
         {
             AnswersNothing = true,
@@ -98,22 +66,15 @@ public sealed class AlbertHeijnLiveLoginTests
 
         Assert.Equal(Code, code);
 
-        // Nothing was typed, clicked or looked for. The human signs in on the
-        // page in front of them; this adapter only watches for the redirect.
         Assert.Empty(page.Filled);
         Assert.Empty(page.Clicked);
         Assert.Empty(page.Calls);
 
-        // No password ever entered the DOM, so there is nothing to clear out
-        // of it - the refusal the redactor exists for cannot fire here at all.
         Assert.True(page.HoldsSecret);
         Assert.DoesNotContain("clear-secrets", page.Calls);
 
-        // Deliberately NOT latched. The latch exists so a lost lease does not
-        // requeue a login whose password already counted against an account,
-        // and the attempts here are the human's own on AH's own page. Latching
-        // would fail jobs permanently to protect against something that cannot
-        // happen.
+        // NOT latched: the latch protects against requeuing a login whose password counted, and here the attempts
+        // are the human's own on AH's page; latching would fail jobs permanently
         Assert.False(ctx.CredentialWasSubmitted);
     }
 
@@ -125,21 +86,16 @@ public sealed class AlbertHeijnLiveLoginTests
 
         await Adapter().LiveCodeAsync(ctx, page, Arrives(afterWaits: 2), CancellationToken.None);
 
-        // Once, not once per poll: three passes over the loop and still a
-        // single ask.
+        // once, not once per poll
         var challenge = Assert.Single(ctx.Asked);
 
         Assert.Equal(ChallengeType.LiveView, challenge.Type);
         Assert.Equal("connect.challenge.live_login", challenge.PromptKey);
 
-        // Passive in the same sense as an app approval: there is no string to
-        // type back, and what ends it is the login completing.
         Assert.True(challenge.IsPassive);
         Assert.Equal(ChallengeAnswerKind.Text, challenge.AnswerKind);
 
-        // Not a picture and not a paste. Those are the other two ways this
-        // adapter can ask, and confusing them puts the wrong UI in front of
-        // somebody mid-login.
+        // not a picture and not a paste, the adapter's other two asks: confusing them shows the wrong UI mid-login
         Assert.Null(challenge.Image);
         Assert.Null(challenge.Url);
         Assert.Null(challenge.ReturnPattern);
@@ -158,9 +114,7 @@ public sealed class AlbertHeijnLiveLoginTests
         await Adapter(new AlbertHeijnOptions { LiveLoginSeconds = seconds })
             .LiveCodeAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // The option reaches the expiry the consumer renders a clock from. A
-        // challenge holds a live browser hostage, so this is the bound that
-        // decides when an agent is released.
+        // the option reaches the expiry the consumer renders a clock from; it decides when an agent is released
         Assert.Equal(Now.AddSeconds(seconds), Assert.Single(ctx.Asked).ExpiresAt);
     }
 
@@ -169,16 +123,11 @@ public sealed class AlbertHeijnLiveLoginTests
     {
         var options = new AlbertHeijnOptions();
 
-        // Generous on purpose: it has to cover reading an SMS, finding a
-        // password manager, and a captcha with several rounds in it.
+        // generous: covers reading an SMS, finding a password manager and a captcha with several rounds
         Assert.Equal(900, options.LiveLoginSeconds);
 
-        // The default this whole file is about. If this ever flips, the typed
-        // form becomes production again and its suite becomes the live one.
         Assert.True(options.LiveLogin);
     }
-
-    // ---- letting go ---------------------------------------------------------
 
     [Fact]
     public async Task The_view_is_ended_when_the_redirect_lands_and_not_merely_abandoned()
@@ -188,10 +137,8 @@ public sealed class AlbertHeijnLiveLoginTests
 
         await Adapter().LiveCodeAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // The sign-in is done, so the view is over. Without this the shutter
-        // keeps photographing for the rest of the window, the agent stays
-        // occupied, and the human sits looking at a frozen picture of a step
-        // they already finished.
+        // without ending, the shutter keeps photographing, the agent stays occupied
+        // and the human sees a frozen picture of a finished step
         Assert.True(Assert.Single(ctx.AskTokens).IsCancellationRequested);
     }
 
@@ -206,13 +153,10 @@ public sealed class AlbertHeijnLiveLoginTests
             () => Adapter(new AlbertHeijnOptions { LiveLoginSeconds = 0 })
                 .LiveCodeAsync(ctx, page, watcher, CancellationToken.None));
 
-        // The case where somebody IS still looking at the picture. Disposing
-        // the linked source merely unlinks it from the job's token, which
-        // orphans the ask instead of ending it.
+        // somebody may still be looking: disposing the linked source only unlinks it from the job's token and orphans the ask
         Assert.True(Assert.Single(ctx.AskTokens).IsCancellationRequested);
 
-        // A window of zero is spent before it is polled: the deadline is
-        // checked ahead of the wait, so nothing is asked of the provider.
+        // a zero window is spent before it is polled: the deadline is checked ahead of the wait
         Assert.Equal(0, watcher.Waits);
     }
 
@@ -221,8 +165,7 @@ public sealed class AlbertHeijnLiveLoginTests
     {
         var page = Page();
 
-        // The answer to a passive challenge is the empty string, and it
-        // arriving at all means the consumer's UI is done with this view.
+        // the answer to a passive challenge is the empty string; its arrival means the consumer's UI is done with this view
         using var ctx = new FakeJobContext { Answer = _ => string.Empty };
         var watcher = Never();
 
@@ -231,12 +174,9 @@ public sealed class AlbertHeijnLiveLoginTests
 
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
 
-        // One pass and out. Without the completed-ask guard this spins for the
-        // full fifteen minutes with nobody at the other end of it.
+        // without the completed-ask guard this spins the full fifteen minutes with nobody there
         Assert.Equal(1, watcher.Waits);
     }
-
-    // ---- what the ending is called -----------------------------------------
 
     [Fact]
     public async Task A_login_that_never_reached_the_callback_is_blocked_and_never_a_wrong_password()
@@ -250,10 +190,7 @@ public sealed class AlbertHeijnLiveLoginTests
 
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
 
-        // Nobody typed a password into anything of ours, so calling this a
-        // credential failure would send the user to reset a password that was
-        // fine - and a credential error is never retried, so the mistake would
-        // be permanent for that session too.
+        // not a credential failure: nobody typed a password into anything of ours, and a credential error is never retried
         Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
         Assert.Equal(
             "ah: the live login ended without reaching the callback; the sign-in was not completed",
@@ -266,8 +203,6 @@ public sealed class AlbertHeijnLiveLoginTests
         var page = Page();
         using var ctx = new FakeJobContext { AnswersNothing = true };
 
-        // The redirect arrived, so the sign-in finished - but the one thing
-        // the whole login is for is not on it.
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => Adapter().LiveCodeAsync(
                 ctx, page, new StubRedirectWaiter("appie://login-exit?state=xyz", afterWaits: 0),
@@ -276,7 +211,6 @@ public sealed class AlbertHeijnLiveLoginTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
         Assert.Equal("ah: the callback carried no authorization code", error.Detail);
 
-        // The sign-in is over either way, so the view goes with it.
         Assert.True(Assert.Single(ctx.AskTokens).IsCancellationRequested);
     }
 
@@ -285,9 +219,6 @@ public sealed class AlbertHeijnLiveLoginTests
     {
         var page = Page();
 
-        // The case a passive challenge exists for: the human acts where we
-        // cannot observe - on the streamed page itself - and has no reason to
-        // come back to the consumer's UI and click anything.
         using var ctx = new FakeJobContext { AnswersNothing = true };
         var watcher = Arrives(afterWaits: 2);
 
@@ -310,8 +241,7 @@ public sealed class AlbertHeijnLiveLoginTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => Adapter().LiveCodeAsync(ctx, page, watcher, cts.Token));
 
-        // Linked, not independent: a job that is cancelled has to be able to
-        // END the ask rather than leave it holding a browser until it expires.
+        // linked, not independent: a cancelled job must be able to END the ask instead of leaving it holding a browser
         Assert.Equal(0, watcher.Waits);
     }
 }

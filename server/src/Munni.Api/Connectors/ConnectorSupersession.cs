@@ -3,39 +3,14 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// A reconnect that made a NEW session must not leave the old one scheduled
-/// beside it.
-/// </summary>
-/// <remarks>
-/// Prod 2026-10-08: a friend's ING consent through GoCardless ended on the
-/// party's budget, the reconnect bound a second session for the same
-/// accounts, and from then on the two shared one daily budget — the nightly
-/// run of either burnt what the other needed, and "auto syncing keeps
-/// stopping". When a connection's accounts pass lands an account, every
-/// other session of the same person and party that reached the same account
-/// (the same IBAN, or a card or wallet the party names across consents; one
-/// keyed by a per-session id proves nothing) is
-/// superseded: its binding goes, the way a re-login of
-/// the same connection replaces it in <c>BindAsync</c>, its references to
-/// those accounts go with it, and the control plane is told to end it —
-/// without its bundle, so the party's consent is left alone (the new one
-/// reaches the same accounts) and a device still holding the old bundle is
-/// answered "sign in again" instead of resuming a session nothing schedules
-/// any more.
-/// </remarks>
+// a reconnect that made a NEW session must not leave the old one scheduled: both would share one daily party budget
+// (prod 2026-10-08, ING via GoCardless); the old one is ended without its bundle, so the party's consent stays
+// and a device holding the old bundle is told to sign in again; a per-session-id reference proves nothing
 public sealed class ConnectorSupersession(AppDbContext db, ConnectorClient client, SubjectMinter minter, ILogger<ConnectorSupersession> logger)
 {
-    /// <summary>The codes the control plane answers for a session it no longer has: nothing to end, nothing to say.</summary>
     private static readonly HashSet<string> AlreadyGone = new(StringComparer.Ordinal) { "unsupported_resource", "session_expired" };
 
-    /// <summary>
-    /// Retires every other session of the user and party whose references
-    /// share one of <paramref name="accountRefs"/>; returns how many went.
-    /// Each reference handed in must name the account itself — an IBAN, or a
-    /// card the party names across consents; the caller leaves out a card
-    /// keyed by an id that may mean another account in another session.
-    /// </summary>
+    // each reference must name the account itself; the caller leaves out a card keyed by an id that may mean another account
     public async Task<int> RetireAsync(Guid userId, string provider, string connectionId, IReadOnlyCollection<string> accountRefs, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(accountRefs);
@@ -74,12 +49,7 @@ public sealed class ConnectorSupersession(AppDbContext db, ConnectorClient clien
         return superseded.Count;
     }
 
-    /// <summary>
-    /// Ends the session at the control plane without its bundle: no logout
-    /// upstream, and a resume of the old bundle answers <c>session_expired</c>
-    /// from here on. Best effort — the binding goes either way, and a control
-    /// plane that is away expires the session by itself.
-    /// </summary>
+    // no logout upstream; resuming the old bundle answers session_expired. Best effort: an away control plane expires it itself
     private async Task EndAsync(ConnectorSession session, CancellationToken ct)
     {
         try

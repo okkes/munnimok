@@ -6,61 +6,24 @@ using Connector.Kit.Manifests;
 
 namespace Connector.Kit.Adapters;
 
-/// <summary>
-/// Every provider a service knows about.
-///
-/// Both products register their own set into this and share every line of
-/// the machinery around it. Providers are code, not rows: the registry is
-/// built at startup and only a provider's HEALTH is ever state.
-/// </summary>
+// providers are code, not rows: the registry is built at startup and only a provider's HEALTH is state
 public interface IProviderRegistry
 {
     IReadOnlyList<ProviderManifest> Manifests { get; }
 
     bool TryGetManifest(string providerId, out ProviderManifest manifest);
 
-    /// <summary>
-    /// Throws <see cref="ErrorCode.UnsupportedResource"/> rather than
-    /// returning null, so a caller naming an unknown provider gets a real
-    /// error instead of a silent empty result.
-    /// </summary>
+    // throws rather than returning null: an unknown provider must not read as an empty result
     ProviderManifest RequireManifest(string providerId);
 
-    /// <summary>
-    /// The adapter implementation. Present only where the process is meant
-    /// to run adapters - an agent always, the control plane only for
-    /// inline-class providers.
-    /// </summary>
+    // only where the process runs adapters: an agent always, the control plane only for inline-class providers
     bool TryGetAdapter(string providerId, out IProviderAdapter adapter);
 
-    /// <summary>
-    /// A digest over every manifest, so a consumer can cache the catalogue
-    /// and revalidate with an ETag instead of refetching it.
-    /// </summary>
     string CatalogDigest { get; }
 
-    /// <summary>
-    /// The digest an AGENT is judged by: over the manifests an agent can be
-    /// leased, each in the one shape every registry can produce.
-    /// </summary>
-    /// <remarks>
-    /// NOT <see cref="CatalogDigest"/>, and the first pooled agent on a NAS
-    /// is why (2026-10-01). The catalogue's own digest moves with two things
-    /// an agent has no part in: the inline parties a control plane runs
-    /// itself - the aggregators exist on it when the operator's keys do, and
-    /// the keys are never handed to an agent - and the raw-payload offer,
-    /// which production withholds from its catalogue and an agent's registry
-    /// never strips. So the agent beside a production control plane with
-    /// GoCardless configured ran the same image, enrolled, heartbeated,
-    /// was listed as stale and leased nothing; the only trace was one log
-    /// line on the agent.
-    /// <para>
-    /// This digest leaves the inline parties out (<see cref="ProviderRegistry.AgentServed"/>)
-    /// and strips raw from the rest on both sides, so two registries built
-    /// from the same adapter code agree whatever the control plane holds the
-    /// keys for and whatever it offers consumers.
-    /// </para>
-    /// </remarks>
+    // the digest an agent is judged by: over the manifests an agent can be leased, raw stripped. Not CatalogDigest, which moves
+    // with the control plane's inline parties (the aggregators, when the operator's keys exist) and the raw offer an agent never
+    // strips: a pooled agent beside a production plane with GoCardless was listed stale and leased nothing (2026-10-01)
     string AgentCatalogDigest { get; }
 }
 
@@ -69,26 +32,9 @@ public sealed class ProviderRegistry : IProviderRegistry
     private readonly Dictionary<string, ProviderManifest> _manifests;
     private readonly Dictionary<string, IProviderAdapter> _adapters;
 
-    /// <param name="offerRawPayloads">
-    /// Whether resources may offer <c>include=raw</c> - the provider's own
-    /// document beside each record.
-    /// </param>
-    /// <remarks>
-    /// False strips the value from every resource that declares it, which is
-    /// the whole gate and needs no second one: the catalogue then never
-    /// advertises raw, and <c>ParamBinder</c> already refuses an
-    /// <c>include</c> value a resource does not list. A caller asking anyway
-    /// gets <c>invalid_request</c> naming the value, rather than a silent
-    /// empty field it would read as the provider sending nothing.
-    /// <para>
-    /// Withheld in production because raw is strictly the more sensitive of
-    /// the two - normalisation drops the fields nobody asked for and this puts
-    /// them back - and because the argument that neither service becomes the
-    /// honeypot holding everyone's purchase history is easier to make when the
-    /// unabridged version is not on offer at all. Diagnosing a shape change is
-    /// what a development deployment is for.
-    /// </para>
-    /// </remarks>
+    // false strips raw from every resource declaring it: the catalogue stops advertising it and ParamBinder refuses an include
+    // value a resource does not list (invalid_request). Withheld in production: raw is the more sensitive of the two, and
+    // neither service should hold everyone's unabridged purchase history; diagnosing a shape change is for development
     public ProviderRegistry(IEnumerable<IProviderAdapter> adapters, bool offerRawPayloads = true)
     {
         ArgumentNullException.ThrowIfNull(adapters);
@@ -124,12 +70,7 @@ public sealed class ProviderRegistry : IProviderRegistry
 
     public string AgentCatalogDigest { get; }
 
-    /// <summary>
-    /// The manifests an agent can be leased - everything but the parties the
-    /// control plane runs in-process (<c>agent.class: inline</c> and not
-    /// required) - with raw payloads stripped, in id order: the canonical
-    /// shape <see cref="AgentCatalogDigest"/> is computed over on both sides.
-    /// </summary>
+    // the canonical shape AgentCatalogDigest is computed over on both sides
     public static IReadOnlyList<ProviderManifest> AgentServed(IEnumerable<ProviderManifest> manifests)
     {
         ArgumentNullException.ThrowIfNull(manifests);
@@ -151,14 +92,7 @@ public sealed class ProviderRegistry : IProviderRegistry
             ? m
             : throw ConnectorException.Unsupported($"unknown provider '{providerId}'");
 
-    /// <summary>
-    /// The same manifest with <c>raw</c> taken off every <c>include</c> it
-    /// appears on, and everything else untouched.
-    ///
-    /// A resource that never offered it is returned as-is, so this changes no
-    /// digest it does not have to: the catalogue ETag moves only for the
-    /// providers that actually lost a value.
-    /// </summary>
+    // a resource that never offered raw is returned as-is, so the catalogue ETag moves only for providers that lost a value
     private static ProviderManifest WithoutRawPayloads(ProviderManifest manifest) => manifest with
     {
         Resources = [.. manifest.Resources.Select(WithoutRawPayloads)],
@@ -182,22 +116,9 @@ public sealed class ProviderRegistry : IProviderRegistry
     public bool TryGetAdapter(string providerId, out IProviderAdapter adapter) =>
         _adapters.TryGetValue(providerId, out adapter!);
 
-    /// <summary>
-    /// Over the whole catalogue as a consumer receives it, not over its
-    /// version numbers.
-    ///
-    /// It hashed <c>id:manifest_version</c> pairs, which made the ETag wrong
-    /// for every change that deliberately does not bump a version - and most
-    /// do not, because <c>ManifestVersion</c> is sealed into bundles as AAD, so
-    /// moving it to bust a cache would invalidate every credential a user
-    /// holds. Adding a challenge type, a resource param, or withholding raw in
-    /// production all left the digest identical, and a consumer revalidating
-    /// against it kept rendering a form the service had stopped accepting.
-    ///
-    /// Serialised through the wire options, so this hashes exactly the bytes
-    /// the catalogue endpoint returns: two processes on the same build agree,
-    /// and any change a consumer could see moves it.
-    /// </summary>
+    // hashes the catalogue as a consumer receives it (wire-option bytes), not id:manifest_version pairs: most changes do
+    // not bump ManifestVersion (sealed into bundles as AAD, so bumping invalidates every credential), and a stale ETag
+    // kept consumers rendering a form the service had stopped accepting
     private static string ComputeDigest(IReadOnlyList<ProviderManifest> manifests)
     {
         var seed = JsonSerializer.SerializeToUtf8Bytes(manifests, ConnectorWireJson.Options);

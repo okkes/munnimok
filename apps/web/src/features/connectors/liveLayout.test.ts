@@ -19,7 +19,6 @@ describe('the streamed login’s geometry (user request 2026-10-01)', () => {
     expect(keyboardInset({ innerHeight: 844, visualViewport: { height: 500, offsetTop: 0 } as VisualViewport })).toBe(344);
     // Android / the native shells: the layout shrank with it
     expect(keyboardInset({ innerHeight: 500, visualViewport: { height: 500, offsetTop: 0 } as VisualViewport })).toBe(0);
-    // a scrolled visual viewport counts its offset
     expect(keyboardInset({ innerHeight: 844, visualViewport: { height: 500, offsetTop: 100 } as VisualViewport })).toBe(244);
   });
 

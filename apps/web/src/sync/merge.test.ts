@@ -21,8 +21,7 @@ function applyAll(local: Row | null, ops: Op[]): Row | null {
   return row;
 }
 
-// JSON.stringify with sorted keys so structural equality isn't defeated by
-// property insertion order.
+// sorted keys: structural equality must not depend on property insertion order
 const canonical = (value: unknown): string =>
   JSON.stringify(value, (_k, v) =>
     v && typeof v === 'object' && !Array.isArray(v)
@@ -90,7 +89,6 @@ describe('applyOp', () => {
       op({ fields: {}, hlc: hlc(130, 'p'), deleted: true }),
       op({ fields: { name: 'C' }, hlc: hlc(140, 'q') }),
     ];
-    // all 120 permutations
     const permutations = (arr: Op[]): Op[][] =>
       arr.length <= 1 ? [arr] : arr.flatMap((x, i) => permutations([...arr.slice(0, i), ...arr.slice(i + 1)]).map((rest) => [x, ...rest]));
 

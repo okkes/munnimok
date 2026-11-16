@@ -2,14 +2,8 @@ import type { ReactNode } from 'react';
 import { Outlet, useChildMatches } from '@tanstack/react-router';
 import { useLgViewport } from '@/lib/viewport';
 
-/**
- * Master–detail panes (redesign §4.2), route-level since 2026-07-18:
- * the LIST route renders this layout and stays mounted while detail
- * child routes come and go through the Outlet — so opening a detail
- * smoothly shrinks the list aside and closing expands it back (user:
- * the old full remount read as a page refresh). Below lg (and in
- * tests) a matched detail fills the screen exactly as before.
- */
+/** route-level: the LIST route stays mounted while detail child routes come and go through the Outlet, so a detail opens by
+ *  shrinking the list aside (a remount read as a page refresh); below lg a matched detail fills the screen */
 export function MasterDetailLayout({ list }: Readonly<{ list: ReactNode }>) {
   const panes = useLgViewport();
   const hasDetail = useChildMatches().length > 0;

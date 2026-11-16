@@ -5,11 +5,6 @@ import { MultiLine } from '@/ui/charts/MultiLine';
 import { Sheet } from '@/ui/Sheet';
 import type { MoneyFmt } from './SegmentSection';
 
-/**
- * Insights (#128): set aside against spent, one point per planned
- * period, the current one last — the lines tell whether the plan runs
- * ahead of the spending or chases it.
- */
 export function InsightsSheet({
   open,
   onOpenChange,

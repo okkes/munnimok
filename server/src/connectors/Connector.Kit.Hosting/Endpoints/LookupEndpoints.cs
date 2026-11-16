@@ -7,11 +7,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// What a party lists at connect time, and what an operator's account at a
-/// party holds (#414). The routes are thin: <see cref="LookupService"/>
-/// holds the plumbing.
-/// </summary>
+/// Connect-time option lookups and an operator's remote consents at a party (#414).
 internal static class LookupEndpoints
 {
     private static readonly string[] Reserved = ["q"];
@@ -67,7 +63,6 @@ internal static class LookupEndpoints
     }
 }
 
-/// <summary>An option's value on a route: base64url, so any value the party uses travels as one safe segment.</summary>
 public static class LookupToken
 {
     public static string Encode(string value) =>

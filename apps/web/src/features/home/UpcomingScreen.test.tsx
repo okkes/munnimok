@@ -9,20 +9,14 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 
-// PINNED clock (Date only — timers stay real for waitFor): the old
-// min(today, 28) fixture put the due day in the PAST on the 29th-31st,
-// emptying the upcoming window — all five specs timed out on Aug 29
+// pinned clock (Date only, timers stay real): a due day derived from the real date emptied the window on the 29th-31st
 vi.useFakeTimers({ toFake: ['Date'] });
 vi.setSystemTime(new Date('2026-08-15T10:00:00'));
 afterAll(() => vi.useRealTimers());
 
-// due TODAY (the pinned today, mid-month, on every real calendar day)
 const day = new Date().getDate();
 
-/** one recurring cost + one tracked loan plan, both due inside the
- *  window; fillerRecs adds same-day recurring costs on top (#334 r2:
- *  bursting the block's cap of 4 is the calendar-safe way to make the
- *  landing really hold more than the block) */
+/** fillerRecs: same-day recurring costs past the block's cap of 4, so the landing holds more than the block (#334) */
 async function seedUpcomingPair({ fillerRecs = 0 } = {}) {
   // the boot chain must settle before this handle's writes (db.close trap)
   await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
@@ -60,11 +54,6 @@ async function seedUpcomingPair({ fillerRecs = 0 } = {}) {
   db.close();
 }
 
-/**
- * #334 (user): the home coming-up block mixes recurring costs and loan
- * payments — its see-all must land on the combined /upcoming list (both
- * kinds, segmented), never the recurring-only manager.
- */
 describe('#334: upcoming see-all = recurring + loans together', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -75,25 +64,22 @@ describe('#334: upcoming see-all = recurring + loans together', () => {
   it('home see-all navigates to /upcoming, which lists BOTH kinds in the window', async () => {
     const first = renderApp('/home');
     await screen.findByTestId('screen-home');
-    // #334 r2: 5 recurrings — one past the block's cap, so see-all shows
+    // 5 recurrings: one past the block's cap
     await seedUpcomingPair({ fillerRecs: 4 });
     first.unmount();
 
     renderApp('/home');
-    // the block carries the loan row and caps the recurrings at 4 of 5…
     const blockLoan = await screen.findByTestId('home-upcoming-debt-loan334', {}, { timeout: 10_000 });
     await waitFor(() => expect(screen.getAllByTestId(/^home-upcoming-rec334/)).toHaveLength(4), { timeout: 10_000 });
-    // #334 r2 (user): costs print unsigned — the loan row wears no minus
+    // costs print unsigned: the loan row wears no minus
     expect(blockLoan.textContent).toMatch(/€250/);
     expect(blockLoan.textContent).not.toMatch(/[−-]/);
-    // …and see-all lands on the combined screen, not the recurring manager
     fireEvent.click(screen.getByTestId('home-seeall-upcoming'));
     await screen.findByTestId('screen-upcoming', {}, { timeout: 10_000 });
     const rec = await screen.findByTestId('upcoming-rec-rec334', {}, { timeout: 10_000 });
     const loan = await screen.findByTestId('upcoming-loan-loan334', {}, { timeout: 10_000 });
     expect(rec.textContent).toContain('Gym 334');
     expect(loan.textContent).toContain('Car loan 334');
-    // the landing is uncapped (all 5 recurrings) and unsigned like the block
     expect(screen.getAllByTestId(/^upcoming-rec-rec334/)).toHaveLength(5);
     expect(loan.textContent).toMatch(/€250/);
     expect(loan.textContent).not.toMatch(/[−-]/);
@@ -117,9 +103,6 @@ describe('#334: upcoming see-all = recurring + loans together', () => {
   }, 30_000);
 });
 
-/** #336 (user): the loan rows wear the ACCOUNT's face — the editor's
- *  chosen logo/picture, else the type icon in the account's color —
- *  never the old hardcoded card icon that ignored every edit */
 describe('#336: upcoming loan rows wear the account face', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -142,9 +125,7 @@ describe('#336: upcoming loan rows wear the account face', () => {
       paymentEvery: 'month' as const,
       paymentDay: day,
     };
-    // colored, no logo: the TYPE icon tinted with the account's color
     await repo.upsert('account', DEMO_SPACE_ID, 'face336a', { ...plan, name: 'Tinted loan 336', color: '#B33771' });
-    // pictured: the chosen logo wins outright
     await repo.upsert('account', DEMO_SPACE_ID, 'face336b', { ...plan, name: 'Logo loan 336', logo: '/brands/acme.svg' });
     db.close();
   }
@@ -153,7 +134,6 @@ describe('#336: upcoming loan rows wear the account face', () => {
     const icon = tinted.querySelector('.mdi-hand-coin-outline');
     expect(icon).not.toBeNull();
     expect(icon?.getAttribute('style') ?? '').toMatch(/#b33771|179,\s*55,\s*113/i);
-    // …and never the old hardcoded stand-in
     expect(tinted.querySelector('.mdi-credit-card-outline')).toBeNull();
     expect(logoed.querySelector('img')?.getAttribute('src')).toBe('/brands/acme.svg');
   }

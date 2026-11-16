@@ -38,7 +38,6 @@ describe('NotificationsBell (user identity)', () => {
     expect((await screen.findByTestId('notif-request-r1')).textContent).toContain('Carol');
     expect(screen.getByTestId('notif-invite-i1').textContent).toContain('Household');
 
-    // a row leads to where the decision is made
     fireEvent.click(screen.getByTestId('notif-invite-i1'));
     expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
   }, 15_000);

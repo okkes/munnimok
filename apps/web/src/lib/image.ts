@@ -1,11 +1,5 @@
-/**
- * Client-side image downscaling for profile pictures and space images.
- * Local-first: the original file never leaves the device — only the
- * tiny (≤ maxPx, JPEG) data URL is stored and synced, so avatars ride
- * along in existing sync fields instead of needing a blob store.
- */
+// avatars ride along in existing sync fields: only the small (≤ maxPx) data URL is stored and synced, never the original
 
-/** largest dimensions that fit `w × h` inside a `max` square, keeping ratio */
 export function fitWithin(w: number, h: number, max: number): { width: number; height: number } {
   if (w <= max && h <= max) return { width: w, height: h };
   const scale = Math.min(max / w, max / h);
@@ -22,7 +16,6 @@ const ALPHA_MAX_CHARS = 60_000;
 const ALPHA_MIN_PX = 64;
 const ALPHA_SHRINK = 0.75;
 
-/** any pixel not fully opaque (RGBA bytes) */
 export function hasTransparency(rgba: Uint8ClampedArray): boolean {
   for (let i = 3; i < rgba.length; i += 4) if (rgba[i] < 255) return true;
   return false;
@@ -46,12 +39,7 @@ function alphaWithinBudget(bitmap: ImageBitmap, canvas: HTMLCanvasElement, ctx: 
   return encoded;
 }
 
-/**
- * #522 (user): JPEG has no alpha — a transparent logo came back on BLACK,
- * which swallowed a dark logo whole. A small picture with transparency
- * keeps it (the screens choose a backdrop for it, ui/Picture); a large one
- * gets a white page under its transparent parts.
- */
+/** #522: JPEG has no alpha (a transparent logo came back on black): small pictures keep it, large ones get a white page */
 export async function downscaleImage(file: Blob, maxPx = 256, quality = 0.82): Promise<string> {
   const bitmap = await createImageBitmap(file);
   try {
@@ -68,7 +56,6 @@ export async function downscaleImage(file: Blob, maxPx = 256, quality = 0.82): P
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, width, height);
     }
-    // JPEG: photos compress far better than PNG at avatar sizes
     return canvas.toDataURL('image/jpeg', quality);
   } finally {
     bitmap.close();

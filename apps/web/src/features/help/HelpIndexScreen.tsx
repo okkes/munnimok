@@ -10,7 +10,6 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Row } from '@/ui/primitives';
 
-/** Settings → Help & tutorials: every tour, rerunnable any time. */
 export function HelpIndexScreen() {
   const { t } = useLang();
   const { store } = useData();
@@ -34,7 +33,6 @@ export function HelpIndexScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="px-1 pb-3 text-[12px] text-ink-3">{t('help.indexSub')}</p>
-        {/* the release notes stay reachable after the Home nudge is gone */}
         <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface">
           <Row
             testId="help-whatsnew-row"
@@ -43,15 +41,12 @@ export function HelpIndexScreen() {
             title={t('whatsnew.title')}
             onClick={() => setWhatsNewOpen(true)}
           />
-          {/* the illustrated guide ships with the app as a static page */}
           <Row
             testId="help-guide-row"
             icon="book-open-page-variant-outline"
             iconColor="var(--m-accent-deep)"
             title={t('help.userGuide')}
-            // native: window.open('_blank') renders a blank webview (user
-            // report) — navigate in place instead; the guide's own
-            // "back to the app" link returns here
+            // native: window.open('_blank') renders a blank webview, so navigate in place; the guide's link returns here
             onClick={() =>
               isNativeApp()
                 ? globalThis.location.assign(`${import.meta.env.BASE_URL}guide/`)
@@ -60,8 +55,7 @@ export function HelpIndexScreen() {
           />
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {/* replay the Mina first-run (user ruling: replayable; its
-              revert ledger lets a run be undone at the wrap) */}
+          {/* replayable by ruling; its revert ledger lets a run be undone at the wrap */}
           <Row
             testId="help-mina-replay"
             icon="compass-outline"

@@ -1,11 +1,5 @@
-// Apple keeps ONE step of the phone pipeline manual: the App Store Connect
-// app record (there is no create-API). Before exporting, ask whether the
-// record exists so a missing one is a notice, never an "EXPORT FAILED".
-//
-// Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID, BUNDLE_ID. Writes
-// exists=true|false|unknown (+ app=<name> when found) to GITHUB_OUTPUT and
-// never fails the build — a probe that cannot answer leaves the export to
-// decide, as before.
+// the ASC app record has no create-API: ask first so a missing one is a notice, not an "EXPORT FAILED"
+// a probe that cannot answer never fails the build: exists=unknown and the export decides
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
@@ -22,8 +16,7 @@ function jwt() {
 // one line per output: a value with a line break in it would otherwise write a second output of its own
 const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${String(v).replace(/[\r\n]+/g, ' ')}\n`); };
 
-// exitCode instead of process.exit(): exiting while the fetch socket is
-// still closing trips a libuv assertion on Windows (seen 2026-09-09)
+// exitCode, not process.exit(): exiting while the fetch socket is closing trips a libuv assertion on Windows
 async function main() {
   const bundleId = String(process.env.BUNDLE_ID ?? '').trim();
   if (!bundleId) { console.log('::warning title=App record check skipped::BUNDLE_ID is empty'); out('exists', 'unknown'); return; }

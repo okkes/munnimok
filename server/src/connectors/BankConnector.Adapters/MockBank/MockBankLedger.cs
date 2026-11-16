@@ -42,27 +42,12 @@ public sealed record MockBankEntry
     public TransactionKind Kind { get; init; } = TransactionKind.Other;
 }
 
-/// <summary>
-/// The mock fleet's data: a ledger that starts on a fixed day and runs
-/// through the day it is read on - in the adapters, their clock's today.
-///
-/// The FIRST day is fixed on purpose. Every row is a pure function of its
-/// day and the rows before it, so a day's rows - ids, balances,
-/// <see cref="ContentHash"/> - never move as the ledger grows. A fixture
-/// whose transactions moved with the clock would produce a different hash
-/// every day, which makes every idempotency assertion in the suite either
-/// flaky or vacuous - and idempotency is precisely what these fixtures
-/// exist to prove. The LAST day follows the clock because a fixed one ran
-/// out: the ledger used to end on 2026-07-26, and once that day fell behind
-/// the history limit no window held a single row.
-/// </summary>
+// starts on a fixed day: every row is a pure function of its day and the rows before, so ids, balances and
+// ContentHash never move; the last day follows the clock, as a fixed one (2026-07-26) fell behind the history
+// limit and every window emptied
 public sealed class MockBankLedger
 {
-    /// <summary>
-    /// The oldest day in the fixture, fixed for good: moving it would move
-    /// every id and hash after it (and duplicate the rows a dev database
-    /// already holds). The day a ledger that ended on 2026-07-26 began.
-    /// </summary>
+    // fixed for good: moving it moves every id and hash after it and duplicates the rows a dev database already holds
     public static readonly DateOnly Start = new(2026, 1, 27);
 
     /// <summary>Six months: enough to span several statement periods and a quarterly interest posting.</summary>
@@ -130,20 +115,9 @@ public sealed class MockBankLedger
         ];
     }
 
-    /// <summary>
-    /// The fixture the honest providers serve, from <see cref="Start"/>
-    /// through <paramref name="lastDay"/>. Its balance chain holds.
-    /// </summary>
     public static MockBankLedger Through(DateOnly lastDay) => new(Generate(lastDay));
 
-    /// <summary>
-    /// The same fixture with one resulting balance nudged by five euros,
-    /// near <paramref name="lastDay"/>.
-    ///
-    /// It exists so the balance-chain verifier can be proven to fire, and so
-    /// the operator alert path has something realistic to fire on: a broken
-    /// chain is what a real bank changing its export looks like from here.
-    /// </summary>
+    // one resulting balance nudged by five euros near lastDay, so the chain verifier and alert path have something to fire on
     public static MockBankLedger BrokenThrough(DateOnly lastDay) => new(Corrupt(Generate(lastDay)));
 
     public IReadOnlyList<MockBankAccount> Accounts { get; }
@@ -177,10 +151,7 @@ public sealed class MockBankLedger
         return accounts;
     }
 
-    /// <summary>
-    /// Entries for the named accounts inside the window, oldest-first and in
-    /// the ledger's own order - the order the balance chain is checked in.
-    /// </summary>
+    // in the ledger's own order, which is the order the balance chain is checked in
     public IReadOnlyList<Transaction> ToTransactions(
         string sessionId,
         IReadOnlyList<Account> accounts,
@@ -214,13 +185,7 @@ public sealed class MockBankLedger
         return transactions;
     }
 
-    /// <summary>
-    /// Deterministic by construction: every amount is a pure function of the
-    /// day, and the running balance is accumulated forward, so the chain is
-    /// exact rather than approximately right. Always from <see cref="Start"/>:
-    /// a later first day would restart the balances and the sequence the ids
-    /// carry, and every day's rows would move with it.
-    /// </summary>
+    // always from Start: a later first day would restart balances and the id sequence, moving every day's rows
     private static List<MockBankEntry> Generate(DateOnly lastDay)
     {
         var entries = new List<MockBankEntry>(256);
@@ -258,8 +223,7 @@ public sealed class MockBankLedger
     private static IEnumerable<(long Amount, string Description, Counterparty? Counterparty, TransactionKind Kind)> EventsFor(
         MockBankAccount account, DateOnly day, long balance)
     {
-        // A cheap spread that is a pure function of the date, so the same
-        // day always produces the same amount without a random source.
+        // a pure function of the date, so the same day gives the same amount without a random source
         var jitter = (day.DayOfYear * 137) % 4_800;
 
         return account.Type switch
@@ -313,9 +277,7 @@ public sealed class MockBankLedger
             yield return (50_000, "Van Betaalrekening", new Counterparty { Name = "O DOKER", Iban = CurrentIban }, TransactionKind.Transfer);
         }
 
-        // Quarterly interest on the last day of the quarter, at
-        // 1.5% annual. Integer arithmetic throughout: a fixture that
-        // rounds is a fixture whose chain drifts.
+        // quarter-end interest at 1.5% annual, integer arithmetic: a rounding fixture's chain drifts
         if (day.Month % 3 == 0 && day.Day == DateTime.DaysInMonth(day.Year, day.Month))
         {
             yield return (balance * 15 / 4_000, "Rente", null, TransactionKind.Interest);
@@ -330,9 +292,7 @@ public sealed class MockBankLedger
             yield return (-(1_100 + (jitter % 3_900)), "Card purchase", Merchant(day), TransactionKind.CardPayment);
         }
 
-        // The monthly settlement clears whatever is outstanding, so
-        // the balance genuinely returns to zero the way a real card
-        // does after a direct debit.
+        // the settlement clears whatever is outstanding, so the balance returns to zero like a real card
         if (day.Day == 5 && balance < 0)
         {
             yield return (-balance, "Automatische incasso creditcard", new Counterparty { Name = "O DOKER", Iban = CurrentIban }, TransactionKind.DirectDebit);
@@ -342,16 +302,8 @@ public sealed class MockBankLedger
     private static Counterparty Merchant(DateOnly day) =>
         new() { Name = Merchants[day.DayOfYear % Merchants.Length] };
 
-    /// <summary>
-    /// Breaks the chain five euros' worth, near the RECENT end of the
-    /// current account but not at the very last row.
-    ///
-    /// Recent because a fetch window is a suffix of history and a corruption
-    /// older than the default window would simply not be fetched - the
-    /// provider would then look healthy, which defeats the fixture. Not the
-    /// last row because a break is a property of a PAIR: the verifier needs
-    /// a row after the corrupted one to compare against.
-    /// </summary>
+    // near the recent end: a fetch window is a suffix, so an older corruption would go unfetched and look healthy
+    // not the last row: a break is a property of a pair, so the verifier needs a row after it
     private static List<MockBankEntry> Corrupt(List<MockBankEntry> entries)
     {
         var current = entries

@@ -28,33 +28,16 @@ import type { SpaceViews } from './prediction';
 import { createMatchScheduler } from './receiptMatching';
 import type { MatchScheduler } from './receiptMatching';
 
-/**
- * #565 (user): "the moment the transactions are available we should do the
- * processing" — every row waiting in the review gets its whole suggestion
- * the moment it lands on this device (a sync, an import, a typed row):
- * category or spread, counterparty, loan, event, recurring cost and the
- * receipt that fits. The card only reads it; nothing is worked out while it
- * opens, and nothing pops in afterwards.
- *
- * A suggestion stays a suggestion (the review rule, 2026-10-09): it lives
- * on THIS device only — learned from the person's own history across their
- * spaces, which a shared space's co-members never see — and reaches the
- * synced row only through the person's Confirm.
- */
+// #565: every row waiting in the review gets its whole suggestion when it lands, so nothing is worked out as the card opens
+// it lives on THIS device only (learned across the person's spaces) and reaches the synced row only via their Confirm
 export interface ReviewSuggestion {
-  /** the stored facts it was prepared on — a change elsewhere outdates it */
   basis: string;
-  /** the card's prefilled decision: category (or spread), type, counterparty */
   draft: ReviewDraft;
-  /** the predicted category and why (the card's reason line) */
   predictedCatId?: string;
   source?: 'history' | 'history-amount' | 'keyword';
   evidence?: number;
-  /** the event the merchant's recent charges joined */
   eventId?: string;
-  /** the active recurring cost this payment is (merchant + amount) */
   recurringId?: string;
-  /** the receipt that fits this payment when the matcher proposed none */
   receiptId?: string;
 }
 
@@ -67,15 +50,13 @@ const FINGERPRINT_KEY = 'reviewSuggest:fingerprint';
 
 interface StoredSuggestions {
   v: number;
-  /** the inputs it was prepared on (`fingerprints().inputs`): a pass that meets the same inputs and no row
-   *  without its suggestion leaves the map alone (#554) */
+  /** the inputs it was prepared on: a pass meeting the same inputs, with every row suggested, leaves the map alone (#554) */
   inputs?: string;
   byTx: ReviewSuggestions;
 }
 
 const queued = (tx: SpaceTx): boolean => tx.deleted === 0 && tx.needsReview === 1;
 
-/** the account a counterparty IBAN names, any space's (an own-account move) — or the PayPal feed a funding debit points at */
 function ownCounterFor(tx: SpaceTx, accounts: readonly AccountRow[]): AccountRow | undefined {
   const iban = tx.counterIban ? normalizeIban(tx.counterIban) : undefined;
   const byIban = iban ? accounts.find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban) : undefined;
@@ -83,7 +64,6 @@ function ownCounterFor(tx: SpaceTx, accounts: readonly AccountRow[]): AccountRow
   return tx.amountCents < 0 && isPaypalFunding(tx) ? accounts.find((a) => a.deleted === 0 && isPaypalAccount(a)) : undefined;
 }
 
-/** one space's suggestions: every row in its review, nothing else (`views`: a pass shares its reads) */
 export async function prepareSpaceSuggestions(store: StorageBackend, spaceId: string, views: SpaceViews = memoViews(store)): Promise<ReviewSuggestions> {
   const queue = (await views(spaceId)).filter(queued);
   if (queue.length === 0) return {};
@@ -111,7 +91,6 @@ export async function prepareSpaceSuggestions(store: StorageBackend, spaceId: st
   return Object.fromEntries(queue.map((tx) => [tx.id, suggestRow(tx, ctx)]));
 }
 
-/** what every row of one space's pass reads */
 interface RowContext {
   memory: Awaited<ReturnType<typeof buildSpaceMerchantMemory>>;
   cats: DraftCatalog;
@@ -130,7 +109,6 @@ function withRecurringCategory(draft: ReviewDraft, recurring: RecurringRow | und
   return withCategory({ ...draft, cats: undefined }, recurring.catId, cats);
 }
 
-/** one row's suggestion: the prediction, the composed draft, the event, the recurring cost and the receipt */
 function suggestRow(tx: SpaceTx, ctx: RowContext): ReviewSuggestion {
   const sourceType = ctx.typeOf.get(tx.accountId);
   const prediction = predictTx({
@@ -172,22 +150,13 @@ function suggestRow(tx: SpaceTx, ctx: RowContext): ReviewSuggestion {
   };
 }
 
-/** what one pass did — the counts its span carries */
 export interface SuggestPassOutcome {
-  /** spaces whose map was prepared again */
   prepared: number;
-  /** the rows those maps speak for */
   rows: number;
 }
 
-/**
- * The pass: the named spaces, or every live space. A space whose map was
- * prepared on today's inputs and speaks for every row in its review is
- * left as it is (#554: a confirm's counter leg, a row leaving the review);
- * any other is prepared again whole, so its rows read the newest memory
- * together. A space asked for BY NAME is always prepared: the asker (the
- * review after a Confirm) knows the memory moved, which no input shows.
- */
+// a space asked for BY NAME is always prepared: the asker (the review after a Confirm) knows the memory moved
+// any other space prepared on today's inputs and speaking for every row in its review is left alone (#554)
 export async function prepareReviewSuggestions(store: StorageBackend, spaceIds?: readonly string[]): Promise<SuggestPassOutcome> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind && (!spaceIds || spaceIds.includes(s.id)));
   const { inputs } = await fingerprints(store);
@@ -205,7 +174,6 @@ export async function prepareReviewSuggestions(store: StorageBackend, spaceIds?:
   return outcome;
 }
 
-/** a stored suggestion that still speaks for the row as it stands */
 export function suggestionFor(map: ReviewSuggestions | undefined, tx: SpaceTx | undefined): ReviewSuggestion | undefined {
   if (!tx) return undefined;
   const found = map?.[tx.id];
@@ -227,19 +195,8 @@ export function useReviewSuggestions(): ReviewSuggestions | undefined {
   );
 }
 
-/**
- * What the pass reads, told cheaply (index counts; field stamps for the
- * small tables a person edits), in two parts:
- * the INPUTS every suggestion reads besides its own row — each
- * space's accounts (own and attached), recurring costs, events and
- * categories, and the shops' receipts — and the ROWS that may wait in a
- * review: each space's own and each attached feed's, with the history
- * gates that let them in. The review's own decisions are in neither
- * (#554): a Confirm writes the row's overlay (a bank row's first one is
- * new), maybe a counter leg or a receipt link — each of those used to
- * start a pass over every space while the person was on the next card.
- * The open review never reshuffles under the person anyway.
- */
+// the review's own decisions are in neither part (#554): a Confirm (a bank row's first overlay, a counter leg,
+// a receipt link) once started a pass over every space while the person was on the next card
 async function fingerprints(store: StorageBackend): Promise<{ inputs: string; rows: string }> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind).sort((a, b) => a.id.localeCompare(b.id));
   const inputs: string[] = [];
@@ -258,7 +215,6 @@ async function fingerprints(store: StorageBackend): Promise<{ inputs: string; ro
   for (const feedId of [...feeds].sort((a, b) => a.localeCompare(b))) {
     rows.push(`${feedId}:${await store.countBySpace('transaction', feedId)}`);
   }
-  // a shop's receipts land in its store feed
   const storeFeeds = [...new Set((await store.allRows('storeConn')).filter((c) => c.deleted === 0).map((c) => c.spaceId))].sort((a, b) => a.localeCompare(b));
   for (const feedId of storeFeeds) inputs.push(`r:${feedId}:${await store.countBySpace('receipt', feedId)}`);
   // an edit or a removal keeps the count: these small tables are read by their field stamps instead.
@@ -277,7 +233,6 @@ async function fingerprints(store: StorageBackend): Promise<{ inputs: string; ro
 const BALANCE_FIELDS: ReadonlySet<string> = new Set(['balanceCents', 'balanceAsOf']);
 const NO_FIELDS: ReadonlySet<string> = new Set();
 
-/** FNV-1a, 32 bit */
 function hash32(text: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
@@ -298,7 +253,6 @@ function stampOf(rows: readonly (SyncEnvelope & { id: string })[], skip: Readonl
   return (digest >>> 0).toString(36);
 }
 
-/** both parts as one — what the trigger watches */
 export async function suggestionInputFingerprint(store: StorageBackend): Promise<string> {
   const { inputs, rows } = await fingerprints(store);
   return `${inputs}#${rows}`;
@@ -306,21 +260,14 @@ export async function suggestionInputFingerprint(store: StorageBackend): Promise
 
 let installed: MatchScheduler | null = null;
 
-/** a landing point's ask, or the review's when it meets a row nobody prepared yet */
 export function requestReviewSuggestions(spaceId?: string): void {
   installed?.request(spaceId);
 }
 
-/** the pace: asks coalesce briefly, the pass runs at idle time, one at a time */
 export const SUGGEST_DEBOUNCE_MS = 250;
 
-/**
- * The pass's triggers, mounted once with the app shell for every identity
- * (an import or a typed row lands offline just the same): the inputs are
- * watched live — rows landing, accounts, recurring costs, events — and a
- * change asks for a pass; the first look compares against the fingerprint
- * the last pass left, so an app open with nothing new prepares nothing.
- */
+// mounted for every identity (an import or typed row lands offline just the same); the first look compares against the
+// last pass's fingerprint, so an app open with nothing new prepares nothing
 export function useReviewSuggestionTriggers(): void {
   const { store } = useData();
   useEffect(() => {
@@ -358,8 +305,7 @@ export function useReviewSuggestionTriggers(): void {
       const finished = scheduler.settled();
       scheduler.dispose();
       if (installed === scheduler) installed = null;
-      // test seam (like the boot chain's): a pass still running holds the
-      // database a next test is about to delete — the setup drains it first
+      // test seam: a pass still running holds the database the next test deletes, so setup drains it first
       if (import.meta.env.VITEST) (globalThis as { __munniSuggestPass?: Promise<unknown> }).__munniSuggestPass = finished;
     };
   }, [store]);

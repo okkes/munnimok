@@ -4,11 +4,6 @@ using System.Text.Json.Nodes;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// The retention bench's report store (#441 L4): a run is the operator's own,
-/// its steps are written in the order taken and replaced by name, it ends
-/// once, and the history lists it newest first.
-/// </summary>
 public class ConnectorRetentionTests(ConnectorApiFactory factory) : IClassFixture<ConnectorApiFactory>
 {
     private const string Admin = "openid profile admin";
@@ -33,7 +28,6 @@ public class ConnectorRetentionTests(ConnectorApiFactory factory) : IClassFixtur
         Assert.Equal("agt_kitchen", run["agentId"]!.GetValue<string>());
         Assert.Empty(run["steps"]!.AsArray());
 
-        // steps in order; the same name again replaces what it said
         using var first = await operatorClient.PostAsJsonAsync($"/lab/bench/retention/runs/{runId}/steps", new { name = "sign-in", state = "running" });
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         using var again = await operatorClient.PostAsJsonAsync($"/lab/bench/retention/runs/{runId}/steps", new { name = "sign-in", state = "pass", detail = "active in 2.1 s", sessionId = "ses_r1", jobId = "job_r1" });
@@ -55,7 +49,6 @@ public class ConnectorRetentionTests(ConnectorApiFactory factory) : IClassFixtur
         Assert.Equal("failed", ended!["state"]!.GetValue<string>());
         Assert.Equal(2, ended["steps"]!.AsArray().Count);
 
-        // a step after the end is refused; the report stands as it was
         using var late = await operatorClient.PostAsJsonAsync($"/lab/bench/retention/runs/{runId}/steps", new { name = "kept-login", state = "pass" });
         Assert.Equal(HttpStatusCode.Conflict, late.StatusCode);
 
@@ -65,7 +58,6 @@ public class ConnectorRetentionTests(ConnectorApiFactory factory) : IClassFixtur
         var one = await operatorClient.GetFromJsonAsync<JsonObject>($"/lab/bench/retention/runs/{runId}");
         Assert.Equal("first pass", one!["label"]!.GetValue<string>());
 
-        // another operator's door shows nothing of it
         using var other = factory.ClientFor("retention-other-operator", scope: Admin);
         Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync($"/lab/bench/retention/runs/{runId}")).StatusCode);
         Assert.DoesNotContain((await other.GetFromJsonAsync<JsonArray>("/lab/bench/retention/runs"))!, r => r!["id"]!.GetValue<string>() == runId);

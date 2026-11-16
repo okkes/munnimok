@@ -3,12 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Transport;
 
-/// <summary>
-/// The agent's state file holds its enrollment token; on a Unix host it is
-/// readable by its owner and nobody else, and a file that cannot be
-/// restricted is logged rather than fatal — the agent still runs, the
-/// operator still learns.
-/// </summary>
+// the state file holds the enrollment token; a file that cannot be restricted is logged, not fatal
 public sealed class OwnerOnlyFileTests
 {
     [Fact]

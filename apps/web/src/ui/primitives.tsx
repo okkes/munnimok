@@ -1,16 +1,11 @@
 import type { ReactNode } from 'react';
 import { Icon } from './Icon';
 
-/**
- * The row/tile/badge vocabulary (redesign §2B–G). Every screen builds
- * lists, tiles, chips and progress from these so the anatomy can't
- * drift again: nav rows 15px/py-3.5, data rows 13px/py-2.5, tiles at
- * exactly 48/36, tone soft-bg + deep-fg pairs, tokens only.
- */
+// the row/tile/badge vocabulary (redesign §2B–G): nav rows 15px/py-3.5, data rows 13px/py-2.5,
+// tiles exactly 48/36, tokens only
 
 export type Tone = 'accent' | 'warning' | 'negative' | 'info' | 'special' | 'neutral';
 
-/** soft background per tone (dark mode shifts via the tokens) */
 const TONE_BG: Record<Tone, string> = {
   accent: 'bg-accent-soft',
   warning: 'bg-warning-soft',
@@ -20,7 +15,6 @@ const TONE_BG: Record<Tone, string> = {
   neutral: 'bg-bg-2',
 };
 
-/** readable foreground on the soft background */
 const TONE_FG: Record<Tone, string> = {
   accent: 'var(--m-accent-deep)',
   warning: 'var(--m-warning)',
@@ -53,11 +47,9 @@ export function Tile({
   icon?: string;
   tone?: Tone;
   size?: 48 | 36;
-  /** icon color override (defaults to the tone's foreground) */
   color?: string;
   /** dynamic background (category color-mix, budget urgency) — replaces the tone */
   bg?: string;
-  /** richer content than an icon (brand logo, picture) */
   children?: ReactNode;
 }>) {
   const box = size === 48 ? 'h-12 w-12 rounded-2xl' : 'h-9 w-9 rounded-xl';
@@ -79,9 +71,7 @@ interface RowProps {
   /** bare leading icon (nav style — settings rows stay untiled by design) */
   icon?: string;
   iconColor?: string;
-  /** richer leading visual (a <Tile>, an <img>…) — wins over `icon` */
   leading?: ReactNode;
-  /** right-aligned content; nav rows append a chevron unless disabled */
   trailing?: ReactNode;
   chevron?: boolean;
   onClick?: () => void;
@@ -90,7 +80,6 @@ interface RowProps {
   className?: string;
 }
 
-/** one list-row anatomy for the whole app (§2B) */
 export function Row({
   kind = 'nav',
   title,
@@ -141,7 +130,6 @@ export function Row({
   );
 }
 
-/** static micro label: tone-soft bg, tone fg (§2F) */
 export function Pill({
   tone = 'neutral',
   caps = false,
@@ -161,13 +149,11 @@ export function Pill({
   );
 }
 
-/** selected-state look per tone — accent for picking, warning for attention filters */
 const CHIP_ON: Partial<Record<Tone, string>> = {
   accent: 'border-accent bg-accent-soft font-medium text-accent-deep',
   warning: 'border-warning bg-warning-soft font-medium text-warning',
 };
 
-/** interactive filter/select chip — full round, tone-soft when on (§2F) */
 export function Chip({
   selected,
   onClick,
@@ -205,7 +191,6 @@ const BAR_H = { sm: 'h-1', md: 'h-1.5', lg: 'h-2' } as const;
 /** fills read best in the tone's base color (deep is for icons/text) */
 const BAR_FILL: Record<Tone, string> = { ...TONE_FG, accent: 'var(--m-accent)' };
 
-/** the one progress bar (§2E): value 0..1, tone or explicit css color */
 export function ProgressBar({
   value,
   tone = 'accent',
@@ -220,7 +205,6 @@ export function ProgressBar({
   tone?: Tone;
   color?: string;
   size?: keyof typeof BAR_H;
-  /** absolutely-positioned decoration inside the track (e.g. over-budget stripes) */
   overlay?: ReactNode;
   className?: string;
   testId?: string;
@@ -261,26 +245,19 @@ export function Field({
 }
 
 interface HeroCardProps {
-  /** leading visual — typically a 48 <Tile> */
   tile: ReactNode;
-  /** name-led heroes (recurring, holding) put the title here; number-led
-   *  heroes (goal, debt, budget) omit it and lead with the figure */
+  /** name-led heroes (recurring, holding) put the title here; number-led ones (goal, debt, budget) omit it */
   title?: ReactNode;
-  /** small pill/badge beside the title */
   titleBadge?: ReactNode;
   sub?: ReactNode;
-  /** the big m-num figure (title scale: 24) */
   number: ReactNode;
-  /** right-aligned slot on the header row */
   right?: ReactNode;
   progress?: ReactNode;
-  /** meta chips/lines under the progress, joined with gap-x-4 */
   meta?: ReactNode;
   testId?: string;
   className?: string;
 }
 
-/** the detail-screen hero (§2D): tile + number + progress + meta, one anatomy */
 export function HeroCard({ tile, title, titleBadge, sub, number, right, progress, meta, testId, className = '' }: Readonly<HeroCardProps>) {
   return (
     <div className={`rounded-card border border-line bg-surface p-4 ${className}`} data-testid={testId}>

@@ -12,12 +12,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TX_TYPE_VISUAL } from './TxTypeSheet';
 
-/**
- * #570 (user): a transaction looked at before it is chosen — the detail
- * screen's facts (money, day, category, type, account, counterparty,
- * event, note, bank text) without any of its edit doors, and the one
- * action the host offers at the bottom.
- */
+/** #570: the detail screen's facts without its edit doors, plus the one action the host offers */
 export function TxPeekSheet({
   tx,
   part,

@@ -1,11 +1,7 @@
 import { KEYWORD_RULES } from './keyword-categories';
 import type { KeywordRule } from './keyword-categories';
 
-/**
- * Keyword rules written here, by hand: the generated table next door was a
- * one-shot port of the legacy predictor's data and is not edited. A rule
- * per language, the same shape; the predictor reads the two tables as one.
- */
+// hand-written rules; the generated table is a one-shot port of the legacy predictor's data and is never edited
 export const EXTRA_KEYWORD_RULES: KeywordRule[] = [
   // #451: activities — things you go and do, as opposed to a film, a concert or a match
   {
@@ -25,5 +21,4 @@ export const EXTRA_KEYWORD_RULES: KeywordRule[] = [
   },
 ];
 
-/** every rule the predictor reads: the generated table and the hand-written one */
 export const ALL_KEYWORD_RULES: readonly KeywordRule[] = [...KEYWORD_RULES, ...EXTRA_KEYWORD_RULES];

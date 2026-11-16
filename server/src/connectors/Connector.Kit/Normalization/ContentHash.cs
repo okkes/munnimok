@@ -4,21 +4,11 @@ using System.Text;
 
 namespace Connector.Kit.Normalization;
 
-/// <summary>
-/// A stable hash of the facts that make a record what it is.
-///
-/// Two properties matter and both are load-bearing: it must not change when
-/// a provider reorders its JSON or adds a field we ignore, and it must
-/// change when any meaningful value does. That is what makes re-fetch
-/// overlap free, which in turn is what lets every adapter widen its window
-/// to catch late-settling rows.
-/// </summary>
+// must not change when a provider reorders its JSON or adds an ignored field, and must change on any meaningful value:
+// that makes re-fetch overlap free, so adapters can widen their window for late-settling rows
 public static class ContentHash
 {
-    /// <summary>
-    /// ASCII unit separator. Written as a numeric escape rather than a
-    /// literal so the source carries no invisible control characters.
-    /// </summary>
+    // ASCII unit separator as a numeric escape, so the source carries no invisible control characters
     private const char Separator = (char)0x1F;
 
     public static string Of(Transaction tx)
@@ -48,9 +38,7 @@ public static class ContentHash
             receipt.Items.Count.ToString(CultureInfo.InvariantCulture),
         };
 
-        // Items participate so a detail fetch that later fills them in
-        // produces a different hash - the summary and the detailed record
-        // are genuinely different content.
+        // items participate so a later detail fetch that fills them in produces a different hash
         foreach (var item in receipt.Items)
         {
             parts.Add(item.Name);
@@ -61,14 +49,7 @@ public static class ContentHash
         return Compute([.. parts]);
     }
 
-    /// <summary>
-    /// The facts a registry states about one credit.
-    ///
-    /// Status participates, unlike a receipt's reconciliation verdict: a
-    /// credit moving from running to ended is the registry saying something
-    /// new about it, not us reaching a different opinion about the same
-    /// content. A consumer must see that as a changed record.
-    /// </summary>
+    // status participates, unlike a receipt's reconciliation verdict: running -> ended is the registry saying something new
     public static string Of(CreditRegistration credit)
     {
         ArgumentNullException.ThrowIfNull(credit);
@@ -85,22 +66,8 @@ public static class ContentHash
             credit.ArrearsCode ?? string.Empty);
     }
 
-    /// <summary>
-    /// What a student-finance body states is owed.
-    ///
-    /// The components participate, not just the total. Two positions can add
-    /// up to the same figure while meaning different things - an ov-schuld
-    /// appearing as a loan shrinks by the same amount is somebody's travel
-    /// product having gone unstopped, and a hash keyed on the total alone
-    /// would report that as no change at all.
-    /// </summary>
-    /// <remarks>
-    /// Nothing dated participates, because nothing dated exists - see the note
-    /// on <see cref="StudentDebt"/>. A sync that finds the same figures
-    /// therefore hashes the same and costs the consumer nothing, which is the
-    /// behaviour wanted: this is a standing position that is expected to sit
-    /// unchanged for a month at a time.
-    /// </remarks>
+    // components participate, not just the total: positions can sum equal yet differ (an unstopped ov-schuld). Nothing dated
+    // participates, so a sync finding the same figures hashes the same, as wanted for a standing position
     public static string Of(StudentDebt debt)
     {
         ArgumentNullException.ThrowIfNull(debt);
@@ -116,18 +83,12 @@ public static class ContentHash
             debt.InterestRegime ?? string.Empty,
             debt.PaymentHolidayMonthsRemaining?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
 
-            // The as-of date participates, and that is a deliberate change of
-            // behaviour: a balance recalculated to a new date is the provider
-            // saying something new about it, even when the figure is identical.
-            // A consumer showing "as of 1 July" when the provider now says
-            // 1 August is stale in exactly the way this field exists to reveal.
+            // the as-of date participates: a balance recalculated to a new date is new from the provider even at an identical figure
             debt.AsOf?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
             debt.RepaymentMonthsRemaining?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
         };
 
-        // Stated history participates too. A year closing, or the provider
-        // restating what was owed at the start of repayment, changes the record
-        // a consumer holds even though today's balance did not move.
+        // stated history participates: a year closing or a restated start-of-repayment changes the record though the balance did not
         foreach (var stated in debt.History)
         {
             parts.Add(stated.Kind.ToString());
@@ -159,10 +120,7 @@ public static class ContentHash
             account.Balance?.Amount.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
     }
 
-    /// <summary>
-    /// Length-prefixed so that no rearrangement of field boundaries can
-    /// collide - ("ab","c") and ("a","bc") must not hash the same.
-    /// </summary>
+    // length-prefixed so ("ab","c") and ("a","bc") cannot collide
     private static string Compute(params string[] parts)
     {
         var sb = new StringBuilder();

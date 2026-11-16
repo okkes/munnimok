@@ -6,12 +6,8 @@ import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 import { useData } from './data';
 
-/**
- * #505 (user): changes made on this device in a space it may only read
- * never reached the other members — the sync engine undid them. This says
- * so, once: the list lives in meta until the person has seen it, so a
- * restart before that still shows it.
- */
+// #505: changes made in a space this device may only read were undone by sync; said once, the list stays in meta
+// until seen so a restart still shows it
 export function UnsavedNotice() {
   const { t } = useLang();
   const { store } = useData();

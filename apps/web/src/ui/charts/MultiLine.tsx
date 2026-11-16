@@ -1,12 +1,5 @@
-/** Two-or-more series on one shared scale (#168: recurring year chart).
- *  Same fluid-width conventions as Line. #168 r2 (user): values may be
- *  null (a gap — segments span only consecutive non-null runs),
- *  `markerIndex` pins a vertical marker on one x index (#168 r4: the
- *  tracking START — data left of it is unknown), and with
- *  `onPointClick` every point wears a tappable dot. Without
- *  `onPointClick` the chart stays decorative: aria-hidden, one end-dot
- *  per series. #168 r3 (user): smoothing is monotone cubic (no
- *  overshoot dips) and the plot keeps dot-sized vertical padding. */
+/** null values are gaps (segments span consecutive non-null runs); without `onPointClick` the chart is decorative:
+ *  aria-hidden, one end dot per series; `markerIndex` pins the tracking start (#168) */
 import { useMemo, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import { monotonePath, monotonePointAt } from './monotone';
@@ -15,8 +8,7 @@ import { pointerFraction, scrubKeyTarget } from './scrub';
 import { useGlide } from './useGlide';
 import { useUserInk } from '@/ui/userInk';
 
-/** #168 r3 (user): room for the r=4.5 selected dot + 2px stroke — the
- *  peak's dot clipped the viewBox edge */
+/** room for the selected dot (r=4.5 + 2px stroke): the peak's dot clipped the viewBox edge (#168) */
 const PAD = 8;
 const WIDTH = 320;
 const TIP_W = 118;
@@ -24,22 +16,17 @@ const TIP_LINE = 11;
 
 type Values = readonly (number | null)[];
 
-/** one line of the scrub tip: a swatch in the series' look and its words */
 export interface ChartScrubRow {
   color: string;
   dashed?: boolean;
   text: string;
 }
 
-/** #510: what the tip says about one index */
 export interface ChartScrubTip {
   title: string;
   rows: readonly ChartScrubRow[];
 }
 
-/** #510 (user: "look through each day … the old vs new values"): a finger,
- *  a mouse or the arrow keys read any index — a guide, a dot on every line
- *  there and a tip; the bead starts at `origin` when a finger lands */
 export interface ChartScrub {
   origin: number;
   tip: (index: number) => ChartScrubTip;
@@ -65,8 +52,6 @@ function nonNullRuns(values: readonly (number | null)[]): Run[] {
   return runs;
 }
 
-/** the closed outline between two series over the first stretch where
- *  both have a value (user 2026-10-08: the range view's low–high band) */
 function bandPath(
   a: readonly (number | null)[],
   b: readonly (number | null)[],
@@ -100,12 +85,8 @@ function runPoint(values: Values, t: number, x: (i: number) => number, y: (value
   );
 }
 
-/**
- * Where the gliding marker stands at `t` (#500): on the preferred series'
- * curve, else on whichever line spans the step — the solid history and its
- * dashed continuation meet in one point, so the marker crosses from one to
- * the other without leaving the stroke — else straight across a gap.
- */
+// the marker rides the preferred series' curve, else whichever line spans the step (solid history and its dashed
+// continuation meet in one point), else straight across a gap
 function trackPoint(series: readonly { values: Values }[], prefer: number, t: number, x: (i: number) => number, y: (value: number) => number): ChartPt | null {
   const order = [prefer, ...series.map((_, si) => si).filter((si) => si !== prefer)];
   for (const si of order) {
@@ -126,7 +107,6 @@ function trackPoint(series: readonly { values: Values }[], prefer: number, t: nu
   return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
 }
 
-/** the scrubbed index's guide, a dot on every line there and the tip (#510) */
 function ScrubLayer({
   series,
   at,
@@ -178,8 +158,6 @@ function ScrubLayer({
   );
 }
 
-/** one tappable point (S2004: the handlers live outside the render
- *  nesting) */
 function ChartDot({
   si,
   i,
@@ -237,31 +215,21 @@ export function MultiLine({
     values: readonly (number | null)[];
     color: string;
     dashed?: boolean;
-    /** #168 r3 (user): suppress this index's dot — the shared now-point
-     *  renders ONE dot (the paid line owns it); the path still passes */
+    /** the shared now-point renders ONE dot (the paid line owns it); the path still passes (#168) */
     skipDotAt?: number;
   }[];
-  /** sparse x labels aligned with the longest series (empty strings skip) */
   labels?: string[];
   height?: number;
   testId?: string;
-  /** vertical marker at this x index (#168 r4: the space's start month
-   *  — anything left of it is untracked; testid `<testId>-start`) */
   markerIndex?: number;
-  /** interactive mode: every non-null point becomes a tappable dot */
   onPointClick?: (seriesIndex: number, pointIndex: number) => void;
   selected?: { seriesIndex: number; pointIndex: number } | null;
-  /** user 2026-10-08: a light wash between two series (indices into
-   *  `series`, the first one's colour) — the range view's low–high band;
-   *  testid `<testId>-band` */
   bandBetween?: readonly [number, number];
-  /** #510: read any index with a finger, a mouse or the arrow keys */
   scrub?: ChartScrub;
 }>) {
   const ink = useUserInk();
   const series = useMemo(() => given.map((s) => ({ ...s, color: ink(s.color) })), [given, ink]);
   const [scrubbed, setScrubbed] = useState<number | null>(null);
-  // a landing finger glides the bead in from its resting point; a drag follows directly
   const [dragging, setDragging] = useState(false);
   const scrubAt = useGlide(scrubbed, scrub?.origin, dragging);
   // #500: the selection is a marker that travels along the line to the tapped point
@@ -340,7 +308,6 @@ export function MultiLine({
       : '';
 
   return (
-    // without interaction the surrounding card carries the numbers in text
     <svg
       viewBox={`0 0 ${width} ${height + labelZone}`}
       className="w-full outline-none"

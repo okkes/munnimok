@@ -5,26 +5,13 @@ using Xunit;
 
 namespace RegistryConnector.Adapters.Tests;
 
-/// <summary>
-/// What DUO says you owe, read off recorded payloads.
-///
-/// The fixtures are the real shapes from a live authenticated session on
-/// 2026-08-10, with the amounts changed. What is NOT changed is the notation -
-/// including the zeros, which DUO writes as <c>0E-8</c> because its API is a
-/// Java BigDecimal on the wire. Seven of the eight components are zero for
-/// almost everybody, so a reader that could not take that notation would fail
-/// on nearly every account rather than on an unlucky one.
-/// </summary>
+// fixtures keep DUO's notation: zero is 0E-8 (Java BigDecimal on the wire),
+// and seven of eight components are zero for most accounts
 public sealed class DuoParsingTests
 {
     private static readonly DuoOptions Options = new();
 
-    /// <summary>
-    /// A day inside the second rate window of the fixture, and the day the
-    /// capture was taken. Fixed, because "the rate in force today" is a
-    /// function of the day and a test that read the clock would pass until
-    /// 1 January 2030 and then fail.
-    /// </summary>
+    // fixed day in the second rate window: a clock-reading test would fail once that window ends (2030)
     private static readonly DateOnly Today = new(2026, 8, 10);
 
     private const string Session = "ses_duo_fixture";
@@ -48,9 +35,6 @@ public sealed class DuoParsingTests
     {
         var debt = Read();
 
-        // 12345.67 + 89.10, in minor units. Asserted by value rather than by
-        // recomputing the sum here, which would only prove the test can
-        // multiply.
         Assert.Equal(1_243_477, debt.Total.Value);
         Assert.Equal("EUR", debt.Total.Currency);
 
@@ -70,15 +54,7 @@ public sealed class DuoParsingTests
             });
     }
 
-    /// <summary>
-    /// The notation that would have broken this on almost every account.
-    ///
-    /// DUO writes zero as <c>0E-8</c>. That is a legal JSON number and reads
-    /// as a decimal, but it does NOT parse under the style
-    /// <see cref="MoneyParser"/> uses for strings - which deliberately refuses
-    /// exponents - so a reader that took the raw text and handed it to the
-    /// money parser would throw on seven of the eight fields.
-    /// </summary>
+    // 0E-8 is a legal JSON number but MoneyParser deliberately refuses exponents, so raw text must not reach it
     [Fact]
     public void A_zero_in_scientific_notation_is_read_as_zero()
     {
@@ -91,8 +67,6 @@ public sealed class DuoParsingTests
         Assert.Equal(10_000, debt.Total.Value);
         Assert.Equal(StudentDebtKind.Loan, Assert.Single(debt.Components).Kind);
 
-        // And the route not taken, asserted so the reason the reader works the
-        // way it does cannot be quietly removed by somebody tidying it up.
         Assert.Throws<ConnectorException>(() => MoneyParser.ToMinor("0E-8", MoneyUnit.MajorDecimal));
     }
 
@@ -101,21 +75,14 @@ public sealed class DuoParsingTests
     {
         var debt = Read();
 
-        // DUO publishes all eight fields for everybody. Keeping the six zeros
-        // would bury the two lines that say something.
+        // DUO publishes all eight fields for everybody; the six zeros would bury the two that say something
         Assert.Equal(2, debt.Components.Count);
         Assert.DoesNotContain(debt.Components, c => c.Amount.Value == 0);
 
-        // Dropping them changed nothing about what is owed.
         Assert.Equal(debt.Components.Sum(c => c.Amount.Value), debt.Total.Value);
     }
 
-    /// <summary>
-    /// DUO states the components and no total anywhere. The figure its own
-    /// portal prints is summed in the browser out of the customer dossier, so
-    /// ours is a sum too - and a consumer has to be told that rather than
-    /// shown a number that looks like DUO's own.
-    /// </summary>
+    // DUO states components and no total (its portal sums in the browser), so ours is derived and the record says so
     [Fact]
     public void The_total_is_ours_and_the_record_says_so()
     {
@@ -133,29 +100,14 @@ public sealed class DuoParsingTests
 
         var unknown = Assert.Single(debt.Components, c => c.Kind == StudentDebtKind.Other);
 
-        // Named, and counted. A component silently dropped from the total is a
-        // figure somebody compares against a letter from DUO and cannot
-        // reconcile.
+        // a component dropped from the total is a figure that cannot be reconciled against a DUO letter
         Assert.Equal("schuldbedragIetsNieuws", unknown.SourceField);
         Assert.Equal(2_500, unknown.Amount.Value);
         Assert.Equal(7_500, debt.Total.Value);
     }
 
-    /// <summary>
-    /// A DEBT THAT STOPPED BEING A NUMBER IS A HOLE IN THE TOTAL.
-    /// </summary>
-    /// <remarks>
-    /// The reader skipped anything that was not a JSON number, without a word.
-    /// The remaining seven fields still summed, the ledger check compares that
-    /// sum against a total built from the same fields, and what came back was a
-    /// complete-looking statement of somebody's debt that was short by a whole
-    /// component - the kind of figure that gets compared against a letter from
-    /// DUO and cannot be reconciled.
-    /// <para>
-    /// A serialiser change is all it would take: <c>"25.00"</c> instead of
-    /// <c>25.00000000</c> is still valid JSON and still the right amount.
-    /// </para>
-    /// </remarks>
+    // a non-number amount was once skipped silently: the other fields still summed, leaving a debt short a component;
+    // a serialiser change suffices: "25.00" instead of 25.00000000 is still valid JSON
     [Fact]
     public void A_debt_amount_that_is_no_longer_a_number_fails_rather_than_going_missing()
     {
@@ -166,16 +118,7 @@ public sealed class DuoParsingTests
         Assert.Contains("schuldbedragOVSchuld", refused.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// And anything else DUO adds is REPORTED rather than passed over.
-    /// </summary>
-    /// <remarks>
-    /// Told apart by DUO's own vocabulary: every amount in that object is
-    /// <c>schuldbedrag*</c>, so one that is not a number is a missing debt and
-    /// fails the fetch, while a field named anything else is metadata this
-    /// connector does not read - worth saying once, not worth refusing an
-    /// account over.
-    /// </remarks>
+    // every amount is schuldbedrag*: a non-number one is a missing debt and fails; any other field is metadata, noted once
     [Fact]
     public void A_field_that_is_not_an_amount_at_all_is_named_rather_than_passed_over()
     {
@@ -195,14 +138,8 @@ public sealed class DuoParsingTests
         Assert.Contains(notes, n => n.Contains("peildatum", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// AND IT SAYS NOTHING ON A REAL ACCOUNT, which is what makes it readable.
-    /// </summary>
-    /// <remarks>
-    /// A note on every fetch is a note nobody reads, and this one exists to be
-    /// noticed exactly once - the day DUO's payload grows a field. The live
-    /// capture is eight numbers and nothing else, so it stays silent.
-    /// </remarks>
+    // the note exists to be noticed once, when DUO's payload grows a field;
+    // the live capture is eight numbers, so it stays silent
     [Fact]
     public void The_real_payload_produces_no_note_at_all()
     {
@@ -212,8 +149,6 @@ public sealed class DuoParsingTests
 
         Assert.Empty(notes);
     }
-
-    // ---- where the debt is, and what it costs -------------------------------
 
     [Fact]
     public void The_phase_is_the_mapped_value_and_duos_own_word_beside_it()
@@ -235,10 +170,7 @@ public sealed class DuoParsingTests
         Assert.Equal("IETS_NIEUWS", debt.PhaseLabel);
     }
 
-    /// <summary>
-    /// DUO's own rule, from its <c>mijn-schulden-opbouw-mapper</c>: the period
-    /// whose window contains the day.
-    /// </summary>
+    // DUO's own rule (its mijn-schulden-opbouw-mapper): the period whose window contains the day
     [Theory]
     [InlineData(2026, 8, 10, "2.57")]
     [InlineData(2024, 6, 1, "0.00")]
@@ -260,9 +192,7 @@ public sealed class DuoParsingTests
         Assert.Null(debt.InterestRate);
         Assert.Null(debt.InterestRegime);
 
-        // Nothing is lost by refusing to name a current rate: both windows are
-        // still carried, so a consumer can say what the rate WAS and what it
-        // is due to become.
+        // both windows are still carried, so a consumer can say what the rate was and will become
         Assert.Equal(2, debt.InterestPeriods.Count);
     }
 
@@ -288,13 +218,7 @@ public sealed class DuoParsingTests
             });
     }
 
-    /// <summary>
-    /// Somebody repaying a loan while drawing lifelong-learning credit is in
-    /// two phases at once, at two different rates. DUO's amounts carry no key
-    /// back to the position they belong to, so there is nothing to break the
-    /// tie with - and picking the first would put a confident single word on a
-    /// position this connector cannot resolve.
-    /// </summary>
+    // DUO's amounts carry no key back to a position, so picking one of two disagreeing positions would be a confident guess
     [Fact]
     public void Two_positions_that_disagree_produce_no_single_phase_or_rate()
     {
@@ -306,8 +230,6 @@ public sealed class DuoParsingTests
         Assert.Null(debt.InterestRate);
         Assert.Null(debt.InterestRegime);
 
-        // And both rates survive, so the answer is "there are two" rather than
-        // "there is none".
         Assert.Equal([2.57m, 1.78m], debt.InterestPeriods.Select(p => p.Rate));
         Assert.Equal(["SF35", "LLLK"], debt.InterestPeriods.Select(p => p.Regime));
     }
@@ -334,16 +256,11 @@ public sealed class DuoParsingTests
         Assert.Equal(60, Read().PaymentHolidayMonthsRemaining);
     }
 
-    /// <summary>
-    /// Enrichment is allowed to be missing. Every fetch here costs a human a
-    /// DigiD sign-in, so losing a balance over an interest rate would be an
-    /// expensive way to say less.
-    /// </summary>
+    // enrichment may be missing: every fetch costs a DigiD sign-in, so never lose the balance over an interest rate
     [Fact]
     public void Missing_extras_cost_the_extras_and_never_the_balance()
     {
-        // Straight to the reader, because the helper above reads a null as
-        // "use the fixture" - which is exactly the absence being tested here.
+        // straight to the reader: the helper reads null as "use the fixture", the very absence under test
         var debt = DuoDebtReader.Read(new DuoPayloads(Amounts, null, null), Today, Options, Session);
 
         Assert.Equal(1_243_477, debt.Total.Value);
@@ -355,8 +272,6 @@ public sealed class DuoParsingTests
         Assert.Empty(debt.InterestPeriods);
         Assert.Null(debt.PaymentHolidayMonthsRemaining);
     }
-
-    // ---- refusals -----------------------------------------------------------
 
     [Fact]
     public void A_payload_with_no_amounts_at_all_is_a_changed_provider()
@@ -382,14 +297,8 @@ public sealed class DuoParsingTests
             Assert.Throws<ConnectorException>(() => Read(amounts: "  ")).Code);
     }
 
-    // ---- identity -----------------------------------------------------------
-
-    /// <summary>
-    /// A singleton standing position, so the external id is a constant: every
-    /// sync updates the same row rather than adding one. With
-    /// <c>(session_id, external_id)</c> uniqueness that is what makes a retry
-    /// free.
-    /// </summary>
+    // singleton position: a constant external id makes every sync update one row;
+    // with (session_id, external_id) uniqueness a retry is free
     [Fact]
     public void The_record_is_the_same_row_on_every_sync()
     {
@@ -402,10 +311,7 @@ public sealed class DuoParsingTests
     [Fact]
     public void The_content_hash_moves_with_the_breakdown_and_not_only_the_total()
     {
-        // Same total, different debts. An ov-schuld appearing as a loan shrinks
-        // by the same amount is somebody's travel product having gone
-        // unstopped, and a hash keyed on the total alone would call that no
-        // change at all.
+        // same total, different debts: a hash keyed on the total alone would call a shifted split no change
         var loan = Read(amounts: """{"schuldbedragLening":100.00000000,"schuldbedragOVSchuld":0E-8}""");
         var split = Read(amounts: """{"schuldbedragLening":40.00000000,"schuldbedragOVSchuld":60.00000000}""");
 
@@ -421,8 +327,6 @@ public sealed class DuoParsingTests
         Assert.Equal(Read().ContentHash, Read().ContentHash);
     }
 
-    // ---- what DUO has stated, and when ---------------------------------------
-
     private static string History => Fixture.Read("duo/schuldhistorie.json");
 
     private static StudentDebt WithHistory(string? history = null, string? grondslag = null) =>
@@ -433,33 +337,15 @@ public sealed class DuoParsingTests
                 grondslag ?? Fixture.Read("duo/grondslaggegevens.json")),
             Today, Options, Session);
 
-    /// <summary>
-    /// THE CORRECTION, and the test that used to assert the opposite.
-    ///
-    /// This record shipped with NO as-of date and a long argument for why it
-    /// could never have one: the date lived only inside DUO's 2.5 MB customer
-    /// dossier, so a minimal-custody connector could not reach it. The evidence
-    /// was two live captures in which no narrow endpoint carried it.
-    ///
-    /// Both captures recorded only the pages the account holder happened to
-    /// open, and nobody had opened "Mijn schuldhistorie". "Every narrow
-    /// endpoint was checked" was true of the endpoints that had been SEEN and
-    /// was written as though it were true of the endpoints that EXIST. A third
-    /// capture, aimed at the pages nobody had visited, found it in 5.6 KB with
-    /// no BSN, no parents and no income anywhere in it.
-    /// </summary>
+    // the as-of date lives in DUO's "Mijn schuldhistorie" endpoint (5.6 KB, no BSN, parents or income);
+    // earlier captures missed it because nobody had opened that page
     [Fact]
     public void The_as_of_date_is_the_one_duo_calculated_interest_to()
     {
         Assert.Equal(new DateOnly(2026, 8, 1), WithHistory().AsOf);
     }
 
-    /// <summary>
-    /// And it comes off the CURRENT balance, not the first entry that happens
-    /// to carry a date. A year-end balance is dated by its year and a phase by
-    /// its start, so taking whichever came first would stamp today's figure
-    /// with somebody else's moment.
-    /// </summary>
+    // taken from the CURRENT balance: a year-end balance is dated by its year and a phase by its start
     [Fact]
     public void The_as_of_date_is_never_taken_from_a_historical_entry()
     {
@@ -472,23 +358,8 @@ public sealed class DuoParsingTests
         Assert.Equal(new DateOnly(2026, 8, 1), WithHistory(history: Json).AsOf);
     }
 
-    /// <summary>
-    /// A NUMBER DUO SENDS AS NULL COSTS THAT FIELD, NEVER THE WHOLE RECORD.
-    /// </summary>
-    /// <remarks>
-    /// <c>TryGetInt32</c> THROWS on an element that is not a number rather than
-    /// returning false - the <c>Try</c> is only about the conversion, never
-    /// about the kind - and an <see cref="InvalidOperationException"/> is not a
-    /// <see cref="JsonException"/>, so it went straight past every catch on the
-    /// way out and arrived as <c>internal</c>.
-    /// <para>
-    /// The shape is not hypothetical: DUO's own recorded fixtures carry
-    /// explicit nulls on number-typed fields, <c>gevraagdTermijnbedrag</c> and
-    /// <c>berekendTermijnbedrag</c> among them. What it cost was the entire
-    /// debt - including the balance that had already arrived - over one
-    /// enrichment field, and a fresh DigiD sign-in to try again.
-    /// </para>
-    /// </remarks>
+    // TryGetInt32 throws InvalidOperationException on a non-number, past every JsonException catch: one null cost the debt;
+    // DUO's own fixtures carry nulls on number fields (gevraagdTermijnbedrag, berekendTermijnbedrag)
     [Fact]
     public void A_number_duo_sends_as_null_costs_that_field_and_nothing_else()
     {
@@ -500,32 +371,16 @@ public sealed class DuoParsingTests
 
         var debt = WithHistory(history: Json);
 
-        // The record survives, dated off the current balance as always.
         Assert.Equal(new DateOnly(2026, 8, 1), debt.AsOf);
 
-        // And the entry is still there, simply without the year DUO declined
-        // to state - which is what every other unreadable field here does.
         var yearEnd = Assert.Single(debt.History, b => b.Kind == StudentDebtBalanceKind.YearEnd);
 
         Assert.Null(yearEnd.Year);
         Assert.Equal(2_500_000, yearEnd.Amount.Value);
     }
 
-    /// <summary>
-    /// AND A WHOLE ENTRY DUO SENDS AS NULL COSTS THAT ENTRY.
-    /// </summary>
-    /// <remarks>
-    /// The sibling of the case above and the one it did not cover: the field
-    /// reads were guarded, and the walk over the list itself was not. Every
-    /// accessor in this reader took the entry as its first argument, so a
-    /// <c>null</c> in the array threw on whichever one ran first.
-    /// <para>
-    /// It survived the audit that found the other four because the guard it was
-    /// missing sat one level up from the guards being hunted. What forbids it
-    /// now is a rule rather than a fix -
-    /// <c>Connector.Kit.Tests.Normalization.JsonReadRuleTests</c>.
-    /// </para>
-    /// </remarks>
+    // a null entry in the array threw in whichever accessor ran first;
+    // Connector.Kit.Tests.Normalization.JsonReadRuleTests now forbids it
     [Fact]
     public void An_entry_duo_sends_as_null_costs_that_entry_and_nothing_else()
     {
@@ -549,9 +404,7 @@ public sealed class DuoParsingTests
     [Fact]
     public void Without_the_history_endpoint_the_record_states_no_date()
     {
-        // Which is what every build before this one did, on every account.
-        // Null still means exactly what the missing field meant: nothing here
-        // is dated, so do not show it as current.
+        // null means nothing here is dated: do not show it as current
         var debt = DuoDebtReader.Read(new DuoPayloads(Amounts, Positions, Holiday), Today, Options, Session);
 
         Assert.Null(debt.AsOf);
@@ -571,8 +424,6 @@ public sealed class DuoParsingTests
         Assert.Equal(2_500, now.InterestPortion!.Value.Value);
         Assert.Equal(2.57m, now.Rate);
 
-        // The figure the account holder wanted to ESTIMATE by reading a ledger
-        // backwards. DUO states it outright.
         var start = Assert.Single(history, h => h.Kind == StudentDebtBalanceKind.RepaymentStart);
         Assert.Equal(2_500_000, start.Amount.Value);
         Assert.Equal(new DateOnly(2022, 1, 1), start.On);
@@ -581,17 +432,8 @@ public sealed class DuoParsingTests
         Assert.Equal(2025, history.First(h => h.Kind == StudentDebtBalanceKind.YearEnd).Year);
     }
 
-    /// <summary>
-    /// Newest first, with the current balance ahead of everything.
-    ///
-    /// DUO publishes these grouped by kind and, inside a group, in no order at
-    /// all - a live fetch came back 2020, 2022, 2021, 2024, 2023, 2015, 2025,
-    /// 2017, 2016, 2019, 2018. Elsewhere this connector preserves a provider's
-    /// order religiously, because an order usually carries meaning. This one
-    /// does not, and passing it through hands every consumer the same sorting
-    /// job plus a good chance of somebody plotting a debt history that jumps
-    /// backwards.
-    /// </summary>
+    // DUO lists balances grouped by kind and in no order inside a group (live: 2020, 2022, 2021, 2024, ...);
+    // sorted newest first so no consumer plots a history that jumps backwards
     [Fact]
     public void The_history_reads_as_a_timeline_rather_than_in_duos_order()
     {
@@ -603,15 +445,9 @@ public sealed class DuoParsingTests
 
         Assert.Equal(moments.OrderByDescending(y => y), moments);
 
-        // The fixture's own jumble, ordered: 2025, 2024, 2022 (repayment
-        // start), 2020 (both grace-period entries), 2015.
         Assert.Equal([2025, 2024, 2022, 2020, 2020, 2015], moments);
     }
 
-    /// <summary>
-    /// And entries that share a moment keep DUO's order, which is what holds
-    /// the grace-period entries together in the sequence it listed them.
-    /// </summary>
     [Fact]
     public void Balances_at_the_same_moment_keep_the_order_duo_listed_them_in()
     {
@@ -623,10 +459,6 @@ public sealed class DuoParsingTests
         Assert.Equal(["Lening hbo of universiteit", "Prestatiebeurs mbo"], grace);
     }
 
-    /// <summary>
-    /// DUO names what each grace-period balance was FOR - a travel product, a
-    /// tuition-fee loan - and those words are the account holder's own history.
-    /// </summary>
     [Fact]
     public void A_balance_duo_labels_keeps_its_label()
     {
@@ -676,17 +508,8 @@ public sealed class DuoParsingTests
         Assert.Null(WithHistory(grondslag: Json).RepaymentMonthsRemaining);
     }
 
-    /// <summary>
-    /// The stated current balance is NOT used to check the total, however
-    /// exactly the two match on this account.
-    ///
-    /// Every history entry carries `schuldtype: STUDIEFINANCIERING`, so the
-    /// current one is the study-finance debt alone - while the eight component
-    /// amounts also cover an ov-schuld, over-payments and lifelong-learning
-    /// credit. On an account with only a loan they coincide, which is precisely
-    /// how a reconciliation built on that coincidence would pass every test here
-    /// and then contradict itself for somebody with a travel debt.
-    /// </summary>
+    // the stated current balance is NOT used to check the total: it is study finance only, the components also cover
+    // ov-schuld, over-payments and lifelong-learning credit; they coincide only on a loan-only account
     [Fact]
     public void The_total_stays_the_sum_of_the_components_and_still_says_so()
     {
@@ -695,8 +518,6 @@ public sealed class DuoParsingTests
         Assert.True(debt.TotalIsDerived);
         Assert.Equal(debt.Components.Sum(c => c.Amount.Value), debt.Total.Value);
     }
-
-    // ---- the ledger, out of the dossier -------------------------------------
 
     private static StudentDebt WithLedger() =>
         DuoDebtReader.Read(
@@ -710,12 +531,8 @@ public sealed class DuoParsingTests
     private const string NothingOwed =
         """{"schuldbedragLening":0E-8,"schuldbedragLevenlanglerenkrediet":0E-8,"schuldbedragOVSchuld":0E-8,"schuldbedragPrestatiebeurs":0E-8,"schuldbedragTeveelBijverdiensten":0E-8,"schuldbedragTeveelOntvangenLevenlanglerenkrediet":0E-8,"schuldbedragTeveelOntvangenStudiefinanciering":0E-8,"schuldbedragTeveelOntvangenTegemoetkomingScholier":0E-8}""";
 
-    /// <summary>
-    /// #566: amounts that add up to nothing while DUO states a debt read as
-    /// €0.00 on a debt in its repayment phase. The booked movements then sum
-    /// to what the portal shows, and without them the balance DUO states as
-    /// current is its own figure - never a zero nobody owes.
-    /// </summary>
+    // #566: amounts adding up to nothing while DUO states a debt read as 0.00 in repayment;
+    // the ledger sum comes first, then the stated current balance, never a zero nobody owes
     [Fact]
     public void Amounts_that_add_up_to_nothing_give_way_to_the_ledger_and_then_to_the_stated_current_balance()
     {
@@ -742,15 +559,7 @@ public sealed class DuoParsingTests
         Assert.Equal(0, DuoDebtReader.Read(new DuoPayloads(NothingOwed, Positions, Holiday), Today, Options, Session).Total.Value);
     }
 
-    /// <summary>
-    /// The sign is DUO's own, not this connector's reading of a reason code.
-    ///
-    /// That mattered enormously. The obvious design was a table mapping
-    /// nineteen Dutch reason codes to a direction, built by matching five of
-    /// them against a screenshot - and a live payload settled it instead: 566
-    /// of 1223 amounts are negative, so the direction is carried in the data
-    /// and no such table needs to exist.
-    /// </summary>
+    // the sign is DUO's own: 566 of 1223 live amounts are negative, so no reason-code-to-direction table is needed
     [Fact]
     public void A_repayment_reduces_the_debt_and_interest_increases_it()
     {
@@ -764,15 +573,11 @@ public sealed class DuoParsingTests
         Assert.Equal(2_500, interest.Amount.Value);
         Assert.Equal(StudentDebtEntryApplies.Interest, interest.Applies);
 
-        // The €21k that vanished between 2019 and 2020: a performance grant
-        // becoming a gift, which reduces a debt without anybody paying it.
+        // a performance grant turned gift reduces the debt without anybody paying it
         var gift = Assert.Single(ledger, e => e.SourceCode == "OMZETTING_NAAR_GIFT");
         Assert.Equal(-2_000_000, gift.Amount.Value);
     }
 
-    /// <summary>
-    /// Each movement names the debt it was booked against, in DUO's words.
-    /// </summary>
     [Fact]
     public void A_movement_is_joined_to_the_debt_it_belongs_to()
     {
@@ -790,11 +595,7 @@ public sealed class DuoParsingTests
         Assert.Equal(booked.OrderByDescending(d => d), booked);
     }
 
-    /// <summary>
-    /// DUO's reason codes are carried verbatim rather than translated: it
-    /// publishes its own words for them in its front-end, not in its API, so
-    /// any prose here would be a table copied out of minified JavaScript.
-    /// </summary>
+    // reason codes are carried verbatim: DUO's words for them live only in its minified front-end, not its API
     [Fact]
     public void The_providers_own_reason_code_is_carried_untranslated()
     {
@@ -806,23 +607,13 @@ public sealed class DuoParsingTests
     {
         var debt = WithLedger();
 
-        // The fixture also holds a 2022 instalment at a different amount.
-        // Picking "the most recent row" would answer with a future schedule;
-        // picking by month answers what is owed now.
+        // the fixture also holds a 2022 instalment at another amount: pick by month, not "most recent row" (a future schedule)
         Assert.Equal(5_000, debt.MonthlyAmount!.Value.Value);
         Assert.Equal(new DateOnly(2026, 8, 27), debt.NextPaymentDue);
     }
 
-    /// <summary>
-    /// Every movement the provider has ever booked should sum to what is owed
-    /// now, and that is a free integrity check on the whole ledger.
-    ///
-    /// Not a hopeful invariant - it was measured. On a live account 1223
-    /// movements spanning fifteen years summed to the current balance to the
-    /// cent, and separately for each of the eight debts underneath. A
-    /// truncated page of history, a dropped row or one flipped sign all break
-    /// it, and none of those is visible any other way.
-    /// </summary>
+    // every booked movement sums to the current balance, measured live (1223 movements over fifteen years, per debt too):
+    // a truncated page, dropped row or flipped sign breaks it
     [Fact]
     public void A_ledger_that_sums_to_the_balance_is_reported_as_reconciled()
     {
@@ -835,10 +626,7 @@ public sealed class DuoParsingTests
     [Fact]
     public void A_ledger_missing_a_movement_is_reported_as_not_reconciled()
     {
-        // One row removed, which is what a truncated history looks like. The
-        // record is still emitted - the figures are still DUO's - and the flag
-        // is how a consumer learns this connector could not prove them
-        // consistent.
+        // one row removed = a truncated history; the record is still emitted, the flag says the figures were not proven
         var short_ = Fixture.Read("duo/klantbeeld-reduced.json")
             .Replace("""{"bedrag":25.00,"boekdatum":"2026-08-01","boekreden":"RENTE","id":9000000103,"mutatieType":"RENTE","vorderingid":9000000200},""", string.Empty, StringComparison.Ordinal);
 
@@ -849,9 +637,6 @@ public sealed class DuoParsingTests
         Assert.NotEmpty(debt.Ledger);
     }
 
-    /// <summary>
-    /// A check that was never made must not read as one that passed.
-    /// </summary>
     [Fact]
     public void Without_a_ledger_no_reconciliation_is_claimed()
     {
@@ -871,9 +656,8 @@ public sealed class DuoParsingTests
     [Fact]
     public void The_content_hash_moves_when_duo_recalculates_to_a_new_date()
     {
-        // Same figures, new date. A consumer showing "as of 1 July" when the
-        // provider now says 1 August is stale in exactly the way this field
-        // exists to reveal, so the record has to read as changed.
+        // same figures, new date: a consumer showing "as of 1 July" is stale in the way this field reveals,
+        // so the record must read as changed
         var july = WithHistory(history: History.Replace("2026-08-01", "2026-07-01", StringComparison.Ordinal));
 
         Assert.NotEqual(WithHistory().ContentHash, july.ContentHash);

@@ -3,22 +3,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-/// <summary>
-/// Keeps an in-process run's lease alive for as long as the run lasts, and
-/// ends with it in the right order: the loop is told to stop, waited for,
-/// and only then is its stop source disposed.
-/// </summary>
-/// <remarks>
-/// Until 2026-10-09 the runner disposed the source the moment the job's
-/// scope closed, while the loop was still awaiting the token: the next
-/// delay or renewal touched a disposed source, threw
-/// <see cref="ObjectDisposedException"/> into a task nobody awaited, and
-/// the finalizer re-raised it as an unobserved
-/// <see cref="AggregateException"/> - 98 events in production's GlitchTip
-/// in three days (#23, #29), one per inline job. Awaiting the loop here is
-/// what observes it; the loop itself never faults, so the await never
-/// throws into the run's own disposal.
-/// </remarks>
+// stops in order: loop told to stop, awaited, then its source disposed
+// disposing first threw ObjectDisposedException into an unawaited task: 98 GlitchTip events in 3 days (#23, #29)
 internal sealed class LeaseRenewal : IAsyncDisposable
 {
     private readonly CancellationTokenSource _stop;
@@ -32,11 +18,6 @@ internal sealed class LeaseRenewal : IAsyncDisposable
     /// <summary>The loop itself: completed once the renewal has ended, never faulted.</summary>
     public Task Loop { get; }
 
-    /// <summary>
-    /// Starts renewing <paramref name="jobId"/>'s lease for <paramref name="owner"/>
-    /// every third of <paramref name="ttl"/>, until disposed or until the
-    /// queue says the lease is no longer this owner's.
-    /// </summary>
     public static LeaseRenewal Start(
         IServiceScopeFactory scopes, string jobId, string owner, TimeSpan ttl, ILogger logger, CancellationToken ct)
     {

@@ -1,4 +1,3 @@
-/** Minimal two-entry CAMT.053 statement shared by parser and import tests. */
 export const CAMT_FIXTURE = `<?xml version="1.0" encoding="UTF-8"?>
 <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
   <BkToCstmrStmt>

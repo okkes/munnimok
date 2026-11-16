@@ -2,11 +2,7 @@ import { useLang } from '@/i18n';
 import { openExternal, webSearchUrl } from '@/lib/platform';
 import { Icon } from '@/ui/Icon';
 
-/**
- * #506 (user): a vague bank title ("PM *Z2U HongKong") is one tap away from
- * a web search for it — a petrol station or a shop usually shows up there,
- * and the category follows. The in-app browser on the shells, a tab on the web.
- */
+/** #506: a vague bank title is one tap from a web search; the in-app browser on the shells, a tab on the web */
 export function TitleSearchButton({ query, testId }: Readonly<{ query: string; testId: string }>) {
   const { t } = useLang();
   if (!query.trim()) return null;
@@ -27,7 +23,6 @@ export function TitleSearchButton({ query, testId }: Readonly<{ query: string; t
   );
 }
 
-/** a one-line title with its search door, for a bar that truncates its title */
 export function SearchableTitle({ text, query, testId }: Readonly<{ text: string; query: string; testId: string }>) {
   return (
     <span className="inline-flex max-w-full items-center gap-0.5 align-middle">

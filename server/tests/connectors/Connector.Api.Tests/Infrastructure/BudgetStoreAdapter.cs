@@ -10,14 +10,8 @@ using Connector.Kit.Security;
 
 namespace Connector.Api.Tests.Infrastructure;
 
-/// <summary>
-/// A store whose budget refuses the first fetches of every session and
-/// serves the ones after: the GoCardless shape of 2026-10-08, where ING's
-/// handful of balance reads a day ran out mid-sync and the refusal, a fact
-/// about the day, ended the session for good. No shipped mock refuses a
-/// fetch with <c>rate_limited</c>, and the queue retries that code, so the
-/// double refuses as many times as the queue will ask before it gives up.
-/// </summary>
+// GoCardless shape (2026-10-08): ING's few balance reads a day ran out mid-sync and the refusal ended the session for good
+// no shipped mock refuses with rate_limited and the queue retries it, so the double refuses as often as the queue asks
 internal sealed class BudgetStoreAdapter : IProviderAdapter
 {
     public const string ProviderId = "test-budget-store";

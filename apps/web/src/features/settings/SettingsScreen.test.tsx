@@ -35,7 +35,6 @@ describe('SettingsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('settings-currency-value').textContent).toBe('EUR'));
     fireEvent.click(screen.getByTestId('settings-currency-row'));
     fireEvent.click(await screen.findByTestId('space-currency-TRY'));
-    // no save button: the pick persists and the row badge follows
     await waitFor(() => expect(screen.getByTestId('settings-currency-value').textContent).toBe('TRY'), {
       timeout: 5000,
     });
@@ -53,7 +52,6 @@ describe('SettingsScreen (demo identity)', () => {
     await screen.findByTestId('screen-settings');
     fireEvent.click(await screen.findByTestId('settings-history-row'));
     fireEvent.change(await screen.findByTestId('space-history-start'), { target: { value: '2026-01-01' } });
-    // nothing writes yet — the consequences show first, then Apply
     const impact = await screen.findByTestId('space-history-impact');
     expect(impact).toBeTruthy();
     fireEvent.click(screen.getByTestId('space-history-apply'));
@@ -75,7 +73,6 @@ describe('SettingsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-signout'));
     expect(await screen.findByTestId('screen-login')).toBeTruthy();
     expect(localStorage.getItem('munni_session')).toBeNull();
-    // demo resets to pristine data: the identity db is destroyed
     await waitFor(async () => {
       const dbs = await indexedDB.databases();
       expect(dbs.some((d) => d.name === 'munni_demo')).toBe(false);
@@ -99,12 +96,9 @@ describe('GlobalSettingsScreen (demo identity)', () => {
   });
 
   it('appearance: the segments pin light or dark, the row cycles light → dark → follow-device', async () => {
-    // persistence + the data attribute belong to app/theme.test.tsx —
-    // here the two controls and what they show
     renderApp('/settings/global');
     await screen.findByTestId('screen-settings-global');
     const pressed = (id: string) => screen.getByTestId(id).getAttribute('aria-pressed');
-    // fresh storage = follow-device
     expect(pressed('settings-theme-auto')).toBe('true');
     fireEvent.click(screen.getByTestId('settings-theme-dark'));
     expect(document.documentElement.dataset.theme).toBe('dark');
@@ -115,7 +109,6 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-theme-auto'));
     expect(pressed('settings-theme-auto')).toBe('true');
 
-    // the row walks the cycle from follow-device: light, dark, device again
     fireEvent.click(screen.getByTestId('settings-theme-toggle'));
     expect(pressed('settings-theme-light')).toBe('true');
     fireEvent.click(screen.getByTestId('settings-theme-toggle'));
@@ -123,8 +116,7 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     expect(document.documentElement.dataset.theme).toBe('dark');
     fireEvent.click(screen.getByTestId('settings-theme-toggle'));
     expect(pressed('settings-theme-auto')).toBe('true');
-    // the segments stay the precise control: a direct pick lands exactly
-    // where it points, never one step further along the row's cycle
+    // a direct segment pick lands where it points, never one step along the row's cycle
     fireEvent.click(screen.getByTestId('settings-theme-dark'));
     expect(pressed('settings-theme-dark')).toBe('true');
     expect(document.documentElement.dataset.theme).toBe('dark');
@@ -135,7 +127,6 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     await screen.findByTestId('screen-settings-global');
     fireEvent.click(screen.getByTestId('settings-language-row'));
     fireEvent.click(await screen.findByTestId('lang-option-nl'));
-    // the screen title re-renders in Dutch (persistence: LoginScreen's pill spec)
     await waitFor(() => expect(screen.getByTestId('screen-settings-global').textContent).toContain('Algemene instellingen'));
   });
 
@@ -160,9 +151,7 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     cleanup();
     renderApp('/home');
     await screen.findByTestId('screen-home');
-    // the help button and the install hint read the SAME meta flag via
-    // separate live queries — under load one emission can trail the
-    // other, so both disappearances wait together
+    // the help button and the install hint read one meta flag via separate live queries: under load one trails, so wait for both
     await waitFor(() => {
       expect(screen.queryByTestId('help-btn-home')).toBeNull();
       expect(screen.queryByTestId('install-hint')).toBeNull();
@@ -177,7 +166,7 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('lock-setup-pin'), { target: { value: '1234' } });
     fireEvent.change(screen.getByTestId('lock-setup-pin2'), { target: { value: '9999' } });
     fireEvent.click(screen.getByTestId('lock-setup-save'));
-    expect(await screen.findByTestId('lock-setup-error')).toBeTruthy(); // mismatch
+    expect(await screen.findByTestId('lock-setup-error')).toBeTruthy();
 
     fireEvent.change(screen.getByTestId('lock-setup-pin2'), { target: { value: '1234' } });
     fireEvent.click(screen.getByTestId('lock-timeout-300'));
@@ -188,15 +177,12 @@ describe('GlobalSettingsScreen (demo identity)', () => {
       expect(config?.pinHash).toMatch(/^[0-9a-f]{64}$/); // hashed, never the raw pin
     });
 
-    // #282: disabling is a GUARDED act now — the current PIN answers
     fireEvent.click(screen.getByTestId('settings-lock-toggle'));
     await screen.findByTestId('lock-disarm-sheet');
-    expect(readLockConfig()).not.toBeNull(); // nothing until the challenge
-    // a wrong 8-digit try errors and keeps the lock armed
+    expect(readLockConfig()).not.toBeNull();
     fireEvent.change(screen.getByTestId('lock-disarm-pin'), { target: { value: '99999999' } });
     expect(await screen.findByTestId('lock-disarm-error')).toBeTruthy();
     expect(readLockConfig()).not.toBeNull();
-    // the real PIN disarms
     fireEvent.change(screen.getByTestId('lock-disarm-pin'), { target: { value: '1234' } });
     await waitFor(() => expect(readLockConfig()).toBeNull());
   }, 15_000);
@@ -210,8 +196,6 @@ describe('Settings screens (user identity, scripted server)', () => {
     resetApiCapabilitiesCache(); // each test scripts its own /health
   });
 
-  /** the push-capable browser surface happy-dom lacks */
-  /** a push-capable browser; `registered` = this device already has its subscription */
   const installPushEnv = (registered = false) => {
     const subscription = {
       endpoint: 'https://push.example/settings',
@@ -253,7 +237,6 @@ describe('Settings screens (user identity, scripted server)', () => {
 
     await screen.findByTestId('screen-settings-global');
     expect(await screen.findByTestId('settings-friends-row')).toBeTruthy();
-    // #159: the devices door moved here from the profile
     expect(screen.getByTestId('settings-devices-row')).toBeTruthy();
     fireEvent.click(screen.getByTestId('settings-hub-row'));
     await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
@@ -331,7 +314,7 @@ describe('Settings screens (user identity, scripted server)', () => {
     });
 
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'), { timeout: 5000 });
-    await waitFor(() => expect(registrations).toHaveLength(1)); // the card's own
+    await waitFor(() => expect(registrations).toHaveLength(1));
     fireEvent.click(screen.getByTestId('settings-push-toggle'));
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('OFF'));
     expect(switches).toEqual([{ on: false }]);
@@ -342,7 +325,6 @@ describe('Settings screens (user identity, scripted server)', () => {
     fireEvent.click(screen.getByTestId('settings-push-toggle'));
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent).toBe('ON'));
     expect(switches).toEqual([{ on: false }, { on: true }]);
-    // every switch-on is the moment the server hears about this device
     expect(registrations).toHaveLength(2);
     expect(pushManager.subscribe).not.toHaveBeenCalled();
   }, 15_000);
@@ -501,7 +483,6 @@ describe('Settings screens (user identity, scripted server)', () => {
 
   it('account deletion requires the typed word, calls the api and wipes the device', async () => {
     let deleted = false;
-    // lives on the PROFILE screen now (user request: identity-level danger)
     renderAppAsUser('/profile', {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
@@ -514,7 +495,6 @@ describe('Settings screens (user identity, scripted server)', () => {
     await screen.findByTestId('screen-profile');
     fireEvent.click(await screen.findByTestId('settings-delete-account'));
 
-    // the confirm stays disarmed until the exact word is typed
     const confirm = (await screen.findByTestId('delete-account-confirm')) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.change(screen.getByTestId('delete-account-input'), { target: { value: 'nope' } });
@@ -560,7 +540,6 @@ describe('Settings screens (user identity, scripted server)', () => {
     let release: (() => void) | undefined;
     renderAppAsUser('/profile', {
       api: {
-        // a slow server erase — resolved by hand below
         'DELETE /me': () =>
           new Promise((resolve) => {
             release = () => resolve({ deleted: true });
@@ -572,16 +551,13 @@ describe('Settings screens (user identity, scripted server)', () => {
     fireEvent.change(await screen.findByTestId('delete-account-input'), { target: { value: 'delete' } });
     fireEvent.click(screen.getByTestId('delete-account-confirm'));
 
-    // the running stage names itself (server erase first — the slow one)
     const progress = await screen.findByTestId('delete-account-progress');
     expect(progress.textContent).toContain('Deleting your account on the server');
-    // a dismissal attempt mid-run is refused with the busy note
     fireEvent.keyDown(window, { key: 'Escape' });
     const note = await screen.findByTestId('sheet-busy-note');
     expect(note.textContent).toContain('still running');
-    expect(screen.getByTestId('delete-account-progress')).toBeTruthy(); // sheet stayed
+    expect(screen.getByTestId('delete-account-progress')).toBeTruthy();
 
-    // the server answers — wipe + sign-out land as before
     release?.();
     expect(await screen.findByTestId('screen-login')).toBeTruthy();
     expect(useSession.getState().identity).toBeNull();

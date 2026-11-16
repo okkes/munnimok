@@ -8,17 +8,9 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The offline backbone, held to its own promise: six registered providers,
-/// one adapter, and not one byte of network traffic between them.
-///
-/// If a mock ever reached the network it would stop being usable in CI, in a
-/// demo, or on a machine with no egress - which is the entire reason it
-/// exists.
-/// </summary>
+// mocks never touch the network: they exist for CI, demos and machines with no egress
 public sealed class MockStoreAdapterTests
 {
-    /// <summary>Zero step delay: the suite must exercise the slow profile without sleeping.</summary>
     private static readonly MockStoreOptions Fast = new() { SlowStepDelay = TimeSpan.Zero };
 
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
@@ -70,16 +62,13 @@ public sealed class MockStoreAdapterTests
         }
         catch (ConnectorException error) when (error.Code == ErrorCode.ProviderChanged)
         {
-            // mock-store-broken exists to produce exactly this, and it must
-            // produce it without contacting anything either.
+            // mock-store-broken exists to produce this, also without contacting anything
             Assert.Equal(MockStoreAdapters.Broken, providerId);
         }
 
         Assert.Equal(0, handler.Calls);
 
-        // Nor a browser: the lease throws on any use, including the T4 mock,
-        // whose tier exists for routing rather than as an instruction to
-        // start Chromium.
+        // no browser either: the lease throws on any use, including the T4 mock (its tier is for routing)
         Assert.False(ctx.Browser.Started);
     }
 
@@ -117,9 +106,8 @@ public sealed class MockStoreAdapterTests
         var result = await Adapter(MockStoreAdapters.Simple)
             .FetchAsync(ctx, Requests.Receipts(), CancellationToken.None);
 
-        // 329 in line items against a stated total of 500. Silently dropping
-        // it would hide a real purchase; silently trusting it would hand over
-        // a total we know disagrees with its own contents.
+        // 329 in line items against a stated total of 500: dropping it hides a real purchase,
+        // trusting it hands over a total known to disagree
         var suspect = Assert.Single(result.Receipts, r => !r.Reconciled);
         Assert.Equal("mock-2026-06-28-0003", suspect.ExternalId);
         Assert.Equal(500, suspect.Total.Value);
@@ -137,8 +125,6 @@ public sealed class MockStoreAdapterTests
         var a = await Adapter(MockStoreAdapters.Simple).FetchAsync(first, Requests.Receipts(), CancellationToken.None);
         var b = await Adapter(MockStoreAdapters.Simple).FetchAsync(second, Requests.Receipts(), CancellationToken.None);
 
-        // Deterministic ids plus a content hash are what make a re-fetch free
-        // for the caller: the same upstream data must produce the same rows.
         Assert.Equal(a.Receipts.Select(r => r.Id), b.Receipts.Select(r => r.Id));
         Assert.Equal(a.Receipts.Select(r => r.ContentHash), b.Receipts.Select(r => r.ContentHash));
     }
@@ -173,14 +159,8 @@ public sealed class MockStoreAdapterTests
         Assert.DoesNotContain(result.Receipts, r => r.ExternalId == "mock-2026-06-28-0003");
     }
 
-    /// <summary>
-    /// The file's receipts are the store's first cycle; they repeat every four
-    /// weeks up to the clock's now and are kept as far back as the history
-    /// limit. Years on, the store still holds a year of receipts inside its
-    /// window - each of the file's once in the last whole cycle, never one in
-    /// the future - and a second fetch that day returns the same ids and hashes.
-    /// Read as it stood, the file held nothing in reach from mid-2027.
-    /// </summary>
+    /// the file's receipts are the store's first cycle: they repeat every four weeks up to the clock's now,
+    /// kept back to the history limit
     [Fact]
     public async Task The_receipts_follow_the_clock_and_stay_inside_the_history_limit()
     {
@@ -207,11 +187,7 @@ public sealed class MockStoreAdapterTests
         Assert.Equal(result.Receipts.Select(r => r.ContentHash), again.Receipts.Select(r => r.ContentHash));
     }
 
-    /// <summary>
-    /// The first day never moves: a later clock serves the file's own
-    /// receipts with the ids and hashes they always had, so a store synced
-    /// before still matches row for row.
-    /// </summary>
+    // the first day never moves: a later clock serves the file's receipts with the ids and hashes they always had
     [Fact]
     public async Task A_days_receipt_keeps_its_id_and_hash_as_the_clock_moves_on()
     {
@@ -229,8 +205,6 @@ public sealed class MockStoreAdapterTests
     }
 
     private static Connector.Kit.Manifests.ProviderManifest Describe(string id) => Adapter(id).Describe();
-
-    // ---- the challenge relay -----------------------------------------------
 
     [Fact]
     public async Task The_sms_mock_relays_a_code_challenge_and_accepts_the_right_answer()
@@ -279,8 +253,6 @@ public sealed class MockStoreAdapterTests
         Assert.Contains(ErrorCode.MfaFailed, ErrorCatalog.NeverRetry);
     }
 
-    // ---- the rule that matters most ----------------------------------------
-
     [Fact]
     public async Task A_rejected_password_latches_the_credential_and_is_never_retried()
     {
@@ -300,9 +272,8 @@ public sealed class MockStoreAdapterTests
         Assert.False(error.Retriable);
         Assert.Contains(ErrorCode.InvalidCredentials, ErrorCatalog.NeverRetry);
 
-        // The credential went upstream and may already have counted, so a
-        // lost lease must fail this job rather than requeue it. Three retries
-        // is how a real account gets locked.
+        // the credential went upstream and may have counted: a lost lease must fail this job, not requeue it
+        // (three retries lock a real account)
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
@@ -322,8 +293,6 @@ public sealed class MockStoreAdapterTests
         Assert.Equal(ErrorCode.InvalidRequest, error.Code);
         Assert.False(ctx.CredentialWasSubmitted);
     }
-
-    // ---- the alert path and BYO routing ------------------------------------
 
     [Fact]
     public async Task The_broken_mock_fails_every_fetch_with_the_code_that_pages_an_operator()
@@ -345,8 +314,7 @@ public sealed class MockStoreAdapterTests
 
         var result = await Adapter(MockStoreAdapters.Persistent).LoginAsync(ctx, CancellationToken.None);
 
-        // Agent custody: the control plane never holds a credential for this
-        // connection, so a breach of the connector yields nothing.
+        // agent custody: the control plane never holds a credential for this connection
         Assert.True(result.Material.IsAgentPointer);
         Assert.Null(result.Material.AccessToken);
         Assert.Null(result.Material.RefreshToken);

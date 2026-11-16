@@ -48,7 +48,6 @@ function PersonRow({
 }: {
   name: string;
   sub?: string;
-  /** extra accent line (e.g. "accepting also joins {space}") */
   note?: string;
   picture?: string | null;
   onClick?: () => void;
@@ -73,11 +72,9 @@ function PersonRow({
     </>
   );
   const rowCls = 'flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0';
-  // rows with row-level controls (accept/decline) stay divs — nested
-  // buttons are invalid; tappable rows carry no inner buttons
+  // rows with row-level controls stay divs: nested buttons are invalid
   if (onClick) {
-    // no border-none here: the divider IS a border (preflight keeps the
-    // button's own border at zero width anyway)
+    // no border-none: the divider IS a border
     return (
       <button data-testid={testId} onClick={onClick} className={`m-tap w-full bg-transparent text-left ${rowCls}`}>
         {body}
@@ -91,11 +88,9 @@ function PersonRow({
   );
 }
 
-/** Friends management (user identities only): the gateway to shared spaces. */
 export function FriendsScreen() {
   const { t } = useLang();
-  // friends are server-mediated: demo/offline identities must stay fully
-  // local, so the screen shows a sign-in note and makes zero network calls
+  // friends are server-mediated: demo/offline identities stay local and make zero network calls
   const isUser = useSession((s) => s.identity?.kind === 'user');
   const { store, repo, engine } = useData();
   const [me, setMe] = useState<{ userId: string } | null>(null);
@@ -104,13 +99,9 @@ export function FriendsScreen() {
   const [copied, setCopied] = useState(false);
   // #195: Add stays enabled — an empty click says why instead
   const [attempted, setAttempted] = useState(false);
-  // #291: the id pointed at nobody — a field-level error, not a log line
   const [notFound, setNotFound] = useState(false);
-  // #165: tapping a friend opens their profile sheet
   const [profile, setProfile] = useState<FriendDto | null>(null);
-  // removing a friend is destructive enough for a second look
   const [confirmRemove, setConfirmRemove] = useState<{ userId: string; name: string } | null>(null);
-  // #180: arriving with an "add a friend" intent focuses the id input
   const addRef = useRef<HTMLInputElement>(null);
   const [focusAdd] = useState(() => takeFriendsAddIntent());
   useEffect(() => {
@@ -127,8 +118,7 @@ export function FriendsScreen() {
     void apiFetch('/me').then(async (res) => res.ok && setMe(await res.json()));
     void reload();
   }, [reload, isUser]);
-  // a request/accept push while the screen is open refreshes the lists
-  // (identity-gated: local-only sessions must stay at zero network)
+  // identity-gated: local-only sessions make zero network calls
   const refresh = useCallback(() => {
     if (isUser) void reload();
   }, [isUser, reload]);
@@ -141,19 +131,15 @@ export function FriendsScreen() {
       return;
     }
     setAttempted(false);
-    // #291: 404 = "no such user" — the field says so and keeps the typed
-    // id for fixing; the input only clears when the request really went
+    // #291: 404 = no such user: the typed id stays for fixing; the input clears only when the request went
     const outcome = await postFriendRequest({ toUserId: id });
     setNotFound(outcome === 'notFound');
     if (outcome === 'sent') setAddId('');
     await reload();
   };
   const accept = async (id: string) => {
-    // #169: a space-carrying request makes us a MEMBER on accept — pull
-    // the new space right away instead of waiting for the next cycle
     const request = data?.receivedPending.find((r) => r.id === id);
-    // #277 r2: the accept answer names no space id — snapshot what we
-    // already know, so whatever the sync delivers NEW gets stamped shared
+    // #277: the accept answer names no space id: snapshot the known spaces so what sync delivers NEW is stamped shared
     // (the sender owns the space, so their name backfills the creator line)
     const known = request?.spaceName ? new Set((await store.allRows('space')).map((s) => s.id)) : null;
     await apiFetch(`/friends/requests/${id}/accept`, { method: 'POST' });
@@ -199,7 +185,6 @@ export function FriendsScreen() {
       )}
       {isUser && (
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* my id */}
         <div className="mt-2 rounded-card border border-line bg-surface px-4 py-3">
           <div className="m-cap">{t('friends.myId')}</div>
           <button data-testid="friends-copy-id" onClick={copyMyId} className="m-tap mt-1 flex w-full items-center gap-2 border-none bg-transparent p-0 text-left">
@@ -208,10 +193,8 @@ export function FriendsScreen() {
           </button>
         </div>
 
-        {/* add by id */}
         <div className="m-cap mt-5 mb-1 px-1">{t('friends.addById')}</div>
         <FormBlockerNote show={attempted && !addId.trim()} text={t('form.needId')} testId="friends-add-blocker" className="mb-1 px-1" />
-        {/* #291: the 404 answer lands AT the field, #195 style */}
         <FormBlockerNote show={notFound} text={t('friends.userNotFound')} testId="friends-add-notfound" className="mb-1 px-1" />
         <div className="flex gap-2">
           <input
@@ -231,7 +214,6 @@ export function FriendsScreen() {
           </Button>
         </div>
 
-        {/* received */}
         {(data?.receivedPending.length ?? 0) > 0 && (
           <>
             <div className="m-cap mt-5 mb-1 px-1">{t('friends.pendingReceived')}</div>
@@ -241,7 +223,6 @@ export function FriendsScreen() {
                   key={r.id}
                   name={r.fromName ?? short(r.fromUserId)}
                   sub={short(r.fromUserId)}
-                  // #169: the request rode in from a space — say what accepting means
                   note={r.spaceName ? t('invite.viaSpace', { space: r.spaceName }) : undefined}
                 >
                   <Button size="sm" data-testid={`friends-accept-${r.id}`} onClick={() => void accept(r.id)}>
@@ -256,7 +237,6 @@ export function FriendsScreen() {
           </>
         )}
 
-        {/* sent */}
         {(data?.sentPending.length ?? 0) > 0 && (
           <>
             <div className="m-cap mt-5 mb-1 px-1">{t('friends.pendingSent')}</div>
@@ -270,8 +250,6 @@ export function FriendsScreen() {
           </>
         )}
 
-        {/* friends — the row opens the profile sheet (#165); removal
-            lives there now, not on the list */}
         <div className="m-cap mt-5 mb-1 px-1">{t('settings.friends')}</div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-list">
           {(data?.friends ?? []).map((f) => (
@@ -293,15 +271,12 @@ export function FriendsScreen() {
       </div>
       )}
 
-      {/* #165: the tapped friend, up close — remove routes to the same
-          confirm the list's trash button used to open */}
       <FriendProfileSheet
         friend={profile}
         onOpenChange={(open) => !open && setProfile(null)}
         onRemove={(f) => setConfirmRemove({ userId: f.userId, name: f.displayName ?? short(f.userId) })}
       />
 
-      {/* deleting a friend needs a second, explicit yes */}
       <Sheet
         open={confirmRemove !== null}
         onOpenChange={(open) => !open && setConfirmRemove(null)}
@@ -322,7 +297,7 @@ export function FriendsScreen() {
             onClick={() => {
               if (confirmRemove) void removeFriend(confirmRemove.userId);
               setConfirmRemove(null);
-              setProfile(null); // the removed friend's profile closes too
+              setProfile(null);
             }}
           >
             {t('action.delete')}

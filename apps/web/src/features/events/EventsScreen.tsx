@@ -43,14 +43,11 @@ export const EVENT_PICTURES = [
   '/events/concert.jpg',
 ] as const;
 
-/** cover for a card/hero: picked or uploaded picture, first bundle as fallback */
 export const eventPicture = (event: Pick<EventRow, 'picture'>): string => event.picture || EVENT_PICTURES[0];
 
-/** #446: where a cover-fitted rendering crops the picture - the card, the
- *  hero and the Home tile each apply the ONE stored focus to their own frame */
+/** #446: the card, hero and Home tile each crop their own frame at the ONE stored focus */
 export const eventPictureStyle = (event: Pick<EventRow, 'pictureFocus'>): ReturnType<typeof focusStyle> => focusStyle(event.pictureFocus);
 
-/** create/edit: the picture carries the character; icons retired */
 export function EventFormSheet({
   initial,
   onClose,
@@ -58,8 +55,7 @@ export function EventFormSheet({
 }: Readonly<{
   initial: EventRow | 'new' | null;
   onClose: () => void;
-  /** create-and-return hosts (review, tx detail) get the saved row's id
-   *  HERE — sniffing the live-query list after close is a lost race */
+  /** create-and-return hosts get the saved row's id here: sniffing the live-query list after close is a lost race */
   onSaved?: (id: string) => void;
 }>) {
   const { t } = useLang();
@@ -77,7 +73,6 @@ export function EventFormSheet({
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
-  // #160: desktop-only webcam tile beside the upload tile
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
 
@@ -101,7 +96,6 @@ export function EventFormSheet({
     if (!file) return;
     // wide enough for the hero, small enough to sync as a field
     setPicture(await downscaleImage(file, 1080, 0.72));
-    // a fresh picture starts at the centre - the frame below moves it
     setFocus(null);
   };
 
@@ -113,8 +107,7 @@ export function EventFormSheet({
     const savedId = await ops.save(editing?.id ?? null, {
       name: name.trim(),
       picture,
-      // #446: a focus belongs to an uploaded picture only; null (not an
-      // absent key) so a cleared focus travels to the other devices too
+      // #446: a focus belongs to an uploaded picture only; null, not absent, so a cleared focus reaches other devices
       pictureFocus: picture.startsWith('data:') ? (focus ?? null) : null,
       from: from || undefined,
       to: to || undefined,
@@ -136,8 +129,7 @@ export function EventFormSheet({
     onClose();
   };
 
-  // dirty vs the seeded values (user request 2026-08-01) — the picture
-  // stays out: picking a bundled one is reversible and uploads are rare
+  // the picture stays out of dirty: picking a bundled one is reversible and uploads are rare
   const dirty =
     initial !== null &&
     (name !== (editing?.name ?? '') ||
@@ -150,7 +142,6 @@ export function EventFormSheet({
     <>
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
-        {/* the picture defines the event — pick a bundled one or upload */}
         <ScrollRow testId="eventform-pictures">
           <button
             data-testid="eventform-upload"
@@ -160,7 +151,6 @@ export function EventFormSheet({
             <Icon name="image-plus" size={18} />
             {t('events.uploadPicture')}
           </button>
-          {/* #160: desktop webcam snapshot — mirrors the upload tile */}
           {webcamDoor && (
             <button
               data-testid="eventform-webcam"
@@ -187,9 +177,7 @@ export function EventFormSheet({
             </button>
           ))}
         </ScrollRow>
-        {/* #446 (user): an own picture is framed here - drag it to choose the
-            part that stays visible on the card and the hero; the bundled
-            ones were composed for the centre and need no frame */}
+        {/* #446: an own picture is framed here; bundled ones were composed for the centre */}
         {picture.startsWith('data:') && (
           <ImageFocusFrame src={picture} focus={focus} onFocus={setFocus} zoom zoomLabel={t('image.zoom')} hint={t('events.dragToFrame')} testId="eventform-focus" />
         )}
@@ -204,7 +192,6 @@ export function EventFormSheet({
           aria-invalid={attempted && !name.trim()}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
-        {/* #195 r2 (user): the blocker sits AT the field */}
         <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="eventform-save-blocker" />
         <div className="flex items-end gap-2">
           <label className="relative min-w-0 flex-1 text-[12px] text-ink-3">
@@ -277,13 +264,11 @@ export function EventFormSheet({
         )}
       </div>
     </Sheet>
-    {/* #160: snapshot feeds the same downscale path as the file input */}
     <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
     </>
   );
 }
 
-/** All events with live totals; archived keep their story below. */
 export function EventsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -303,7 +288,6 @@ export function EventsScreen() {
   };
 
   const renderCard = (event: EventRow) => {
-    // #448: the headline is the net - what it cost, or the surplus with a plus
     const totals = eventTotals(txs ?? [], event.id);
     const cost = Math.max(totals.netCents, 0);
     const overBudget = !!event.budgetCents && totals.netCents > event.budgetCents;

@@ -69,16 +69,14 @@ describe('typed-splits v2 special families (approved table 2026-08-05)', () => {
   });
 
   it('isSpecialCategory = the locked family trees, nothing else', () => {
-    // #261: balanceAdjustment joined the locked trees — Adjustment is
-    // system bookkeeping (balance edits mint it, nobody subs under it)
+    // #261: Adjustment is system bookkeeping (balance edits mint it), so it joined the locked trees
     for (const id of ['savingDeposit', 'savingInterest', 'transferOut', 'loanRepayment', 'debtFees', 'investDividend', 'fundingIn', 'reimburse', 'balanceAdjustment']) {
       expect(isSpecialCategory(sub(id)), id).toBe(true);
     }
-    expect(isSpecialCategory(sub('saving'))).toBe(true); // the locked main itself
+    expect(isSpecialCategory(sub('saving'))).toBe(true);
     for (const id of ['groceries', 'salary', 'interest']) {
       expect(isSpecialCategory(sub(id)), id).toBe(false);
     }
-    // custom categories can never join (locked mains refuse user subs)
     expect(isSpecialCategory({ id: 'custom1', parentId: 'custom_main' })).toBe(false);
   });
 });

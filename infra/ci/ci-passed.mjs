@@ -3,7 +3,7 @@
 // missing Web CI holds it, and so does one still running at the deadline or a GitHub that cannot be asked.
 import { pathToFileURL } from 'node:url';
 
-const WORKFLOW = 'deploy.yml'; // Web CI
+const WORKFLOW = 'deploy.yml';
 
 /** what the commit's Web CI says: a re-run keeps its run and moves the conclusion, so the newest run decides */
 export function verdictOf(runs, sha) {
@@ -24,7 +24,6 @@ async function ask(fetchImpl, url, token) {
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** asks until the run has an end or the wait is over; the last word is the answer */
 export async function waitForCi({ api, repo, token, sha, waitMs, everyMs = 30_000, fetchImpl = fetch, sleep = pause, now = Date.now }) {
   const given = { GITHUB_REPOSITORY: repo, GH_TOKEN: token, '--sha': sha };
   const missing = Object.keys(given).filter((name) => !given[name]);

@@ -31,10 +31,7 @@ import { useScrollMemory } from '@/lib/scrollMemory';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
-/** #492: the whole history is listed, a page of rows at a time — the rows
- *  are in memory already, but thousands of mounted rows made every visit
- *  to the tab heavy. The depth reached is remembered for the session like
- *  the scroll offset, so the detour into a row comes back to the same spot. */
+/** #492: rows are listed a page at a time (thousands of mounted rows made every visit heavy); depth is kept per session */
 const ROWS_KEY = 'munni_txlist_rows';
 
 function readShownRows(): number {
@@ -46,8 +43,7 @@ function readShownRows(): number {
   }
 }
 
-/** the parts a filter singled out, standing alone (#126 r8) —
- *  module-level for S2004 */
+/** module-level for S2004 */
 function TxPartSoloRows({
   tx,
   parts,
@@ -81,12 +77,7 @@ function TxPartSoloRows({
   );
 }
 
-/** a split's parts standing IN the list (#126 r5; restyled r6, r9,
- *  then SUBTLER per the user's #198 inspiration): the header is a
- *  plain row — category icon, title, a quiet "N linked parts" pill,
- *  the FULL amount and a fold chevron — and the parts sit in a soft
- *  inset below it, each led by a small branch arrow. No accent band,
- *  no drawn spine. Module-level for S2004. */
+/** a split's parts standing in the list (#126): header row plus an inset of parts; module-level for S2004 */
 function TxPartGroupRows({
   tx,
   parts,
@@ -102,8 +93,7 @@ function TxPartGroupRows({
   const cats = useCategories();
   const [collapsed, setCollapsed] = useState(false);
   const sign = tx.amountCents < 0 ? -1 : 1;
-  // #228: the header says what the whole is WORTH — part nets, so a
-  // reimbursed part shrinks the group exactly like a settled whole row
+  // #228: the header shows what the whole is worth: part nets, so a reimbursed part shrinks the group
   const totalCents = sign * parts.reduce((sum, part) => sum + partNetCents(part), 0);
   const headCat = cats.byId(tx.catId);
   const headColor = headCat.color ?? cats.byId(headCat.parentId ?? '').color ?? 'var(--m-ink-3)';
@@ -136,11 +126,7 @@ function TxPartGroupRows({
           <Icon name={collapsed ? 'chevron-down' : 'chevron-up'} size={15} />
         </button>
       </div>
-      {/* #198 r2 (user): hairlines separate TRANSACTIONS, not the parts
-          of one — the inset alone already groups them. r5 (user): the
-          ROUNDED inset is the wanted look — the group's boundary toward
-          the next transaction is the card's own straight hairline,
-          which paints right below the box since r3's divider fix. */}
+      {/* #198: hairlines separate transactions, not the parts of one; the rounded inset is the wanted look */}
       {!collapsed && (
         <div className="mb-2 rounded-card bg-bg px-2">
           {parts.map((part, i) => {
@@ -186,13 +172,8 @@ function TxPartGroupRows({
   );
 }
 
-/** the collapsed pair's note (S3776: out of the memo). Opposite-sign
- *  pairs read from the surviving negative leg; a same-sign wallet pair's
- *  surviving purchase reads the FUNDING direction from its hidden
- *  transfer leg (#237, user decision "a") — "Bank → PayPal".
- *  #237 r2: a ONE-WAY pair (only the other row carries the pointer)
- *  reads through the reverse index, so the surviving leg still says
- *  where the money came from. */
+/** the collapsed pair's note: read from the surviving negative leg; a same-sign wallet pair's purchase reads the funding
+ *  direction from its hidden transfer leg; a one-way pair reads through the reverse index (#237) */
 function peerNoteFor(
   item: SpaceTx,
   byId: Map<string, SpaceTx>,
@@ -208,8 +189,7 @@ function peerNoteFor(
   return from && to ? `${from} → ${to}` : undefined;
 }
 
-/** #156 r2: where a row sits against its group card's rounded frame —
- *  only the selected/focused tint consumes it (TxRow) */
+/** where a row sits against its group card's rounded frame; only the selected tint consumes it (#156) */
 function edgeOf(index: number, count: number): TxRowEdge {
   if (count === 1) return 'both';
   if (index === 0) return 'first';
@@ -217,7 +197,6 @@ function edgeOf(index: number, count: number): TxRowEdge {
   return 'none';
 }
 
-/** the byId + reverse peer indexes over one list (S3776 helpers) */
 function peerIndexes(matched: readonly SpaceTx[]) {
   const byId = new Map(matched.map((item) => [item.id, item]));
   // #237 r2: one-way pairs read their peer through the reverse index
@@ -229,9 +208,7 @@ function peerIndexes(matched: readonly SpaceTx[]) {
   return { peerOf };
 }
 
-/** #237 (user decision "a"): a pair collapses to ONE row — the outgoing
- *  leg, or for a SAME-SIGN wallet pair the real purchase (the transfer
- *  leg hides). S3776: out of the list memo. */
+/** #237: a pair collapses to one row: the outgoing leg, or for a same-sign wallet pair the real purchase */
 function collapseTransferPairs(matched: SpaceTx[]): SpaceTx[] {
   const { peerOf } = peerIndexes(matched);
   return matched.filter((item) => {
@@ -244,7 +221,7 @@ function collapseTransferPairs(matched: SpaceTx[]): SpaceTx[] {
   });
 }
 
-/** #352: same-day legs sit together, outgoing first. S3776. */
+/** #352: same-day legs sit together, outgoing first */
 function pairAdjacentLegs(matched: SpaceTx[]): SpaceTx[] {
   const { peerOf } = peerIndexes(matched);
   const placed = new Set<string>();
@@ -279,14 +256,12 @@ function groupByDate(txs: SpaceTx[]): [string, SpaceTx[]][] {
 export function TransactionsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  // #140: seeded from the module snapshot — the lens survives the detour
-  // into a transaction; a tab switch or fresh start finds it empty
+  // #140: seeded from the module snapshot: the lens survives the detour into a transaction; a tab switch finds it empty
   const [query, setQuery] = useState(() => readTxFilters().query);
   const [uncatOnly, setUncatOnly] = useState(() => readTxFilters().uncatOnly);
   const [unsettledOnly, setUnsettledOnly] = useState(() => readTxFilters().unsettledOnly);
-  // #243 (user): see the linked legs on their own — pairs uncollapsed
+  // #243: see the linked legs on their own, pairs uncollapsed
   const [counterOnly, setCounterOnly] = useState(() => readTxFilters().counterOnly);
-  // #148: home's "see all new" arrives with this lens on
   const [newOnly, setNewOnly] = useState(() => readTxFilters().newOnly);
   const [filters, setFilters] = useState<SheetFilters>(() => readTxFilters().filters);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -294,8 +269,7 @@ export function TransactionsScreen() {
   useEffect(() => {
     writeTxFilters({ query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters });
   }, [query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters]);
-  // #492: how deep the list is rendered — a changed lens starts at one
-  // page again; the mount keeps the depth the detour remembered
+  // #492: a changed lens starts at one page again; the mount keeps the depth the detour remembered
   const [shownRows, setShownRows] = useState(readShownRows);
   const lens = useMemo(
     () => ({ query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters }),
@@ -320,7 +294,7 @@ export function TransactionsScreen() {
   // #148 r2: NEW = first-seen on this device within 24h (the same set
   // home's block lists) — not the unreviewed badge
   const { newIds } = useNewTransactions(allTxs);
-  // desktop density (D2): the account column needs names, one lookup for all rows
+  // the account column needs names: one lookup for all rows
   const accounts = useSpaceAccounts();
   // #181 (user): the empty state leads to the SPACE's own accounts screen
   const { spaceId } = useData();
@@ -342,11 +316,9 @@ export function TransactionsScreen() {
   // the list remembers where you were (#131)
   const scrollRef = useRef<HTMLDivElement>(null);
   useScrollMemory(scrollRef, 'transactions');
-  // #126 r5: a part row opens its own page
   const openPartPage = (txId: string, partId: string | undefined) =>
     void navigate({ to: '/transactions/$txId', params: { txId }, search: { part: partId } });
 
-  // desktop keyboard (§4.5): `/` jumps to search unless already typing
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -364,15 +336,13 @@ export function TransactionsScreen() {
       new Date(iso),
     );
 
-  // a main category matches itself and all of its subs
   const catIds = useMemo(() => {
     const mains = [...filters.mainCatIds];
     if (mains.length === 0) return undefined;
     return new Set(mains.flatMap((id) => [id, ...cats.childrenOf(id).map((c) => c.id)]));
   }, [filters.mainCatIds, cats]);
 
-  // filter FIRST, then newest-first — the whole history (#492: it used to
-  // stop at 200 rows); the render below pages through it
+  // filter first, then newest-first, over the whole history; the render pages through it
   const txs = useMemo(() => {
     if (!allTxs) return undefined;
     // filterTxs returns a fresh array — sorting it in place mutates no input
@@ -387,27 +357,19 @@ export function TransactionsScreen() {
       minCents: filters.minCents,
       maxCents: filters.maxCents,
     });
-    // quick filter (redesign): expected/received value still open
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
-    // #148 r2: the "new" lens = rows first seen within the last 24h
     if (newOnly) matched = matched.filter((item) => newIds.has(item.id));
-    // paired transfers are ONE event (arc 1): the incoming leg hides when
-    // its outgoing peer is listed too — unless an account filter is on
-    // (a per-account view needs its own leg for the running story).
-    // #243 r2 (user): the chip does NOT narrow — it shows the full list
-    // with every pair's legs standing separately (collapse off).
+    // paired transfers are one event: the incoming leg hides when its outgoing peer is listed, unless an account filter is on
+    // (a per-account view needs its own leg); the counter chip turns collapse off (#243)
     if (filters.accountIds.size === 0 && !counterOnly) matched = collapseTransferPairs(matched);
     matched.sort((a, b) => b.date.localeCompare(a.date));
-    // #352: with the legs standing separately, a SAME-DAY pair sits
-    // together (outgoing first) — the date sort alone scattered them
+    // #352: with legs standing separately a same-day pair sits together; the date sort alone scattered them
     if (counterOnly) matched = pairAdjacentLegs(matched);
     return matched;
   }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, newIds, catIds]);
   const shownTxs = useMemo(() => txs?.slice(0, shownRows), [txs, shownRows]);
 
-  // the collapsed row says where the money went: "Checking → Savings".
-  // #237: a same-sign wallet pair's surviving purchase reads the funding
-  // direction from its hidden transfer leg — "Bank → PayPal"
+  // the collapsed row says where the money went; a same-sign wallet pair's purchase reads the funding direction (#237)
   const peerNotes = useMemo(() => {
     if (filters.accountIds.size > 0) return new Map<string, string>();
     const byId = new Map((allTxs ?? []).map((item) => [item.id, item]));
@@ -423,8 +385,7 @@ export function TransactionsScreen() {
     return map;
   }, [shownTxs, allTxs, accountNames, filters.accountIds]);
 
-  // display-currency lens: rows convert at their own day's fixing —
-  // warm the rate cache for every date this list is about to show
+  // rows convert at their own day's fixing: warm the rate cache for every date shown
   const { fmt, ensureDates } = useDisplayMoney();
   useEffect(() => {
     ensureDates([...new Set((shownTxs ?? []).map((tx) => tx.date))]);
@@ -452,7 +413,6 @@ export function TransactionsScreen() {
           </>
         }
       />
-      {/* search + filters */}
       <div className="shrink-0 px-5 pb-1">
         <SearchField testId="tx-search" value={query} onChange={setQuery} placeholder={t('tx.searchPlaceholder')} />
         <ScrollRow className="mt-2">
@@ -467,7 +427,6 @@ export function TransactionsScreen() {
               </span>
             )}
           </Chip>
-          {/* #148: the unreviewed lens home's "see all" arrives with */}
           <Chip testId="tx-filter-new" selected={newOnly} onClick={() => setNewOnly((v) => !v)}>
             {t('tx.newFilter')}
           </Chip>
@@ -477,7 +436,6 @@ export function TransactionsScreen() {
           <Chip testId="tx-filter-unsettled" selected={unsettledOnly} onClick={() => setUnsettledOnly((v) => !v)}>
             {t('tx.unsettledFilter')}
           </Chip>
-          {/* #243 r2 (user): ALL transactions with pairs uncollapsed */}
           <Chip testId="tx-filter-counter" selected={counterOnly} onClick={() => setCounterOnly((v) => !v)}>
             <Icon name="swap-horizontal" size={14} />
             {t('tx.counterFilter')}
@@ -517,8 +475,7 @@ export function TransactionsScreen() {
           />
         )}
         {groups.map(([date, list]) => {
-          // #352: adjacent mutually-linked same-day legs render as ONE
-          // visual unit (the reorder above guarantees the adjacency)
+          // #352: adjacent mutually-linked same-day legs render as one unit (the reorder above guarantees adjacency)
           const pairTops = new Set<string>();
           for (let i = 0; i < list.length - 1; i += 1) {
             const row = list[i];
@@ -528,8 +485,7 @@ export function TransactionsScreen() {
               i += 1;
             }
           }
-          // S2004: the row renderer lives at THIS level, not inside the
-          // list map — pair units render two rows through one function
+          // S2004: the row renderer lives at this level, not inside the list map
           const renderRow = (item: SpaceTx, listIndex: number) => (
             <TxRow
               key={item.id}
@@ -545,23 +501,14 @@ export function TransactionsScreen() {
           );
           return (
           <div key={date}>
-            {/* sticky (D2): the group's date stays readable while its rows scroll */}
             <div className="m-cap sticky top-0 z-10 -mx-1 mt-4 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
-            {/* #198: hairline dividers between rows — every tx list */}
             <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1">
               {list.map((tx, listIndex) => {
-                // the pair's SECOND leg renders inside the first's unit
                 if (listIndex > 0 && pairTops.has(list[listIndex - 1].id)) return null;
-                // #126 r5: a real split doesn't show its container in the
-                // list — the sub-transactions stand as rows of their own,
-                // the shared rail linking them; each opens its own page
                 const rowParts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-                // #149: EVERY multi-part row branches — a flat category
-                // spread is a split to the user, labels or not
+                // #149: every multi-part row branches: a flat category spread is a split to the user
                 if (rowParts.length > 1) {
-                  // r8 (user request): a filter that matches only SOME
-                  // parts shows exactly those, aligned like normal rows
-                  // with the split glyph — the band stays for full groups
+                  // a filter matching only some parts shows exactly those, aligned like normal rows; the band stays for full groups
                   const shown = matchingPartIndexes(tx, { catIds, txTypes: filters.txTypes, onlyUncategorized: uncatOnly });
                   if (shown.length < rowParts.length) {
                     return (
@@ -587,8 +534,6 @@ export function TransactionsScreen() {
                   );
                 }
                 if (pairTops.has(tx.id)) {
-                  // #352: the two legs share a soft inset + a tie label
-                  // (the linked-parts pattern, applied to transfer pairs)
                   return (
                     <div key={tx.id} className="py-1.5" data-testid={`tx-pair-${tx.id}`}>
                       <div className="mb-0.5 flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wide text-accent-deep uppercase">

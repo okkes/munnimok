@@ -5,12 +5,7 @@ using ShopConnector.Adapters.Fixtures;
 
 namespace ShopConnector.Adapters.Tests.Support;
 
-/// <summary>
-/// Fixture access, plus the two mutations every defensive-parsing test
-/// needs: add a field the parser has never seen, and take away one it
-/// requires. Both start from the recorded payload rather than a hand-written
-/// one, so a fixture that drifts breaks these tests too.
-/// </summary>
+/// mutations start from the recorded payload, so a drifting fixture breaks these tests too
 internal static class Fixture
 {
     public static JsonDocument Doc(string name) => JsonDocument.Parse(FixtureCatalog.Read(name));
@@ -27,17 +22,12 @@ internal static class Fixture
         Node(name) as JsonArray
         ?? throw new InvalidOperationException($"fixture '{name}' is not a JSON array");
 
-    /// <summary>Reparses a mutated node so the parser under test sees a real document.</summary>
     public static JsonDocument Reparse(JsonNode node) => JsonDocument.Parse(node.ToJsonString());
 }
 
 internal static class Requests
 {
-    /// <summary>
-    /// The receipts request every shopping provider serves. <c>items</c>
-    /// defaults on because the line items and their discounts are what the
-    /// reconciliation invariant is checked against.
-    /// </summary>
+    /// items defaults on because the reconciliation invariant is checked against line items and discounts
     public static ResourceRequest Receipts(
         DateOnly? since = null, DateOnly? until = null, bool items = true, bool raw = false, bool invoice = false)
     {

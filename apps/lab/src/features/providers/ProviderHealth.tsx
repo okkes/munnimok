@@ -4,14 +4,12 @@ import type { ProviderHealth as Health } from '../../types';
 
 const WINDOWS = ['24h', '7d', '30d'] as const;
 
-/** `provider_changed: 3 · agent_unavailable: 1`, the wire codes as the logs spell them */
 export const codeLine = (codes: Readonly<Record<string, number>>): string =>
   Object.entries(codes)
     .sort((a, b) => b[1] - a[1])
     .map(([code, n]) => `${snake(code)}: ${n}`)
     .join(' · ') || '—';
 
-/** a party's health over the last day, week and month (#441 L1): outcomes, codes, who asked, the people behind the failures, the canary, the reports */
 export function ProviderHealthCard({ id, health }: Readonly<{ id: string; health: Health | null | undefined }>) {
   if (!health) {
     return (

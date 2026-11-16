@@ -1,35 +1,25 @@
 namespace ShopConnector.Adapters.Mock;
 
-/// <summary>
-/// Which part of the protocol a mock provider exercises. One behaviour per
-/// hard thing, so a failure names the thing that broke.
-/// </summary>
+/// one behaviour per hard thing, so a failure names the thing that broke
 public enum MockStoreBehaviour
 {
     /// <summary>T1, no challenge, instant. The smoke test.</summary>
     Instant,
 
-    /// <summary>Relays an <c>mfa_code</c> challenge.</summary>
     SmsChallenge,
 
-    /// <summary>Relays an <c>image</c> challenge with real PNG bytes.</summary>
     ImageChallenge,
 
     /// <summary>Runs long enough to exercise SSE progress and lease renewal.</summary>
     Slow,
 
-    /// <summary>Always fails a fetch with <c>provider_changed</c>.</summary>
     Broken,
 
     /// <summary>T4 on a BYO agent: the bundle holds a pointer and no secret.</summary>
     Persistent,
 }
 
-/// <summary>
-/// One mock provider's identity and behaviour. Everything that could vary
-/// per test lives here so the registered set stays realistic while a test
-/// can construct a fast one.
-/// </summary>
+/// everything a test may vary lives here, so the registered set stays realistic while a test builds a fast one
 public sealed record MockStoreProfile
 {
     public required string Id { get; init; }
@@ -49,16 +39,10 @@ public sealed record MockStoreProfile
     /// <summary>The only answer the image mock accepts, compared case-insensitively.</summary>
     public string CaptchaAnswer { get; init; } = "MOCK1";
 
-    /// <summary>
-    /// The password that makes a mock login fail with
-    /// <c>invalid_credentials</c>. It exists so the rule that matters most -
-    /// a credential failure is never retried by anything - has an offline
-    /// test that needs no real account.
-    /// </summary>
+    /// makes a mock login fail with invalid_credentials: an offline test of the never-retry rule
     public string RejectedPassword { get; init; } = "wrong";
 }
 
-/// <summary>Host-bindable settings for the whole mock set.</summary>
 public sealed record MockStoreOptions
 {
     public TimeSpan SlowStepDelay { get; init; } = TimeSpan.FromSeconds(2);

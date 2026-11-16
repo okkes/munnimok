@@ -12,33 +12,19 @@ import { measure } from '@/lib/perf';
 import { linkedTxIds, writeProposedLinks } from './receiptLinks';
 import { myStoreFeedId } from './storeFeed';
 
-/**
- * Receipts v3 matching, per space: fetched receipts live ONCE in the
- * owner's store feed (the server's ingest writes them — #367), and the
- * matcher runs per INCLUDED space, linking rung-1 singles by writing
- * snapshot `receiptLink` rows. A candidate a human already reviewed is
- * never attached behind their back: it becomes a proposal (§5.7).
- *
- * User 2026-10-09: the matching is done UPFRONT, like the category — the
- * proposals exist before the review opens, written when rows land (a
- * shop's sync, a bank's sync, a sync cycle that brought new rows, a
- * history start moved older) instead of on the fly while reviewing.
- */
+// receipts live once in the owner's store feed; the matcher runs per INCLUDED space and writes receiptLink rows (#367)
+// matching is upfront: proposals exist before the review opens; a reviewed candidate is proposed, never attached (§5.7)
 
 export interface MatchOutcome {
-  /** attached by the matcher */
   linked: number;
-  /** waiting in "Matches to check" */
   proposed: number;
 }
 
 const NOTHING: MatchOutcome = { linked: 0, proposed: 0 };
 
-/** the live spaces, by id */
 const liveSpaceIds = async (store: StorageBackend): Promise<Set<string>> =>
   new Set((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.id));
 
-/** the spaces a connection is included in (storeConnLink, deleted spaces drop) */
 export async function includedSpaces(store: StorageBackend, connectionId: string): Promise<string[]> {
   const localSpaceIds = await liveSpaceIds(store);
   return (await store.allRows('storeConnLink'))
@@ -46,7 +32,6 @@ export async function includedSpaces(store: StorageBackend, connectionId: string
     .map((l) => l.spaceId);
 }
 
-/** the connections ONE space includes (its live storeConnLink rows) */
 const includedConnectionIds = async (store: StorageBackend, spaceId: string): Promise<Set<string>> =>
   new Set((await store.bySpace('storeConnLink', spaceId)).filter((l) => l.deleted === 0).map((l) => l.instanceId));
 
@@ -56,16 +41,14 @@ async function holdsOwnPhotos(store: StorageBackend): Promise<boolean> {
   return !!mine && (await store.bySpace('receipt', mine)).some((r) => r.deleted === 0 && r.source === 'photo');
 }
 
-/** every live space a pass can change: the ones that include a connection — and all of them while a photo of
- *  the person's own waits for its transaction, which may land in any */
+/** spaces that include a connection, or every live space while an own photo waits for its transaction */
 async function spacesToMatch(store: StorageBackend): Promise<string[]> {
   const live = await liveSpaceIds(store);
   if (await holdsOwnPhotos(store)) return [...live];
   return [...new Set((await store.allRows('storeConnLink')).filter((l) => l.deleted === 0 && live.has(l.spaceId)).map((l) => l.spaceId))];
 }
 
-/** the store feeds: the ones the connections write their receipts into, and the person's own (#567: it holds
- *  their photos with or without a shop connected) */
+/** the connections' feeds plus the person's own, which holds their photos with or without a shop (#567) */
 const storeFeedIds = async (store: StorageBackend): Promise<Set<string>> => {
   const ids = new Set((await store.allRows('storeConn')).filter((c) => c.deleted === 0).map((c) => c.spaceId));
   const mine = myStoreFeedId();
@@ -73,8 +56,7 @@ const storeFeedIds = async (store: StorageBackend): Promise<Set<string>> => {
   return ids;
 };
 
-/** every global receipt of the store feeds — with a set named, those connections' and (unless a pass is about
- *  one connection alone) the person's own photos */
+/** a named set limits to those connections' receipts, plus the own photos unless the pass is about one connection */
 async function feedReceipts(store: StorageBackend, connectionIds?: ReadonlySet<string>, photos = true): Promise<ReceiptRow[]> {
   const receipts: ReceiptRow[] = [];
   for (const feedId of await storeFeedIds(store)) {
@@ -84,23 +66,14 @@ async function feedReceipts(store: StorageBackend, connectionIds?: ReadonlySet<s
   return receipts.filter((r) => (photos && r.source === 'photo') || (!!r.instanceId && connectionIds.has(r.instanceId)));
 }
 
-/** IBAN tails of the space's accounts — payment-aware matching (R5) */
 async function accountTailResolver(store: StorageBackend): Promise<AccountTailOf> {
   const accounts = await store.allRows('account');
   const ibanByAccount = new Map(accounts.filter((a) => a.iban).map((a) => [a.id, a.iban!.replaceAll(/\D/g, '')]));
   return (tx: TransactionRow) => ibanByAccount.get(tx.accountId);
 }
 
-/**
- * Match the given global receipts into ONE space: a rung-1 single becomes
- * a PROPOSAL — never an attachment (user rule 2026-10-05: a receipt the
- * matcher attached behind the person's back read as "it just linked
- * itself"). A transaction still to review carries the proposal into its
- * review card; a reviewed one lists it under Matches to check and on
- * Home. Receipts already attached in the space are skipped, as are
- * transactions that already carry or are already proposed a receipt and
- * the transactions a human rejected for a receipt.
- */
+// a rung-1 single becomes a PROPOSAL, never an attachment: a matcher-attached receipt read as "it just linked itself"
+// a transaction still to review carries it into its review card; a reviewed one is listed under Matches to check and on Home
 export async function matchReceiptsIntoSpace(
   storage: StorageBackend,
   repo: Repo,
@@ -109,8 +82,6 @@ export async function matchReceiptsIntoSpace(
 ): Promise<MatchOutcome> {
   // #505: a space this identity only reads gets its proposals from the members who may write it
   if (!repo.canWrite(spaceId)) return NOTHING;
-  // the space's VIEW: own rows and attached feed rows alike, the derived
-  // types telling expenses from movements
   const [txs, links] = await Promise.all([visibleTransactions(storage, spaceId), storage.bySpace('receiptLink', spaceId)]);
   const linkById = new Map(links.filter((l) => l.deleted === 0).map((l) => [l.id, l]));
   // a transaction that carries a receipt (as its first holder or a further one — user 2026-10-08), or is already
@@ -137,11 +108,7 @@ export async function matchReceiptsIntoSpace(
   return { linked: 0, proposed: proposals.length };
 }
 
-/**
- * Re-evaluate a whole space against every global receipt: after a shop's
- * sync landed new rows, and when a connection joins the space (R5).
- * `connectionId` narrows the pass to one connection; omitted = all.
- */
+/** after a shop's sync landed new rows, or when a connection joins the space (R5); `connectionId` narrows to one */
 export async function reevaluateSpace(
   storage: StorageBackend,
   repo: Repo,
@@ -160,18 +127,12 @@ export async function matchReceiptEverywhere(storage: StorageBackend, repo: Repo
   return outcome;
 }
 
-/**
- * The whole space against the receipts of the connections it INCLUDES —
- * what a landing point runs when the transactions moved rather than the
- * receipts (a bank's sync, a sync cycle, a history start moved older):
- * a space that includes no shop has nothing to match.
- */
+/** run when transactions moved rather than receipts; a space that includes no shop has nothing to match */
 export async function rematchSpace(storage: StorageBackend, repo: Repo, spaceId: string): Promise<MatchOutcome> {
   const receipts = await feedReceipts(storage, await includedConnectionIds(storage, spaceId));
   return receipts.length === 0 ? NOTHING : matchReceiptsIntoSpace(storage, repo, spaceId, receipts);
 }
 
-/** the pass itself: the named spaces, or every live space with an included connection */
 export async function rematchSpaces(storage: StorageBackend, repo: Repo, spaceIds?: readonly string[]): Promise<MatchOutcome> {
   const outcome: MatchOutcome = { linked: 0, proposed: 0 };
   for (const spaceId of spaceIds ?? (await spacesToMatch(storage))) {
@@ -182,8 +143,6 @@ export async function rematchSpaces(storage: StorageBackend, repo: Repo, spaceId
   return outcome;
 }
 
-// ── the triggers (user 2026-10-09: proposals before the review, not during it) ──
-
 /** where the last pass's fingerprint rests, so an app open with nothing new runs nothing */
 export const MATCH_FINGERPRINT_KEY = 'receiptMatchFingerprint';
 /** a sync cycle ends every ten seconds; asks coalesce for this long before the pass runs at idle time */
@@ -191,12 +150,7 @@ export const MATCH_DEBOUNCE_MS = 1_500;
 /** the idle wait's ceiling: a busy device still runs the pass within this */
 const IDLE_TIMEOUT_MS = 3_000;
 
-/**
- * What the matcher reads, counted cheaply (index counts, no rows): the
- * transactions of every space and of every feed its accounts attach,
- * each space's history gates, and the receipts of the store feeds. Only
- * a sync cycle that moved one of these is worth a pass.
- */
+/** counted cheaply (index counts, no rows); only a sync cycle that moved one of these is worth a pass */
 export async function matchInputFingerprint(store: StorageBackend): Promise<string> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0).sort((a, b) => a.id.localeCompare(b.id));
   const parts: string[] = [];
@@ -226,19 +180,11 @@ const whenIdle: IdleFn = (callback) => {
 };
 
 export interface MatchScheduler {
-  /** ask for a pass over one space, or over every space with an included connection when none is named; asks coalesce */
   request(spaceId?: string): void;
-  /** resolves once nothing is waiting or running */
   settled(): Promise<void>;
-  /** drops a waiting pass (the provider going away) */
   dispose(): void;
 }
 
-/**
- * The matcher's pace: asks within the debounce window fold into one pass,
- * the pass runs at idle time, one at a time — an ask that lands while a
- * pass runs is served by one more pass right after it.
- */
 export function createMatchScheduler(
   run: (spaceIds: readonly string[] | undefined) => Promise<unknown>,
   options: { delayMs?: number; idle?: IdleFn } = {},
@@ -255,7 +201,6 @@ export function createMatchScheduler(
     for (const resolve of waiters.splice(0)) resolve();
   };
   const drain = async (): Promise<void> => {
-    // a pass reads `pending` afresh after each run: what arrived meanwhile is served next
     while (pending && !disposed) {
       const spaceIds = pending === 'all' ? undefined : [...pending];
       pending = null;
@@ -299,23 +244,12 @@ export function createMatchScheduler(
 
 let installed: MatchScheduler | null = null;
 
-/**
- * A landing point's ask (a history start moved older, …): the installed
- * scheduler takes it; none installed (demo, offline, no provider) = the
- * rows have no receipts to meet, nothing to do.
- */
+/** none installed (demo, offline, no provider) = no receipts to meet, so the ask is a no-op */
 export function requestReceiptMatching(spaceId?: string): void {
   installed?.request(spaceId);
 }
 
-/**
- * The matcher's triggers, mounted once with the data provider (signed-in
- * only — shops and banks are a signed-in feature): every sync cycle that
- * moved the matcher's input asks for a pass, debounced and at idle time,
- * and the app's first look compares against the fingerprint the last
- * pass left, so an app open with nothing new runs nothing. A shop's own
- * sync still matches at once (connectorSync.landAndMatch).
- */
+/** signed-in only (shops and banks); a shop's own sync still matches at once (connectorSync.landAndMatch) */
 export function useReceiptMatchTriggers(): void {
   const { store, repo, engine } = useData();
   useEffect(() => {
@@ -323,7 +257,7 @@ export function useReceiptMatchTriggers(): void {
     const scheduler = createMatchScheduler(async (spaceIds) => {
       // the fingerprint is read BEFORE the pass: rows landing during it are the next cycle's business
       const fingerprint = await matchInputFingerprint(store);
-      // a 'receipts.match' span per pass (2026-10-09): the matcher's cost is read in GlitchTip, never guessed
+      // a span per pass: the matcher's cost is read in GlitchTip
       await measure('receipts.match', (span) => {
         span.setAttribute('receipts.spaces', spaceIds?.length ?? 0);
         return rematchSpaces(store, repo, spaceIds);

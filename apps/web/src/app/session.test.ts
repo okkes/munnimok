@@ -18,7 +18,6 @@ describe('session persistence (local-first: restarts must not sign out)', () => 
 
   it('survives a simulated app restart (fresh read from storage)', () => {
     useSession.getState().login({ kind: 'user', sub: 'abc', testAuth: true });
-    // "restart": nothing but storage remains
     expect(readSessionIdentity()).toEqual({ kind: 'user', sub: 'abc', testAuth: true });
   });
 
@@ -42,7 +41,6 @@ describe('session persistence (local-first: restarts must not sign out)', () => 
 
     expect(identityKey({ kind: 'offline', profileId: profile.id })).toBe('user_abc');
     expect(identityKey({ kind: 'user', sub: 'abc' })).toBe('user_abc_2');
-    // another login on the device is untouched
     expect(identityKey({ kind: 'user', sub: 'xyz' })).toBe('user_xyz');
   });
 

@@ -8,24 +8,12 @@ using Munni.Api.Connectors;
 
 namespace Munni.Api.Tests.Connectors;
 
-/// <summary>
-/// Every fetch a job (a zero window), and the mock banks capped at a third
-/// of the rows they hold in reach, shared out per account: their history
-/// takes several passes and the accounts stop on different days. (A third of
-/// what is in reach, not a number: the mock's ledger runs through today, and
-/// how many rows its history limit holds moves a little with the weekdays
-/// and month ends inside it.)
-///
-/// The day is pinned when the suite starts: the mock banks' clock stays on
-/// that instant, and the cap and every expected count are read for the same
-/// day - a run across midnight cannot move the window without the
-/// expectation, as it could when the count came from the clock at assert time.
-/// </summary>
+/// <summary>Every fetch a job; the mock cap is a third of the rows in reach (that count moves with weekdays and month ends).
+/// The day is pinned at suite start so a run across midnight cannot move the window without the expectation.</summary>
 public sealed class BackfillWalkApiFactory : ConnectorApiFactory
 {
     private readonly DateTimeOffset _started = DateTimeOffset.UtcNow;
 
-    /// <summary>The day the mock banks' window ends on, for the whole suite.</summary>
     public DateOnly Today => DateOnly.FromDateTime(_started.UtcDateTime);
 
     public int Cap => Math.Max(1, BackfillFlows.LedgerRowsInReach(Today) / 3);
@@ -43,13 +31,9 @@ file sealed class PinnedClock(DateTimeOffset at) : TimeProvider
     public override DateTimeOffset GetUtcNow() => at;
 }
 
-/// <summary>
-/// #460: a pass that brings only the newest part of a party's history says
-/// how far back it reached, and a pass with <c>until</c> fetches the older
-/// part - through the job path, the way a slow party answers - until a pass
-/// comes back whole. (Each class has a database of its own: the mock's IBAN
-/// feeds are shared by construction, so two connections in one would mix.)
-/// </summary>
+/// <summary>#460: a partial pass says how far back it reached; a pass with <c>until</c> fetches older history
+/// through jobs until one comes back whole. Own database per class: the mock's IBAN feeds are shared,
+/// so two connections would mix.</summary>
 public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixture<BackfillWalkApiFactory>
 {
     [Fact]
@@ -59,7 +43,6 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
         using var client = factory.ClientFor(sub);
         var (_, bundle) = await BackfillFlows.LoginAsync(client, "conn-backfill");
 
-        // the first sync: accounts, then the newest rows up to the cap - partial, and how far back they reach
         var walked = new List<string>();
         var first = await BackfillFlows.SyncAsync(client, new { connectionId = "conn-backfill", bundle }, bundle, asked: walked);
         Assert.Equal(["accounts", "transactions"], walked);
@@ -67,7 +50,6 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
         var reached = first["oldest"]!.GetValue<string>();
         Assert.Equal(factory.Cap, BackfillFlows.Transactions(factory, sub));
 
-        // pass after pass over older history, each asking up to where the last one reached
         var passes = 0;
         JsonObject pass;
         do
@@ -75,7 +57,6 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
             passes++;
             var asked = new List<string>();
             pass = await BackfillFlows.SyncAsync(client, new { connectionId = "conn-backfill", bundle, until = reached }, bundle, until: reached, asked);
-            // an older pass walks the history only: the accounts are all of them already
             Assert.Equal(["transactions"], asked);
             if (pass["complete"]!.GetValue<bool>()) break;
             var next = pass["oldest"]!.GetValue<string>();
@@ -86,12 +67,10 @@ public class ConnectorBackfillTests(BackfillWalkApiFactory factory) : IClassFixt
 
         Assert.True(pass["complete"]!.GetValue<bool>(), pass.ToJsonString());
         Assert.True(passes >= 2, "the history should take more than one older pass at a third of it each");
-        // every row the party keeps in reach landed once
         Assert.Equal(BackfillFlows.LedgerRowsInReach(factory.Today), BackfillFlows.Transactions(factory, sub));
     }
 }
 
-/// <summary>#460: the relay's scheduler takes one pass over older history per run, after a run that came back partial.</summary>
 public class ConnectorBackfillScheduleTests(BackfillWalkApiFactory factory) : IClassFixture<BackfillWalkApiFactory>
 {
     [Fact]
@@ -108,15 +87,12 @@ public class ConnectorBackfillScheduleTests(BackfillWalkApiFactory factory) : IC
         var after = factory.Read(db => db.ConnectorSessions.Single(s => s.Id == sessionId));
         Assert.Null(after.LastScheduleError);
         Assert.Equal("active", after.State);
-        // the run's own pass brought the newest rows up to the cap; its backfill pass brought older ones on top
         Assert.True(BackfillFlows.Transactions(factory, sub) > factory.Cap);
-        // what is left waits for the next run: one older pass per run, never more
         Assert.True(BackfillFlows.Transactions(factory, sub) <= 2 * factory.Cap);
         Assert.NotNull(after.BackfillUntil);
     }
 }
 
-/// <summary>The mock bank driven through the relay the way the app drives it.</summary>
 internal static class BackfillFlows
 {
     private const string MockBank = "mock-bank-simple";
@@ -128,10 +104,7 @@ internal static class BackfillFlows
         ["password"] = "hunter2",
     };
 
-    /// <summary>
-    /// One sync followed through every job its walk becomes, collected with the same window; the finished view.
-    /// Every fetch is a job here, so <paramref name="asked"/> receives the resources the pass asked the party for.
-    /// </summary>
+    /// <summary>Every fetch is a job here, so <paramref name="asked"/> receives the resources the pass asked for.</summary>
     public static async Task<JsonObject> SyncAsync(HttpClient client, object body, string bundle, string? until = null, List<string>? asked = null)
     {
         using var sync = await client.PostAsJsonAsync($"/connectors/{MockBank}/sync", body);
@@ -149,7 +122,6 @@ internal static class BackfillFlows
         return view;
     }
 
-    /// <summary>The rows in every feed the person's connected accounts landed in (one per IBAN, one for the card).</summary>
     public static int Transactions(ConnectorApiFactory factory, string sub)
     {
         var user = factory.Read(db => db.Users.Single(u => u.Sub == sub));

@@ -4,25 +4,15 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Shopping;
 
-/// <summary>What the app sends: the photos as data URLs and the categories the reader may choose from.</summary>
 public sealed record ReceiptReadRequest(IReadOnlyList<string>? Images, IReadOnlyList<ReadCategory>? Categories);
 
-/// <summary>
-/// ok: the receipt. limited: this person's reads for today are used up,
-/// back at Until. capped: the environment's reads for the month are used
-/// up, back at Until. unreadable: the reader made no receipt of the
-/// photos. unavailable: the reader did not answer.
-/// </summary>
+/// ok: the receipt. limited: this person's reads for today are used up. capped: the environment's reads for the month
+/// are used up (both back at Until). unreadable: no receipt made of the photos. unavailable: the reader did not answer.
 public sealed record ReceiptReadReply(string State, ReceiptReadResult? Receipt, DateTimeOffset? Until);
 
 public sealed record ReceiptReadSettings(int? DailyPerUser, int? MonthlyCap, string? Model);
 
-/// <summary>
-/// #567 (user 2026-11-09): "munni api sends the picture to vision model …
-/// validates totals, normalizes keys, match categories … returns the
-/// receipt data back to the client". The provider's key never leaves the
-/// server, every read is counted, and nothing of the photo is kept here.
-/// </summary>
+/// #567: the provider's key never leaves the server, every read is counted, nothing of the photo is kept here
 public static class ReceiptReadEndpoints
 {
     public const string DailyLimitKey = "receiptAi.dailyPerUser";
@@ -39,7 +29,6 @@ public static class ReceiptReadEndpoints
 
     public static void MapReceiptReading(this IEndpointRouteBuilder app, bool enabled)
     {
-        // the operator's side: how far one person and the whole environment can go, and how the month stands —
         // mapped without a key too, so the portal can say the reader is off
         var admin = app.MapGroup("/admin").RequireAuthorization(AdminScope.Policy);
         admin.MapGet("/receipt-reading", async (AppDbContext db, ReceiptReadCounts counts, IServiceProvider services, CancellationToken ct) =>
@@ -80,7 +69,6 @@ public static class ReceiptReadEndpoints
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    /// <summary>A model id as providers write them: letters, digits, dots, dashes — never a sentence.</summary>
     private static bool IsModelId(string value) => value.Length is >= 3 and <= 80 && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.' or '_' or ':');
 
     private static async Task<IResult> SaveSettingsAsync(ReceiptReadSettings body, AppDbContext db, CancellationToken ct)
@@ -152,7 +140,6 @@ public static class ReceiptReadEndpoints
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>One to four photos as data URLs of a picture type and a fair size; null when the request holds anything else.</summary>
     private static List<ReceiptPhoto>? Photos(IReadOnlyList<string>? images)
     {
         if (images is null || images.Count is 0 or > MaxPhotos) return null;

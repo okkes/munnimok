@@ -48,7 +48,6 @@ public class SpaceErasureTests : IClassFixture<SyncApiFactory>
     private static async Task<string?> ErrorOf(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString();
 
-    /// <summary>alice's space with bob in it as a contributor: its own row and one category</summary>
     private async Task<(string SpaceId, HttpClient Alice, HttpClient Bob, Guid BobId)> SharedSpaceAsync(string tag)
     {
         var spaceId = $"space_{Guid.NewGuid():N}";
@@ -105,12 +104,10 @@ public class SpaceErasureTests : IClassFixture<SyncApiFactory>
             Assert.Null(entry.SourceTxId);
         });
 
-        // nobody is told to sync it any more
         Assert.DoesNotContain((await alice.GetFromJsonAsync<List<SpaceHead>>("/sync/heads"))!, h => h.SpaceId == spaceId);
         Assert.DoesNotContain((await bob.GetFromJsonAsync<List<SpaceHead>>("/sync/heads"))!, h => h.SpaceId == spaceId);
         Assert.DoesNotContain(spaceId, (await bob.GetFromJsonAsync<List<string>>("/me/spaces"))!);
 
-        // a device that still holds it is told it is gone, by every door — and its push does not bring it back
         var pull = await bob.GetAsync($"/sync/{spaceId}/pull?since=0");
         Assert.Equal(HttpStatusCode.Forbidden, pull.StatusCode);
         Assert.Equal(SpaceErasure.GoneError, await ErrorOf(pull));
@@ -130,7 +127,6 @@ public class SpaceErasureTests : IClassFixture<SyncApiFactory>
     {
         var (spaceId, alice, bob, _) = await SharedSpaceAsync("keep");
 
-        // a contributor's delete is not applied; what else that push carried is
         var byBob = await Push(bob, spaceId, DeleteSpace(spaceId, "000000200-0000-devB"), Row(spaceId, "category", "c2", "000000201-0000-devB"));
         Assert.True(byBob.IsSuccessStatusCode);
         Assert.Equal(1, (await byBob.Content.ReadFromJsonAsync<PushResponse>())!.Accepted);
@@ -171,7 +167,6 @@ public class SpaceErasureTests : IClassFixture<SyncApiFactory>
         }
         Deleted("by-owner", owner);
         Deleted("by-contributor", contributor);
-        // a space that lives, and one whose erase stopped after it was taken out of reach
         db.Spaces.Add(new Space { Id = "alive", LastSeq = 1 });
         db.SpaceMembers.Add(new SpaceMember { SpaceId = "alive", UserId = owner, Role = SpaceRoles.Owner });
         db.EntityRows.Add(new EntityRow { SpaceId = "alive", Entity = "space", EntityId = "alive", DataJson = "{}", FieldVersionsJson = "{}" });
@@ -188,7 +183,6 @@ public class SpaceErasureTests : IClassFixture<SyncApiFactory>
         Assert.Equal(["by-contributor"], await db.SpaceAccountLinks.Select(l => l.SpaceId).ToListAsync());
         Assert.False(await db.SpaceMembers.AnyAsync(m => m.SpaceId == "by-owner"));
         Assert.Equal(["by-owner", "cut-short"], await db.ErasedSpaces.Select(e => e.SpaceId).OrderBy(id => id).ToListAsync());
-        // nothing left to do the next time
         Assert.Equal(0, await SpaceErasure.SweepAsync(db, NullLogger.Instance, CancellationToken.None));
     }
 }

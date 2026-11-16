@@ -7,23 +7,9 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// Lidl Plus's v2 list and v3 detail. The two endpoints sit on different API
-/// versions, which is not a typo and must not be "fixed".
-///
-/// The detail fixture was replaced on 2026-08-04 with the shape a real one
-/// has, and it is nothing like what was here before. There is no line-item
-/// collection at all - no itemsLine, no items, no lines, no discounts array.
-/// A v3 detail is "ticketType": "HTML" and carries the PAPER RECEIPT in
-/// htmlPrintedReceipt, with each article's facts on data attributes of the
-/// spans it is printed from.
-///
-/// The load-bearing case is now the weighed article. 0,850 kg of bananas at
-/// 1,79/kg is printed as 1,52, and 0.850 x 1.79 is 1.5215 - so a parser that
-/// multiplied instead of reading the printed total would put every receipt
-/// containing loose produce a cent out and fail reconciliation for a reason
-/// nobody could see on screen.
-/// </summary>
+// the v2 list and v3 detail sit on different API versions on purpose: do not "fix" it
+// a v3 detail is ticketType HTML: the paper receipt in htmlPrintedReceipt, no line-item collection
+// weighed articles: the printed total (1,52) is read, not computed (0.850 x 1.79 = 1.5215), or reconciliation is a cent out
 public sealed class LidlPlusParsingTests
 {
     private const string ListFixture = "lidl/tickets-page-1.json";
@@ -56,10 +42,7 @@ public sealed class LidlPlusParsingTests
 
         var ticket = LidlPlusTicketParser.ParseList(document.RootElement, Options, Dutch)[0];
 
-        // "2026-07-18T18:04:00" states no offset. Interpreting it in the
-        // agent's zone would date a receipt by where the fleet happens to
-        // run; interpreting it in the provider's country gives +02:00 in
-        // July, which is what the shop's clock actually said.
+        // no offset stated: read in the provider's country zone (+02:00 in July), not the agent's
         Assert.Equal(TimeSpan.FromHours(2), ticket.PurchasedAt.Offset);
         Assert.Equal(new DateTimeOffset(2026, 7, 18, 18, 4, 0, TimeSpan.FromHours(2)), ticket.PurchasedAt);
     }
@@ -69,8 +52,7 @@ public sealed class LidlPlusParsingTests
     {
         using var document = Fixture.Doc(EmptyPageFixture);
 
-        // This is what terminates pagination; treating it as a failure would
-        // make every complete fetch look broken.
+        // an empty page terminates pagination; treating it as a failure would make every complete fetch look broken
         Assert.Empty(LidlPlusTicketParser.ParseList(document.RootElement, Options, Dutch));
     }
 
@@ -82,21 +64,13 @@ public sealed class LidlPlusParsingTests
         Assert.Equal(3, items.Count);
         Assert.Equal(["Bruin brood", "Halfvolle melk", "Bananen"], items.Select(i => i.Name));
 
-        // A plain article: one of it, at the price printed beside it.
         Assert.Equal(129, items[0].Total.Value);
         Assert.Equal(1m, items[0].Quantity);
         Assert.Equal(129, items[0].UnitPrice?.Value);
         Assert.Null(items[0].Discount);
     }
 
-    /// <summary>
-    /// The case that decides whether this parser can be trusted at all.
-    ///
-    /// Lidl prints the weight and the price per kilo as attributes and the
-    /// LINE TOTAL as text. 0,850 x 1,79 = 1,5215, and the till charged 1,52 -
-    /// so the total has to be read rather than computed, or every shop with
-    /// loose produce in it lands a cent out and reconciliation fails.
-    /// </summary>
+    // the till printed 1,52 for 0,850 x 1,79 = 1,5215: the total is read, not computed
     [Fact]
     public void A_weighed_article_takes_the_total_the_till_printed()
     {
@@ -106,25 +80,11 @@ public sealed class LidlPlusParsingTests
         Assert.Equal(179, bananas.UnitPrice?.Value);
         Assert.Equal(152, bananas.Total.Value);
 
-        // The printed figure. For these numbers a computed one would agree -
-        // 0,850 x 1,79 is 1,5215, which rounds to the same 1,52 - so this
-        // assertion alone does not prove the total is READ. The test below
-        // does that.
         Assert.Equal(152, bananas.Total.Value);
     }
 
-    /// <summary>
-    /// The line total is READ, never recomputed from the attributes.
-    ///
-    /// Constructed rather than captured, because the receipts seen so far
-    /// happen not to distinguish the two: 0,850 x 1,79 rounds to the printed
-    /// 1,52 either way. That is luck, not a guarantee. Whatever the till
-    /// printed is what the customer was actually charged, and how it got
-    /// there - rounding, truncation, a promotion applied per kilo - is its
-    /// business. A parser that multiplied would silently disagree with the
-    /// bank statement the day the two differ, and reconciliation would fail
-    /// pointing at nothing.
-    /// </summary>
+    // constructed: seen receipts happen not to distinguish read from computed totals
+    // the printed figure is what was charged, however rounded; a multiplying parser would disagree with the bank statement
     [Fact]
     public void The_line_total_is_the_printed_one_even_when_the_attributes_disagree()
     {
@@ -140,15 +100,10 @@ public sealed class LidlPlusParsingTests
         Assert.Equal(0.500m, item.Quantity);
         Assert.Equal(300, item.UnitPrice?.Value);
 
-        // The number a parser doing the arithmetic itself would have produced.
         Assert.NotEqual(150, item.Total.Value);
     }
 
-    /// <summary>
-    /// A markdown is printed on its own line under the article it reduces,
-    /// with no attributes of its own - so it has to be attached to the article
-    /// above it or the items stop summing to the stated total.
-    /// </summary>
+    // a markdown is printed on its own line without attributes: attach it to the article above or the items stop summing
     [Fact]
     public void A_markdown_line_attaches_to_the_article_it_was_printed_under()
     {
@@ -161,11 +116,9 @@ public sealed class LidlPlusParsingTests
         Assert.Equal(-20, discount.Amount.Value);
         Assert.Equal("In prijs verlaagd", discount.Label);
 
-        // And the line total stays as printed: the discount carries the
-        // difference rather than being baked into the price.
+        // the line total stays as printed; the discount carries the difference
         Assert.Equal(115, milk.Total.Value);
 
-        // It belongs to the milk and to nothing else.
         Assert.All(Items().Where(i => i.Name != "Halfvolle melk"), i => Assert.Null(i.Discount));
     }
 
@@ -207,11 +160,7 @@ public sealed class LidlPlusParsingTests
         Assert.True(receipt.Reconciled);
     }
 
-    /// <summary>
-    /// The detail states a store OBJECT - id "NL0263", name "Delft" - and the
-    /// old read asked for a string, so every receipt in the demo was titled
-    /// with the branch CODE. The receipt itself prints "Lidl Delft".
-    /// </summary>
+    // the detail's store is an OBJECT (id "NL0263", name "Delft"); reading it as a string titled receipts with the branch code
     [Fact]
     public void The_store_is_named_rather_than_numbered()
     {
@@ -229,8 +178,6 @@ public sealed class LidlPlusParsingTests
 
         return LidlPrintedReceipt.Items(printed, Options, "EUR");
     }
-
-    // ---- defensive parsing -------------------------------------------------
 
     [Fact]
     public void An_unexpected_extra_field_is_tolerated()
@@ -287,9 +234,7 @@ public sealed class LidlPlusParsingTests
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
 
-        // The FIELD, and never the value - see the same assertion in the Albert
-        // Heijn tests. The detail now travels to the caller, so a total that
-        // will not parse must not ride out inside the complaint about it.
+        // the FIELD, never the value: the detail travels to the caller, so an unparseable total must not ride out in the complaint
         Assert.Contains("ticket.total", error.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain("14,2,7", error.Detail, StringComparison.Ordinal);
     }
@@ -305,12 +250,7 @@ public sealed class LidlPlusParsingTests
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
     }
 
-    /// <summary>
-    /// A line with no article attributes is not an article. Headers,
-    /// separators and the totals block all sit in the same markup, and a
-    /// parser that took any line with a number on it would emit "Totaal" as
-    /// something somebody bought.
-    /// </summary>
+    // headers, separators and the totals block share the markup: taking any line with a number would emit "Totaal" as a purchase
     [Fact]
     public void Only_lines_carrying_an_article_id_become_items()
     {
@@ -321,7 +261,6 @@ public sealed class LidlPlusParsingTests
         Assert.DoesNotContain(items, i => i.Name.Contains("OMSCHRIJVING", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(items, i => i.Name.Contains("Lidl", StringComparison.OrdinalIgnoreCase));
 
-        // And the markdown line is a discount rather than a fourth item.
         Assert.DoesNotContain(items, i => i.Name.Contains("verlaagd", StringComparison.OrdinalIgnoreCase));
     }
 

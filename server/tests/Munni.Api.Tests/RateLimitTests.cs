@@ -9,11 +9,7 @@ using Xunit;
 
 namespace Munni.Api.Tests;
 
-/// <summary>
-/// Rate limiting (security review S2) and route-param shape validation
-/// (S4). Uses its own factory with LOW explicit limits — the other test
-/// factories run TestMode-unlimited so functional suites never throttle.
-/// </summary>
+// this factory sets LOW explicit limits: the other factories run TestMode-unlimited so functional suites never throttle
 public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
 {
     private readonly RateLimitedApiFactory _factory;
@@ -33,8 +29,7 @@ public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
     {
         var client = ClientFor($"limited_{Guid.NewGuid():N}");
 
-        // budget is 2/min in this factory; the first two may fail
-        // functionally (unknown target user) but must pass the limiter
+        // budget is 2/min here; the first two may fail functionally (unknown target) but must pass the limiter
         for (var i = 0; i < 2; i++)
         {
             var ok = await client.PostAsJsonAsync("/friends/requests", new SendFriendRequest(Guid.NewGuid()));
@@ -52,51 +47,37 @@ public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
         var noisy = ClientFor($"noisy_{Guid.NewGuid():N}");
         var quiet = ClientFor($"quiet_{Guid.NewGuid():N}");
 
-        // bucket = 8 tokens, slow refill: the 9th rapid request must 429
         var sawTooMany = false;
         for (var i = 0; i < 9 && !sawTooMany; i++)
             sawTooMany = (await noisy.GetAsync("/me")).StatusCode == HttpStatusCode.TooManyRequests;
         Assert.True(sawTooMany);
 
-        // partitioning is per sub — another user is unaffected
         Assert.NotEqual(HttpStatusCode.TooManyRequests, (await quiet.GetAsync("/me")).StatusCode);
     }
 
-    /// <summary>
-    /// The streamed login polls a frame per request and posts every batch
-    /// of taps: counted against the global bucket, a minute of signing in
-    /// starved the sync pulls and dropped keystrokes (user ss 2026-10-01).
-    /// </summary>
+    // the streamed login polls a frame per request; in the global bucket a minute of signing in
+    // starved sync pulls and dropped keystrokes
     [Fact]
     public async Task Live_view_polls_ride_their_own_bucket_and_leave_the_global_one_alone()
     {
         var client = ClientFor($"live_{Guid.NewGuid():N}");
 
-        // far past the 8-token global bucket: none of these is a 429 (the
-        // relay answers for the unknown session instead)
         for (var i = 0; i < 20; i++)
         {
             var frame = await client.GetAsync("/connectors/mock-store-simple/login/ses_x/challenges/chl_x/live/frame?after=0");
             Assert.NotEqual(HttpStatusCode.TooManyRequests, frame.StatusCode);
         }
 
-        // and the global bucket is untouched by them
         Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync("/me")).StatusCode);
     }
 
-    /// <summary>
-    /// The pushed live view (#429) is one request for a whole login, so what
-    /// is bounded is how often one opens - each open holds a stream to the
-    /// control plane - and neither the per-frame bucket nor the global one
-    /// pays for it.
-    /// </summary>
+    // #429: one request per login, so only how often one opens is bounded: each open holds a stream to the control plane
     [Fact]
     public async Task Live_view_stream_opens_ride_their_own_small_bucket()
     {
         var client = ClientFor($"livestream_{Guid.NewGuid():N}");
         const string stream = "/connectors/mock-store-simple/login/ses_x/challenges/chl_x/live/stream";
 
-        // the factory allows three opens: the fourth in a row is refused
         for (var i = 0; i < 3; i++)
         {
             Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync(stream)).StatusCode);
@@ -106,17 +87,12 @@ public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
         Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode);
         Assert.True(refused.Headers.Contains("Retry-After"));
 
-        // the poll beside it, the app's fallback, still has its own bucket
         Assert.NotEqual(HttpStatusCode.TooManyRequests,
             (await client.GetAsync("/connectors/mock-store-simple/login/ses_x/challenges/chl_x/live/frame?after=0")).StatusCode);
         Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.GetAsync("/me")).StatusCode);
     }
 
-    /// <summary>
-    /// The lab drives the same live view on its bench and in an explore run
-    /// (#576): in the global bucket a minute of it starved every other lab
-    /// call and the taps were dropped as if sent.
-    /// </summary>
+    // #576: in the global bucket a minute of the lab's live view starved every other lab call and taps were dropped as if sent
     [Fact]
     public async Task The_labs_live_view_rides_the_live_bucket_too()
     {
@@ -157,7 +133,6 @@ public class RateLimitTests : IClassFixture<RateLimitedApiFactory>
     {
         var client = ClientFor($"shape_{Guid.NewGuid():N}");
         var response = await client.GetAsync($"/sync/space_{Guid.NewGuid():N}/pull?since=0");
-        // whatever the membership outcome, the shape filter must not trip
         Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }

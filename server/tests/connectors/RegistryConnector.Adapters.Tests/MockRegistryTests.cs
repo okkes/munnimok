@@ -9,17 +9,8 @@ using Xunit;
 
 namespace RegistryConnector.Adapters.Tests;
 
-/// <summary>
-/// The registry service's own shape, proved before its first real provider
-/// exists.
-///
-/// The thing worth proving is not the fixture data - it is that a provider
-/// which re-authenticates on EVERY sync is expressible here at all. Every
-/// provider on this platform before it either syncs unattended or needs
-/// nobody after the first login; a credit register needs six digits from a
-/// human every single time, and a consumer has to be told that rather than
-/// discovering it at 3am.
-/// </summary>
+// proves a provider that re-authenticates on EVERY sync (six digits from a human each time) is expressible,
+// and that consumers are told
 public sealed class MockRegistryTests
 {
     private static readonly ProviderRegistry Registry =
@@ -32,32 +23,19 @@ public sealed class MockRegistryTests
 
         foreach (var manifest in Registry.Manifests)
         {
-            // Throws with every failing rule listed; a manifest that cannot
-            // boot the host must not pass the suite either.
             ManifestValidator.Validate(manifest);
 
             Assert.Equal(ProviderKind.Registry, manifest.Kind);
         }
     }
 
-    /// <summary>
-    /// A registry states what is true NOW, not what happened in a window.
-    /// Declaring `since` would invite a question it has no way to answer.
-    /// </summary>
-    /// <remarks>
-    /// Over every resource of every provider rather than over the credits
-    /// resource of each, which is what this asked before DUO arrived carrying
-    /// a student debt instead. The rule was never about credits - it is about
-    /// what a register is - so the test that asserted it should not have been
-    /// keyed on one provider's resource name either.
-    /// </remarks>
+    // a registry states what is true now; `since` would invite a question it cannot answer, whatever the provider
     [Fact]
     public void No_registry_resource_takes_a_date_range()
     {
         var resources = Registry.Manifests.SelectMany(m => m.Resources).ToList();
 
-        // Guards the loop: an empty registry would make this pass by never
-        // running.
+        // guards the loop: an empty registry would pass by never running
         Assert.NotEmpty(resources);
 
         foreach (var resource in resources)
@@ -79,11 +57,7 @@ public sealed class MockRegistryTests
         Assert.All(credits, r => Assert.Equal(ResourceShape.CreditRegistration, r!.Returns));
     }
 
-    /// <summary>
-    /// The field that stops a consumer promising something it cannot deliver.
-    /// A provider needing a fresh code per sync cannot be scheduled, and the
-    /// one that does not can.
-    /// </summary>
+    // stops a consumer promising scheduled syncs it cannot deliver: a provider needing a fresh code per sync cannot be scheduled
     [Theory]
     [InlineData(MockRegistryAdapters.Simple, true)]
     [InlineData(MockRegistryAdapters.TwoFactor, false)]
@@ -93,9 +67,7 @@ public sealed class MockRegistryTests
 
         Assert.Equal(unattended, manifest.UnattendedFetch);
 
-        // And the store is offered exactly where it earns its keep: a password
-        // that never changes is worth keeping, six digits that change every
-        // thirty seconds are not.
+        // the store is offered where it earns its keep: a password is worth keeping, six digits changing every 30s are not
         Assert.Equal(!unattended, manifest.OffersCredentialStore);
     }
 
@@ -107,13 +79,10 @@ public sealed class MockRegistryTests
         Assert.Equal(AuthFlow.PasswordTotp, manifest.Auth.Flow);
         Assert.Equal([ChallengeType.MfaCode], manifest.Auth.Challenges);
 
-        // Not refreshable, because there is nothing to refresh: the next sync
-        // signs in again from the stored password and a new code.
+        // nothing to refresh: the next sync signs in again from the stored password and a new code
         Assert.False(manifest.Auth.Session.Refreshable);
         Assert.False(manifest.Auth.Session.RotatesOnUse);
     }
-
-    // ---- the credits themselves --------------------------------------------
 
     [Fact]
     public async Task A_fetch_states_each_credit_the_way_the_register_does()
@@ -132,20 +101,14 @@ public sealed class MockRegistryTests
         Assert.Equal(200_000, revolving.Amount.Value);
         Assert.Equal("EUR", revolving.Amount.Currency);
 
-        // Revolving credit states no end date, and null is the honest answer
-        // rather than a date computed from a term it does not have.
+        // revolving credit states no end date: null, not one computed from a term it lacks
         Assert.Null(revolving.EndsOn);
 
-        // The registry's own words ride along beside the mapped enum, so a
-        // label this connector does not recognise still reaches the user.
+        // the registry's own words ride along so a label this connector does not recognise still reaches the user
         Assert.Equal("Doorlopend krediet", revolving.KindLabel);
     }
 
-    /// <summary>
-    /// The single most consequential field in a credit register, carried
-    /// verbatim. A connector that softened or summarised an arrears code would
-    /// be hiding the one thing that decides a mortgage application.
-    /// </summary>
+    // carried verbatim: softening an arrears code would hide what decides a mortgage application
     [Fact]
     public async Task An_arrears_code_is_carried_exactly_as_stated()
     {
@@ -159,14 +122,11 @@ public sealed class MockRegistryTests
         Assert.Equal("A2", ended.ArrearsCode);
         Assert.Equal(CreditStatus.Ended, ended.Status);
 
-        // And a credit with nothing against it says nothing, rather than "none"
-        // or "A0" - both of which are claims the register never made.
+        // no arrears code stays null, not "none" or "A0": claims the register never made
         Assert.All(
             result.Registrations.Where(c => c.ExternalId != "MOCK-0003"),
             c => Assert.Null(c.ArrearsCode));
     }
-
-    // ---- the code, on every sync -------------------------------------------
 
     [Fact]
     public async Task A_two_factor_fetch_asks_for_six_digits_and_will_not_proceed_without_them()
@@ -184,11 +144,7 @@ public sealed class MockRegistryTests
         Assert.Equal(3, result.Registrations.Count);
     }
 
-    /// <summary>
-    /// A wrong code is not a wrong password. Reporting it as one sends
-    /// somebody to reset a credential that was never the problem, and on a
-    /// provider that locks accounts that is an expensive place to send them.
-    /// </summary>
+    // a wrong code is not a wrong password: reporting it so sends the user to reset a credential that was fine
     [Fact]
     public async Task A_wrong_code_is_an_mfa_failure_and_never_a_credential_one()
     {

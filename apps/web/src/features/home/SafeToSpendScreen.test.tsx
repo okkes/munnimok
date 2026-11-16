@@ -32,7 +32,6 @@ async function seed(write: (repo: Repo) => Promise<void>) {
   first.unmount();
 }
 
-/** through Home's block onto the screen; answers with the figure the block showed */
 async function openBreakdown(): Promise<string | null> {
   renderApp('/home');
   const block = await screen.findByTestId('home-cashflow', {}, { timeout: 5000 });
@@ -51,7 +50,6 @@ describe('safe to spend (#541)', () => {
   });
 
   it('sums the checking and cash accounts and takes off what is still due this period, each with its reason', async () => {
-    // due today and not paid yet: it comes off
     await seed((repo) =>
       repo.upsert('recurring', DEMO_SPACE_ID, 'rec_gym', { name: 'Gym', kind: 'subscription', amountCents: 2_055, every: 'month', dueDay: now.getDate(), active: 1 }),
     );
@@ -61,12 +59,11 @@ describe('safe to spend (#541)', () => {
     expect(screen.queryByTestId('cashflow-account-demo_save')).toBeNull();
     expect(screen.getByTestId('cashflow-due-rec_gym').textContent).toContain('Recurring cost');
     expect(screen.getByTestId('cashflow-headline').textContent).toContain('3,400.00');
-    // the Home block and its screen tell the same number — and the screen says it once (user 2026-11-16)
+    // the Home block and its screen tell the same number, and the screen says it once
     expect(screen.getByTestId('cashflow-headline').textContent).toBe(onHome);
     expect(screen.getAllByText('€3,400.00')).toHaveLength(1);
     expect(screen.getByTestId('cashflow-accounts-total').textContent).toContain('3,420.55');
     expect(screen.getByTestId('cashflow-dues-total').textContent).toContain('20.55');
-    // no plan yet: the set-asides wait for one
     expect(screen.getByTestId('cashflow-noplan')).toBeTruthy();
   }, 20_000);
 
@@ -77,7 +74,6 @@ describe('safe to spend (#541)', () => {
     fireEvent.click(screen.getByTestId('cashflow-pick-save'));
     await waitFor(() => expect(screen.getByTestId('cashflow-headline').textContent).toContain('11,570.55'));
 
-    // Back returns to Home, where the block shows the new sum
     fireEvent.click(screen.getByTestId('cashflow-back'));
     await screen.findByTestId('screen-home', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.getByTestId('home-cashflow-amount').textContent).toContain('11,570.55'));

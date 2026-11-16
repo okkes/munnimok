@@ -4,21 +4,14 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Connectors;
 
-/// <summary>
-/// The #508 repair: reserved rows nobody tracks any more stood beside their
-/// booked twins for good — mirrored by a pass that became a job (whose
-/// settle never ran), or tracked by a connection a reconnect superseded or a
-/// disconnect forgot. Once per database, every live reserved row nobody
-/// tracks goes to the live references of its feed account, so their next
-/// complete pass settles it against what the bank reports; a row on an
-/// account no connection reaches any more is tombstoned.
-/// </summary>
+// #508: reserved rows nobody tracks stood beside their booked twins for good (a pass that became a job never settled;
+// a superseded or disconnected connection); once per database they go to live references of the feed account,
+// else tombstoned
 public static class ReservedRowRepair
 {
     public const string SettingKey = "repair:reserved-rows:2026-11-08";
     private const string Entity = "transaction";
 
-    /// <summary>Runs once per database (an app setting remembers it); returns how many rows were tombstoned.</summary>
     public static async Task<int> RunOnceAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
@@ -34,7 +27,6 @@ public static class ReservedRowRepair
         return tombstoned;
     }
 
-    /// <summary>The repair itself: how many untracked reserved rows were handed over, and how many tombstoned.</summary>
     public static async Task<(int Adopted, int Tombstoned)> RepairAsync(AppDbContext db, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);

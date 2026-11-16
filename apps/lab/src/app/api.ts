@@ -1,11 +1,6 @@
 import { deviceId } from './device';
 
-/**
- * The lab's one door to the munni API: every call carries the device
- * header, the bearer (or the test-auth subject), and JSON. Errors come
- * back as the api's plain string or the connector's envelope
- * ({ error: { code, … } }) — `reasonOf` reads both.
- */
+/** errors come back as the api's plain string or the connector's envelope ({ error: { code, … } }); `reasonOf` reads both */
 export interface LabAuth {
   /** null = test-auth mode (X-User-Sub from the settings box) */
   getToken: (() => Promise<string | undefined>) | null;
@@ -30,7 +25,6 @@ export function createCall(apiUrl: string, auth: LabAuth): Call {
   };
 }
 
-/** the reason a refused answer carries: the api's string, the connector's code, or the status */
 export async function reasonOf(res: Response | null): Promise<string> {
   if (!res) return 'network';
   const body = (await res.json().catch(() => null)) as { error?: string | { code?: string; detailId?: string } } | null;

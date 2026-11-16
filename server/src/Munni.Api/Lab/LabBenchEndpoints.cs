@@ -10,7 +10,6 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Lab;
 
-/// <summary>The sign-in the bench starts: the manifest's inputs, the party's config, a label, where to run it.</summary>
 public sealed record LabLoginRequest(
     Dictionary<string, string>? Inputs = null,
     Dictionary<string, string>? Config = null,
@@ -21,13 +20,11 @@ public sealed record LabLoginRequest(
     /// <summary>Record the run (#441 L3): the browser's and the HTTP client's calls, redacted, kept on the control plane for the operator.</summary>
     bool Record = false);
 
-/// <summary>A fetch from the bench: the resource and its params as the manifest spells them (a date, a list of includes, the accounts).</summary>
 public sealed record LabFetchRequest(string Resource, Dictionary<string, JsonNode?>? Params = null, bool Record = false);
 
 /// <summary>An explore run (#441 L3): a browser on a fleet agent opened at this address, driven from the lab's live view, recorded throughout.</summary>
 public sealed record LabExploreRequest(string Url, string? Label = null, string? PreferAgent = null);
 
-/// <summary>A lab session flipped into the party's canary.</summary>
 public sealed record LabCanaryRequest(string Resource, int IntervalMinutes);
 
 /// <summary>A lab session as the bench lists it. Never the bundle.</summary>
@@ -83,15 +80,8 @@ public sealed class LabCanaryRequestValidator : AbstractValidator<LabCanaryReque
     }
 }
 
-/// <summary>
-/// The test bench (#441 L2): the operator connects to a party under the LAB
-/// subject, answers what it asks — a code, a picture, the live browser —
-/// says where the run happens, fetches a resource and reads the records
-/// back, keeps the session for tomorrow, and flips it into the party's
-/// canary. Everything goes to the control plane with <c>X-Connector-Trigger:
-/// lab</c>, so a failure's picture is the operator's at once; nothing is
-/// ingested, bound to a person, or pushed onto anyone's event stream.
-/// </summary>
+// everything goes to the control plane with X-Connector-Trigger: lab (#441 L2)
+// nothing is ingested, bound to a person, or pushed onto anyone's event stream
 public static class LabBenchEndpoints
 {
     private const string Trigger = "lab";
@@ -171,12 +161,8 @@ public static class LabBenchEndpoints
         return Results.Json(Strip(view), statusCode: (int)reply.Status);
     }
 
-    /// <summary>
-    /// An explore run (#441 L3) is a sign-in to the control plane's own
-    /// <c>explore</c> provider with the address as its one input, recorded
-    /// from the first byte: the session it makes is a lab session like any
-    /// other, and the recording lands in the job history.
-    /// </summary>
+    // an explore run is a login to the control plane's own explore provider with the address as input,
+    // recorded from the first byte (#441 L3)
     private static Task<IResult> Explore(LabExploreRequest request, HttpContext http, ConnectorRelay relay, CancellationToken ct) =>
         Login(
             ExploreProviderId,
@@ -249,7 +235,6 @@ public static class LabBenchEndpoints
         return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
     }
 
-    /// <summary>The live view's newest frame past <c>after</c>, as the consumer relay serves it: the bytes and every <c>X-Live-*</c> header.</summary>
     private static async Task<IResult> LiveFrame(
         string provider, string sessionId, string challengeId, [FromQuery] long after, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
@@ -280,12 +265,8 @@ public static class LabBenchEndpoints
         return reply.IsSuccess ? Results.Accepted() : ConnectorRelayEndpoints.Relay(http, reply);
     }
 
-    /// <summary>
-    /// One round trip with the kept bundle: the records come back to the
-    /// operator (camelCased, the bundle stripped and kept here when the party
-    /// rotated it) and nothing is ingested; a run that outruns the window
-    /// answers 202 with the job to follow through <c>…/jobs/{jobId}</c>.
-    /// </summary>
+    // the records go back to the operator and nothing is ingested;
+    // a run outrunning the window answers 202 with a job to follow
     private static async Task<IResult> Fetch(string sessionId, LabFetchRequest request, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var row = await relay.Db.LabSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == http.GetUserId(), ct);
@@ -323,7 +304,6 @@ public static class LabBenchEndpoints
         return Results.Json(view, statusCode: (int)reply.Status);
     }
 
-    /// <summary>A fetch that became a job, read back: the page once it succeeded, a rotated bundle kept here.</summary>
     private static async Task<IResult> Job(string provider, string jobId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync($"v1/{provider}/jobs/{jobId}", new ConnectorCall { Subject = relay.LabSubjectOf(http) }, ct);
@@ -347,12 +327,7 @@ public static class LabBenchEndpoints
         return Results.Json(Strip(reply.Object), statusCode: (int)reply.Status);
     }
 
-    /// <summary>
-    /// The session becomes the party's canary: the control plane takes the
-    /// bundle (sealed for the lab subject, which carries the canary marker)
-    /// and rotates it on every run from now on, so the row here — whose copy
-    /// would be stale after the first run — goes with it.
-    /// </summary>
+    // the control plane takes the bundle and rotates it every run, so this row's copy would go stale: the row is removed
     private static async Task<IResult> MakeCanary(string sessionId, LabCanaryRequest request, HttpContext http, ConnectorRelay relay, ILogger<ConnectorClient> logger, CancellationToken ct)
     {
         var row = await relay.Db.LabSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == http.GetUserId(), ct);
@@ -393,12 +368,9 @@ public static class LabBenchEndpoints
         return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : ConnectorRelayEndpoints.Relay(http, reply);
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
-
     private static Task<LabSession?> OwnAsync(ConnectorRelay relay, HttpContext http, string provider, string sessionId, CancellationToken ct) =>
         relay.Db.LabSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == http.GetUserId() && s.Provider == provider, ct);
 
-    /// <summary>What a session view said: its state, and the bundle on its single delivery.</summary>
     private static void Keep(LabSession row, JsonObject view, DateTimeOffset now)
     {
         if (view.Text("state") is { Length: > 0 } state) row.State = state;
@@ -441,8 +413,6 @@ public static class LabBenchEndpoints
         new ConnectorError("session_expired", false, "reauth", "connect.error.session_expired", null, null));
 }
 
-/// <summary>The one-shot fetch body as the control plane reads it (snake_case on the wire).</summary>
 internal sealed record WireOneShotFetch(string Subject, string Bundle, Dictionary<string, JsonNode?> Params, bool Record = false);
 
-/// <summary>The canary enrolment body: the lab subject (it carries the marker), the bundle, the resource, the interval.</summary>
 internal sealed record WireCanary(string Subject, string Bundle, string Resource, int IntervalMinutes);

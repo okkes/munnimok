@@ -27,7 +27,6 @@ describe('SpaceAccess (#505)', () => {
 
     expect(access.isReadOnly('theirs')).toBe(true);
     expect(access.isReadOnly('mine')).toBe(false);
-    // a later boot knows it before any round — offline too
     const reborn = new SpaceAccess(store);
     await reborn.hydrate();
     expect(reborn.roleOf('theirs')).toBe('reader');

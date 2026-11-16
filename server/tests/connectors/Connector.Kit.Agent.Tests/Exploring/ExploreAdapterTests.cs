@@ -7,11 +7,6 @@ using Connector.Kit.Tracing;
 
 namespace Connector.Kit.Agent.Tests.Exploring;
 
-/// <summary>
-/// The explore run on the agent (#441 L3): the address rule at run time, the
-/// live view raised with navigation, the run ending on the operator's word
-/// and leaving a session and a recording behind.
-/// </summary>
 public sealed class ExploreAdapterTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(90);
@@ -42,8 +37,7 @@ public sealed class ExploreAdapterTests
         using var rig = Rig();
         rig.Control.Answer(ExploreProvider.Done);
 
-        // An address that does not resolve: the page stays blank, the run
-        // goes on - the operator has an address bar - and the recording notes it.
+        // an unresolvable address leaves the page blank and the run going (the operator has an address bar); the recording notes it
         await rig.RunAsync(Explore("https://provider.test/")).WaitAsync(Patience);
 
         Assert.Null(rig.Control.Failure);
@@ -69,9 +63,7 @@ public sealed class ExploreAdapterTests
         using var rig = Rig();
         rig.Control.SaysNothingYet();
 
-        // The window is thirty minutes by contract; the budget here is shorter
-        // than that, so the test leans on the adapter's own handling of the
-        // timeout by giving it a challenge that expires at once.
+        // the window is thirty minutes by contract: a challenge that expires at once exercises the adapter's timeout handling
         var adapter = new ExploreAdapter(new ExpiredWindowClock());
         using var quick = new TestRig(adapter, manifest: ExploreProvider.Manifest);
         quick.Control.SaysNothingYet();
@@ -83,7 +75,6 @@ public sealed class ExploreAdapterTests
         Assert.Contains(quick.Control.Result!.Notes, n => n.Contains("nobody at the view", StringComparison.Ordinal));
     }
 
-    /// <summary>A clock a window behind the real one, so a view raised "for thirty minutes" has already lapsed.</summary>
     private sealed class ExpiredWindowClock : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.AddMinutes(-ExploreProvider.WindowMinutes - 1);

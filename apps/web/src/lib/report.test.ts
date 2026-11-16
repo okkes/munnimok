@@ -33,6 +33,6 @@ describe('report', () => {
     silenced = false;
     await expect(transport.send(envelope)).resolves.toEqual({ statusCode: 200 });
     expect(send).toHaveBeenCalledWith(envelope);
-    await expect(transport.flush()).resolves.toBe(true); // the rest of the transport is untouched
+    await expect(transport.flush()).resolves.toBe(true);
   });
 });

@@ -1,18 +1,13 @@
 import type { AccountRow, RecurringEvery, RecurringRow } from '@/db/types';
 
-/** what a counterparty account is regularly paid: the amount and its rhythm */
 export interface CounterPlan {
   cents: number;
   every: RecurringEvery;
   everyN?: number;
 }
 
-/**
- * #556 (user ss): three "ING Loan" rows read the same in the counterparty
- * list — the payment each one takes is what tells them apart. A loan's own
- * payment plan answers first; any other account answers with an active
- * recurring cost paid into it (#274: a recurring may name its counterparty).
- */
+// #556: several "ING Loan" rows read alike, so the payment each takes tells them apart; a loan's own plan answers first,
+// any other account answers with an active recurring paid into it (#274)
 export function counterPlanOf(
   account: Pick<AccountRow, 'id' | 'paymentCents' | 'paymentEvery' | 'paymentEveryN'>,
   recurrings: readonly Pick<RecurringRow, 'linkedAccountId' | 'active' | 'amountCents' | 'every' | 'everyN'>[],

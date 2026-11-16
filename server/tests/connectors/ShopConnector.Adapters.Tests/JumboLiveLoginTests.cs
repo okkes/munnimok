@@ -8,46 +8,26 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-/// <summary>
-/// The login Jumbo actually performs: type what we were given, and hand the
-/// page over the moment Auth0 asks something only a human can answer.
-///
-/// The wall is why it is shaped this way. A real connect on 2026-07-31 sat on
-/// <c>auth.jumbo.com/u/login</c> for the full 180 seconds and failed
-/// <c>provider_changed</c>, with no challenge raised at all - the page was
-/// carrying Auth0's <c>auth0_v2</c> captcha, which is Cloudflare Turnstile.
-/// Detecting it would only have changed the error: a Turnstile token is minted
-/// by its own JavaScript in the browser that rendered it, against that browser,
-/// so there is no picture to relay out and no tap to replay back.
-///
-/// Auth0 raises it on a risk score, so it is there some days and not others.
-/// That is the whole reason both credentials are optional rather than absent:
-/// on a quiet day the stored credential goes in and nobody is disturbed, and on
-/// a walled day the same half-filled page is streamed to whoever owns the
-/// account.
-/// </summary>
+// Auth0's auth0_v2 captcha (Cloudflare Turnstile) walled a real connect on auth.jumbo.com/u/login (2026-07-31): its token is
+// minted by its own JS in the rendering browser, so it cannot be relayed as picture or tap; the page is streamed to a human
+// raised on a risk score, so both credentials stay optional: a quiet day signs in unattended, a walled day goes to the owner
 public sealed class JumboLiveLoginTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
 
-    /// <summary>Back on jumbo.com and off every login marker: the session exists.</summary>
     private const string Signed = "https://www.jumbo.com/mijn-jumbo/bestellingen";
 
-    /// <summary>The form's three controls, as Auth0 lays them out.</summary>
     private static readonly string[] FormControls = ["input#username", "input#password", "button[type='submit']"];
 
-    /// <summary>Turnstile, as it appears in the markup Auth0 renders.</summary>
     private static string Wall => new JumboOptions().InteractiveCaptchaSelectors
         .First(s => s.Contains("cloudflare", StringComparison.Ordinal));
 
     private static JumboAdapter Adapter(JumboOptions? options = null) =>
         new(options ?? new JumboOptions(), new FakeJumboGraphQl(), new FixedTimeProvider(Now));
 
-    /// <summary>The form, as it stands on a quiet day.</summary>
     private static StubLoginPage FormPage(params string[] extra) =>
         StubLoginPage.Showing([.. FormControls, .. extra]);
 
-    /// <summary>Nothing on it: what a page looks like to a login that types nothing.</summary>
     private static StubLoginPage BarePage() => StubLoginPage.Showing();
 
     private static FakeJobContext Context(
@@ -64,8 +44,6 @@ public sealed class JumboLiveLoginTests
 
     private static StubRedirectWaiter Never() => new(redirect: null, afterWaits: 0);
 
-    // ---- the quiet day: nobody is disturbed --------------------------------
-
     [Fact]
     public async Task Credentials_and_no_wall_sign_in_without_asking_anybody()
     {
@@ -74,16 +52,12 @@ public sealed class JumboLiveLoginTests
 
         var result = await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // Jumbo's own login chain, which 302s to Auth0.
         Assert.Equal("https://www.jumbo.com/account/inloggen", Assert.Single(page.Visited));
 
-        // Typed and submitted by the adapter.
         Assert.Equal(JumboFixtures.Credentials["username"], page.Filled["input#username"]);
         Assert.Equal(JumboFixtures.Credentials["password"], page.Filled["input#password"]);
         Assert.Contains("button[type='submit']", page.Clicked);
 
-        // And the human was never involved. This is the case that makes a
-        // stored credential worth having at all.
         Assert.Empty(ctx.Asked);
 
         Assert.NotNull(result.Material.StorageState);
@@ -102,8 +76,6 @@ public sealed class JumboLiveLoginTests
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
-    // ---- the walled day: the human finishes --------------------------------
-
     [Fact]
     public async Task A_wall_before_the_click_hands_over_without_spending_an_attempt()
     {
@@ -112,21 +84,14 @@ public sealed class JumboLiveLoginTests
 
         var result = await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // The username is in the box, so the human inherits the half they
-        // would otherwise have to go and look up.
         Assert.Equal(JumboFixtures.Credentials["username"], page.Filled["input#username"]);
 
-        // The password is NOT, and that is deliberate twice over. The wall is
-        // checked before it would be typed, so it never enters a DOM this run
-        // is about to hand to a shutter - and the redactor refuses to
-        // photograph a page holding a secret, so a filled box would have
-        // relayed a live view of nothing at all.
+        // the password is NOT typed: the wall is checked first so it never enters a DOM handed to the shutter,
+        // and the redactor refuses to photograph a page holding a secret
         Assert.DoesNotContain("input#password", page.Filled.Keys);
         Assert.False(page.HoldsSecret);
 
-        // Nothing was submitted either, so no attempt was spent against the
-        // account and nothing was latched - the sign-in that follows is
-        // entirely theirs.
+        // nothing submitted: no attempt spent against the account, nothing latched
         Assert.DoesNotContain("button[type='submit']", page.Clicked);
         Assert.False(ctx.CredentialWasSubmitted);
 
@@ -145,8 +110,6 @@ public sealed class JumboLiveLoginTests
 
         var result = await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // What a first connect looks like. Nothing is typed, because nothing
-        // was given.
         Assert.Empty(page.Filled);
         Assert.Empty(page.Clicked);
         Assert.False(ctx.CredentialWasSubmitted);
@@ -155,20 +118,14 @@ public sealed class JumboLiveLoginTests
         Assert.NotNull(result.Material.StorageState);
     }
 
-    /// <summary>
-    /// The wall that appears AFTER the click, a one-time code, or anything
-    /// nobody has seen. Every one of those is answerable by the person who owns
-    /// the account, so the run is handed over rather than failed.
-    /// </summary>
+    // a wall after the click, a one-time code or anything unseen is answerable by the account owner: hand over rather than fail
     [Fact]
     public async Task A_submit_that_reaches_no_session_hands_over_rather_than_failing()
     {
         var page = FormPage();
         using var ctx = Context(page, withCredentials: true);
 
-        // Submitted, and the settle budget is spent without a session -
-        // afterWaits:1 is the one poll that budget affords, so the redirect
-        // arrives to the LIVE VIEW rather than to the automatic path.
+        // afterWaits:1 is the one poll the spent settle budget affords, so the redirect arrives at the live view
         var result = await Adapter(new JumboOptions { LoginSettleSeconds = 0 })
             .LoginAsync(ctx, page, Arrives(afterWaits: 1), CancellationToken.None);
 
@@ -177,14 +134,7 @@ public sealed class JumboLiveLoginTests
         Assert.NotNull(result.Material.StorageState);
     }
 
-    // ---- the one thing streaming cannot fix --------------------------------
-
-    /// <summary>
-    /// A stated wrong password must NOT be handed to a human to retype: it has
-    /// to reach the consumer, so a stored credential is dropped rather than
-    /// re-submitted by machine tomorrow. That is the failure mode a scheduled
-    /// login has that a human-driven one does not.
-    /// </summary>
+    // a stated wrong password must reach the consumer so a stored credential is dropped, not re-submitted by machine tomorrow
     [Fact]
     public async Task A_stated_wrong_password_is_reported_and_never_escalated()
     {
@@ -196,12 +146,9 @@ public sealed class JumboLiveLoginTests
 
         Assert.Equal(ErrorCode.InvalidCredentials, error.Code);
 
-        // Nobody was asked to fix a password that is simply wrong.
         Assert.Empty(ctx.Asked);
         Assert.False(error.Retriable);
     }
-
-    // ---- what the live view promises ---------------------------------------
 
     [Fact]
     public async Task The_live_view_carries_the_configured_window_and_is_asked_once()
@@ -217,8 +164,7 @@ public sealed class JumboLiveLoginTests
         Assert.Equal(Now.AddSeconds(240), challenge.ExpiresAt);
         Assert.Equal("connect.challenge.live_login", challenge.PromptKey);
 
-        // Not a picture. Relaying one is exactly what Turnstile cannot be
-        // answered by.
+        // not a picture: Turnstile cannot be answered by relaying one
         Assert.Null(challenge.Image);
         Assert.NotEqual(ChallengeType.Image, challenge.Type);
     }
@@ -231,9 +177,7 @@ public sealed class JumboLiveLoginTests
 
         await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // Without this the shutter keeps photographing, the agent stays
-        // occupied, and the human looks at a frozen picture of a step they
-        // already finished.
+        // else the shutter keeps photographing and the agent stays occupied
         Assert.True(Assert.Single(ctx.AskTokens).IsCancellationRequested);
     }
 
@@ -247,17 +191,13 @@ public sealed class JumboLiveLoginTests
             () => Adapter(new JumboOptions { LiveLoginSeconds = 0 })
                 .LoginAsync(ctx, page, Never(), CancellationToken.None));
 
-        // Nobody typed a password into anything of ours, so calling this a
-        // credential failure would send the user to reset one that was fine.
+        // nobody typed a password into anything of ours: calling this a credential failure sends the user to reset a fine one
         Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
         Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
         Assert.True(Assert.Single(ctx.AskTokens).IsCancellationRequested);
     }
 
-    /// <summary>
-    /// The URL is not the credential. A page that looks signed in but left no
-    /// jumbo.com cookies produced nothing this connector can fetch with.
-    /// </summary>
+    // the URL is not the credential: a page that looks signed in but left no jumbo.com cookies yields nothing fetchable
     [Fact]
     public async Task A_session_that_left_no_cookies_behind_is_a_shape_change()
     {
@@ -286,8 +226,6 @@ public sealed class JumboLiveLoginTests
 
         var result = await Adapter().LoginAsync(ctx, page, Arrives(), CancellationToken.None);
 
-        // Carried across the hand-over too: a run that typed first and then
-        // gave the page to a human is still the same device.
         Assert.Equal("dev-first-time", result.Material.DeviceId);
     }
 

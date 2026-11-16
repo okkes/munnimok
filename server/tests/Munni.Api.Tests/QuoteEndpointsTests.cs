@@ -98,7 +98,7 @@ public class QuoteEndpointsTests : IClassFixture<QuotesApiFactory>
     {
         Assert.Equal(HttpStatusCode.BadRequest, (await Client().GetAsync("/quotes/search?q=a")).StatusCode);
         var payload = await Client().GetFromJsonAsync<JsonElement>("/quotes/search?q=asml");
-        var stock = Assert.Single(payload.GetProperty("stocks").EnumerateArray()); // the OPTION hit is filtered out
+        var stock = Assert.Single(payload.GetProperty("stocks").EnumerateArray());
         Assert.Equal("ASML.AS", stock.GetProperty("symbol").GetString());
         Assert.Equal("Amsterdam", stock.GetProperty("exchange").GetString());
         var coin = Assert.Single(payload.GetProperty("coins").EnumerateArray());
@@ -145,7 +145,7 @@ public class QuoteEndpointsTests : IClassFixture<QuotesApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, (await Client().GetAsync("/quotes/search?q=a")).StatusCode);
         var payload = await Client().GetFromJsonAsync<JsonElement>("/quotes/search?q=asml");
         var stocks = payload.GetProperty("stocks").EnumerateArray().ToList();
-        Assert.Single(stocks); // the OPTION hit is dropped
+        Assert.Single(stocks);
         Assert.Equal("ASML.AS", stocks[0].GetProperty("symbol").GetString());
         Assert.Single(payload.GetProperty("coins").EnumerateArray());
     }

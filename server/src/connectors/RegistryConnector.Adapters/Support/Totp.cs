@@ -5,31 +5,14 @@ using Connector.Kit.Errors;
 
 namespace RegistryConnector.Adapters.Support;
 
-/// <summary>
-/// Six digits from a shared secret and the clock. RFC 6238.
-///
-/// Written rather than taken from a package because it is forty lines of
-/// arithmetic with an official answer key: RFC 6238 Appendix B publishes test
-/// vectors, so this can be checked against the standard instead of against
-/// itself. A TOTP implementation that only agrees with its own tests is worth
-/// nothing - the whole point is agreeing with somebody else's clock.
-///
-/// This exists so a provider that demands a code on EVERY sign-in can be
-/// connected without asking a human for six digits every time. That is a
-/// deliberate weakening of the user's second factor and is never the default;
-/// see <see cref="Bkr.BkrManifest"/> for the shape of the choice and what the
-/// user is told before making it.
-/// </summary>
+// RFC 6238, written not packaged: Appendix B test vectors give an answer key to check against
+// storing the secret to skip the per-sign-in code weakens the second factor and is never the default (see Bkr.BkrManifest)
 internal static class Totp
 {
-    /// <summary>The step every authenticator uses unless told otherwise.</summary>
     public const int DefaultPeriodSeconds = 30;
 
     public const int DefaultDigits = 6;
 
-    /// <summary>
-    /// The code for <paramref name="at"/>, from a secret in raw bytes.
-    /// </summary>
     public static string Generate(
         ReadOnlySpan<byte> secret,
         DateTimeOffset at,
@@ -41,8 +24,6 @@ internal static class Totp
         if (digits is < 6 or > 8) throw ConnectorException.InvalidRequest($"totp: {digits} digits is not 6, 7 or 8");
         if (periodSeconds <= 0) throw ConnectorException.InvalidRequest("totp: the period must be positive");
 
-        // The counter is whole steps since the Unix epoch, big-endian in eight
-        // bytes. Negative time is not a thing an authenticator has to handle.
         var counter = Math.Max(0, at.ToUnixTimeSeconds()) / periodSeconds;
 
         Span<byte> message = stackalloc byte[8];
@@ -61,9 +42,7 @@ internal static class Totp
             _ => throw ConnectorException.InvalidRequest($"totp: unsupported algorithm '{algorithm}'"),
         };
 
-        // Dynamic truncation, RFC 4226 section 5.3: the low nibble of the last
-        // byte picks where to read four bytes from, and the top bit is masked
-        // off so the result is positive on every platform.
+        // dynamic truncation, RFC 4226 section 5.3
         var offset = mac[written - 1] & 0x0F;
 
         var binary = ((mac[offset] & 0x7F) << 24)
@@ -78,11 +57,7 @@ internal static class Totp
         return (binary % modulo).ToString(CultureInfo.InvariantCulture).PadLeft(digits, '0');
     }
 
-    /// <summary>
-    /// RFC 4648 base32, which is how every authenticator writes a secret down.
-    /// Case-insensitive, padding optional, and spaces ignored because the
-    /// providers that print a secret for manual entry group it in fours.
-    /// </summary>
+    // RFC 4648 base32, case-insensitive, padding optional, spaces ignored: providers print secrets grouped in fours
     public static byte[] FromBase32(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -132,7 +107,6 @@ internal enum TotpAlgorithm
     Sha512,
 }
 
-/// <summary>One authenticator entry: the secret and how to use it.</summary>
 internal sealed record TotpSecret
 {
     public required byte[] Secret { get; init; }

@@ -1,15 +1,7 @@
 #!/usr/bin/env node
-// The connector platform's coverage gate (#367): the 85 % line floor per
-// ASSEMBLY, over the union of every cobertura report a `dotnet test
-// --collect:"XPlat Code Coverage"` run wrote. A line counts as covered when
-// any suite hit it — the kit is exercised by six suites, the hosting library
-// by the control plane's, the adapter packs by their own — so a single
-// report can never say how covered an assembly is. Munni.Api keeps the
-// MSBuild gate in server/tests/Directory.Build.props (its report is its own).
-//
-//   node server/tests/coverage-gate.mjs [results-dir] [--floor 85]
-//
-// Exit code 1 names every assembly under the floor.
+// connector platform's coverage gate (#367): 85 % line floor per assembly over the union of all cobertura reports
+// (covered = any suite hit it); Munni.Api keeps the MSBuild gate in server/tests/Directory.Build.props
+// usage: node server/tests/coverage-gate.mjs [results-dir] [--floor 85]
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -44,15 +36,11 @@ if (reports.length === 0) {
   process.exit(1);
 }
 
-/** assembly -> Map("absolute file:line" -> hits) */
 const lines = new Map();
 for (const file of reports) {
   const xml = readFileSync(file, 'utf8');
-  // a class's filename is relative to the report's <source> root, and that
-  // root is the common parent of everything the run touched — a suite that
-  // covers both the API and the connectors roots at server/src while the
-  // connector suites root at server/src/connectors, so the same file would
-  // be two keys and every line counted twice; absolute paths merge them
+  // report <source> roots differ per run (common parent of what it touched): the same file would be two keys
+  // and counted twice, so paths are made absolute
   const source = /<source>([^<]+)<\/source>/.exec(xml)?.[1] ?? '';
   for (const pkg of xml.split('<package name="').slice(1)) {
     const name = pkg.slice(0, pkg.indexOf('"'));

@@ -22,10 +22,8 @@ import { useFileByReceipt } from './useFileByReceipt';
 
 const sourceIcon = (source: string): string => (source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
-/** how long an answered card takes to fold away (user 2026-10-09: "so instantly I'm not sure I clicked") */
 export const PROPOSAL_EXIT_MS = 260;
 
-/** the fold: the row's track collapses and fades over the exit, the card inside clipped by it */
 function ExitRow({ leaving, children }: Readonly<{ leaving: boolean; children: ReactNode }>) {
   return (
     <div
@@ -39,7 +37,6 @@ function ExitRow({ leaving, children }: Readonly<{ leaving: boolean; children: R
   );
 }
 
-/** store, merchant, item names and the amount's digits are all searchable */
 function entryMatches(entry: ReceiptEntry, q: string, amountQ: string | null): boolean {
   const receipt = entry.data;
   const haystack = [receipt.merchant ?? '', receipt.source, ...(receipt.items?.map((i) => i.name) ?? [])]
@@ -49,12 +46,6 @@ function entryMatches(entry: ReceiptEntry, q: string, amountQ: string | null): b
   return !!amountQ && String(Math.abs(receipt.totalCents)).includes(amountQ);
 }
 
-/**
- * Receipts v3 home (R7): everything the space sees — snapshot-linked
- * receipts (store-born and photo-born) and the owner's still-unmatched
- * store pulls — searchable by name/item/amount, filterable by
- * linked-state and by connection instance, grouped by store.
- */
 export function ReceiptsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -73,7 +64,7 @@ export function ReceiptsScreen() {
   const canEdit = useCanEdit(); // #505
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
-  // an answered match folds away before it leaves the data (user 2026-10-09)
+  // an answered match folds away before it leaves the data
   const { rows: toCheck, leave } = useLeavingRows(proposals, PROPOSAL_EXIT_MS);
 
   const entries = useMemo(() => {
@@ -102,7 +93,6 @@ export function ReceiptsScreen() {
       list.push(entry);
       bySource.set(entry.data.source, list);
     }
-    // stores first (alphabetical), the photo bucket last
     return [...bySource.entries()].sort(([a], [b]) => {
       if (a === 'photo') return 1;
       if (b === 'photo') return -1;
@@ -115,7 +105,7 @@ export function ReceiptsScreen() {
 
   const renderRow = (entry: ReceiptEntry) => {
     const receipt = entry.data;
-    // user 2026-10-08: one receipt can prove several payments — the row counts them
+    // one receipt can prove several payments — the row counts them
     const holders = entry.txIds?.length ?? 0;
     return (
       <button
@@ -183,7 +173,6 @@ export function ReceiptsScreen() {
                 {t('receipts.unlinkedOnly', { n: unlinkedCount })}
               </Chip>
             )}
-            {/* one chip per included connection instance (R7 filters) */}
             {(connLinks ?? []).map((link) => (
               <Chip
                 key={link.instanceId}
@@ -197,9 +186,7 @@ export function ReceiptsScreen() {
           </div>
         )}
 
-        {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first. User ss 2026-10-05: the receipt
-            and the transaction are both doors; user 2026-10-09: two rows of one shape on one card, the answer
-            folds the card away */}
+        {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first; the answer folds the card away */}
         {/* #505: answering is the space's members' work — a reader sees the receipts, not the questions */}
         {canEdit && toCheck.length > 0 && (
           <div className="mt-3" data-testid="receipts-to-check">

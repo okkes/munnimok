@@ -4,36 +4,13 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Browsing;
 
-/// <summary>
-/// What a page description may carry out of somebody's bank.
-///
-/// <para>
-/// This runs during a discovery session, against a real account, and its output
-/// goes into notes that end up in a commit message. So the rule is not "be
-/// careful": it is that a shape can be pasted anywhere without anybody checking
-/// it first, and these tests are what makes that a property rather than a
-/// habit.
-/// </para>
-///
-/// <para>
-/// The probe itself runs in a browser and cannot be reached offline. What CAN
-/// be tested is the half that decides what leaves - the reader - so it is fed
-/// the shapes the probe produces, including a few it should not.
-/// </para>
-/// </summary>
+// discovery output runs against a real account and ends up in commit messages: a shape must be pasteable unchecked,
+// so the reader (the half that decides what leaves) is tested; the probe runs in a browser and is unreachable offline
 public sealed class PageShapeTests
 {
     private static JsonElement Shape(string json) => JsonDocument.Parse(json).RootElement;
 
-    /// <summary>
-    /// A SIGN-IN PAGE, DESCRIBED AS SELECTORS AND NOTHING ELSE.
-    /// </summary>
-    /// <remarks>
-    /// The output somebody actually works from: they read this line and decide
-    /// which selector goes in which option. So it is asserted whole rather than
-    /// by fragments - a description that quietly stopped naming the inputs
-    /// would still contain every substring a looser test looked for.
-    /// </remarks>
+    // asserted whole: a description that stopped naming the inputs would still contain every substring a looser test looks for
     [Fact]
     public void A_sign_in_page_reads_as_the_selectors_somebody_has_to_choose_between()
     {
@@ -60,16 +37,7 @@ public sealed class PageShapeTests
             described);
     }
 
-    /// <summary>
-    /// A QR IS REPORTED AS A SQUARE, NEVER AS AN IMAGE.
-    /// </summary>
-    /// <remarks>
-    /// Its dimensions are what identifies it - a square canvas a couple of
-    /// hundred pixels across - and its bytes ARE the code somebody is about to
-    /// scan into their bank. Reporting where it sits is the whole job;
-    /// reporting what is in it would be relaying a live second factor into a
-    /// log.
-    /// </remarks>
+    // a QR is reported by position and size only: its bytes are a live second factor
     [Fact]
     public void A_qr_code_is_located_by_its_dimensions_and_never_carried()
     {
@@ -81,19 +49,11 @@ public sealed class PageShapeTests
 
         Assert.Contains("images: canvas.qr 220x220 SQUARE", described, StringComparison.Ordinal);
 
-        // The logo is reported too, unmarked. Anything filtered out of a
-        // discovery run is something somebody has to go back for.
+        // the logo is reported too: anything filtered out of a discovery run has to be gone back for
         Assert.Contains("img.logo 180x40", described, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A CHALLENGE NUMBER IS COUNTED, NEVER QUOTED.
-    /// </summary>
-    /// <remarks>
-    /// The useful fact is that eight digits appear at a given selector - that
-    /// is what says "this is where the number a device is keyed with lives".
-    /// The digits themselves are a live second factor.
-    /// </remarks>
+    // eight digits at a selector is the useful fact; the digits themselves are a live second factor
     [Fact]
     public void A_number_on_screen_is_reported_as_a_length_and_not_as_digits()
     {
@@ -104,16 +64,8 @@ public sealed class PageShapeTests
         Assert.Contains("digit-runs: output#challenge (8 digits)", described, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// AND NOTHING THAT ARRIVES UNEXPECTEDLY IS PASSED THROUGH.
-    /// </summary>
-    /// <remarks>
-    /// The probe is the thing meant to withhold values, and this is the second
-    /// lock: a probe that was edited carelessly, or a page that answered with
-    /// something else under the same keys, must not turn the reader into a
-    /// conduit. Every field it reads is one it has a shape for, so a
-    /// <c>value</c> nobody asked for has nowhere to go.
-    /// </remarks>
+    // second lock beside the probe: a careless probe or a page answering under the same keys must not turn
+    // the reader into a conduit
     [Fact]
     public void A_probe_that_offered_values_would_still_carry_none()
     {
@@ -133,14 +85,10 @@ public sealed class PageShapeTests
         Assert.DoesNotContain("1.730,01", described, StringComparison.Ordinal);
         Assert.DoesNotContain("Wachtwoord", described, StringComparison.Ordinal);
 
-        // It still described the page.
         Assert.Contains("password #pw", described, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// A probe that answered with nothing usable says so, rather than producing
-    /// an empty line somebody reads as "the page was blank".
-    /// </summary>
+    // an unusable answer says so, not an empty line that reads as "the page was blank"
     [Theory]
     [InlineData("{}")]
     [InlineData("null")]
@@ -149,12 +97,7 @@ public sealed class PageShapeTests
     public void A_probe_that_answered_with_nothing_says_so(string json) =>
         Assert.Equal("the page described itself as nothing at all", PageShape.Describe(Shape(json)));
 
-    /// <summary>
-    /// Whatever the page is complaining about DOES come through, because it is
-    /// the one piece of text somebody onboarding a provider cannot work
-    /// without - a login that failed and a login that is waiting look identical
-    /// otherwise.
-    /// </summary>
+    // the page's complaint comes through: a failed login and a waiting one look identical otherwise
     [Fact]
     public void What_the_page_is_complaining_about_comes_through()
     {
@@ -165,31 +108,9 @@ public sealed class PageShapeTests
         Assert.Contains("says: De ingevoerde code is onjuist.", described, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// THE BUTTON LIST NAMES ICON BUTTONS AND DROPS NOTHING.
-    /// </summary>
-    /// <remarks>
-    /// Two live sign-outs were spent on a header this probe described as three
-    /// buttons with no names: ASN's controls all report as
-    /// <c>button[data-testid='button']</c> - a design system's component name
-    /// where a handle should be - and the only thing telling them apart was the
-    /// <c>aria-label</c> the probe was not reading. So the page read as having
-    /// nothing on it, and the search that followed pressed them in the dark.
-    /// <para>
-    /// And the list used to DISCARD any button whose label ran past forty
-    /// characters, silently - the same failure as the twelve-button cap that
-    /// hid the account dialog's confirm, and reasoned from the same way: a
-    /// control missing from the list reads as a control that is not on the
-    /// page.
-    /// </para>
-    /// <para>
-    /// PINNED IN THE SOURCE rather than run, and that is a real limitation. The
-    /// probe is JavaScript evaluated in a browser and there is no browser here,
-    /// so this asserts that the script still says what it should - the same
-    /// thing <c>SelectorMissRuleTests</c> does for a trap that also could not
-    /// be reached from a unit test.
-    /// </para>
-    /// </remarks>
+    // ASN's controls all report as button[data-testid='button'] and only aria-label tells them apart; dropping labels
+    // past forty characters hid controls like the twelve-button cap did (a missing control reads as absent)
+    // pinned in the script source: no browser here
     [Fact]
     public void The_probe_names_icon_buttons_and_drops_none_of_them()
     {
@@ -200,8 +121,7 @@ public sealed class PageShapeTests
             PageShape.Script,
             StringComparison.Ordinal);
 
-        // The cap that remains says so when it bites, which is the difference
-        // between a short list and a cut one.
+        // the remaining cap says "cut:" when it bites, so a short list differs from a cut one
         Assert.Contains("cut:", PageShape.Script, StringComparison.Ordinal);
     }
 }

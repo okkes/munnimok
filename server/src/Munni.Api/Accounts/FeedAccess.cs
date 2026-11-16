@@ -3,35 +3,23 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Accounts;
 
-/// <summary>
-/// Feed-space access rules. Feeds are never members' spaces directly:
-/// the owner registered them, and everyone else derives READ access
-/// through an attachment in a space they belong to. Writes to a feed
-/// stay owner-only (raw bank truth has one author; every space's
-/// opinion lives in its own overlay rows).
-/// </summary>
+/// feeds are never members' spaces: everyone but the owner derives READ through an attachment; writes stay
+/// owner-only (raw bank truth has one author, every space's opinion lives in its own overlay rows)
 public static class FeedAccess
 {
     /// <summary>uuid version 5 = deterministic feed-shaped id (normal spaces are v7 or free-form).</summary>
     public static bool IsFeedShaped(string spaceId)
     {
         if (!Guid.TryParseExact(spaceId, "D", out _)) return false;
-        // canonical form: version nibble is the 15th hex character
         return spaceId.Length == 36 && spaceId[14] == '5';
     }
 
-    /// <summary>#240: ownership is the recorded first owner OR any
-    /// co-owner (their own consent covered the account) — both edit,
-    /// attach and delete like the account is theirs, because it is.</summary>
+    /// #240: the first owner or any co-owner (their own consent covered the account) edits, attaches and deletes as owner
     public static async Task<bool> IsFeedOwner(AppDbContext db, Guid userId, string feedSpaceId) =>
         await db.FeedSpaces.AnyAsync(f => f.Id == feedSpaceId && f.OwnerUserId == userId)
         || await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedSpaceId && o.UserId == userId);
 
-    /// <summary>
-    /// Read access + cursor cap. Returns null when the user may not read;
-    /// long.MaxValue for unlimited; otherwise the archived-at cap (only
-    /// archived attachments reach the user — history stays, new data stops).
-    /// </summary>
+    /// null: may not read; long.MaxValue: unlimited; else the archived-at cap (history stays, new data stops)
     public static async Task<long?> ReadCapAsync(AppDbContext db, Guid userId, string feedSpaceId)
     {
         if (await IsFeedOwner(db, userId, feedSpaceId)) return long.MaxValue;
@@ -45,11 +33,7 @@ public static class FeedAccess
         return links.Max(l => l.ArchivedAtSeq ?? 0);
     }
 
-    /// <summary>
-    /// <see cref="ReadCapAsync"/> for every feed the user reaches, in three
-    /// queries rather than three per feed (#569: the sync round reads them all
-    /// at once): long.MaxValue where unlimited, else the archived-at cap.
-    /// </summary>
+    /// #569: every reachable feed in three queries, not three per feed (the sync round reads them all)
     public static async Task<Dictionary<string, long>> ReadCapsAsync(AppDbContext db, Guid userId)
     {
         var caps = new Dictionary<string, long>(StringComparer.Ordinal);
@@ -71,7 +55,6 @@ public static class FeedAccess
         return caps;
     }
 
-    /// <summary>Feed spaces the user can currently read via attachments or ownership (for discovery/SSE).</summary>
     public static async Task<List<string>> ReachableFeedsAsync(AppDbContext db, Guid userId)
     {
         var owned = await db.FeedSpaces.Where(f => f.OwnerUserId == userId).Select(f => f.Id).ToListAsync();

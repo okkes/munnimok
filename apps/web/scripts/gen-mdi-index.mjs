@@ -1,5 +1,4 @@
-// Regenerates src/generated/mdiNames.ts from the self-hosted @mdi/font
-// css — run after bumping @mdi/font: node scripts/gen-mdi-index.mjs
+// run after bumping @mdi/font: regenerates src/generated/mdiNames.ts from its css
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 

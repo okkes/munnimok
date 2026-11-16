@@ -53,7 +53,6 @@ describe('apiFetch', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}, 409));
     await apiFetch('/y');
     expect(reportWarning).toHaveBeenCalledTimes(2);
-    // a caller that handles the answer as a designed branch opts out
     await apiFetch('/feeds', {}, { expectStatuses: [409] });
     expect(reportWarning).toHaveBeenCalledTimes(2);
   });
@@ -98,7 +97,7 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     const { isSessionExpired, resetSessionExpiryForTests } = await import('@/app/sessionExpiry');
     resetSessionExpiryForTests();
     const { setAccessTokenGetter, signalAuthReady } = await import('@/app/authToken');
-    signalAuthReady(); // the restore finished — apiFetch may proceed
+    signalAuthReady();
     setAccessTokenGetter(async () => 'stale-but-real-token'); // a REAL bearer gets rejected
     const { useSession } = await import('@/app/session');
     // apiFetch reads the persisted identity, not the store snapshot
@@ -118,16 +117,13 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     const { apiFetch } = await import('./api');
     const res = await apiFetch('/me/spaces');
     expect(res.status).toBe(401);
-    expect(calls.length).toBe(2); // original + fresh-token retry
-    // the app keeps working on this device: the offline banner asks for a
-    // sign-in, the session and the SDK's state stay, nothing navigates away
+    expect(calls.length).toBe(2);
     expect(useSession.getState().identity).not.toBeNull();
     expect(localStorage.getItem('logto:app-id:idToken')).toBe('stale');
     expect(assignSpy).not.toHaveBeenCalled();
     expect(isSessionExpired()).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('double 401'));
 
-    // a second 401 in the same page load names the state once, not twice
     await apiFetch('/me/spaces');
     expect(warn).toHaveBeenCalledTimes(1);
     setAccessTokenGetter(null);
@@ -161,15 +157,12 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
   });
 
   it('a 401 without a bearer never forces a logout (cold-start boot race)', async () => {
-    // an app update always cold-starts: requests fired before the token
-    // getter exists carry no bearer — those 401s prove nothing about the
-    // refresh token and must NOT wipe the session (user: had to sign in
-    // after every update)
+    // requests fired before the token getter exists carry no bearer: those 401s must not wipe the session
     const { resetAuthExpiryGuard, apiFetch } = await import('./api');
     resetAuthExpiryGuard();
     const { setAccessTokenGetter, signalAuthReady } = await import('@/app/authToken');
     signalAuthReady();
-    setAccessTokenGetter(null); // no getter yet — exactly the boot window
+    setAccessTokenGetter(null);
     const { useSession } = await import('@/app/session');
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'booting-user' }));
     useSession.setState({ identity: { kind: 'user', sub: 'booting-user' } });
@@ -178,8 +171,8 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     vi.stubGlobal('location', { ...globalThis.location, assign: assignSpy });
 
     const res = await apiFetch('/me/spaces');
-    expect(res.status).toBe(401); // the caller sees the 401 …
-    expect(useSession.getState().identity).not.toBeNull(); // … but stays signed in
+    expect(res.status).toBe(401);
+    expect(useSession.getState().identity).not.toBeNull();
     expect(assignSpy).not.toHaveBeenCalled();
   });
 });

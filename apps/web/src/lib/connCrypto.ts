@@ -1,19 +1,6 @@
-/**
- * Client-side crypto for E2EE store-connection sync (SC1).
- *
- * One AES-GCM 256 Connection Sync Key (CSK) encrypts the connection
- * tokens; the CSK travels between devices wrapped ECIES-style: an
- * ephemeral P-256 key agrees (ECDH → HKDF-SHA256) with the TARGET
- * device's public key, and only the target's private key can repeat
- * that agreement. The server stores public keys, wraps and ciphertext —
- * none of which it can open.
- *
- * Keys are handled as JWK strings so every storage backend can hold
- * them. On this device that is the same protection level the store
- * tokens themselves have today (device-local storage; SQLCipher when
- * the encrypted store is on) — the E2EE property protects the SERVER,
- * which is the threat model the design targets.
- */
+// E2EE connection sync (SC1): an AES-GCM key (CSK) encrypts the tokens; devices pass it wrapped to the target's public key
+// the server stores public keys, wraps and ciphertext, none of which it can open; keys are JWK strings
+// on this device they get the store tokens' own protection level: the E2EE property protects the SERVER
 
 const subtle = globalThis.crypto.subtle;
 
@@ -54,7 +41,6 @@ export async function fingerprintOf(publicJwk: string): Promise<string> {
   return String(view.getUint32(0) % 1_000_000).padStart(6, '0');
 }
 
-/** a fresh 256-bit Connection Sync Key */
 export function mintCsk(): string {
   return toB64(crypto.getRandomValues(new Uint8Array(32)));
 }
@@ -73,7 +59,6 @@ async function agreeKey(privateJwk: string, publicJwk: string): Promise<CryptoKe
   );
 }
 
-/** wrap the CSK TO a device: only its private key can unwrap */
 export async function wrapCsk(csk: string, targetPublicJwk: string): Promise<string> {
   const ephemeral = await generateDeviceKeys();
   const key = await agreeKey(ephemeral.privateJwk, targetPublicJwk);
@@ -93,7 +78,6 @@ async function cskKey(csk: string, usage: KeyUsage): Promise<CryptoKey> {
   return subtle.importKey('raw', fromB64(csk), 'AES-GCM', false, [usage]);
 }
 
-/** connection payloads: AES-GCM under the CSK, base64(iv).base64(ct) */
 export async function encryptJson(csk: string, value: unknown): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await subtle.encrypt({ name: 'AES-GCM', iv }, await cskKey(csk, 'encrypt'), new TextEncoder().encode(JSON.stringify(value)));

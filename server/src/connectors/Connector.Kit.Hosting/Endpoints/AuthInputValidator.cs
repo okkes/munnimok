@@ -4,16 +4,8 @@ using Connector.Kit.Manifests;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// Validates a login payload against the manifest that described the form.
-///
-/// The consumer already validated client-side from the same
-/// <see cref="FieldSpec"/>, and that is exactly why this exists: a
-/// client-side check is a courtesy to the user, not a guarantee to us. A
-/// field arriving that the manifest never declared means the caller is
-/// working from a different contract, and passing it through to an adapter
-/// would make the manifest advisory.
-/// </summary>
+/// client-side validation is a courtesy, not a guarantee: a field the manifest never declared means a different contract
+/// and passing it to an adapter would make the manifest advisory
 public static class AuthInputValidator
 {
     /// <summary>A pattern is a validator, not a puzzle; a runaway one must not become a stall.</summary>
@@ -24,28 +16,8 @@ public static class AuthInputValidator
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(inputs);
 
-        // THE MANIFEST DECIDES, on this flow as on every other.
-        //
-        // This read "device_persistent has no credential step at all" and
-        // refused every input outright, which made every persistent provider
-        // that declares a field impossible to connect. ASN declares the five
-        // digits a browser the bank already trusts signs in with; the mock
-        // bank declares an agent id and its login requires one. Send what
-        // those manifests ask for and the answer was "this provider's login
-        // takes no inputs"; send nothing and a required field is missing
-        // instead. There was no third thing to try, and every test of those
-        // two called the adapter directly, so nothing said so.
-        //
-        // The third persistent provider - the shop's mock - declares no
-        // fields and was unaffected, which is how a rule contradicting two
-        // manifests stayed quiet: the one provider that agreed with it was
-        // the only one anybody ever connected.
-        //
-        // The rule it was reaching for is already here, one line down and
-        // applied uniformly: only what the manifest declared. A
-        // device_persistent provider that really takes nothing declares no
-        // fields, and "unknown input" refuses the lot - without a second rule
-        // that a manifest can contradict and nothing reconciles.
+        // the manifest decides on this flow too: a blanket "device_persistent takes no inputs" rule contradicted ASN's and
+        // the mock bank's declared fields; a persistent provider that takes nothing declares no fields
         var declared = manifest.Auth.Steps.SelectMany(s => s.Fields).ToList();
         Validate(declared, inputs, "input");
     }

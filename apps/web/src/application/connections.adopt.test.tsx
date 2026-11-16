@@ -13,11 +13,8 @@ import type { ConnectionOps } from './connections';
 const manifest = { id: 'mock-store-simple', name: 'Mock', kind: 'store' } as ProviderManifest;
 const answer = (sessionId: string, bundle?: string): SessionView => ({ sessionId, state: 'active', ...(bundle ? { bundle } : {}) });
 
-/**
- * #430: the relay hands a sign-in's bundle to exactly one reader. When two reads cross as the sign-in lands,
- * the second answer says "active" without it — and on a phone, where the bundle rests in the device row, adopting
- * that answer wrote the row over the bundle the first one had brought: "Sign in to sync on this device", every time.
- */
+// #430: the relay hands a sign-in's bundle to one reader; a crossing second answer without it must not
+// overwrite the bundle the first brought in a phone's device row
 describe('adopting a sign-in on a phone (the bundle rests in the device row)', () => {
   let ops: ConnectionOps;
   let store: StorageBackend;

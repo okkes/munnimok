@@ -28,8 +28,7 @@ describe('press feedback (touch affordance)', () => {
   });
 
   it('a long-press context menu clears the pressed look and drops pointer capture', () => {
-    // the copy-link menu on an <a> swallows pointerup; without these the
-    // link stayed "pressed" and kept capturing every later touch
+    // the copy-link menu on an <a> swallows pointerup: the link stayed "pressed" and kept capturing later touches
     vi.useFakeTimers();
     initPressFeedback();
     const link = document.createElement('a');

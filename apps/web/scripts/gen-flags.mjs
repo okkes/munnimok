@@ -1,7 +1,4 @@
-// Copies the country-flag SVGs the app actually uses (COUNTRIES list +
-// language flags) from the flag-icons package into src/assets/flags so
-// they ship as OFFLINE bundle assets — no CDN, no emoji (Windows breaks
-// those). Re-run after adding countries:  node scripts/gen-flags.mjs
+// copies the flags the app uses into src/assets/flags as offline bundle assets: no CDN, no emoji (Windows breaks those)
 import { copyFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

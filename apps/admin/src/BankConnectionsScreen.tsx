@@ -2,13 +2,12 @@ import { useMemo, useState } from 'react';
 import { ConfirmButton, SessionsTable, partyLabel } from './sessionBits';
 import type { SessionRow } from './sessionBits';
 
-/** a session on the dashboard: the shared row with the person it belongs to */
 export interface BankConnectionRow extends SessionRow {
   userSub: string;
   userName: string;
 }
 
-/** GET /admin/bank-connections: the rows, whether every party was asked for, and whether the list was cut */
+/** GET /admin/bank-connections; capped = the list was cut */
 export interface BankConnectionsDoc {
   all: boolean;
   total: number;
@@ -32,14 +31,7 @@ function Stat({ label, value, warn = false }: Readonly<{ label: string; value: n
   );
 }
 
-/**
- * Bank connections (user 2026-10-09: "I can't find any more where I could
- * see all the connections made so far with Enable Banking and GoCardless
- * … build it for Enable Banking too so we can disconnect those"): every
- * open-banking consent the connector platform binds, across users,
- * grouped per person — the rows the nightly sync runs on — with a
- * Disconnect per row and a clean-up of a person's stale ones.
- */
+// every open-banking consent the connector platform binds, across users: the rows the nightly sync runs on
 export function BankConnectionsScreen({
   doc,
   busy,
@@ -52,7 +44,6 @@ export function BankConnectionsScreen({
   busy: boolean;
   onToggleAll: (all: boolean) => void;
   onDisconnect: (row: BankConnectionRow) => void;
-  /** every stale row of one person, after one confirm */
   onCleanUp: (rows: BankConnectionRow[]) => void;
 }>) {
   const [query, setQuery] = useState('');

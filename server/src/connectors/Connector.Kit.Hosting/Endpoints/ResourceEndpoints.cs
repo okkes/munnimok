@@ -21,16 +21,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Endpoints;
 
-/// <summary>
-/// The user's requested shape, served by exactly one handler:
-/// <c>GET /v1/jumbo/receipts?since=…&amp;include=items</c>.
-///
-/// A fetch is a job, so it can take a minute and it can stop to ask a
-/// question - a T3 provider re-authenticates on every run. The response is
-/// therefore one of three: the data, a job handle, or a challenge. All three
-/// are the same code path; only how far it got before the window closed
-/// differs.
-/// </summary>
+/// A fetch is a job, so the response is the data, a job handle or a challenge: one code path, differing in how far it got
+/// before the window closed.
 internal static class ResourceEndpoints
 {
     public static void Map(IEndpointRouteBuilder api)
@@ -43,8 +35,7 @@ internal static class ResourceEndpoints
             FetchRunner runner,
             CancellationToken ct) =>
         {
-            // A ticket is a bearer secret minted for one subject; presented
-            // by anybody else it is as good as unknown, and said to be so.
+            // a ticket is a bearer secret for one subject; presented by anybody else it is treated as unknown
             var subject = RequestContext.RequireSubject(http);
             var ticket = RequestContext.RequireTicket(http);
             if (!tickets.TryRedeem(ticket, provider, out var grant)
@@ -58,9 +49,7 @@ internal static class ResourceEndpoints
         .Produces<DataResponse>(StatusCodes.Status200OK)
         .Produces<JobAcceptedResponse>(StatusCodes.Status202Accepted);
 
-        // The one-shot form, for a caller that wants a single round trip and
-        // does not need a ticket. Everything after the bundle is opened is the
-        // identical path.
+        // one-shot form: no ticket; the same path once the bundle is open
         api.MapPost("/{provider}/{resource}:fetch", async (
             HttpContext http,
             string provider,
@@ -89,9 +78,7 @@ internal static class ResourceEndpoints
 
             return await runner.RunAsync(http, provider, resource, Flatten(request.Params), grant, ct, RequestContext.RecordOf(http, request.Record));
         })
-        // The two outcomes a fetch has, and the reason FetchRunner.RunAsync
-        // stays Task<IResult>: which one you get depends on how far the job got
-        // before the window closed, so no single static claim can be true.
+        // 200 or 202 depending on how far the job got: why FetchRunner.RunAsync stays Task<IResult>
         .Produces<DataResponse>(StatusCodes.Status200OK)
         .Produces<JobAcceptedResponse>(StatusCodes.Status202Accepted);
 
@@ -108,8 +95,7 @@ internal static class ResourceEndpoints
             var manifest = registry.RequireManifest(provider);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
-            // A ticket is a bearer secret minted for one subject; presented
-            // by anybody else it is as good as unknown, and said to be so.
+            // a ticket is a bearer secret for one subject; presented by anybody else it is treated as unknown
             var subject = RequestContext.RequireSubject(http);
             var ticket = RequestContext.RequireTicket(http);
             if (!tickets.TryRedeem(ticket, provider, out var grant)
@@ -128,11 +114,7 @@ internal static class ResourceEndpoints
         });
     }
 
-    /// <summary>
-    /// The one-shot body carries params as JSON, where a list is a real array
-    /// rather than a comma-joined string. Flattening to the query-string shape
-    /// means one validator sees both forms and they cannot diverge.
-    /// </summary>
+    /// Flattened to the query-string shape so one validator sees both forms and they cannot diverge.
     private static Dictionary<string, IReadOnlyList<string>> Flatten(IReadOnlyDictionary<string, JsonNode?> body)
     {
         var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
@@ -161,10 +143,6 @@ public sealed record AckResponse
     public required int Purged { get; init; }
 }
 
-/// <summary>
-/// The shared body of every fetch: validate, enqueue, wait a little, and
-/// answer with whatever is true by then.
-/// </summary>
 public sealed class FetchRunner(
     IProviderRegistry registry,
     ProviderStatusService statuses,
@@ -211,14 +189,8 @@ public sealed class FetchRunner(
             RequestContext.TriggerOf(http), manifest, session.Subject, JobKind.Fetch, resource.Id, ct);
         await RequireProfileHolderOnlineAsync(session, ct);
 
-        // A fetch of this resource already in flight for this connection IS
-        // the fetch the caller gets (prod 2026-10-06: a phone that kept
-        // reopening the app queued four Amazon fetches in twelve minutes;
-        // one ran for half an hour while the other three waited behind the
-        // per-session lease and died as agent_unavailable). The handle is
-        // the same contract as a fresh 202, and whichever device collects
-        // it first collects it. Only when it asks the party the same: a pass
-        // over older history is not answered with the newest rows, nor the reverse.
+        // an in-flight fetch of this resource for this connection IS the caller's fetch, if it asks the same (prod 2026-10-06:
+        // a reopening phone queued four Amazon fetches in 12 min; three died as agent_unavailable behind the session lease)
         if (await InFlightAsync(session.Id, request, ct) is { } inFlight)
         {
             return ConnectorResults.Json(await views.AcceptedAsync(inFlight, ct), StatusCodes.Status202Accepted);
@@ -234,12 +206,8 @@ public sealed class FetchRunner(
             Config = MergeConfig(session, grant),
             Material = grant.Material,
             ProfileId = session.ProfileId,
-            // Both routing answers come off the session, because both were
-            // given about the CONNECTION rather than about one job: a pin says
-            // which machine holds this browser, and FleetOnly says the caller
-            // asked for the operator's fleet and not for a machine of theirs.
-            // A fetch that forgot the second would land back on the NAS the
-            // login was deliberately kept off.
+            // routing comes off the session: the pin says which machine holds the browser, FleetOnly that the caller asked
+            // for the fleet; forgetting it would land the fetch on the NAS the login was kept off
             FleetOnly = session.FleetOnly,
             Trigger = RequestContext.TriggerNameOf(http),
             Record = record,
@@ -282,11 +250,6 @@ public sealed class FetchRunner(
         }
     }
 
-    /// <summary>
-    /// The newest fetch that asks the same of this resource and is still
-    /// queued, leased, running or waiting for an answer, for this session;
-    /// null when none is.
-    /// </summary>
     private async Task<JobRow?> InFlightAsync(string sessionId, ResourceRequest request, CancellationToken ct)
     {
         var running = await db.Jobs.AsNoTracking()
@@ -303,7 +266,6 @@ public sealed class FetchRunner(
         return running.Find(j => SameAsk(j.ParamsJson, request));
     }
 
-    /// <summary>Whether a job's recorded request is this one: the same window and the same selections.</summary>
     internal static bool SameAsk(string paramsJson, ResourceRequest request)
     {
         var asked = Infrastructure.ConnectorJson.DeserializeOr<ResourceRequest?>(paramsJson, null);
@@ -314,28 +276,9 @@ public sealed class FetchRunner(
                && asked.Selections.All(s => request.Selections.TryGetValue(s.Key, out var values) && values.ToHashSet(StringComparer.Ordinal).SetEquals(s.Value));
     }
 
-    /// <summary>
-    /// Refuses, now, a fetch that nobody could ever take.
-    /// </summary>
-    /// <remarks>
-    /// ONLY FOR WORK PINNED TO A PROFILE, and the distinction is the whole
-    /// design. An ordinary job whose owner's machine is off is not stranded:
-    /// the queue lets the fleet stand back for a head start and then hands
-    /// the work to whoever asks, which is self-healing and needs nobody told.
-    /// A job pinned to a persistent profile has no such fallback - the
-    /// profile is a browser directory on one machine, and the lease clause
-    /// will only ever offer it to the agent holding that directory. Queued
-    /// while that agent is off, it waits the full abandonment window and
-    /// then fails with <c>agent_unavailable</c>, having told the caller 202
-    /// and shown them a spinner for half an hour first.
-    /// <para>
-    /// Judged by the agent that HOLDS the profile rather than by the session's
-    /// own <c>AgentId</c>, because the profile is what the queue routes on;
-    /// the two are minted together and agree today, and this reads the one
-    /// that decides. The window is the platform's single definition of
-    /// online, the same one the agent listing shows.
-    /// </para>
-    /// </remarks>
+    /// Only for work pinned to a profile: an ordinary job whose owner is off self-heals (the fleet takes it after the head
+    /// start), a pinned one fails after half an hour. Judged by the agent holding the profile, as the queue routes on the
+    /// profile; the online window is the platform's single definition.
     private async Task RequireProfileHolderOnlineAsync(SessionRow session, CancellationToken ct)
     {
         if (session.ProfileId is not { } profileId) return;
@@ -351,37 +294,9 @@ public sealed class FetchRunner(
         throw HolderRefusal(profileId, holder);
     }
 
-    /// <summary>
-    /// Says which of the three ways to be unusable this holder is, because
-    /// they do not all have the same answer.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="AgentLiveness.IsOnline"/> collapses REVOKED and SILENT into
-    /// one false, and that is right for a predicate and wrong for a sentence.
-    /// The refusal used to know only the silent wording, so a holder revoked
-    /// thirty seconds ago - heartbeat still warm - was told its last check-in
-    /// was more than ninety seconds ago, and told to start the agent. Both
-    /// halves were false, and the second one worse than false: revocation
-    /// replaces the agent's token hash, so the machine that obediently starts
-    /// is answered 401, self-revokes and wipes its profiles. The instruction
-    /// destroys the thing it claims to be recovering, and the user can follow
-    /// it for ever without the answer changing.
-    /// <para>
-    /// Revoked is therefore checked FIRST, and carries its own code rather
-    /// than a different string under the same one: <c>user_action</c> is a
-    /// function of the code in the error catalogue and nowhere else, so
-    /// "reconnect" instead of "start your agent" IS the second code. A
-    /// consumer that renders <c>agent_unavailable</c> as a friendly notice -
-    /// the demo does, on the reasoning that a switched-off machine is not a
-    /// failure - gets a real failure styled as one, which is what a connection
-    /// that cannot be repaired is.
-    /// </para>
-    /// <para>
-    /// Internal so it can be asserted on directly. The detail never reaches
-    /// the wire - it is logged beside a <c>detail_id</c> - so a test driving
-    /// the endpoint can see the code and the action but not one word of this.
-    /// </para>
-    /// </remarks>
+    /// Revoked is checked first with its own code: IsOnline collapses revoked and silent, but starting a revoked agent gets 401,
+    /// self-revokes and wipes its profiles. user_action derives from the code alone, so "reconnect" needs its own code.
+    /// Internal for tests: the detail is only logged, never on the wire.
     internal static ConnectorException HolderRefusal(string profileId, AgentRow? holder)
     {
         if (holder is null)
@@ -407,10 +322,7 @@ public sealed class FetchRunner(
             + "session, so start the agent and fetch again");
     }
 
-    /// <summary>
-    /// The bundle's config wins where the two disagree: it is what the user
-    /// actually connected with, and the session row is a convenience copy.
-    /// </summary>
+    /// The bundle's config wins: it is what the user connected with; the session row is a convenience copy.
     private static Dictionary<string, string> MergeConfig(SessionRow session, TicketGrant grant)
     {
         var merged = new Dictionary<string, string>(

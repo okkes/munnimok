@@ -14,12 +14,6 @@ using Xunit;
 
 namespace BankConnector.Adapters.Tests;
 
-/// <summary>
-/// Enable Banking as a party (#414): the RS256 request signing, institutions
-/// named by name|country, the consent born from the bank's single-use code,
-/// the wire's directions and references turned into the ingest's identities,
-/// the revoke.
-/// </summary>
 public sealed class EnableBankingAdapterTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
@@ -113,7 +107,6 @@ public sealed class EnableBankingAdapterTests
         Assert.Equal(Now.AddHours(1).ToUnixTimeSeconds(), payload.RootElement.GetProperty("exp").GetInt64());
         Assert.True(Key.VerifyData(Encoding.ASCII.GetBytes($"{parts[0]}.{parts[1]}"), Base64Url(parts[2]), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
 
-        // the second call reuses the token; nothing is re-imported or re-signed
         await adapter.LookupAsync(http, "institution", new LookupQuery { Text = "pay", Context = new Dictionary<string, string> { ["country"] = "DE" } }, CancellationToken.None);
         Assert.Equal(bearer, wire.Requests[1].Header("Authorization"));
     }
@@ -168,11 +161,11 @@ public sealed class EnableBankingAdapterTests
         var account = Assert.Single(accounts.Accounts);
         Assert.Equal(25_010, account.Balance?.Amount.Value);
         Assert.Equal(new DateTimeOffset(2026, 9, 29, 0, 0, 0, TimeSpan.Zero), account.Balance?.AsOf);
-        Assert.Equal("hash-u1", account.Identity);   // the same account in every later consent
+        Assert.Equal("hash-u1", account.Identity);
         Assert.Equal(0, wire.Count("GET", "/accounts/u1/details"));   // the login already learned them
 
         var transactions = await adapter.FetchAsync(ctx, new ResourceRequest { ResourceId = "transactions", Since = new DateOnly(2026, 9, 10) }, CancellationToken.None);
-        Assert.Equal(2, wire.Count("GET", "/accounts/u1/transactions"));   // two pages
+        Assert.Equal(2, wire.Count("GET", "/accounts/u1/transactions"));
         var ids = transactions.Transactions.Select(t => t.ExternalId).ToList();
         Assert.Contains("ref-1", ids);
         Assert.Contains("ref-3", ids);
@@ -237,11 +230,7 @@ public sealed class EnableBankingAdapterTests
         Assert.Equal("only", Assert.Single(result.Transactions).ExternalId);
     }
 
-    /// <summary>
-    /// #460: a pass over older history names its end as date_to, and a walk the
-    /// page cap stopped while the bank still offered a page says it is not the
-    /// whole history - it used to read as everything.
-    /// </summary>
+    /// #460: an older pass names its end as date_to; a walk the page cap stopped is partial, not the whole history.
     [Fact]
     public async Task A_backfill_pass_names_its_end_and_a_walk_the_cap_stopped_is_partial()
     {
@@ -250,7 +239,6 @@ public sealed class EnableBankingAdapterTests
         {
             if (req.Path != "/accounts/u1/transactions") return null;
             queries.Add(req.Query);
-            // a bank that always has one more page
             return Stub.Json($$"""{"transactions":[{"entry_reference":"r{{queries.Count}}","transaction_amount":{"amount":"1.00","currency":"EUR"},"credit_debit_indicator":"CRDT","status":"BOOK","booking_date":"2026-08-{{10 + queries.Count:00}}"}],"continuation_key":"more"}""");
         });
         using var ctx = new FakeJobContext(wire) { Material = Consent() };

@@ -6,14 +6,8 @@ import { decryptJson, encryptJson, generateDeviceKeys, mintCsk, unwrapCsk, wrapC
 import { nativePlatform } from '@/lib/platform';
 import { keepBundle, readBundle } from '@/features/connectors/bundles';
 
-/**
- * E2EE connection sync (the application layer of the SC1/SC2 design, now
- * carrying connector bundles — #367 §10.3). Everything meaningful happens
- * on-device: the server only ferries public keys, wrapped sync keys and
- * ciphertext. Meta keys (device-local, never synced through spaces):
- *  - connectionSyncDevice: { deviceId, publicJwk, privateJwk }
- *  - connectionSyncCsk:    the unwrapped CSK — its presence means ENABLED
- */
+// E2EE connection sync (SC1/SC2, #367): the server only ferries public keys, wrapped sync keys and ciphertext
+// device-local meta: connectionSyncDevice = keys; connectionSyncCsk = the unwrapped CSK, present = ENABLED
 const DEVICE_KEY = 'connectionSyncDevice';
 const CSK_KEY = 'connectionSyncCsk';
 const BASE = '/me/connection-sync';
@@ -64,7 +58,6 @@ const registerBody = (device: DeviceRecord): RequestInit => ({
   body: JSON.stringify({ deviceId: device.deviceId, publicJwk: device.publicJwk, name: deviceName() }),
 });
 
-/** first device: mint the CSK, register, self-wrap, push what we have */
 export async function enableConnectionSync(store: StorageBackend): Promise<void> {
   const device = await ensureDevice(store);
   await apiFetch(`${BASE}/devices`, registerBody(device));
@@ -94,8 +87,6 @@ export async function disableConnectionSync(store: StorageBackend): Promise<void
   await store.metaDelete(CSK_KEY);
 }
 
-/** push one connection's bundle as ciphertext (no-op while disabled, or
- *  while this device holds no bundle for it) */
 export async function pushConnection(store: StorageBackend, connectionId: string): Promise<void> {
   const csk = (await store.metaGet(CSK_KEY))?.value as string | undefined;
   if (!csk) return;
@@ -121,7 +112,6 @@ export async function pushAllConnections(store: StorageBackend): Promise<void> {
   }
 }
 
-/** pull ciphertext and adopt whatever is newer than the local copy */
 export async function pullConnections(store: StorageBackend): Promise<number> {
   const csk = (await store.metaGet(CSK_KEY))?.value as string | undefined;
   if (!csk) return 0;
@@ -147,13 +137,11 @@ export async function pullConnections(store: StorageBackend): Promise<number> {
   return adopted;
 }
 
-/** a NEW device asks to join: register, then poll for the wrap */
 export async function requestEnrollment(store: StorageBackend): Promise<void> {
   const device = await ensureDevice(store);
   await apiFetch(`${BASE}/devices`, registerBody(device));
 }
 
-/** poll: adopt the wrap the moment an enrolled device approves us */
 export async function adoptWrapIfApproved(store: StorageBackend): Promise<boolean> {
   if (await syncEnabled(store)) return true;
   const device = await ensureDevice(store);
@@ -165,14 +153,12 @@ export async function adoptWrapIfApproved(store: StorageBackend): Promise<boolea
   return true;
 }
 
-/** list every device (the approval + revoke UI feeds off this) */
 export async function listSyncDevices(): Promise<SyncDeviceInfo[]> {
   const res = await apiFetch(`${BASE}/devices`).catch(() => null);
   if (!res?.ok) return [];
   return (await res.json()) as SyncDeviceInfo[];
 }
 
-/** an ENROLLED device approves another: wrap the CSK to its public key */
 export async function approveDevice(store: StorageBackend, target: SyncDeviceInfo): Promise<void> {
   const csk = (await store.metaGet(CSK_KEY))?.value as string | undefined;
   if (!csk) throw new Error('connection sync is not enabled on this device');

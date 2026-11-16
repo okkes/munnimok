@@ -32,20 +32,13 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
   debt: 'var(--m-special)',
 };
 
-/**
- * Drill-down for one overview bucket (earned/spent/saved/invested):
- * per-period bar chart, composition bar, and main-category cards that
- * unfold into their sub categories (legacy ScreenExpenses parity).
- */
-
 export function OverviewScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const { kind } = useParams({ strict: false }) as { kind: OverviewKind };
   const navigate = useNavigate();
   const cats = useCategories();
-  // user ss 2026-10-06: the folds and the scroll offset survive a category
-  // detour like the period does (#355) — and forget like it does (#454)
+  // the folds and the scroll offset survive a category detour like the period (#355) and are forgotten like it (#454)
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => recallExpanded(kind) ?? {});
   const toggleGroup = (catId: string, isOpen: boolean) => {
     const next = { ...expanded, [catId]: !isOpen };
@@ -63,15 +56,13 @@ export function OverviewScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_COUNT),
     [space?.periodType, space?.periodDay],
   );
-  // #355: the chosen period survives the category/transaction detour —
-  // a module-level memo per kind (session-scoped, like the tx filters);
-  // detours change OTHER screens' periods without touching this one
+  // #355: the period survives the category/transaction detour: a module-level memo per kind, session-scoped
   const [periodIndex, setPeriodIndex] = useState(() => recallPeriod(kind) ?? PERIOD_COUNT - 1);
   const selectPeriod = (i: number) => {
     rememberPeriod(kind, i);
     setPeriodIndex(i);
   };
-  // kind switches keep the component mounted — adopt that kind's memory
+  // kind switches keep the component mounted: adopt that kind's memory
   const lastKind = useRef(kind);
   useEffect(() => {
     if (lastKind.current === kind) return;
@@ -96,7 +87,6 @@ export function OverviewScreen() {
   const barLabels = useMemo(() => periods.map((period) => periodMonthsLabel(period, LOCALES[lang])), [periods, lang]);
 
   const period = periods[periodIndex];
-  // drill into the category's own screen, keeping the selected period
   const openCategory = (catId: string) =>
     void navigate({ to: '/overview/$kind/$catId', params: { kind, catId }, search: { from: period.start } });
   const groups = useMemo(
@@ -107,8 +97,7 @@ export function OverviewScreen() {
     () => (kind === 'saving' ? goalCashOutsIn(goals ?? [], txs ?? [], period) : []),
     [kind, goals, txs, period],
   );
-  // the remembered offset lands once the groups have rendered (the list's
-  // height exists only then); a later scroll is the person's own
+  // the remembered offset lands once the groups have rendered: the list's height exists only then
   useLayoutEffect(() => {
     if (scrollRestored.current || groups.length === 0 || !listRef.current) return;
     scrollRestored.current = true;
@@ -160,7 +149,7 @@ export function OverviewScreen() {
           />
         </div>
 
-        {/* #455 (user): money that left savings for a reached goal shows — as the goal, not as a setback */}
+        {/* #455: money that left savings for a reached goal shows as the goal, not as a setback */}
         {cashOuts.length > 0 && (
           <div className="mt-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="overview-cashouts">
             <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
@@ -203,15 +192,11 @@ export function OverviewScreen() {
         <div className="flex flex-col gap-2">
           {groups.map((group, i) => {
             const main = cats.byId(group.catId);
-            // a lone main unfolds by itself — with one card there is
-            // nothing to compare, the subs ARE the story (user request);
-            // an explicit tap can still close it
+            // a lone main unfolds by itself: with one card there is nothing to compare; an explicit tap can still close it
             const isOpen = expanded[group.catId] ?? groups.length === 1;
             const pct = positiveTotal > 0 ? (Math.max(group.totalCents, 0) / positiveTotal) * 100 : 0;
             return (
-              // user ss 2026-10-06: keyboard focus on the header rings the CARD
-              // (m-focus-card) — the header's own inset ring was a rectangle
-              // inside the rounded, overflow-hidden card, its corners chipped off
+              // keyboard focus rings the CARD (m-focus-card): the header's own inset ring was a rectangle chipped at the rounded corners
               <div key={group.catId} className="m-focus-card overflow-hidden rounded-card border border-line bg-surface">
                 <button
                   data-testid={`overview-group-${group.catId}`}
@@ -245,9 +230,7 @@ export function OverviewScreen() {
                 {group.subs.length > 0 && (
                 <Collapse open={isOpen}>
                   <div className="bg-bg-2 px-4 py-1" data-testid={`overview-subs-${group.catId}`}>
-                    {/* whole main category first (legacy 'All'): the header
-                        row folds/unfolds, so this is how you reach ALL of
-                        the main's transactions */}
+                    {/* the header row folds/unfolds, so this row is how to reach ALL of the main's transactions */}
                     <button
                       data-testid={`overview-all-${group.catId}`}
                       onClick={() => openCategory(group.catId)}

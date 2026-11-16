@@ -25,7 +25,6 @@ async function fixture() {
   return { store, repo };
 }
 
-/** a plan with two expense subjects that each spent 80 and hold 50 */
 async function redPlan(repo: Repo) {
   await repo.upsert('plan', SPACE, current, { kind: 'actual', periodStart: PERIOD });
   for (const [order, id, name, catId] of [[0, 'food', 'Groceries', 'groceries'], [1, 'fun', 'Fun', 'entertainment']] as const) {
@@ -49,7 +48,6 @@ describe('resolveInbox (#614): a row leaves the bell once what it says stopped b
     expect(await collectPlanAlerts(store, SPACE, 'en', NOW)).toHaveLength(1);
     expect((await readInbox(store))[0].payload).toMatchObject({ n: '2', names: 'Groceries, Fun' });
 
-    // still true: nothing moves
     expect(await resolveInbox(store, NOW)).toEqual([]);
     expect((await readInbox(store))[0].payload).toMatchObject({ n: '2' });
 
@@ -94,7 +92,6 @@ describe('resolveInbox (#614): a row leaves the bell once what it says stopped b
     expect(shownTagOf(dropped.find((e) => e.payload?.name === 'paid')!)).toBe('rec-remind-paid');
     expect((await readInbox(store)).map((e) => e.payload?.name)).toEqual(['open']);
 
-    // the 20th came and went
     await resolveInbox(store, '2026-03-21');
     expect(await readInbox(store)).toEqual([]);
   });

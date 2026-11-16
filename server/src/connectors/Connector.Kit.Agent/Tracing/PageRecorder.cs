@@ -5,23 +5,8 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Tracing;
 
-/// <summary>
-/// The browser's half of a recording (#441 L3): every request and response
-/// the page makes, the main frame's navigations, the console, and a
-/// snapshot of the document each time a page settles - written into the
-/// run's <see cref="TraceBook"/>, which redacts on the way in.
-///
-/// Attached to the page the moment the lease creates it, before the first
-/// navigation, so the login's own document request is the first entry.
-/// Bodies are read only for what an adapter author would read - documents,
-/// XHR and fetch answers in a text type - and never for a script, an image
-/// or a font, which the book records as a size and a type.
-///
-/// Playwright raises its events synchronously and a body is only readable
-/// asynchronously, so the reads are fanned out as tasks and gathered at
-/// disposal. A body that cannot be read (a redirect, a page that moved on,
-/// a response the browser threw away) is a missing body, never an error.
-/// </summary>
+// browser half of a recording (#441 L3), attached before the first navigation so the login's document request is first
+// bodies only for documents, XHR and fetch; reads are async, gathered at disposal; an unreadable body is missing
 internal sealed class PageRecorder : IAsyncDisposable
 {
     private static readonly HashSet<string> ReadableTypes = new(StringComparer.Ordinal) { "document", "xhr", "fetch" };
@@ -64,7 +49,6 @@ internal sealed class PageRecorder : IAsyncDisposable
         _book.Note("the browser's recorder is attached");
     }
 
-    /// <summary>The cookie jar as it stands now: names, attributes and fingerprints.</summary>
     public async Task<IReadOnlyList<TraceCookie>> CookiesAsync(CancellationToken ct)
     {
         if (_page is not { } page || page.IsClosed) return [];
@@ -94,14 +78,8 @@ internal sealed class PageRecorder : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Waits for the bodies and snapshots still being read, so a book built
-    /// now holds them. Playwright raises its events synchronously and a body
-    /// is read afterwards; on a slow machine the adapter is done before the
-    /// reads are (CI, 2026-10-06: a trace with the requests and none of the
-    /// answers). A read that outlives the wait is a body the trace goes
-    /// without, never an error.
-    /// </summary>
+    // on a slow machine the adapter finishes before the reads do (CI 2026-10-06: requests and no answers)
+    // a read outliving the wait is a missing body
     public async Task FlushAsync(CancellationToken ct)
     {
         var reads = _pending.Keys.ToArray();

@@ -10,12 +10,8 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// A call that times out reports an OperationCanceledException nobody asked
-/// for. A loop that reads it as the host's stop ends for good - quietly in a
-/// sweep, and with the whole process in the pump, whose exception leaves the
-/// BackgroundService. Only the stopping token says the host is stopping.
-/// </summary>
+/// a timed-out call raises an OperationCanceledException nobody asked for;
+/// only the stopping token means the host is stopping
 public class BackgroundLoopTests
 {
     /// <summary>Every scope "times out"; the second request for one proves the loop came back.</summary>

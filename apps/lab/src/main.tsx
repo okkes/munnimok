@@ -12,7 +12,6 @@ if (glitchtipDsn) {
 
 const logtoConfigured = Boolean(config.logtoEndpoint && config.logtoAppId);
 
-/** OIDC entry: sign in via Logto when configured, else test-auth sub input */
 function Root() {
   if (!logtoConfigured) return <LabApp config={config} getToken={null} />;
   return (
@@ -21,8 +20,7 @@ function Root() {
         endpoint: config.logtoEndpoint,
         appId: config.logtoAppId,
         resources: config.logtoResource ? [config.logtoResource] : [],
-        // the API admits an operator by the `admin` scope on its access
-        // token (a Logto role on the API resource grants it) — ask for it
+        // the API admits an operator by the `admin` scope on the access token (a Logto role on the API resource grants it)
         scopes: ['admin'],
       }}
     >
@@ -31,10 +29,7 @@ function Root() {
   );
 }
 
-// Single-flight token fetch: a screen fires several /lab/* calls in
-// parallel and Logto ROTATES refresh tokens — concurrent refreshes race and
-// the loser's consumed token gets the whole grant revoked. One in-flight
-// fetch serves all callers.
+// single-flight: Logto rotates refresh tokens, so concurrent refreshes race and the loser's consumed token revokes the grant
 let tokenInflight: Promise<string | undefined> | null = null;
 function singleFlight(fetchToken: () => Promise<string | undefined>): Promise<string | undefined> {
   tokenInflight ??= fetchToken().finally(() => {

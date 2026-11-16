@@ -13,13 +13,8 @@ import { Picture } from '@/ui/Picture';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
-/**
- * Filter state owned by the transactions screen; the sheet only edits
- * it. Sets are additive within a section and sections combine with AND
- * (pick two accounts + a category = that category on either account).
- * #320 (user): the type/kind chips left the sheet — `txTypes` stays in
- * the contract (the screen still applies it) but nothing writes it here.
- */
+// the screen owns the filter state; sets add within a section, sections combine with AND
+// `txTypes` is still applied by the screen but nothing writes it here (#320)
 export interface SheetFilters {
   accountIds: ReadonlySet<string>;
   txTypes: ReadonlySet<TxType>;
@@ -27,7 +22,7 @@ export interface SheetFilters {
   mainCatIds: ReadonlySet<string>;
   from?: string;
   to?: string;
-  /** inclusive cents bounds on the amount's size (user 2026-10-06) */
+  /** inclusive bounds on the amount's size, in cents */
   minCents?: number;
   maxCents?: number;
 }
@@ -48,9 +43,6 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
   return next;
 }
 
-/** #320 (user): each chip wears the account's face — the bank logo
- *  where one exists (the AccountsScreen row recipe), else the type icon
- *  in the account's color; a dead logo URL swaps to the icon */
 function AccountChipFace({ account }: Readonly<{ account: SpaceAccount }>) {
   const logo = account.logo ?? institutionLogoUrl(account);
   const icon = <Icon name={typeDef(account.type).icon} size={13} color={account.color ?? 'var(--m-ink-3)'} />;
@@ -71,7 +63,6 @@ function AccountChipFace({ account }: Readonly<{ account: SpaceAccount }>) {
   );
 }
 
-/** one selectable group of account chips (#320: defaults split out) */
 function AccountChips({
   list,
   value,
@@ -99,13 +90,8 @@ function AccountChips({
 
 const centsText = (cents: number | undefined): string => (cents === undefined ? '' : (cents / 100).toFixed(2));
 
-/**
- * User 2026-10-06: "more than x and less than x" — two typed amounts, EU or
- * dotted decimals alike (parseCents), applied to the amount's SIZE so a
- * €50 purchase and a €50 refund both answer "between 40 and 60". The boxes
- * keep what was typed while it is still half a number; a reset from
- * outside (Clear filters) empties them.
- */
+// applies to the amount's SIZE so a €50 purchase and a €50 refund both match;
+// boxes keep half-typed text, a reset from outside empties them
 function AmountRange({ value, onChange }: Readonly<{ value: SheetFilters; onChange: (next: SheetFilters) => void }>) {
   const { t } = useLang();
   const [minText, setMinText] = useState(() => centsText(value.minCents));
@@ -166,9 +152,6 @@ export function FilterSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.filters')} size="tall">
       <div className="flex flex-col gap-3 pb-2">
-        {/* #320 r2 (user): the filter's own caption — the global overview
-            keeps its shared title. #546: the default pots retired; the cash
-            wallet is an account like the others */}
         <div className="m-cap px-1">{t('tx.filterAccountsCap')}</div>
         <AccountChips list={accounts ?? []} value={value} onChange={onChange} />
 

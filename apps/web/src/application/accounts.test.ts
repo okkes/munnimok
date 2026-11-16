@@ -34,10 +34,8 @@ describe('#212: the destructive type change', () => {
     expect(touched).toBe(2);
 
     expect((await store.get('account', 'a1'))?.type).toBe('savings');
-    // savings STAMPS its rows — every one re-reads as saving, back in review
     expect(await store.get('transaction', 't1')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(await store.get('transaction', 't2')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
-    // other accounts' rows stay untouched
     expect(await store.get('transaction', 'keep')).toMatchObject({ catId: 'coffee', needsReview: 0 });
     // balances are physical facts — the type never rewrites them
     expect((await store.get('account', 'a1'))?.balanceCents).toBe(5_000);
@@ -75,13 +73,10 @@ describe('#212: the destructive type change', () => {
     const touched = await changeLinkedAccountType(store, repo, 's1', link, 'savings');
     expect(touched).toBe(1);
 
-    // the SPACE's fact moved; the global row keeps its plain value
     expect((await store.get('accountLink', linkA))?.type).toBe('savings');
     expect((await store.get('accountLink', linkB))?.type).toBe('checking');
     expect((await store.get('account', 'bankacct'))?.type).toBe('checking');
-    // s1 reads the row as saving, back in review; s2 keeps its own
-    // checking reading (raw rows carry no opinion — each space's meta
-    // overlay does, and only s1's was rewritten)
+    // s2 keeps its checking reading: raw rows carry no opinion, each space's meta overlay does
     const inA = (await visibleTransactions(store, 's1')).find((r) => r.id === 'raw1');
     expect(inA).toMatchObject({ catId: 'uncategorized', txType: 'saving', needsReview: 1 });
     const inB = (await visibleTransactions(store, 's2')).find((r) => r.id === 'raw1');

@@ -1,12 +1,5 @@
-/**
- * User-guide content (curated, EN-first): each section pairs committed
- * gallery screenshots with instructions and tips. MAINTENANCE RULE:
- * whenever a screen or flow changes, update the matching section here
- * and re-run `npm run guide` — the guide ships inside the app at /guide/.
- *
- * `shots` reference basenames in tests/screenshots (without the
- * `--en-light-mobile` suffix); the generator picks the best variant.
- */
+// a screen or flow change updates its section here and re-runs `npm run guide` (the guide ships at /guide/);
+// `shots` are basenames in tests/screenshots without the `--en-light-mobile` suffix
 export const GUIDE = [
   {
     id: 'start',

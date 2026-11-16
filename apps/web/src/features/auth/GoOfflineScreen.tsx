@@ -24,12 +24,6 @@ const END_ROWS = [
   ['cloud-off-outline', 'goOffline.end3'],
 ] as const;
 
-/**
- * Online → offline conversion, consent-first (OO2): what stays, what
- * ends, a keep/remove choice per shared space, and the server-data
- * deletion default. The conversion itself is an identity rebind — the
- * local store is adopted as-is (goOffline.ts).
- */
 export function GoOfflineScreen() {
   const { t } = useLang();
   const { store, engine, spaceId, setActiveSpace } = useData();

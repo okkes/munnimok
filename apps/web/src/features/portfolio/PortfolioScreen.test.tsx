@@ -98,7 +98,6 @@ describe('Portfolio (demo identity)', () => {
     renderAppAsUser('/portfolio', { api });
     await screen.findByTestId('screen-portfolio');
 
-    // pick the live symbol from the debounced search
     fireEvent.click(await screen.findByTestId('pf-add'));
     fireEvent.change(await screen.findByTestId('pf-search'), { target: { value: 'asml' } });
     fireEvent.click(await screen.findByTestId('pf-hit-ASML.AS', {}, { timeout: 5000 }));

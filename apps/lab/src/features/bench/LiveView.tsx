@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Call } from '../../app/api';
 
-/**
- * The live browser view, the lab's own rendering of the control plane's
- * contract (never the member app's component): the newest JPEG past the
- * last sequence, long-polled through `/lab/bench/…/live/frame?after=n`
- * with `X-Live-Sequence`, `X-Live-Size` and `X-Live-Origin`; the
- * operator's taps, moves, scrolls, text and keys batched every 80 ms to
- * `…/live/input` as fractions of the frame. The stream ends when the
- * platform says so (404/410/challenge over).
- */
+/** the lab's own rendering of the control plane's live contract, never the member app's component */
 const FRAME_IDLE_MS = 400;
 const FRAME_RETRY_MS = 1_500;
 const FLUSH_MS = 80;
@@ -69,7 +61,6 @@ export function LiveView({
     ended.current?.();
   }, []);
 
-  // frames: one long-poll after another, each asking past the last sequence
   useEffect(() => {
     let alive = true;
     const pollOnce = async (): Promise<number> => {
@@ -115,7 +106,6 @@ export function LiveView({
     };
   }, [call, base, finish]);
 
-  // input: whatever gathered since the last flush goes as one batch
   const flush = useCallback(() => {
     if (queue.current.length === 0 || over.current) return;
     const events = queue.current.splice(0, BATCH_MAX);

@@ -16,11 +16,8 @@ import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
-/** the partition must always add up — a lone row included: it means
- *  "no split", which is only sound when it still covers the WHOLE
- *  (50% typed on a single row held Done armed — user report #126 r3).
- *  Parts may share a category (#126 r6): two full sub-transactions with
- *  the same category differ by note/event/identity. */
+// the partition must always add up, a lone row included (it means "no split"; 50% on one row held Done armed, #126)
+// parts may share a category: two sub-transactions differ by note/event/identity
 function sheetError(options: {
   mode: 'amount' | 'pct';
   referenceCents: number;
@@ -36,9 +33,7 @@ function sheetError(options: {
   return error === 'duplicateCategory' ? null : error;
 }
 
-/** a part's category entries beyond the first (v2.1 spread) — the
- *  values editor never edits them, but a stored spread must survive a
- *  resave untouched */
+/** a part's category entries beyond the first (v2.1 spread): never edited here, but must survive a resave */
 interface EntryDraft {
   key: string;
   catId: string;
@@ -46,11 +41,9 @@ interface EntryDraft {
 }
 
 interface Row {
-  /** stable key for React list rendering (rows have no natural id) */
   key: string;
   catId: string;
   amount: string; // user-facing text, EU decimals
-  // typed parts (v2): identity + story carried through the editor
   id?: string;
   label: string;
   /** the part's own type; undefined = inherits the row's */
@@ -72,12 +65,9 @@ const newRow = (catId: string, amount: string, part?: Partial<Omit<Row, 'key'>>)
   ...part,
 });
 
-/** the part's face when the user typed nothing: "<title> – split N" */
 const defaultLabel = (title: string, index: number, t: ReturnType<typeof useLang>['t']): string =>
   `${title} – ${t('split.partN', { n: index + 1 })}`;
 
-/** the amount an emptied-then-abandoned field falls back to, or the
- *  evaluated arithmetic (87,40-25 → 62,40); null keeps what's typed */
 function blurredAmount(raw: string, stashed: string | undefined, amountMode: boolean): string | null {
   if (stashed !== undefined && raw.trim() === '') return stashed;
   if (!amountMode) return null;
@@ -85,7 +75,6 @@ function blurredAmount(raw: string, stashed: string | undefined, amountMode: boo
   return evaluated !== null && evaluated >= 0 ? toText(evaluated) : null;
 }
 
-/** the typed-part story a row carries into the stored slice */
 const partFields = (r: Row): Partial<TxSplit> => ({
   ...(r.id ? { id: r.id } : {}),
   ...(r.label.trim() ? { label: r.label.trim() } : {}),
@@ -95,9 +84,7 @@ const partFields = (r: Row): Partial<TxSplit> => ({
   ...(r.eventId ? { eventId: r.eventId } : {}),
 });
 
-/** the stored slice a row becomes: a plain part, or one keeping its
- *  stored category spread (amount = the spread's sum, catId = the
- *  largest entry as the compat shadow) */
+/** a kept spread: amount = the spread's sum, catId = the largest entry as compat shadow */
 function rowToSplit(r: Row): TxSplit {
   const main = { catId: r.catId, amountCents: parseCents(r.amount) ?? 0 };
   const extras = r.extraCats.map((x) => ({ catId: x.catId, amountCents: parseCents(x.amount) ?? 0 }));
@@ -112,10 +99,7 @@ function rowToSplit(r: Row): TxSplit {
   };
 }
 
-/** the unassigned/overshoot pill — tap fills the row being worked on
- *  (out of the editor for S3776). onArm fires on pointerdown, BEFORE
- *  the focused field's blur restores its stashed value — that's how the
- *  pill knows which row the user meant (#130 round 2). */
+/** onArm fires on pointerdown, before the focused field's blur restores its stash: that is how it knows which row (#130) */
 function RemainderPill({
   remainder,
   mode,
@@ -139,9 +123,6 @@ function RemainderPill({
   );
 }
 
-/** #126 v2: the values-only row — the split as pure money: label +
- *  amount, exact euros or percentages. Categories, kinds and events are
- *  the part deck's / part pages' job. */
 function ValuesRow({
   row,
   index,
@@ -190,7 +171,6 @@ function ValuesRow({
   );
 }
 
-/** shared entry handlers, bundled once (out of the editor for S3776) */
 interface EntryHandlers {
   onAmount: (index: number, amount: string) => void;
   /** the element rides along so the deferred focus-empty (#134) can
@@ -207,13 +187,7 @@ const parsePct = (text: string): number => {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 };
 
-/**
- * The split-TRANSACTION editor (#211: nothing but that anymore — a
- * multi-category assignment is the CatsSheet's job): the partition as
- * pure money — label + amount per part, exact euros or percentages.
- * Controlled mode (review draft): `value`+`onApply` make the sheet
- * report the partition instead of writing it.
- */
+/** controlled mode (review draft): `value`+`onApply` report the partition instead of writing it */
 export function SplitEditorSheet({
   open,
   onOpenChange,
@@ -231,11 +205,9 @@ export function SplitEditorSheet({
   value?: TxSplit[];
   /** null = clear the split */
   onApply: (splits: TxSplit[] | null) => void;
-  /** empty start seeds ONE row (current category, full amount) instead
-   *  of the classic two — collapsing back to it means "no split" */
+  /** empty start seeds ONE row instead of two; collapsing back to it means "no split" */
   seedSingle?: boolean;
-  /** seedSingle: the CURRENT category (review keeps it on the draft, not
-   *  the raw tx — seeding from tx.catId showed Uncategorized, user bug) */
+  /** seedSingle: the current category — review keeps it on the draft, not the raw tx */
   seedCatId?: string;
   /** seedSingle mode: saving with one row reports the plain category */
   onApplySingle?: (catId: string) => void;
@@ -244,20 +216,14 @@ export function SplitEditorSheet({
   const { repo } = useData();
   const [rows, setRows] = useState<Row[]>([]);
   const [mode, setMode] = useState<'amount' | 'pct'>('amount');
-  // focusing an amount empties it so typing replaces instead of appending
-  // (user request); blurring an untouched empty field restores the value
   const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
-  // register-style entry for the focused amount (lib/amountRegister) —
-  // one field is focused at a time, so one mode is enough
   const [entryMode, setEntryMode] = useState<AmountEntryMode>('register');
-  // #130 r2: the pill's pointerdown runs BEFORE the focused field blurs
-  // (and restores its stash) — capture WHICH field the user meant here
+  // the pill's pointerdown runs before the focused field blurs: capture which field was meant (#130)
   const pendingBalanceTarget = useRef<number | null>(null);
   const armBalance = () => {
     pendingBalanceTarget.current = focusStash?.index ?? null;
   };
 
-  // #195: tappable — an invalid tap arms the aria/error state
   const [attempted, setAttempted] = useState(false);
   const source = value;
   const referenceCents = tx.amountCents;
@@ -265,8 +231,7 @@ export function SplitEditorSheet({
     if (!open) return;
     setAttempted(false);
     if (source?.length) {
-      // #216: settled `reimbursed` slices carry no pct by design — they
-      // must not flip a %-shaped partition back to amount mode
+      // settled `reimbursed` slices carry no pct and must not flip a %-shaped partition to amount mode (#216)
       const pctMode = splitsArePct(source.filter((s) => s.catId !== REIMBURSED_ID));
       setMode(pctMode ? 'pct' : 'amount');
       setRows(
@@ -285,23 +250,17 @@ export function SplitEditorSheet({
         }),
       );
     } else if (seedSingle) {
-      // open on JUST the current category owning the full amount —
-      // parts are added explicitly (user redesign)
       setMode('amount');
       setRows([newRow(seedCatId ?? tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents)))]);
     } else {
       setMode('amount');
-      // start from the current category + an empty second row
       setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
-    // deliberately only on open (or a card swap): the sheet owns its
-    // rows while open. Keyed by tx.id, NOT the object — background
-    // writes (sync, boot heals) re-emit the same row as a fresh object
-    // and must never wipe rows the user is mid-editing.
+    // only on open or a card swap; keyed by tx.id, not the object: background writes re-emit the same row as a
+    // new object and must not wipe rows mid-edit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx.id]);
 
-  /** a row's total in the mode's units — a stored spread sums its entries */
   const rowValue = (r: Row): number => {
     if (mode === 'pct') return parsePct(r.amount);
     const main = parseCents(r.amount) ?? 0;
@@ -314,8 +273,6 @@ export function SplitEditorSheet({
   const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
   const error = sheetError({ mode, referenceCents, splits });
 
-  // an empty or zero entry must be finished before ANOTHER one appears
-  // (user request: + Add part waits for the current one)
   const addBlocked = rows.some((r) => rowValue(r) <= 0);
 
   const switchMode = (next: 'amount' | 'pct') => {
@@ -323,7 +280,6 @@ export function SplitEditorSheet({
     setMode(next);
     const abs = Math.abs(referenceCents);
     if (next === 'pct') {
-      // carry the current euro shape over as rounded percentages
       setRows((r) =>
         r.map((row) => {
           const cents = parseCents(row.amount) ?? 0;
@@ -331,10 +287,8 @@ export function SplitEditorSheet({
         }),
       );
     } else {
-      // pct → euros must land EXACTLY on the total: rounding each row on
-      // its own left a ±1 cent remainder (50/50 of €34.99 → "€0.01 too
-      // much", user ss). resolveSplitsFor is the same partition the save
-      // path stores — tabbing back shows precisely what saving would.
+      // pct to euros must land exactly on the total: rounding each row alone left a ±1 cent remainder;
+      // resolveSplitsFor is the partition save stores
       setRows((r) => {
         const pctSplits = r.map((row) => ({ catId: row.catId, amountCents: 0, pct: parsePct(row.amount) }));
         const resolved = resolveSplitsFor(abs, pctSplits);
@@ -345,20 +299,13 @@ export function SplitEditorSheet({
 
   const save = () => {
     if (error) return;
-    // a lone row means "just this category" — no split is stored, the
-    // category rides through onApplySingle
     if (seedSingle && rows.length === 1) {
       onApplySingle?.(rows[0].catId);
       onOpenChange(false);
       return;
     }
-    // pct splits keep their percentages AND a materialized partition, so
-    // every reader (budgets, drills, exports) stays simple.
-    // needsReview is NOT touched: saving a split mid-review must keep the
-    // card on screen until the user confirms (user request)
-    // Typed parts get a STABLE id at save (typed-splits v2): the mint
-    // engine, per-part events and detail navigation key on it, and two
-    // devices editing the same array converge on the same identities.
+    // pct splits keep percentages AND a materialized partition for every reader; needsReview stays untouched so a
+    // mid-review save keeps the card on screen; parts get a stable id at save (mint engine, per-part events, device convergence)
     const stored = (mode === 'pct' ? resolveSplitsFor(referenceCents, splits) : splits).map((s) => ({
       ...s,
       id: s.id ?? repo.newId(),
@@ -373,8 +320,7 @@ export function SplitEditorSheet({
   };
 
   const autoBalance = () => {
-    // the field the pill was tapped FROM wins (#130 r2); else the first
-    // empty row; else the last as the correction slot
+    // the field the pill was tapped from wins (#130); else the first empty row; else the last
     const forced = pendingBalanceTarget.current;
     pendingBalanceTarget.current = null;
     setRows((r) => {
@@ -383,8 +329,7 @@ export function SplitEditorSheet({
       const total = mode === 'pct' ? 100 : Math.abs(referenceCents);
       const open = total - values.reduce((sum, v, i) => (i === target ? sum : sum + v), 0);
       const next = mode === 'pct' ? toPctText(Math.max(0, open)) : toText(Math.max(0, open));
-      // the balanced row's stored spread no longer matches its new
-      // amount — it collapses to the shadow category (values flow rule)
+      // the balanced row's stored spread no longer matches: it collapses to the shadow category
       return r.map((row, i) => (i === target ? { ...row, amount: next, extraCats: [] } : row));
     });
   };
@@ -395,8 +340,6 @@ export function SplitEditorSheet({
   const setRowLabel = (index: number, label: string) =>
     setRows((r) => r.map((x, j) => (j === index ? { ...x, label } : x)));
   const removeEntry = (index: number) => setRows((r) => r.filter((_, j) => j !== index));
-  // a new part takes the current remainder — the natural next slice
-  // (user design: adding a split copies the info and offers what's left)
   const addRow = () =>
     setRows((r) => [...r, newRow(UNCATEGORIZED_ID, mode === 'amount' ? toText(Math.max(remainder, 0)) : toPctText(Math.max(remainder, 0)))]);
 
@@ -409,8 +352,6 @@ export function SplitEditorSheet({
 
   const entryHandlers: EntryHandlers = {
     onAmount: (index, raw) => {
-      // register-style entry (user request): digits fill cents from the
-      // right — euros only; percentages keep plain typing
       if (mode !== 'amount') {
         patchAmount(index, raw);
         return;
@@ -420,19 +361,13 @@ export function SplitEditorSheet({
       patchAmount(index, next.text);
     },
     onAmountFocus: (index, el) => {
-      // the register is armed right away…
       setEntryMode('register');
-      // …but the empty-for-typing happens ONE FRAME LATER (#134): iOS
-      // WebKit stalls the caret for seconds when the input's value swaps
-      // in the same beat as focus. If focus already moved on (spam-
-      // switching fields), the deferred empty stands down.
+      // iOS WebKit stalls the caret when the value swaps in the same beat as focus: the field empties one frame later (#134)
       const amount = entryAmount(index);
       requestAnimationFrame(() => {
-        // another editable already took focus (spam-switch): stand down.
-        // (Synthetic test focus leaves activeElement on body — proceed.)
+        // another editable already took focus: stand down (a synthetic test focus leaves activeElement on body)
         const active = document.activeElement;
         if (el && active !== el && active instanceof HTMLElement && active.matches('input, textarea')) return;
-        // typing already replaced the value inside this frame: keep it
         if (el && el.value !== amount) return;
         setFocusStash({ index, amount });
         patchAmount(index, '');
@@ -445,14 +380,10 @@ export function SplitEditorSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall">
       <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
-        {/* #210 (user): split categories is the everyday tool — the
-            transaction split is for parts that need lives of their own */}
+        {/* split categories is the everyday tool; the transaction split is for parts that need lives of their own (#210) */}
         <p className="px-1 text-[12px] leading-relaxed text-ink-3" data-testid="split-vs-cats-hint">
           {t('split.vsCatsHint')}
         </p>
-        {/* exact euros for one charge, percentages when the shape repeats.
-            #283: the #209 what-the-modes-mean paragraph folds behind the
-            hint beside the chips instead of standing open */}
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
             {t('split.modeAmount')}
@@ -474,8 +405,6 @@ export function SplitEditorSheet({
           />
         ))}
 
-        {/* finish the open row first (user request): no new row while
-            one is still worth nothing */}
         <button
           data-testid="split-add-row"
           onClick={addRow}
@@ -490,15 +419,9 @@ export function SplitEditorSheet({
           <RemainderPill remainder={remainder} mode={mode} currency={tx.currency} onArm={armBalance} onBalance={autoBalance} />
         )}
 
-        {/* "Done", not "Save": in review this only stages the draft — the
-            card's Confirm is the real write (user: Save felt misleading).
-            translateZ pins the buttons to their own compositor layer:
-            adding a row shifts them down while Done flips to disabled
-            opacity, and iOS kept painting the OLD enabled button at the
-            old spot as a dark ghost band (user ss r6). */}
+        {/* "Done" only stages the draft in review; translateZ stops iOS painting the old enabled button as a ghost band */}
         <div className="flex flex-col gap-2" style={{ transform: 'translateZ(0)' }}>
-          {/* the remainder pill above already explains an unbalanced split —
-              the note steps in only for pill-less errors (e.g. a zero row) */}
+          {/* the remainder pill explains an unbalanced split; the note covers pill-less errors (a zero row) */}
           <FormBlockerNote show={attempted && !!error && remainder === 0} text={t('form.fixErrors')} testId="split-save-blocker" />
           <Button
             data-testid="split-save"

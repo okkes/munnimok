@@ -1,16 +1,6 @@
-// Keep an environment's TestFlight build alive (user 2026-10-09): Apple expires
-// a TestFlight build 90 days after its upload, so an app that sees no code
-// change for three months stops installing on the testers' phones. This asks
-// App Store Connect for the newest build of ONE bundle id and decides whether
-// native-ios.yml must upload a fresh one — the same code rebuilt is fine, a new
-// upload restarts the 90 days (a dispatch takes a fresh build number).
-//
-// Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID, BUNDLE_ID, RENEW_UNDER_DAYS
-// (default 30). Writes renew=true|false, reason=<text>, days_left=<n|''> to
-// GITHUB_OUTPUT, prints one table row (and appends it to the step summary); a
-// probe that cannot answer is a warning with renew=false — nothing is
-// dispatched on a guess. The pure parts are exported for the tests
-// (infra/tests/testflight-renew.test.mjs); the run happens only as a script.
+// Apple expires a TestFlight build 90 days after upload: decides whether native-ios.yml must upload a fresh one
+// a probe that cannot answer is a warning with renew=false: nothing is dispatched on a guess
+// pure parts are tested in infra/tests/testflight-renew.test.mjs
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
@@ -38,7 +28,6 @@ function daysLeft(expirationDate, now = Date.now()) {
   return Number.isFinite(t) ? Math.floor((t - now) / DAY_MS) : null;
 }
 
-/** the verdict for an app's newest build: renew when there is none, it expired, or fewer than `under` days remain */
 function decide(build, { now = Date.now(), under = RENEW_UNDER_DAYS } = {}) {
   if (!build) return { renew: true, daysLeft: null, reason: 'no build on TestFlight yet' };
   const a = build.attributes ?? {};
@@ -66,15 +55,13 @@ async function latestBuild(bundleId, { fetchImpl = fetch, token = null } = {}) {
   return { app, build: (builds.data ?? [])[0] ?? null };
 }
 
-/** one line of the run's table: bundle id, app, version, uploaded, expires, days left, verdict */
 function row(bundleId, app, build, verdict) {
   const a = build?.attributes ?? {};
   const day = (iso) => (iso ? String(iso).slice(0, 10) : '-');
   return oneLine([bundleId, app?.attributes?.name ?? '(no record)', a.version ?? '-', day(a.uploadedDate), day(a.expirationDate), verdict.daysLeft ?? '-', verdict.renew ? 'RENEW' : 'ok'].join(' | '));
 }
 
-// exitCode instead of process.exit(): exiting while the fetch socket is
-// still closing trips a libuv assertion on Windows (seen 2026-09-09)
+// exitCode, not process.exit(): exiting while the fetch socket is closing trips a libuv assertion on Windows
 async function main() {
   const bundleId = String(process.env.BUNDLE_ID ?? '').trim();
   const under = Number(process.env.RENEW_UNDER_DAYS) || RENEW_UNDER_DAYS;

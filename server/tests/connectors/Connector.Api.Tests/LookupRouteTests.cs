@@ -5,12 +5,7 @@ using Connector.Kit.Hosting.Endpoints;
 
 namespace Connector.Api.Tests;
 
-/// <summary>
-/// The aggregator shape on the wire (#414), walked against the consent mock:
-/// a lookup field's options and vendored logo, a login that is a redirect
-/// answered with the bank's return, the party's budget on the status
-/// document after a fetch, and the operator's inventory at the party.
-/// </summary>
+// the aggregator shape on the wire (#414), walked against the consent mock
 public sealed class LookupRouteTests(ShopApiFactory factory) : IClassFixture<ShopApiFactory>
 {
     private const string Provider = MockBankConsentAdapter.ProviderId;
@@ -46,7 +41,6 @@ public sealed class LookupRouteTests(ShopApiFactory factory) : IClassFixture<Sho
         using var garbage = await http.GetAsync($"/v1/{Provider}/options/institution/not-a-token!/logo");
         Assert.Equal(HttpStatusCode.NotFound, garbage.StatusCode);
 
-        // a party that lists nothing at connect time says so in the envelope
         using var unsupported = await http.GetAsync($"/v1/{MockBankSimpleAdapter.ProviderId}/options/institution");
         await ErrorEnvelope.AssertAsync(unsupported, HttpStatusCode.BadRequest, "unsupported_resource");
     }
@@ -78,7 +72,6 @@ public sealed class LookupRouteTests(ShopApiFactory factory) : IClassFixture<Sho
         var code = challenge.Text("code");
         Assert.StartsWith("mcr_", code, StringComparison.Ordinal);
 
-        // the return page hands the landing url back as the answer
         using var answerRequest = Wire.Post($"/v1/{Provider}/login/{sessionId}/answer",
             new { ChallengeId = challenge.Text("id"), Value = $"{ReturnUrl}?ref={code}" });
         using var answer = await http.SendAsync(answerRequest);
@@ -88,9 +81,8 @@ public sealed class LookupRouteTests(ShopApiFactory factory) : IClassFixture<Sho
         var settled = await Flows.AwaitStateAsync(http, Provider, sessionId, "active");
         Assert.Equal(MockBankConsentAdapter.InstitutionName, settled.GetProperty("provider_account").Text("display_name"));
 
-        // a fetch over the consent: the party reports its budget, the status document carries it
         var ticket = await Flows.ResumeAsync(http, Provider, new Connection(subject, sessionId, bundle));
-        await Flows.FetchPageAsync(http, Provider, $"/v1/{Provider}/accounts", ticket);   // asserts the fetch succeeded
+        await Flows.FetchPageAsync(http, Provider, $"/v1/{Provider}/accounts", ticket);
 
         using var status = await http.GetAsync("/v1/status");
         var party = (await status.JsonAsync()).GetProperty("providers").EnumerateArray()

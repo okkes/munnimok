@@ -48,7 +48,6 @@ import type { BindingView, JobView, ProviderKind, ProviderManifest } from './typ
 import { useCatalogue, useRelayAccountLinks, useRelayBindingsRead } from './useCatalogue';
 import { manageRouteFor, renewalOf } from './connectionRules';
 
-/** the hub's sections, in the order they read */
 const SECTIONS: { kind: ProviderKind; captionKey: 'conn.banks' | 'conn.shops' | 'conn.registries' }[] = [
   { kind: 'bank', captionKey: 'conn.banks' },
   { kind: 'store', captionKey: 'conn.shops' },
@@ -59,7 +58,6 @@ const SECTIONS: { kind: ProviderKind; captionKey: 'conn.banks' | 'conn.shops' | 
 export const SERVICE_KINDS: readonly ProviderKind[] = ['store', 'registry'];
 export const BANK_KINDS: readonly ProviderKind[] = ['bank'];
 
-/** the deep links a hub answers: a party to connect (as a connection, to sign in again), a connection or an account to bring into view (#528) */
 interface HubSearch {
   connect?: string;
   reconnect?: string;
@@ -67,7 +65,7 @@ interface HubSearch {
   uncovered?: string;
 }
 
-/** #528: brings a card into view and flashes it once the smooth scroll settles (the accounts screen's own pulse) */
+// #528: brings a card into view and flashes it once the smooth scroll settles
 function flashIntoView(elementId: string): boolean {
   const target = document.getElementById(elementId);
   if (!target) return false;
@@ -82,7 +80,6 @@ function flashIntoView(elementId: string): boolean {
 
 type Translate = ReturnType<typeof useLang>['t'];
 
-/** what a settled sync brought: bank rows first, else receipts, then what the matcher did with them */
 function okLine(state: SyncReport, t: Translate): string {
   let text: string;
   if (state.transactions > 0 || state.accounts > 0) {
@@ -105,12 +102,10 @@ const REFUSAL_KEYS: Partial<Record<SyncReport['status'], TranslationKey>> = {
   asking: 'conn.state.asking',
 };
 
-/** a sync attempt's outcome, spoken out loud */
 function SyncResultLine({ id, state, found, older }: Readonly<{ id: string; state: 'busy' | SyncReport; found?: number | null; older?: string }>) {
   const { t, lang } = useLang();
   if (state === 'busy') {
     let busy = found == null ? t('conn.syncBusy') : t('conn.syncFound', { n: found });
-    // #460: the sync went on to older history — how far back it reached so far
     if (older) busy = olderLine(older, t, lang);
     return (
       <span className="block text-[11px] text-accent-deep" data-testid={`conn-syncing-${id}`}>
@@ -144,7 +139,6 @@ function relayLine(binding: BindingView | undefined, t: Translate, lang: Lang): 
   return { text, warn: false };
 }
 
-/** the party asked for a pause — with the moment it is over when the relay said how long (user question 2026-10-01: "what does the pause mean?") */
 function pauseLine(error: NonNullable<ConnectorConnRow['lastError']>, t: Translate, lang: Lang): string {
   if (!error.at || !error.retryAfterSeconds) return t('conn.state.wait');
   const until = new Date(Date.parse(error.at) + error.retryAfterSeconds * 1000);
@@ -152,14 +146,12 @@ function pauseLine(error: NonNullable<ConnectorConnRow['lastError']>, t: Transla
   return t('conn.state.waitUntil', { time: until.toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) });
 }
 
-/** a sign-in in flight: where it stands, in one line */
 function pendingLine(login: PendingLogin, t: Translate): StateLine {
   if (login.error) return { text: t('conn.pending.failed'), warn: true };
   if (login.asking) return { text: t('conn.pending.asking'), warn: true };
   return { text: t('conn.pending.signingIn'), warn: false };
 }
 
-/** what this device knows about the connection */
 function deviceLine(view: ConnectionView, t: Translate, lang: Lang): StateLine {
   const { device, meta, hasBundle } = view;
   if (!device) return meta.status === 'expired' ? { text: t('conn.state.reconnect'), warn: true } : { text: t('conn.state.elsewhere'), warn: false };
@@ -172,7 +164,6 @@ function deviceLine(view: ConnectionView, t: Translate, lang: Lang): StateLine {
   return { text, warn: false };
 }
 
-/** a job's question while a sync runs from the hub */
 interface JobAsk {
   job: JobView;
   provider: string;
@@ -186,18 +177,10 @@ const accountTail = (account: ConnectorAccountView['account']): string =>
 const pendingQuestionOf = (view: ConnectionView, binding: BindingView | undefined): string | undefined =>
   view.device?.lastError?.artifactsJobId ?? binding?.artifactsJobId ?? undefined;
 
-/** the questions a standing "always report" answered this page load — once per job, so a row that
- *  keeps its id a moment longer (the relay's copy stays until the next load) never shares twice */
+/** answered this page load, once per job: the relay's copy stays a while, so a row must never share twice */
 const autoAnswered = new Set<string>();
 
-/**
- * The connections of some kinds (#367, the hub): every party the user
- * connected, as cards with the party's status and the connection's state,
- * one primary action per state, the spaces a shop's receipts flow into or
- * the accounts a bank handed over — and the door to connect one more.
- * #527: Connected services renders the shops and registries, All accounts
- * the banks (with a bank-only picker), on the same machinery.
- */
+// #527: Connected services renders shops and registries, All accounts the banks (bank-only picker), on one machinery
 export function ConnectionHub({
   kinds,
   route,
@@ -206,7 +189,6 @@ export function ConnectionHub({
   kinds: readonly ProviderKind[];
   /** the screen the hub sits on: a deep link's params are cleared back to it */
   route: '/connections' | '/accounts';
-  /** a host whose own door (the Add-account chooser) opens the picker holds its state */
   picker?: { open: boolean; onOpenChange: (open: boolean) => void };
 }>) {
   const { t, lang } = useLang();
@@ -224,16 +206,13 @@ export function ConnectionHub({
   const ended = (view: ConnectionView): boolean =>
     renewalOf(view.meta, view.device, bindings.get(view.meta.id), bindingsRead !== undefined, catalogue.byId.get(view.meta.store)).ended;
   const banks = kinds.includes('bank');
-  // #445: which connections still exist - an account stamped with a gone one is not fetched any more;
-  // only for accounts the viewer's own connection feeds (a friend's ids are not in this device's set) -
-  // the feed set says whose (user ss 2026-10-09), the attacher's name only while that set is out of reach
+  // #445: an account stamped with a gone connection is not fetched any more; the feed set says whose accounts are the viewer's
+  // (a friend's ids are not in this device's set), the attacher's name only while that set is out of reach
   const liveIds = useLiveConnectionIds();
   const myFeeds = useMyFeedIds();
   const identity = useSession((s) => s.identity);
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
-  // every sync in flight or just finished, whoever started it; the rows read it
   const activity = useSyncActivity((s) => s.activity);
-  // #524: which accounts each of the person's connections fetches, asked again after every finished sync
   const finishedSyncs = Object.values(activity).filter((a) => a.phase === 'done').length;
   const reachedBy = useRelayAccountLinks(finishedSyncs);
   const sinceOf = (view: ConnectorAccountView): string | null =>
@@ -242,25 +221,20 @@ export function ConnectionHub({
   const { connect: connectParam, reconnect: reconnectParam } = search;
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
-  /** the kind of party an account was fetched by — a registry's positions live with Connected services */
   const partyKindOf = (provider: string | undefined): ProviderKind =>
     (provider ? (catalogue.byId.get(provider)?.kind ?? connections?.find((c) => c.meta.store === provider)?.meta.kind) : undefined) ?? 'bank';
 
-  // an accounts screen's Connect door arrives with the bank picker already open (#414, #527); a host may hold it
   const [ownPicker, setOwnPicker] = useState(() => !picker && banks && takeCatalogueIntent());
   const catalogueOpen = picker?.open ?? ownPicker;
   const setCatalogueOpen = picker?.onOpenChange ?? setOwnPicker;
   const [flow, setFlow] = useState<FlowRequest | null>(null);
-  // sign-ins in flight (closed sheets included): followed by the connect steps and adopted when they settle
   const pendingLogins = usePendingLogins((s) => s.logins);
   const forgetPending = usePendingLogins((s) => s.remove);
   const [manageId, setManageId] = useState<string | null>(null);
   const [ask, setAsk] = useState<JobAsk | null>(null);
-  // #441 L1: answers given to "report this failure?" this visit (the relay's copy refreshes on the next load)
   const [reportAnswers, setReportAnswers] = useState<Record<string, 'yes' | 'no'>>({});
   const ranges = useFetchedRanges();
 
-  // a finished sync's result leaves the row after a while: re-render when the soonest one expires
   const [, tick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     const waits = Object.values(activity)
@@ -274,8 +248,7 @@ export function ConnectionHub({
 
   const signedIn = connectorsAvailable();
 
-  // user 2026-10-07: "Always report" means never asked — a question under a card whose
-  // connection carries the standing answer is answered yes here, the moment it lands
+  // "Always report" means never asked: a question under a card with the standing answer is answered yes on landing
   useEffect(() => {
     if (!signedIn) return;
     for (const view of connections ?? []) {
@@ -288,8 +261,7 @@ export function ConnectionHub({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the rows and the relay's word are the inputs; ops is rebuilt every render
   }, [connections, bindings, signedIn]);
 
-  // #445: party-fed accounts no live connection of the person's fetches any more — they sit under no card
-  // (#524: a card lists only what its own connection fetches), so they are listed here, with the way back
+  // #445/#524: party-fed accounts no live connection fetches any more sit under no card, so they are listed here
   const orphaned = (bankAccounts ?? [])
     .filter((view) => kinds.includes(partyKindOf(view.account.provider ?? view.account.source)))
     .map((view) => ({ account: view.account, since: sinceOf(view) }))
@@ -299,9 +271,7 @@ export function ConnectionHub({
   const kindOf = (view: ConnectionView): ProviderKind => view.meta.kind ?? catalogue.byId.get(view.meta.store)?.kind ?? 'store';
 
   const runSync = async (view: ConnectionView) => {
-    // the row follows the sync through the activity store, wherever it was started
     await ops.syncNow(view.meta.id, {
-      // a question mid-fetch is asked right here — a human is present
       onChallenge: (job) => new Promise<string | null>((resolve) => setAsk({ job, provider: view.meta.store, resolve })),
     });
     setAsk(null);
@@ -312,19 +282,14 @@ export function ConnectionHub({
     setFlow({ manifest, reconnectId });
   };
 
-  /** user 2026-10-07: the manage sheet's "Sign in again" — the card's own reconnect door, for any connection not mid-sign-in */
   const signInAgainFor = (view: ConnectionView): (() => void) | undefined => {
     const manifest = catalogue.byId.get(view.meta.store);
     if (!signedIn || !manifest || pendingLogins[view.meta.id]) return undefined;
     return () => openFlow(manifest, view.meta.id);
   };
 
-  // #445: an accounts sheet's "Reconnect <party>" door arrives with the party
-  // named in the URL - the flow opens for it at once, and the name leaves the URL.
-  // Prod 2026-10-08: it also names the connection the account was fetched by; while
-  // that connection still exists here the sign-in runs AS it, so the server replaces
-  // its session instead of scheduling a second one beside it (two sessions on one
-  // consent shared the bank's daily budget, and the nightly sync "kept stopping")
+  // #445: a reconnect door names the connection that fetched the account; while it exists the sign-in runs AS it,
+  // so the server replaces its session: two sessions on one consent shared the bank's daily budget
   useEffect(() => {
     if (!connectParam || !signedIn) return;
     const manifest = catalogue.byId.get(connectParam);
@@ -341,8 +306,6 @@ export function ConnectionHub({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the manifest map and the live ids are the inputs that change
   }, [connectParam, reconnectParam, catalogue.byId, liveIds]);
 
-  // #528: a reconnect door elsewhere names the connection (or the account no connection fetches any more):
-  // it is brought into view and flashed, its own action right there — once the rows it names have rendered
   const focusId = search.connection ? `conn-row-${search.connection}` : search.uncovered && `conn-uncovered-row-${search.uncovered}`;
   const rendered = (connections?.length ?? 0) + orphaned.length;
   useEffect(() => {
@@ -351,7 +314,6 @@ export function ConnectionHub({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the rows rendering is what the effect waits for
   }, [focusId, rendered]);
 
-  /** back into a sign-in that was closed mid-way */
   const continueLogin = (login: PendingLogin) => {
     const manifest = catalogue.byId.get(login.provider);
     if (!manifest) return;
@@ -363,7 +325,6 @@ export function ConnectionHub({
     forgetPending(login.connectionId);
   };
 
-  /** the attach step on the active space's accounts screen, the account already picked (#310) */
   const attach = (accountId: string) => {
     setSpaceAttachIntent(accountId);
     void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
@@ -373,7 +334,6 @@ export function ConnectionHub({
     const running = activity[view.meta.id];
     if (running?.phase === 'fetching') return <SyncResultLine id={view.meta.id} state="busy" found={running.found} older={running.older} />;
     if (resultStillFresh(running)) return <SyncResultLine id={view.meta.id} state={running.report} />;
-    // a sign-in in flight for this connection outranks every other word
     const inFlight = pendingLogins[view.meta.id];
     if (inFlight) {
       const line = pendingLine(inFlight, t);
@@ -383,8 +343,7 @@ export function ConnectionHub({
         </span>
       );
     }
-    // what the relay heard last wins where it knows more than this device: a
-    // question the scheduler left, a session it found dead, a sync it ran itself
+    // what the relay heard last wins where it knows more than this device (a question the scheduler left, a dead session)
     const binding = bindings.get(view.meta.id);
     // a consent the relay no longer keeps reads as one to renew, whatever this device last saw
     const gone = !binding && ended(view) ? { text: t('conn.state.reconnect'), warn: true } : null;
@@ -396,11 +355,10 @@ export function ConnectionHub({
     );
   };
 
-  /** #524: the accounts this connection itself fetches — never every account its party fed */
+  /** #524: only the accounts this connection itself fetches, never every account its party fed */
   const fetchedBy = (view: ConnectionView) =>
     (bankAccounts ?? []).filter((entry) => fetchingConnectionIds(entry.account, reachedBy).includes(view.meta.id));
 
-  /** how far the fetches reach — the dates covered and the count — under the state (user request 2026-10-02) */
   const rangeOf = (view: ConnectionView) => {
     const kind = kindOf(view);
     if (kind === 'registry') return null;
@@ -412,7 +370,6 @@ export function ConnectionHub({
     );
   };
 
-  /** the one action a state asks for */
   const primaryAction = (view: ConnectionView) => {
     if (!signedIn) return null;
     const manifest = catalogue.byId.get(view.meta.store);
@@ -444,7 +401,6 @@ export function ConnectionHub({
     );
   };
 
-  /** a shop's receipts flow into these spaces */
   const usedIn = (view: ConnectionView) => {
     const names = (links ?? []).filter((l) => l.instanceId === view.meta.id).map((l) => spaceNames.get(l.spaceId) ?? '').filter(Boolean);
     if (names.length === 0) return null;
@@ -460,7 +416,6 @@ export function ConnectionHub({
     );
   };
 
-  /** a bank's accounts — the ones this connection itself fetches (#524) — each with where it is attached and the door to attach it here */
   const accountsOf = (view: ConnectionView) => {
     const mine = fetchedBy(view);
     return (
@@ -501,7 +456,6 @@ export function ConnectionHub({
     );
   };
 
-  /** a sign-in in flight for a connection that does not exist yet: where it stands, the way back in, the way out */
   const renderPending = (login: PendingLogin) => {
     const manifest = catalogue.byId.get(login.provider);
     const line = pendingLine(login, t);
@@ -534,11 +488,9 @@ export function ConnectionHub({
     );
   };
 
-  /** #441 L1: a failed run left a picture that waits on the person's word — asked once, under the card */
   const reportAsk = (view: ConnectionView) => {
     const jobId = pendingQuestionOf(view, bindings.get(view.meta.id));
     if (!jobId || !signedIn) return null;
-    // a standing "always report" reads as answered from the first paint — the effect above sends it
     const answered = reportAnswers[jobId] ?? (view.device?.reportFailures ? 'yes' : null);
     return (
       <div className="mt-2 pl-9">
@@ -623,7 +575,6 @@ export function ConnectionHub({
 
         {SECTIONS.filter(({ kind }) => kinds.includes(kind)).map(({ kind, captionKey }) => {
           const rows = (connections ?? []).filter((c) => kindOf(c) === kind);
-          // sign-ins in flight for connections that are not rows yet sit at the top of their section
           const known = new Set(rows.map((c) => c.meta.id));
           const starting = Object.values(pendingLogins).filter(
             (l) => !known.has(l.connectionId) && (catalogue.byId.get(l.provider)?.kind ?? 'store') === kind,
@@ -640,8 +591,6 @@ export function ConnectionHub({
           );
         })}
 
-        {/* #445: accounts no connection of the person's fetches any more still belong
-            to them: say so, and offer the way back */}
         {orphaned.length > 0 && (
           <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-uncovered">
             <div className="px-4 pt-3.5 pb-1">
@@ -676,7 +625,6 @@ export function ConnectionHub({
           </div>
         )}
 
-        {/* the catalogue door — always visible, honest about sign-in; on All accounts the bank picker's */}
         <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
           <div className="flex items-center gap-3 px-4 py-3.5" data-testid="conn-add">
             <Icon name={banks ? 'bank-plus' : 'plus-circle-outline'} size={20} color="var(--m-ink-3)" />
@@ -694,7 +642,6 @@ export function ConnectionHub({
           </div>
         </div>
 
-        {/* the household agents (§10.4): the parties that only talk to a browser on the person's own connection */}
         {signedIn && !banks && (
           <button
             data-testid="conn-agents"
@@ -712,7 +659,6 @@ export function ConnectionHub({
 
         {!banks && (
           <>
-            {/* the hub's own receipts: everything the shops handed over, per connection (a space's Receipts carry the matching) */}
             <button
               data-testid="conn-view-receipts"
               onClick={() => void navigate({ to: '/connections/receipts' })}
@@ -758,7 +704,6 @@ export function ConnectionHub({
 
       <ConnectSteps flow={flow} onFlowChange={setFlow} catalogue={catalogue} />
 
-      {/* a party's question while a sync runs from here */}
       <Sheet
         open={ask !== null}
         onOpenChange={(open) => {
@@ -790,11 +735,6 @@ export function ConnectionHub({
   );
 }
 
-/**
- * Settings → Connected services (#527, renamed from Connections): the shops
- * and registries. Banks are managed with the accounts (All accounts), on
- * the same machinery and the same relay.
- */
 export function ConnectionsScreen() {
   const { t } = useLang();
   return (
