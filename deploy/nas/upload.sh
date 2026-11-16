@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Upload files to a Synology NAS via the FileStation Web API.
-#   upload.sh FILE [FILE...]
-# Reads SYNOLOGY_URL / SYNOLOGY_USER / SYNOLOGY_PASS / SYNOLOGY_PATH from
-# the environment. VERSION is uploaded LAST so the NAS poller never sees a
-# new version stamp before the bundle it points at has landed.
+# VERSION is uploaded LAST so the NAS poller never sees a stamp before its bundle has landed.
 set -euo pipefail
 
 : "${SYNOLOGY_URL:?}" "${SYNOLOGY_USER:?}" "${SYNOLOGY_PASS:?}" "${SYNOLOGY_PATH:?}"
@@ -39,8 +35,7 @@ logout() {
 
 upload_one() {
   local sid="$1" file="$2" resp
-  # _sid must ride the query string: as a multipart field the API answers
-  # error 119 (SID not found)
+  # _sid must ride the query string: as a multipart field the API answers error 119
   resp=$(curl -sS "$URL/webapi/entry.cgi?_sid=$sid" \
     -F "api=SYNO.FileStation.Upload" \
     -F "version=2" \

@@ -10,10 +10,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 
-/**
- * What ended the app's process, kept where the next start finds it. The web layer's error reporting dies with
- * the process: without this an Android crash leaves no trace anywhere the app's owner can read.
- */
+/** What ended the app's process, kept for the next start: the web layer's error reporting dies with the process. */
 final class LastExit {
 
     static final String CRASH_FILE = "last-crash.txt";
@@ -26,7 +23,7 @@ final class LastExit {
 
     private LastExit() {}
 
-    /** Notes an exception nothing caught, then hands it to whoever handled it before: the crash itself goes on as it would have. */
+    /** chains to the previous handler: the crash itself goes on as it would have */
     static synchronized void watch(Context context) {
         // an activity that is created again must not wrap the handler in itself
         if (watching) return;
@@ -45,7 +42,6 @@ final class LastExit {
         });
     }
 
-    /** The web view's own process died: whether it crashed or was killed, and how important the system held it. */
     static void noteRendererGone(Context context, RenderProcessGoneDetail detail) {
         try {
             String how = "gone";
@@ -60,7 +56,7 @@ final class LastExit {
         }
     }
 
-    /** The note under that name, once: it is gone after it was read. Null when there is none. */
+    /** read once: the note is deleted after it was read; null when there is none */
     static String take(Context context, String name) {
         File file = new File(context.getFilesDir(), name);
         if (!file.exists()) return null;

@@ -11,12 +11,8 @@
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.15" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
-    <!-- GHSA-v5pm-xwqc-g5wc flags every OpenApi 2.x, but the fixed 3.x
-         line breaks AspNetCore.OpenApi's source generator (built against
-         2.x, incl. 10.0.10). The vulnerable path is PARSING untrusted
-         OpenAPI documents; this api only GENERATES its own document.
-         Pinned to the newest 2.x, suppressed until Microsoft ships a
-         3.x-compatible generator — dependabot will surface that bump. -->
+    <!-- GHSA-v5pm-xwqc-g5wc flags every 2.x but 3.x breaks AspNetCore.OpenApi's source generator; the flaw is in PARSING
+         untrusted documents and this api only generates its own. Newest 2.x, suppressed until a 3.x-compatible generator ships -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.13.0" NoWarn="NU1903" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -33,7 +29,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- test seams (GcFetchService.FetchAllAsync etc.) -->
     <InternalsVisibleTo Include="Munni.Api.Tests" />
   </ItemGroup>
 

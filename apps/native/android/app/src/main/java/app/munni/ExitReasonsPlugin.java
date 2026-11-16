@@ -12,11 +12,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-/**
- * Tells the web layer how the app's processes ended lately: Android's own record of it (from Android 11 on), the
- * stack trace of an exception nothing caught, and the note of a web view process that died. The web layer reports
- * what was not somebody's choice (lib/nativeExit.ts).
- */
+/** How the app's processes ended lately, for the web layer to report (lib/nativeExit.ts); the system record needs Android 11. */
 @CapacitorPlugin(name = "ExitReasons")
 public class ExitReasonsPlugin extends Plugin {
 

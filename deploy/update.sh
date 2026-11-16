@@ -1,10 +1,7 @@
 #!/bin/sh
-# munni update script for the Synology NAS (run as root) — one stack:
+# One stack on the Synology NAS (as root), run by deploy/nas/apply.sh or by hand:
 #   sh /volume1/docker/munni-nas-prod/update.sh docker-compose.munni-nas-prod.yml
-# Invoked by deploy/nas/apply.sh when GitHub publishes a new bundle, or by
-# hand. Compose reads .env next to this script (rendered by CI — never
-# edit it on the NAS, the next deploy overwrites it). Re-authenticates to
-# GHCR from the env file when a token is present.
+# .env is rendered by CI: never edit it on the NAS, the next deploy overwrites it.
 set -eu
 cd "$(dirname "$0")"
 # --seed: only the seeds below (the poller retries a seed that could not run yet)
@@ -14,8 +11,7 @@ COMPOSE_FILE="${1:-docker-compose.yml}"
 ENV_FILE=".env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE next to update.sh" >&2; exit 1; }
 
-# Read single values out of the env file. Never `source` it: values like
-# FCM_SERVICE_ACCOUNT_JSON contain spaces/quotes the shell would execute.
+# never `source` the env file: values like FCM_SERVICE_ACCOUNT_JSON contain spaces/quotes the shell would execute
 env_val() {
   sed -n "s/^$1=//p" "$ENV_FILE" | head -n 1 | tr -d '\r' \
     | sed "s/^'\(.*\)'$/\1/; s/^\"\(.*\)\"\$/\1/"
@@ -23,15 +19,12 @@ env_val() {
 GHCR_USER="$(env_val GHCR_USER)"
 GHCR_PAT="$(env_val GHCR_PAT)"
 compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
-# the postgres service of an environment stack carries the environment's name (postgres-<env>); the in-stack alias is "postgres"
+# an environment stack's postgres service is named postgres-<env>
 pg_service() { grep -oE '^  postgres(-[a-z0-9]+)?:' "$COMPOSE_FILE" | head -n 1 | tr -d ' :'; }
 
-# ── Logto machine credentials as code: the env carries two credentials the
-#    bootstrap minted; insert them into Logto's own database once
-#    (idempotent) — `infra` in the default tenant with the Management API
-#    role, and one in the admin tenant with the console credential's roles.
-#    Logto creates its tables on first boot: wait for the role row; a seed
-#    that cannot run yet leaves .logto-seed-pending for the poller.
+# Logto machine credentials minted by the bootstrap go into Logto's own db (idempotent): `infra` in the
+# default tenant (Management API role) and one in the admin tenant. Logto creates its tables on first
+# boot, so wait for the role row; a seed that cannot run yet leaves .logto-seed-pending for the poller.
 logto_seed() {
   SEED_ID="$(env_val LOGTO_SEED_INFRA_ID)"; SEED_SECRET="$(env_val LOGTO_SEED_INFRA_SECRET)"
   ADM_ID="$(env_val LOGTO_SEED_ADMIN_ID)"; ADM_SECRET="$(env_val LOGTO_SEED_ADMIN_SECRET)"
@@ -69,9 +62,7 @@ logto_seed() {
   fi
 }
 
-# ── GlitchTip admin + API token as code (the shared stack): create the
-#    superuser and the token inside the container once (idempotent) so the
-#    bootstrap can write DSNs back without anyone registering by hand.
+# GlitchTip superuser + API token created once (idempotent) so the bootstrap can write DSNs back unattended
 glitchtip_seed() {
   GT_EMAIL="$(env_val GLITCHTIP_SEED_EMAIL)"; GT_PASSWORD="$(env_val GLITCHTIP_SEED_PASSWORD)"; GT_TOKEN="$(env_val GLITCHTIP_SEED_TOKEN)"
   if [ -z "$GT_EMAIL" ] || [ -z "$GT_PASSWORD" ] || [ -z "$GT_TOKEN" ]; then return 0; fi
@@ -121,9 +112,8 @@ if [ "$MODE" = "seed" ]; then
   exit 0
 fi
 
-# the registry: with a token, log in fresh; without one, DROP whatever credential the daemon still holds — the images
-# are public, and a login left behind by an earlier token (revoked with the old secrets) makes every pull answer
-# "denied: denied" (#365: the NAS ran weeks behind while every deploy reported green)
+# without a token, DROP any credential the daemon holds: the images are public, and a login left by a
+# revoked token makes every pull answer "denied: denied" (#365: the NAS ran weeks behind, deploys green)
 if [ -n "$GHCR_PAT" ]; then
   if ! printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:-okkes}" --password-stdin; then
     echo "ghcr login failed — dropping the stored credential, pulling anonymously"
@@ -138,14 +128,14 @@ if ! compose pull; then
   exit 1
 fi
 
-# don't die before the status dump below — it captures WHY up failed
+# don't die before the status dump below: it captures WHY up failed
 UP_RC=0
-# --remove-orphans: a service that left the stack must leave the NAS too — its container would otherwise keep (re)starting
+# --remove-orphans: a service that left the stack must leave the NAS, or its container keeps restarting
 compose up -d --remove-orphans || UP_RC=$?
 [ "$UP_RC" -eq 0 ] && { logto_seed; glitchtip_seed; }
 docker image prune -f
 
-# ── post-deploy status dump (readable via File Station / the NAS-diagnostics workflow)
+# status dump, read via File Station / the NAS-diagnostics workflow
 sleep 20
 {
   echo "=== status $(date '+%Y-%m-%d %H:%M:%S') $COMPOSE_FILE ==="

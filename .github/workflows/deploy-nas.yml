@@ -1,17 +1,6 @@
-# Deploy stacks of the nas platform to the Synology NAS via the File
-# Station API (no SSH). One bundle per stack — rendered from the platform
-# config GitHub holds (the MUNNI_PLATFORM_* variables the wizard publishes,
-# #416, materialized into infra/platforms first) with every placeholder
-# filled from the stack's GitHub environment, each secret NAMED explicitly below (no
-# toJSON(secrets): the pattern GitHub's scanner holds public-repo runs
-# for). The NAS-side poller (deploy/nas/apply.sh, a Task Scheduler entry
-# the shared stack's bootstrap ensures) picks the stamp up and composes the
-# stack up in its own folder next to the live dir.
-#
-# Triggers: the wizard / the Bootstrap chain (dispatch, one stack or every
-# stack of a channel), and every successful image build (dev branch →
-# stacks on channel `dev`, master → channel `latest`) — the sustainable
-# pipeline: merge, images build, the NAS follows.
+# Deploys nas stacks to the Synology via File Station (no SSH); the NAS-side poller (deploy/nas/apply.sh)
+# picks the stamp up. Secrets are NAMED one by one: toJSON(secrets) makes GitHub's scanner hold public-repo runs.
+# Triggers: dispatch (wizard / Bootstrap chain) and every successful image build (dev → channel dev, master → latest).
 name: Deploy to NAS
 run-name: ${{ github.event_name == 'workflow_dispatch' && format('Deploy {0}', inputs.stack || format('every {0} stack', inputs.channel)) || format('Deploy after images ({0})', github.event.workflow_run.head_branch) }}
 
@@ -46,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # the tools of the branch that built the images (a dispatch: the wizard's ref); the config comes from GitHub's variables (#416)
+          # the tools of the branch that built the images (a dispatch: the wizard's ref)
           ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
       - uses: actions/setup-node@v7
         with:
@@ -69,7 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - name: Which stacks
         id: m
-        # a stack rides in its GitHub environment; without one it was never bootstrapped — an image build skips it (a dispatch names its stack: the Bootstrap chain created the environment)
+        # no GitHub environment = never bootstrapped: an image build skips the stack, a dispatch names it
         run: |
           if EXISTING=$(gh api "repos/${{ github.repository }}/environments?per_page=100" --jq '[.environments[].name] | join(",")'); then
             FILTER=(--existing "$EXISTING")
@@ -94,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 1 # the shared stack first (the matrix lists it first); one upload session at a time
+      max-parallel: 1 # the shared stack first (listed first); one upload session at a time
       matrix:
         include: ${{ fromJSON(needs.stacks.outputs.include) }}
     concurrency:
@@ -104,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # the branch this stack's runs check out (#416): the platform's choice, else by its image channel
+          # the platform's branch choice, else by image channel (#416)
           ref: ${{ matrix.ref }}
       - uses: actions/setup-node@v7
         with:
@@ -114,8 +103,8 @@ jobs:
         env:
           MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
           MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
-      # the environment holds the platform's domain once its Bootstrap ran — before that there is nothing to deploy (the Bootstrap chains this Deploy when it is done).
-      # an image-triggered deploy steps aside only on the exact answer "superseded" (a newer run deploys the stack anyway) — an error or no answer deploys
+      # no domain secret = Bootstrap has not run (it chains this Deploy when done).
+      # an image-triggered deploy steps aside only on the exact answer "superseded"; an error or no answer deploys
       - name: Bootstrapped?
         id: ready
         run: |
@@ -156,7 +145,6 @@ jobs:
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
         env:
           PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
-          # every placeholder of the rendered env template, by name
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -186,7 +174,6 @@ jobs:
           LOGODEV_PUBLIC_TOKEN: ${{ secrets.LOGODEV_PUBLIC_TOKEN }}
           BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
           RECEIPT_AI_API_KEY: ${{ secrets.RECEIPT_AI_API_KEY }}
-          # the connector control plane and the relay (#367)
           CONNECTOR_SEAL_KEY_K1: ${{ secrets.CONNECTOR_SEAL_KEY_K1 }}
           CONNECTOR_ENROLLMENT_HMAC: ${{ secrets.CONNECTOR_ENROLLMENT_HMAC }}
           CONNECTOR_SUBJECT_SALT: ${{ secrets.CONNECTOR_SUBJECT_SALT }}
@@ -209,7 +196,7 @@ jobs:
           if [ -z "$LIVE" ] || [ "$LIVE" = "${SYNOLOGY_PATH%/}" ]; then
             echo "::error::SYNOLOGY_PATH must be a folder inside a shared folder, e.g. /docker/munni-nas/published"; exit 1
           fi
-          # the poller script rides along with every bundle (the task runs a throwaway copy)
+          # the task runs a throwaway copy, so the poller script ships with every bundle
           SYNOLOGY_PATH="$LIVE" bash deploy/nas/upload.sh deploy/nas/apply.sh
           bash deploy/nas/upload.sh "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}" "$RUNNER_TEMP/${{ steps.bundle.outputs.stamp }}"
         env:
@@ -217,10 +204,8 @@ jobs:
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
-      # no click left: the first deploy carries the seeds; once the poller applied
-      # them and the services answer with the seeded credentials, the Bootstrap
-      # runs once more and turns sign-in / crash reports into code, then deploys
-      # again so the frontends pick the app ids up. Ends by itself.
+      # the first deploy carries the seeds; once the services answer with them the Bootstrap runs again
+      # and deploys again so the frontends get the app ids
       - name: Wait for the poller, read its log, and see whether the seeds landed
         id: applied
         if: ${{ steps.ready.outputs.ok == 'true' }}

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- largeHeap: the encrypted store hands a whole table to the web layer as ONE object on the Java side, and
-         the heap a phone grants an app by default is small next to some years of transactions (#594) -->
+    <!-- largeHeap: the encrypted store hands a whole table to the web layer as one Java object; the default heap is too small (#594) -->
     <application
         android:allowBackup="true"
         android:largeHeap="true"
@@ -23,8 +22,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- munni:// deep links: bank-consent and auth callbacks land
-                 back INSIDE the app (docs/native-apps-design.md N3) -->
+            <!-- deep links: bank-consent and auth callbacks land back inside the app -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -32,9 +30,7 @@
                 <data android:scheme="${munniScheme}" />
             </intent-filter>
 
-            <!-- verified App Links (UL2): the bank's https redirect and
-                 split invites open the app directly — scope stays TIGHT
-                 so browser flows (sign-in callbacks) are never hijacked -->
+            <!-- verified App Links: keep the paths tight so browser flows (sign-in callbacks) are never hijacked -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -45,7 +41,6 @@
                 <data android:pathPrefix="/invite" />
             </intent-filter>
 
-            <!-- §5: long-press launcher shortcuts (Review / Transactions) -->
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
@@ -57,8 +52,6 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
     </application>
-
-    <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
 </manifest>

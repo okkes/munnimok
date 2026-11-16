@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Long-press launcher shortcuts (§5). The VIEW intents ride the same
-     munni:// deep-link path the webview already parses; the dev flavor
-     overrides this file with its own package/scheme. -->
+<!-- the dev flavor overrides this file with its own package/scheme -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:shortcutId="review"

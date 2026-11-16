@@ -1,7 +1,3 @@
-/* munni admin console (admin-redesign AD2, 2026-07-19): slick, minimal,
-   modern — one consistent control language (every button, input and
-   select shares the same geometry), calm surfaces, the app's dark-mint
-   brand voice at desk density. Light/dark follows the OS. */
 :root {
   --brand: #08372b;
   --brand-ink: #eef3f0;
@@ -51,10 +47,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── one control language ─────────────────────────────────────────────
-   Every bare <button> is a quiet ghost control; .btn opts into the
-   filled primary. Inputs and selects share the exact same geometry, so
-   forms read as one family instead of a pile of odd shapes. */
+/* a bare <button> is a quiet ghost control; .btn opts into the filled primary */
 button {
   height: 30px;
   padding: 0 12px;
@@ -96,7 +89,6 @@ select { cursor: pointer; }
 .btn.danger { background: var(--danger); }
 .btn.danger:hover:not(:disabled) { background: var(--danger); filter: brightness(1.08); }
 
-/* ── layout: fixed sidebar + content ─────────────────────────────── */
 .shell { display: flex; min-height: 100vh; }
 .sidebar {
   width: 216px;
@@ -143,7 +135,6 @@ select { cursor: pointer; }
 h1 { font: 700 26px/1.2 Georgia, 'Times New Roman', serif; margin: 0 0 20px; letter-spacing: -0.01em; }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink3); margin: 0 0 12px; font-weight: 650; }
 
-/* ── cards, tiles, chips ─────────────────────────────────────────── */
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -171,7 +162,6 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: v
 .ok-chip { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 .danger-chip { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
 
-/* ── tables ───────────────────────────────────────────────────────── */
 table { width: 100%; border-collapse: collapse; }
 th {
   text-align: left;
@@ -196,7 +186,6 @@ td.warn { color: var(--warn); font-weight: 700; }
 .kw-words { color: var(--ink2); font-size: 13px; }
 em { color: var(--warn); font-style: normal; font-size: 10.5px; font-weight: 700; text-transform: uppercase; margin-left: 6px; letter-spacing: 0.04em; }
 
-/* ── controls & layout helpers ────────────────────────────────────── */
 .search { min-width: 320px; margin-bottom: 14px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; min-height: 38px; }
 .center { display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; min-height: 100vh; }
@@ -209,7 +198,6 @@ em { color: var(--warn); font-style: normal; font-size: 10.5px; font-weight: 700
 .form-row select { min-width: 220px; }
 .form-row input { flex: 1; min-width: 220px; }
 
-/* narrow screens: don't break — sidebar becomes a top bar */
 @media (max-width: 768px) {
   .shell { flex-direction: column; }
   .sidebar { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; }
@@ -220,7 +208,6 @@ em { color: var(--warn); font-style: normal; font-size: 10.5px; font-weight: 700
   .content { padding: 18px 14px 72px; }
 }
 
-/* ── catalog: merged tree + sticky publish bar ───────────────────── */
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .page-head .sub { max-width: 640px; display: block; margin-top: 2px; }
 .page-head .chip { margin-top: 12px; }
@@ -259,7 +246,6 @@ em { color: var(--warn); font-style: normal; font-size: 10.5px; font-weight: 700
   background: linear-gradient(to top, var(--bg) 70%, transparent);
 }
 
-/* per-user sync-chain diagnosis: cards per section since 2026-10-09 (user: the id lines were "hard to understand") */
 .diag { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink2); padding: 6px 2px; }
 .diag strong { color: var(--ink); font-weight: 600; }
 .diag-section { margin-bottom: 16px; }
@@ -269,7 +255,6 @@ em { color: var(--warn); font-style: normal; font-size: 10.5px; font-weight: 700
 .diag-section .hint { margin-bottom: 8px; }
 .diag-section table { background: var(--surface); }
 
-/* ids kept short, the whole id on hover and one click away; an inline confirm; the notice strip; the dashboard's user groups */
 .id-chip { font: 500 11px/1 ui-monospace, monospace; padding: 3px 7px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); color: var(--ink2); cursor: copy; height: auto; }
 .id-chip code { font: inherit; }
 .confirm-inline { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -279,7 +264,6 @@ em { color: var(--warn); font-style: normal; font-size: 10.5px; font-weight: 700
 .user-group:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
 .user-group .card-head { margin-bottom: 6px; }
 
-/* the sign-in gate: the button and the one line that says whose account */
 .center .hint { max-width: 400px; margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink3); text-align: center; }
 .sidebar-foot .btn { width: 100%; background: rgb(255 255 255 / 12%); margin-bottom: 8px; }
 .sidebar-foot .btn:hover:not(:disabled) { background: rgb(255 255 255 / 22%); }

@@ -1,4 +1,3 @@
 <Project>
-  <!-- central package versions live with the sources -->
   <Import Project="$(MSBuildThisFileDirectory)../../src/connectors/Directory.Packages.props" />
 </Project>

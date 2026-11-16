@@ -7,8 +7,7 @@ android {
         applicationId "app.munni"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // CI feeds these (seconds since 2026 / package.json version) so every
-        // Play upload has a strictly increasing versionCode
+        // CI feeds these (seconds since 2026): every Play upload needs a strictly increasing versionCode
         versionCode Integer.parseInt(System.getenv('ANDROID_VERSION_CODE') ?: '1')
         versionName System.getenv('ANDROID_VERSION_NAME') ?: '1.0'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -18,13 +17,8 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // ONE flavor, MANY store identities: every environment of every
-    // platform is its own app (app.munni.<platform>.<env> by default,
-    // installable side by side). CI feeds the environment's id, deep-link
-    // scheme, label and https host (universal links) from the platform
-    // config (infra/platforms); the google-services stub at
-    // src/app/google-services.json is rebranded per build and replaced by
-    // the real Firebase config when the wizard's automation supplied one.
+    // one flavor, many store identities: each environment is its own app (installable side by side);
+    // CI feeds id, scheme, label and host from infra/platforms, and swaps the google-services stub for the real config
     flavorDimensions += 'channel'
     productFlavors {
         app {
@@ -37,8 +31,7 @@ android {
             ]
         }
     }
-    // release signing comes from CI env (repo secrets); local builds
-    // without the keystore still assemble debug just fine
+    // release signing comes from CI env; local builds without the keystore still assemble debug
     signingConfigs {
         release {
             if (System.getenv('ANDROID_KEYSTORE_PATH')) {
@@ -51,9 +44,7 @@ android {
     }
     buildTypes {
         release {
-            // R8 shrinks the (small) Java layer and produces the mapping
-            // file Play wants for readable crash reports; the webview JS
-            // is untouched. CI uploads the mapping with every release.
+            // R8 produces the mapping file Play wants for readable crash reports (CI uploads it)
             minifyEnabled true
             shrinkResources true
             // AGP 9 dropped 'proguard-android.txt' (it disabled R8 optimization)

@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Download a file from the Synology NAS via the FileStation Web API.
-#   download.sh REMOTE_PATH LOCAL_PATH
-# Reads SYNOLOGY_URL / SYNOLOGY_USER / SYNOLOGY_PASS from the env.
-# Companion to upload.sh — used by the NAS-diagnostics workflow to pull
-# deploy.log without SSH.
+#   download.sh REMOTE_PATH LOCAL_PATH   (a trailing slash on REMOTE lists the folder instead)
+# Used by the NAS-diagnostics workflow to pull deploy.log without SSH.
 set -euo pipefail
 
 : "${SYNOLOGY_URL:?}" "${SYNOLOGY_USER:?}" "${SYNOLOGY_PASS:?}"
@@ -22,8 +19,6 @@ echo "$resp" | grep -q '"success":true' || { echo "Synology login failed: $resp"
 SID=$(echo "$resp" | sed -n 's/.*"sid" *: *"\([^"]*\)".*/\1/p')
 trap 'curl -sS "$URL/webapi/auth.cgi?api=SYNO.API.Auth&version=6&method=logout&session=FileStation&_sid='"$SID"'" >/dev/null || true' EXIT
 
-# a trailing slash lists the folder (names, sizes, mtimes) instead of
-# downloading — used to see what a deploy actually left on the NAS
 if [ "${REMOTE%/}" != "$REMOTE" ]; then
   FOLDER=$(printf '%s' "$REMOTE" | sed 's:/*$::')
   curl -sS -G "$URL/webapi/entry.cgi" \
@@ -45,8 +40,7 @@ else
     -o "$LOCAL"
 fi
 
-# a JSON or HTML body instead of file content means the API refused
-# (bad path / permission / DSM 404 page)
+# a JSON or HTML body instead of file content means the API refused (bad path, permission, DSM 404 page)
 if head -c 1 "$LOCAL" | grep -q '{' && grep -q '"success":false' "$LOCAL" 2>/dev/null; then
   echo "download of $REMOTE failed: $(cat "$LOCAL")" >&2
   exit 1

@@ -6,9 +6,7 @@
 # Then follow "Local full-stack test" in deploy/README.md.
 name: munni-local
 services:
-  # every service restarts with the Docker daemon (unless-stopped), so the
-  # local stack survives a machine reboot like staging/prod do — before,
-  # only ocr had a policy and the stack came back half-alive
+  # every service restarts with the daemon so the stack survives a reboot like staging/prod
   api:
     restart: unless-stopped
     build:
@@ -37,8 +35,7 @@ services:
       Ocr__BaseUrl: http://ocr:8884
       ImportWatch__Path: /import-watch
       ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}
-      # the connector relay (#367) against the local control plane below:
-      # the development key instead of a machine token, a fixed salt
+      # relay (#367) to the local control plane: dev key instead of a machine token
       Connectors__BaseUrl: http://connector:8080/
       Connectors__DevKey: localtest-connector-key
       Connectors__SubjectSalt: localtest-subject-salt
@@ -54,11 +51,8 @@ services:
       connector:
         condition: service_started
 
-  # the connector control plane (#367, docs/connectors/deploy.md) in
-  # Development mode: Sqlite inside the container, the shared dev key,
-  # every pack with its mock providers — so the Connections hub has a
-  # catalogue to show and a mock store to sign in to. Real parties need
-  # a browser agent, which the local stack does not run.
+  # connector control plane (#367) in Development mode with mock providers; real parties need
+  # a browser agent, which the local stack does not run
   connector:
     restart: unless-stopped
     build:
@@ -67,12 +61,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
-      # the image publishes without appsettings.Development.json (it is a
-      # dotnet-run convenience), so development mode and the Sqlite file are
-      # said here: production mode refuses to start without a bundle key
-      # ring, an OIDC authority and an enrollment key, which the local loop
-      # mints in memory instead (a restart invalidates every bundle — right
-      # locally). /tmp because the image runs as the unprivileged app user.
+      # the image ships without appsettings.Development.json, so dev mode is set here (production
+      # mode needs a key ring, OIDC authority and enrollment key); /tmp: the app user is unprivileged
       Connector__Mode: Development
       Connector__Database__Provider: Sqlite
       Connector__Database__ConnectionString: Data Source=/tmp/connector.db
@@ -85,7 +75,6 @@ services:
     ports:
       - "8187:8080"
 
-  # receipt-photo OCR sidecar (receipts design): internal-only, stateless
   ocr:
     image: hertzg/tesseract-server:latest
     restart: unless-stopped
@@ -93,8 +82,7 @@ services:
   logto:
     restart: unless-stopped
     image: svhd/logto:1.43
-    # seed FIRST: alteration-before-seed on an empty db half-creates tables
-    # and seed --swe then skips forever (RLS crash-loop; incident 2026-08-26)
+    # seed FIRST: alteration before seed on an empty db half-creates tables and seed then skips (RLS crash-loop)
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
       TRUST_PROXY_HEADER: "0"
@@ -108,8 +96,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # database inspector: http://localhost:8183 (admin@munni.dev / localtest)
-  # (pgadmin validates the domain — special-use TLDs like .local are refused)
+  # pgadmin refuses special-use TLDs like .local in the login email
   pgadmin:
     restart: unless-stopped
     image: dpage/pgadmin4:latest
@@ -142,6 +129,6 @@ services:
 
 volumes:
   pgdata18_local:
-    # fixed name: survives the compose-project rename (pre-existing data)
+    # fixed name: survives the compose-project rename
     name: deploy_pgdata18_local
   pgadmin_local:

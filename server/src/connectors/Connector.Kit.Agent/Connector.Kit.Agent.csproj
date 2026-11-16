@@ -1,19 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!--
-    The data plane, as a library. This is the only assembly that carries a
-    browser dependency and the only one that ever holds a plaintext
-    credential. Both products' agents are thin shells over it.
-  -->
+  <!-- the only assembly with a browser dependency and the only one that holds a plaintext credential -->
   <PropertyGroup>
     <RootNamespace>Connector.Kit.Agent</RootNamespace>
     <AssemblyName>Connector.Kit.Agent</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- JobBudget is an implementation detail of the runner, and the rule it
-         enforces - parked time is not spent time - is only worth anything if a
-         test can drive it directly. -->
+    <!-- JobBudget's rule (parked time is not spent time) must be testable directly -->
     <InternalsVisibleTo Include="Connector.Kit.Agent.Tests" />
   </ItemGroup>
 

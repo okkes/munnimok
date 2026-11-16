@@ -1,18 +1,8 @@
 #!/bin/sh
-# Render /runtime-config.js from MUNNI_* container env vars at startup
-# (nginx:alpine runs /docker-entrypoint.d/*.sh before serving). This is
-# what lets ONE public web/admin image serve every stack: the app prefers
-# window.__MUNNI_CONFIG__ over its baked Vite env (apps/*/src config).
-# No MUNNI_* vars set -> an empty overlay -> the baked config wins, so
-# the live stacks behave exactly as before this file existed.
-#
-# The same start renders the app-link files of THIS deployment's own app:
-#   /.well-known/assetlinks.json            (Android App Links)
-#   /.well-known/apple-app-site-association (iOS universal links)
-# from MUNNI_ANDROID_PACKAGE + MUNNI_ANDROID_CERT_SHA256 (the certificate
-# Play signs the installed app with — one or more, comma-separated) and
-# MUNNI_APPLE_TEAM_ID + MUNNI_IOS_BUNDLE_ID. Nothing static, nothing per
-# channel: every environment claims exactly its own app.
+# Lets ONE public web/admin image serve every stack: the app prefers window.__MUNNI_CONFIG__ over its
+# baked Vite env; no MUNNI_* vars -> empty overlay -> the baked config wins.
+# Also renders the app-link files (assetlinks.json, apple-app-site-association) so every environment
+# claims exactly its own app; MUNNI_ANDROID_CERT_SHA256 is the Play signing certificate, comma-separated.
 set -eu
 ROOT="${MUNNI_HTML_ROOT:-/usr/share/nginx/html}"
 OUT="$ROOT/runtime-config.js"
@@ -29,7 +19,6 @@ done
 printf 'window.__MUNNI_CONFIG__={%s};\n' "$json" > "$OUT"
 echo "40-runtime-config: rendered $OUT ($([ -n "$json" ] && echo 'overlay active' || echo 'empty — baked config applies'))"
 
-# ── app links ───────────────────────────────────────────────────────────
 WK="$ROOT/.well-known"
 mkdir -p "$WK"
 if [ -n "${MUNNI_ANDROID_PACKAGE:-}" ] && [ -n "${MUNNI_ANDROID_CERT_SHA256:-}" ]; then
@@ -48,11 +37,8 @@ else
   echo "40-runtime-config: apple-app-site-association claims no app (team id or bundle id not set)"
 fi
 
-# The baked CSP allows img-src 'self' data: blob: https: — enough for every
-# https deployment, but a plain-http API origin (the LOCAL twin) serves the
-# vendored institution logos from http://localhost:<api-port>, which that
-# policy blocks (34 blank bank logos, found live 2026-08-27). When THIS
-# deployment's API is http, admit exactly that one origin.
+# the baked CSP img-src blocks the vendored bank logos served by a plain-http API (the LOCAL twin):
+# admit exactly that one origin
 SNIPPET="${MUNNI_CSP_SNIPPET:-/etc/nginx/snippets/security-headers.conf}"
 case "${MUNNI_API_URL:-}" in
   http://*)

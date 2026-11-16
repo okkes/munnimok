@@ -2,16 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <!-- interactive-widget: Android resizes the layout for the keyboard and
-       restores it when it hides (any way it hides); iOS ignores the field -->
+  <!-- interactive-widget: Android resizes the layout for the keyboard and restores it when it hides; iOS ignores it -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"/>
   <meta name="mobile-web-app-capable" content="yes"/>
-  <!-- NOT black-translucent: modern iOS then sizes the standalone layout
-       926−statusbar tall but anchors it at the glass TOP, leaving an
-       unpaintable band under the tab bar (proven via the diagnostics
-       overlay: viewport 879 at glass 0, tabbar CSS bottom 926 clipped at
-       879). With 'default' the webview sits below the status bar and
-       reaches the real bottom; theme-color paints the bar's band. -->
+  <!-- not black-translucent: modern iOS then sizes the standalone layout (screen minus status bar) but anchors it at the
+       glass top, leaving an unpaintable band under the tab bar; with 'default' the webview reaches the real bottom -->
   <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
   <meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)"/>
   <meta name="theme-color" content="#191714" media="(prefers-color-scheme: dark)"/>
@@ -19,9 +14,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <!-- per-deployment config overlay (window.__MUNNI_CONFIG__): the nginx
-       entrypoint rewrites this file from MUNNI_* env vars so ONE public
-       image serves every stack; the committed stub sets nothing -->
+  <!-- window.__MUNNI_CONFIG__: rewritten by the nginx entrypoint per deployment; the committed stub sets nothing -->
   <script src="/runtime-config.js"></script>
   <script type="module" src="/src/main.tsx"></script>
 </body>

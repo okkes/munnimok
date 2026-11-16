@@ -1,19 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!--
-    The offline parse suite.
-
-    Adapter maintenance is the ongoing cost of the shopping connector, so
-    this is the suite that has to catch a provider changing shape before a
-    user does. Nothing here opens a socket or starts a browser: every test
-    runs against a recorded fixture, a stubbed HttpMessageHandler, or the
-    IJumboGraphQlClient seam.
-  -->
   <PropertyGroup>
     <RootNamespace>ShopConnector.Adapters.Tests</RootNamespace>
-    <!-- Must match the InternalsVisibleTo in ShopConnector.Adapters.csproj:
-         the parsers are internal, and a parse test that has to build an HTTP
-         stub to check a discount sign is a test nobody writes. -->
+    <!-- must match InternalsVisibleTo in ShopConnector.Adapters.csproj (the parsers are internal) -->
     <AssemblyName>ShopConnector.Adapters.Tests</AssemblyName>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -23,9 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Same import the adapters project takes: the browser-login seam moved
-         into the kit when a second service needed it, and the stubs here
-         implement those interfaces. -->
+    <!-- the stubs here implement the kit's browser-login interfaces -->
     <Using Include="Connector.Kit.Browsing" />
   </ItemGroup>
 

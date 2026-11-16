@@ -1,10 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!--
-    The offline suite for the registry providers. Nothing here opens a socket
-    or starts a browser: every test runs against a recorded fixture or a
-    stubbed HttpMessageHandler.
-  -->
   <PropertyGroup>
     <RootNamespace>RegistryConnector.Adapters.Tests</RootNamespace>
     <AssemblyName>RegistryConnector.Adapters.Tests</AssemblyName>

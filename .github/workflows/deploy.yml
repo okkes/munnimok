@@ -1,5 +1,3 @@
-# Web CI: unit tests (coverage) + Playwright e2e against the test stack.
-# The NAS serves the real app (deploy-nas.yml); Pages is unused.
 name: Web CI
 
 on:
@@ -17,8 +15,7 @@ permissions:
 
 jobs:
   build:
-    # first-boot latch: fresh repo copies skip every run until the
-    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
     steps:
@@ -33,18 +30,9 @@ jobs:
 
       - run: npm ci
 
-      # Chromium runs the critical happy flows (tests/e2e; the guide's other
-      # scenes are local captures, npm run shots); WebKit runs the sheet-geometry guard
-      # (all of iOS is WebKit — its layout bugs are invisible to Blink).
-      # Installing on the ephemeral runner is the cheap path here; the
-      # local equivalent is dockerized instead: deploy/webkit-e2e.ps1
-      # The runner image preconfigures Google's Chrome apt repository, and
-      # its index regularly mismatches its Release file ("Hash Sum
-      # mismatch", twice on 2026-09-09) — apt-get update, which
-      # --with-deps runs, fails on ANY broken source. Playwright brings its
-      # own browsers, so that repository is dead weight here: drop it on
-      # the ephemeral runner, then install with retries for the mirrors
-      # that remain.
+      # WebKit runs the sheet-geometry guard: all of iOS is WebKit, its layout bugs are invisible to Blink.
+      # The runner's preconfigured Chrome apt repo often fails with "Hash Sum mismatch", and apt-get update
+      # (run by --with-deps) fails on any broken source; Playwright brings its own browsers, so drop it and retry.
       - run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome*.list /etc/apt/sources.list.d/google-chrome*.sources
           for attempt in 1 2 3; do
@@ -55,16 +43,14 @@ jobs:
           exit 1
         working-directory: apps/web
 
-      # Unit tests with coverage (finance app: correctness paths must be covered)
       - run: npx vitest run --coverage
         working-directory: apps/web
 
-      # Sync API for the two-device e2e specs (on CI they fail when it does not answer)
+      # the two-device e2e specs need it; on CI they fail when it does not answer
       - name: Start sync test stack
         run: docker compose -f deploy/docker-compose.test.yml up --build -d --wait
 
-      # Build the app (catches build-only breakage: SW, defines, chunks) — and the build the
-      # end-to-end gate below serves (#587), so it names the test API
+      # also the build the e2e gate serves (#587), so it names the test API
       - run: npm run build
         working-directory: apps/web
         env:
@@ -74,8 +60,6 @@ jobs:
         run: npx playwright test
         working-directory: apps/web
 
-      # The operator consoles' unit tests (admin, control, lab) — the same
-      # coverage floors as the app, cheap suites, never skipped
       - name: Console unit tests
         run: |
           for app in admin control lab; do
@@ -83,7 +67,6 @@ jobs:
             (cd "apps/$app" && npx vitest run --coverage) || exit 1
           done
 
-      # Upload test results (failure screenshots + traces) as downloadable artifact
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v7

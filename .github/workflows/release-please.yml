@@ -1,8 +1,3 @@
-# Automated versioning: release-please parses Conventional Commits on
-# master, maintains a release PR (version bump + CHANGELOG), and tags
-# vX.Y.Z + a GitHub release when that PR merges. package.json versions
-# are bumped via extra-files; the web build shows the version in
-# Settings via __APP_VERSION__.
 name: Release Please
 
 on:
@@ -15,8 +10,7 @@ permissions:
 
 jobs:
   release-please:
-    # first-boot latch: fresh repo copies skip every run until the
-    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    # first-boot latch: fresh repo copies skip runs until the wizard sets MUNNI_INITIALIZED
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
     steps:
