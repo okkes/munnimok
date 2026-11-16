@@ -86,7 +86,7 @@ test('appDefinitions: web/admin SPAs, the native shell, the api\'s m2m app — a
   assert.deepEqual(defs.admin.oidcClientMetadata.redirectUris, [`https://munni-prod-nas-admin.${DOMAIN}/auth-callback`]);
   assert.deepEqual(defs.native, {
     name: 'munni-nas-prod native', type: 'Native',
-    oidcClientMetadata: { redirectUris: [`https://munni-prod-nas.${DOMAIN}/native-auth`, 'munni-prod-nas://auth-callback'], postLogoutRedirectUris: [`https://munni-prod-nas.${DOMAIN}/native-signed-out`, 'munni-prod-nas://signed-out'] },
+    oidcClientMetadata: { redirectUris: ['munni-prod-nas://auth-callback'], postLogoutRedirectUris: ['munni-prod-nas://signed-out'] },
     // the phone's refresh token never rotates and lives 90 days (prod Logto logs 2026-10-08: a rotated token the webview lost
     // was presented again and the reuse detection killed the grant); the SPAs keep Logto's rotation
     customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'], rotateRefreshToken: false, refreshTokenTtlInDays: 90 },
@@ -106,7 +106,7 @@ test('appDefinitions: web/admin SPAs, the native shell, the api\'s m2m app — a
     assert.deepEqual(lan.web.oidcClientMetadata.redirectUris, ['https://munni-prod-lcl.192-168-1-50.sslip.io/auth-callback', 'http://localhost:8380/auth-callback'], 'host-browser use keeps working beside the LAN name');
     assert.deepEqual(lan.web.customClientMetadata.corsAllowedOrigins, ['https://munni-prod-lcl.192-168-1-50.sslip.io', 'http://localhost:8380']);
     assert.deepEqual(lan.control.customClientMetadata.corsAllowedOrigins, ['https://control-lcl.192-168-1-50.sslip.io', 'http://localhost:8385']);
-    assert.deepEqual(lan.native.oidcClientMetadata.redirectUris, ['https://munni-prod-lcl.192-168-1-50.sslip.io/native-auth', 'munni-prod-lcl://auth-callback']);
+    assert.deepEqual(lan.native.oidcClientMetadata.redirectUris, ['munni-prod-lcl://auth-callback'], 'the phone returns on its scheme, whatever name the web answers on');
   } finally {
     fx.lanOff();
   }

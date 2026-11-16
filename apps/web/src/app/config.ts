@@ -58,9 +58,7 @@ export const config = {
   channel,
   /** deep-link scheme of the app this bundle belongs to: 'munni' for
    *  production, 'munni-dev' for staging (app.munni.dev). Native shells
-   *  bake VITE_NATIVE_SCHEME; the HOSTED web image never did — its
-   *  /native-auth scheme-bounce fell back to 'munni' and sent munni-dev
-   *  logins into the PROD app (user bug). The channel decides now. */
+   *  bake VITE_NATIVE_SCHEME; a bundle without one takes the channel's. */
   nativeScheme:
     runtime('NATIVE_SCHEME') ??
     (import.meta.env.VITE_NATIVE_SCHEME as string | undefined) ??

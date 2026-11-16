@@ -45,12 +45,6 @@ if (window.location.pathname.startsWith('/splits/join/')) {
 if (/^\/invite\/?$/.test(window.location.pathname)) {
   window.location.replace(`${window.location.origin}/#/invite${window.location.search}`);
 }
-// native auth/logout returns that landed in the BROWSER (universal link
-// not taken — old build, verification pending): bounce into the app via
-// the channel's scheme, carrying the path + query for the code exchange
-if (window.location.pathname.startsWith('/native-auth') || window.location.pathname.startsWith('/native-signed-out')) {
-  window.location.replace(`${config.nativeScheme}://${window.location.pathname.slice(1)}${window.location.search}`);
-}
 
 // Chosen-offline identities (demo / offline mode) promise ZERO network
 // traffic — not even crash reports. Signed-in users who merely lost

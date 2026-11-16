@@ -59,10 +59,14 @@ Principles the matrix encodes:
   `openUrl` (not webview navigation) on both platforms and that
   `/gc-callback` returns land via universal/app link into the running
   app; fix any drift. Web stays same-tab.
-- NA4 **Cleanup**: the hosted `/native-auth` scheme-bounce stays as
-  fallback for old builds, then retires; drop `/native-auth` from the
-  AASA once no old build matters (`/gc-callback` and `/splits/join`
-  stay — external-tap flows are where universal links shine).
+- NA4 **Cleanup** (done, #585): the hosted `/native-auth` and
+  `/native-signed-out` pages are gone — from the web bundle, the
+  shells' link claims (the Android intent filter, the AASA) and the
+  native application in Logto, whose only redirect is the scheme form.
+  `/gc-callback`, `/splits/join` and `/invite` stay: external-tap
+  flows are where universal links shine. A build from before NA1/NA2
+  cannot sign in any more, and the server had stopped speaking to
+  those builds already (the minimum client protocol).
 
 Carried over from the (retired) universal-links plan — one pending
 user action: the **app.munni.dev** Play app's own signing-key SHA-256
@@ -86,8 +90,7 @@ plain redirects everywhere.
   session — ASWebAuthenticationSession on iOS (the AuthSession plugin in
   AppDelegate.swift), a Custom Tab (@capacitor/browser) on Android — with
   the app's scheme as the callback (`munni-<env>-<platform>://auth-callback`,
-  `…://signed-out`). The hosted `/native-auth` bounce stays for builds that
-  predate this (NA4's retirement waits for them to age out).
+  `…://signed-out`).
 - The Play fingerprint pending item above is superseded by the card.
 
 ## Refresh tokens on the phone (2026-10-08)

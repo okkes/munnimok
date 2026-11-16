@@ -31,9 +31,9 @@ describe('platform seam', () => {
     expect(deepLinkToPath('munni://gc-callback?ref=r-1&code=c-1')).toBe('/gc-callback?ref=r-1&code=c-1');
     expect(deepLinkToPath('munni://auth-callback?code=x')).toBe('/auth-callback?code=x');
     expect(deepLinkToPath('munni-dev://auth-callback?code=x')).toBe('/auth-callback?code=x'); // staging app scheme
-    // the platform model's scheme carries two dashes (munni-<env>-<platform>): the hosted /native-auth bounce and the
-    // bank's return both arrive on it
-    expect(deepLinkToPath('munni-prod-nas://native-auth?code=x&state=s')).toBe('/native-auth?code=x&state=s');
+    // the platform model's scheme carries two dashes (munni-<env>-<platform>): the sign-in's return and the
+    // bank's both arrive on it
+    expect(deepLinkToPath('munni-prod-nas://auth-callback?code=x&state=s')).toBe('/auth-callback?code=x&state=s');
     expect(deepLinkToPath('munni-dev-lcl://gc-callback?ref=r-1')).toBe('/gc-callback?ref=r-1');
     expect(deepLinkToPath('munni://')).toBe('/');
     expect(deepLinkToPath('https://evil.example/gc-callback')).toBeNull();
@@ -45,6 +45,8 @@ describe('platform seam', () => {
     expect(deepLinkToPath('https://munni-test.munni.example/splits/join/tok-1')).toBe('/splits/join/tok-1');
     // outside the allowlist: never routed into the shell
     expect(deepLinkToPath('https://munni.munni.example/auth-callback?code=x')).toBeNull();
+    // the phone's sign-in returns on the app's own scheme: no https page hands a code to the shell (#585)
+    expect(deepLinkToPath('https://munni.munni.example/native-auth?code=x')).toBeNull();
     expect(deepLinkToPath('https://munni.munni.example/')).toBeNull();
     expect(deepLinkToPath('https://evil.example/splits/join/tok-1')).toBeNull();
   });

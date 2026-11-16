@@ -105,12 +105,11 @@ export async function ensurePersistentStorage(): Promise<void> {
 /** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls).
  *  Accepts the suffixed schemes too: munni-dev:// (the legacy staging app) and
  *  munni-<env>-<platform>:// (every environment of the platform model, e.g.
- *  munni-prod-nas://) — a dash-blind pattern dropped the latter, so the hosted
- *  /native-auth bounce was ignored and the native login landed back on the
- *  login screen (nas prod, 2026-09-28). */
+ *  munni-prod-nas://) — a dash-blind pattern drops the latter, and with it
+ *  the sign-in's own return and the bank's. */
 /** the https paths a verified App Link / universal link may hand us —
  *  a tight allowlist so nothing else ever routes into the shell */
-const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/native-auth', '/native-signed-out', '/invite'];
+const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/invite'];
 
 export function deepLinkToPath(url: string): string | null {
   const match = /^munni(?:-[\w-]+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
@@ -173,18 +172,6 @@ export function initDeepLinks(): void {
     const path = deepLinkToPath(url);
     if (!path) return;
     if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
-    // https auth return (universal link — no popup): when the raw url is
-    // https it IS the registered redirect_uri; a scheme-bounced fallback
-    // stores the path form and the callback screen rebuilds the origin
-    if (path.startsWith('/native-auth')) {
-      sessionStorage.setItem(NATIVE_CALLBACK_KEY, url.startsWith('https:') ? url : path);
-      globalThis.location.assign('/auth-callback');
-      return;
-    }
-    if (path.startsWith('/native-signed-out')) {
-      globalThis.location.assign('/#/login');
-      return;
-    }
     // the post sign-out landing: session is already cleared locally —
     // just bring the app to the login screen
     if (path.startsWith('/signed-out')) {
