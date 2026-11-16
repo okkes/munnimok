@@ -15,6 +15,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { HoldingFormSheet } from './PortfolioScreen';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 const LOT_KINDS = ['buy', 'sell', 'dividend', 'fee'] as const;
 const LOT_ICON: Record<string, string> = { buy: 'tray-arrow-down', sell: 'tray-arrow-up', dividend: 'cash-plus', fee: 'cash-minus' };
@@ -188,26 +189,18 @@ export function HoldingDetailScreen() {
             className="h-11 w-full appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
           />
           {(kind === 'buy' || kind === 'sell') && (
-            <input
+            <DecimalInput
               data-testid="pf-lot-qty"
-              type="number"
-              inputMode="decimal"
-              step="any"
-              min="0"
               value={qty}
-              onChange={(e) => setQty(e.target.value)}
+              onValue={setQty}
               placeholder={t('pf.qtyPlaceholder')}
               className="h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
             />
           )}
-          <input
+          <DecimalInput
             data-testid="pf-lot-price"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
             value={unitPrice}
-            onChange={(e) => setUnitPrice(e.target.value)}
+            onValue={setUnitPrice}
             placeholder={kind === 'buy' || kind === 'sell' ? t('pf.pricePlaceholder') : t('pf.totalPlaceholder')}
             className="h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
           />

@@ -28,6 +28,7 @@ import { IconPicker } from '@/ui/IconPicker';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 export const GOAL_ICONS = ['home-outline', 'car-outline', 'airplane', 'shield-check-outline', 'laptop', 'ring', 'sail-boat', 'school-outline'] as const;
 
@@ -189,14 +190,10 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         {/* #195 r2 (user): the blocker sits AT the field */}
         <FormBlockerNote show={attempted && nameMissing} text={t('form.needName')} testId="goalform-save-blocker" />
         <div className="m-cap px-1">{t('goals.target')}</div>
-        <input
+        <DecimalInput
           data-testid="goalform-target"
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
           value={target}
-          onChange={(e) => setTarget(e.target.value)}
+          onValue={setTarget}
           placeholder="0.00"
           aria-invalid={attempted && amountMissing}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && amountMissing)}`}

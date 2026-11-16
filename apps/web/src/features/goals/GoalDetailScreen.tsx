@@ -23,6 +23,7 @@ import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 import { GoalFormSheet } from './GoalsScreen';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 /** the line under the bar: when the goal was cashed out, that it is reached, or the pace that reaches it by its date; null without a date to pace for */
 function paceLineOf(
@@ -326,14 +327,10 @@ export function GoalDetailScreen() {
         size="form"
       >
         <div className="flex flex-col gap-3 pt-1">
-          <input
+          <DecimalInput
             data-testid="goalfund-amount"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onValue={setAmount}
             placeholder="0.00"
             aria-invalid={attempted && fundBad}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && fundBad)}`}

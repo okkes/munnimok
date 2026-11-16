@@ -20,6 +20,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: string }[] = [
   { id: 'stock', labelKey: 'pf.classStock', icon: 'chart-line' },
@@ -201,14 +202,10 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
         ) : (
           <label className="text-[12px] text-ink-3">
             {t('pf.manualPrice')}
-            <input
+            <DecimalInput
               data-testid="pf-manual-price"
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
               value={manualPrice}
-              onChange={(e) => setManualPrice(e.target.value)}
+              onValue={setManualPrice}
               placeholder="0.00"
               className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
             />

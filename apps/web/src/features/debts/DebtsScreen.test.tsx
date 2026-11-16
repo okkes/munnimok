@@ -28,6 +28,12 @@ async function createLoan(name: string, current: string, apr?: string, payment?:
   return document.querySelector('[data-testid^="debt-card-"]')!;
 }
 
+/** A phone's number field hands the page an empty value for text it does not read as a number, and the test DOM does not: this applies that rule. */
+const typeOnAPhone = (input: HTMLElement, text: string) => {
+  const refused = (input as HTMLInputElement).type === 'number' && !/^\d*\.?\d+$/.test(text);
+  fireEvent.change(input, { target: { value: refused ? '' : text } });
+};
+
 const demoRepo = (db: MunniDB) => new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
 
 /** #286 r3: local yyyy-mm-dd relative to today — candidate seeds sit
@@ -108,6 +114,24 @@ describe('Debts (demo identity)', () => {
     }, { timeout: 5000 });
     // weekly €120 ≈ €520/month on the overview (cadence-normalized)
     expect(screen.getByTestId('debts-overview').textContent).toMatch(/520/);
+    db.close();
+  }, 15_000);
+
+  it('takes the comma a phone keypad offers as the decimal sign (#611)', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    fireEvent.click(await screen.findByTestId('debts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Car loan' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '19000' } });
+    typeOnAPhone(screen.getByTestId('chooser-acctform-apr'), '7,5');
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const account = (await db.accounts.toArray()).find((a) => a.name === 'Car loan');
+      expect(account?.interestPctYear).toBe(7.5);
+    }, { timeout: 5000 });
     db.close();
   }, 15_000);
 

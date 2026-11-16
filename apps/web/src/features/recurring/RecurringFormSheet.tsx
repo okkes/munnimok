@@ -25,6 +25,7 @@ import { Icon } from '@/ui/Icon';
 import { Picture } from '@/ui/Picture';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 const NOTIFY_CHOICES = [0, 1, 3, 7];
 
@@ -387,14 +388,10 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
             )}
 
             <div className="m-cap px-1">{t('recurring.amount')}</div>
-            <input
+            <DecimalInput
               data-testid="recform-amount"
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
               value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              onValue={(typed) => setForm({ ...form, amount: typed })}
               placeholder="0.00"
               aria-invalid={amountBad}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(amountBad)}`}
