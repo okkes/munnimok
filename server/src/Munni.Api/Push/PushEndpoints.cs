@@ -10,8 +10,53 @@ public sealed record SubscribeRequest(string Endpoint, string? P256dh = null, st
 
 public sealed record SpaceNotifyRequest(bool On);
 
-/// <summary>#580: the moment up to which the caller cleared their in-app notifications on one device.</summary>
-public sealed record NotificationsClearedRequest(DateTimeOffset ClearedAt);
+/// <summary>#580: the moment up to which the caller cleared their in-app notifications on one device.
+/// #614: with <c>Scopes</c> ("general", a space id) only those parts of the list; without, the whole list.</summary>
+public sealed record NotificationsClearedRequest(DateTimeOffset ClearedAt, IReadOnlyList<string>? Scopes = null);
+
+/// <summary>#614: the moments per part of the list, kept as one JSON map on the user's row.</summary>
+public static class ClearedScopes
+{
+    public const int MaxPerRequest = 20;
+
+    /// a person in dozens of spaces fits; the oldest moments go first
+    private const int MaxKept = 100;
+
+    private static readonly System.Text.RegularExpressions.Regex Name =
+        new("^[A-Za-z0-9_:.-]{1,64}$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    public static bool Valid(IReadOnlyList<string> scopes) => scopes.Count is > 0 and <= MaxPerRequest && scopes.All(Name.IsMatch);
+
+    public static Dictionary<string, DateTimeOffset> Read(string? stored)
+    {
+        if (string.IsNullOrEmpty(stored)) return [];
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, DateTimeOffset>>(stored) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // an unreadable map is an empty one: the next clear writes a good one
+            return [];
+        }
+    }
+
+    /// each moment only moves forward; null when nothing moved
+    public static string? Moved(string? stored, IReadOnlyList<string> scopes, DateTimeOffset at)
+    {
+        var map = Read(stored);
+        var moved = false;
+        foreach (var scope in scopes)
+        {
+            if (map.TryGetValue(scope, out var held) && held >= at) continue;
+            map[scope] = at;
+            moved = true;
+        }
+        if (!moved) return null;
+        var kept = map.OrderByDescending(pair => pair.Value).Take(MaxKept).ToDictionary(pair => pair.Key, pair => pair.Value);
+        return System.Text.Json.JsonSerializer.Serialize(kept);
+    }
+}
 
 public static class PushEndpoints
 {
@@ -105,11 +150,12 @@ public static class PushEndpoints
         group.MapGet("/cleared", async (AppDbContext db, HttpContext http, CancellationToken ct) =>
         {
             var user = await db.Users.FindAsync([http.GetUserId()], ct);
-            return Results.Ok(new { clearedAt = user?.NotificationsClearedAt });
+            return Results.Ok(new { clearedAt = user?.NotificationsClearedAt, scopes = ClearedScopes.Read(user?.NotificationsClearedScopes) });
         });
 
         group.MapPut("/cleared", async (NotificationsClearedRequest request, AppDbContext db, HttpContext http, CancellationToken ct) =>
         {
+            if (request.Scopes is not null && !ClearedScopes.Valid(request.Scopes)) return Results.BadRequest(new { error = "scopes" });
             var user = await db.Users.FindAsync([http.GetUserId()], ct);
             if (user is null) return Results.NotFound();
             // the moment only moves forward (a late device never brings old notifications back), and never past the
@@ -118,12 +164,22 @@ public static class PushEndpoints
             // postgres refuses a timestamptz that is not at offset zero
             var asked = request.ClearedAt.ToUniversalTime();
             var at = asked > now ? now : asked;
-            if (user.NotificationsClearedAt is null || at > user.NotificationsClearedAt)
+            if (request.Scopes is not null)
+            {
+                // #614: a part of the list (what the bell showed) — the whole-list moment stays where it is
+                var moved = ClearedScopes.Moved(user.NotificationsClearedScopes, request.Scopes, at);
+                if (moved is not null)
+                {
+                    user.NotificationsClearedScopes = moved;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+            else if (user.NotificationsClearedAt is null || at > user.NotificationsClearedAt)
             {
                 user.NotificationsClearedAt = at;
                 await db.SaveChangesAsync(ct);
             }
-            return Results.Ok(new { clearedAt = user.NotificationsClearedAt });
+            return Results.Ok(new { clearedAt = user.NotificationsClearedAt, scopes = ClearedScopes.Read(user.NotificationsClearedScopes) });
         });
     }
 }

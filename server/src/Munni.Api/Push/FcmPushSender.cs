@@ -113,6 +113,37 @@ public static class FcmTexts
         return template.Replace("{name}", Str("fromName", someone)).Replace("{split}", Str("splitName", "")).Replace("{amount}", amount);
     }
 
+    private static readonly System.Text.RegularExpressions.Regex SpaceIdShape =
+        new("^[A-Za-z0-9_-]+$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    private static readonly System.Text.RegularExpressions.Regex SplitIdShape =
+        new("^[A-Za-z0-9._:-]+$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
+    /// <summary>#614: the tag the web worker shows the same payload under (sync/swNotifications.ts). An Android phone
+    /// files the notification by it, which is how the app finds and removes one that was handled.</summary>
+    public static string? Tag(JsonElement payload)
+    {
+        string Str(string name) =>
+            payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        var type = Str("type");
+        switch (type)
+        {
+            case "new-transactions":
+                var spaceId = Str("spaceId");
+                return $"new-tx-{(SpaceIdShape.IsMatch(spaceId) ? spaceId : "all")}";
+            case "split":
+                var cents = payload.TryGetProperty("cents", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt64() : 0;
+                var kind = Str("kind");
+                if (kind == "settled") kind = cents switch { > 0 => SettledGet, < 0 => SettledPay, _ => SettledEven };
+                var splitId = Str("splitId");
+                return $"split-{kind}-{(SplitIdShape.IsMatch(splitId) ? splitId : "")}";
+            case "friend-request" or "friend-accept" or "space-invite" or "space-join" or "member-removed" or "member-role" or "test":
+                return type;
+            default:
+                return null;
+        }
+    }
+
     /// <summary>title+body for a payload, or null for types with no visible text</summary>
     public static (string Title, string Body)? Build(JsonElement payload, string lang)
     {
@@ -179,6 +210,7 @@ public sealed class FcmPushSender : IPushSender
         var token = await GetAccessTokenAsync(ct);
         using var doc = JsonDocument.Parse(payload);
         var visible = FcmTexts.Build(doc.RootElement, subscription.Lang);
+        var tag = visible is null ? null : FcmTexts.Tag(doc.RootElement);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"v1/projects/{_projectId}/messages:send");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         request.Content = new StringContent(JsonSerializer.Serialize(new
@@ -189,7 +221,8 @@ public sealed class FcmPushSender : IPushSender
                 data = new { payload },
                 // the OS-rendered notification: closed iOS apps show nothing for data-only messages
                 notification = visible is null ? null : new { title = visible.Value.Title, body = visible.Value.Body },
-                android = new { priority = "high" },
+                // #614: Android only — iOS hands the app the data payload of a delivered notification, which names it as well
+                android = new { priority = "high", notification = tag is null ? null : new { tag } },
                 apns = new { headers = new Dictionary<string, string> { ["apns-priority"] = "10" }, payload = new { aps = new { sound = "default" } } },
             },
         }, JsonOptions), Encoding.UTF8, "application/json");

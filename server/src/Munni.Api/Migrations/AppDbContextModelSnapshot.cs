@@ -766,6 +766,9 @@ namespace Munni.Api.Migrations
                     b.Property<DateTimeOffset?>("NotificationsClearedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("NotificationsClearedScopes")
+                        .HasColumnType("text");
+
                     b.Property<string>("Picture")
                         .HasColumnType("text");
 

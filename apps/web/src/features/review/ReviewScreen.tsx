@@ -2,6 +2,7 @@ import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSpaceAccount, useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
+import { useReviewedSettle } from './useReviewedSettle';
 import { requestReviewSuggestions, suggestionFor, useReviewSuggestions } from '@/application/reviewSuggestions';
 import type { ReviewSuggestion, ReviewSuggestions } from '@/application/reviewSuggestions';
 import { fileRememberedCounter, storyBasis } from '@/domain/reviewSuggest';
@@ -1508,6 +1509,7 @@ export function ReviewScreen() {
     () => (suggestionsReady ? allTxs?.filter((item) => item.needsReview === 1).sort((a, b) => a.date.localeCompare(b.date)) : undefined),
     [allTxs, suggestionsReady],
   );
+  useReviewedSettle(queue?.length);
   // a row nobody prepared, or one changed since (e.g. sent back by a heal), asks the pass, never the card; once per state
   const askedFor = useRef(new Set<string>());
   useEffect(() => {

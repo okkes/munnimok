@@ -12,6 +12,7 @@ import { useServerRefresh } from '@/lib/serverEvents';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { settleAnswered } from '@/application/deliveredResolve';
 import { adoptEventLinks } from './splitEvents';
 import { SplitFormSheet } from './SplitFormSheet';
 import { splitDates, splitPhase, useSplitsApi } from './splitsCore';
@@ -75,6 +76,8 @@ export function SplitsScreen() {
     // an answer that cannot be had keeps what was on screen
     setSplits((prev) => list ?? prev ?? []);
     if (invites) setInvitations(invites);
+    // #614: an invitation that was answered leaves the phone's notification centre too
+    if (invites) void settleAnswered({ splitInvites: invites.map((invite) => invite.splitId) }).catch(() => undefined);
     // a link the server still keeps from before lands on its event once
     if (list) void adoptEventLinks(store, repo, list);
   }, [api, store, repo]);

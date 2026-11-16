@@ -32,6 +32,8 @@ interface CapacitorGlobal {
       register?: () => Promise<void>;
       unregister?: () => Promise<void>;
       removeAllDeliveredNotifications?: () => Promise<void>;
+      getDeliveredNotifications?: () => Promise<{ notifications?: NativeDelivered[] }>;
+      removeDeliveredNotifications?: (delivered: { notifications: NativeDelivered[] }) => Promise<void>;
     };
     StatusBar?: {
       setStyle?: (options: { style: 'LIGHT' | 'DARK' }) => Promise<void>;
@@ -347,6 +349,27 @@ export function onNativePushTap(callback: (payload: unknown) => void): void {
 export async function unregisterNativePush(): Promise<void> {
   if (!isNativeApp()) return;
   await capacitor()?.Plugins?.PushNotifications?.unregister?.().catch(() => undefined);
+}
+
+/** one notification in the phone's notification centre: Android names it by id + tag, iOS by id, and only iOS hands back the push's data */
+export interface NativeDelivered {
+  id: string | number;
+  tag?: string | null;
+  data?: Record<string, unknown>;
+}
+
+/** #614: what the phone still shows of munni; null outside the shell (or an older one) */
+export async function nativeDelivered(): Promise<NativeDelivered[] | null> {
+  const push = capacitor()?.Plugins?.PushNotifications;
+  if (!isNativeApp() || !push?.getDeliveredNotifications || !push.removeDeliveredNotifications) return null;
+  const answer = await push.getDeliveredNotifications().catch(() => undefined);
+  return answer?.notifications ?? [];
+}
+
+export async function removeNativeDelivered(notifications: NativeDelivered[]): Promise<void> {
+  await capacitor()
+    ?.Plugins?.PushNotifications?.removeDeliveredNotifications?.({ notifications })
+    .catch(() => undefined);
 }
 
 /** #580: takes munni's notifications off the phone's notification centre; false outside the shell (or an older one) */

@@ -2,6 +2,7 @@ import type { StorageBackend } from '@/db/backend';
 import { visibleTransactions } from '@/db/joined';
 import { cycleKeyOf } from '@/domain/recurring';
 import { debtsMissingRate } from './debts';
+import { closeShownWhere } from './deliveredNotifications';
 import { readInbox, reviseInbox, WHATS_NEW_SEEN_KEY } from './notifications';
 import type { InboxEntry } from './notifications';
 import { buildPlanning, hasCurrentPlan, loadPlanningData, localIsoToday } from './planningModel';
@@ -101,14 +102,10 @@ export function shownTagOf(entry: InboxEntry): string | undefined {
   return entry.kind === 'digest' && key ? key : undefined;
 }
 
-/** closes what the device still shows of the rows that left (the browser's notifications; a phone shell shows none of these) */
+/** closes what the device still shows of the rows that left */
 async function closeShown(dropped: readonly InboxEntry[]): Promise<void> {
-  const tags = dropped.flatMap((entry) => shownTagOf(entry) ?? []);
-  if (tags.length === 0) return;
-  const registration = await navigator.serviceWorker?.getRegistration?.().catch(() => undefined);
-  for (const tag of tags) {
-    for (const shown of (await registration?.getNotifications?.({ tag }).catch(() => undefined)) ?? []) shown.close();
-  }
+  const tags = new Set(dropped.flatMap((entry) => shownTagOf(entry) ?? []));
+  if (tags.size > 0) await closeShownWhere((tag) => tags.has(tag));
 }
 
 export async function settleInbox(store: StorageBackend): Promise<void> {

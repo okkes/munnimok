@@ -351,6 +351,8 @@ public class User
     public string? DisplayCurrency { get; set; }
     /// <summary>#580: the in-app notifications up to this moment were cleared on one of the person's devices — the others follow</summary>
     public DateTimeOffset? NotificationsClearedAt { get; set; }
+    /// <summary>#614: the same per part of the list the bell shows — a JSON map from "general" or a space id to its moment</summary>
+    public string? NotificationsClearedScopes { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

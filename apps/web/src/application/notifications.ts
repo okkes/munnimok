@@ -12,9 +12,16 @@ export interface InboxEntry {
   payload?: Record<string, string>;
 }
 
+/** #614: the bell shows two parts of the list — what is about no space, and what is about the open one */
+export const GENERAL_SCOPE = 'general';
+export const scopeOf = (entry: InboxEntry): string => entry.payload?.spaceId || GENERAL_SCOPE;
+
 const LIST_KEY = 'notifInbox';
+/** read only: the one moment of before #614, the fallback for a part that has no moment of its own yet */
 const SEEN_KEY = 'notifSeenAt';
+const SEEN_BY_KEY = 'notifSeenBy';
 const CLEARED_KEY = 'notifClearedAt';
+const CLEARED_BY_KEY = 'notifClearedBy';
 /** the once-only events a clear took away — never appended again (What's new would return on the next open) */
 const RETIRED_KEY = 'notifRetiredKeys';
 const CAP = 50;
@@ -81,13 +88,33 @@ export async function reviseInbox(store: StorageBackend, revise: (entry: InboxEn
   return dropped;
 }
 
-export async function unreadNotifCount(store: StorageBackend): Promise<number> {
-  const seen = (await store.metaGet(SEEN_KEY))?.value as string | undefined;
-  return (await readInbox(store)).filter((e) => !seen || e.ts > seen).length;
+/** a meta value that maps a part of the list to a moment */
+async function readMoments(store: Pick<StorageBackend, 'metaGet'>, key: string): Promise<Record<string, string>> {
+  const value = (await store.metaGet(key))?.value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter((pair): pair is [string, string] => typeof pair[1] === 'string'));
 }
 
-export async function stampNotifSeen(store: StorageBackend): Promise<void> {
-  await store.metaPut(SEEN_KEY, new Date().toISOString());
+/** the rows of these parts that arrived after the part was last looked at */
+export async function unreadNotifCount(store: StorageBackend, scopes: readonly string[]): Promise<number> {
+  const before = (await store.metaGet(SEEN_KEY))?.value as string | undefined;
+  const seenBy = await readMoments(store, SEEN_BY_KEY);
+  return (await readInbox(store)).filter((e) => {
+    const scope = scopeOf(e);
+    if (!scopes.includes(scope)) return false;
+    const seen = seenBy[scope] ?? before;
+    return !seen || e.ts > seen;
+  }).length;
+}
+
+// per part: one moment for the whole list would mark another space's rows as read before the bell ever showed them
+export async function stampNotifSeen(store: StorageBackend, scopes: readonly string[]): Promise<void> {
+  const now = new Date().toISOString();
+  await store.transact(['meta'], async () => {
+    const seenBy = await readMoments(store, SEEN_BY_KEY);
+    for (const scope of scopes) seenBy[scope] = now;
+    await store.metaPut(SEEN_BY_KEY, seenBy);
+  });
 }
 
 export async function readInboxClearedAt(store: Pick<StorageBackend, 'metaGet'>): Promise<string | undefined> {
@@ -107,23 +134,49 @@ export async function clearInboxUpTo(store: StorageBackend, at: string): Promise
   return moved;
 }
 
+export const readClearedBy = (store: Pick<StorageBackend, 'metaGet'>): Promise<Record<string, string>> => readMoments(store, CLEARED_BY_KEY);
+
 /**
- * #580: the person's own Clear empties the list whatever the clocks say — the
- * remembered moment may come from a clock ahead of this device's; the later one stays.
+ * #614: the person's own Clear takes what the bell showed — these parts, whatever the clocks say (#580: a remembered
+ * moment may come from a clock ahead of this device's; the later one stays). Answers the rows that went.
  */
-export async function clearInboxNow(store: StorageBackend): Promise<void> {
+export async function clearScopesNow(store: StorageBackend, scopes: readonly string[]): Promise<InboxEntry[]> {
+  let dropped: InboxEntry[] = [];
   await store.transact(['meta'], async () => {
-    const cleared = await readInboxClearedAt(store);
+    const clearedBy = await readClearedBy(store);
     const now = new Date().toISOString();
-    await dropFromInbox(store, cleared && cleared > now ? cleared : now, () => true);
+    for (const scope of scopes) clearedBy[scope] = clearedBy[scope] && clearedBy[scope] > now ? clearedBy[scope] : now;
+    await store.metaPut(CLEARED_BY_KEY, clearedBy);
+    dropped = await removeEntries(store, (e) => scopes.includes(scopeOf(e)));
   });
+  return dropped;
+}
+
+/** #614: a clear of one part made on another device; nothing when the part was already cleared that far */
+export async function clearScopeUpTo(store: StorageBackend, scope: string, at: string): Promise<InboxEntry[] | null> {
+  let dropped: InboxEntry[] | null = null;
+  await store.transact(['meta'], async () => {
+    const clearedBy = await readClearedBy(store);
+    if (clearedBy[scope] && clearedBy[scope] >= at) return;
+    await store.metaPut(CLEARED_BY_KEY, { ...clearedBy, [scope]: at });
+    dropped = await removeEntries(store, (e) => scopeOf(e) === scope && e.ts <= at);
+  });
+  return dropped;
 }
 
 /** inside the caller's meta transaction */
 async function dropFromInbox(store: StorageBackend, at: string, goes: (entry: InboxEntry) => boolean): Promise<void> {
-  const list = await readInbox(store);
-  const keys = list.filter(goes).flatMap((e) => (e.payload?.dedupe ? [retiredKey(e.kind, e.payload.dedupe)] : []));
-  if (keys.length > 0) await store.metaPut(RETIRED_KEY, [...keys, ...(await readRetired(store))].slice(0, RETIRED_CAP));
   await store.metaPut(CLEARED_KEY, at);
+  await removeEntries(store, goes);
+}
+
+/** inside the caller's meta transaction; a once-only event that was cleared is never appended again */
+async function removeEntries(store: StorageBackend, goes: (entry: InboxEntry) => boolean): Promise<InboxEntry[]> {
+  const list = await readInbox(store);
+  const gone = list.filter(goes);
+  if (gone.length === 0) return [];
+  const keys = gone.flatMap((e) => (e.payload?.dedupe ? [retiredKey(e.kind, e.payload.dedupe)] : []));
+  if (keys.length > 0) await store.metaPut(RETIRED_KEY, [...keys, ...(await readRetired(store))].slice(0, RETIRED_CAP));
   await store.metaPut(LIST_KEY, list.filter((e) => !goes(e)));
+  return gone;
 }

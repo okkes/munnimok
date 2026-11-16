@@ -1454,6 +1454,8 @@ export const en = {
   'notif.title': 'Notifications',
   'notif.empty': 'You’re all caught up.',
   'notif.clear': 'Clear all',
+  'notif.groupGeneral': 'General',
+  'notif.groupSpace': 'This space',
   'notif.someone': 'Someone',
   'notif.friendRequest': '{name} sent you a friend request',
   'notif.spaceInvite': '{name} invited you to “{space}”',

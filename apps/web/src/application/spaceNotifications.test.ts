@@ -75,7 +75,7 @@ describe('notifications chosen per space (#549)', () => {
     apiFetchMock.mockResolvedValueOnce(json({ off: ['s1'] }));
     await refreshSpacesNotifyOff(store);
     apiFetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    await clearNotifications(store, true);
+    await clearNotifications(store, true, ['general']);
 
     await forgetSpacesNotifyOff(store);
     expect(await spaceNotifyOn(store, 's1')).toBe(true);

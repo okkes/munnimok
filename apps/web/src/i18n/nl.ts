@@ -1456,6 +1456,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'notif.title': 'Meldingen',
   'notif.empty': 'Je bent helemaal bij.',
   'notif.clear': 'Alles wissen',
+  'notif.groupGeneral': 'Algemeen',
+  'notif.groupSpace': 'Deze ruimte',
   'notif.someone': 'Iemand',
   'notif.friendRequest': '{name} heeft je een vriendschapsverzoek gestuurd',
   'notif.spaceInvite': '{name} heeft je uitgenodigd voor “{space}”',

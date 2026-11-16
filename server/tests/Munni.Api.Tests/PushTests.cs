@@ -398,7 +398,7 @@ public class PushTests : IClassFixture<SyncApiFactory>
     }
 
     private sealed record OffList(List<string> Off);
-    private sealed record ClearedMoment(DateTimeOffset? ClearedAt);
+    private sealed record ClearedMoment(DateTimeOffset? ClearedAt, Dictionary<string, DateTimeOffset>? Scopes = null);
 
     [Fact]
     public async Task Each_member_chooses_a_spaces_notifications_and_the_new_transactions_push_names_the_space()
@@ -526,6 +526,40 @@ public class PushTests : IClassFixture<SyncApiFactory>
         await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(DateTimeOffset.UtcNow.AddDays(2)));
         var held = (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!.ClearedAt!.Value;
         Assert.True(held <= DateTimeOffset.UtcNow && held > first);
+    }
+
+    [Fact]
+    public async Task Clearing_a_part_of_the_list_moves_that_part_only()
+    {
+        var client = ClientFor($"clr-{Guid.NewGuid():N}");
+        var at = DateTimeOffset.UtcNow.AddMinutes(-10);
+
+        var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(at, ["general", "space_a"]));
+        var held = (await put.Content.ReadFromJsonAsync<ClearedMoment>())!;
+        // #614: a space the bell did not show keeps its rows, so the whole-list moment stays where it was
+        Assert.Null(held.ClearedAt);
+        Assert.Equal(at, held.Scopes!["general"]);
+        Assert.Equal(at, held.Scopes["space_a"]);
+
+        await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(at.AddMinutes(-5), ["space_a"]));
+        await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(at.AddMinutes(5), ["space_b"]));
+        var read = (await client.GetFromJsonAsync<ClearedMoment>("/me/notifications/cleared"))!;
+        Assert.Equal(at, read.Scopes!["space_a"]);
+        Assert.Equal(at.AddMinutes(5), read.Scopes["space_b"]);
+        Assert.False(read.Scopes.ContainsKey("space_c"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("a b")]
+    [InlineData("<script>")]
+    public async Task A_scope_that_is_not_a_name_is_refused(string scope)
+    {
+        var client = ClientFor($"clr-{Guid.NewGuid():N}");
+
+        var put = await client.PutAsJsonAsync("/me/notifications/cleared", new NotificationsClearedRequest(DateTimeOffset.UtcNow, [scope]));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, put.StatusCode);
     }
 
     [Fact]

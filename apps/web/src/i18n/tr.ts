@@ -1456,6 +1456,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'notif.title': 'Bildirimler',
   'notif.empty': 'Her şey güncel.',
   'notif.clear': 'Tümünü temizle',
+  'notif.groupGeneral': 'Genel',
+  'notif.groupSpace': 'Bu alan',
   'notif.someone': 'Birisi',
   'notif.friendRequest': '{name} sana arkadaşlık isteği gönderdi',
   'notif.spaceInvite': '{name} seni “{space}” alanına davet etti',

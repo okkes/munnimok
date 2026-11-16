@@ -1,6 +1,15 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NATIVE_CALLBACK_KEY, deepLinkToPath, ensurePersistentStorage, getNativePushToken, initDeepLinks, isNativeApp } from './platform';
+import {
+  NATIVE_CALLBACK_KEY,
+  deepLinkToPath,
+  ensurePersistentStorage,
+  getNativePushToken,
+  initDeepLinks,
+  isNativeApp,
+  nativeDelivered,
+  removeNativeDelivered,
+} from './platform';
 
 type CapacitorStub = {
   isNativePlatform?: () => boolean;
@@ -12,6 +21,45 @@ const setCapacitor = (stub: CapacitorStub | undefined) => {
 };
 
 afterEach(() => setCapacitor(undefined));
+
+describe('the phone’s notification centre (#614)', () => {
+  it('outside the shell, or in a shell whose plugin cannot list them, there is nothing to ask', async () => {
+    expect(await nativeDelivered()).toBeNull();
+    setCapacitor({ isNativePlatform: () => true, Plugins: { PushNotifications: {} } });
+    expect(await nativeDelivered()).toBeNull();
+  });
+
+  it('lists what the phone still shows and removes the ones it is handed', async () => {
+    const removeDeliveredNotifications = vi.fn(() => Promise.resolve());
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: {
+        PushNotifications: {
+          getDeliveredNotifications: () => Promise.resolve({ notifications: [{ id: 7, tag: 'new-tx-s1' }] }),
+          removeDeliveredNotifications,
+        },
+      },
+    });
+
+    expect(await nativeDelivered()).toEqual([{ id: 7, tag: 'new-tx-s1' }]);
+    await removeNativeDelivered([{ id: 7, tag: 'new-tx-s1' }]);
+    expect(removeDeliveredNotifications).toHaveBeenCalledWith({ notifications: [{ id: 7, tag: 'new-tx-s1' }] });
+  });
+
+  it('a plugin that fails to answer reads as nothing shown', async () => {
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: {
+        PushNotifications: {
+          getDeliveredNotifications: () => Promise.reject(new Error('plugin')),
+          removeDeliveredNotifications: () => Promise.reject(new Error('plugin')),
+        },
+      },
+    });
+    expect(await nativeDelivered()).toEqual([]);
+    await expect(removeNativeDelivered([{ id: 1 }])).resolves.toBeUndefined();
+  });
+});
 
 describe('platform seam', () => {
   // host checks derive from publicOrigin (the real domain is a secret): pin it for the fixtures

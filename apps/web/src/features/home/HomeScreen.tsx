@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { useReviewedSettle } from '@/features/review/useReviewedSettle';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
@@ -225,6 +226,7 @@ export function HomeScreen() {
   const allTxs = useSpaceTransactions();
   const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
+  useReviewedSettle(reviewCount);
   // a receipt fitting an already-reviewed transaction has no review card to ask on: Home points at it
   const receiptProposals = useProposedMatches();
   // #505: a space this identity only reads — its settings, layout and questions are its members' to change

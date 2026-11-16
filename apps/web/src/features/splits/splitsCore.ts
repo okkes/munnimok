@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from '@/app/session';
+import { settleAnswered } from '@/application/deliveredResolve';
 import { serverSplits } from '@/application/splitsApi';
 import type { SplitDetail, SplitMember, SplitsApi, SplitSummary } from '@/application/splitsApi';
 import { useLang } from '@/i18n';
@@ -47,6 +48,10 @@ export function useSplitDetail(api: SplitsApi | null, splitId: string): { view: 
     if (answer === 'gone') setView({ state: 'gone' });
     else if (answer) setView({ state: 'ready', detail: answer });
     else setView((prev) => (prev.state === 'ready' ? prev : { state: 'offline' }));
+    // #614: an owner who answered the last join request no longer needs the phone's notice of it
+    if (answer && answer !== 'gone' && answer.requests) {
+      void settleAnswered({ splitRequests: { splitId, waiting: answer.requests.length } }).catch(() => undefined);
+    }
   }, [api, splitId]);
   useEffect(() => {
     void reload();

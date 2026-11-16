@@ -14,6 +14,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { FriendProfileSheet } from './FriendProfileSheet';
 import { takeFriendsAddIntent } from './friendsHandoff';
+import { settleAnswered } from '@/application/deliveredResolve';
 
 interface FriendDto {
   userId: string;
@@ -110,7 +111,11 @@ export function FriendsScreen() {
 
   const reload = useCallback(async () => {
     const res = await apiFetch('/friends');
-    if (res.ok) setData((await res.json()) as FriendsResponse);
+    if (!res.ok) return;
+    const body = (await res.json()) as FriendsResponse;
+    setData(body);
+    // #614: with the last request answered the phone lets go of its notice
+    void settleAnswered({ friendRequests: body.receivedPending.length }).catch(() => undefined);
   }, []);
 
   useEffect(() => {

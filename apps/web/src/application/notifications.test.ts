@@ -8,7 +8,11 @@ import { HlcClock } from '@/sync/hlc';
 import {
   appendNotification,
   clearInboxUpTo,
+  clearScopeUpTo,
+  clearScopesNow,
+  GENERAL_SCOPE,
   notificationTitle,
+  readClearedBy,
   readInbox,
   readInboxClearedAt,
   stampNotifSeen,
@@ -46,18 +50,62 @@ describe('notification inbox (arc 6)', () => {
     expect(list[0].payload?.n).toBe('54');
   });
 
-  it('unread counts entries newer than the stamp; opening the tab clears it', async () => {
+  it('unread counts the rows of the parts asked for that came after the part was last looked at', async () => {
     const store = fresh();
-    await appendNotification(store, 'debtRate', { name: 'Car loan' });
-    await appendNotification(store, 'digest', { n: '3' });
-    expect(await unreadNotifCount(store)).toBe(2);
+    await appendNotification(store, 'whatsnew', { version: '5.23.0' });
+    await appendNotification(store, 'digest', { n: '3', spaceId: 's1' });
+    await appendNotification(store, 'planOverspent', { names: 'Rent', spaceId: 's2' });
+    expect(await unreadNotifCount(store, [GENERAL_SCOPE, 's1'])).toBe(2);
 
-    await stampNotifSeen(store);
-    expect(await unreadNotifCount(store)).toBe(0);
+    // #614: looking at the bell in one space does not read another space's rows
+    await stampNotifSeen(store, [GENERAL_SCOPE, 's1']);
+    expect(await unreadNotifCount(store, [GENERAL_SCOPE, 's1'])).toBe(0);
+    expect(await unreadNotifCount(store, [GENERAL_SCOPE, 's2'])).toBe(1);
 
     await new Promise((r) => setTimeout(r, 5));
-    await appendNotification(store, 'debtRate', { name: 'Car loan' });
-    expect(await unreadNotifCount(store)).toBe(1);
+    await appendNotification(store, 'debtRate', { name: 'Car loan', spaceId: 's1' });
+    expect(await unreadNotifCount(store, [GENERAL_SCOPE, 's1'])).toBe(1);
+  });
+
+  it('a part not looked at since the list was split keeps the one moment of before', async () => {
+    const store = fresh();
+    await appendNotification(store, 'digest', { n: '3', spaceId: 's1' });
+    await new Promise((r) => setTimeout(r, 5));
+    await store.metaPut('notifSeenAt', new Date().toISOString());
+    expect(await unreadNotifCount(store, [GENERAL_SCOPE, 's1'])).toBe(0);
+  });
+
+  it('#614: the person’s own Clear takes the parts the bell showed and leaves another space’s rows', async () => {
+    const store = fresh();
+    await appendNotification(store, 'whatsnew', { version: '5.23.0' }, 'v5.23.0');
+    await appendNotification(store, 'digest', { n: '3', spaceId: 's1' });
+    await appendNotification(store, 'planOverspent', { names: 'Rent', spaceId: 's2' });
+
+    const gone = await clearScopesNow(store, [GENERAL_SCOPE, 's1']);
+    expect(gone.map((e) => e.kind).sort()).toEqual(['digest', 'whatsnew']);
+    expect((await readInbox(store)).map((e) => e.kind)).toEqual(['planOverspent']);
+    // the whole-list moment of #580 is another thing and stays where it was
+    expect(await readInboxClearedAt(store)).toBeUndefined();
+    expect(Object.keys(await readClearedBy(store)).sort()).toEqual(['general', 's1']);
+
+    // a once-only event that was cleared does not come back
+    await appendNotification(store, 'whatsnew', { version: '5.23.0' }, 'v5.23.0');
+    expect((await readInbox(store)).map((e) => e.kind)).toEqual(['planOverspent']);
+  });
+
+  it('#614: a part cleared on another device drops that part’s older rows, once', async () => {
+    const store = fresh();
+    await appendNotification(store, 'digest', { n: '3', spaceId: 's1' });
+    await appendNotification(store, 'digest', { n: '2', spaceId: 's2' });
+    await new Promise((r) => setTimeout(r, 5));
+    const moment = new Date().toISOString();
+    await new Promise((r) => setTimeout(r, 5));
+    await appendNotification(store, 'debtRate', { name: 'Car loan', spaceId: 's1' });
+
+    expect((await clearScopeUpTo(store, 's1', moment))?.map((e) => e.kind)).toEqual(['digest']);
+    expect((await readInbox(store)).map((e) => `${e.kind}:${e.payload?.spaceId}`)).toEqual(['debtRate:s1', 'digest:s2']);
+    expect(await clearScopeUpTo(store, 's1', moment)).toBeNull();
+    expect(await clearScopeUpTo(store, 's1', '2020-01-01T00:00:00.000Z')).toBeNull();
   });
 
   it('#580: a clear drops what came before its moment, keeps what came after, and never moves back', async () => {

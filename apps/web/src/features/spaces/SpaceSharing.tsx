@@ -22,6 +22,7 @@ import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 import { RolePicker } from './InviteFriendSheet';
 import { MemberSheet } from './MemberSheet';
+import { settleAnswered } from '@/application/deliveredResolve';
 
 export type { SpaceRole } from '@/sync/spaceAccess';
 
@@ -121,7 +122,11 @@ export function SpaceInvitesBanner() {
 
   const reload = useCallback(async () => {
     const res = await apiFetch('/me/invites').catch(() => null);
-    if (res?.ok) setInvites((await res.json()) as InviteDto[]);
+    if (!res?.ok) return;
+    const waiting = (await res.json()) as InviteDto[];
+    setInvites(waiting);
+    // #614: with the last invitation answered the phone lets go of its notice
+    void settleAnswered({ spaceInvites: waiting.length }).catch(() => undefined);
   }, []);
   useEffect(() => void reload(), [reload]);
   useServerRefresh(reload);

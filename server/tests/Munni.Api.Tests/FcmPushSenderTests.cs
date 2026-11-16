@@ -97,6 +97,28 @@ public class FcmPushSenderTests
         Assert.DoesNotContain("\"notification\":", handler.LastSendBody);
     }
 
+    [Fact]
+    public async Task An_android_notification_is_filed_under_the_tag_the_web_worker_uses()
+    {
+        // #614: the app finds a handled notification on the phone by this tag and removes it
+        var (sender, handler) = Create();
+        Assert.True(await sender.SendAsync(Row("tok-1"), """{"type":"new-transactions","spaceId":"s1","count":3}""", CancellationToken.None));
+        Assert.Contains("\"android\":{\"priority\":\"high\",\"notification\":{\"tag\":\"new-tx-s1\"}}", handler.LastSendBody);
+    }
+
+    [Theory]
+    [InlineData("""{"type":"new-transactions","spaceId":"s1"}""", "new-tx-s1")]
+    [InlineData("""{"type":"new-transactions"}""", "new-tx-all")]
+    [InlineData("""{"type":"new-transactions","spaceId":"../x"}""", "new-tx-all")]
+    [InlineData("""{"type":"friend-request","fromName":"Ayse"}""", "friend-request")]
+    [InlineData("""{"type":"space-invite"}""", "space-invite")]
+    [InlineData("""{"type":"split","kind":"invited","splitId":"sp1"}""", "split-invited-sp1")]
+    [InlineData("""{"type":"split","kind":"settled","splitId":"sp1","cents":-250}""", "split-settled-pay-sp1")]
+    [InlineData("""{"type":"test"}""", "test")]
+    [InlineData("""{"type":"mystery"}""", null)]
+    public void A_payload_has_the_tag_the_web_worker_gives_it(string payload, string? tag) =>
+        Assert.Equal(tag, FcmTexts.Tag(JsonDocument.Parse(payload).RootElement));
+
     private static (string Title, string Body) Text(string payload, string lang = "en") =>
         FcmTexts.Build(JsonDocument.Parse(payload).RootElement, lang)!.Value;
 

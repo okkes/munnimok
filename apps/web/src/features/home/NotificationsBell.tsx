@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useSession } from '@/app/session';
-import { appendNotification, readInbox, stampNotifSeen, unreadNotifCount, type InboxEntry, type InboxKind } from '@/application/notifications';
+import {
+  appendNotification,
+  GENERAL_SCOPE,
+  readInbox,
+  scopeOf,
+  stampNotifSeen,
+  unreadNotifCount,
+  type InboxEntry,
+  type InboxKind,
+} from '@/application/notifications';
 import { clearNotifications, syncNotificationsCleared } from '@/application/inboxClear';
+import { settleAnswered, settleReviewed } from '@/application/deliveredResolve';
 import { settleInbox } from '@/application/inboxResolve';
 import { refreshSpacesNotifyOff } from '@/application/spaceNotifications';
 import { WhatsNewSheet } from '@/features/help/WhatsNew';
@@ -132,10 +142,34 @@ const INBOX_VISUAL: Record<InboxKind, { icon: string; to?: '/recurring' | '/debt
   planOverspent: { icon: 'clipboard-alert-outline', to: '/planning' },
 };
 
-/** #551: "Household · " before the row's age — the space the row is about, while the person is in it */
-function spaceLabel(names: Map<string, string> | undefined, entry: InboxEntry): string {
-  const name = entry.payload?.spaceId ? names?.get(entry.payload.spaceId) : undefined;
-  return name ? `${name} · ` : '';
+/** #614: the name of a part of the list — "General", then the open space */
+function GroupLabel({ testId, children }: Readonly<{ testId: string; children: ReactNode }>) {
+  return (
+    <div data-testid={testId} className="m-cap px-1 pt-3 pb-1 text-[10px] text-ink-4 first:pt-0">
+      {children}
+    </div>
+  );
+}
+
+function InboxRow({ entry, line, age, onOpen }: Readonly<{ entry: InboxEntry; line: string; age: string; onOpen: (entry: InboxEntry) => void }>) {
+  return (
+    <button
+      data-testid={`notif-inbox-${entry.id}`}
+      onClick={() => onOpen(entry)}
+      className="m-tap flex items-start gap-3 border-b border-line-2 bg-transparent px-1 py-3 text-left last:border-0"
+    >
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2">
+        <Icon name={INBOX_VISUAL[entry.kind].icon} size={17} color="var(--m-ink-2)" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] leading-snug text-ink">{line}</span>
+        <span className="block truncate pt-0.5 text-[11px] text-ink-4" data-testid={`notif-inbox-meta-${entry.id}`}>
+          {age}
+        </span>
+      </span>
+      <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
+    </button>
+  );
 }
 
 function inboxLine(t: TFunc, entry: InboxEntry): string {
@@ -239,24 +273,28 @@ export function NotificationsBell() {
     if (whatsnewUnseen && version) void appendNotification(store, 'whatsnew', { version }, `v${version}`);
   }, [whatsnewUnseen, store]);
 
-  const inbox = useQuery(store, async () => readInbox(store), []);
-  const unread = useQuery(store, async () => unreadNotifCount(store), []);
-  // #551: each row says which space it is about (a space since left says nothing)
-  const spaceNames = useQuery(
+  // #614: the bell shows what is about no space and what is about the open one; another space's rows wait in that space
+  const inbox = useQuery(
     store,
-    async () => new Map((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => [s.id, s.name])),
-    [],
+    async () => (await readInbox(store)).filter((entry) => scopeOf(entry) === GENERAL_SCOPE || scopeOf(entry) === spaceId),
+    [spaceId],
   );
+  const general = (inbox ?? []).filter((entry) => scopeOf(entry) === GENERAL_SCOPE);
+  const here = (inbox ?? []).filter((entry) => scopeOf(entry) === spaceId);
+  const unread = useQuery(store, async () => unreadNotifCount(store, [GENERAL_SCOPE, spaceId]), [spaceId]);
+  const spaceName = useQuery(store, async () => (await store.get('space', spaceId))?.name, [spaceId]);
 
-  // opening the Notifications tab stamps everything seen — the badge's
+  // opening the Notifications tab stamps what it shows as seen — the badge's
   // inbox share clears; actionable server items keep their own count
   useEffect(() => {
-    if (open && tab === 'notifications') void stampNotifSeen(store);
-  }, [open, tab, store]);
+    if (open && tab === 'notifications') void stampNotifSeen(store, [GENERAL_SCOPE, spaceId]);
+  }, [open, tab, store, spaceId]);
 
-  // #614: whoever looks at the list sees what is still true — in every space, not only the open one
+  // #614: whoever looks at the list sees what is still true, and the phone lets go of what was handled
   useEffect(() => {
-    if (open) void settleInbox(store).catch(() => undefined);
+    if (!open) return;
+    void settleInbox(store).catch(() => undefined);
+    void settleReviewed(store).catch(() => undefined);
   }, [open, store]);
 
   const openActor = (to: '/profile' | 'members') => {
@@ -277,19 +315,26 @@ export function NotificationsBell() {
       apiFetch('/friends').catch(() => null),
       apiFetch('/me/invites').catch(() => null),
     ]);
-    if (friendsRes?.ok) {
-      const body = (await friendsRes.json()) as { receivedPending: PendingRequest[] };
-      setRequests(body.receivedPending);
-    }
-    if (invitesRes?.ok) setInvites((await invitesRes.json()) as PendingInvite[]);
+    const friendRequests = friendsRes?.ok ? ((await friendsRes.json()) as { receivedPending: PendingRequest[] }).receivedPending : undefined;
+    if (friendRequests) setRequests(friendRequests);
+    const spaceInvites = invitesRes?.ok ? ((await invitesRes.json()) as PendingInvite[]) : undefined;
+    if (spaceInvites) setInvites(spaceInvites);
     // #538: an owner asked the person into a split — it waits here like a space's invitation
-    setSplitInvites((await serverSplits.invitations()) ?? []);
+    const invitedTo = await serverSplits.invitations();
+    setSplitInvites(invitedTo ?? []);
+    // #614: what the server no longer lists was answered — on this device or another — and the phone lets go of it
+    void settleAnswered({
+      friendRequests: friendRequests?.length,
+      spaceInvites: spaceInvites?.length,
+      splitInvites: invitedTo?.map((invite) => invite.splitId),
+    }).catch(() => undefined);
   }, [isUser, store]);
 
   useEffect(() => void reload(), [reload]);
   useServerRefresh(reload);
 
-  const count = requests.length + invites.length + splitInvites.length + (unread ?? 0);
+  const pendingCount = requests.length + invites.length + splitInvites.length;
+  const count = pendingCount + (unread ?? 0);
 
   const go = (to: '/friends' | '/spaces' | '/splits') => {
     setOpen(false);
@@ -360,13 +405,13 @@ export function NotificationsBell() {
                 <p className="text-[13px] text-ink-3">{t('notif.empty')}</p>
               </div>
             )}
-            {/* #580: the list empties here and on the person's other devices, and the phone's
-                own notification centre lets go of them; requests and invites wait for an answer */}
+            {/* #580, #614: what the bell shows empties here and on the person's other devices, and the phone's own
+                notification centre lets go of it; requests and invites wait for an answer */}
             {(inbox?.length ?? 0) > 0 && (
               <div className="flex justify-end">
                 <button
                   data-testid="notif-clear"
-                  onClick={() => void clearNotifications(store, isUser)}
+                  onClick={() => void clearNotifications(store, isUser, [GENERAL_SCOPE, spaceId])}
                   className="m-tap flex items-center gap-1 border-none bg-transparent px-1 py-1 text-[12px] font-medium text-accent-deep"
                 >
                   <Icon name="notification-clear-all" size={15} />
@@ -375,6 +420,7 @@ export function NotificationsBell() {
               </div>
             )}
             <div className="flex flex-col">
+              {pendingCount + general.length > 0 && <GroupLabel testId="notif-group-general">{t('notif.groupGeneral')}</GroupLabel>}
               {requests.map((r) => (
                 <button
                   key={r.id}
@@ -426,25 +472,12 @@ export function NotificationsBell() {
                   <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
                 </button>
               ))}
-              {(inbox ?? []).map((entry) => (
-                <button
-                  key={entry.id}
-                  data-testid={`notif-inbox-${entry.id}`}
-                  onClick={() => openInboxRow(entry)}
-                  className="m-tap flex items-start gap-3 border-b border-line-2 bg-transparent px-1 py-3 text-left last:border-0"
-                >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2">
-                    <Icon name={INBOX_VISUAL[entry.kind].icon} size={17} color="var(--m-ink-2)" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] leading-snug text-ink">{inboxLine(t, entry)}</span>
-                    <span className="block truncate pt-0.5 text-[11px] text-ink-4" data-testid={`notif-inbox-meta-${entry.id}`}>
-                      {spaceLabel(spaceNames, entry)}
-                      {fmtTimeAgo(entry.ts, lang)}
-                    </span>
-                  </span>
-                  <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
-                </button>
+              {general.map((entry) => (
+                <InboxRow key={entry.id} entry={entry} line={inboxLine(t, entry)} age={fmtTimeAgo(entry.ts, lang)} onOpen={openInboxRow} />
+              ))}
+              {here.length > 0 && <GroupLabel testId="notif-group-space">{spaceName ?? t('notif.groupSpace')}</GroupLabel>}
+              {here.map((entry) => (
+                <InboxRow key={entry.id} entry={entry} line={inboxLine(t, entry)} age={fmtTimeAgo(entry.ts, lang)} onOpen={openInboxRow} />
               ))}
             </div>
           </>
