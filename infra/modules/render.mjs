@@ -112,8 +112,9 @@ ${publish(p.glitchtip)}
     networks: [shared]
 
   # the platform's vault: the HUMAN copy of every credential the setup mints
+  # a version, never "latest": a deploy must not be what updates the store of every credential (Renovate raises it)
   vaultwarden:
-    image: vaultwarden/server:latest
+    image: vaultwarden/server:1.37.5
     restart: unless-stopped
     environment:
       DOMAIN: ${s.urls.vault}
