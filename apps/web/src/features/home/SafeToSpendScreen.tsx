@@ -18,7 +18,7 @@ import { Icon } from '@/ui/Icon';
 import { HeroCard, Row, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { TickBox, enterToggles } from '@/ui/TickBox';
-import { useSafeToSpend } from './useSafeToSpend';
+import { safeToSpendColor, useSafeToSpend } from './useSafeToSpend';
 
 /** the planner's own names for what it holds (#541: "segments from the planner tool") */
 const SET_ASIDE_LABEL: Record<SpendSetAside, TranslationKey> = {
@@ -32,13 +32,6 @@ const SET_ASIDE_LABEL: Record<SpendSetAside, TranslationKey> = {
 const DUES_COLOR = 'var(--m-warning)';
 const SET_ASIDE_COLOR = 'var(--m-info)';
 const SAFE_COLOR = 'var(--m-accent)';
-
-/** the colour Home's block wears too: red below zero, amber under €10 a day — and nothing where the stars hide the figure (#530) */
-export function safeToSpendColor(forecast: SafeToSpend, hidden: boolean): string {
-  if (forecast.accounts.length === 0 || hidden) return 'var(--m-ink-3)';
-  if (forecast.cents < 0) return 'var(--m-negative)';
-  return forecast.perDayCents < 1000 ? 'var(--m-warning)' : 'var(--m-accent-deep)';
-}
 
 /**
  * Safe to spend's own screen (#541, user 2026-11-16: "a dedicated screen",

@@ -44,6 +44,16 @@ export function forecastSafeToSpend({ accounts, txs, recurrings, space, planning
   return safeToSpend({ accounts: converted, space, recurrings, txs, held: planHeld(planning), today: localToday() });
 }
 
+/**
+ * The figure's colour on Home's block and on its screen: red below zero, amber under €10 a day — and none where
+ * the stars hide the figure (#530). Here, not in the screen's file: Home would pull the whole screen into its chunk.
+ */
+export function safeToSpendColor(forecast: SafeToSpend, hidden: boolean): string {
+  if (forecast.accounts.length === 0 || hidden) return 'var(--m-ink-3)';
+  if (forecast.cents < 0) return 'var(--m-negative)';
+  return forecast.perDayCents < 1000 ? 'var(--m-warning)' : 'var(--m-accent-deep)';
+}
+
 /** the forecast with what its screen needs beside it: the accounts to pick from, the space's settings, the ledger currency */
 export function useSafeToSpend(): { forecast: SafeToSpend | null; accounts: SpaceAccount[] | undefined; space: SpaceRow | undefined; currency: string } {
   const { store, spaceId } = useData();
