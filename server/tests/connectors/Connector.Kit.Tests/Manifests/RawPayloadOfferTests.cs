@@ -6,7 +6,7 @@ using Xunit;
 namespace Connector.Kit.Tests;
 
 // raw is the provider's own document beside each record, the more sensitive; README policy: raw payloads off in production
-// withheld from the CATALOGUE so consumers do not offer a control production refuses;
+// withheld from the CATALOGUE so consumers do not offer a control production refuses.
 // ParamBinder's enum check then refuses it by name
 public sealed class RawPayloadOfferTests
 {

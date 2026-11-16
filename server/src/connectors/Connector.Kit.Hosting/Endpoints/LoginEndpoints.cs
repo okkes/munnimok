@@ -50,7 +50,7 @@ internal static class LoginEndpoints
             CancellationToken ct) => LoginAsync(
                 http, provider, request, platform, registry, statuses, sessions, queue, inline, db, views,
                 signals, idempotency, interval, options, time, ct))
-        // same body under two statuses is the contract: 200 = the bundle is in hand, 202 = poll or subscribe;
+        // same body under two statuses is the contract: 200 = the bundle is in hand, 202 = poll or subscribe.
         // a consumer reading only the 200 shape never learns of the second
         .Produces<SessionResponse>(StatusCodes.Status200OK)
         .Produces<SessionResponse>(StatusCodes.Status202Accepted);
@@ -650,7 +650,7 @@ internal static class LoginEndpoints
             throw new ConnectorException(ErrorCode.AgentUnavailable, $"unknown agent '{preferAgent}'");
         }
 
-        // after the ownership check, deliberately: whether another's machine is on is not the caller's to learn;
+        // after the ownership check, deliberately: whether another's machine is on is not the caller's to learn.
         // same code the queue would fail with later, so "start your agent" shows now
         var now = time.GetUtcNow();
         if (!AgentLiveness.IsOnline(agent, now))
@@ -790,7 +790,7 @@ internal static class LoginEndpoints
 
         if (held is not null) return held;
 
-        // several machines, none has run this provider: nothing says which one the person is at, and a guess would not self-correct;
+        // several machines, none has run this provider: nothing says which one the person is at, and a guess would not self-correct.
         // unpinned, the queue offers it to any of THEIR agents and the next connect finds the reported profile
         if (theirs.Count > 1) return null;
 

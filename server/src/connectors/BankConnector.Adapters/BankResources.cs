@@ -17,7 +17,7 @@ public static class BankResources
         MaxRecordsPerFetch = 50,
     };
 
-    // accountTypes: only the types the provider can TELL APART. ASN states no type, so all its accounts are Current;
+    // accountTypes: only the types the provider can TELL APART. ASN states no type, so all its accounts are Current.
     // defaulting to all four let callers tick credit_card and loan on a connection that has neither
     public static ResourceSpec TransactionsSpec(
         int maxHistoryDays = 540,

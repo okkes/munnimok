@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Adapters;
 
-// lists every consent the aggregator knows, held by a session here or not (other environments', an earlier integration's);
+// lists every consent the aggregator knows, held by a session here or not (other environments', an earlier integration's).
 // the operator revokes them from the admin portal
 public interface IRemoteInventory
 {

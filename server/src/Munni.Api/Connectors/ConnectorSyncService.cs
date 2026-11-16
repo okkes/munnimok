@@ -245,7 +245,7 @@ public sealed class ConnectorSyncService(
         return pending ?? await FinishAsync(run, row, view, ct);
     }
 
-    // a page that still carries its accounts is the party's word, also with no reserved row;
+    // a page that still carries its accounts is the party's word, also with no reserved row.
     // a gone page (collected, swept, taken over) is not
     private async Task<ConnectorIngestResult?> LandJobAsync(JobPage page, bool backfill, CancellationToken ct)
     {

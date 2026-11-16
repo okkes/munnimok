@@ -8,7 +8,7 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-// tests the token LOOP: material out of one fetch goes into the next, against an upstream that retires what it rotates;
+// tests the token LOOP: material out of one fetch goes into the next, against an upstream that retires what it rotates.
 // Lidl is only the vehicle: refresh, retry and carry-forward live in BearerSession, shared by every T1 adapter
 public sealed class RefreshLoopTests
 {

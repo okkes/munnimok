@@ -40,7 +40,7 @@ internal static class LiveStreamRelay
 {
     public const string ContentType = "text/event-stream";
 
-    // the control plane keeps alive every 10 s: three missed is an upstream gone unannounced;
+    // the control plane keeps alive every 10 s: three missed is an upstream gone unannounced.
     // the app reconnects past its last frame
     public static readonly TimeSpan UpstreamSilence = TimeSpan.FromSeconds(30);
 

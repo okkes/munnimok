@@ -223,7 +223,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         }
         finally
         {
-            // cancelled in finally, not only on success: when the window runs out someone is still looking at the picture;
+            // cancelled in finally, not only on success: when the window runs out someone is still looking at the picture.
             // the ask's exception is observed because an unobserved one is a crash report for a deliberate close
             await view.CancelAsync().ConfigureAwait(false);
             _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);

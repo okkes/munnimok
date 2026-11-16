@@ -25,7 +25,7 @@ internal sealed record PkceChallenge
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(verifier);
 
-        // ASCII, not UTF-8: the spec hashes the verifier's own alphabet, which is ASCII;
+        // ASCII, not UTF-8: the spec hashes the verifier's own alphabet, which is ASCII.
         // a tidy-up to Encoding.UTF8 must not change the hash
         return new PkceChallenge
         {

@@ -16,7 +16,7 @@ public static class ErrorCatalog
         [ErrorCode.ProviderUnavailable] = new(503, Retriable: true, UserAction.Retry),
         [ErrorCode.RateLimited] = new(429, Retriable: true, UserAction.Wait),
         [ErrorCode.AgentUnavailable] = new(503, Retriable: true, UserAction.StartYourAgent),
-        // 403 and never retried, unlike an unavailable agent (503): the machine was de-authorised, not switched off;
+        // 403 and never retried, unlike an unavailable agent (503): the machine was de-authorised, not switched off.
         // Reconnect is the only exit
         [ErrorCode.AgentRevoked] = new(403, Retriable: false, UserAction.Reconnect),
         [ErrorCode.UnsupportedResource] = new(400, Retriable: false, UserAction.None),

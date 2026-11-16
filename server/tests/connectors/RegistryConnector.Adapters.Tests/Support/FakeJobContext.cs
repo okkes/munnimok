@@ -38,7 +38,7 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     public bool Attended { get; init; } = true;
 
-    // false, as the contract's default: a first connect has no session, so SessionProbe must not look for one;
+    // false, as the contract's default: a first connect has no session, so SessionProbe must not look for one.
     // a test of an already-signed-in browser sets it
     public bool KeepsSession { get; init; }
 

@@ -121,7 +121,7 @@ public sealed class BalanceChainTests
 
         var ex = Assert.Throws<ConnectorException>(() => BalanceChain.Verify(rows, "asn"));
 
-        // ProviderChanged, not Internal: the export's shape or ordering moved;
+        // ProviderChanged, not Internal: the export's shape or ordering moved.
         // it also degrades the provider, so the next user avoids the bad data
         Assert.Equal(ErrorCode.ProviderChanged, ex.Code);
         Assert.False(ex.Retriable);

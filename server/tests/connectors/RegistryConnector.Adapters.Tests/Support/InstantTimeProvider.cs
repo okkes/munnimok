@@ -1,7 +1,7 @@
 namespace RegistryConnector.Adapters.Tests;
 
 // timers fire at once, for counted polls (SessionProbe.OnPageAsync: 20 passes of 500ms on BKR's options); only safe where
-// a COUNT bounds the loop, a deadline off a frozen GetUtcNow would spin for ever;
+// a COUNT bounds the loop, a deadline off a frozen GetUtcNow would spin for ever.
 // callbacks are queued, not run inside CreateTimer: Task.Delay is still wiring itself up, so that is re-entrancy
 internal sealed class InstantTimeProvider(DateTimeOffset now) : TimeProvider
 {

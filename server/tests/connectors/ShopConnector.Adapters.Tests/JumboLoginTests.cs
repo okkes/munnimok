@@ -94,7 +94,7 @@ public sealed class JumboLoginTests
         Assert.True(ctx.CredentialWasSubmitted);
     }
 
-    // a box that moved is handed to the human rather than failed, nothing typed so nothing counted;
+    // a box that moved is handed to the human rather than failed, nothing typed so nothing counted.
     // a hanging page is handed over too, else it surfaced as "something went wrong on munni's side"
     [Fact]
     public async Task A_page_that_will_not_settle_is_handed_over_rather_than_blamed_on_munni()

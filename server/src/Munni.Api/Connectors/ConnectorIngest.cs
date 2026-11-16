@@ -253,7 +253,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new ConnectorIngestCounts(0, written, 0, 0, dropped);
     }
 
-    // NamesTheAccount: the ref is an IBAN or the party's identity, so another session holding it reached the same account;
+    // NamesTheAccount: the ref is an IBAN or the party's identity, so another session holding it reached the same account.
     // AccountRef is null when the person dropped the account
     private sealed record AccountLanding(int Accepted, string? AccountRef, bool NamesTheAccount = false);
 
@@ -307,7 +307,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new AccountLanding(accepted, accountRef, isIban || identity is not null);
     }
 
-    // a card or wallet's external id is per session, so each new consent filed the same wallet as a new account (#491);
+    // a card or wallet's external id is per session, so each new consent filed the same wallet as a new account (#491).
     // an earlier ref with the same identity lends its reference
     private async Task<string> CardRefAsync(AccountPass pass, string id, string externalId, string? identity, CancellationToken ct)
     {
@@ -550,7 +550,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new TransactionRow(op, entityId, pending, amount.Value.Value < 0 ? "debit" : CreditDirection, $"{merchant} {description}", bookedAt);
     }
 
-    // FLOOR clock: it only fills what nobody said yet, a person's choice (before or after) always outranks it;
+    // FLOOR clock: it only fills what nobody said yet, a person's choice (before or after) always outranks it.
     // a live server clock once buried an evening's categorisations (TxMetaOverlayRepair)
     // a SUGGESTION: every fetched row waits in the review prefilled, only the person takes one out (NeedsReviewRepair)
     private static SyncOpDto OverlayOp(string spaceId, TransactionRow row)

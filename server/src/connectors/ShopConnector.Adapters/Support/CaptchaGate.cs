@@ -334,7 +334,7 @@ internal sealed class CaptchaGate
         // More means the human is mid-answer: the relay working, not the provider resisting
         if (relayed is not GridRound.More) relay.Escalations++;
 
-        // only a finished gesture waits for the provider (a human mid-grid gave it nothing to move on from);
+        // only a finished gesture waits for the provider (a human mid-grid gave it nothing to move on from).
         // the redirect is the only proof
         if (relayed is GridRound.Done
             && await watcher.WaitAsync(TimeSpan.FromSeconds(_spec.PollSeconds), ct).ConfigureAwait(false)

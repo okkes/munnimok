@@ -4,7 +4,7 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Connectors;
 
-// #508: reserved rows nobody tracks stood beside their booked twins for good (a pass that became a job never settled;
+// #508: reserved rows nobody tracks stood beside their booked twins for good (a pass that became a job never settled,
 // a superseded or disconnected connection); once per database they go to live references of the feed account,
 // else tombstoned
 public static class ReservedRowRepair

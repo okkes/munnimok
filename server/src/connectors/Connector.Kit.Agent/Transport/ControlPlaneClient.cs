@@ -154,7 +154,7 @@ public sealed class ControlPlaneClient
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            // AskAsync turns an OperationCanceledException into MfaTimeout, blaming the human for a dropped connection;
+            // AskAsync turns an OperationCanceledException into MfaTimeout, blaming the human for a dropped connection.
             // named transient so it is retried
             throw new ControlPlaneException(
                 HttpStatusCode.RequestTimeout, $"GET {path} timed out before the control plane answered", ex);

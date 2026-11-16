@@ -7,8 +7,8 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-// LiveLogin ships true, so this is every real connect's path; AlbertHeijnAdapterTests cover only the typed form;
-// pinned: the adapter types nothing, asks for nothing, latches no credential, and ENDS the view at sign-in;
+// LiveLogin ships true, so this is every real connect's path; AlbertHeijnAdapterTests cover only the typed form.
+// pinned: the adapter types nothing, asks for nothing, latches no credential, and ENDS the view at sign-in.
 // an agent runs one job at a time, so a login that never lets go wedges every later one
 public sealed class AlbertHeijnLiveLoginTests
 {

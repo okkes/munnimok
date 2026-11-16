@@ -98,7 +98,7 @@ public sealed class ControlPlaneHost : IAsyncDisposable
             ["Connector:Auth:SharedSecret"] = DevKey,
             // a loaded CI agent: the wait only makes a 202 deterministic
             ["Connector:Timeouts:LoginWaitSeconds"] = "15",
-            // one second, so the slow mock outruns the window and the job path is exercised;
+            // one second, so the slow mock outruns the window and the job path is exercised.
             // zero for the walk suite, where every fetch becomes a job
             ["Connector:Timeouts:FetchWaitSeconds"] = fetchWaitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
         });

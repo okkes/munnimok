@@ -4,7 +4,7 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Browsing;
 
-// no login page has a published contract, so every selector is a guess: candidates ordered most-specific first;
+// no login page has a published contract, so every selector is a guess: candidates ordered most-specific first.
 // a miss on all is ProviderChanged with the list in the detail
 public static class PageOps
 {

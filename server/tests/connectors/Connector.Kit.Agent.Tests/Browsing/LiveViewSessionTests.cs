@@ -431,7 +431,7 @@ public sealed class LiveViewSessionTests(ITestOutputHelper output) : IAsyncLifet
     {
         var (page, control) = await OpenAsync();
 
-        // the fake's empty input poll answers after 50 ms where a real one holds;
+        // the fake's empty input poll answers after 50 ms where a real one holds.
         // the floor against a spin would dominate the measure
         await using var session = Session(
             page,

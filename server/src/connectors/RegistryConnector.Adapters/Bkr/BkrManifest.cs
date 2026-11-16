@@ -53,7 +53,7 @@ internal static class BkrManifest
                     Id = "credentials",
                     LabelKey = MessageKeys.StepCredentials,
 
-                    // all three optional: what the user supplies decides how much sign-in they watch (nothing: streamed;
+                    // all three optional: what the user supplies decides how much sign-in they watch (nothing: streamed,
                     // user+password: typed, second factor streamed; plus seed: computed); a required field would rule out the first two
                     Fields =
                     [
@@ -87,7 +87,7 @@ internal static class BkrManifest
                 },
             ],
 
-            // LiveView answers what the typed path cannot (texted code, choice, reset, consent);
+            // LiveView answers what the typed path cannot (texted code, choice, reset, consent).
             // MfaCode too: a drifted clock or mistyped seed must be answerable by a human
             Challenges = [ChallengeType.LiveView, ChallengeType.MfaCode],
 

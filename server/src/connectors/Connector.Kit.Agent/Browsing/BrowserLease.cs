@@ -460,7 +460,7 @@ public sealed record BrowserLeaseOptions
 
     public IReadOnlyList<string> Args { get; init; } = [];
 
-    // called once with the new page before it navigates (#441 L3): the recorder's door;
+    // called once with the new page before it navigates (#441 L3): the recorder's door.
     // a throwing hook is logged and the page is handed out anyway
     public Func<IPage, Task>? OnPage { get; init; }
 }

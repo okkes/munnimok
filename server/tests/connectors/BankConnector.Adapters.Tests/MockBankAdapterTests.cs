@@ -268,7 +268,7 @@ public sealed class MockBankAdapterTests
         Assert.False(error.Retriable);
         Assert.Contains(ErrorCode.InvalidCredentials, ErrorCatalog.NeverRetry);
 
-        // latched before the verdict: once a credential has gone upstream a lost lease must fail the job permanently;
+        // latched before the verdict: once a credential has gone upstream a lost lease must fail the job permanently.
         // three retries locks a real bank account
         Assert.True(ctx.CredentialWasSubmitted);
     }

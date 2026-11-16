@@ -233,7 +233,7 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         Assert.Equal(2, full!.Ops.Count);
     }
 
-    // #569: /sync/heads names every reachable space with the head its pull reports;
+    // #569: /sync/heads names every reachable space with the head its pull reports.
     // an archived reader's feed is capped where its pull is
     [Fact]
     public async Task Heads_name_every_reachable_space_with_the_head_its_pull_reports()

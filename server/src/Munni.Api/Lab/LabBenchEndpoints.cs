@@ -265,7 +265,7 @@ public static class LabBenchEndpoints
         return reply.IsSuccess ? Results.Accepted() : ConnectorRelayEndpoints.Relay(http, reply);
     }
 
-    // the records go back to the operator and nothing is ingested;
+    // the records go back to the operator and nothing is ingested.
     // a run outrunning the window answers 202 with a job to follow
     private static async Task<IResult> Fetch(string sessionId, LabFetchRequest request, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {

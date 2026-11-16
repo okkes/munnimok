@@ -8,7 +8,7 @@ namespace RegistryConnector.Adapters.Duo;
 
 internal static class DuoManifest
 {
-    // 2: bundles are bound to (provider, subject, manifest_version) so a changed login cannot apply to older material;
+    // 2: bundles are bound to (provider, subject, manifest_version) so a changed login cannot apply to older material.
     // v1 connections sign in again
     public const int Version = 2;
 
@@ -102,7 +102,7 @@ internal static class DuoManifest
                 },
             ],
 
-            // LiveView carries the sign-in; QrDisplay relays DigiD's inline PNG QR (a photographed one is sometimes unreadable);
+            // LiveView carries the sign-in; QrDisplay relays DigiD's inline PNG QR (a photographed one is sometimes unreadable).
             // MfaCode is the typed path's code
             Challenges = [ChallengeType.MfaCode, ChallengeType.LiveView, ChallengeType.QrDisplay],
 

@@ -7,7 +7,7 @@ using ConnectorStartup = Connector.Kit.Hosting.Data.DatabaseStartup;
 
 namespace Munni.Api.Tests;
 
-// #573: after a NAS restart docker starts the api and the connector before postgres resolves;
+// #573: after a NAS restart docker starts the api and the connector before postgres resolves.
 // both wait for the server up to a deadline instead of crashing into a restart loop
 public class DatabaseStartupTests
 {

@@ -46,7 +46,7 @@ internal static class LidlPlusManifest
         NotesKey = MessageKeys.LidlNotes,
         Auth = new AuthSpec
         {
-            // not PasswordSms: the code goes by SMS or e-mail by identifier, and the frozen kit enum has no password_otp;
+            // not PasswordSms: the code goes by SMS or e-mail by identifier, and the frozen kit enum has no password_otp.
             // the code is declared below in challenges, its delivery decided per login
             Flow = AuthFlow.Password,
             // config, neither secrets nor challenges: they appear in the ticket URLs and the Accept-Language and Country headers

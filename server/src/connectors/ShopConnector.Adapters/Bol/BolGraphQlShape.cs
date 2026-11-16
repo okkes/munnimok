@@ -52,7 +52,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
         return Replayed(options, after) ?? Rebuilt(options, after);
     }
 
-    // the page's own body with only the cursor rewritten (2026-10-07 prod, see OrdersRequestTemplate);
+    // the page's own body with only the cursor rewritten (2026-10-07 prod, see OrdersRequestTemplate).
     // null if none learned or the template is not a body with variables
     private static string? Replayed(BolOptions options, string after)
     {
@@ -227,7 +227,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
     }
 
     // errors are read before the data is trusted: a hash bol forgot arrives here, not as a status code
-    // "Error(s) redacted." did not say what was refused (2026-10-07 prod): the detail carries tokens (see BolRefusal);
+    // "Error(s) redacted." did not say what was refused (2026-10-07 prod): the detail carries tokens (see BolRefusal).
     // an anonymous data.me beside errors is the session being over
     private static void Refuse(JsonElement root, List<JsonElement> errors, BolOptions options)
     {

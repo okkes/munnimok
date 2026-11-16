@@ -117,7 +117,7 @@ internal sealed class PlaywrightAmazonPages : IAmazonPages
         return new AmazonDownload(response.Status, MediaType(contentType), body);
     }
 
-    // APIRequest shares the context's cookie jar, so the human-established session is the one used;
+    // APIRequest shares the context's cookie jar, so the human-established session is the one used.
     // a separate client would be signed out
     private async Task<IAPIResponse> RequestAsync(string url, bool xhr, CancellationToken ct)
     {
@@ -183,7 +183,7 @@ internal enum AmazonPageKind
 
 internal readonly record struct AmazonVerdict(AmazonPageKind Kind, string? Marker);
 
-// order is the point: bot protection before the sign-in chain (WAF is served from inside it);
+// order is the point: bot protection before the sign-in chain (WAF is served from inside it).
 // a challenge is never invalid_credentials, which would send somebody to reset a fine password
 internal static class AmazonGuard
 {

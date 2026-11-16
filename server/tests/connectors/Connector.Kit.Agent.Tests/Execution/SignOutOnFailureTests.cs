@@ -126,7 +126,7 @@ public class SignOutOnFailureTests
         Assert.False(((SigningAdapter)rig.Adapter).SignedOut);
     }
 
-    // a standalone logout job once tested !Browser.Started and silently did nothing (its browser had not started yet);
+    // a standalone logout job once tested !Browser.Started and silently did nothing (its browser had not started yet).
     // here no browser means no session, and launching Chromium to visit a bank because of a failure is worse than nothing
     [Fact]
     public async Task A_run_that_never_opened_a_browser_signs_nothing_out()

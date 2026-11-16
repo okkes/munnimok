@@ -168,7 +168,7 @@ public sealed class IngReaderTests
         Assert.All(Page(BankFixtures.IngTransactionsDutch).Transactions, t => Assert.Null(t.ValueAt));
     }
 
-    // an IBAN only where type says IBAN: a card payment states {"type":"UNKNOWN","value":""}
+    // an IBAN only where type says IBAN: a card payment states {"type":"UNKNOWN","value":""}.
     [Fact]
     public void A_counterparty_iban_is_read_only_when_ing_says_it_is_one()
     {

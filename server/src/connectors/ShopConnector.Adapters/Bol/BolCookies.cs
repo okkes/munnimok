@@ -4,7 +4,7 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Bol;
 
-// host match is deliberate, not a suffix test: JSESSIONID is set on login.bol.com, the orders page is on www.bol.com;
+// host match is deliberate, not a suffix test: JSESSIONID is set on login.bol.com, the orders page is on www.bol.com.
 // a fetch that only works when we over-send lies about which cookie authenticates it
 internal static class BolCookies
 {

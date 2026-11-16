@@ -301,7 +301,7 @@ public sealed class ManifestValidatorTests
             new FieldSpec { Key = "username", Type = FieldType.Text, Pattern = "^.{3,64}$" }));
     }
 
-    // a federated login spans hosts: DUO sends the human to login.digid.nl and back;
+    // a federated login spans hosts: DUO sends the human to login.digid.nl and back.
     // without both declared the live view stops at the IdP
     [Fact]
     public void Accepts_the_exact_hosts_a_federated_login_spans()

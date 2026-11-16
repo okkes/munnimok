@@ -7,7 +7,7 @@ using Xunit;
 
 namespace RegistryConnector.Adapters.Tests;
 
-// ForceAuthn=true and a remote_browser flow (no manifest fields): nothing is typed or stored by this connector;
+// ForceAuthn=true and a remote_browser flow (no manifest fields): nothing is typed or stored by this connector.
 // the tests cover where login starts, what ends it, and the QR relay
 public sealed class DuoLoginTests
 {
@@ -387,7 +387,7 @@ public sealed class DuoLoginTests
         Assert.Contains(ctx.Notes, n => n.Contains("handed over", StringComparison.Ordinal));
     }
 
-    // says which step missed (ProviderChanged covers many different repairs);
+    // says which step missed (ProviderChanged covers many different repairs).
     // the message is the adapter's own prose, never a typed value
     [Fact]
     public async Task The_hand_over_says_which_step_missed_and_what_the_page_was()
@@ -599,7 +599,7 @@ public sealed class DuoLoginTests
         Assert.Empty(page.Filled);
     }
 
-    // the app method types credentials, then hands over (phone code and QR are the human's);
+    // the app method types credentials, then hands over (phone code and QR are the human's).
     // DigiD's this-device-or-another screen always gets "another": the agent's browser has no DigiD app
     [Fact]
     public async Task The_app_path_says_the_phone_is_somewhere_else()
@@ -756,7 +756,7 @@ public sealed class DuoLoginTests
         Assert.Equal(Now.AddSeconds(900), result.ExpiresAt);
     }
 
-    // DigiD's QR is an inline 196x196 PNG, so relaying its bytes is lossless;
+    // DigiD's QR is an inline 196x196 PNG, so relaying its bytes is lossless.
     // the live view's JPEG stream fails to decode ~1.5% of QR codes
     [Fact]
     public async Task A_qr_is_relayed_as_the_bytes_digid_drew()
@@ -779,7 +779,7 @@ public sealed class DuoLoginTests
         Assert.Equal(Payload, qr.Url);
     }
 
-    // the QR block holds three images: DigiD's own 44x44 logo FIRST, a remote noscript copy, a hidden canvas;
+    // the QR block holds three images: DigiD's own 44x44 logo FIRST, a remote noscript copy, a hidden canvas.
     // the wrong one waits out the login silently
     [Fact]
     public async Task A_remote_image_is_never_relayed_as_a_qr()
@@ -902,7 +902,7 @@ public sealed class DuoLoginTests
     [InlineData("https://login.digid.nl/inloggen", false)]
     [InlineData("https://login.digid.nl/inloggen_app_qr?utf8=x", false)]
 
-    // constructed, never observed (no DigiD url mentions duo): what a SAML RelayState carrying its target would look like;
+    // constructed, never observed (no DigiD url mentions duo): what a SAML RelayState carrying its target would look like.
     // without it the watcher's host clause is an equivalent mutant
     [InlineData(
         "https://login.digid.nl/saml/v4/idp/redirect_with_artifact" +

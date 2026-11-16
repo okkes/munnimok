@@ -1,7 +1,7 @@
 namespace Connector.Kit.Agent;
 
 // one slot count per MACHINE: a host-level semaphore would mean three Chromiums on a NAS configured MaxConcurrency 1.
-// Taken BEFORE the lease poll, so a connector without a slot never leases a job and parks it until its lease runs out;
+// Taken BEFORE the lease poll, so a connector without a slot never leases a job and parks it until its lease runs out.
 // each control plane is told the machine's limit, which slightly over-promises when several connectors are idle
 public sealed class AgentSlots : IDisposable
 {

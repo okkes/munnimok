@@ -294,7 +294,7 @@ public sealed class BolAdapter : IProviderAdapter
         }
         catch (ConnectorException ex) when (learned.Hash is null && IsRefusedOperation(ex))
         {
-            // configured hash refused and none learned: ask for a new sign-in (it learns the current hash) instead of provider_changed;
+            // configured hash refused and none learned: ask for a new sign-in (it learns the current hash) instead of provider_changed.
             // a refused LEARNED hash is a change bol made since sign-in and stays provider_changed
             throw ConnectorException.SessionExpired(
                 $"{ProviderId}: bol refused the configured orders operation and this session learned no hash of its own; " +

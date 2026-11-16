@@ -105,7 +105,7 @@ internal sealed class RotatingStoreAdapter : IProviderAdapter
 
         return new Receipt
         {
-            // The control plane re-mints both of these when it stages the record;
+            // The control plane re-mints both of these when it stages the record.
             // the adapter still states them so the contract reads honestly.
             Id = Ids.ForRecord(Ids.Receipt, sessionId, externalId),
             ExternalId = externalId,

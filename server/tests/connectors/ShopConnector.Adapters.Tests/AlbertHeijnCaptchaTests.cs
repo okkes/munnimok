@@ -9,7 +9,7 @@ using Xunit;
 namespace ShopConnector.Adapters.Tests;
 
 // login.ah.nl is fronted by hCaptcha (probed): the challenge iframe is photographed, relayed as Image with answer kind Taps,
-// and the taps are replayed with the mouse; nobody here reads or scores a grid;
+// and the taps are replayed with the mouse; nobody here reads or scores a grid.
 // the redactor refusing a page with a full password field once killed a job with nobody asked
 public sealed class AlbertHeijnCaptchaTests
 {
@@ -19,7 +19,7 @@ public sealed class AlbertHeijnCaptchaTests
 
     private static readonly AlbertHeijnOptions Options = new();
 
-    // literal, not Options.CaptchaGridSelectors[0]: the adapter's own list would let a wrong list pass (cost a live ASN fetch);
+    // literal, not Options.CaptchaGridSelectors[0]: the adapter's own list would let a wrong list pass (cost a live ASN fetch).
     // hCaptcha's two frames differ only by their #frame= fragment
     private const string Grid = "iframe[src*='hcaptcha.com'][src*='#frame=challenge']";
 
@@ -39,7 +39,7 @@ public sealed class AlbertHeijnCaptchaTests
 
     private static AlbertHeijnAdapter Adapter() => new(Options, new FixedTimeProvider(Now));
 
-    // the three selector lists overlap by construction, so probe order (most specific first) is the mechanism;
+    // the three selector lists overlap by construction, so probe order (most specific first) is the mechanism.
     // reversed, every solvable puzzle silently downgrades to the generic widget and no other test fails
     [Fact]
     public async Task A_grid_that_also_matches_the_widget_selectors_is_relayed_as_a_grid()

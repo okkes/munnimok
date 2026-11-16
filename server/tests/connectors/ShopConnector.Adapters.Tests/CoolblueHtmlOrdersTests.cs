@@ -235,7 +235,7 @@ public sealed partial class CoolblueHtmlOrdersTests
     [InlineData("", "3x AA batterij Alkaline", 1)]
     // two three-packs tell the cases apart: only reading what sits before the LINK gives two
     [InlineData("2x ", "3x AA batterij Alkaline", 2)]
-    // text before the link that only starts like a count is not one: guards an unseen shape (a badge);
+    // text before the link that only starts like a count is not one: guards an unseen shape (a badge).
     // the pattern needs the count to be all that precedes the name
     [InlineData("3x sneller bezorgd ", "Testmerk Waterkoker", 1)]
     public void A_product_named_like_a_multipack_is_still_one_product(
@@ -273,7 +273,7 @@ public sealed partial class CoolblueHtmlOrdersTests
             line => line.Name.Contains("Koelkastfilter", StringComparison.Ordinal));
     }
 
-    // the page title "Details van je bestelling | Coolblue" matches a case-insensitive search for the section label;
+    // the page title "Details van je bestelling | Coolblue" matches a case-insensitive search for the section label.
     // returning nothing would reconcile trivially, so a missing section must fail
     [Fact]
     public void The_page_title_is_not_the_product_section()

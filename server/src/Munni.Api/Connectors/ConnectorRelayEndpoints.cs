@@ -71,7 +71,7 @@ internal sealed record WireEnrollment(string Subject, string Name);
 // #420 A2: the subject is the relay's, never the client's
 internal sealed record WirePrivateAgentRequest(string Subject);
 
-// #367: the subject is minted here, never sent by the client, and a session route answers only its owner;
+// #367: the subject is minted here, never sent by the client, and a session route answers only its owner.
 // bundles pass through memory only, the binding table holds ids and state alone
 public static partial class ConnectorRelayEndpoints
 {
@@ -496,7 +496,7 @@ public static partial class ConnectorRelayEndpoints
         return row;
     }
 
-    // household-agent and server-custody bundles hold no secret (§5.5, §15), so the relay keeps them for the scheduler;
+    // household-agent and server-custody bundles hold no secret (§5.5, §15), so the relay keeps them for the scheduler.
     // a client-custody bundle carries the person's own secret and passes through memory only
     internal static bool KeepsBundle(JsonObject? manifest) =>
         manifest?.Text("secret_custody") is "agent" or "server";

@@ -190,7 +190,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     /// <summary>How many terminal failure posts this job made. One, or a bug.</summary>
     public int FailureCount { get { lock (_gate) return _failures.Count; } }
 
-    // the name is the point: the long polls' and keepalives' clients share one control plane and the choice is under test;
+    // the name is the point: the long polls' and keepalives' clients share one control plane and the choice is under test.
     // a fake with one timeout, or picking by path, would pass with the renew on the long polls' client
     public HttpClient CreateClient(string name) =>
         new(new Bounded(this, Bound(name), Time), disposeHandler: false)
@@ -415,7 +415,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
         return System.Text.Json.JsonSerializer.Deserialize<T>(body, AgentJson.Options)!;
     }
 
-    // HttpClient's timeout enforced above the handler but on Time, so a test need not sit through seventy real seconds;
+    // HttpClient's timeout enforced above the handler but on Time, so a test need not sit through seventy real seconds.
     // raises TaskCanceledException with nobody's token cancelled, the shape ControlPlaneClient's translation exists for
     private sealed class Bounded(FakeControlPlane control, TimeSpan timeout, TimeProvider time)
         : DelegatingHandler(control)

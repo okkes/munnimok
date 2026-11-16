@@ -14,7 +14,7 @@ internal static class AmazonManifest
 {
     public const int Version = 1;
 
-    // 30 days, UNCONFIRMED: acceptance is Amazon's risk engine, not a cookie expiry;
+    // 30 days, UNCONFIRMED: acceptance is Amazon's risk engine, not a cookie expiry.
     // too long a TTL claims a dead connection is fine
     public const int SessionTtlSeconds = 2_592_000;
 
@@ -43,7 +43,7 @@ internal static class AmazonManifest
         UnattendedFetch = false,
         // the widget cannot be photographed into an answer: only a person at this browser can pass it
         LoginNeedsHeadedAgent = true,
-        // None: LogoutAsync returns at once unless a browser is already running, and a logout job gets a fresh context;
+        // None: LogoutAsync returns at once unless a browser is already running, and a logout job gets a fresh context.
         // launching Chromium only to sign out would hold a pooled agent, so nothing upstream is told
         Logout = LogoutSupport.None,
         SecretCustody = SecretCustody.Client,
@@ -53,7 +53,7 @@ internal static class AmazonManifest
         NotesKey = AmazonMessageKeys.Notes,
         Auth = new AuthSpec
         {
-            // two screens are Amazon's page, not the consumer's form: values are collected once and the adapter drives both;
+            // two screens are Amazon's page, not the consumer's form: values are collected once and the adapter drives both.
             // TwoStep would render a round trip that does not exist. What follows the password is a per-login challenge below
             Flow = AuthFlow.Password,
             Steps =
@@ -123,7 +123,7 @@ internal static class AmazonManifest
                 MaxHistoryDays = 1_095,
                 // minutes, not seconds: a navigation per page and per order's items; 300 orders at a 3s gap is 15 min of pacing alone
                 TypicalDurationSeconds = 1_200,
-                // lower than other stores: every order is its own navigation against a site that challenges;
+                // lower than other stores: every order is its own navigation against a site that challenges.
                 // a first connect stops at 300, newest first
                 MaxRecordsPerFetch = 300,
             },
@@ -133,12 +133,12 @@ internal static class AmazonManifest
             MinIntervalSeconds = 21_600,
             Concurrency = 1,
 
-            // chosen, not measured: Amazon publishes no threshold and a day of unpaced walking ended in a 503;
+            // chosen, not measured: Amazon publishes no threshold and a day of unpaced walking ended in a 503.
             // affordable as only a first connect pays it per order, later syncs a handful
             MinRequestGapMs = 3_000,
 
             MaxHistoryDays = 1_095,
-            // an order's total moves after placing (partial shipments, refunds, late promotions);
+            // an order's total moves after placing (partial shipments, refunds, late promotions).
             // re-reading 14 days keeps the first total from sticking
             SettlementLagDays = 14,
         },

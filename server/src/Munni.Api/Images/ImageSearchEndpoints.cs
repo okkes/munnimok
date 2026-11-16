@@ -12,7 +12,7 @@ namespace Munni.Api.Images;
 
 public sealed record ImageHit(string Thumbnail, string Title, string Source, int? Width, int? Height);
 
-// ok: the pictures; paused: the month's searches are used up; limited: this person's searches for today are;
+// ok: the pictures; paused: the month's searches are used up; limited: this person's searches for today are.
 // unavailable: the service refused for another reason
 public sealed record ImageSearchReply(string State, IReadOnlyList<ImageHit> Results, DateTimeOffset? Until);
 
@@ -92,7 +92,7 @@ public sealed class ImageSearchState(TimeProvider time)
     }
 }
 
-// proxied so the Brave key never reaches a client and every paid search is counted (#521);
+// proxied so the Brave key never reaches a client and every paid search is counted (#521).
 // a picked picture is fetched only from Brave's image store
 public static class ImageSearchEndpoints
 {

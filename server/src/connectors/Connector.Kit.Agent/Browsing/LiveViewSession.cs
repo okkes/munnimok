@@ -80,7 +80,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
     private Task? _input;
     private int _stopped;
 
-    // width and height packed in one long so they never come from two frames;
+    // width and height packed in one long so they never come from two frames.
     // zero until the first post, so input before any picture is refused
     private long _frameSize;
 
@@ -527,7 +527,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         }
     }
 
-    // waits on the semaphore, not a timer, so the burst begins on the keystroke;
+    // waits on the semaphore, not a timer, so the burst begins on the keystroke.
     // wall clock, deliberately: this is the cadence being measured
     private async Task WaitAsync(LiveScreencast camera, Shutter shutter, CancellationToken ct)
     {

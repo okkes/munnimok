@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace Munni.Api.Data;
 
-// Docker restarts a stack without compose's depends_on order, so the api can start before postgres resolves (#573);
+// Docker restarts a stack without compose's depends_on order, so the api can start before postgres resolves (#573).
 // crashing on that left a restart loop that read as a broken deploy
 public static class DatabaseStartup
 {

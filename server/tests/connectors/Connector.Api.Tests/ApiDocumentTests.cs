@@ -358,7 +358,7 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         foreach (var path in document.GetProperty("paths").EnumerateObject())
         {
-            // the /v1 group holds the exception filter, so its failure shape is a promise;
+            // the /v1 group holds the exception filter, so its failure shape is a promise.
             // liveness is mapped on the root, outside both filters
             if (!path.Name.StartsWith("/v1/", StringComparison.Ordinal)) continue;
             if (path.Name == "/v1/health") continue;

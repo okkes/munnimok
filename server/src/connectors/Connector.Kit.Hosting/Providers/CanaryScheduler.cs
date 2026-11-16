@@ -195,7 +195,7 @@ public sealed class CanaryScheduler(
 
     private sealed record Hold(string Reason, bool Quiet);
 
-    // holds: DueAsync goes by the clock alone, so a slow provider needs the in-flight hold;
+    // holds: DueAsync goes by the clock alone, so a slow provider needs the in-flight hold.
     // a paused provider is the kill switch, and a canary is work
     private static async Task<Hold?> HoldAsync(IServiceProvider provider, CanaryRow canary, CancellationToken ct)
     {

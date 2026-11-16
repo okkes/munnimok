@@ -19,7 +19,7 @@ public sealed class OneAgentManyConnectorsTests
     private const string Bank = "bank";
     private const string Registry = "registry";
 
-    // a code is signed with the minting connector's key and names its subject, so each goes to the right connector;
+    // a code is signed with the minting connector's key and names its subject, so each goes to the right connector.
     // the online line carries the connector's name because one machine prints it once per connector
     [Fact]
     public async Task Two_connectors_enroll_independently_and_both_come_online()

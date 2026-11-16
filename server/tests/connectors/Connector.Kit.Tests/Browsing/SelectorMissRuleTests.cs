@@ -2,8 +2,8 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Browsing;
 
-// Playwright .NET raises System.TimeoutException, not a PlaywrightException, on an expired wait: a bare
-// catch (PlaywrightException) lets it escape as `internal` and takes the job down
+// Playwright .NET raises System.TimeoutException, not a PlaywrightException, on an expired wait: catching only
+// PlaywrightException lets it escape as `internal` and takes the job down
 // a comment did not stop it (21 bare catches, one failed live on a bank), so this reads sources
 public sealed class SelectorMissRuleTests
 {

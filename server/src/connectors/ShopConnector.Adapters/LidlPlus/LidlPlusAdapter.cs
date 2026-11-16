@@ -409,7 +409,7 @@ public sealed class LidlPlusAdapter : IProviderAdapter
                     "hand. An agent attached to a real browser profile is the route that can pass it.");
             }
 
-            // no code box: Lidl skips the step on a trusted device (redirect on its way) or something blocks the form;
+            // no code box: Lidl skips the step on a trusted device (redirect on its way) or something blocks the form.
             // probing for a wall only here keeps the happy path cheap
             if (await FaceCaptchaAsync(ctx, page, watcher, ct).ConfigureAwait(false) is { } finished)
             {

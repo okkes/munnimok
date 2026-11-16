@@ -72,7 +72,7 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal(188, milk.Total.Value);
     }
 
-    // the layout prints a promoted line at its discounted price, never the promotion's value;
+    // the layout prints a promoted line at its discounted price, never the promotion's value.
     // an invented discount would be subtracted twice
     [Fact]
     public void A_promotion_flag_becomes_neither_an_item_nor_a_discount()

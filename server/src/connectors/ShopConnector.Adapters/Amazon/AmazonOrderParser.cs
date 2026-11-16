@@ -6,7 +6,7 @@ using ShopConnector.Adapters.Support;
 
 namespace ShopConnector.Adapters.Amazon;
 
-// Total is null when the card states none (a fact about that order, the invoice states one);
+// Total is null when the card states none (a fact about that order, the invoice states one).
 // a stated but unreadable total is a shape change
 internal sealed record AmazonOrderSummary(
     string Id,
@@ -40,7 +40,7 @@ internal enum AmazonTotalKind
 
     GrandTotal,
 
-    // what was actually charged, differing from GrandTotal once a gift card or balance pays part;
+    // what was actually charged, differing from GrandTotal once a gift card or balance pays part.
     // preferred as a bank transaction is matched against it
     FinalTotal,
 }
@@ -96,7 +96,7 @@ internal static partial class AmazonOrderParser
                 continue;
             }
 
-            // absent and unreadable differ: no total on the card is null (the invoice has one);
+            // absent and unreadable differ: no total on the card is null (the invoice has one).
             // a total that is there but unreadable is a shape change
             var totalText = Labelled(card, options.OrderTotalLabels, options)
                             ?? HtmlQuery.TextOf(card, options.OrderTotalSelectors);
@@ -276,7 +276,7 @@ internal static partial class AmazonOrderParser
 
         var totals = Totals(dom, options);
 
-        // nothing at all is a page whose shape we no longer recognise, not an empty invoice;
+        // nothing at all is a page whose shape we no longer recognise, not an empty invoice.
         // naming both selector lists is the diagnosis
         if (items.Count == 0 && totals.Count == 0)
         {
@@ -286,7 +286,7 @@ internal static partial class AmazonOrderParser
                 $"and totals [{string.Join(", ", options.InvoiceTotalRowSelectors)}]");
         }
 
-        // shipping is a real charge; tax is not added when prices include BTW (the row decomposes the total, adding double-counts);
+        // shipping is a real charge; tax is not added when prices include BTW (the row decomposes the total, adding double-counts).
         // a tax-exclusive invoice is UNCONFIRMED, hence the switch
         foreach (var kind in new[] { AmazonTotalKind.Shipping, AmazonTotalKind.Tax })
         {
@@ -298,7 +298,7 @@ internal static partial class AmazonOrderParser
             }
         }
 
-        // a promotion is a discount, not a negative product (the normalised record's construct);
+        // a promotion is a discount, not a negative product (the normalised record's construct).
         // its name is the provider's own label, a connector invents no user-facing prose
         foreach (var row in totals.Where(r =>
                      r.Kind is AmazonTotalKind.Promotion or AmazonTotalKind.GiftCard && r.Amount.Value != 0))
@@ -481,7 +481,7 @@ internal static partial class AmazonOrderParser
         return ReceiptFactory.Payment();
     }
 
-    // card covers every scheme (the record's vocabulary; the tail is what is matched on);
+    // card covers every scheme (the record's vocabulary; the tail is what is matched on).
     // unrecognised is null, never an invented method
     private static string? Method(string? name)
     {

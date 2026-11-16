@@ -81,7 +81,7 @@ public sealed class CoolblueAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        // the key names the cost: the order list states no money, so each receipt needs the order's own page;
+        // the key names the cost: the order list states no money, so each receipt needs the order's own page.
         // a first connect takes minutes
         Assert.Equal("connect.coolblue.notes.page_per_order", manifest.NotesKey);
         Assert.StartsWith("connect.", manifest.NotesKey, StringComparison.Ordinal);
@@ -185,7 +185,7 @@ public sealed class CoolblueAdapterTests
         Assert.Equal(days.Value, manifest.Limits.MaxHistoryDays);
     }
 
-    // starts at the protected page: our own authorize URL (own state/PKCE) left www.coolblue.nl anonymous;
+    // starts at the protected page: our own authorize URL (own state/PKCE) left www.coolblue.nl anonymous.
     // Coolblue's 307 to /inloggen runs its own flow
     [Fact]
     public async Task The_login_starts_at_the_protected_page_and_lets_coolblue_run_its_own_flow()
@@ -222,7 +222,7 @@ public sealed class CoolblueAdapterTests
         Assert.Equal(signedIn, CoolblueSessionWatcher.SignedIn(url, Options));
     }
 
-    // the protected page is the test: a browser Coolblue knows lands on the overview, one it does not is 307'd to /inloggen;
+    // the protected page is the test: a browser Coolblue knows lands on the overview, one it does not is 307'd to /inloggen.
     // a sign-in driven at the overview would hunt an e-mail box that is not there
 
     // timers that do not wait: the bounce window runs at its shipped length
@@ -272,7 +272,7 @@ public sealed class CoolblueAdapterTests
         Assert.DoesNotContain(ctx.Notes, n => n.Contains("still signed in to Coolblue", StringComparison.Ordinal));
     }
 
-    // first connect: no kept profile or bundle jar, so SessionProbe says "cannot tell" without looking;
+    // first connect: no kept profile or bundle jar, so SessionProbe says "cannot tell" without looking.
     // the shipped adapter (real timers) makes a broken gate show as slowness
     [Fact]
     public async Task A_first_connect_is_never_asked_whether_it_is_already_signed_in()
@@ -466,7 +466,7 @@ public sealed class CoolblueAdapterTests
     [Fact]
     public async Task Silence_after_the_submit_is_a_shape_change_and_never_a_guess_at_the_password()
     {
-        // the settle budget is zeroed: the suite's clock does not move, so the deadline loop never ends;
+        // the settle budget is zeroed: the suite's clock does not move, so the deadline loop never ends.
         // zero takes the same branch at once
         var options = Options with { LoginSettleSeconds = 0 };
 
@@ -511,7 +511,7 @@ public sealed class CoolblueAdapterTests
     [Fact]
     public async Task A_fetch_with_no_stored_browser_session_is_a_dead_session_and_costs_coolblue_nothing()
     {
-        // the cookie is the credential (server-rendered pages, no Authorization header);
+        // the cookie is the credential (server-rendered pages, no Authorization header).
         // a fetch holds no password, so it asks for a new login job
         var handler = new StubHttpHandler((_, _) => Stub.Page(Overview));
         using var ctx = new FakeJobContext(handler) { Material = new SessionMaterial { AccessToken = "irrelevant" } };
@@ -1104,7 +1104,7 @@ public sealed class CoolblueAdapterTests
         new(handler) { Inputs = Credentials() };
 
     // separate from Context: most tests must not touch a browser (a lease that refuses proves it)
-    // restored: the browser was opened with a kept profile or the bundle's jar;
+    // restored: the browser was opened with a kept profile or the bundle's jar.
     // only then does SessionProbe ask whether already signed in
     private static FakeJobContext SigningIn(HttpMessageHandler handler, bool restored = false) =>
         new(handler)
@@ -1114,7 +1114,7 @@ public sealed class CoolblueAdapterTests
             KeepsSession = restored,
         };
 
-    // the cookie list is awkward on purpose: the session cookie has a NEGATIVE expiry and must not be filtered as expired;
+    // the cookie list is awkward on purpose: the session cookie has a NEGATIVE expiry and must not be filtered as expired.
     // a genuinely stale one and another domain's must not travel
     private static FakeJobContext Fetching(HttpMessageHandler handler) =>
         new(handler)

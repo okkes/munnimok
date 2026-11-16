@@ -89,7 +89,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.Finalizing);
 
-        // wait without touching anything: the form's redirectURL lands the app on orders and it fires the query itself;
+        // wait without touching anything: the form's redirectURL lands the app on orders and it fires the query itself.
         // a navigation on top of a sign-in in flight cancels it (browser stuck on the form, password blamed)
         var observed = await portal
             .WatchAsync(_options.OrdersOperation, _options.OrdersCallTimeoutMs, ct)

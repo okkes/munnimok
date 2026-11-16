@@ -166,7 +166,7 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
         Assert.Null(job.InputsJson);
     }
 
-    // the endpoint once marked the session running after enqueueing, so a fast job's awaiting_input was put back;
+    // the endpoint once marked the session running after enqueueing, so a fast job's awaiting_input was put back.
     // the transition is now a no-op on a session that has moved on, in whichever order the two writes land
     [Fact]
     public async Task A_session_waiting_on_a_challenge_is_not_marked_running_again()

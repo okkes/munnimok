@@ -43,7 +43,7 @@ public sealed record Account : NormalizedRecord
 
     public Balance? Balance { get; init; }
 
-    // the institution as the party's lookup lists it (an aggregator institution id), so a client can ask for the same logo;
+    // the institution as the party's lookup lists it (an aggregator institution id), so a client can ask for the same logo.
     // absent where the party is the institution
     public string? Institution { get; init; }
 
@@ -207,7 +207,7 @@ public enum ReceiptLineKind
 
     Adjustment,
 
-    // DERIVED, not merchant data: the gap between the stated total and everything itemised;
+    // DERIVED, not merchant data: the gap between the stated total and everything itemised.
     // labelled rather than folded into Fee, as the reason is unknown
     Unattributed,
 }
@@ -391,7 +391,7 @@ public sealed record StudentDebt : NormalizedRecord
     [JsonPropertyName("total_is_derived")]
     public bool TotalIsDerived { get; init; }
 
-    // only components with a non-zero stated amount: a fixed set of eight states seven zeroes for most people;
+    // only components with a non-zero stated amount: a fixed set of eight states seven zeroes for most people.
     // Total is unaffected
     public IReadOnlyList<StudentDebtComponent> Components { get; init; } = [];
 
@@ -438,7 +438,7 @@ public sealed record StudentDebt : NormalizedRecord
     // empty unless asked for (ResourceRequest.WantsLedger): on DUO it needs the customer dossier
     public IReadOnlyList<StudentDebtEntry> Ledger { get; init; } = [];
 
-    // null when no ledger was fetched: a check never made must not read as passed. The movements should sum to what is owed;
+    // null when no ledger was fetched: a check never made must not read as passed. The movements should sum to what is owed.
     // false still carries the record and only says consistency could not be proved
     [JsonPropertyName("ledger_reconciled")]
     public bool? LedgerReconciled { get; init; }

@@ -60,7 +60,7 @@ public sealed class LabRetentionFinishRequestValidator : AbstractValidator<LabRe
     }
 }
 
-// the report store (#441 L4): a run survives the tab that started it; nothing here touches the control plane;
+// the report store (#441 L4): a run survives the tab that started it; nothing here touches the control plane.
 // listed only to its operator
 public static class LabRetentionEndpoints
 {

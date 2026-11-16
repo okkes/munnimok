@@ -28,7 +28,7 @@ public static class LiveStream
     /// <summary>Written after a quiet stretch so an idle proxy keeps the response open.</summary>
     public const string KeepAlive = ": keep-alive\n\n";
 
-    // the frame slot cannot say the challenge was answered or the session moved on;
+    // the frame slot cannot say the challenge was answered or the session moved on.
     // reading per frame would be a dozen queries a second
     public static readonly TimeSpan RecheckEvery = TimeSpan.FromSeconds(1);
 

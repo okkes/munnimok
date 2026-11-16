@@ -51,7 +51,7 @@ public static class PushEndpoints
             return Results.Ok();
         }).WithValidation<SubscribeRequest>();
 
-        // the Settings "Send a test notification": every registered device of the caller gets one;
+        // the Settings "Send a test notification": every registered device of the caller gets one.
         // the space it was sent from rides along
         group.MapPost("/test", async (string? spaceId, PushNotifier notifier, HttpContext http, CancellationToken ct) =>
             Results.Ok(new { sent = await notifier.NotifyTestAsync(http.GetUserId(), spaceId, ct) }));

@@ -57,7 +57,7 @@ public static class AccountEndpoints
             if (existing.OwnerUserId == me)
                 return Results.Ok(new RegisterFeedResponse(existing.Id, true));
 
-            // an ORPHANED feed (owner row gone) is claimable, else re-importing after a wipe 409s forever on one's own IBAN;
+            // an ORPHANED feed (owner row gone) is claimable, else re-importing after a wipe 409s forever on one's own IBAN.
             // a feed with a LIVING other owner stays a conflict, so a squatter never observes another user's data
             var ownerAlive = await db.Users.AnyAsync(u => u.Id == existing.OwnerUserId);
             if (ownerAlive)

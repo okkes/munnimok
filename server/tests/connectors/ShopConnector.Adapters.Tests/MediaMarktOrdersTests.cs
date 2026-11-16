@@ -284,7 +284,7 @@ public sealed class MediaMarktOrdersTests
         }
     }
 
-    // two named branches, not a general scrub (raw would stop being worth asking for);
+    // two named branches, not a general scrub (raw would stop being worth asking for).
     // billing.payments stays: amount and method are the receipt
     [Fact]
     public void Raw_still_carries_everything_it_is_asked_for()

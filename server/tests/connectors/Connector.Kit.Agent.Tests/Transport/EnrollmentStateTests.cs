@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Connector.Kit.Agent.Tests.Transport;
 
-// an enrollment code is single-use and HMAC-signed: an agent that loses its entry needs a human to mint another;
+// an enrollment code is single-use and HMAC-signed: an agent that loses its entry needs a human to mint another.
 // entries are keyed by the control plane that issued them, which is what a bearer token belongs to
 public sealed class EnrollmentStateTests : IDisposable
 {
@@ -85,7 +85,7 @@ public sealed class EnrollmentStateTests : IDisposable
         Assert.Equal("agt_registry", _store.Load(Registry)?.AgentId);
     }
 
-    // a revoke is one connector's verdict, often a connector restored from a pre-enrollment backup answering 401 to everything;
+    // a revoke is one connector's verdict, often a connector restored from a pre-enrollment backup answering 401 to everything.
     // clearing the whole file would cost the registry connector its enrollment too (DUO has no pooled fleet to fall back on)
     [Fact]
     public void Clearing_one_connector_leaves_the_others_enrollment_alone()

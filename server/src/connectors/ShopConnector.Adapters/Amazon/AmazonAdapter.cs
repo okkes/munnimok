@@ -35,7 +35,7 @@ public sealed class AmazonAdapter : IProviderAdapter
         _options = options ?? new AmazonOptions();
         _time = time ?? TimeProvider.System;
 
-        // the policy is shared with Albert Heijn and Lidl Plus (one decision, not three copies);
+        // the policy is shared with Albert Heijn and Lidl Plus (one decision, not three copies).
         // only the selectors and the patience are Amazon's
         _captcha = new CaptchaGate(new CaptchaSpec
         {
@@ -94,7 +94,7 @@ public sealed class AmazonAdapter : IProviderAdapter
         var username = RequiredInput(ctx, "username");
         var password = RequiredInput(ctx, "password");
 
-        // not a hand-built /ap/signin URL: the reference hardcodes the US openid.assoc_handle=usflex;
+        // not a hand-built /ap/signin URL: the reference hardcodes the US openid.assoc_handle=usflex.
         // the order list lets amazon.nl build its own sign-in chain
         await page.GotoAsync(OrdersUrl(_time.GetUtcNow().Year, 0), ct).ConfigureAwait(false);
 
@@ -119,7 +119,7 @@ public sealed class AmazonAdapter : IProviderAdapter
             throw Missing("e-mail field", _options.UsernameSelectors);
         }
 
-        // Amazon may ask for the credentials on two screens: probed so a one-page form still works;
+        // Amazon may ask for the credentials on two screens: probed so a one-page form still works.
         // the probe is short because it always misses on the two-step page
         if (!await page.FillAsync(_options.PasswordSelectors, password, _options.PasswordProbeMs, ct)
                 .ConfigureAwait(false))
@@ -229,7 +229,7 @@ public sealed class AmazonAdapter : IProviderAdapter
             return SettleOutcome.Restart;
         }
 
-        // the wall first: one string read, while each check below probes selectors at 0.5 s apiece;
+        // the wall first: one string read, while each check below probes selectors at 0.5 s apiece.
         // the verification page can vanish between polls
         if (!settle.ChallengeSeen && OnChallengePage(page))
         {
@@ -240,7 +240,7 @@ public sealed class AmazonAdapter : IProviderAdapter
         // the waiter is only the poll interval: Amazon ends on an ordinary page, so the page itself says whether we are in
         if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return SettleOutcome.Landed;
 
-        // not through SessionProbe's gate: it asks "was this browser handed anything?", wrong after credentials went upstream;
+        // not through SessionProbe's gate: it asks "was this browser handed anything?", wrong after credentials went upstream.
         // on a first connect it would shut this off and miss a landing already reached
         if (await PresenceAsync(page, ct).ConfigureAwait(false) is SessionPresence.SignedIn)
         {
@@ -450,7 +450,7 @@ public sealed class AmazonAdapter : IProviderAdapter
     {
         if (!Any(page.Url, _options.SignedInUrlMarkers)) return SessionPresence.SignedOut;
 
-        // the URL alone is not enough: the sign-in chain and WAF challenge can carry the order-list return URL;
+        // the URL alone is not enough: the sign-in chain and WAF challenge can carry the order-list return URL.
         // a password box means this is not the list
         return await page.FindAsync(_options.PasswordSelectors, _options.ProbeMs, ct).ConfigureAwait(false) is null
                && await page.FindAsync(_options.UsernameSelectors, _options.ProbeMs, ct).ConfigureAwait(false) is null
@@ -704,7 +704,7 @@ public sealed class AmazonAdapter : IProviderAdapter
             documents = await DocumentsAsync(ctx, pages, summary, ct).ConfigureAwait(false);
         }
 
-        // the card's figure first: card and invoice are two independent statements of one number, the only integrity check here;
+        // the card's figure first: card and invoice are two independent statements of one number, the only integrity check here.
         // the invoice total as fallback keeps the order and still catches a line the parser missed
         var total = summary.Total ?? stated
             ?? throw ConnectorException.ProviderChanged(
@@ -897,7 +897,7 @@ public sealed class AmazonAdapter : IProviderAdapter
 
         var fetched = await pages.OpenAsync(url, ct).ConfigureAwait(false);
 
-        // back off for longer than this job: the penalty makes the NEXT attempt arrive later;
+        // back off for longer than this job: the penalty makes the NEXT attempt arrive later.
         // no Retry-After is read, Amazon has never been seen to send one on a throttled page
         if (IsThrottled(fetched.Status)) ctx.Pacer.Backoff(ThrottlePenalty);
 

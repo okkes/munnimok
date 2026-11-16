@@ -76,7 +76,7 @@ internal static class Wire
         request.Headers.TryAddWithoutValidation(name, value);
     }
 
-    // binds the client to one user via the subject header the connector answers session, job, ticket and agent routes for;
+    // binds the client to one user via the subject header the connector answers session, job, ticket and agent routes for.
     // Flows stamps it itself
     public static HttpClient ActAs(this HttpClient http, string subject)
     {

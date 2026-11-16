@@ -1010,7 +1010,7 @@ public sealed class IngAdapter : IProviderAdapter
 
         ctx.Progress(JobStep.LoggingOut);
 
-        // a browser is started on purpose: the lease carries the stored cookie jar, so opening a page resumes the session;
+        // a browser is started on purpose: the lease carries the stored cookie jar, so opening a page resumes the session.
         // with no jar there is nothing to sign out of
         if (string.IsNullOrWhiteSpace(ctx.Material?.StorageState))
         {

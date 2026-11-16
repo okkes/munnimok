@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 namespace Munni.Api.Connectors;
 
-// revalidated, not refetched: the connector answers 304 to the ETag it issued and the relay keeps the last document;
+// revalidated, not refetched: the connector answers 304 to the ETag it issued and the relay keeps the last document.
 // it changes on a deploy or a health change
 public sealed class ConnectorCatalogue
 {

@@ -7,7 +7,7 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Auth;
 
-// CI/e2e only (Auth:TestMode): X-User-Sub is the subject, X-User-Scope the `scope` claim ("admin" for operator routes);
+// CI/e2e only (Auth:TestMode): X-User-Sub is the subject, X-User-Scope the `scope` claim ("admin" for operator routes).
 // never enabled in production
 public sealed class TestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,

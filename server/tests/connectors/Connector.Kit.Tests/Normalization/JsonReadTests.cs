@@ -4,7 +4,7 @@ using Xunit;
 
 namespace Connector.Kit.Tests.Normalization;
 
-// the Try accessors throw on a wrong-kind element (four of ten adapters made that mistake);
+// the Try accessors throw on a wrong-kind element (four of ten adapters made that mistake).
 // these tests hold that the raw API throws and nothing here does
 public sealed class JsonReadTests
 {

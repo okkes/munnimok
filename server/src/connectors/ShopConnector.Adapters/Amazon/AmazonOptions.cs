@@ -35,11 +35,11 @@ public sealed record AmazonOptions
         "a",
     ];
 
-    // the list holds print.html (a summary), /documents/download/ (the files) and "Factuur aanvragen" (a support form);
+    // the list holds print.html (a summary), /documents/download/ (the files) and "Factuur aanvragen" (a support form).
     // a path marker, because the form starts with the same word as the real invoice
     public IReadOnlyList<string> DocumentPathMarkers { get; init; } = ["/documents/download/"];
 
-    // an expired session answers a sign-in HTML page from a .pdf URL, so the media type is checked, not the extension;
+    // an expired session answers a sign-in HTML page from a .pdf URL, so the media type is checked, not the extension.
     // Amazon sends "application/pdf;charset=UTF-8", hence parameters are trimmed before comparing
     public IReadOnlyList<string> DocumentMediaTypes { get; init; } = ["application/pdf"];
 
@@ -98,7 +98,7 @@ public sealed record AmazonOptions
     public IReadOnlyList<string> OrderIdAttributes { get; init; } =
         ["data-csa-c-slot-id", "data-order-id", "data-orderid"];
 
-    // header facts are identical li elements told apart only by their label, so date and total are found by label;
+    // header facts are identical li elements told apart only by their label, so date and total are found by label.
     // column-span selectors would report the total as the purchase date once the page reflows
     public IReadOnlyList<string> OrderHeaderItemSelectors { get; init; } =
     [
@@ -135,7 +135,7 @@ public sealed record AmazonOptions
         "a[href*='order-details']",
     ];
 
-    // looked for before the next link: present, its next control is authoritative;
+    // looked for before the next link: present, its next control is authoritative.
     // absent (another layout), the walk's freshness guard decides
     public IReadOnlyList<string> PaginationSelectors { get; init; } =
     [
@@ -154,7 +154,7 @@ public sealed record AmazonOptions
 
     // data-component attributes name what a thing is, not its layout, and survived the redesign that removed every tr
 
-    // not purchasedItems itself: there is one per SHIPMENT, so it would collapse a multi-product order into one item;
+    // not purchasedItems itself: there is one per SHIPMENT, so it would collapse a multi-product order into one item.
     // the per-item container has no data-component, so one layout class is load-bearing here
     public IReadOnlyList<string> InvoiceItemRowSelectors { get; init; } =
     [
@@ -171,7 +171,7 @@ public sealed record AmazonOptions
         "td[colspan]",
     ];
 
-    // the price renders twice in span.a-price (.a-offscreen and aria-hidden), reading "€22,99€22,99";
+    // the price renders twice in span.a-price (.a-offscreen and aria-hidden), reading "€22,99€22,99".
     // the inner span is defensive only: the parse takes the first amount either way
     public IReadOnlyList<string> InvoiceItemPriceSelectors { get; init; } =
     [
@@ -181,7 +181,7 @@ public sealed record AmazonOptions
         "td[align='right']",
     ];
 
-    // the empty data-component='quantity' is a decoy: the quantity is the .od-item-view-qty badge, absent when it is one;
+    // the empty data-component='quantity' is a decoy: the quantity is the .od-item-view-qty badge, absent when it is one.
     // trusting the decoy would report a two-pack at unit price and break reconciliation
     public IReadOnlyList<string> InvoiceItemQuantitySelectors { get; init; } =
     [
@@ -271,7 +271,7 @@ public sealed record AmazonOptions
     public IReadOnlyList<string> GiftCardLabels { get; init; } =
         ["cadeaubon", "tegoedbon", "gift card amount", "gift card"];
 
-    // Totaal (what the order came to) and Eindtotaal (what was charged) diverge once a gift card or balance pays part;
+    // Totaal (what the order came to) and Eindtotaal (what was charged) diverge once a gift card or balance pays part.
     // the receipt total is the charged one, as a bank transaction is matched against it
     public IReadOnlyList<string> FinalTotalLabels { get; init; } =
         ["eindtotaal", "grand total"];
@@ -329,7 +329,7 @@ public sealed record AmazonOptions
         "button[type='submit']",
     ];
 
-    // narrow on purpose: only phrasings stating a CREDENTIAL failure;
+    // narrow on purpose: only phrasings stating a CREDENTIAL failure.
     // invalid_credentials is never retried, so a false one is permanent
     public IReadOnlyList<string> LoginErrorSelectors { get; init; } =
     [
@@ -422,7 +422,7 @@ public sealed record AmazonOptions
         "order has been canceled",
     ];
 
-    // the passkey nudge stopped every live login: password accepted, then a passkey page the settle loop had no name for;
+    // the passkey nudge stopped every live login: password accepted, then a passkey page the settle loop had no name for.
     // served to the pooled agent, not to a plain desktop run
 
     public IReadOnlyList<string> PasskeyNudgeUrlMarkers { get; init; } = ["/ax/claim/webauthn/nudge"];
@@ -464,7 +464,7 @@ public sealed record AmazonOptions
         "Voer de tekens in die je hieronder ziet",
     ];
 
-    // a hard refusal with nothing for a human to do: blocked_by_provider even on a 200;
+    // a hard refusal with nothing for a human to do: blocked_by_provider even on a 200.
     // Cloudflare/Akamai listed so a CDN change is diagnosed, not parsed
     public IReadOnlyList<string> BlockedBodyMarkers { get; init; } =
     [
@@ -484,12 +484,12 @@ public sealed record AmazonOptions
         ["/your-orders/orders", "/gp/css/order-history", "/gp/your-account/order-history"];
 
     // x-main is amazon.COM's cookie; amazon.nl suffixes its own and never sets x-main, so a working login was rejected
-    // short on purpose: a signed-out visit already leaves session-id, ubid-acbnl, lc-acbnl, sst-acbnl;
+    // short on purpose: a signed-out visit already leaves session-id, ubid-acbnl, lc-acbnl, sst-acbnl.
     // x-main stays last for .com
     public IReadOnlyList<string> AuthCookieNames { get; init; } =
         ["x-acbnl", "at-acbnl", "sess-at-acbnl", "x-main"];
 
-    // 429 and 503 are refusals from a bot wall, not retriable rate limits: retrying into it escalates to a hard block;
+    // 429 and 503 are refusals from a bot wall, not retriable rate limits: retrying into it escalates to a hard block.
     // 500 is deliberately absent: a real server error is provider_unavailable and retriable
     public IReadOnlySet<int> BlockStatuses { get; init; } =
         new HashSet<int> { 403, 429, 502, 503, 504, 511 };

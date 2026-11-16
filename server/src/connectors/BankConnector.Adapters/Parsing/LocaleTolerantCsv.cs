@@ -114,7 +114,7 @@ public static class LocaleTolerantCsv
         return (bestDelimiter, bestHeaders, bestResolved);
     }
 
-    // exact pass first for every column, so a short alias cannot steal a longer one's header (rekening vs tegenrekening);
+    // exact pass first for every column, so a short alias cannot steal a longer one's header (rekening vs tegenrekening).
     // containment only after, and only where unambiguous
     private static Dictionary<string, int> Match(List<string> headers, CsvSchema schema)
     {
@@ -373,7 +373,7 @@ public sealed class CsvRow
         Text(key) ?? throw ConnectorException.ProviderChanged(
             $"{_schema.Name}: row {LineNumber} has no value for required column '{key}'");
 
-    // the kit's parser accepts both decimal separators and refuses the ambiguous;
+    // the kit's parser accepts both decimal separators and refuses the ambiguous.
     // the unit is declared, never inferred from the value's shape
     public long MinorUnits(string key, MoneyUnit unit = MoneyUnit.MajorString) =>
         MoneyParser.ToMinor(Require(key), unit, $"{_schema.Name}: row {LineNumber} column '{key}'");

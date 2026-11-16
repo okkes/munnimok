@@ -158,7 +158,7 @@ public static class LiveOrigin
     // bounding the input at 300 lost the origin on exactly the pages that need it most
     public const int MaxUrlLength = 8_192;
 
-    // null must reach the human as "unknown", never something reassuring. Origin only (a query can carry a token); http(s) only;
+    // null must reach the human as "unknown", never something reassuring. Origin only (a query can carry a token); http(s) only.
     // punycode, because a Cyrillic а in https://аh.nl is indistinguishable from the real host as unicode
     public static string? Normalize(string? url)
     {

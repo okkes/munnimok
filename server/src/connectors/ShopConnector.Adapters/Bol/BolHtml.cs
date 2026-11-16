@@ -174,8 +174,7 @@ internal static partial class BolHtml
 
         var cleaned = match.Value.Replace(',', '.');
 
-        // "1.234" is a thousand, not 1.234 - but only when the groups are
-        // three digits long, which is what tells the two apart.
+        // several dots are thousands separators; a single one is read as the decimal point
         var dots = cleaned.Count(c => c == '.');
         if (dots > 1) cleaned = cleaned.Replace(".", string.Empty, StringComparison.Ordinal);
 

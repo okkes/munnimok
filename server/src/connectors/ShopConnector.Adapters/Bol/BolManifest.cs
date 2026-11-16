@@ -25,7 +25,7 @@ internal static class BolManifest
         Kind = ProviderKind.Store,
         Country = "NL",
         ManifestVersion = Version,
-        // T3, not T2: T2 means a REFRESH TOKEN serves every fetch after, bol issues none (the jar dies in about a day);
+        // T3, not T2: T2 means a REFRESH TOKEN serves every fetch after, bol issues none (the jar dies in about a day).
         // Jumbo declares T3 for identical mechanics; a runtime-filtered agent pool would be offered a promise bol cannot keep
         Runtime = ProviderRuntime.BrowserInteractive,
         Agent = new AgentRequirement

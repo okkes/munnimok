@@ -116,7 +116,7 @@ public readonly record struct Tap
     /// <summary>0 is the image's top edge, 1 its bottom.</summary>
     public double Y { get; }
 
-    // lives here so the mapping cannot disagree with the encoding: the crop's origin is part of the meaning;
+    // lives here so the mapping cannot disagree with the encoding: the crop's origin is part of the meaning.
     // for a whole page pass new CropRegion(0, 0, w, h)
     public (double X, double Y) ToPagePixels(CropRegion region) =>
         (region.X + (X * region.Width), region.Y + (Y * region.Height));

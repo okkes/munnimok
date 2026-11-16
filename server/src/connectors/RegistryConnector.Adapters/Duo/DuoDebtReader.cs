@@ -163,7 +163,7 @@ internal static class DuoDebtReader
 
             seen++;
 
-            // read as decimal, never via text: DUO writes zero as "0E-8" (Java BigDecimal), which the string path refuses;
+            // read as decimal, never via text: DUO writes zero as "0E-8" (Java BigDecimal), which the string path refuses.
             // seven of eight fields are zero
             if (field.Value.Decimal() is not { } amount)
             {

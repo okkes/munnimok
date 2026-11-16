@@ -60,7 +60,7 @@ public static class AdminBankConnectionEndpoints
     public static bool IsOpenBankingParty(string provider) =>
         ConnectorIngest.OpenBankingProviders.Contains(provider) || provider.StartsWith(MockBankPrefix, StringComparison.Ordinal);
 
-    // stale: not active and no bundle kept for the scheduler, so nothing fetches it again;
+    // stale: not active and no bundle kept for the scheduler, so nothing fetches it again.
     // an active row without a bundle is a device's own (client custody) and stays
     public static bool IsStale(ConnectorSession session)
     {
@@ -94,7 +94,7 @@ public static class AdminBankConnectionEndpoints
         return Results.Ok(new { all, total, capped = total > Cap, connections = rows });
     }
 
-    // best effort at the control plane: an away party cannot keep a row the operator asked to be rid of;
+    // best effort at the control plane: an away party cannot keep a row the operator asked to be rid of.
     // 503 without connectors
     private static async Task<IResult> Disconnect(string sessionId, HttpContext http, CancellationToken ct)
     {

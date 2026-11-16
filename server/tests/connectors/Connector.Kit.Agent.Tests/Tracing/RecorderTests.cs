@@ -6,7 +6,7 @@ using Microsoft.Playwright;
 
 namespace Connector.Kit.Agent.Tests.Tracing;
 
-// #441 L3: a run that asked to be recorded posts its trace with secrets removed; one that did not posts nothing;
+// #441 L3: a run that asked to be recorded posts its trace with secrets removed; one that did not posts nothing.
 // a failed run posts anyway
 public sealed class RecorderTests
 {

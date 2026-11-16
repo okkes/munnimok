@@ -239,7 +239,7 @@ public sealed record JobResultRequest
     /// <summary>What a registry states you owe. A standing position, not an event.</summary>
     public IReadOnlyList<CreditRegistration> Registrations { get; init; } = [];
 
-    // its own list like Registrations: a record shape not carried here is invisible however correctly an adapter produced it;
+    // its own list like Registrations: a record shape not carried here is invisible however correctly an adapter produced it.
     // DUO shipped without it and a fetch succeeded, "complete", staging nothing, which reads as "no student debt"
     public IReadOnlyList<StudentDebt> Debts { get; init; } = [];
 
@@ -263,7 +263,7 @@ public sealed record JobResultRequest
     // (a closed translatable set); explains outcomes that look like success (a partial page, an unlistable account type)
     public IReadOnlyList<string> Notes { get; init; } = [];
 
-    // staged onto the same row as the normalised record, so the ack that purges one purges the other;
+    // staged onto the same row as the normalised record, so the ack that purges one purges the other.
     // raw gets no lifetime of its own
     public IReadOnlyDictionary<string, string> Raw { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);

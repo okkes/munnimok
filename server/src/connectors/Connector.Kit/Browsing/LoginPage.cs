@@ -34,7 +34,7 @@ public interface ILoginPage
         IReadOnlyList<string> selectors, string attribute, int timeoutMs, CancellationToken ct) =>
         Task.FromResult<string?>(null);
 
-    // false when nothing matched: the caller decides what a missing field means;
+    // false when nothing matched: the caller decides what a missing field means.
     // filling something else instead is never the answer
     Task<bool> FillAsync(IReadOnlyList<string> selectors, string value, int timeoutMs, CancellationToken ct);
 

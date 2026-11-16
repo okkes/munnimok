@@ -62,7 +62,7 @@ internal sealed class TestClock : TimeProvider
         }
     }
 
-    // steps, not one leap: the code under test arms its next wait on its own thread after the last fired;
+    // steps, not one leap: the code under test arms its next wait on its own thread after the last fired.
     // the short real pause lets it get there; five ms, not two: at two the ten-virtual-second keepalive bound
     // was 20 real ms, which a loaded CI runner spent in one pause
     public async Task<bool> RunUntilAsync(Func<bool> done, TimeSpan budget)

@@ -228,7 +228,7 @@ public sealed class ConnectorAgentOptions
         }
     }
 
-    // each rule guards a quiet failure: no connector; duplicate names (a directory under the profile root);
+    // each rule guards a quiet failure: no connector; duplicate names (a directory under the profile root).
     // two connections on one control plane (state file keyed by it, enrollment overwritten); shorthand beside a list
     private string? ShorthandBesideTheList()
     {

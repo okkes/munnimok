@@ -90,7 +90,7 @@ public sealed class DuoFetchTests
         Assert.True(result.Complete);
     }
 
-    // the ledger is opt-in: its endpoint also holds a BSN, both parents, tax income, IBANs and addresses;
+    // the ledger is opt-in: its endpoint also holds a BSN, both parents, tax income, IBANs and addresses.
     // not asking must never request it
     [Fact]
     public async Task A_fetch_that_did_not_ask_for_the_ledger_never_reads_the_dossier()
@@ -170,7 +170,7 @@ public sealed class DuoFetchTests
         Assert.Empty(portal.Requested);
     }
 
-    // a signed-out visitor is BOUNCED into the SAML chain (200 with a login page), not refused;
+    // a signed-out visitor is BOUNCED into the SAML chain (200 with a login page), not refused.
     // status alone would report the provider as rebuilt
     [Fact]
     public async Task A_bounce_into_the_sign_in_chain_is_a_dead_session_and_not_a_changed_provider()
@@ -360,7 +360,7 @@ public sealed class DuoFetchTests
         Assert.Null(debt.InterestRate);
     }
 
-    // the landing page separates a recoverable in-portal move from an ended session;
+    // the landing page separates a recoverable in-portal move from an ended session.
     // logged without the query, where a SAMLRequest lives
     [Fact]
     public async Task An_interrupted_call_reports_the_browsers_own_words_and_where_the_page_went()
@@ -636,7 +636,7 @@ internal sealed class StubDuoPortal : IDuoPortal
 
     public void Break(string path, int status) => _broken[path] = status;
 
-    // landedOn defaults to where the browser already was (a same-origin move);
+    // landedOn defaults to where the browser already was (a same-origin move).
     // SignInChain makes it a dead session, not a lost token
     public void Interrupt(string path, int times = 1, string? reason = null, string? landedOn = null)
     {

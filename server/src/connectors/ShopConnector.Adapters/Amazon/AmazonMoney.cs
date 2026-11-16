@@ -120,7 +120,7 @@ internal static partial class AmazonMoney
         return stripped;
     }
 
-    // a lone separator is read as the decimal point, wrong for whole-euro grouping ("€ 1.234" would become 1.234, no throw);
+    // a lone separator is read as the decimal point, wrong for whole-euro grouping ("€ 1.234" would become 1.234, no throw).
     // resolved by anchored shape: exactly three digits after every separator and no second kind of separator
     private static string Normalize(string digits)
     {

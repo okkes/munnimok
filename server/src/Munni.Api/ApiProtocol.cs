@@ -1,6 +1,6 @@
 namespace Munni.Api;
 
-// bump Version with CLIENT_PROTOCOL (apps/web/src/lib/protocol.ts) when the sync/API contract changes;
+// bump Version with CLIENT_PROTOCOL (apps/web/src/lib/protocol.ts) when the sync/API contract changes.
 // raise MinClient only when an OLD client would misbehave, not just miss a feature
 public static class ApiProtocol
 {

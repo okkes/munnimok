@@ -106,7 +106,7 @@ public sealed class DuoParsingTests
         Assert.Equal(7_500, debt.Total.Value);
     }
 
-    // a non-number amount was once skipped silently: the other fields still summed, leaving a debt short a component;
+    // a non-number amount was once skipped silently: the other fields still summed, leaving a debt short a component.
     // a serialiser change suffices: "25.00" instead of 25.00000000 is still valid JSON
     [Fact]
     public void A_debt_amount_that_is_no_longer_a_number_fails_rather_than_going_missing()
@@ -138,7 +138,7 @@ public sealed class DuoParsingTests
         Assert.Contains(notes, n => n.Contains("peildatum", StringComparison.Ordinal));
     }
 
-    // the note exists to be noticed once, when DUO's payload grows a field;
+    // the note exists to be noticed once, when DUO's payload grows a field.
     // the live capture is eight numbers, so it stays silent
     [Fact]
     public void The_real_payload_produces_no_note_at_all()
@@ -297,7 +297,7 @@ public sealed class DuoParsingTests
             Assert.Throws<ConnectorException>(() => Read(amounts: "  ")).Code);
     }
 
-    // singleton position: a constant external id makes every sync update one row;
+    // singleton position: a constant external id makes every sync update one row.
     // with (session_id, external_id) uniqueness a retry is free
     [Fact]
     public void The_record_is_the_same_row_on_every_sync()
@@ -337,7 +337,7 @@ public sealed class DuoParsingTests
                 grondslag ?? Fixture.Read("duo/grondslaggegevens.json")),
             Today, Options, Session);
 
-    // the as-of date lives in DUO's "Mijn schuldhistorie" endpoint (5.6 KB, no BSN, parents or income);
+    // the as-of date lives in DUO's "Mijn schuldhistorie" endpoint (5.6 KB, no BSN, parents or income).
     // earlier captures missed it because nobody had opened that page
     [Fact]
     public void The_as_of_date_is_the_one_duo_calculated_interest_to()
@@ -358,7 +358,7 @@ public sealed class DuoParsingTests
         Assert.Equal(new DateOnly(2026, 8, 1), WithHistory(history: Json).AsOf);
     }
 
-    // TryGetInt32 throws InvalidOperationException on a non-number, past every JsonException catch: one null cost the debt;
+    // TryGetInt32 throws InvalidOperationException on a non-number, past every JsonException catch: one null cost the debt.
     // DUO's own fixtures carry nulls on number fields (gevraagdTermijnbedrag, berekendTermijnbedrag)
     [Fact]
     public void A_number_duo_sends_as_null_costs_that_field_and_nothing_else()
@@ -379,7 +379,7 @@ public sealed class DuoParsingTests
         Assert.Equal(2_500_000, yearEnd.Amount.Value);
     }
 
-    // a null entry in the array threw in whichever accessor ran first;
+    // a null entry in the array threw in whichever accessor ran first.
     // Connector.Kit.Tests.Normalization.JsonReadRuleTests now forbids it
     [Fact]
     public void An_entry_duo_sends_as_null_costs_that_entry_and_nothing_else()
@@ -432,7 +432,7 @@ public sealed class DuoParsingTests
         Assert.Equal(2025, history.First(h => h.Kind == StudentDebtBalanceKind.YearEnd).Year);
     }
 
-    // DUO lists balances grouped by kind and in no order inside a group (live: 2020, 2022, 2021, 2024, ...);
+    // DUO lists balances grouped by kind and in no order inside a group (live: 2020, 2022, 2021, 2024, ...).
     // sorted newest first so no consumer plots a history that jumps backwards
     [Fact]
     public void The_history_reads_as_a_timeline_rather_than_in_duos_order()
@@ -531,7 +531,7 @@ public sealed class DuoParsingTests
     private const string NothingOwed =
         """{"schuldbedragLening":0E-8,"schuldbedragLevenlanglerenkrediet":0E-8,"schuldbedragOVSchuld":0E-8,"schuldbedragPrestatiebeurs":0E-8,"schuldbedragTeveelBijverdiensten":0E-8,"schuldbedragTeveelOntvangenLevenlanglerenkrediet":0E-8,"schuldbedragTeveelOntvangenStudiefinanciering":0E-8,"schuldbedragTeveelOntvangenTegemoetkomingScholier":0E-8}""";
 
-    // #566: amounts adding up to nothing while DUO states a debt read as 0.00 in repayment;
+    // #566: amounts adding up to nothing while DUO states a debt read as 0.00 in repayment.
     // the ledger sum comes first, then the stated current balance, never a zero nobody owes
     [Fact]
     public void Amounts_that_add_up_to_nothing_give_way_to_the_ledger_and_then_to_the_stated_current_balance()

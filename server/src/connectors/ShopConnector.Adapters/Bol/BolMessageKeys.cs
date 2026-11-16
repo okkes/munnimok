@@ -5,7 +5,7 @@ internal static class BolMessageKeys
 {
     public const string BolNotes = "connect.bol.notes";
 
-    // not the sms key: bol's credential is an e-mail address, so the code likelier arrives in a mailbox;
+    // not the sms key: bol's credential is an e-mail address, so the code likelier arrives in a mailbox.
     // the challenge's delivery field says which, per login
     public const string VerificationCode = "connect.challenge.verification_code";
 }

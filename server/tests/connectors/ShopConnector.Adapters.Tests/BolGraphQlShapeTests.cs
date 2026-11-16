@@ -10,7 +10,7 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-// bol's order overview as its own front end reads it: every "Toon meer" posts OrdersOverviewClient to /api/graphql;
+// bol's order overview as its own front end reads it: every "Toon meer" posts OrdersOverviewClient to /api/graphql.
 // the fixture keeps every key and nesting level but none of the purchases (public repo)
 public sealed class BolGraphQlShapeTests
 {

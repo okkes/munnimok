@@ -65,7 +65,7 @@ public static class ExploreProvider
         Resources = [],
     };
 
-    // the manifest and nothing that runs: every explore job is leased by a fleet agent carrying the real adapter;
+    // the manifest and nothing that runs: every explore job is leased by a fleet agent carrying the real adapter.
     // run inline, the control plane says it cannot
     public static IProviderAdapter ManifestOnly { get; } = new ManifestOnlyAdapter();
 

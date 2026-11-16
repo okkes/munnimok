@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Connector.Kit.Security;
 
-// rotation is a kid bump: new bundles seal with the new key, existing ones validate under their own until they expire;
+// rotation is a kid bump: new bundles seal with the new key, existing ones validate under their own until they expire.
 // no mass re-login
 public interface IBundleKeyRing
 {

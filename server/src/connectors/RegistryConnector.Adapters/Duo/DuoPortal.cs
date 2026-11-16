@@ -214,7 +214,7 @@ internal readonly record struct DuoCall(
 
 internal static class DuoCalls
 {
-    // InvalidOperationException, not ConnectorException: reading the dossier is a bug here, not a provider fault;
+    // InvalidOperationException, not ConnectorException: reading the dossier is a bug here, not a provider fault.
     // a code rule so whoever adds an endpoint cannot forget it
     public static async Task<string?> ReadAsync(
         IDuoPortal portal,

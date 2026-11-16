@@ -107,7 +107,7 @@ public static class BankStatementCsv
             {
                 Key = ColumnCode,
                 Required = false,
-                // "code" first: the two-letter codes are identical in the Dutch and English exports, the words beside them are not;
+                // "code" first: the two-letter codes are identical in the Dutch and English exports, the words beside them are not.
                 // alias order decides which header is claimed, so kinds must not depend on the export's language
                 Aliases = ["code", "mutatiesoort", "transactiesoort", "transaction type", "mutation type"],
             },

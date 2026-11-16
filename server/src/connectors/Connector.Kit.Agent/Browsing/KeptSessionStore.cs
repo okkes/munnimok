@@ -215,7 +215,7 @@ internal sealed record KeptSession
     public IReadOnlyList<KeptCookie> Cookies { get; init; } = [];
 }
 
-// `required` on the identifying four: a torn file would otherwise restore a cookie with an empty name or domain;
+// `required` on the identifying four: a torn file would otherwise restore a cookie with an empty name or domain.
 // a missing member is a JsonException, which Restore treats as sign in again
 internal sealed record KeptCookie
 {

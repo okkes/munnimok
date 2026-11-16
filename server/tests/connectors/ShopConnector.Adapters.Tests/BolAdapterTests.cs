@@ -16,7 +16,7 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-// bol has no refresh grant: a login is expensive and never retried; a bot wall must not read as a bad password;
+// bol has no refresh grant: a login is expensive and never retried; a bot wall must not read as a bad password.
 // a captcha with nobody at the agent fails at once instead of holding it
 public sealed class BolAdapterTests
 {
@@ -506,7 +506,7 @@ public sealed class BolAdapterTests
         Assert.Contains("neither completed nor stated", error.Detail, StringComparison.Ordinal);
     }
 
-    // prod 2026-10-07: the jar is sealed after the probe, not before, or its visits' cookies never reach a fetch;
+    // prod 2026-10-07: the jar is sealed after the probe, not before, or its visits' cookies never reach a fetch.
     // only header NAMES go to the notes, never a value
     [Fact]
     public async Task The_jar_sealed_is_the_one_read_after_the_probe_and_the_page_s_request_rides_beside_the_hash()

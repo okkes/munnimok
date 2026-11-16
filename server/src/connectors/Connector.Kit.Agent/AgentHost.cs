@@ -418,7 +418,7 @@ public sealed class AgentHost : BackgroundService
         return $"{ConnectorAgentOptions.SectionName}:Connections:<{Name}>:EnrollmentCode";
     }
 
-    // a revoked connection wipes only ITS profiles (live provider sessions the control plane can no longer route to) and state;
+    // a revoked connection wipes only ITS profiles (live provider sessions the control plane can no longer route to) and state.
     // a 401 from a bank connector restored from an old backup used to wipe DUO's browser and stop the process
     private async Task RevokeAsync(string why)
     {
@@ -439,7 +439,7 @@ public sealed class AgentHost : BackgroundService
 
         var next = _heartbeatInterval;
 
-        // a released hosted slot (#420 A2): wipe, then beat again soon so the slot is free in seconds;
+        // a released hosted slot (#420 A2): wipe, then beat again soon so the slot is free in seconds.
         // a beat that stops asking is the control plane having heard
         if (response.ResetProfiles)
         {

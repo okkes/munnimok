@@ -102,7 +102,7 @@ public sealed class EfLeasedJobQueue(
 
         var paused = await PausedProvidersAsync(ct);
 
-        // own machine is read off the agent's row, not capabilities.Class, which a heartbeat could set to byo;
+        // own machine is read off the agent's row, not capabilities.Class, which a heartbeat could set to byo.
         // the pooled fleet once leased DUO's DigiD login (Logius scores those sign-ins, on the citizen)
         // an owner named in FleetSubjects asks with no owner scope = serves everybody, not somebody's own machine
         var ownMachine = ownerSubject is not null
@@ -147,7 +147,7 @@ public sealed class EfLeasedJobQueue(
 
     private HashSet<string> HeadedOnlyLogins(AgentCapabilities capabilities)
     {
-        // a headless agent leasing a login that can meet an interactive wall fails blocked_by_provider after two minutes;
+        // a headless agent leasing a login that can meet an interactive wall fails blocked_by_provider after two minutes.
         // only logins are withheld, fetches are still served
         return capabilities.Headed
             ? []
@@ -393,7 +393,7 @@ public sealed class EfLeasedJobQueue(
                 .SetProperty(j => j.LeaseExpiresAt, (DateTimeOffset?)null)
                 .SetProperty(j => j.UpdatedAt, now), ct);
 
-        // unrecoverable, two reasons: a submitted credential may have counted, so the user signs in again;
+        // unrecoverable, two reasons: a submitted credential may have counted, so the user signs in again.
         // an agent gone twice is just gone
         var submitted = await BurnAsync(now, credentialSubmitted: true,
             ErrorCode.SessionExpired, "lease lost after a credential went upstream; never retried", ct);

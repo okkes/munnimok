@@ -303,7 +303,7 @@ internal static partial class IngTransactions
         return DerivedPrefix + Convert.ToHexStringLower(digest.AsSpan(0, 10));
     }
 
-    // the IBAN only when ING says the number is one: a card payment states {"type":"UNKNOWN","value":""}
+    // the IBAN only when ING says the number is one: a card payment states {"type":"UNKNOWN","value":""}.
     private static Counterparty? Counterparty(JsonElement row)
     {
         var counter = row.Child("counterAccount");

@@ -25,7 +25,7 @@ public sealed class LiveOriginTests
         Assert.DoesNotContain("abc123", origin, StringComparison.Ordinal);
     }
 
-    // "аh.nl" starts with a Cyrillic а (U+0430), indistinguishable from "ah.nl" when rendered;
+    // "аh.nl" starts with a Cyrillic а (U+0430), indistinguishable from "ah.nl" when rendered.
     // browsers show punycode for this reason
     [Fact]
     public void A_lookalike_domain_is_shown_as_punycode_rather_than_as_the_real_thing()

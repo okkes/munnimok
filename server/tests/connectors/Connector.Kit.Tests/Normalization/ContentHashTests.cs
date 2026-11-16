@@ -45,7 +45,7 @@ public sealed class ContentHashTests
     {
         var baseline = ContentHash.Of(Tx());
 
-        // id, value date, classification and running balance move without the transaction changing;
+        // id, value date, classification and running balance move without the transaction changing.
         // hashing them churns every re-fetch and defeats dedupe
         Assert.Equal(baseline, ContentHash.Of(Tx() with { Id = Ids.New(Ids.Transaction) }));
         Assert.Equal(baseline, ContentHash.Of(Tx() with { ValueAt = new DateOnly(2026, 8, 1) }));
@@ -105,7 +105,7 @@ public sealed class ContentHashTests
     [Fact]
     public void A_separator_inside_a_value_cannot_forge_a_field_boundary()
     {
-        // a separator alone fails: "ab<sep>c"+sep+"d" and "ab"+sep+"c<sep>d" are identical bytes;
+        // a separator alone fails: "ab<sep>c"+sep+"d" and "ab"+sep+"c<sep>d" are identical bytes.
         // only the length prefix separates them
         // numeric escape, as the kit writes it: an invisible control character in source cannot be reviewed
         const char separator = (char)0x1F;

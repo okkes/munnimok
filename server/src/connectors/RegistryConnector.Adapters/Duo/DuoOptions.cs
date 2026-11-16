@@ -126,13 +126,13 @@ public sealed record DuoOptions
     public string SessionTokenHeader { get; init; } = "authorization";
 
     // ends the login, a url does not: StartUrl redirects to the dashboard before bouncing into SAML, so a signed-out
-    // browser sits on a portal address; signed in it answers {"profiel":"PP","nieuwToken":true,…}
+    // browser sits on a portal address; signed in it answers {"profiel":"PP","nieuwToken":true,…}.
     public string SessionPath { get; init; } = "sessietoken/rest/jwt";
 
     // profiel names whose session it is, so it cannot plausibly be present on an answer about nobody
     public string SessionProfileField { get; init; } = "profiel";
 
-    // never called: 2.5 MB holding a BSN, both parents, a partner, twenty years of income, IBANs and every address;
+    // never called: 2.5 MB holding a BSN, both parents, a partner, twenty years of income, IBANs and every address.
     // named so the refusal is code
     public string ForbiddenPath { get; init; } = "raadplegen/klantbeeld";
 

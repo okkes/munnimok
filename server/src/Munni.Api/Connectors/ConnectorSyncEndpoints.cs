@@ -48,7 +48,7 @@ public static partial class ConnectorRelayEndpoints
         return Results.Json(outcome.Body, statusCode: outcome.Status);
     }
 
-    // relayed under their subject (the control plane holds it to the session's owner);
+    // relayed under their subject (the control plane holds it to the session's owner).
     // closes the hub's open question on the binding
     private static async Task<IResult> ShareArtifacts(string provider, string jobId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {

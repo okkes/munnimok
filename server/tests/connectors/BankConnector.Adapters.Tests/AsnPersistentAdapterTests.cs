@@ -300,7 +300,7 @@ public sealed class AsnPersistentAdapterTests
         Assert.Contains("10s after the browsercode was submitted", refused.Message, StringComparison.Ordinal);
     }
 
-    // a page that is neither sign-in nor overview (maintenance, withdrawn registration) was reported as a wrong code;
+    // a page that is neither sign-in nor overview (maintenance, withdrawn registration) was reported as a wrong code.
     // the address is what the first failure can carry out
     [Fact]
     public async Task A_browser_sent_somewhere_third_after_the_code_names_the_address_rather_than_the_code()
@@ -606,7 +606,7 @@ public sealed class AsnPersistentAdapterTests
         Assert.Contains(inside.Notes, n => n.Contains("nothing was asked of you", StringComparison.Ordinal));
     }
 
-    // the address alone is right the instant a signed-in overview loads, so the wait is paid only on a doubtful page;
+    // the address alone is right the instant a signed-in overview loads, so the wait is paid only on a doubtful page.
     // "not signed in" costs a reconnect, "signed in" a broken export and a degraded provider
     [Fact]
     public async Task A_menu_that_does_not_appear_within_the_settle_window_means_not_signed_in()

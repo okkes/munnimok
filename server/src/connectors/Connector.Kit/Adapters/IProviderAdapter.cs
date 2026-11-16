@@ -89,7 +89,7 @@ public interface IJobContext
     // has nobody to ask and would hang the job to its budget
     bool Attended => false;
 
-    // the browser starts from something an earlier run left (a kept profile dir, or storage state from the bundle);
+    // the browser starts from something an earlier run left (a kept profile dir, or storage state from the bundle).
     // not a claim anybody is signed in: SessionProbe checks it first, as a browser handed nothing cannot be signed in
     // profile: a BYO agent's; storage state: the pooled fleet's on a refresh (Amazon's refresh skips sign-in that way)
     bool KeepsSession => false;

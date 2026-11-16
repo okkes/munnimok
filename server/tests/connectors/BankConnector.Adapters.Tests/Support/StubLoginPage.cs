@@ -4,7 +4,7 @@ using Connector.Kit.Challenges;
 
 namespace BankConnector.Adapters.Tests.Support;
 
-// tests say which option-list candidates are on the page, so operator-editable selectors are what is asserted through;
+// tests say which option-list candidates are on the page, so operator-editable selectors are what is asserted through.
 // order matters: the password leaves the DOM before anything photographs it, the credential is declared submitted first
 internal sealed class StubLoginPage : ILoginPage
 {
@@ -58,7 +58,7 @@ internal sealed class StubLoginPage : ILoginPage
     public Task<PageMatch?> FindAsync(IReadOnlyList<string> selectors, int timeoutMs, CancellationToken ct) =>
         Task.FromResult<PageMatch?>(Match(selectors) is null ? null : new PageMatch(Box));
 
-    // the interface defaults this to null, which would fail every attribute read;
+    // the interface defaults this to null, which would fail every attribute read.
     // a provider that shows a human something to type needs the value
     public Dictionary<string, string> Attributes { get; } = new(StringComparer.Ordinal);
 

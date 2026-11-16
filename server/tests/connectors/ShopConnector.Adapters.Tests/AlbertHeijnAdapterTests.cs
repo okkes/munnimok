@@ -144,7 +144,7 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Equal("ah-access-token-fixture", result.Material.AccessToken);
         Assert.Equal("ah-refresh-token-fixture", result.Material.RefreshToken);
 
-        // unset: the access token's expiry says nothing about the connection's life;
+        // unset: the access token's expiry says nothing about the connection's life.
         // the short one would prompt needless reconnects
         Assert.Null(result.ExpiresAt);
     }
@@ -406,7 +406,7 @@ public sealed class AlbertHeijnAdapterTests
     [Fact]
     public async Task A_list_that_keeps_answering_the_same_page_stops_instead_of_looping()
     {
-        // the symptom of an offset that stopped advancing upstream;
+        // the symptom of an offset that stopped advancing upstream.
         // without the guard it is one request five times against a defended endpoint
         var handler = new StubHttpHandler((_, _) => FullPage(0));
         using var ctx = new FakeJobContext(handler)
@@ -548,7 +548,7 @@ public sealed class AlbertHeijnAdapterTests
         Assert.Empty(handler.Requests);
     }
 
-    // HttpRequestMessage parses User-Agent into tokens, so the recorder sees them separately;
+    // HttpRequestMessage parses User-Agent into tokens, so the recorder sees them separately.
     // on the wire they rejoin with a space
     private static void AssertUserAgent(RecordedRequest request)
     {

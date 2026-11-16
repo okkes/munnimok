@@ -2,7 +2,7 @@ using Connector.Kit.Normalization;
 
 namespace BankConnector.Adapters.Parsing;
 
-// its own type: ING states the same code in a CSV column and in its web API's JSON (type.id);
+// its own type: ING states the same code in a CSV column and in its web API's JSON (type.id).
 // two tables could classify one row differently
 public static class BankTransactionKinds
 {

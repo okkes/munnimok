@@ -26,7 +26,7 @@ public static class LogoEndpoints
 
         if (string.IsNullOrEmpty(secretKey) || string.IsNullOrEmpty(publicToken)) return;
 
-        // search needs the SECRET key (sk_), image URLs the PUBLISHABLE (pk_);
+        // search needs the SECRET key (sk_), image URLs the PUBLISHABLE (pk_).
         // a swap fails silently upstream (401, empty results): refuse loudly
         var log = app.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Logos");
         if (secretKey.StartsWith("pk_", StringComparison.Ordinal))

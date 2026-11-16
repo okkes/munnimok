@@ -7,7 +7,7 @@ using Connector.Kit.Security;
 namespace Connector.Kit.Hosting.Jobs;
 
 // the retry policy is the highest-consequence code in the platform, so it lives here out of an adapter author's reach
-// a lost lease requeues the job exactly once, only while no credential went upstream (a retried login locks accounts);
+// a lost lease requeues the job exactly once, only while no credential went upstream (a retried login locks accounts).
 // no code in ErrorCatalog.NeverRetry is ever retried
 public interface ILeasedJobQueue
 {

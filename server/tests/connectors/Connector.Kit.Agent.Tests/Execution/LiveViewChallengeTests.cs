@@ -72,7 +72,7 @@ public class LiveViewChallengeTests
         Assert.Empty(rig.Control.Frames);
     }
 
-    // the frame sequence is monotonic per job and the connector drops frames not above its slot's while answering 200;
+    // the frame sequence is monotonic per job and the connector drops frames not above its slot's while answering 200.
     // a counter restarted per live view left the human on a stale page. Needs a real browser: a posted picture
     [Fact]
     public async Task Two_live_views_in_one_job_share_one_frame_count()

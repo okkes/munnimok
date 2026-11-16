@@ -3,7 +3,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Munni.Api.Investments;
 
-// Yahoo chart (stocks/ETFs) and CoinGecko (crypto): free, unofficial, cached 60s;
+// Yahoo chart (stocks/ETFs) and CoinGecko (crypto): free, unofficial, cached 60s.
 // prices are never stored, demo/offline identities never call
 public static class QuoteEndpoints
 {

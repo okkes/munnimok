@@ -13,7 +13,7 @@ public sealed record DeviceDto(
     bool Revoked);
 public sealed record RenameDeviceRequest(string Name);
 
-// disconnect = wipe: a revoked device wipes itself on its next request;
+// disconnect = wipe: a revoked device wipes itself on its next request.
 // enforcement and last-seen stamping live in UserResolution.TouchDeviceAsync
 public static class DeviceEndpoints
 {

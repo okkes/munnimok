@@ -272,7 +272,7 @@ public sealed class ManifestTests
     {
         var manifest = Registry.RequireManifest(AlbertHeijnAdapter.ProviderId);
 
-        // T2: the agent types the credentials and catches the appie:// redirect itself;
+        // T2: the agent types the credentials and catches the appie:// redirect itself.
         // pasting it out of a console is impossible on a phone
         Assert.Equal(ProviderRuntime.BrowserOnce, manifest.Runtime);
         Assert.True(manifest.Agent.Required);
@@ -284,7 +284,7 @@ public sealed class ManifestTests
         // streamed now, but agent and Dutch residential line stay: a human-driven browser must still appear to be there
         Assert.Equal(AuthFlow.RemoteBrowser, manifest.Auth.Flow);
 
-        // two challenges: the streamed page already shows the human any captcha, SMS box or approval prompt;
+        // two challenges: the streamed page already shows the human any captcha, SMS box or approval prompt.
         // Redirect stays as last resort. A consumer with no UI for a challenge its provider raises strands the user
         Assert.Equal(
             new[] { ChallengeType.LiveView, ChallengeType.Redirect },

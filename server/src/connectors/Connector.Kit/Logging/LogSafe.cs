@@ -2,7 +2,7 @@ using System.Text;
 
 namespace Connector.Kit.Logging;
 
-// CodeQL cs/log-forging: a line break in a route parameter, query value, agent detail or reason key forges a log entry;
+// CodeQL cs/log-forging: a line break in a route parameter, query value, agent detail or reason key forges a log entry.
 // every such value goes through Line (breaks and control characters become a space, length capped)
 public static class LogSafe
 {

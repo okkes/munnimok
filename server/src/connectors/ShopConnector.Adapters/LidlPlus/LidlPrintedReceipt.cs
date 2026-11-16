@@ -69,7 +69,7 @@ internal static partial class LidlPrintedReceipt
                 continue;
             }
 
-            // a weighed article's continuation line ("0,084 kg x 5,99") repeats the attributes and has no total;
+            // a weighed article's continuation line ("0,084 kg x 5,99") repeats the attributes and has no total,
             // told by its text not starting with the description
             if (!StartsWithDescription(line)) continue;
 

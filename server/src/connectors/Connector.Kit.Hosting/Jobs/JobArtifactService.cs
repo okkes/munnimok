@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Connector.Kit.Hosting.Jobs;
 
-// failure pictures (#441 L1): operator runs (lab, canary) are retained at once;
+// failure pictures (#441 L1): operator runs (lab, canary) are retained at once.
 // a person's is PENDING, served by no route, until they consent
 // yes retains for the retention period; no, or no answer inside the consent window, deletes it
 public sealed class JobArtifactService(

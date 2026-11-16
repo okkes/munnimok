@@ -31,7 +31,7 @@ public class ConnectorSession
     // a party's retry_after on a rate-limited refusal (§15): the scheduler waits it out
     public DateTimeOffset? ScheduleNotBefore { get; set; }
 
-    // #460: the older history a scheduled pass left; the next backfill pass asks from BackfillSince up to this day;
+    // #460: the older history a scheduled pass left; the next backfill pass asks from BackfillSince up to this day.
     // null when nothing is left
     public DateOnly? BackfillUntil { get; set; }
 

@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace Munni.Api.Admin;
 
-// one operator-editable JSON document in AppSettings, version bumped per publish;
+// one operator-editable JSON document in AppSettings, version bumped per publish.
 // clients fall back to the bundled copy until they have fetched one
 public static class CatalogEndpoints
 {

@@ -4,7 +4,7 @@ namespace Connector.Kit.Agent.Execution;
 // would kill the login of someone walking back to their desk. A run that never parks gets no extension
 internal sealed class JobBudget : IDisposable
 {
-    // floor on re-checks WHILE PARKED: remaining time stands still, so a job parked with 1 ms left would wake every ms;
+    // floor on re-checks WHILE PARKED: remaining time stands still, so a job parked with 1 ms left would wake every ms.
     // a working job dies exactly on its deadline
     private static readonly TimeSpan MinimumRecheck = TimeSpan.FromSeconds(1);
 

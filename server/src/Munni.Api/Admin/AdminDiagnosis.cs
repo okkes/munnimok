@@ -30,7 +30,7 @@ public sealed record AdminUserDiagnosisDto(
     List<AdminConnectorSessionDetailDto>? ConnectorSessions = null,
     List<AdminSpaceDto>? Spaces = null);
 
-// the server never interprets the app's entities, but may READ a name off a materialized row to label a line;
+// the server never interprets the app's entities, but may READ a name off a materialized row to label a line.
 // an unreadable row leaves the label null
 public static class AdminDiagnosis
 {

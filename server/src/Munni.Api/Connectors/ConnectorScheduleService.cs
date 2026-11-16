@@ -54,7 +54,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         }
     }
 
-    // one or two unreachable cycles are normal on a deploy or router swap (GlitchTip 17-19, 2026-10-05): a warning;
+    // one or two unreachable cycles are normal on a deploy or router swap (GlitchTip 17-19, 2026-10-05): a warning.
     // only UnreachableCyclesBeforeError in a row raises the error that pages
     private int _unreachableCycles;
 

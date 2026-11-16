@@ -2,7 +2,7 @@ using System.Security.Claims;
 
 namespace Munni.Api.Auth;
 
-// admin iff the token's space-separated `scope` claim carries `admin`;
+// admin iff the token's space-separated `scope` claim carries `admin`.
 // the identity provider is the single source of truth (no config list, no database grants)
 public static class AdminScope
 {

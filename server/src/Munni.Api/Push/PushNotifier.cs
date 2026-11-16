@@ -108,7 +108,7 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
             ? Task.CompletedTask
             : SendToUsersAsync(toUserIds, new { type = "split", kind, splitId = split.Id, splitName = split.Name, currency = split.Currency, fromName, cents }, ct);
 
-    // "Test notification" to every device of ONE user; sent from a space's settings it names that space (#551);
+    // "Test notification" to every device of ONE user; sent from a space's settings it names that space (#551).
     // returns how many devices were tried
     public async Task<int> NotifyTestAsync(Guid userId, string? spaceId, CancellationToken ct)
     {

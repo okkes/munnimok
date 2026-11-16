@@ -4,7 +4,7 @@ using Xunit;
 
 namespace ShopConnector.Adapters.Tests;
 
-// prod 2026-10-05: the landing page said nothing within the probe, the configured hash stood and bol refused it;
+// prod 2026-10-05: the landing page said nothing within the probe, the configured hash stood and bol refused it.
 // the probe now opens the overview itself and, failing that, presses "Toon meer"
 public sealed class BolHashProbeTests
 {

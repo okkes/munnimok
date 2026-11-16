@@ -23,7 +23,7 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     options.SetBeforeSend((e, _) => ConnectorNoise.Quiet(e));
 });
 
-// one control plane per environment hosts every provider pack under one catalogue, database and consumer credential;
+// one control plane per environment hosts every provider pack under one catalogue, database and consumer credential.
 // provider ids are unique across packs. Unconfirmed provider facts hang off these sections so a correction is a
 // deploy-time edit
 var banks = builder.Configuration.GetSection("BankAdapters").Get<BankAdapterOptions>()

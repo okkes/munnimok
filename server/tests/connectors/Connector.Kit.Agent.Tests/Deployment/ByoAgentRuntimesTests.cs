@@ -26,7 +26,7 @@ public sealed class ByoAgentRuntimesTests
         {
             Assert.NotEmpty(service.MergedEnvironment);
 
-            // the environment provider translates ConnectorAgent__Class to ConnectorAgent:Class;
+            // the environment provider translates ConnectorAgent__Class to ConnectorAgent:Class.
             // an in-memory one is handed translated keys
             var configuration = new ConfigurationBuilder()
                 .AddJsonFile(Path.Combine(ByoCompose.RepoRoot(), agentDirectory, "appsettings.json"), optional: false)

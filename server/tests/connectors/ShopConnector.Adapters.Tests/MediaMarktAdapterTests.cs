@@ -152,7 +152,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Equal([10, 20, 23], ctx.Counted);
     }
 
-    // the order's own page offers an invoice, which rides the receipt as a document;
+    // the order's own page offers an invoice, which rides the receipt as a document.
     // a non-PDF answer (a sign-in page behind a .pdf link) is not attached
     [Fact]
     public async Task An_invoice_is_fetched_from_the_orders_own_page_and_rides_the_receipt()
@@ -271,7 +271,7 @@ public sealed class MediaMarktAdapterTests
         Assert.True(result.Complete);
     }
 
-    // the hash and the channel config are MediaMarkt's and must survive a rewrite untouched;
+    // the hash and the channel config are MediaMarkt's and must survive a rewrite untouched.
     // the connector deliberately understands neither
     [Fact]
     public async Task Paging_changes_the_variables_and_nothing_else()
@@ -553,7 +553,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Equal("pwa-client", carried["apollographql-client-name"]);
     }
 
-    // Google and Apple hand off to an identity provider we hold no credential for;
+    // Google and Apple hand off to an identity provider we hold no credential for.
     // a stray click lands on a consent screen nobody can answer
     [Fact]
     public async Task The_login_never_presses_a_social_sign_in_button()
@@ -611,7 +611,7 @@ public sealed class MediaMarktAdapterTests
         Assert.Contains("content-type", new MediaMarktOptions().CarriedHeaders, StringComparer.OrdinalIgnoreCase);
     }
 
-    // the session is the browser's own cookie jar (credentials: 'same-origin');
+    // the session is the browser's own cookie jar (credentials: 'same-origin').
     // copying cookies into headers would move a credential into this process
     [Fact]
     public void No_carried_header_is_a_credential()

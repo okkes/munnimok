@@ -23,7 +23,7 @@ public sealed class PersistentProfileTests(ShopApiFactory factory)
 {
     private const string Provider = PersistentStoreAdapter.ProviderId;
 
-    // CreateAsync mints a new session every time, so the profile alone carries the browser across devices;
+    // CreateAsync mints a new session every time, so the profile alone carries the browser across devices.
     // per-session keys would repeat the bank's registration
     [Fact]
     public async Task Two_devices_of_one_person_land_in_the_browser_they_already_trusted()
@@ -283,7 +283,7 @@ public sealed class PersistentProfileTests(ShopApiFactory factory)
         CreatedAt = lastBeat,
     };
 
-    // ValidateInputs once refused every input on persistent logins, which made ASN's PIN flow unconnectable;
+    // ValidateInputs once refused every input on persistent logins, which made ASN's PIN flow unconnectable.
     // the pin must reach the job, not just be accepted
     [Fact]
     public async Task A_persistent_login_carries_the_secret_its_manifest_declares()
@@ -323,7 +323,7 @@ public sealed class PersistentProfileTests(ShopApiFactory factory)
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    // the unique index holds the rule: two simultaneous connects both miss the read and would register two browsers;
+    // the unique index holds the rule: two simultaneous connects both miss the read and would register two browsers.
     // the loser now fails with a retriable error
     [Fact]
     public async Task One_machine_cannot_hold_two_browsers_for_one_person_and_provider()

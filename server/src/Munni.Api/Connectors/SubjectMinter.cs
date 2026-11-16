@@ -11,7 +11,7 @@ public sealed class SubjectMinter
     /// <summary>Every user subject starts with this; the connector's canary marker never does.</summary>
     public const string Prefix = "u_";
 
-    // only a subject carrying it may be enrolled as a canary, keeping a person's bundle out of that table;
+    // only a subject carrying it may be enrolled as a canary, keeping a person's bundle out of that table.
     // the LAB subject carries it, a user subject never does
     public const string CanaryMarker = "canary:";
 
@@ -25,7 +25,7 @@ public sealed class SubjectMinter
 
     public string For(Guid userId) => Mint(userId.ToString("D"));
 
-    // #441: a lab run never shows among the person's connections and nothing of it is ingested into a space;
+    // #441: a lab run never shows among the person's connections and nothing of it is ingested into a space.
     // a bundle opens only against its own subject, so no other minting path can make a canary
     public string ForLab(Guid userId) => CanaryMarker + Mint($"lab:{userId:D}");
 

@@ -277,7 +277,7 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
     {
         ct.ThrowIfCancellationRequested();
 
-        // substring: the dialog heading and the form's "Kies je rekening(en)" do not contain each other;
+        // substring: the dialog heading and the form's "Kies je rekening(en)" do not contain each other.
         // survives a count in the heading
         var heading = page.GetByRole(AriaRole.Heading, new() { Name = text, Exact = false }).First;
 

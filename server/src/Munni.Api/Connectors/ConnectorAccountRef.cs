@@ -1,6 +1,6 @@
 namespace Munni.Api.Connectors;
 
-// turns a connector's per-session account id back into the feed and account row the accounts pass created;
+// turns a connector's per-session account id back into the feed and account row the accounts pass created.
 // ids and references only
 public class ConnectorAccountRef
 {

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Connector.Kit.Agent.Browsing;
 
-// health is persisted so "your VM has been off for three days" stays knowable after a restart;
+// health is persisted so "your VM has been off for three days" stays knowable after a restart.
 // the heartbeat reports it for routing
 public sealed partial class ProfileStore
 {

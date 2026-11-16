@@ -28,7 +28,7 @@ public static class BankFixtures
 
     public const string IngCreditCards = "ing-credit-cards.json";
 
-    // shape recovered through Ing.IngSchema (keys, nesting, lengths, no values) because the recorder withheld the response;
+    // shape recovered through Ing.IngSchema (keys, nesting, lengths, no values) because the recorder withheld the response.
     // strings invented, IBANs match the other ING fixtures so both routes to one account can be compared
     public const string IngAgreements = "ing-agreements.json";
 

@@ -165,7 +165,7 @@ public sealed class JumboAdapterTests
         });
     }
 
-    // the name matters: OrdersPageOrders is corroborated nowhere and would be a schema validation error;
+    // the name matters: OrdersPageOrders is corroborated nowhere and would be a schema validation error.
     // $orderId is Float!, a number on the wire
     [Fact]
     public async Task Line_items_are_asked_for_by_the_confirmed_operation_with_a_numeric_order_id()
@@ -371,7 +371,7 @@ public sealed class JumboAdapterTests
         var result = await Adapter(graphql).FetchAsync(
             ctx, Requests.Receipts(since: Requests.Day(2026, 8, 1)), CancellationToken.None);
 
-        // newest first: one whole page below the window means every later page is older;
+        // newest first: one whole page below the window means every later page is older.
         // walking full history each sync risks tripping protection
         Assert.Empty(result.Receipts);
         Assert.Single(graphql.ListCalls);

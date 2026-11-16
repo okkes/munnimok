@@ -37,7 +37,7 @@ public readonly record struct RegionCapture
 
     public bool Captured => _png is { Length: > 0 };
 
-    // rounds OUTWARD (floor origin, ceil far edge): truncating loses up to a pixel of a captcha's last row;
+    // rounds OUTWARD (floor origin, ceil far edge): truncating loses up to a pixel of a captcha's last row.
     // the margin cancels as taps are normalised against the captured box
     // a negative origin is refused, not clamped: clamping would photograph a different rectangle than taps map into
     internal static CropRegion? Enclosing(double x, double y, double width, double height)

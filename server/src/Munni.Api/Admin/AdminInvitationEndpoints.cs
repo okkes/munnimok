@@ -11,7 +11,7 @@ public sealed record CreateInvitationRequest(string Email);
 
 public sealed record AdminInvitationDto(string Id, string Email, string Status, DateTimeOffset? CreatedAt, DateTimeOffset? ExpiresAt, string Link);
 
-// an invitation is a Logto one-time token (Management API, Logto 1.43) bound to an e-mail;
+// an invitation is a Logto one-time token (Management API, Logto 1.43) bound to an e-mail.
 // no mailer, the operator copies the link; nothing is stored here, Logto is the one register
 public static class AdminInvitationEndpoints
 {

@@ -16,7 +16,7 @@ public static class ApiRateLimits
         (path.StartsWithSegments("/connectors") || path.StartsWithSegments("/lab/bench"))
         && (path.Value ?? string.Empty).Contains("/live/", StringComparison.Ordinal);
 
-    // #429: the pushed live view is one request per login, so a per-frame bucket means nothing;
+    // #429: the pushed live view is one request per login, so a per-frame bucket means nothing.
     // what is bounded is how often one opens, as each holds a stream to the control plane
     public static bool IsLiveStreamRoute(PathString path) =>
         IsLiveViewRoute(path) && (path.Value ?? string.Empty).EndsWith("/live/stream", StringComparison.Ordinal);

@@ -6,7 +6,7 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.ImportWatch;
 
-// CAMT.053 files dropped in the folder ingest as raw feed rows for the configured owner;
+// CAMT.053 files dropped in the folder ingest as raw feed rows for the configured owner.
 // ids match the device import, so both dedupe
 public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfiguration config, ILogger<WatchFolderService> logger) : BackgroundService
 {
