@@ -12,6 +12,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.23.0',
+    date: '2026-11-17',
+    items: [
+      {
+        en: 'The bell has two parts: General (friend requests, invitations, what is new) and the space you are in. A notification that is no longer true leaves by itself, on your phone too: a plan that is covered again, transactions you reviewed, a request you answered.',
+        nl: 'De bel heeft twee delen: Algemeen (vriendschapsverzoeken, uitnodigingen, wat er nieuw is) en de ruimte waarin je bent. Een melding die niet meer klopt verdwijnt vanzelf, ook op je telefoon: een plan dat weer gedekt is, transacties die je hebt beoordeeld, een verzoek dat je hebt beantwoord.',
+        tr: 'Zilin iki bölümü var: Genel (arkadaşlık istekleri, davetler, yenilikler) ve içinde bulunduğun alan. Artık geçerli olmayan bir bildirim kendiliğinden kaybolur, telefonunda da: yeniden karşılanan bir plan, incelediğin işlemler, yanıtladığın bir istek.',
+      },
+      {
+        en: 'Safe to spend has its own screen: what is in your accounts, what is still due and what you set aside, in one picture.',
+        nl: 'Vrij te besteden heeft een eigen scherm: wat er op je rekeningen staat, wat er nog af moet en wat je opzij hebt gezet, in één beeld.',
+        tr: 'Harcanabilir tutarın kendi ekranı var: hesaplarında ne olduğu, daha neyin ödeneceği ve neyi kenara ayırdığın tek bir görünümde.',
+      },
+      {
+        en: 'While adding a transaction you can link what it reimburses right away: pick the transactions, come back to the form, and the link is saved together with it.',
+        nl: 'Tijdens het toevoegen van een transactie kun je meteen koppelen wat ze terugbetaalt: kies de transacties, ga terug naar het formulier, en de koppeling wordt samen met de transactie opgeslagen.',
+        tr: 'Bir işlem eklerken neyin geri ödemesi olduğunu hemen bağlayabilirsin: işlemleri seç, forma dön, bağlantı işlemle birlikte kaydedilir.',
+      },
+      {
+        en: 'Planning: "Back to the pool" empties a subject in one tap, and the history says which subject changed and by how much.',
+        nl: 'Planning: "Terug naar de pot" maakt een onderwerp in één tik leeg, en de geschiedenis zegt welk onderwerp is gewijzigd en met hoeveel.',
+        tr: 'Planlama: "Havuza geri al" bir konuyu tek dokunuşla boşaltır ve geçmiş, hangi konunun ne kadar değiştiğini söyler.',
+      },
+      {
+        en: 'A space you delete is erased from the server at once, with everything in it. Deleting a space cannot be undone.',
+        nl: 'Een ruimte die je verwijdert wordt meteen van de server gewist, met alles wat erin staat. Een ruimte verwijderen kan niet ongedaan worden gemaakt.',
+        tr: 'Sildiğin bir alan, içindeki her şeyle birlikte sunucudan hemen silinir. Bir alanı silmek geri alınamaz.',
+      },
+      {
+        en: 'Smaller things: category suggestions from another space can be turned down ("Not interested"); a balance correction to 0 works; the budget chart\'s label is readable again on the iPhone; on a computer, Settings sits right under the list in the side panel; and a shop that wants a check in its own window is no longer described as an approval in an app.',
+        nl: 'Kleinere dingen: categorievoorstellen uit een andere ruimte kun je afslaan ("Niet nodig"); een saldocorrectie naar 0 werkt; het label van de budgetgrafiek is op de iPhone weer leesbaar; op een computer staat Instellingen direct onder de lijst in het zijpaneel; en een winkel die een controle in haar eigen venster wil, wordt niet meer beschreven als een goedkeuring in een app.',
+        tr: 'Küçük şeyler: başka bir alandan gelen kategori önerilerini geri çevirebilirsin ("İlgilenmiyorum"); bakiyeyi 0\'a düzeltmek çalışır; bütçe grafiğinin etiketi iPhone\'da yeniden okunur; bilgisayarda Ayarlar yan panelde listenin hemen altında durur; ve kendi penceresinde bir kontrol isteyen mağaza artık bir uygulamadaki onay gibi anlatılmaz.',
+      },
+    ],
+  },
+  {
     version: '5.22.0',
     date: '2026-11-16',
     items: [
