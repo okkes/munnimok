@@ -403,9 +403,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
 
         if (batch.Dropped > 0 && logger.IsEnabled(LogLevel.Warning))
         {
+            // the account ids themselves stay out of the log: a party may use the IBAN as its id (CodeQL cs/cleartext-storage)
             logger.LogWarning(
-                "connector ingest {Provider}: {Dropped} of {Total} transactions dropped — {Orphaned} name an account this relay never saw (first: {Account}), the rest lack an id, a date or an amount",
-                provider, batch.Dropped, records.Count, batch.Orphaned, batch.OrphanAccount ?? "-");
+                "connector ingest {Provider}: {Dropped} of {Total} transactions dropped — {Orphaned} name one of {Accounts} accounts this relay never saw, the rest lack an id, a date or an amount",
+                provider, batch.Dropped, records.Count, batch.Orphaned, batch.OrphanAccounts);
         }
 
         // asked before the feeds are written: afterwards every row of the page is one the feed holds
@@ -468,9 +469,18 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
 
         public int Dropped { get; set; }
 
-        public int Orphaned { get; set; }
+        public int Orphaned { get; private set; }
 
-        public string? OrphanAccount { get; set; }
+        /// <summary>how many different accounts the orphaned rows name; the ids are only compared, never kept for the log</summary>
+        public int OrphanAccounts { get; private set; }
+
+        private readonly HashSet<string> _orphans = new(StringComparer.Ordinal);
+
+        public void Orphan(string accountId)
+        {
+            Orphaned++;
+            if (_orphans.Add(accountId)) OrphanAccounts++;
+        }
     }
 
     private async Task PlaceAsync(
@@ -484,8 +494,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             batch.Dropped++;
             if (accountId is not null && account is null)
             {
-                batch.Orphaned++;
-                batch.OrphanAccount ??= accountId;
+                batch.Orphan(accountId);
             }
             return;
         }

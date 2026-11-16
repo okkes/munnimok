@@ -119,6 +119,54 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Contains("\"catId\":\"transport\"", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == spaceId && r.EntityId == laterMetaId).DataJson));
     }
 
+    private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger<ConnectorIngest>
+    {
+        public List<string> Lines { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Lines.Add(formatter(state, exception));
+    }
+
+    [Fact]
+    public async Task Rows_that_name_an_account_the_relay_never_saw_are_dropped_and_the_log_counts_them_without_naming_the_account()
+    {
+        const string sub = "orphan-rows";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        const string iban = "NL91MOCK0000000881";
+        // a party may use the IBAN itself as its account id: the log must never carry it
+        const string stranger = "NL91MOCK0000000999";
+        var log = new CapturingLogger();
+        using var scope = factory.Services.CreateScope();
+        var ingest = ActivatorUtilities.CreateInstance<ConnectorIngest>(scope.ServiceProvider, log);
+        var ct = CancellationToken.None;
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-orphan", "account",
+            [new JsonObject { ["id"] = "acc_known", ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current" }], ct);
+
+        JsonObject Row(string id, string reference, string accountId)
+        {
+            var tx = Tx(id, reference, "2026-11-10", -500, "Shop", "Shop 1");
+            tx["account_id"] = accountId;
+            return tx;
+        }
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-orphan", "transaction",
+            [Row("t1", "REF-K1", "acc_known"), Row("t2", "REF-S1", stranger), Row("t3", "REF-S2", stranger), Row("t4", "REF-O1", "acc_other")], ct);
+
+        var feedId = ImportIds.FeedSpaceId(iban);
+        Assert.Equal(1, factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "transaction")));
+        var line = Assert.Single(log.Lines, l => l.Contains("transactions dropped", StringComparison.Ordinal));
+        Assert.Contains("3 of 4 transactions dropped", line);
+        Assert.Contains("3 name one of 2 accounts", line);
+        Assert.DoesNotContain(stranger, string.Join('\n', log.Lines));
+        Assert.DoesNotContain("acc_other", string.Join('\n', log.Lines));
+    }
+
     [Fact]
     public async Task An_open_banking_feed_is_never_taken_over_by_a_lesser_party_feeding_the_same_account()
     {
