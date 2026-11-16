@@ -172,7 +172,7 @@ export function SideNav({ pathname }: Readonly<{ pathname: string }>) {
   const fade = useEdgeFade();
   return (
     <>
-      <div ref={fade.ref} style={fade.style} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto" data-testid="side-nav">
+      <div ref={fade.ref} style={fade.style} className="flex min-h-0 flex-col gap-0.5 overflow-y-auto" data-testid="side-nav">
         <SideLink item={HOME_NAV} pathname={pathname} />
         {SIDE_NAV_GROUPS.map((group) => {
           const ids = group.ids.filter(usable);
@@ -187,7 +187,7 @@ export function SideNav({ pathname }: Readonly<{ pathname: string }>) {
           );
         })}
       </div>
-      <div className="shrink-0 border-t border-line pt-2">
+      <div className="mt-2 shrink-0 border-t border-line pt-2">
         <SideLink item={NAV_FEATURES.settings} pathname={pathname} />
       </div>
     </>
