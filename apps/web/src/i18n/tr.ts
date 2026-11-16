@@ -3137,6 +3137,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'plan.fund.chipTarget': 'Hedef',
   'plan.fund.chipSpent': 'Harcanan',
   'plan.fund.fill': 'Hedefe kadar doldur',
+  'plan.fund.empty': 'Havuza geri al',
   'plan.fund.snooze': 'Bu dönemi atla',
   'plan.fund.unsnooze': 'Bu dönem say',
   'plan.fund.edit': 'Konuyu düzenle',

@@ -3137,6 +3137,7 @@ export const en = {
   'plan.fund.chipTarget': 'Target',
   'plan.fund.chipSpent': 'Spent',
   'plan.fund.fill': 'Fill to target',
+  'plan.fund.empty': 'Back to the pool',
   'plan.fund.snooze': 'Skip this period',
   'plan.fund.unsnooze': 'Count it this period',
   'plan.fund.edit': 'Edit subject',

@@ -307,6 +307,11 @@ export function SubjectSheet({
               />
               <AmountChips view={view} model={model} fmt={fmt} currency={currency} selectedCents={typed} onPick={(cents) => setDraft((cents / 100).toFixed(2))} />
               <div className="flex flex-wrap gap-2">
+                {view.fundedCents > 0 && (
+                  <Button size="sm" variant="outline" data-testid="plan-fund-empty" onClick={() => void ops.fund(subject.id, 0).then(onClose)}>
+                    {t('plan.fund.empty')}
+                  </Button>
+                )}
                 {shortfallCents(view) > 0 && model.toAllocateOf(plan) > 0 && (
                   <Button size="sm" variant="outline" data-testid="plan-fund-fill" onClick={() => void ops.fillSubject(plan, subject.id).then(onClose)}>
                     {t('plan.fund.fill')}

@@ -235,6 +235,37 @@ describe('Planning (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
   }, 25_000);
 
+  it('#613 #618: Back to the pool empties a subject in one tap, and the history names the subject and the amounts', async () => {
+    await startEmptyPlan();
+    const before = screen.getByTestId('plan-toallocate').textContent;
+    await addHousingSubject('500');
+    const openSubject = async () => {
+      fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/)[0]);
+      await screen.findByTestId('plan-sheet');
+    };
+    await openSubject();
+    // a subject that holds nothing has nothing to give back
+    expect(screen.queryByTestId('plan-fund-empty')).toBeNull();
+    fireEvent.change(screen.getByTestId('plan-fund-input'), { target: { value: '500' } });
+    fireEvent.click(screen.getByTestId('plan-fund-save'));
+    await waitFor(() => expect(screen.queryByTestId('plan-sheet')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).not.toBe(before));
+
+    await openSubject();
+    fireEvent.click(await screen.findByTestId('plan-fund-empty'));
+    await waitFor(() => expect(screen.queryByTestId('plan-sheet')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('plan-toallocate').textContent).toBe(before));
+
+    fireEvent.click(screen.getAllByTestId('tab-home')[0]);
+    await screen.findByTestId('screen-home');
+    fireEvent.click(screen.getByTestId('home-notifications'));
+    fireEvent.click(await screen.findByTestId('notif-tab-activity'));
+    const list = await screen.findByTestId('history-list');
+    await waitFor(() => expect(list.textContent).toContain('You took €500.00 back from Housing'));
+    expect(list.textContent).toContain('You set aside €500.00 for Housing (was €0.00)');
+    expect(list.textContent).toContain('You added Housing to the plan');
+  }, 25_000);
+
   // the Unplanned source rows (user 2026-10-09): a paid recurring cost sits under Unplanned with its logo until Plan it
   // mirrors it — and the head reads the same before and after, because the money only moves from Unplanned into the subject
 

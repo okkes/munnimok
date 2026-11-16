@@ -3137,6 +3137,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'plan.fund.chipTarget': 'Doel',
   'plan.fund.chipSpent': 'Uitgegeven',
   'plan.fund.fill': 'Vul tot doelbedrag',
+  'plan.fund.empty': 'Terug naar de pot',
   'plan.fund.snooze': 'Deze periode overslaan',
   'plan.fund.unsnooze': 'Deze periode meetellen',
   'plan.fund.edit': 'Onderwerp bewerken',
