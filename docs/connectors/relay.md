@@ -115,9 +115,13 @@ them the way the api's own open-banking service once did:
   the first IBAN the connection reaches (`BankZones`; the party's home
   country otherwise). The fetches declare `X-Connector-Trigger: schedule`,
   so the control plane holds them to the interval as well (a refusal is
-  remembered, not fought); transactions a scheduled fetch lands wake the
-  phones of the spaces the accounts are attached to (push), a person's own
-  sync needs no push;
+  remembered, not fought); a scheduled fetch tells each space how many
+  booked rows are new to it (push, #610): the rows the feed did not hold
+  yet, on an account the space shows, from the day it shows it — a
+  reserved row is told when the bank books it, a space the fetch brought
+  nothing hears nothing, and neither does a space that was deleted (its
+  members and attachments stay on the server); a person's own sync needs
+  no push;
 - a fetch that became a job is followed for ten minutes and collected
   with the kept bundle (and the next job the collect answers with, and
   the next, until the walk is done); a job that asks a question leaves the session
