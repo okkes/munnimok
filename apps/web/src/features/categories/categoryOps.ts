@@ -165,6 +165,29 @@ export function copyGroups(spaceId: string, spaces: readonly SpaceRow[], rows: r
   return offeredOnce(ordered);
 }
 
+/** what a declined offer is filed under: the main's name for a main this space lacks (whichever space offers it), the main here for subs that would join one */
+export const copyDeclineKey = (group: CopyGroup): string => (group.main ? `main:${normName(group.main.name)}` : `into:${group.intoId ?? ''}`);
+
+/** what a decline remembers: the names that were on offer */
+export const copyDeclineNames = (group: CopyGroup): string[] => group.subs.map((sub) => normName(sub.name)).sort((a, b) => a.localeCompare(b));
+
+/** #390 r4 (user): a declined offer stays away until its main gains a sub that was not on offer then — a sub removed there brings nothing back */
+export function withoutDeclined(groups: readonly CopyGroup[], declined: Readonly<Record<string, string[]>> | null | undefined): CopyGroup[] {
+  return groups.filter((group) => {
+    const seen = declined?.[copyDeclineKey(group)];
+    return !seen || group.subs.some((sub) => !seen.includes(normName(sub.name)));
+  });
+}
+
+export async function declineCopyGroup(store: StorageBackend, repo: Repo, spaceId: string, group: CopyGroup): Promise<void> {
+  const declined = (await store.get('space', spaceId))?.copyDeclined ?? {};
+  await repo.upsert('space', spaceId, spaceId, { copyDeclined: { ...declined, [copyDeclineKey(group)]: copyDeclineNames(group) } });
+}
+
+export async function restoreCopyOffers(repo: Repo, spaceId: string): Promise<void> {
+  await repo.upsert('space', spaceId, spaceId, { copyDeclined: {} });
+}
+
 /** how much the banner announces: a main counts once with its subs, a sub joining a main here counts on its own */
 export const copyCount = (groups: readonly CopyGroup[]): number => groups.reduce((n, g) => n + (g.main ? 1 : g.subs.length), 0);
 

@@ -57,6 +57,7 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   catAdd: { key: 'act.catAdd', icon: 'shape-plus' },
   catEdit: { key: 'act.catEdit', icon: 'shape-outline' },
   catRemove: { key: 'act.catRemove', icon: 'shape-outline' },
+  catCopyDecline: { key: 'act.catCopyDecline', icon: 'shape-outline' },
   recAdd: { key: 'act.recAdd', icon: 'autorenew' },
   recEdit: { key: 'act.recEdit', icon: 'autorenew' },
   recRemove: { key: 'act.recRemove', icon: 'autorenew' },

@@ -20,6 +20,7 @@ import { Sheet } from '@/ui/Sheet';
 import {
   copyCount,
   copyGroups,
+  withoutDeclined,
   iconConflict,
   createMainCategory,
   createSubCategory,
@@ -356,11 +357,18 @@ export function ManageCategoriesScreen() {
   const rowById = (id: string) => customRows?.find((r) => r.id === id);
 
   // #390: what the user's other spaces have that this one lacks
-  const copyable = useQuery(
+  const copyOffers = useQuery(
     store,
-    async () => copyGroups(spaceId, (await store.allRows('space')).filter((s) => s.deleted === 0), await store.allRows('category')),
+    async () => {
+      const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+      const all = copyGroups(spaceId, spaces, await store.allRows('category'));
+      // #390 r4: what this space said no to stays out until its main gains a sub
+      const offered = withoutDeclined(all, spaces.find((s) => s.id === spaceId)?.copyDeclined);
+      return { offered, hidden: all.length - offered.length };
+    },
     [spaceId],
   );
+  const copyable = copyOffers?.offered;
   const copyTotal = copyCount(copyable ?? []);
 
   const openNewMain = () => {
@@ -1009,7 +1017,7 @@ export function ManageCategoriesScreen() {
       </Sheet>
 
       {/* #390: the other spaces' custom categories this space lacks — per space and main, every sub its own pick */}
-      <CopyCategoriesSheet open={copyOpen} onOpenChange={setCopyOpen} groups={copyable ?? []} />
+      <CopyCategoriesSheet open={copyOpen} onOpenChange={setCopyOpen} groups={copyable ?? []} hidden={copyOffers?.hidden ?? 0} />
 
       {/* hold-menu on a group header: the quiet actions live here now */}
       <Sheet

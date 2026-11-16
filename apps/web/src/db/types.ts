@@ -52,6 +52,13 @@ export interface SpaceRow extends SyncEnvelope {
   navTabs?: string[] | null;
   /** main categories switched off for this space (picker filtering only — data never blocks) */
   hiddenMains?: string[];
+  /**
+   * #390 r4: the copy offers from other spaces this space said no to — per
+   * main (`main:<name>` for one it lacks, `into:<id>` for one here that
+   * would gain subs), the sub names on offer at that moment. An offer comes
+   * back when it brings a name that is not among them.
+   */
+  copyDeclined?: Record<string, string[]>;
   /** Home balance band (user design 2026-08-01): what the big number IS.
    *  Absent = 'networth' (the pre-config behavior: every account summed). */
   balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
