@@ -90,7 +90,8 @@ internal static class AmazonManifest
             ],
             // LiveView first (confirmed 2026-08-05): correct credentials from a pooled browser land on /ap/cvf/request, the same from a
             // watched browser pass; Amazon challenges the client. MfaCode is relayable (a string); Image is the legacy OCR captcha
-            Challenges = [ChallengeType.LiveView, ChallengeType.MfaCode, ChallengeType.Image],
+            // AppApproval is the passive wait of CaptchaGate: a wall met mid-fetch on a browser somebody sits at (#623)
+            Challenges = [ChallengeType.LiveView, ChallengeType.MfaCode, ChallengeType.Image, ChallengeType.AppApproval],
             Session = new SessionSpec
             {
                 TtlSeconds = SessionTtlSeconds,

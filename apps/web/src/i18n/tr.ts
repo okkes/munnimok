@@ -2663,6 +2663,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'connect.approved': 'Onayladım',
   'connect.codeEntered': 'Girdim',
   'connect.approval.waiting': 'Tarafın uygulamasında onayın bekleniyor…',
+  'connect.check.waiting': 'O penceredeki kontrol bekleniyor…',
+  'connect.check.done': 'Çözdüm',
   'connect.taps.hint': 'Eşleşen her resme dokun, sonra onayla.',
   'connect.taps.submit': 'Onayla',
   'connect.taps.none': 'Hiçbiri eşleşmiyor',

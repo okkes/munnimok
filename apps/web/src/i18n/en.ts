@@ -2661,6 +2661,8 @@ export const en = {
   'connect.approved': 'I approved it',
   'connect.codeEntered': 'I entered it',
   'connect.approval.waiting': 'Waiting for your approval in the party’s app…',
+  'connect.check.waiting': 'Waiting for the check in that window…',
+  'connect.check.done': 'I solved it',
   'connect.taps.hint': 'Tap every matching picture, then confirm.',
   'connect.taps.submit': 'Confirm',
   'connect.taps.none': 'None match',

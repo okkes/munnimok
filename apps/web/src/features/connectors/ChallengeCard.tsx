@@ -9,6 +9,8 @@ import { challengeKey, encodeTaps, ownReturn } from './manifestForm';
 import { openPartyPage } from './redirect';
 import type { ChallengeView } from './types';
 
+const CHECK_IN_BROWSER = 'connect.challenge.captcha_in_browser';
+
 export interface ChallengeCardProps {
   provider: string;
   sessionId: string;
@@ -205,18 +207,21 @@ export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer, 
             </Button>
           </>
         );
-      case 'app_approval':
+      case 'app_approval': {
+        // #623: a check passed in a browser window travels as this type too, and there is no app to approve in
+        const check = challenge.promptKey === CHECK_IN_BROWSER;
         return (
           <>
             <div className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="connect-waiting">
-              <Icon name="cellphone-check" size={20} color="var(--m-accent-deep)" />
-              <span className="text-[13px] text-ink-2">{t('connect.approval.waiting')}</span>
+              <Icon name={check ? 'shield-check-outline' : 'cellphone-check'} size={20} color="var(--m-accent-deep)" />
+              <span className="text-[13px] text-ink-2">{t(check ? 'connect.check.waiting' : 'connect.approval.waiting')}</span>
             </div>
             <Button variant="outline" data-testid="connect-answer-submit" disabled={busy} onClick={() => onAnswer('')}>
-              {t('connect.approved')}
+              {t(check ? 'connect.check.done' : 'connect.approved')}
             </Button>
           </>
         );
+      }
       case 'image':
         return challenge.answerKind === 'taps' ? (
           <TapsAnswer url={image} busy={busy} onAnswer={onAnswer} />

@@ -71,8 +71,9 @@ public sealed class AmazonAdapterTests
         Assert.Contains(ChallengeType.MfaCode, manifest.Auth.Challenges);
         Assert.Contains(ChallengeType.Image, manifest.Auth.Challenges);
 
-        // AppApproval is gone: it told the user to approve in an app for a widget that has none
-        Assert.DoesNotContain(ChallengeType.AppApproval, manifest.Auth.Challenges);
+        // #623: the sign-in no longer asks it (the puzzle is streamed), but a wall met mid-fetch on an attended browser
+        // does, so the list names it
+        Assert.Contains(ChallengeType.AppApproval, manifest.Auth.Challenges);
     }
 
     [Fact]

@@ -2663,6 +2663,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'connect.approved': 'Ik heb goedgekeurd',
   'connect.codeEntered': 'Ik heb hem ingevoerd',
   'connect.approval.waiting': 'Wachten op je goedkeuring in de app van de partij…',
+  'connect.check.waiting': 'Wachten op de controle in dat venster…',
+  'connect.check.done': 'Ik heb hem opgelost',
   'connect.taps.hint': 'Tik op elke passende afbeelding en bevestig daarna.',
   'connect.taps.submit': 'Bevestigen',
   'connect.taps.none': 'Geen enkele past',
