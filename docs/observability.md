@@ -100,10 +100,20 @@ container — since 7.0 the same process serves the site and does the
 background work; see `infra/modules/render.mjs`) has shown transactions
 since 1.3; there is nothing to enable in the UI — the Performance page
 lists transaction groups as soon as an SDK sends them with a sample rate
-above 0. The retention is `GLITCHTIP_TRANSACTION_RETENTION_DAYS`
-(inherits `GLITCHTIP_RETENTION_DAYS`, 90 days); set it in the
-`glitchtip` service's environment if the volume ever matters. The names
+above 0. The list knows no builds and no periods: every figure in it
+is over all the timings GlitchTip still holds. The shared stack
+therefore keeps a month of them (`GLITCHTIP_TRANSACTION_RETENTION_DAYS:
+30` in the `glitchtip` service's environment, #603), so the averages
+are about the builds people run now; crash reports and everything else
+keep the default of `GLITCHTIP_RETENTION_DAYS`, 90 days. The names
 that ended in `_LIFE_DAYS` are ignored since 7.0.
+
+To judge one build, or one week, take two readings of
+`/api/0/organizations/<org>/transaction-groups/` and subtract: with a
+group's count `n` and average `a` at both moments,
+`(a2·n2 − a1·n1) / (n2 − n1)` is the average of what arrived in
+between. That is how the phone was read after the fixes of 8 and 15
+November.
 
 1. Open the environment's web project (`<stack>-pwa`, e.g.
    `munni-nas-prod-pwa`) → **Performance**.

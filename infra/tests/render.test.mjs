@@ -53,6 +53,7 @@ test('shared stack on lcl: glitchtip with its own database, vault, control, pgad
   assert.match(compose, /^    name: munni-lcl-shared-net$/m);
   const gt = envOf(block(compose, 'glitchtip'));
   assert.equal(gt.DATABASE_URL, 'postgres://munni:${POSTGRES_PASSWORD}@glitchtip-db:5432/glitchtip');
+  assert.equal(gt.GLITCHTIP_TRANSACTION_RETENTION_DAYS, '30', 'a month of performance timings; crash reports keep the default (#603)');
   assert.equal(gt.GLITCHTIP_DOMAIN, 'http://localhost:8383');
   assert.equal(gt.VALKEY_URL, 'redis://valkey:6379/0');
   assert.deepEqual(portsOf(block(compose, 'glitchtip')), ['8383:8000']);

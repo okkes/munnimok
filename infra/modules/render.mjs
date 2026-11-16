@@ -93,6 +93,8 @@ services:
       SECRET_KEY: \${GLITCHTIP_SECRET_KEY}
       GLITCHTIP_DOMAIN: ${s.urls.glitchtip}
       EMAIL_URL: \${GLITCHTIP_EMAIL_URL:-consolemail://}
+      # the Performance list knows no builds, only all-time figures: a month of timings keeps them about the builds people run
+      GLITCHTIP_TRANSACTION_RETENTION_DAYS: 30
 ${publish(p.glitchtip)}
     depends_on:
       glitchtip-db:
