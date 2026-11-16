@@ -37,11 +37,10 @@ import { resolveHomeBlocks } from './HomeCustomizeScreen';
 import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { NavShortcutsBlock, useHomeShortcuts } from '@/features/navigation/NavShortcuts';
-import { safeToSpend } from '@/domain/safeToSpend';
 import type { SafeToSpend } from '@/domain/safeToSpend';
-import { planHeld } from '@/application/safeToSpend';
 import { parseLocalDate } from '@/application/planningModel';
-import { SafeToSpendSheet } from './SafeToSpendSheet';
+import { safeToSpendColor } from './SafeToSpendScreen';
+import { forecastSafeToSpend } from './useSafeToSpend';
 import { HiddenFiguresSheet } from '@/features/privacy/HiddenFiguresSheet';
 import { MASK, SENSITIVE_KINDS } from '@/features/privacy/sensitive';
 import { BAND_MODES, bandEditable, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
@@ -64,7 +63,7 @@ import { AheadCircle } from '@/features/planning/AheadCircle';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { budgetDaysLeft, budgetOptsFor } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
-import { convertCents, sumCents } from '@/lib/rates';
+import { sumCents } from '@/lib/rates';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { setDisplayCurrency } from '@/features/currency/displayCurrencyPref';
 import { CURRENCIES } from '@/domain/countries';
@@ -377,29 +376,11 @@ export function HomeScreen() {
   // planning block (#128): only once the period has a plan
   const planning = usePlanning();
 
-  // #541: safe to spend over the space's own period — the picked accounts,
-  // minus the dues still open, minus the plan's set-asides the space picked.
-  // #349: mixed-currency accounts summed RAW made the base lie — convert
-  // each balance into the ledger currency first (a missing rate keeps the
-  // raw figure; still better than dropping the account)
-  const forecast = useMemo(() => {
-    if (!accounts || !allTxs || !allRecurrings || !space) return null;
-    const day = display?.cache.days.latest;
-    const converted = accounts.map((a) =>
-      a.currency && a.currency !== currency
-        ? { ...a, balanceCents: convertCents(a.balanceCents, a.currency, currency, day, display?.manual) ?? a.balanceCents }
-        : a,
-    );
-    return safeToSpend({
-      accounts: converted,
-      space,
-      recurrings: allRecurrings,
-      txs: allTxs,
-      held: planHeld(planning),
-      today: localToday(),
-    });
-  }, [accounts, allTxs, allRecurrings, space, planning, currency, display]);
-  const [forecastOpen, setForecastOpen] = useState(false);
+  // #541: the block's figure; its breakdown is a screen of its own
+  const forecast = useMemo(
+    () => forecastSafeToSpend({ accounts, txs: allTxs, recurrings: allRecurrings, space, planning, currency, display }),
+    [accounts, allTxs, allRecurrings, space, planning, currency, display],
+  );
   // #530: why the balance reads as stars
   const [hiddenInfoOpen, setHiddenInfoOpen] = useState(false);
 
@@ -733,18 +714,6 @@ export function HomeScreen() {
         </div>
       </Sheet>
 
-      {/* the number must never feel like magic (#541): the accounts, every
-          due with its date, the plan's set-asides as switches */}
-      {forecast && (
-        <SafeToSpendSheet
-          open={forecastOpen}
-          onOpenChange={setForecastOpen}
-          forecast={forecast}
-          accounts={accounts ?? []}
-          space={space}
-          currency={currency}
-        />
-      )}
       <HiddenFiguresSheet open={hiddenInfoOpen} onOpenChange={setHiddenInfoOpen} />
     </div>
   );
@@ -817,17 +786,13 @@ export function HomeScreen() {
   function renderCashflowBlock() {
     if (!forecast) return null; // no account money is spent from — never guess
     const empty = forecast.accounts.length === 0;
-    // the colour would tell what the stars hide (#530)
-    let color = 'var(--m-accent-deep)';
-    if (empty || hideSensitive) color = 'var(--m-ink-3)';
-    else if (forecast.cents < 0) color = 'var(--m-negative)';
-    else if (forecast.perDayCents < 1000) color = 'var(--m-warning)'; // under €10/day gets attention
+    const color = safeToSpendColor(forecast, hideSensitive);
     return (
       <>
         <div className="m-cap mt-5 mb-1 px-1">{t('cashflow.title')}</div>
         <button
           data-testid="home-cashflow"
-          onClick={() => setForecastOpen(true)}
+          onClick={() => void navigate({ to: '/safe-to-spend' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
           <Tile icon="calendar-arrow-right" bg={`color-mix(in srgb, ${color} 14%, transparent)`} color={color} />

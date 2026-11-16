@@ -26,6 +26,7 @@ import { UpdateGate } from '@/app/UpdateGate';
 const InviteScreen = lazyScreen(() => import('@/features/auth/InviteScreen'), 'InviteScreen');
 const HomeCustomizeScreen = lazyScreen(() => import('@/features/home/HomeCustomizeScreen'), 'HomeCustomizeScreen');
 const TxDetailCustomizeScreen = lazyScreen(() => import('@/features/transactions/TxDetailCustomizeScreen'), 'TxDetailCustomizeScreen');
+const SafeToSpendScreen = lazyScreen(() => import('@/features/home/SafeToSpendScreen'), 'SafeToSpendScreen');
 const TransactionsScreen = lazyScreen(() => import('@/features/transactions/TransactionsScreen'), 'TransactionsScreen');
 const TxDetailScreen = lazyScreen(() => import('@/features/transactions/TxDetailScreen'), 'TxDetailScreen');
 const TxCreateScreen = lazyScreen(() => import('@/features/transactions/TxFormSheet'), 'TxCreateScreen');
@@ -151,6 +152,8 @@ const txCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/t
 // #334 (user): home's coming-up see-all lands on the combined recurring +
 // loan list — a plain child route, so browser back returns to Home
 const upcomingRoute = createRoute({ getParentRoute: () => appRoute, path: '/upcoming', component: UpcomingScreen });
+// #541 (user 2026-11-16): safe to spend's breakdown is a screen of its own, behind Home's block
+const safeToSpendRoute = createRoute({ getParentRoute: () => appRoute, path: '/safe-to-spend', component: SafeToSpendScreen });
 const periodsRoute = createRoute({ getParentRoute: () => appRoute, path: '/periods', component: PeriodsScreen });
 // list routes render the master-detail layout: the list stays mounted
 // while a detail child slides in beside it at lg (animated, §4.2)
@@ -396,6 +399,7 @@ export const routeTree = rootRoute.addChildren([
     homeCustomizeRoute,
     txCustomizeRoute,
     upcomingRoute,
+    safeToSpendRoute,
     periodsRoute,
     transactionsRoute.addChildren([txCreateRoute, txDetailRoute, reimburseLinkRoute]),
     recurringRoute.addChildren([recurringDetailRoute, recurringTxRoute]),

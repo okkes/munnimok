@@ -57,7 +57,6 @@ describe('hide sensitive figures (#530)', () => {
     await screen.findByTestId('cashflow-breakdown');
     expect(screen.getByTestId('cashflow-headline').textContent).toBe(MASK);
     expect(screen.getByTestId('cashflow-accounts-total').textContent).toBe(MASK);
-    expect(screen.getByTestId('cashflow-total').textContent).toBe(MASK);
     expect(screen.queryByTestId('cashflow-bar')).toBeNull();
   }, 20_000);
 
