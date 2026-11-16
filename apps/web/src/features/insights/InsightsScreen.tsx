@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
+import { settleInsightDigest } from '@/application/inboxResolve';
 import { useInsightDigest, useInsightOps, useInsights } from '@/application/insights';
 import type { Insight, InsightGroup, InsightSeverity } from '@/domain/insights';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -53,6 +54,11 @@ export function InsightsScreen() {
   const ops = useInsightOps();
   const canEdit = useCanEdit(); // #505: a dismissal hides the card for every member
   useInsightDigest(insights);
+  // #614: the bell's digest row counts what waits here now, and goes with the last insight
+  const waiting = insights?.length;
+  useEffect(() => {
+    if (waiting !== undefined) void settleInsightDigest(store, spaceId, waiting).catch(() => undefined);
+  }, [store, spaceId, waiting]);
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const text = useInsightText(currency);

@@ -1,5 +1,6 @@
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
+import { WHATS_NEW_SEEN_KEY } from '@/application/notifications';
 import type { Lang } from '@/i18n';
 
 /**
@@ -1732,7 +1733,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
   },
 ];
 
-const SEEN_KEY = 'whatsNewSeenVersion';
+const SEEN_KEY = WHATS_NEW_SEEN_KEY;
 
 export const latestWhatsNewVersion = (): string | undefined => WHATS_NEW[0]?.version;
 

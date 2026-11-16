@@ -26,6 +26,8 @@ const CLEARED_KEY = 'notifClearedAt';
 const RETIRED_KEY = 'notifRetiredKeys';
 const CAP = 50;
 const RETIRED_CAP = 200;
+/** the release whose notes this device has read */
+export const WHATS_NEW_SEEN_KEY = 'whatsNewSeenVersion';
 
 const retiredKey = (kind: InboxKind, dedupeKey: string) => `${kind}:${dedupeKey}`;
 
@@ -70,6 +72,28 @@ export async function appendNotification(
     };
     await store.metaPut(LIST_KEY, [entry, ...list].slice(0, CAP));
   });
+}
+
+/**
+ * #614: rewrites the list in one step with the appends — `revise` answers an
+ * entry with itself, a corrected copy, or null to let it go. Returns what went.
+ * Nothing is retired: what left because it stopped being true may be said again.
+ */
+export async function reviseInbox(store: StorageBackend, revise: (entry: InboxEntry) => InboxEntry | null): Promise<InboxEntry[]> {
+  const dropped: InboxEntry[] = [];
+  await store.transact(['meta'], async () => {
+    const list = await readInbox(store);
+    const next: InboxEntry[] = [];
+    let changed = false;
+    for (const entry of list) {
+      const revised = revise(entry);
+      if (revised === null) dropped.push(entry);
+      else next.push(revised);
+      changed ||= revised !== entry;
+    }
+    if (changed) await store.metaPut(LIST_KEY, next);
+  });
+  return dropped;
 }
 
 /** unread = entries newer than the last time the tab was opened */

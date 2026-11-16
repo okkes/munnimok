@@ -114,10 +114,10 @@ describe('NotificationsBell (user identity)', () => {
     }
   }, 15_000);
 
-  /** the device's list before the app opens: one plan row about `spaceId`, this release already seen */
+  /** the device's list before the app opens: one digest row about `spaceId`, this release already seen */
   async function seedInbox(spaceId: string) {
     const store = new DexieBackend(new MunniDB(USER_TEST_DB));
-    await appendNotification(store, 'planOverspent', { n: '1', names: 'Groceries', spaceId }, `plan_${spaceId}`);
+    await appendNotification(store, 'digest', { n: '3', spaceId }, `digest_${spaceId}`);
     await store.metaPut('whatsNewSeenVersion', latestWhatsNewVersion());
     await store.metaPut('activeSpaceId', 's-user');
     const [entry] = await readInbox(store);
@@ -144,7 +144,7 @@ describe('NotificationsBell (user identity)', () => {
     await waitFor(() => expect(screen.getByTestId(`notif-inbox-meta-${entry.id}`).textContent).toContain('Trip'), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId(`notif-inbox-${entry.id}`));
-    await screen.findByTestId('screen-planning', {}, { timeout: 5000 });
+    await screen.findByTestId('screen-insights', {}, { timeout: 5000 });
     const db = new MunniDB(USER_TEST_DB);
     await waitFor(async () => expect((await db.meta.get('activeSpaceId'))?.value).toBe('s-trip'), { timeout: 5000 });
     db.close();

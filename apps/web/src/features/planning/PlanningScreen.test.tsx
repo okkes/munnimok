@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
@@ -265,6 +265,43 @@ describe('Planning (demo identity)', () => {
     expect(list.textContent).toContain('You set aside €500.00 for Housing (was €0.00)');
     expect(list.textContent).toContain('You added Housing to the plan');
   }, 25_000);
+
+  it('#614: the bell says a plan is in the red, and stops saying it once the plan is out of it', async () => {
+    await startEmptyPlan();
+    // a main that already spent, planned without money: born in the red
+    fireEvent.click((await screen.findAllByTestId(/^plan-unplanned-(?!sheet|plan)/))[0]);
+    await screen.findByTestId('plan-unplanned-sheet');
+    fireEvent.click(screen.getByTestId('plan-unplanned-plan'));
+    await screen.findByTestId('plan-editor');
+    fireEvent.click(screen.getByTestId('plan-editor-save'));
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).toMatch(/Over by/));
+
+    const redRow = () => [...document.querySelectorAll('[data-testid^="notif-inbox-"]')].find((el) => el.textContent?.includes('In the red in your plan'));
+    const openBell = async () => {
+      fireEvent.click(screen.getAllByTestId('tab-home')[0]);
+      await screen.findByTestId('screen-home');
+      fireEvent.click(screen.getByTestId('home-notifications'));
+      await screen.findByTestId('notif-tab-notifications');
+    };
+    // the next time the app opens, the red plan is in the bell
+    cleanup();
+    renderApp('/planning');
+    await screen.findByTestId('plan-header');
+    await openBell();
+    await waitFor(() => expect(redRow()).toBeTruthy());
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    fireEvent.click(screen.getAllByTestId('tab-planning')[0]);
+    await screen.findByTestId('plan-header');
+    fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/)[0]);
+    await screen.findByTestId('plan-sheet');
+    fireEvent.click(screen.getByTestId('plan-fund-chip-target'));
+    fireEvent.click(screen.getByTestId('plan-fund-save'));
+    await waitFor(() => expect(screen.getByTestId('plan-segment-expenses').textContent).not.toMatch(/Over by/));
+
+    await openBell();
+    await waitFor(() => expect(redRow()).toBeUndefined());
+  }, 30_000);
 
   // the Unplanned source rows (user 2026-10-09): a paid recurring cost sits under Unplanned with its logo until Plan it
   // mirrors it — and the head reads the same before and after, because the money only moves from Unplanned into the subject

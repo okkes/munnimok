@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { useData } from '@/app/data';
 import { usePlanningDot } from '@/application/planning';
+import { settleInbox } from '@/application/inboxResolve';
 import { osNotifyAllowed } from '@/application/spaceNotifications';
 import { useLang } from '@/i18n';
 import { hapticNotify } from '@/lib/platform';
@@ -31,6 +32,11 @@ export function PlanAttention() {
   useEffect(() => {
     publish(dot);
   }, [dot, publish]);
+
+  // #614: when the app opens and whenever this plan goes into or out of the red, the bell lets go of what no longer holds
+  useEffect(() => {
+    void settleInbox(store).catch(() => undefined);
+  }, [store, spaceId, dot]);
 
   useEffect(() => {
     void (async () => {

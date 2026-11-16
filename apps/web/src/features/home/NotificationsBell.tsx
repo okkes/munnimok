@@ -7,6 +7,7 @@ import { useQuery } from '@/db/useQuery';
 import { useSession } from '@/app/session';
 import { appendNotification, readInbox, stampNotifSeen, unreadNotifCount, type InboxEntry, type InboxKind } from '@/application/notifications';
 import { clearNotifications, syncNotificationsCleared } from '@/application/inboxClear';
+import { settleInbox } from '@/application/inboxResolve';
 import { refreshSpacesNotifyOff } from '@/application/spaceNotifications';
 import { WhatsNewSheet } from '@/features/help/WhatsNew';
 import { latestWhatsNewVersion, useMarkWhatsNewSeen, useWhatsNewUnseen } from '@/features/help/releaseNotes';
@@ -271,6 +272,11 @@ export function NotificationsBell() {
     if (open && tab === 'notifications') void stampNotifSeen(store);
   }, [open, tab, store]);
 
+  // #614: whoever looks at the list sees what is still true — in every space, not only the open one
+  useEffect(() => {
+    if (open) void settleInbox(store).catch(() => undefined);
+  }, [open, store]);
+
   const openActor = (to: '/profile' | 'members') => {
     setOpen(false);
     if (to === '/profile') void navigate({ to: '/profile' });
@@ -466,7 +472,14 @@ export function NotificationsBell() {
           </>
         )}
       </Sheet>
-      <WhatsNewSheet open={whatsnewOpen} onOpenChange={setWhatsnewOpen} />
+      <WhatsNewSheet
+        open={whatsnewOpen}
+        onOpenChange={(next) => {
+          setWhatsnewOpen(next);
+          // read: its row has said what it had to say
+          if (!next) void settleInbox(store).catch(() => undefined);
+        }}
+      />
     </>
   );
 }
