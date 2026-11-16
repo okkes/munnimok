@@ -53,15 +53,18 @@ export async function drainPull(
   spaceId: string,
   options: DrainOptions = {},
 ): Promise<number> {
+  const since = options.since ?? (((await store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0);
+  if (since > 0) return pullFrom(store, repo, backend, spaceId, since, options);
+  const taken = await takeSnapshot(store, repo, backend, spaceId, options);
+  if (taken.since === null) return taken.applied;
+  return taken.applied + (await pullFrom(store, repo, backend, spaceId, taken.since, options));
+}
+
+/** the changes after `from`, page by page; returns how many were applied */
+async function pullFrom(store: StorageBackend, repo: Repo, backend: SyncBackend, spaceId: string, from: number, options: DrainOptions): Promise<number> {
   const now = options.now ?? Date.now;
-  let since = options.since ?? (((await store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0);
+  let since = from;
   let applied = 0;
-  if (since === 0) {
-    const taken = await takeSnapshot(store, repo, backend, spaceId, options);
-    applied = taken.applied;
-    if (taken.since === null) return applied;
-    since = taken.since;
-  }
   for (;;) {
     const { ops, latestSeq, nextSince } = await backend.pull(spaceId, since);
     if (ops.length === 0) {
