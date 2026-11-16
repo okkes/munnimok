@@ -115,6 +115,8 @@ describe('Payoff planner (#413)', () => {
     await seedLoans();
     await screen.findByTestId('debtplan-hero');
     await screen.findByTestId('debtplan-order-loan-car');
+    // both seeded loans are in once the scale reads their total (the live query lands the writes one by one)
+    await waitFor(() => expect(screen.getByTestId('debtplan-chart-top').textContent).toMatch(/€10,000/));
     // the overall chart carries both walks, the minimums-only one dashed; every debt has its own
     expect(screen.getByTestId('debtplan-chart').querySelectorAll('path')).toHaveLength(2);
     expect(screen.getByTestId('debtplan-chart-baseline').getAttribute('stroke-dasharray')).toBe('5 4');
@@ -127,7 +129,7 @@ describe('Payoff planner (#413)', () => {
     expect(screen.getByTestId('debtplan-chart-zero').textContent).toMatch(/€0/);
     expect(screen.getByTestId('debtplan-debt-chart-loan-car-top').textContent).toMatch(/€4,000/);
     // the x labels never pile up: a handful, all different
-    const labels = [...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid])')].map((el) => el.textContent);
+    const labels = [...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid]):not([aria-hidden])')].map((el) => el.textContent);
     expect(labels.length).toBeGreaterThan(1);
     expect(labels.length).toBeLessThanOrEqual(7);
     expect(new Set(labels).size).toBe(labels.length);
@@ -146,7 +148,7 @@ describe('Payoff planner (#413)', () => {
     // a plan that ends within months is drawn over its own horizon, labelled by month
     fireEvent.change(screen.getByTestId('debtplan-lump'), { target: { value: '9900' } });
     await waitFor(() =>
-      expect([...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid])')].some((el) => /’[0-9]{2}$/.test(el.textContent ?? ''))).toBe(true),
+      expect([...screen.getByTestId('debtplan-chart').querySelectorAll('text:not([data-testid]):not([aria-hidden])')].some((el) => /’[0-9]{2}$/.test(el.textContent ?? ''))).toBe(true),
     );
     // the per-debt extra survives a reopen on this device
     cleanup();
