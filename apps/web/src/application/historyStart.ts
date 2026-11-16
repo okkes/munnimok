@@ -2,6 +2,7 @@ import { spaceAccountLinks } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { logActivity } from './activity';
+import { settleSpaceReimbursements } from './catalogMaintenance';
 import { requestReceiptMatching } from './receiptMatching';
 
 /**
@@ -81,6 +82,8 @@ export async function applyHistoryMove(store: StorageBackend, repo: Repo, spaceI
     for (const tx of own.filter((t) => t.deleted === 0 && t.date < newDate)) {
       await repo.remove('transaction', spaceId, tx.id);
     }
+    // #617: a reimbursement that named one of those rows is none any more
+    await settleSpaceReimbursements(store, repo, spaceId);
   } else if (newDate < oldDate) {
     // older: stored rows surface — the shops' receipts meet them now, not when the review opens (user 2026-10-09)
     requestReceiptMatching(spaceId);

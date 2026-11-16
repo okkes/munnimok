@@ -7,6 +7,7 @@ import { setSpaceAttachIntent } from './openHandoff';
 import { detachFeedFromSpace } from '@/application/accountAttach';
 import { purgeAccountRemnants } from '@/application/accountPurge';
 import { logActivity } from '@/application/activity';
+import { settleSpaceReimbursements } from '@/application/catalogMaintenance';
 import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { useData } from '@/app/data';
 import { useReadOnlySpaceIds } from '@/app/useCanEdit';
@@ -147,6 +148,8 @@ export function AttachSheet({
     for (const tx of await store.allRows('transaction')) {
       if (tx.deleted === 0 && tx.importBatchId === rollbackBatch.id) await repo.remove('transaction', tx.spaceId, tx.id);
     }
+    // #617: a reimbursement that named one of those rows is none any more
+    await settleSpaceReimbursements(store, repo, spaceId).catch(() => undefined);
     void logActivity(store, repo, spaceId, 'importRollback', `${rollbackBatch.count}`);
     setRollbackBatch(null);
   };

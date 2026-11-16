@@ -3,6 +3,7 @@ import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
 import { releaseAccountReferences } from './accountRelease';
+import { settleSpaceReimbursements } from './catalogMaintenance';
 
 /**
  * #279: deleting a global account used to end at engine.purgeSpace,
@@ -49,6 +50,8 @@ async function purgeSpaceRemnants(
   for (const tx of await store.bySpace('transaction', spaceId)) {
     if (tx.deleted === 0 && tx.accountId === accountId) await repo.remove('transaction', spaceId, tx.id);
   }
+  // #617: a reimbursement that named one of those rows is none any more
+  await settleSpaceReimbursements(store, repo, spaceId);
 }
 
 /**

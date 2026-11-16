@@ -16,6 +16,7 @@ import { LOCALES, useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { settleSpaceReimbursements } from '@/application/catalogMaintenance';
 import { countPreAnchorTx } from '@/application/loanBalance';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -319,6 +320,8 @@ async function deleteManualTxRow(
     }
   }
   await repo.remove('transaction', tx.spaceId, tx.id);
+  // #617: what it reimbursed, or was reimbursed by, stops reading as settled now — not at the next start
+  await settleSpaceReimbursements(store, repo, spaceId).catch(() => undefined);
   void logActivity(store, repo, spaceId, 'txDelete', txTitle(tx));
 }
 

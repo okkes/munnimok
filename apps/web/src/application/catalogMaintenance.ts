@@ -62,10 +62,13 @@ export async function applyCatalogTombstones(store: StorageBackend, repo: Repo):
 export async function normalizeReimbursements(store: StorageBackend, repo: Repo): Promise<number> {
   let touched = 0;
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
-  for (const space of spaces) {
-    touched += await normalizeSpaceReimbursements(repo, await visibleTransactions(store, space.id));
-  }
+  for (const space of spaces) touched += await settleSpaceReimbursements(store, repo, space.id);
   return touched;
+}
+
+/** #617: one space's bookkeeping settled now — right after its transactions were deleted, so neither side waits for the next start */
+export async function settleSpaceReimbursements(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  return normalizeSpaceReimbursements(store, repo, await visibleTransactions(store, spaceId));
 }
 
 /** settle bookkeeping still on a side whose links may all be gone */
@@ -162,9 +165,45 @@ const plainCats = (cats: TxSplitCat[] | null | undefined): { catId: string; amou
 const comparableSplits = (splits: TxSplit[] | null | undefined) =>
   splits?.length ? splits.map((p) => ({ ...p, txType: undefined, cats: plainCats(p.cats) ?? undefined })) : null;
 
-async function normalizeSpaceReimbursements(repo: Repo, allRows: SpaceRows): Promise<number> {
+/**
+ * #617: a link to a transaction that was deleted is no link — the expense
+ * lets go of it, and the settle pass then frees the value. Only a row this
+ * device holds as deleted counts: one it does not hold may not have arrived.
+ */
+async function dropLinksToDeleted(store: StorageBackend, repo: Repo, txs: SpaceRows): Promise<{ rows: SpaceRows; dropped: number }> {
+  const live = new Set(txs.map((tx) => tx.id));
+  const gone = new Map<string, boolean>();
+  const isGone = async (id: string): Promise<boolean> => {
+    if (live.has(id)) return false;
+    if (!gone.has(id)) gone.set(id, (await store.get('transaction', id))?.deleted === 1);
+    return gone.get(id) ?? false;
+  };
+  const rows: SpaceRows = [];
+  let dropped = 0;
+  for (const tx of txs) {
+    const links = tx.reimbursements ?? [];
+    const kept: TxReimbursement[] = [];
+    for (const link of links) {
+      if (!(await isGone(link.txId))) kept.push(link);
+    }
+    if (kept.length === links.length) {
+      rows.push(tx);
+      continue;
+    }
+    await writeTxTransform(repo, tx, { reimbursements: kept });
+    rows.push({ ...tx, reimbursements: kept });
+    dropped++;
+  }
+  return { rows, dropped };
+}
+
+async function normalizeSpaceReimbursements(store: StorageBackend, repo: Repo, allRows: SpaceRows): Promise<number> {
   const nameOf = (id: string) => id;
-  const txs = allRows.filter((tx) => tx.deleted === 0);
+  const { rows: txs, dropped } = await dropLinksToDeleted(
+    store,
+    repo,
+    allRows.filter((tx) => tx.deleted === 0),
+  );
   const renamed = await nameReimbursementParts(repo, txs);
   const linksOf = (tx: SpaceRows[number]) => renamed.get(tx.id) ?? tx.reimbursements ?? [];
 
@@ -175,7 +214,7 @@ async function normalizeSpaceReimbursements(repo: Repo, allRows: SpaceRows): Pro
       namedBy.set(link.txId, [...(namedBy.get(link.txId) ?? []), link]);
     }
   }
-  let touched = 0;
+  let touched = dropped;
   for (const tx of txs) {
     const own = linksOf(tx);
     const named = namedBy.get(tx.id) ?? [];

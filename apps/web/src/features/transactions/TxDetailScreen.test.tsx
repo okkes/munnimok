@@ -137,6 +137,40 @@ describe('TxDetailScreen (demo identity)', () => {
     await waitFor(() => expect(list.querySelector('[data-testid="tx-row-dm6"]')).toBeNull(), { timeout: 5000 });
   });
 
+  it('#617: deleting an expense frees the money that paid it back — at once, not at the next start', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(db), new HlcClock('reimb617'), { trackOutbox: false });
+    const expense = (await db.transactions.get('dm6'))!;
+    // dm6 (-52.40) with 1.00 paid back by a payment of 800.00, settled on both sides
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'pay617', {
+      accountId: 'demo_main', date: isoDaysAgo(1), amountCents: 80_000, currency: 'EUR', merchant: 'A friend', catId: 'uncategorized', needsReview: 0,
+      cats: [{ catId: 'uncategorized', amountCents: 79_900 }, { catId: 'reimbursed', amountCents: 100 }],
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dm6', {
+      reimbursements: [{ txId: 'pay617', amountCents: 100 }],
+      cats: [{ catId: expense.catId ?? 'uncategorized', amountCents: 5_140 }, { catId: 'reimbursed', amountCents: 100 }],
+    });
+    cleanup();
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    // the start-up pass leaves a consistent pair alone
+    expect((await db.transactions.get('pay617'))?.cats).toMatchObject([{ catId: 'uncategorized' }, { catId: 'reimbursed', amountCents: 100 }]);
+
+    fireEvent.click(await screen.findByTestId('tx-detail-delete'));
+    fireEvent.click(await screen.findByTestId('tx-delete-confirm'));
+    await waitFor(async () => {
+      expect((await db.transactions.get('dm6'))?.deleted).toBe(1);
+      const payback = await db.transactions.get('pay617');
+      expect(payback?.cats ?? null).toBeNull();
+      expect(payback?.catId).toBe('uncategorized');
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
   it('#228: deleting a manual row retires its row-key mint with its money', async () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
