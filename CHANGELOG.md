@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.22.0](https://github.com/okkes/munnimok/compare/v5.21.3...v5.22.0) (2026-11-16)
+
+
+### ✨ Features
+
+* **infra:** GlitchTip keeps a month of performance timings ([0cbdb36](https://github.com/okkes/munnimok/commit/0cbdb36eae4be01729f5f30a91eeb200accff01f)), closes [#603](https://github.com/okkes/munnimok/issues/603)
+* **sync:** a new device takes a space's rows instead of replaying its history ([df7188d](https://github.com/okkes/munnimok/commit/df7188deb6e5a55ed1af04350ca508d8b2c1262e)), closes [#606](https://github.com/okkes/munnimok/issues/606)
+
+
+### 🐞 Bug Fixes
+
+* **android:** the app says why it ended, and reads large tables in pages ([9712e03](https://github.com/okkes/munnimok/commit/9712e03e84ba50ab4bf8d659062d21a048ac63a2)), closes [#594](https://github.com/okkes/munnimok/issues/594)
+* **infra:** the vault names its version; Renovate raises the next one ([05d8935](https://github.com/okkes/munnimok/commit/05d8935f570c01537df3c64108bf1f6f6c485cf7)), closes [#601](https://github.com/okkes/munnimok/issues/601)
+* **push:** a nightly fetch tells each space its own new rows, once ([52b87c3](https://github.com/okkes/munnimok/commit/52b87c3bba33f0b84968eea1cc67cb4fe45073b7)), closes [#610](https://github.com/okkes/munnimok/issues/610)
+* **web:** a decimal field takes the comma a phone keypad offers ([afdedb3](https://github.com/okkes/munnimok/commit/afdedb35f7dd0a446bee63a19dae903d973308dc)), closes [#611](https://github.com/okkes/munnimok/issues/611)
+
 ## [5.21.3](https://github.com/okkes/munnimok/compare/v5.21.2...v5.21.3) (2026-11-15)
 
 
