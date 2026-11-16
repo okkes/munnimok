@@ -9,7 +9,7 @@ import { dataUrlBytes } from './PdfView';
 import { clampZoom } from './ZoomFrame';
 
 // pdf.js is mocked: happy-dom has no canvas, and the viewer's shape is what is under test
-vi.mock('pdfjs-dist', () => ({
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: () => ({
     promise: Promise.resolve({
@@ -22,7 +22,7 @@ vi.mock('pdfjs-dist', () => ({
     }),
   }),
 }));
-vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf.worker.js' }));
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default: 'pdf.worker.js' }));
 
 // happy-dom has no canvas — the downscaler is covered by lib/image.test.ts
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';

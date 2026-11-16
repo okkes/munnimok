@@ -12,11 +12,18 @@ export function dataUrlBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
-/** pdf.js arrives only when an invoice is opened (the type import above costs nothing); its worker is a bundled asset */
+/**
+ * pdf.js arrives only when an invoice is opened (the type import above costs
+ * nothing); its worker is a bundled asset. The LEGACY build, both files: since
+ * version 6 the default one is written for the newest browsers alone (it calls
+ * Math.sumPrecise and Map.getOrInsert without a fallback), and a phone whose
+ * web view is a year old would show "could not open" instead of the invoice.
+ * This one runs from Safari 18 and Chrome 125.
+ */
 async function openPdf(dataUrl: string): Promise<PDFDocumentProxy> {
-  const pdfjs = await import('pdfjs-dist');
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    const worker = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
+    const worker = await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url');
     pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
   }
   return pdfjs.getDocument({ data: dataUrlBytes(dataUrl) }).promise;
