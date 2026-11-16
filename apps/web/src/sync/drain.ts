@@ -1,9 +1,17 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
+import { snapshotOps } from './merge';
 
 /** where a space's pull resumes: the seq of the last op applied, per space */
 export const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
+/** a snapshot cut short: the head its first page named and the page it asks for next */
+export const snapshotKey = (spaceId: string) => `syncSnapshot_${spaceId}`;
+
+interface SnapshotMark {
+  seq: number;
+  after: string;
+}
 
 export interface DrainOptions {
   /** the cursor to resume from; absent, the stored one */
@@ -31,7 +39,12 @@ export interface DrainOptions {
  * worker both pull through here: the worker's own copy of this loop kept
  * the old head stamp after the engine was fixed.
  *
- * @returns how many ops were applied
+ * #606: a pull from the very start is a device that holds nothing of the
+ * space. It takes the rows as the server holds them first (`takeSnapshot`)
+ * and pulls only what came after them — the history grows with every change
+ * anyone makes, the rows do not.
+ *
+ * @returns how many rows and ops were applied
  */
 export async function drainPull(
   store: StorageBackend,
@@ -43,6 +56,12 @@ export async function drainPull(
   const now = options.now ?? Date.now;
   let since = options.since ?? (((await store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0);
   let applied = 0;
+  if (since === 0) {
+    const taken = await takeSnapshot(store, repo, backend, spaceId, options);
+    applied = taken.applied;
+    if (taken.since === null) return applied;
+    since = taken.since;
+  }
   for (;;) {
     const { ops, latestSeq, nextSince } = await backend.pull(spaceId, since);
     if (ops.length === 0) {
@@ -58,5 +77,46 @@ export async function drainPull(
     since = next;
     if (since >= latestSeq) return applied;
     if (options.deadline !== undefined && now() >= options.deadline) return applied;
+  }
+}
+
+/**
+ * The space's rows as the server holds them, page by page. `since` is where the pull goes on: the head the
+ * FIRST page named (what is written while the pages are read lies after it), 0 when there is no snapshot to
+ * take and the history is pulled from its start, null when the deadline came first — the mark left behind
+ * makes the next call ask for the page this one stopped at.
+ */
+async function takeSnapshot(
+  store: StorageBackend,
+  repo: Repo,
+  backend: SyncBackend,
+  spaceId: string,
+  options: DrainOptions,
+): Promise<{ since: number | null; applied: number }> {
+  if (!backend.snapshot) return { since: 0, applied: 0 };
+  const now = options.now ?? Date.now;
+  const mark = (await store.metaGet(snapshotKey(spaceId)))?.value as SnapshotMark | undefined;
+  let seq = mark?.seq;
+  let after = mark?.after;
+  let applied = 0;
+  for (;;) {
+    const page = await backend.snapshot(spaceId, after);
+    if (page === null) {
+      // no snapshot (any more): whatever pages were laid down stay, and the history from its start covers them
+      await store.metaDelete(snapshotKey(spaceId));
+      return { since: 0, applied };
+    }
+    seq ??= page.latestSeq;
+    await repo.applyRemoteOps(page.rows.flatMap((row) => snapshotOps(spaceId, row)));
+    applied += page.rows.length;
+    options.onPage?.(page.rows.length);
+    if (!page.next) {
+      await store.metaPut(cursorKey(spaceId), seq);
+      await store.metaDelete(snapshotKey(spaceId));
+      return { since: seq, applied };
+    }
+    after = page.next;
+    await store.metaPut(snapshotKey(spaceId), { seq, after } satisfies SnapshotMark);
+    if (options.deadline !== undefined && now() >= options.deadline) return { since: null, applied };
   }
 }

@@ -4,7 +4,7 @@ import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { HlcClock } from './hlc';
 import { applyOp } from './merge';
 import type { Op, SyncEnvelope } from './merge';
-import type { PullResult, PushResult, SpaceHead, SyncBackend } from './backend';
+import type { PullResult, PushResult, SnapshotPage, SpaceHead, SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
 import { reportError } from '@/lib/report';
 
@@ -25,6 +25,7 @@ vi.mock('@/lib/perf', () => ({
   },
 }));
 import { DEFAULT_PAUSE_MS, SyncEngine } from './engine';
+import { cursorKey, drainPull } from './drain';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -67,6 +68,7 @@ class InMemoryServer implements SyncBackend {
       const key = `${op.entity}:${op.entityId}`;
       const { row } = applyOp(this.state.get(key) ?? null, op);
       this.state.set(key, row);
+      this.rowSpace.set(key, spaceId);
       this.ops.push({ ...op, seq: ++this.lastSeq });
     }
     return { lastSeq: this.lastSeq };
@@ -85,11 +87,43 @@ class InMemoryServer implements SyncBackend {
     this.pulledSpaces.push(spaceId);
     const all = this.ops.filter((o) => o.seq > since && o.spaceId === spaceId);
     const page = all.slice(0, this.pageSize);
+    this.opsServed += page.length;
     const nextSince = page.length > 0 ? page.at(-1)!.seq : since;
     return {
       ops: page,
       latestSeq: this.lastSeq,
       ...(this.omitNextSince ? {} : { nextSince }),
+    };
+  }
+
+  /** #606: rows to a snapshot page; null = this server hands out none, as for a feed read up to an archive point */
+  snapshotPage: number | null = null;
+  /** what each snapshot request asked with, in order */
+  snapshotCalls: (string | undefined)[] = [];
+  /** the snapshot request with this number (from 1) fails once, like a connection that drops */
+  snapshotFailsAt: number | null = null;
+  /** how many ops the pulls handed out */
+  opsServed = 0;
+  private readonly rowSpace = new Map<string, string>();
+
+  async snapshot(spaceId: string, after?: string): Promise<SnapshotPage | null> {
+    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    if (this.snapshotPage === null) return null;
+    this.snapshotCalls.push(after);
+    if (this.snapshotCalls.length === this.snapshotFailsAt) {
+      this.snapshotFailsAt = null;
+      throw new TypeError('connection lost');
+    }
+    const keys = [...this.state.keys()].filter((key) => this.rowSpace.get(key) === spaceId && (after === undefined || key > after)).sort((a, b) => (a < b ? -1 : 1));
+    const page = keys.slice(0, this.snapshotPage);
+    return {
+      rows: page.map((key) => {
+        const { fieldVersions, deleted: _deleted, ...data } = this.state.get(key)!;
+        const at = key.indexOf(':');
+        return { entity: key.slice(0, at), entityId: key.slice(at + 1), data, fieldVersions };
+      }),
+      latestSeq: Math.max(0, ...this.ops.filter((o) => o.spaceId === spaceId).map((o) => o.seq)),
+      next: page.length < keys.length ? page.at(-1)! : null,
     };
   }
 
@@ -204,6 +238,109 @@ describe('SyncEngine', () => {
     off();
 
     expect(seen).toEqual(['0/1 0', '0/1 4', '0/1 8', '0/1 10', '1/1 10']);
+    expect(await fresh.db.categories.count()).toBe(9);
+  });
+
+  /** a space with more history than rows: nine categories, three of them renamed twice */
+  async function writtenSpace(wall: () => number) {
+    const writer = device('devWriter606', wall, server);
+    dbs.push(writer.db);
+    await writer.repo.upsert('space', 'big', 'big', { name: 'Big', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    for (let i = 0; i < 9; i++) await writer.repo.upsert('category', 'big', `c${i}`, { name: `Category ${i}`, color: 'green' });
+    for (let i = 0; i < 3; i++) {
+      await writer.repo.upsert('category', 'big', `c${i}`, { name: `Renamed ${i}` });
+      await writer.repo.upsert('category', 'big', `c${i}`, { name: `Renamed again ${i}` });
+    }
+    await writer.repo.remove('category', 'big', 'c8');
+    await writer.engine.syncAll();
+    return writer;
+  }
+
+  it('a device that holds nothing of a space takes its rows as they stand, not its history (#606)', async () => {
+    let w = 3_600_000;
+    const writer = await writtenSpace(() => ++w);
+
+    server.snapshotPage = 4;
+    // the writer's own round was handed its changes back: counted from here
+    server.opsServed = 0;
+    const fresh = device('devFresh606', () => ++w, server);
+    dbs.push(fresh.db);
+    const seen: string[] = [];
+    const off = fresh.engine.onProgress((p) => {
+      if (p.phase === 'spaces') seen.push(`${p.done}/${p.total} ${p.changes}`);
+    });
+    await fresh.engine.syncAll();
+    off();
+
+    // ten rows in three pages, and not one of the seventeen changes that made them
+    expect(server.snapshotCalls).toEqual([undefined, 'category:c3', 'category:c7']);
+    expect(server.opsServed).toBe(0);
+    expect(seen).toEqual(['0/1 0', '0/1 4', '0/1 8', '0/1 10', '1/1 10']);
+    // the same rows, stamp for stamp: a later change from either device merges as if the history had been replayed
+    const strip = (rows: { id: string }[]) => [...rows].sort((a, b) => a.id.localeCompare(b.id));
+    expect(strip(await fresh.db.categories.toArray())).toEqual(strip(await writer.db.categories.toArray()));
+    expect((await fresh.db.categories.get('c8'))?.deleted).toBe(1);
+    expect((await fresh.db.spaces.get('big'))?.name).toBe('Big');
+
+    // from here it pulls like any device: the next change arrives as a change
+    await writer.repo.upsert('category', 'big', 'c4', { name: 'After the snapshot' });
+    await writer.engine.syncAll();
+    await fresh.engine.syncAll();
+    expect((await fresh.db.categories.get('c4'))?.name).toBe('After the snapshot');
+    expect(server.opsServed).toBe(2); // one to each device: the writer's own comes back to it
+    expect(server.snapshotCalls).toHaveLength(3);
+  });
+
+  it('a snapshot cut short goes on at the page it stopped, and what changed meanwhile still arrives (#606)', async () => {
+    let w = 3_700_000;
+    const writer = await writtenSpace(() => ++w);
+
+    server.snapshotPage = 4;
+    server.snapshotFailsAt = 2;
+    const fresh = device('devCut606', () => ++w, server);
+    dbs.push(fresh.db);
+    await fresh.engine.syncAll();
+    expect(fresh.engine.getStatus()).toBe('offline');
+    expect(await fresh.db.categories.count()).toBe(4);
+    expect(await fresh.storeBackend.metaGet(cursorKey('big'))).toBeUndefined();
+
+    // a row of the page already taken changes before the device comes back
+    await writer.repo.upsert('category', 'big', 'c1', { name: 'Changed in between' });
+    await writer.engine.syncAll();
+
+    await fresh.engine.syncAll();
+    expect(server.snapshotCalls).toEqual([undefined, 'category:c3', 'category:c3', 'category:c7']);
+    expect(await fresh.db.categories.count()).toBe(9);
+    expect((await fresh.db.categories.get('c1'))?.name).toBe('Changed in between');
+    expect((await fresh.db.spaces.get('big'))?.name).toBe('Big');
+  });
+
+  it('a worker\'s short wake takes the pages its time allows and the next wake takes the rest (#606)', async () => {
+    let w = 3_800_000;
+    await writtenSpace(() => ++w);
+    server.snapshotPage = 4;
+    const fresh = device('devWake606', () => ++w, server);
+    dbs.push(fresh.db);
+
+    let clock = 0;
+    const now = () => clock;
+    // the deadline passes while the first page is applied: the wake ends there
+    const first = await drainPull(fresh.storeBackend, fresh.repo, {
+      push: (...args) => server.push(...args),
+      pull: (...args) => server.pull(...args),
+      listSpaces: () => server.listSpaces(),
+      heads: () => server.heads(),
+      snapshot: async (spaceId, after) => {
+        clock += 10;
+        return server.snapshot(spaceId, after);
+      },
+    }, 'big', { deadline: 5, now });
+    expect(first).toBe(4);
+    expect(await fresh.storeBackend.metaGet(cursorKey('big'))).toBeUndefined();
+
+    const second = await drainPull(fresh.storeBackend, fresh.repo, server, 'big');
+    expect(second).toBe(6);
+    expect(server.snapshotCalls).toEqual([undefined, 'category:c3', 'category:c7']);
     expect(await fresh.db.categories.count()).toBe(9);
   });
 

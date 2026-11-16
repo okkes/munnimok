@@ -9,7 +9,7 @@ import type { EntityName, OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
 import { SyncHttpError, isLostConnection } from './backend';
-import { cursorKey, drainPull } from './drain';
+import { cursorKey, drainPull, snapshotKey } from './drain';
 import { dropUnstamped, unstampWrites } from './merge';
 import type { SyncEnvelope } from './merge';
 import { noteUnsavedUndone } from './spaceAccess';
@@ -571,6 +571,8 @@ export class SyncEngine {
       await this.store.outboxDelete(queued.map((o) => o.opId));
       await this.store.metaDelete(parkedKey(spaceId));
       await this.store.metaDelete(cursorKey(spaceId));
+      // a snapshot cut short would go on at the page it stopped: the rows before it would keep their unstamped fields
+      await this.store.metaDelete(snapshotKey(spaceId));
       await this.store.metaPut(undoKey(spaceId), [...new Set([...pending, ...rows])]);
       // counted by row: one change of the person is several ops, and the app's own passes queued ops too
       if (rows.length > 0) {
@@ -681,6 +683,7 @@ export class SyncEngine {
       }
       await this.store.outboxDeleteBySpace(spaceId);
       await this.store.metaDelete(cursorKey(spaceId));
+      await this.store.metaDelete(snapshotKey(spaceId));
       // #306: parked ops died with the space (they were re-offered every
       // session — a lingering 403 POST per boot); the eviction tombstone
       // deliberately survives this purge

@@ -114,6 +114,72 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.False(SyncWriter.IsUniqueViolation(new DbUpdateException("save failed", new InvalidOperationException())));
     }
 
+    /// <summary>#606: a device without the space takes its rows as they stand, a page at a time, and pulls from the first page's head.</summary>
+    [Fact]
+    public async Task A_snapshot_comes_in_pages_and_names_where_the_history_continues()
+    {
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor("alice");
+        var total = SyncEndpoints.SnapshotPageRows + 500;
+        foreach (var chunk in Enumerable.Range(0, total).Chunk(1000))
+        {
+            var push = await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+                [.. chunk.Select(i => Op(spaceId, $"c{i:D5}", "name", $"Category {i}", $"{100 + i:D9}-0000-devA"))]));
+            Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync());
+        }
+
+        var first = await alice.GetFromJsonAsync<BootstrapResponse>($"/sync/{spaceId}/bootstrap");
+        Assert.Equal(SyncEndpoints.SnapshotPageRows, first!.Rows.Count);
+        Assert.Equal(total, first.LatestSeq);
+        Assert.NotNull(first.Next);
+
+        // a change made between two pages lies after the first page's head: the pull that follows the snapshot brings it
+        await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "c00000", "name", "Renamed", "000900000-0000-devA")]));
+
+        var second = await alice.GetFromJsonAsync<BootstrapResponse>($"/sync/{spaceId}/bootstrap?after={Uri.EscapeDataString(first.Next!)}");
+        Assert.Equal(500, second!.Rows.Count);
+        Assert.Null(second.Next);
+        Assert.Equal(total, first.Rows.Concat(second.Rows).Select(r => r.EntityId).Distinct().Count());
+        var since = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since={first.LatestSeq}");
+        Assert.Equal("Renamed", Assert.Single(since!.Ops).Fields["name"].GetString());
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await alice.GetAsync($"/sync/{spaceId}/bootstrap?after=nocolon")).StatusCode);
+    }
+
+    /// <summary>The in-memory database of these tests runs any expression; Postgres must be able to run the page as SQL.</summary>
+    [Fact]
+    public void A_snapshot_page_is_a_query_the_database_itself_runs()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql("Host=munni-db.invalid;Database=munni;Username=munni;Password=x").Options;
+        using var db = new AppDbContext(options);
+
+        var sql = SyncEndpoints.SnapshotRowsAfter(db, "space_1", ("category", "c1")).Take(SyncEndpoints.SnapshotPageRows + 1).ToQueryString();
+
+        Assert.Contains("\"Entity\" > ", sql);
+        Assert.Contains("\"EntityId\" > ", sql);
+        Assert.Matches(@"ORDER BY \w+\.""Entity"", \w+\.""EntityId""", sql);
+        Assert.Contains("LIMIT", sql);
+    }
+
+    [Fact]
+    public async Task A_snapshot_page_ends_before_it_outgrows_one_download()
+    {
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor("alice");
+        // three rows, each holding close to half a page's worth of data (a picture): two fit, the third starts the next page
+        var heavy = new string('x', SyncEndpoints.SnapshotPageChars * 45 / 100);
+        foreach (var id in new[] { "p1", "p2", "p3" })
+        {
+            var push = await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, id, "picture", heavy, "000000100-0000-devA")]));
+            Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync());
+        }
+
+        var first = await alice.GetFromJsonAsync<BootstrapResponse>($"/sync/{spaceId}/bootstrap");
+        Assert.Equal(["p1", "p2"], first!.Rows.Select(r => r.EntityId));
+        var second = await alice.GetFromJsonAsync<BootstrapResponse>($"/sync/{spaceId}/bootstrap?after={Uri.EscapeDataString(first.Next!)}");
+        Assert.Equal(["p3"], second!.Rows.Select(r => r.EntityId));
+        Assert.Null(second.Next);
+    }
 }
 
 public class SyncApiFactory : WebApplicationFactory<Program>

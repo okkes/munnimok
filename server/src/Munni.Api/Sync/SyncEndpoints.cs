@@ -13,7 +13,14 @@ public sealed record PushResponse(long LastSeq, int Accepted, int Duplicates);
 // after a capped 1000-op page skipped everything in between forever.
 public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq, long NextSince);
 public sealed record BootstrapRow(string Entity, string EntityId, bool Deleted, JsonElement Data, Dictionary<string, string> FieldVersions);
-public sealed record BootstrapResponse(List<BootstrapRow> Rows, long LatestSeq);
+/// <summary>
+/// One page of a space's rows as they stand (#606): what a device without the space takes instead of
+/// replaying its history.
+/// </summary>
+/// <param name="LatestSeq">The space's head, read before the page's rows. Whatever is written while the pages
+/// are read lies after the FIRST page's value: the device pulls from there once it holds every page.</param>
+/// <param name="Next">What the next page is asked with (<c>after</c>); null on the last one.</param>
+public sealed record BootstrapResponse(List<BootstrapRow> Rows, long LatestSeq, string? Next = null);
 /// <summary>
 /// Where one space the caller reaches stands: its head as the caller may pull
 /// it (capped for an archived feed), and the caller's role there (#505: a
@@ -157,25 +164,69 @@ public static class SyncEndpoints
         return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap), Math.Min(nextSince, cap)));
     }
 
-    private static async Task<IResult> Bootstrap(string spaceId, AppDbContext db, HttpContext http)
+    /// <summary>How many rows one page of a snapshot holds at most.</summary>
+    internal const int SnapshotPageRows = 2000;
+
+    /// <summary>
+    /// A page also ends once its rows' data passes this many characters (a picture is tens of thousands): one
+    /// request stays a download a phone finishes inside the app's limit per request.
+    /// </summary>
+    internal const int SnapshotPageChars = 2_000_000;
+
+    /// <summary>The longest <c>after</c> a page can have named: an entity's name, the colon, an entity id.</summary>
+    private const int SnapshotCursorMaximum = 64 + 1 + 128;
+
+    /// <summary>
+    /// A space's rows after the last one of the page before, in the order of the primary key: the database
+    /// walks one index from where the page before ended, however many rows the space holds.
+    /// </summary>
+    internal static IQueryable<EntityRow> SnapshotRowsAfter(AppDbContext db, string spaceId, (string Entity, string EntityId)? last)
+    {
+        var rows = db.EntityRows.AsNoTracking().Where(r => r.SpaceId == spaceId);
+        if (last is var (entity, entityId))
+        {
+            rows = rows.Where(r => string.Compare(r.Entity, entity) > 0 || (r.Entity == entity && string.Compare(r.EntityId, entityId) > 0));
+        }
+        return rows.OrderBy(r => r.Entity).ThenBy(r => r.EntityId);
+    }
+
+    private static async Task<IResult> Bootstrap(string spaceId, string? after, AppDbContext db, HttpContext http)
     {
         var member = await RequireMember(spaceId, db, http);
         if (member is not null)
         {
-            // feeds: full snapshot only with UNCAPPED access — the
-            // materialized rows can't be filtered by seq, so archived
-            // readers use capped pulls from 0 instead
             var feedCap = await Accounts.FeedAccess.ReadCapAsync(db, http.GetUserId(), spaceId);
-            if (feedCap != long.MaxValue) return member;
+            if (feedCap is null) return member;
+            // rows as they stand cannot be cut off at the point an archived attachment reads up to: that
+            // reader is told there is no snapshot for them, and pulls the capped history from its start
+            if (feedCap != long.MaxValue) return Results.NoContent();
         }
 
-        var space = await db.Spaces.FindAsync(spaceId);
-        var rows = await db.EntityRows.Where(r => r.SpaceId == spaceId).ToListAsync();
-        var dtos = rows.Select(r => new BootstrapRow(
-            r.Entity, r.EntityId, r.Deleted,
-            JsonSerializer.Deserialize<JsonElement>(r.DataJson),
-            JsonSerializer.Deserialize<Dictionary<string, string>>(r.FieldVersionsJson) ?? new())).ToList();
-        return Results.Ok(new BootstrapResponse(dtos, space?.LastSeq ?? 0));
+        (string Entity, string EntityId)? last = null;
+        if (!string.IsNullOrEmpty(after))
+        {
+            var colon = after.IndexOf(':');
+            if (colon <= 0 || colon == after.Length - 1 || after.Length > SnapshotCursorMaximum) return Results.BadRequest(new { error = "after is not a page this endpoint named" });
+            last = (after[..colon], after[(colon + 1)..]);
+        }
+
+        // the head BEFORE the rows: every change up to it is in the rows read after it
+        var head = await db.Spaces.Where(s => s.Id == spaceId).Select(s => s.LastSeq).FirstOrDefaultAsync();
+        var rows = await SnapshotRowsAfter(db, spaceId, last).Take(SnapshotPageRows + 1).ToListAsync();
+
+        var page = new List<BootstrapRow>(Math.Min(rows.Count, SnapshotPageRows));
+        var chars = 0;
+        foreach (var row in rows.Take(SnapshotPageRows))
+        {
+            if (page.Count > 0 && chars + row.DataJson.Length > SnapshotPageChars) break;
+            chars += row.DataJson.Length;
+            page.Add(new BootstrapRow(
+                row.Entity, row.EntityId, row.Deleted,
+                JsonSerializer.Deserialize<JsonElement>(row.DataJson),
+                JsonSerializer.Deserialize<Dictionary<string, string>>(row.FieldVersionsJson) ?? new()));
+        }
+        var next = page.Count < rows.Count ? $"{page[^1].Entity}:{page[^1].EntityId}" : null;
+        return Results.Ok(new BootstrapResponse(page, head, next));
     }
 
     private static async Task<IResult?> RequireMember(string spaceId, AppDbContext db, HttpContext http)

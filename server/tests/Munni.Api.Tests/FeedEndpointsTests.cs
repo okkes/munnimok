@@ -244,8 +244,8 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         var capped = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Single(capped!.Ops);
         Assert.Equal("tx-before", capped.Ops[0].EntityId);
-        // archived readers get no full snapshot either
-        Assert.Equal(HttpStatusCode.Forbidden, (await bob.GetAsync($"/sync/{feed}/bootstrap")).StatusCode);
+        // an archived reader is told there is no snapshot for them (rows as they stand cannot stop at the archive point): the capped pull above is their way in
+        Assert.Equal(HttpStatusCode.NoContent, (await bob.GetAsync($"/sync/{feed}/bootstrap")).StatusCode);
 
         // bob (owner after auto-promotion) invites alice back; accepting
         // revives her attachment automatically — new data flows again

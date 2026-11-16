@@ -1,5 +1,14 @@
 import { deviceHeaders, noticeDeviceRevoked } from '@/lib/api';
-import type { Op } from './merge';
+import type { Op, SnapshotRow } from './merge';
+
+/** #606: one page of a space's rows as the server holds them */
+export interface SnapshotPage {
+  rows: SnapshotRow[];
+  /** the space's head, read before the page's rows: the FIRST page's value is where the pull goes on */
+  latestSeq: number;
+  /** what the next page is asked with; absent or null on the last */
+  next?: string | null;
+}
 
 export interface PushResult {
   lastSeq: number;
@@ -27,6 +36,12 @@ export interface SpaceHead {
 export interface SyncBackend {
   push(spaceId: string, clientId: string, ops: Op[]): Promise<PushResult>;
   pull(spaceId: string, since: number): Promise<PullResult>;
+  /**
+   * #606: a page of the space's rows as they stand, for a device that holds nothing of it; null when there is
+   * no snapshot to take (a feed read up to an archive point) and the history is pulled from its start instead.
+   * A transport without the method has no snapshots at all.
+   */
+  snapshot?(spaceId: string, after?: string): Promise<SnapshotPage | null>;
   /** space ids this user is a member of — how a fresh device discovers its data */
   listSpaces(): Promise<string[]>;
   /** #569: every space the user reaches with its head, in one call — a round pulls only what moved */
@@ -99,6 +114,17 @@ export class ApiSyncBackend implements SyncBackend {
     });
     if (!res.ok) throw await this.failed(res);
     return (await res.json()) as PullResult;
+  }
+
+  async snapshot(spaceId: string, after?: string): Promise<SnapshotPage | null> {
+    const query = after ? `?after=${encodeURIComponent(after)}` : '';
+    const res = await fetch(`${this.options.baseUrl}/sync/${spaceId}/bootstrap${query}`, {
+      headers: await this.headers(),
+      signal: withinLimit(),
+    });
+    if (res.status === 204) return null;
+    if (!res.ok) throw await this.failed(res);
+    return (await res.json()) as SnapshotPage;
   }
 
   async listSpaces(): Promise<string[]> {

@@ -119,8 +119,18 @@ sequenceDiagram
 - **Offline is the normal case**: ops queue in the outbox for days if
   needed; on reconnect the engine flushes and pulls. Order of arrival
   never matters — HLC per field makes every interleaving converge.
-- **New device**: `GET /sync/{space}/bootstrap` streams the materialized
-  snapshot instead of replaying years of ops.
+- **New device** (#606): a space the device has no cursor for is taken as
+  its rows, not its history — `GET /sync/{space}/bootstrap` hands the
+  materialized rows out in pages (2,000 rows or about 2 MB of row data,
+  whichever comes first; `after` names the page before). Each row comes
+  with the stamp of every field, so the device lays it down by the same
+  per-field rule a pulled change follows. The first page names the
+  space's head as it stood before the rows were read: once every page
+  is in, the cursor is set there and an ordinary pull brings whatever
+  was written meanwhile. A snapshot cut short leaves a mark (the head,
+  the next page) and goes on from it; a feed read only up to an archive
+  point gets `204` and replays its capped history instead, since rows
+  as they stand cannot be cut off at that point.
 - Deletes are tombstones, so an offline device cannot resurrect a row.
 
 ## 4. Two people, one shared space
