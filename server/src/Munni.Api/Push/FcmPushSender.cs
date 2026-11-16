@@ -39,6 +39,7 @@ public static class FcmTexts
             "Birisi", "bir alan", "Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓"),
     };
 
+    private const string NewTransactions = "new-transactions";
     private const string SettledGet = "settled-get";
     private const string SettledPay = "settled-pay";
     private const string SettledEven = "settled-even";
@@ -123,25 +124,29 @@ public static class FcmTexts
     /// files the notification by it, which is how the app finds and removes one that was handled.</summary>
     public static string? Tag(JsonElement payload)
     {
-        string Str(string name) =>
-            payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-        var type = Str("type");
-        switch (type)
+        var type = Text(payload, "type");
+        return type switch
         {
-            case "new-transactions":
-                var spaceId = Str("spaceId");
-                return $"new-tx-{(SpaceIdShape.IsMatch(spaceId) ? spaceId : "all")}";
-            case "split":
-                var cents = payload.TryGetProperty("cents", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt64() : 0;
-                var kind = Str("kind");
-                if (kind == "settled") kind = cents switch { > 0 => SettledGet, < 0 => SettledPay, _ => SettledEven };
-                var splitId = Str("splitId");
-                return $"split-{kind}-{(SplitIdShape.IsMatch(splitId) ? splitId : "")}";
-            case "friend-request" or "friend-accept" or "space-invite" or "space-join" or "member-removed" or "member-role" or "test":
-                return type;
-            default:
-                return null;
-        }
+            NewTransactions => $"new-tx-{Shaped(SpaceIdShape, Text(payload, "spaceId"), "all")}",
+            "split" => $"split-{SplitKind(payload)}-{Shaped(SplitIdShape, Text(payload, "splitId"), "")}",
+            "friend-request" or "friend-accept" or "space-invite" or "space-join" or "member-removed" or "member-role" or "test" => type,
+            _ => null,
+        };
+    }
+
+    private static string Text(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    private static string Shaped(System.Text.RegularExpressions.Regex shape, string value, string otherwise) =>
+        shape.IsMatch(value) ? value : otherwise;
+
+    /// `settled` is worded, and tagged, by the receiver's own figure
+    private static string SplitKind(JsonElement payload)
+    {
+        var kind = Text(payload, "kind");
+        if (kind != "settled") return kind;
+        var cents = payload.TryGetProperty("cents", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt64() : 0;
+        return cents switch { > 0 => SettledGet, < 0 => SettledPay, _ => SettledEven };
     }
 
     /// <summary>title+body for a payload, or null for types with no visible text</summary>
@@ -157,9 +162,9 @@ public static class FcmTexts
 
         var body = type switch
         {
-            "new-transactions" when payload.TryGetProperty("count", out var c) && c.TryGetInt32(out var n) && n != 1 =>
+            NewTransactions when payload.TryGetProperty("count", out var c) && c.TryGetInt32(out var n) && n != 1 =>
                 texts.Many.Replace("{n}", n.ToString()),
-            "new-transactions" => texts.One,
+            NewTransactions => texts.One,
             "friend-request" => Social(texts.FriendRequest),
             "friend-accept" => Social(texts.FriendAccept),
             "space-invite" => Social(texts.SpaceInvite),
@@ -174,7 +179,7 @@ public static class FcmTexts
         // #551: a notification about one space wears its name as the title — the lock screen already says
         // "munni" above it; the social ones name their space in the sentence
         var spaceName = Str("spaceName", "").Trim();
-        var title = (type is "new-transactions" or "test") && spaceName.Length > 0 ? spaceName : "munni";
+        var title = (type is NewTransactions or "test") && spaceName.Length > 0 ? spaceName : "munni";
         return (title, body);
     }
 }
