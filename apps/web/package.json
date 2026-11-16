@@ -57,6 +57,6 @@
     "workbox-precaching": "^7.4.1"
   },
   "volta": {
-    "node": "24.22.2"
+    "node": "24.22.3"
   }
 }
