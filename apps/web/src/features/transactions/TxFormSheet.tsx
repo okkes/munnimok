@@ -771,8 +771,98 @@ function LinkAskSheet({ bank, onAnswer, onClose }: Readonly<{ bank: BankRowRef |
 /** the id of a transaction still being typed, where the reimbursement picker needs a row to size its links by */
 const DRAFT_TX_ID = 'tx:being-typed';
 
-function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLinkReimb }: TxFormHost) {
+/** the transaction as typed so far */
+interface TypedTx {
+  accountId: string | null;
+  date: string;
+  cents: number | null;
+  isExpense: boolean;
+  currency: string;
+  merchant: string;
+  catId: string;
+  cats: TxSplitCat[] | null;
+}
+
+/** the row as it would be saved — the anchor the picker sizes its links by; none before there is an amount */
+function reimbAnchorFor(active: boolean, spaceId: string, typed: TypedTx, fallbackTitle: string): SpaceTx | null {
+  if (!active || !typed.cents) return null;
+  return {
+    id: DRAFT_TX_ID,
+    spaceId,
+    accountId: typed.accountId ?? '',
+    date: typed.date,
+    amountCents: typed.isExpense ? -typed.cents : typed.cents,
+    currency: typed.currency,
+    merchant: typed.merchant.trim() || fallbackTitle,
+    catId: typed.catId,
+    ...(typed.cats ? { cats: typed.cats } : {}),
+    needsReview: 0,
+    deleted: 0,
+  } as unknown as SpaceTx;
+}
+
+/**
+ * #348 r5 (user): the reimbursements picked while a transaction is still
+ * being typed. They wait here and are written with the row, on Add — the
+ * other transaction is not touched before that. Picked for an expense or
+ * for money coming in, and sized by the amount of that moment: a sign
+ * flipped drops them, an amount lowered under them blocks the save.
+ */
+function useStagedReimbursements(args: {
+  /** the create screen, and no balance correction */
+  active: boolean;
+  /** a new form (opened again, or another row) starts without picks */
+  resetKey: string;
+  spaceId: string;
+  typed: TypedTx;
+  onOpen?: () => void;
+}) {
   const { t, lang } = useLang();
+  const [staged, setStaged] = useState<PickedLink[]>([]);
+  const [asked, setAsked] = useState(false);
+  const allTxs = useSpaceTransactions(args.active);
+  const { linkMany } = useReimburseLinks(allTxs);
+  useEffect(() => {
+    setStaged([]);
+    setAsked(false);
+  }, [args.resetKey]);
+  const held = args.active ? staged : [];
+  const cents = held.reduce((sum, link) => sum + link.cents, 0);
+  const anchor = reimbAnchorFor(args.active, args.spaceId, args.typed, t('txform.addTitle'));
+  return {
+    staged: held,
+    setStaged,
+    allTxs,
+    anchor,
+    /** the picks' total, formatted, when it is more than the amount */
+    over: cents > (args.typed.cents ?? 0) ? fmtCents(cents, args.typed.currency, lang) : undefined,
+    needsAmount: asked && !anchor ? t('txform.reimbNeedsAmount') : '',
+    open: () => {
+      setAsked(!anchor);
+      if (anchor) args.onOpen?.();
+    },
+    unstage: (key: string) => setStaged((picks) => picks.filter((link) => link.key !== key)),
+    /** a link runs from an expense to the money that pays it back: the other direction has other counterparts */
+    onSign: (expense: boolean) => {
+      if (expense !== args.typed.isExpense) setStaged([]);
+    },
+    /** once the row is there: `saved` is it, as written */
+    write: (saved: SpaceTx) => {
+      if (held.length === 0) return;
+      const expense = saved.amountCents < 0;
+      linkMany(
+        held.map((link) =>
+          expense
+            ? { expense: saved, credit: link.row, cents: link.cents, creditPartId: link.creditPartId }
+            : { expense: link.row, credit: saved, cents: link.cents, partId: link.partId },
+        ),
+      );
+    },
+  };
+}
+
+function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLinkReimb }: TxFormHost) {
+  const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const canEdit = useCanEdit();
@@ -808,11 +898,6 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   // #547: an entry on a bank account — the balance tick, and the bank row a new entry already fits
   const [countIn, setCountIn] = useState(true);
   const [linkAsk, setLinkAsk] = useState<{ bank: BankRowRef } | null>(null);
-  // #348 r5 (user): a reimbursement picked while adding is staged here — it is written with the row, on Add
-  const [staged, setStaged] = useState<PickedLink[]>([]);
-  const [reimbNote, setReimbNote] = useState(false);
-  const allTxs = useSpaceTransactions(extended);
-  const { linkMany } = useReimburseLinks(allTxs);
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const baselineRef = useRef('');
@@ -858,8 +943,6 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
     setAttempted(false);
     setCountIn(tx ? tx.inBalance !== 0 : true);
     setLinkAsk(null);
-    setStaged([]);
-    setReimbNote(false);
     saving.current = false;
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
@@ -895,21 +978,25 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
   const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
   const zeroCounts = adjustment && adjustTarget;
   const noAmount = amountMissing(cents, zeroCounts);
-  // what is staged was picked for an expense or for money coming in, and sized by the amount of that moment
-  const stagedCents = adjustment ? 0 : staged.reduce((sum, link) => sum + link.cents, 0);
-  const stagedOver = stagedCents > (cents ?? 0);
+  const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
+  const reimb = useStagedReimbursements({
+    active: extended && !adjustment,
+    resetKey: `${open}:${tx?.id ?? ''}`,
+    spaceId,
+    typed: { accountId: effectiveAccount, date, cents, isExpense, currency: formCurrency, merchant, catId, cats: stagedCats },
+    onOpen: onLinkReimb,
+  });
   const valid =
     isValidManualTx({ merchant, cents, zeroCounts, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking, futureOnBank }) &&
     !adjustNoop &&
-    !stagedOver;
+    !reimb.over;
   // #195 r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
   const [blockerField, blockerText] = manualBlockerFor({
     attempted, valid, merchant, amountMissing: noAmount, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, futureOnBank, t,
-    stagedOver: stagedOver ? fmtCents(stagedCents, accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR', lang) : undefined,
+    stagedOver: reimb.over,
   });
-
-  const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
+  const reimbNote = blockerField === 'reimb' ? blockerText : reimb.needsAmount;
 
   const save = (bank?: { link?: BankRowRef; apart?: string }) => {
     if (!valid || !effectiveAccount || cents === null || saving.current) return;
@@ -950,16 +1037,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
       await repo.upsert('transaction', spaceId, rowId, { ...fields, ...entryFieldsFor(onBank, tx, canCount && countIn, bank?.apart) });
       await linkSavedEntry(store, repo, spaceId, rowId, bank?.link);
       // #348 r5: the staged reimbursements are written now that their row is there
-      if (!adjustment && staged.length > 0) {
-        const saved = { ...fields, id: rowId, spaceId, deleted: 0, needsReview: 0 } as unknown as SpaceTx;
-        linkMany(
-          staged.map((link) =>
-            signed < 0
-              ? { expense: saved, credit: link.row, cents: link.cents, creditPartId: link.creditPartId }
-              : { expense: link.row, credit: saved, cents: link.cents, partId: link.partId },
-          ),
-        );
-      }
+      reimb.write({ ...fields, id: rowId, spaceId, deleted: 0, needsReview: 0 } as unknown as SpaceTx);
       if (prevLinked !== nextLinked) {
         const { planMirrorChange } = await import('@/application/mirrorMint');
         const plan = await planMirrorChange(
@@ -1025,30 +1103,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
     save(link ? { link: asked.bank } : { apart: asked.bank.raw.id });
   };
 
-  // #348 r5: the row as it would be saved — the anchor the picker sizes its links by; none before there is an amount
-  const reimbAnchor: SpaceTx | null =
-    !extended || adjustment || cents === null || cents === 0
-      ? null
-      : ({
-          id: DRAFT_TX_ID,
-          spaceId,
-          accountId: effectiveAccount ?? '',
-          date,
-          amountCents: isExpense ? -cents : cents,
-          currency: formCurrency,
-          merchant: merchant.trim() || t('txform.addTitle'),
-          catId,
-          ...(stagedCats ? { cats: stagedCats } : {}),
-          needsReview: 0,
-          deleted: 0,
-        } as unknown as SpaceTx);
-  const openReimb = () => {
-    setReimbNote(!reimbAnchor);
-    if (reimbAnchor) onLinkReimb?.();
-  };
   const flipSign = (expense: boolean) => {
-    // a link runs from an expense to the money that pays it back: the other direction has other counterparts
-    if (expense !== isExpense) setStaged([]);
+    reimb.onSign(expense);
     setIsExpense(expense);
   };
 
@@ -1228,11 +1284,11 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
               onNotes={setNotes}
               credit={!isExpense}
               canLinkReimb={canEdit && !!onLinkReimb}
-              onLinkReimb={openReimb}
-              staged={staged}
-              onUnstage={(key) => setStaged((held) => held.filter((link) => link.key !== key))}
+              onLinkReimb={reimb.open}
+              staged={reimb.staged}
+              onUnstage={reimb.unstage}
               currency={formCurrency}
-              note={blockerField === 'reimb' ? blockerText : reimbNote && !reimbAnchor ? t('txform.reimbNeedsAmount') : ''}
+              note={reimbNote}
             />
           )}
         </>
@@ -1361,7 +1417,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLi
     </>
   );
 
-  return { fields, saveButton, sheets, dirty, empty, reimbAnchor, staged, setStaged, allTxs };
+  return { fields, saveButton, sheets, dirty, empty, reimbAnchor: reimb.anchor, staged: reimb.staged, setStaged: reimb.setStaged, allTxs: reimb.allTxs };
 }
 
 /** #348: the create screen's story rows — the event, the notes, and the
