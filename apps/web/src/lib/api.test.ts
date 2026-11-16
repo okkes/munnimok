@@ -117,7 +117,7 @@ describe('dead-session handling (401 → retry → the sign-in banner)', () => {
     const { apiFetch } = await import('./api');
     const res = await apiFetch('/me/spaces');
     expect(res.status).toBe(401);
-    expect(calls.length).toBe(2);
+    expect(calls).toHaveLength(2);
     expect(useSession.getState().identity).not.toBeNull();
     expect(localStorage.getItem('logto:app-id:idToken')).toBe('stale');
     expect(assignSpy).not.toHaveBeenCalled();
