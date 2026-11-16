@@ -240,7 +240,8 @@ describe('Planning (demo identity)', () => {
     const before = screen.getByTestId('plan-toallocate').textContent;
     await addHousingSubject('500');
     const openSubject = async () => {
-      fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/)[0]);
+      // the row follows the live query: it may not be there the moment the editor closes
+      fireEvent.click((await screen.findAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/))[0]);
       await screen.findByTestId('plan-sheet');
     };
     await openSubject();
@@ -293,7 +294,7 @@ describe('Planning (demo identity)', () => {
 
     fireEvent.click(screen.getAllByTestId('tab-planning')[0]);
     await screen.findByTestId('plan-header');
-    fireEvent.click(screen.getAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/)[0]);
+    fireEvent.click((await screen.findAllByTestId(/^plan-subject-(?!need-|status-|funded-|orphan-|logo-|bar-|overlap-|inpool-)/))[0]);
     await screen.findByTestId('plan-sheet');
     fireEvent.click(screen.getByTestId('plan-fund-chip-target'));
     fireEvent.click(screen.getByTestId('plan-fund-save'));
