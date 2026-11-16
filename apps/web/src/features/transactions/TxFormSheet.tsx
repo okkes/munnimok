@@ -253,12 +253,16 @@ const askDefaultFamily = (catId: string | null) =>
 const fieldBlocker = (field: string, current: string, text: string): string | undefined =>
   current === field ? text : undefined;
 
+const amountMissing = (cents: number | null, zeroCounts: boolean): boolean => cents === null || (cents === 0 && !zeroCounts);
+
 /** save gate: real merchant, positive amount, an account, a date not
  *  before the space starts (arc 5), and — for transfers — a decided
  *  other side */
 const isValidManualTx = (args: {
   merchant: string;
   cents: number | null;
+  /** #619: a balance to land on may be 0; a transaction's value may not */
+  zeroCounts: boolean;
   account: string | null;
   date: string;
   counterMissing: boolean;
@@ -267,8 +271,7 @@ const isValidManualTx = (args: {
   futureOnBank: boolean;
 }): boolean =>
   !!args.merchant.trim() &&
-  args.cents !== null &&
-  args.cents > 0 &&
+  !amountMissing(args.cents, args.zeroCounts) &&
   !!args.account &&
   !!args.date &&
   !args.counterMissing &&
@@ -519,8 +522,8 @@ function signedManualCents(adjustment: boolean, adjustTarget: boolean, cents: nu
 
 /** #269: the live balance delta — null while the field is empty (S3776) */
 function adjustDeltaFor(adjustment: boolean, adjustTarget: boolean, cents: number | null, adjustBase: number, isExpense: boolean): number | null {
-  if (!adjustment || cents === null || cents === 0) return null;
-  return signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
+  if (!adjustment || amountMissing(cents, adjustTarget)) return null;
+  return signedManualCents(adjustment, adjustTarget, cents ?? 0, adjustBase, isExpense);
 }
 
 /** #195 r2: the (field, message) the blocker cascade names (S3776) */
@@ -528,7 +531,7 @@ function manualBlockerFor(args: {
   attempted: boolean;
   valid: boolean;
   merchant: string;
-  cents: number | null;
+  amountMissing: boolean;
   adjustNoop: boolean;
   effectiveAccount: string | null;
   counterMissing: boolean;
@@ -539,7 +542,7 @@ function manualBlockerFor(args: {
   const { t } = args;
   if (!args.attempted || args.valid) return ['', ''];
   if (!args.merchant.trim()) return ['merchant', t('form.needName')];
-  if (args.cents === null || args.cents === 0) return ['amount', t('form.needAmount')];
+  if (args.amountMissing) return ['amount', t('form.needAmount')];
   if (args.adjustNoop) return ['amount', t('txform.adjustNoop')];
   if (!args.effectiveAccount) return ['account', t('form.needAccount')];
   if (args.futureOnBank) return ['date', t('txform.futureDate')];
@@ -871,13 +874,15 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   // #309 (user): a movement category REQUIRES its counterparty here too —
   // the validator always had the gate, the form just never fed it
   const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
+  const zeroCounts = adjustment && adjustTarget;
+  const noAmount = amountMissing(cents, zeroCounts);
   const valid =
-    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking, futureOnBank }) &&
+    isValidManualTx({ merchant, cents, zeroCounts, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking, futureOnBank }) &&
     !adjustNoop;
   // #195 r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
   const [blockerField, blockerText] = manualBlockerFor({
-    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, futureOnBank, t,
+    attempted, valid, merchant, amountMissing: noAmount, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, futureOnBank, t,
   });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
@@ -1053,8 +1058,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
               }}
               inputMode="decimal"
               placeholder={`${t('txform.amount')} (EUR)`}
-              aria-invalid={attempted && (cents === null || cents === 0)}
-              className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && (cents === null || cents === 0))}`}
+              aria-invalid={attempted && noAmount}
+              className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && noAmount)}`}
             />
           </div>
           <FormBlockerNote show={blockerField === 'amount'} text={blockerText} testId="txform-save-blocker" />

@@ -296,6 +296,32 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('#619: a correction can name 0 as the new balance — and still refuses 0 as a transaction value', async () => {
+    await openForm();
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const before = (await db.accounts.get('demo_main'))!.balanceCents;
+    expect(before).not.toBe(0);
+
+    fireEvent.click(screen.getByTestId('txform-adjustment'));
+    await screen.findByTestId('txform-adjust-panel');
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '0,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Leeg' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    expect((await screen.findByTestId('txform-save-blocker')).textContent).toContain('Enter an amount first');
+
+    fireEvent.click(screen.getByTestId('txform-adjust-mode-target'));
+    await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
+    expect(screen.getByTestId('txform-adjust-impact').textContent).toContain('→');
+    fireEvent.click(screen.getByTestId('txform-save'));
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Leeg');
+      expect(row?.amountCents).toBe(-before);
+      expect((await db.accounts.get('demo_main'))!.balanceCents).toBe(0);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('a movement keeps its story when the counterparty is re-picked; the Adjustment mark writes through', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
