@@ -27,6 +27,7 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 /** bundled, offline-ready defaults (public/events/*.jpg, Unsplash license) */
 export const EVENT_PICTURES = [
@@ -229,14 +230,10 @@ export function EventFormSheet({
         </div>
         <label className="text-[12px] text-ink-3">
           {t('events.estimate')}
-          <input
+          <DecimalInput
             data-testid="eventform-budget"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
             value={estimate}
-            onChange={(e) => setEstimate(e.target.value)}
+            onValue={setEstimate}
             placeholder="0.00"
             className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
           />

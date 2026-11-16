@@ -15,6 +15,7 @@ import { config } from '@/app/config';
 import { useSession } from '@/app/session';
 import { initPwa } from '@/app/pwa';
 import { initDeepLinks } from '@/lib/platform';
+import { watchNativeExits } from '@/lib/nativeExit';
 import { installViewportGuard } from '@/lib/viewportGuard';
 import { installKeyboardDismiss } from '@/lib/keyboardDismiss';
 import { installKeyboardReveal } from '@/lib/keyboardReveal';
@@ -44,12 +45,6 @@ if (window.location.pathname.startsWith('/splits/join/')) {
 // (InviteScreen), never by landing here
 if (/^\/invite\/?$/.test(window.location.pathname)) {
   window.location.replace(`${window.location.origin}/#/invite${window.location.search}`);
-}
-// native auth/logout returns that landed in the BROWSER (universal link
-// not taken — old build, verification pending): bounce into the app via
-// the channel's scheme, carrying the path + query for the code exchange
-if (window.location.pathname.startsWith('/native-auth') || window.location.pathname.startsWith('/native-signed-out')) {
-  window.location.replace(`${config.nativeScheme}://${window.location.pathname.slice(1)}${window.location.search}`);
 }
 
 // Chosen-offline identities (demo / offline mode) promise ZERO network
@@ -129,6 +124,7 @@ initPwa();
 initLockWatcher();
 initPressFeedback();
 initDeepLinks(); // native shell only: munni:// callbacks re-enter here
+watchNativeExits(); // the Android shell only: what ended the app last time, told before a screen can end it again
 installViewportGuard(); // iOS keyboard focus-scroll must never displace the shell
 installKeyboardDismiss(); // touch-scroll or Enter closes the mobile keyboard
 installKeyboardReveal(); // iOS: fields the keyboard swallowed scroll back into view (#129)

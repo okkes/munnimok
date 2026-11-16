@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeHlc } from './hlc';
-import { applyOp, dropUnstamped, unstampWrites } from './merge';
+import { DELETED_FIELD, applyOp, dropUnstamped, snapshotOps, unstampWrites } from './merge';
 import type { Op, SyncEnvelope } from './merge';
 
 type Row = Record<string, unknown> & SyncEnvelope;
@@ -126,5 +126,33 @@ describe('undoing writes the server never took (#505)', () => {
   it('a row only this device ever wrote is gone', () => {
     const local = applyAll(null, [op({ fields: { name: 'Trip' }, hlc: mine })])!;
     expect(dropUnstamped(unstampWrites(local, new Set([mine])))).toBeNull();
+  });
+});
+
+describe("the server's row as a snapshot hands it over (#606)", () => {
+  const made = hlc(100);
+  const renamed = hlc(200, 'b');
+  const snapshot = (fieldVersions: Record<string, string>, data: Record<string, unknown>) =>
+    snapshotOps('s1', { entity: 'category', entityId: 'c1', data, fieldVersions });
+
+  it('laid over nothing, it is the row a replay of its history ends in', () => {
+    const replayed = applyAll(null, [op({ fields: { name: 'Food', color: 'red' }, hlc: made }), op({ fields: { name: 'Groceries' }, hlc: renamed })])!;
+    const taken = applyAll(null, snapshot({ name: renamed, color: made }, { name: 'Groceries', color: 'red' }))!;
+    expect(canonical(taken)).toBe(canonical(replayed));
+  });
+
+  it('a deleted row arrives deleted, and one changed after its delete arrives alive', () => {
+    const gone = applyAll(null, snapshot({ name: made, [DELETED_FIELD]: renamed }, { name: 'Food' }))!;
+    expect(gone.deleted).toBe(1);
+    const revived = applyAll(null, snapshot({ name: renamed, [DELETED_FIELD]: made }, { name: 'Food' }))!;
+    expect(revived.deleted).toBe(0);
+  });
+
+  it('a field this device wrote later keeps its value; the rest becomes the server\'s', () => {
+    const mine = hlc(300, 'c');
+    const local = applyAll(null, [op({ fields: { name: 'Mine' }, hlc: mine })])!;
+    const merged = applyAll(local, snapshot({ name: renamed, color: made }, { name: 'Groceries', color: 'red' }))!;
+    expect(merged).toMatchObject({ name: 'Mine', color: 'red' });
+    expect(merged.fieldVersions).toEqual({ name: mine, color: made });
   });
 });

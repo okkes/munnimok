@@ -19,10 +19,12 @@
 // v4 (#557): a plan subject's row holds the period's own funding, what rolled
 // over is derived on top — a v3 client reads the row as the whole and hands
 // the rolled-over money out a second time
-export const CLIENT_PROTOCOL = 4;
-/** oldest server protocol this client can safely talk to — v3 (#569): the
- *  sync round asks GET /sync/heads, which a v2 server does not answer */
-export const MIN_SERVER_PROTOCOL = 3;
+// v5 (#606): a space this device holds nothing of is taken as the server's rows, in pages
+export const CLIENT_PROTOCOL = 5;
+/** oldest server protocol this client can safely talk to — v5 (#606): a v4
+ *  server answers GET /sync/{space}/bootstrap with the whole space at once,
+ *  which a phone cannot download inside the limit a request has */
+export const MIN_SERVER_PROTOCOL = 5;
 
 export type ProtocolIssue = 'client-outdated' | 'server-outdated';
 

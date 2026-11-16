@@ -33,6 +33,11 @@ export interface SqlStatement {
 /** ids per SELECT … IN (the oldest SQLite builds bind at most 999 values) and rows per batched write (one message to native code) */
 const READ_CHUNK = 500;
 const WRITE_CHUNK = 200;
+/**
+ * rows per read of a whole table or a whole space (#594): on a phone a read comes back from native code as ONE
+ * object, and Android holds it inside a heap that some years of transactions do not fit in several times over
+ */
+export const READ_PAGE = 2000;
 
 /** the SQL the backend needs — tiny on purpose, so any engine fits */
 export interface SqlExecutor {
@@ -229,12 +234,33 @@ export class SqlStorageBackend implements StorageBackend {
     return rows[0];
   }
 
+  /**
+   * Every row the condition admits, a page at a time in the order the rows were written. A row rewritten while
+   * the pages are read moves to the end (REPLACE gives it a new place) and may come by twice: it is kept once,
+   * as it stands last.
+   */
+  private async pagedRowsOf<E extends EntityName>(entity: E, condition = '', params: (string | number)[] = []) {
+    this.read(entityDep(entity));
+    const table = entityTable(entity);
+    const byId = new Map<string, EntityRowMap[E]>();
+    let after = 0;
+    for (;;) {
+      const rows = await this.sql.query(`SELECT rowid AS place, json FROM ${table} WHERE rowid > ?${condition} ORDER BY rowid LIMIT ${READ_PAGE}`, [after, ...params]);
+      for (const r of rows) {
+        const row = JSON.parse(r.json as string) as EntityRowMap[E];
+        byId.set(row.id, row);
+      }
+      if (rows.length < READ_PAGE) return [...byId.values()];
+      after = Number(rows.at(-1)?.place);
+    }
+  }
+
   bySpace<E extends Exclude<EntityName, 'space'>>(entity: E, spaceId: string) {
-    return this.rowsOf(entity, 'WHERE spaceId = ?', [spaceId]);
+    return this.pagedRowsOf(entity, ' AND spaceId = ?', [spaceId]);
   }
 
   allRows<E extends EntityName>(entity: E) {
-    return this.rowsOf(entity);
+    return this.pagedRowsOf(entity);
   }
 
   async countBySpace(entity: Exclude<EntityName, 'space'>, spaceId: string) {

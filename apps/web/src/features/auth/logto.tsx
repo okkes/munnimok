@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto, Prompt } from '@logto/react';
 import * as Sentry from '@sentry/react';
-import { config, logtoConfigured, publicOrigin } from '@/app/config';
+import { config, logtoConfigured } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
 import { NativeLogtoClient, nativeCallbackUri } from './nativeAuth';
 import {
@@ -37,8 +37,7 @@ import { Logo } from '@/ui/Logo';
  * handler re-enters /auth-callback with the same params.
  */
 export const callbackUri = () =>
-  // native: the scheme callback the auth session hands straight back (nativeAuth.ts) —
-  // the hosted /native-auth bounce stays only for builds that predate it
+  // native: the scheme callback the auth session hands straight back (nativeAuth.ts)
   isNativeApp() ? nativeCallbackUri() : `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
 
@@ -235,9 +234,7 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
         appId: config.logto.appId,
         resources: config.logto.resource ? [config.logto.resource] : [],
       });
-      // scheme-bounced fallback stored only the path — re-anchor it on
-      // the public origin so it matches the registered redirect_uri
-      await client.handleSignInCallback(url.startsWith('/') ? `${publicOrigin()}${url}` : url);
+      await client.handleSignInCallback(url);
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
       // this client holds the token the exchange minted — the provider's own would refresh for it
       if (!(await finish(() => client.getAccessToken()))) setFailed('no identity claims');

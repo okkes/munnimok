@@ -206,7 +206,7 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(2, landed.Counts.Transactions);
         var pendingRow = Assert.Single(landed.PendingRows);
         Assert.Equal("acc_mirror", pendingRow.AccountRefId);
-        Assert.Contains(spaceId, landed.Attached);
+        Assert.Equal(1, landed.NewBySpace[spaceId]);   // the booked row; the reserved one is told when the bank books it
         var pendingId = ImportIds.TransactionId(ImportIds.Normalize(iban), "pending:P-1");
         Assert.Contains("\"pending\":1", factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == pendingId).DataJson));
         var bookedId = ImportIds.TransactionId(ImportIds.Normalize(iban), "REF-1");
@@ -227,6 +227,112 @@ public class ConnectorOpenBankingTests(ConnectorApiFactory factory) : IClassFixt
         Assert.Equal(1, await ingest.SettlePendingAsync(userId, Consent, "conn-mirror", ["acc_mirror"], [], ct));
         Assert.True(factory.Read(db => db.EntityRows.Single(r => r.SpaceId == reference.FeedSpaceId && r.EntityId == pendingId).Deleted));
         Assert.Equal(0, factory.Read(db => db.ConnectorPendingTxs.Count(p => p.AccountRefId == "acc_mirror")));
+    }
+
+    /// <summary>
+    /// #610: a nightly fetch told every space attached to any account of the connection that the fetch's whole
+    /// count had arrived — also the space whose account brought nothing new, and with a reserved row counted
+    /// that the bank books under a new reference later (the same payment announced twice).
+    /// </summary>
+    [Fact]
+    public async Task A_fetch_counts_for_each_space_the_booked_rows_that_are_new_to_it()
+    {
+        const string sub = "new-by-space";
+        using var client = factory.ClientFor(sub);
+        Assert.True((await client.GetAsync("/connectors")).IsSuccessStatusCode);
+        var userId = factory.Read(db => db.Users.Single(u => u.Sub == sub).Id);
+        const string paying = "NL91MOCK0000000791";
+        const string saving = "NL91MOCK0000000792";
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        var ct = CancellationToken.None;
+        JsonObject Account(string id, string iban) => new() { ["id"] = id, ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Rekening", ["currency"] = "EUR", ["type"] = "current" };
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "account", [Account("acc_pay", paying), Account("acc_save", saving)], ct);
+
+        async Task<string> SpaceAsync(string name, string accountId, string historyFrom)
+        {
+            var spaceId = $"space_{Guid.NewGuid():N}";
+            await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+                [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement(name) }, ServerHlc.Now(0))]));
+            var reference = factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == accountId));
+            var attached = await client.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(reference.FeedSpaceId, reference.AccountEntityId, historyFrom));
+            Assert.True(attached.IsSuccessStatusCode, await attached.Content.ReadAsStringAsync());
+            return spaceId;
+        }
+        var household = await SpaceAsync("Household", "acc_pay", "2026-01-01");
+        var savings = await SpaceAsync("Savings", "acc_save", "2026-01-01");
+        var sinceOctober = await SpaceAsync("Since October", "acc_pay", "2026-10-01");
+
+        static JsonObject On(string accountId, JsonObject tx)
+        {
+            tx["account_id"] = accountId;
+            return tx;
+        }
+        JsonObject Interest() => On("acc_save", Tx("txn_s1", "REF-S1", "2026-09-20", 5000, "Rente", "Rente derde kwartaal"));
+        var first = await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "transaction", [Interest()], ct);
+        Assert.Equal(1, Assert.Single(first.NewBySpace, s => s.Key == savings).Value);
+
+        // the next night: two booked rows and a reserved one on the paying account, and the savings row served again
+        var night = await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "transaction",
+        [
+            On("acc_pay", Tx("txn_p1", "REF-P1", "2026-09-28", -1250, "Albert Heijn", "Albert Heijn 1350 AMSTERDAM")),
+            On("acc_pay", Tx("txn_p2", "REF-P2", "2026-09-29", -300, "NS", "NS Reizigers")),
+            On("acc_pay", Tx("txn_p3", "pending:P-3", "2026-09-30", -900, "Jumbo", "Jumbo 1234 UTRECHT")),
+            Interest(),
+        ], ct);
+        Assert.Equal(2, Assert.Single(night.NewBySpace).Value);
+        Assert.Equal(household, night.NewBySpace.Keys.Single());
+        // a space that shows the account from a later day on is not told about rows it does not show
+        Assert.DoesNotContain(sinceOctober, night.NewBySpace.Keys);
+
+        // the same page again brings nothing new to anybody
+        var again = await ingest.IngestAsync(userId, Consent, "Mock", "conn-new", "transaction",
+            [On("acc_pay", Tx("txn_p1", "REF-P1", "2026-09-28", -1250, "Albert Heijn", "Albert Heijn 1350 AMSTERDAM")), Interest()], ct);
+        Assert.Empty(again.NewBySpace);
+    }
+
+    /// <summary>#610, at the phone: the scheduler's fetch is the one that speaks, to the space that got rows and with that space's own count.</summary>
+    [Fact]
+    public async Task The_schedulers_fetch_tells_a_space_its_own_count_and_says_nothing_about_a_deleted_one()
+    {
+        const string sub = "told-by-space";
+        var (_, userId) = await ConnectAsync(sub, "conn-told");
+        using var client = factory.ClientFor(sub);
+        var endpoint = $"https://push.test/{sub}";
+        Assert.True((await client.PostAsJsonAsync("/me/push-subscriptions", new Munni.Api.Push.SubscribeRequest(endpoint, "p", "a"))).IsSuccessStatusCode);
+
+        // the account is known before the scheduler runs, so two spaces can show it: one that stays, one the person deletes
+        using var scope = factory.Services.CreateScope();
+        var ingest = scope.ServiceProvider.GetRequiredService<ConnectorIngest>();
+        const string iban = MockBankLedger.CurrentIban;
+        await ingest.IngestAsync(userId, Consent, "Mock", "conn-told", "account",
+            [new JsonObject { ["id"] = "acc_told", ["external_id"] = iban, ["iban"] = iban, ["display_name"] = "Betaal", ["currency"] = "EUR", ["type"] = "current" }], CancellationToken.None);
+        var reference = factory.Read(db => db.ConnectorAccountRefs.Single(a => a.Id == "acc_told"));
+        async Task<string> SpaceAsync(string name)
+        {
+            var spaceId = $"space_{Guid.NewGuid():N}";
+            await client.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+                [new SyncOpDto(Guid.NewGuid().ToString("N"), spaceId, "space", spaceId, new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement(name) }, ServerHlc.Now(0))]));
+            Assert.True((await client.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(reference.FeedSpaceId, reference.AccountEntityId, "2026-01-01"))).IsSuccessStatusCode);
+            return spaceId;
+        }
+        var household = await SpaceAsync("Household");
+        var deleted = await SpaceAsync("Old household");
+        await client.PostAsJsonAsync($"/sync/{deleted}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString("N"), deleted, "space", deleted, [], ServerHlc.Now(1), Deleted: true)]));
+
+        var service = factory.Services.GetRequiredService<ConnectorScheduleService>();
+        Assert.Equal(1, await service.RunOnceAsync(CancellationToken.None));
+
+        var told = Assert.Single(factory.Pushes.SentTo(endpoint));
+        using var payload = JsonDocument.Parse(told);
+        Assert.Equal("new-transactions", payload.RootElement.GetProperty("type").GetString());
+        Assert.Equal(household, payload.RootElement.GetProperty("spaceId").GetString());
+        Assert.Equal("Household", payload.RootElement.GetProperty("spaceName").GetString());
+        // its count is the rows that wait in that space's review: the booked ones of the account it shows
+        var waiting = factory.Read(db => db.EntityRows.Count(r => r.SpaceId == household && r.Entity == "txMeta"));
+        Assert.True(waiting > 0);
+        Assert.Equal(waiting, payload.RootElement.GetProperty("count").GetInt32());
     }
 
     [Fact]

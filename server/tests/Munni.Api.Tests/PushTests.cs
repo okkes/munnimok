@@ -381,6 +381,29 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Empty(await db.PushSubscriptions.Where(s => s.UserId == userB.Id).ToListAsync());
     }
 
+    /// <summary>#610: a deleted space keeps its members and its accounts on the server, and its row no longer
+    /// states a name — its pushes arrived untitled, between the ones of the spaces that still exist.</summary>
+    [Fact]
+    public async Task Nobody_is_told_about_new_transactions_in_a_space_that_was_deleted()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var spaceId = $"space_gone_{suffix}";
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var owner = new User { Id = Guid.NewGuid(), Sub = $"gone-{suffix}" };
+        db.Users.Add(owner);
+        db.Spaces.Add(new Space { Id = spaceId });
+        db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = owner.Id, Role = SpaceRoles.Owner });
+        db.EntityRows.Add(new EntityRow { SpaceId = spaceId, Entity = "space", EntityId = spaceId, Deleted = true, DataJson = """{"name":"Old household"}""", FieldVersionsJson = "{}" });
+        db.PushSubscriptions.Add(new PushSubscriptionRow { Id = Guid.NewGuid(), UserId = owner.Id, Endpoint = $"https://p/{suffix}/gone", P256dh = "k", Auth = "a" });
+        await db.SaveChangesAsync();
+
+        var sender = new FakeSender();
+        await new PushNotifier(db, sender, NullLogger<PushNotifier>.Instance).NotifyNewTransactionsAsync(spaceId, 3, CancellationToken.None);
+
+        Assert.Empty(sender.Sent);
+    }
+
     private static HttpClient ClientIn(WebApplicationFactory<Program> factory, string sub)
     {
         var client = factory.CreateClient();

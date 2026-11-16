@@ -86,6 +86,33 @@ export function applyOp<T extends Record<string, unknown>>(
   return { row: merged as T & SyncEnvelope, appliedFields, changed: true };
 }
 
+/** a row as the server holds it: every field with the stamp of the write that won it (#606) */
+export interface SnapshotRow {
+  entity: string;
+  entityId: string;
+  data: Record<string, unknown>;
+  fieldVersions: Record<string, string>;
+}
+
+/**
+ * The server's row as the changes that made it what it is, one per stamp: laid over the store by the same
+ * rule a pulled change is, so a field this device wrote later keeps its value and a row it holds nothing of
+ * becomes the server's.
+ */
+export function snapshotOps(spaceId: string, row: SnapshotRow): Op[] {
+  const byStamp = new Map<string, Op>();
+  for (const [field, hlc] of Object.entries(row.fieldVersions)) {
+    let op = byStamp.get(hlc);
+    if (!op) {
+      op = { opId: '', spaceId, entity: row.entity, entityId: row.entityId, fields: {}, hlc };
+      byStamp.set(hlc, op);
+    }
+    if (field === DELETED_FIELD) op.deleted = true;
+    else op.fields[field] = row.data[field];
+  }
+  return [...byStamp.values()];
+}
+
 /**
  * #505, undoing writes the server never took: the fields those writes
  * stamped lose their version but keep their value (the row still renders

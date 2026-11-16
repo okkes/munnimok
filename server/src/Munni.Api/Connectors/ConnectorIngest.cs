@@ -32,12 +32,18 @@ public sealed record ConnectorIngestResult(
     IReadOnlySet<string> TouchedSpaces,
     /// <summary>The pending rows this ingest mirrored (§15): the sync settles the account's earlier ones against them once the fetch is complete.</summary>
     IReadOnlyList<ConnectorPendingTx>? Pending = null,
-    /// <summary>The spaces the accounts are attached to, where the prediction overlays went: the ones a scheduled fetch wakes with a push.</summary>
-    IReadOnlySet<string>? AttachedSpaces = null)
+    /// <summary>
+    /// The booked rows each space shows for the first time: what a scheduled fetch tells that space's members.
+    /// A reserved row is not counted — the bank books it under a new reference, and the same payment would be
+    /// announced twice — nor a row the feed already held, nor one from before the day the space shows the account from.
+    /// </summary>
+    IReadOnlyDictionary<string, int>? Fresh = null)
 {
+    private static readonly Dictionary<string, int> None = [];
+
     public IReadOnlyList<ConnectorPendingTx> PendingRows => Pending ?? [];
 
-    public IReadOnlySet<string> Attached => AttachedSpaces ?? new HashSet<string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, int> NewBySpace => Fresh ?? None;
 }
 
 /// <summary>
@@ -112,7 +118,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var user = await db.Users.FindAsync([userId], ct) ?? throw new InvalidOperationException($"user {userId} missing");
         var touched = new HashSet<string>(StringComparer.Ordinal);
         var pending = new List<ConnectorPendingTx>();
-        var attached = new HashSet<string>(StringComparer.Ordinal);
+        var fresh = new Dictionary<string, int>(StringComparer.Ordinal);
         var byShape = records.OfType<JsonObject>().GroupBy(r => ShapeOf(r, shape)).ToDictionary(g => g.Key, g => g.ToList());
 
         var counts = ConnectorIngestCounts.None;
@@ -122,7 +128,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             counts = counts.Plus(kind switch
             {
                 AccountEntity => await AccountsAsync(user, provider, connectionId, items, touched, ct),
-                TransactionEntity => await TransactionsAsync(user, provider, items, touched, pending, attached, ct),
+                TransactionEntity => await TransactionsAsync(user, provider, items, touched, pending, fresh, ct),
                 ReceiptEntity => await ReceiptsAsync(user, provider, connectionId, items, touched, ct),
                 "credit_registration" => await RegistrationsAsync(user, provider, items, touched, ct),
                 _ => await StudentDebtsAsync(user, provider, providerName, items, touched, ct),
@@ -130,7 +136,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         }
         foreach (var (unknown, items) in byShape) counts = counts.Plus(Unknown(unknown, items.Count));
 
-        return new ConnectorIngestResult(counts, touched, pending, attached);
+        return new ConnectorIngestResult(counts, touched, pending, fresh);
     }
 
     /// <summary>The connector mints <c>acc_</c>, <c>txn_</c>, <c>rcp_</c>, <c>crd_</c> and <c>sdt_</c> ids; a record without one is what the resource says it returns.</summary>
@@ -440,7 +446,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
 
     private async Task<ConnectorIngestCounts> TransactionsAsync(
         User user, string provider, List<JsonObject> records, HashSet<string> touched,
-        List<ConnectorPendingTx> pending, HashSet<string> attached, CancellationToken ct)
+        List<ConnectorPendingTx> pending, Dictionary<string, int> fresh, CancellationToken ct)
     {
         var accountIds = records.Select(t => t.Text("account_id")).Where(a => a is not null).Distinct().ToList();
         var known = await db.ConnectorAccountRefs
@@ -465,21 +471,54 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
                 provider, batch.Dropped, records.Count, batch.Orphaned, batch.OrphanAccount ?? "-");
         }
 
+        // asked before the feeds are written: afterwards every row of the page is one the feed holds
+        var held = await HeldRowsAsync(batch.Shown, ct);
         var written = 0;
         foreach (var (feedId, ops) in batch.ByFeed)
         {
             var feed = await db.Spaces.FindAsync([feedId], ct) ?? throw new InvalidOperationException($"feed {feedId} missing");
             written += await ApplyAsync(feed, ops, touched);
         }
+        var standing = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (spaceId, metas) in batch.Overlays)
         {
             var space = await db.Spaces.FindAsync([spaceId], ct);
             if (space is null) continue;   // an attachment to a space that is gone: nothing to predict for
             await ApplyAsync(space, metas, touched);
-            attached.Add(spaceId);
+            standing.Add(spaceId);
+        }
+        foreach (var spaceId in batch.Shown.Where(s => standing.Contains(s.SpaceId) && !held.Contains((s.FeedId, s.EntityId))).Select(s => s.SpaceId))
+        {
+            fresh[spaceId] = fresh.GetValueOrDefault(spaceId) + 1;
         }
 
         return new ConnectorIngestCounts(0, 0, written, 0, batch.Dropped);
+    }
+
+    /// <summary>Which of the rows the spaces show the feeds hold already.</summary>
+    private async Task<HashSet<(string FeedId, string EntityId)>> HeldRowsAsync(IReadOnlyCollection<ShownRow> shown, CancellationToken ct)
+    {
+        var held = new HashSet<(string, string)>();
+        foreach (var feed in shown.GroupBy(s => s.FeedId, StringComparer.Ordinal))
+        {
+            var ids = feed.Select(s => s.EntityId).Distinct(StringComparer.Ordinal).ToList();
+            var known = await db.EntityRows
+                .Where(r => r.SpaceId == feed.Key && r.Entity == TransactionEntity && ids.Contains(r.EntityId))
+                .Select(r => r.EntityId)
+                .ToListAsync(ct);
+            foreach (var id in known) held.Add((feed.Key, id));
+        }
+        return held;
+    }
+
+    /// <summary>A booked row in a space that shows it: the feed it lies in says whether it is new.</summary>
+    private sealed record ShownRow(string SpaceId, string FeedId, string EntityId);
+
+    /// <summary>One space's attachment of an account: where the overlay goes, and whether the space shows a row of that day.</summary>
+    private sealed record Attachment(string SpaceId, string HistoryFrom, bool Archived)
+    {
+        /// <summary>An archived attachment shows nothing new, and a live one nothing from before its first day.</summary>
+        public bool Shows(string bookedAt) => !Archived && string.CompareOrdinal(bookedAt, HistoryFrom) >= 0;
     }
 
     /// <summary>One transactions pass sorted by where its rows go: the feed ops per feed, the overlays per attached space, and what was dropped.</summary>
@@ -490,7 +529,10 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         /// <summary>The prediction overlay goes to every space the account is attached to, never to the feed (§15).</summary>
         public Dictionary<string, List<SyncOpDto>> Overlays { get; } = new(StringComparer.Ordinal);
 
-        public Dictionary<string, List<string>> SpacesOf { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, List<Attachment>> SpacesOf { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The booked rows of the pass, once for every space that shows them.</summary>
+        public HashSet<ShownRow> Shown { get; } = [];
 
         public int Dropped { get; set; }
 
@@ -535,15 +577,16 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             return;   // a pending row is a fact the bank may still withdraw: no opinion on it yet
         }
         if (!batch.SpacesOf.TryGetValue(account.Id, out var spaces)) batch.SpacesOf[account.Id] = spaces = await AttachedSpacesAsync(account, ct);
-        foreach (var spaceId in spaces)
+        foreach (var space in spaces)
         {
-            if (!batch.Overlays.TryGetValue(spaceId, out var metas)) batch.Overlays[spaceId] = metas = [];
-            metas.Add(OverlayOp(spaceId, row));
+            if (!batch.Overlays.TryGetValue(space.SpaceId, out var metas)) batch.Overlays[space.SpaceId] = metas = [];
+            metas.Add(OverlayOp(space.SpaceId, row));
+            if (space.Shows(row.BookedAt)) batch.Shown.Add(new ShownRow(space.SpaceId, row.Op.SpaceId, row.EntityId));
         }
     }
 
     /// <summary>A transaction as it lands: the feed's raw row, and what the overlay needs to know about it.</summary>
-    private sealed record TransactionRow(SyncOpDto Op, string EntityId, bool Pending, string Direction, string Text);
+    private sealed record TransactionRow(SyncOpDto Op, string EntityId, bool Pending, string Direction, string Text, string BookedAt);
 
     /// <summary>
     /// One transaction as the feed's raw row — no opinion, just the party's
@@ -584,7 +627,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         if (pending) fields["pending"] = Json(1);
 
         var op = Op(account.FeedSpaceId, TransactionEntity, entityId, fields, Seed(entityId, tx, fields));
-        return new TransactionRow(op, entityId, pending, amount.Value.Value < 0 ? "debit" : CreditDirection, $"{merchant} {description}");
+        return new TransactionRow(op, entityId, pending, amount.Value.Value < 0 ? "debit" : CreditDirection, $"{merchant} {description}", bookedAt);
     }
 
     /// <summary>
@@ -614,12 +657,15 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         return new SyncOpDto(ImportIds.OpId($"connmeta:{spaceId}:{row.EntityId}"), spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, ServerHlc.Floor);
     }
 
-    private Task<List<string>> AttachedSpacesAsync(ConnectorAccountRef account, CancellationToken ct) =>
-        db.SpaceAccountLinks
+    private async Task<List<Attachment>> AttachedSpacesAsync(ConnectorAccountRef account, CancellationToken ct)
+    {
+        var links = await db.SpaceAccountLinks
             .Where(l => l.FeedSpaceId == account.FeedSpaceId && l.AccountId == account.AccountEntityId)
-            .Select(l => l.SpaceId)
-            .Distinct()
+            .Select(l => new Attachment(l.SpaceId, l.HistoryFrom, l.Archived))
             .ToListAsync(ct);
+        // one per space: the live attachment that reaches furthest back speaks for it
+        return [.. links.GroupBy(l => l.SpaceId, StringComparer.Ordinal).Select(g => g.OrderBy(l => l.Archived).ThenBy(l => l.HistoryFrom, StringComparer.Ordinal).First())];
+    }
 
     /// <summary>The account records a page carries, by the id their references are kept under.</summary>
     internal static List<string> AccountIdsOf(JsonArray? records) =>

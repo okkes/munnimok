@@ -53,6 +53,7 @@ import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Chip, HeroCard, Tile } from '@/ui/primitives';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 type Translate = ReturnType<typeof useLang>['t'];
 type Money = (cents: number) => string;
@@ -462,17 +463,13 @@ function DebtCard({ outcome, account, debt, extraCents, onExtra, onApply, today,
       />
       <label className="mt-2 block text-[12px] text-ink-3">
         {t('debtplan.extraFor')}
-        <input
+        <DecimalInput
           data-testid={`debtplan-debt-extra-${outcome.id}`}
-          type="number"
-          inputMode="decimal"
-          min="0"
-          step="5"
           value={text}
-          onChange={(e) => {
+          onValue={(typed) => {
             setByDate(null);
-            setText(e.target.value);
-            onExtra(parseEuros(e.target.value));
+            setText(typed);
+            onExtra(parseEuros(typed));
           }}
           placeholder="0"
           className={INPUT_CLASS}
@@ -828,17 +825,13 @@ export function DebtPlanScreen() {
               <div className="flex items-end gap-3">
                 <label className="min-w-0 flex-1 text-[12px] text-ink-3">
                   {t('debtplan.extra')}
-                  <input
+                  <DecimalInput
                     data-testid="debtplan-extra"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="5"
                     value={extraText}
-                    onChange={(e) => {
+                    onValue={(typed) => {
                       setFreeBy(null);
-                      setExtraText(e.target.value);
-                      update({ extraCents: parseEuros(e.target.value) });
+                      setExtraText(typed);
+                      update({ extraCents: parseEuros(typed) });
                     }}
                     placeholder="0"
                     className={INPUT_CLASS}
@@ -846,17 +839,13 @@ export function DebtPlanScreen() {
                 </label>
                 <label className="min-w-0 flex-1 text-[12px] text-ink-3">
                   {t('debtplan.lump')}
-                  <input
+                  <DecimalInput
                     data-testid="debtplan-lump"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="50"
                     value={lumpText}
-                    onChange={(e) => {
+                    onValue={(typed) => {
                       setFreeBy(null);
-                      setLumpText(e.target.value);
-                      update({ lumpCents: parseEuros(e.target.value) });
+                      setLumpText(typed);
+                      update({ lumpCents: parseEuros(typed) });
                     }}
                     placeholder="0"
                     className={INPUT_CLASS}

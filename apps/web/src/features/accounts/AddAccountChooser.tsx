@@ -23,6 +23,7 @@ import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadence
 import { Icon } from '@/ui/Icon';
 import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 /**
  * THE one "Add an account" entry (account-entry-flow plan, AE1): every
@@ -425,14 +426,10 @@ export function AddAccountChooser({
                     </label>
                     <label className="min-w-0 flex-1 text-[12px] text-ink-3">
                       {t('debts.apr')}
-                      <input
+                      <DecimalInput
                         data-testid="chooser-acctform-apr"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.1"
-                        min="0"
                         value={apr}
-                        onChange={(e) => setApr(e.target.value)}
+                        onValue={setApr}
                         placeholder="0.0"
                         className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                       />

@@ -27,6 +27,10 @@ interface CapacitorGlobal {
       open?: (options: { url: string }) => Promise<void>;
       close?: () => Promise<void>;
     };
+    /** the Android shell's own plugin (ExitReasonsPlugin.java): how the app's processes ended lately */
+    ExitReasons?: {
+      recent?: () => Promise<NativeExits>;
+    };
     PushNotifications?: CapacitorPluginListener & {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
@@ -105,12 +109,11 @@ export async function ensurePersistentStorage(): Promise<void> {
 /** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls).
  *  Accepts the suffixed schemes too: munni-dev:// (the legacy staging app) and
  *  munni-<env>-<platform>:// (every environment of the platform model, e.g.
- *  munni-prod-nas://) — a dash-blind pattern dropped the latter, so the hosted
- *  /native-auth bounce was ignored and the native login landed back on the
- *  login screen (nas prod, 2026-09-28). */
+ *  munni-prod-nas://) — a dash-blind pattern drops the latter, and with it
+ *  the sign-in's own return and the bank's. */
 /** the https paths a verified App Link / universal link may hand us —
  *  a tight allowlist so nothing else ever routes into the shell */
-const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/native-auth', '/native-signed-out', '/invite'];
+const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/invite'];
 
 export function deepLinkToPath(url: string): string | null {
   const match = /^munni(?:-[\w-]+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
@@ -173,18 +176,6 @@ export function initDeepLinks(): void {
     const path = deepLinkToPath(url);
     if (!path) return;
     if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
-    // https auth return (universal link — no popup): when the raw url is
-    // https it IS the registered redirect_uri; a scheme-bounced fallback
-    // stores the path form and the callback screen rebuilds the origin
-    if (path.startsWith('/native-auth')) {
-      sessionStorage.setItem(NATIVE_CALLBACK_KEY, url.startsWith('https:') ? url : path);
-      globalThis.location.assign('/auth-callback');
-      return;
-    }
-    if (path.startsWith('/native-signed-out')) {
-      globalThis.location.assign('/#/login');
-      return;
-    }
     // the post sign-out landing: session is already cleared locally —
     // just bring the app to the login screen
     if (path.startsWith('/signed-out')) {
@@ -216,6 +207,35 @@ export function syncNativeStatusBar(theme: 'light' | 'dark'): void {
 /** 'android' | 'ios' inside the shells, undefined on the web */
 export const nativePlatform = (): string | undefined =>
   isNativeApp() ? capacitor()?.getPlatform?.() : undefined;
+
+/** one of Android's own records of a process of this app that ended (ApplicationExitInfo) */
+export interface NativeExitRecord {
+  at: number;
+  /** ApplicationExitInfo's reason code */
+  reason: number;
+  description?: string | null;
+  /** how important the system held the process when it ended: 100 is "on screen" */
+  importance?: number;
+  status?: number;
+  pssKb?: number;
+  rssKb?: number;
+  process?: string | null;
+}
+
+export interface NativeExits {
+  exits?: NativeExitRecord[];
+  /** "time\nthread\nstack trace" of an exception nothing caught, noted by the shell as the app went down */
+  javaCrash?: string | null;
+  /** "time\ncrashed|killed\npriority" of the web view's own process */
+  renderer?: string | null;
+}
+
+/** what the Android shell knows about how the app ended lately; null on any other surface, or on a shell from before it could say */
+export async function nativeExits(): Promise<NativeExits | null> {
+  const plugin = capacitor()?.Plugins?.ExitReasons;
+  if (nativePlatform() !== 'android' || !plugin?.recent) return null;
+  return plugin.recent().catch(() => null);
+}
 
 // the store numbers a binary by the clock: only the bundle's own commit count compares with the hosted version.json
 export const bundledWebBuild = (): number => Number(__BUILD_NUMBER__);

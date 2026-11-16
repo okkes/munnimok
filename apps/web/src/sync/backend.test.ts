@@ -67,6 +67,21 @@ describe('ApiSyncBackend', () => {
     await expect(backend({ testSub: 'x' }).listSpaces()).rejects.toBeInstanceOf(SyncHttpError);
   });
 
+  it('#606: a snapshot page is asked with the page before it, and "no content" means there is none to take', async () => {
+    const page = { rows: [{ entity: 'category', entityId: 'c:1', data: { name: 'Food' }, fieldVersions: { name: 'h1' } }], latestSeq: 12, next: 'category:c:1' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(page)).mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const api = backend({ bearer: 'tok' });
+
+    expect(await api.snapshot('s1')).toEqual(page);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://api/sync/s1/bootstrap');
+    expect(await api.snapshot('s1', 'category:c:1')).toBeNull();
+    expect(fetchMock.mock.calls[1][0]).toBe('http://api/sync/s1/bootstrap?after=category%3Ac%3A1');
+    for (const [, init] of fetchMock.mock.calls) expect(init?.signal).toBeInstanceOf(AbortSignal);
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}, 403));
+    await expect(api.snapshot('s1')).rejects.toMatchObject(new SyncHttpError(403));
+  });
+
   it('listSpaces returns the id array', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(['a', 'b']));
     expect(await backend({ testSub: 'x' }).listSpaces()).toEqual(['a', 'b']);

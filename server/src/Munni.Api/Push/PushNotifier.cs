@@ -79,6 +79,8 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
     {
         var userIds = await db.SpaceMembers.Where(m => m.SpaceId == spaceId && m.Notify).Select(m => m.UserId).ToListAsync(ct);
         if (userIds.Count == 0) return;
+        // a space deleted on a device keeps its members and its accounts here: nobody is told about one they can no longer open
+        if (await db.EntityRows.AnyAsync(r => r.SpaceId == spaceId && r.Entity == "space" && r.EntityId == spaceId && r.Deleted, ct)) return;
         await SendToUsersAsync(userIds, new { type = "new-transactions", spaceId, spaceName = await SpaceNameAsync(spaceId, ct), count }, ct);
     }
 

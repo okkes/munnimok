@@ -95,7 +95,7 @@ public sealed class ConnectorSyncService(
         if (row.KeptBundle is not null) row.KeptBundle = run.Bundle;
         await relay.Db.SaveChangesAsync(ct);
         Wake(run.Touched);
-        await NotifyAsync(run.Trigger, run.Attached, run.Landed.Transactions, ct);
+        await NotifyAsync(run.Trigger, run.NewBySpace, ct);
 
         var body = new JsonObject
         {
@@ -176,7 +176,7 @@ public sealed class ConnectorSyncService(
         run.Landed = run.Landed.Plus(landed.Counts);
         run.Touched.UnionWith(landed.TouchedSpaces);
         run.Pending.AddRange(landed.PendingRows);
-        run.Attached.UnionWith(landed.Attached);
+        run.NoteNew(landed.NewBySpace);
 
         if (page[SessionField] is JsonObject session && session.Text("bundle") is { Length: > 0 } fresh)
         {
@@ -288,7 +288,7 @@ public sealed class ConnectorSyncService(
             Rotated = rotated,
         };
         if (run.Partial) run.NoteOldest(OldestOf(job["data"] as JsonArray, Day(call.Request.Until)));
-        if (landed is not null) run.Attached.UnionWith(landed.Attached);
+        if (landed is not null) run.NoteNew(landed.NewBySpace);
 
         var pending = await WalkOnAsync(run, row, job.Text(ResourceField), ct);
         return pending ?? await FinishAsync(run, row, view, ct);
@@ -354,7 +354,7 @@ public sealed class ConnectorSyncService(
             await relay.Db.SaveChangesAsync(ct);
         }
         Wake(run.Touched);
-        await NotifyAsync(run.Trigger, run.Attached, run.Landed.Transactions, ct);
+        await NotifyAsync(run.Trigger, run.NewBySpace, ct);
 
         view["ingested"] = Counts(run.Landed);
         view[CompleteField] = !run.Partial;
@@ -381,11 +381,11 @@ public sealed class ConnectorSyncService(
         return resourceId is null ? null : Resources(manifest).FirstOrDefault(r => r.Text("id") == resourceId)?.Text("returns");
     }
 
-    /// <summary>A scheduled fetch that landed transactions wakes the phones of the spaces they went to; a person's own sync needs no push.</summary>
-    private async Task NotifyAsync(string trigger, IEnumerable<string> spaces, int transactions, CancellationToken ct)
+    /// <summary>A scheduled fetch tells each space how many rows are new to it, and a space it brought nothing says nothing; a person's own sync needs no push.</summary>
+    private async Task NotifyAsync(string trigger, IReadOnlyDictionary<string, int> newBySpace, CancellationToken ct)
     {
-        if (notifier is null || trigger != "schedule" || transactions == 0) return;
-        foreach (var spaceId in spaces) await notifier.NotifyNewTransactionsAsync(spaceId, transactions, ct);
+        if (notifier is null || trigger != "schedule") return;
+        foreach (var (spaceId, count) in newBySpace) await notifier.NotifyNewTransactionsAsync(spaceId, count, ct);
     }
 
     // ── the connector's calls ────────────────────────────────────────────
@@ -589,8 +589,13 @@ public sealed class ConnectorSyncService(
         /// <summary>The pending rows the pages mirrored (§15), settled once the transactions resource is complete.</summary>
         public List<ConnectorPendingTx> Pending { get; } = [];
 
-        /// <summary>The spaces the prediction overlays went to: what a scheduled fetch wakes with a push.</summary>
-        public HashSet<string> Attached { get; } = new(StringComparer.Ordinal);
+        /// <summary>The booked rows each space shows for the first time, over every page: what a scheduled fetch tells that space.</summary>
+        public Dictionary<string, int> NewBySpace { get; } = new(StringComparer.Ordinal);
+
+        public void NoteNew(IReadOnlyDictionary<string, int> landed)
+        {
+            foreach (var (spaceId, count) in landed) NewBySpace[spaceId] = NewBySpace.GetValueOrDefault(spaceId) + count;
+        }
 
         public required string SessionId { get; init; }
 

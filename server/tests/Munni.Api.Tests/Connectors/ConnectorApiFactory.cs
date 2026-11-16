@@ -155,6 +155,20 @@ public sealed class ControlPlaneHost : IAsyncDisposable
     }
 }
 
+/// <summary>The push transport of the connector suites: it delivers nothing and remembers what it was handed.</summary>
+public sealed class RecordingPushSender : Munni.Api.Push.IPushSender
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(string Endpoint, string Payload)> _sent = new();
+
+    public IReadOnlyList<string> SentTo(string endpoint) => [.. _sent.Where(s => s.Endpoint == endpoint).Select(s => s.Payload)];
+
+    public Task<bool> SendAsync(Munni.Api.Push.PushSubscriptionRow subscription, string payload, CancellationToken ct)
+    {
+        _sent.Enqueue((subscription.Endpoint, payload));
+        return Task.FromResult(true);
+    }
+}
+
 /// <summary>
 /// munni's API with the relay configured against the in-process control
 /// plane: test auth, an in-memory database of its own, the development key
@@ -168,6 +182,9 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
     private readonly string _databaseName = $"connector-tests-{Guid.NewGuid():N}";
 
     public ControlPlaneHost ControlPlane { get; private set; } = null!;
+
+    /// <summary>Every push the api sent, by the endpoint it went to.</summary>
+    public RecordingPushSender Pushes { get; } = new();
 
     /// <summary>How long the control plane waits for a fetch before it answers 202; a suite overrides it to force the job path.</summary>
     protected virtual int FetchWaitSeconds => 1;
@@ -211,6 +228,7 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
                 services.Remove(d);
             }
             services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_databaseName));
+            services.AddSingleton<Munni.Api.Push.IPushSender>(Pushes);
 
             // the relay's client talks to the in-process control plane
             services.AddHttpClient<ConnectorClient>()

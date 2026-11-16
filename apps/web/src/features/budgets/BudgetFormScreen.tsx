@@ -27,6 +27,7 @@ import { Chip } from '@/ui/primitives';
 import { SearchField } from '@/ui/SearchField';
 import type { TranslationKey } from '@/i18n';
 import { BUDGET_ICONS } from './budgetUi';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 /** #534: why a warning cannot reach the person, and how it could */
 const NOTIFY_BLOCKED: Record<Exclude<PushState, 'on'>, TranslationKey> = {
@@ -279,14 +280,10 @@ export function BudgetFormScreen() {
           <IconPicker value={icon} onChange={setIcon} featured={BUDGET_ICONS} query={iconQuery} onQuery={setIconQuery} testIdPrefix="budgetform-icon" />
 
           <div className="m-cap px-1">{t('budgets.amount', { currency })}</div>
-          <input
+          <DecimalInput
             data-testid="budgetform-amount"
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onValue={setAmount}
             placeholder="0.00"
             className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
@@ -432,14 +429,10 @@ export function BudgetFormScreen() {
                   className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
                 />
               ) : (
-                <input
+                <DecimalInput
                   data-testid="budgetform-carrycap"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
                   value={carryCap}
-                  onChange={(e) => setCarryCap(e.target.value)}
+                  onValue={setCarryCap}
                   placeholder="0.00"
                   className="h-10 w-28 rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                 />

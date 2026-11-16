@@ -27,6 +27,7 @@ import { sourceKeyFor, sourceParamsFor } from './AttachSheet';
 import { AccountTypeRow } from './AccountTypeRow';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
+import { DecimalInput } from '@/ui/DecimalInput';
 
 /** an emptied field must CLEAR the row (null); undefined would drop from
  *  the op and leave the stale value standing */
@@ -375,14 +376,10 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                 </label>
                 <label className="min-w-0 flex-1 text-[12px] text-ink-3">
                   {t('debts.apr')}
-                  <input
+                  <DecimalInput
                     data-testid="acctedit-apr"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    min="0"
                     value={apr}
-                    onChange={(e) => setApr(e.target.value)}
+                    onValue={setApr}
                     placeholder="0.0"
                     className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
@@ -391,14 +388,10 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
               <div className="flex gap-2">
                 <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
                   {t('debts.payment')}
-                  <input
+                  <DecimalInput
                     data-testid="acctedit-payment"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
                     value={payment}
-                    onChange={(e) => setPayment(e.target.value)}
+                    onValue={setPayment}
                     placeholder="0.00"
                     className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />

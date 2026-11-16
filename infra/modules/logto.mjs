@@ -54,7 +54,7 @@ async function client(stack, { m2mId, m2mSecret }, fetchImpl = localAwareFetch) 
  * the app definitions one environment needs: SPA web + admin + lab (+ the
  * control cockpit when this environment powers it), native, m2m. Redirect
  * URIs mirror what the apps really send (origin + /auth-callback; the
- * native shell returns via /native-auth or its scheme).
+ * native shell returns on its own scheme, into the platform's auth session).
  */
 export function appDefinitions(stack) {
   const spa = (name, url, twinPort) => {
@@ -70,8 +70,8 @@ export function appDefinitions(stack) {
       name: `${stack.stack} native`,
       type: 'Native',
       oidcClientMetadata: {
-        redirectUris: [`${stack.urls.web}/native-auth`, `${stack.native.scheme}://auth-callback`],
-        postLogoutRedirectUris: [`${stack.urls.web}/native-signed-out`, `${stack.native.scheme}://signed-out`],
+        redirectUris: [`${stack.native.scheme}://auth-callback`],
+        postLogoutRedirectUris: [`${stack.native.scheme}://signed-out`],
       },
       customClientMetadata: {
         corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'],

@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- largeHeap: the encrypted store hands a whole table to the web layer as ONE object on the Java side, and
+         the heap a phone grants an app by default is small next to some years of transactions (#594) -->
     <application
         android:allowBackup="true"
+        android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:label="${munniLabel}"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -40,8 +43,6 @@
                 <data android:pathPrefix="/gc-callback" />
                 <data android:pathPrefix="/splits/join/" />
                 <data android:pathPrefix="/invite" />
-                <data android:pathPrefix="/native-auth" />
-                <data android:pathPrefix="/native-signed-out" />
             </intent-filter>
 
             <!-- §5: long-press launcher shortcuts (Review / Transactions) -->

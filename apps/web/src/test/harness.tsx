@@ -179,6 +179,9 @@ export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], 
     if (/^\/sync\/[^/]+\/push$/.test(url.pathname)) return json({ lastSeq: 0 });
     const pull = /^\/sync\/([^/]+)\/pull$/.exec(url.pathname);
     if (pull) return pullResponse(spaces, url, pull[1]);
+    // the scripted server hands out history only (what a test scripts is its pull): "no snapshot for you", as the
+    // real one answers a reader of an archived feed
+    if (/^\/sync\/[^/]+\/bootstrap$/.test(url.pathname)) return new Response(null, { status: 204 });
     // SSE stream: an immediately-closed stream — the engine falls back to polling
     if (url.pathname === '/sync/events') return new Response('', { status: 200 });
     // the handshake must agree with THIS build's protocol, or every

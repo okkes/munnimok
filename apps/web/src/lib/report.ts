@@ -15,6 +15,11 @@ export function reportError(scope: string, err: unknown): void {
   Sentry.captureException(err instanceof Error ? err : new Error(String(err)), { tags: { scope } });
 }
 
+/** `reportError` with the facts that explain it (sizes, counts, a trace): never anything a person typed or owns */
+export function reportErrorWith(scope: string, err: Error, extra: Record<string, unknown>): void {
+  Sentry.captureException(err, { tags: { scope }, extra });
+}
+
 /** a non-crash observation (#135: the memory watcher) — same gates as
  *  reportError: zero-network identities never send, offline queues */
 export function reportWarning(scope: string, message: string, extra: Record<string, unknown>): void {

@@ -93,6 +93,34 @@ is sent; the dev server traces at 1 when `VITE_GLITCHTIP_DSN` is set.
   own issue, and so does one that ran past its command timeout — a slow
   query is a fault of its own.
 
+### When the Android app itself ends (#594)
+
+Everything above is reported by the web layer, and the web layer dies
+with the app's process: a crash of the Android app left no trace in
+GlitchTip at all. The shell now notes how it ended and the next start
+reports it, under the scope `android-exit`:
+
+- **Android's own record** (`ApplicationExitInfo`, Android 11 and up):
+  the reason, its description, how important the process was held and
+  the memory it had. Reported: a crash, a native crash, "not
+  responding", a failed start and excessive resource use always; low
+  memory, a kill by signal and a dependency that died only while the
+  app was on screen — Android clears a resting app away as it pleases,
+  and a person swiping the app away is not a fault.
+- **The stack trace** of an exception nothing caught, written to the
+  app's files as the app goes down (`LastExit.java`).
+- **The web view's own process** dying (crashed or killed): Capacitor
+  leaves that unhandled, so Android ends the app with it.
+
+Each is told once (`lib/nativeExit.ts`), at the start of the app and
+only once a signed-in identity is known: nobody and a chosen-offline
+identity send nothing. An exit that reads "low memory" or a trace
+that says `OutOfMemoryError` points at how much the encrypted store
+hands across to the web layer at once. Two things keep that small: a
+whole table or a whole space is read 2,000 rows at a time
+(`READ_PAGE` in `db/sqlBackend.ts`), and the app asks Android for the
+large heap.
+
 ## 4. Reading a slow Confirm in GlitchTip
 
 GlitchTip (the shared stack runs `glitchtip/glitchtip:7` as one
@@ -100,10 +128,20 @@ container — since 7.0 the same process serves the site and does the
 background work; see `infra/modules/render.mjs`) has shown transactions
 since 1.3; there is nothing to enable in the UI — the Performance page
 lists transaction groups as soon as an SDK sends them with a sample rate
-above 0. The retention is `GLITCHTIP_TRANSACTION_RETENTION_DAYS`
-(inherits `GLITCHTIP_RETENTION_DAYS`, 90 days); set it in the
-`glitchtip` service's environment if the volume ever matters. The names
+above 0. The list knows no builds and no periods: every figure in it
+is over all the timings GlitchTip still holds. The shared stack
+therefore keeps a month of them (`GLITCHTIP_TRANSACTION_RETENTION_DAYS:
+30` in the `glitchtip` service's environment, #603), so the averages
+are about the builds people run now; crash reports and everything else
+keep the default of `GLITCHTIP_RETENTION_DAYS`, 90 days. The names
 that ended in `_LIFE_DAYS` are ignored since 7.0.
+
+To judge one build, or one week, take two readings of
+`/api/0/organizations/<org>/transaction-groups/` and subtract: with a
+group's count `n` and average `a` at both moments,
+`(a2·n2 − a1·n1) / (n2 − n1)` is the average of what arrived in
+between. That is how the phone was read after the fixes of 8 and 15
+November.
 
 1. Open the environment's web project (`<stack>-pwa`, e.g.
    `munni-nas-prod-pwa`) → **Performance**.
