@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.22.0',
+    date: '2026-11-16',
+    items: [
+      {
+        en: 'New transactions, told once: after the nightly bank update each space says how many transactions are new in that space. A space that got nothing stays quiet, and a deleted space no longer sends its untitled notification.',
+        nl: 'Nieuwe transacties, één keer gemeld: na de nachtelijke bankupdate zegt elke ruimte hoeveel transacties er in die ruimte nieuw zijn. Een ruimte die niets kreeg blijft stil, en een verwijderde ruimte stuurt haar melding zonder naam niet meer.',
+        tr: 'Yeni işlemler bir kez bildirilir: gece yapılan banka güncellemesinden sonra her alan, o alanda kaç işlemin yeni olduğunu söyler. Hiçbir şey almayan alan sessiz kalır ve silinmiş bir alan artık adsız bildirimini göndermez.',
+      },
+      {
+        en: 'Amounts and percentages take the comma of your phone\'s keypad: 7,5 and 7.5 both mean seven and a half, in every field.',
+        nl: 'Bedragen en percentages nemen de komma van het toetsenbord van je telefoon: 7,5 en 7.5 betekenen allebei zeven en een half, in elk veld.',
+        tr: 'Tutarlar ve yüzdeler telefonunun tuş takımındaki virgülü kabul eder: 7,5 ve 7.5 her alanda yedi buçuk anlamına gelir.',
+      },
+      {
+        en: 'Signing in on a new device fetches your data as it stands today, not every change ever made to it: the first sign-in takes as long as your data is big, however long you have used the app.',
+        nl: 'Aanmelden op een nieuw apparaat haalt je gegevens op zoals ze nu zijn, niet elke wijziging die er ooit in is gemaakt: de eerste aanmelding duurt zo lang als je gegevens groot zijn, hoe lang je de app ook gebruikt.',
+        tr: 'Yeni bir cihazda oturum açmak verilerini bugünkü haliyle getirir, şimdiye kadar yapılmış her değişikliği değil: ilk oturum açma, uygulamayı ne kadar süredir kullanırsan kullan, verilerinin büyüklüğü kadar sürer.',
+      },
+    ],
+  },
+  {
     version: '5.21.3',
     date: '2026-11-15',
     items: [
