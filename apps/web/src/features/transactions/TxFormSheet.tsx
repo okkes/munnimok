@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useSpaceAccounts } from '@/application/transactions';
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { useEvents } from '@/application/events';
 import { EventPickList } from '@/features/events/EventPickList';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -23,6 +24,7 @@ import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
+import { cleanBankText } from '@/lib/text';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Chip } from '@/ui/primitives';
 import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
@@ -38,6 +40,9 @@ import { Icon } from '@/ui/Icon';
 import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
 import { CatsSheet } from './PartCatsSheet';
+import { ReimburseLinkPicker } from './ReimburseLinkScreen';
+import type { PickedLink } from './ReimburseLinkScreen';
+import { useReimburseLinks } from './useReimburseLinks';
 import { minaSuggestedTx } from '@/features/mina/steps';
 import { CounterpartySheet } from './TxKindSheet';
 
@@ -537,6 +542,8 @@ function manualBlockerFor(args: {
   counterMissing: boolean;
   startGateBlocking: string | undefined;
   futureOnBank: boolean;
+  /** the staged reimbursements' total, formatted, when it is more than the amount */
+  stagedOver?: string;
   t: ReturnType<typeof useLang>['t'];
 }): [string, string] {
   const { t } = args;
@@ -548,6 +555,7 @@ function manualBlockerFor(args: {
   if (args.futureOnBank) return ['date', t('txform.futureDate')];
   // #309 (user): a movement category refuses to save without its counter
   if (args.counterMissing) return ['counter', t('review.counterRequired')];
+  if (args.stagedOver) return ['reimb', t('txform.reimbOver', { amount: args.stagedOver })];
   // the start-gate card already explains itself — just point at it
   if (args.startGateBlocking) return ['form', t('form.fixErrors')];
   return ['form', t('form.needFields')];
@@ -669,8 +677,9 @@ interface TxFormHost {
   extended?: boolean;
   /** the host goes away (the no-account door leaves for the accounts screen) */
   onClose: () => void;
-  /** saved: the row's id, and 'reimb' when the person asked to link a reimbursement next */
-  onSaved: (rowId: string, next?: 'reimb') => void;
+  onSaved: (rowId: string) => void;
+  /** #348 r5: the reimbursement picker opens over the form — the picks wait on the form until Add */
+  onLinkReimb?: () => void;
 }
 
 /** the manual transaction form, shared by the edit sheet and the create screen */
@@ -759,8 +768,11 @@ function LinkAskSheet({ bank, onAnswer, onClose }: Readonly<{ bank: BankRowRef |
   );
 }
 
-function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: TxFormHost) {
-  const { t } = useLang();
+/** the id of a transaction still being typed, where the reimbursement picker needs a row to size its links by */
+const DRAFT_TX_ID = 'tx:being-typed';
+
+function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved, onLinkReimb }: TxFormHost) {
+  const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const canEdit = useCanEdit();
@@ -795,7 +807,12 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const [accountOpen, setAccountOpen] = useState(false);
   // #547: an entry on a bank account — the balance tick, and the bank row a new entry already fits
   const [countIn, setCountIn] = useState(true);
-  const [linkAsk, setLinkAsk] = useState<{ bank: BankRowRef; next?: 'reimb' } | null>(null);
+  const [linkAsk, setLinkAsk] = useState<{ bank: BankRowRef } | null>(null);
+  // #348 r5 (user): a reimbursement picked while adding is staged here — it is written with the row, on Add
+  const [staged, setStaged] = useState<PickedLink[]>([]);
+  const [reimbNote, setReimbNote] = useState(false);
+  const allTxs = useSpaceTransactions(extended);
+  const { linkMany } = useReimburseLinks(allTxs);
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
   const baselineRef = useRef('');
@@ -841,6 +858,8 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
     setAttempted(false);
     setCountIn(tx ? tx.inBalance !== 0 : true);
     setLinkAsk(null);
+    setStaged([]);
+    setReimbNote(false);
     saving.current = false;
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
@@ -876,18 +895,23 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
   const zeroCounts = adjustment && adjustTarget;
   const noAmount = amountMissing(cents, zeroCounts);
+  // what is staged was picked for an expense or for money coming in, and sized by the amount of that moment
+  const stagedCents = adjustment ? 0 : staged.reduce((sum, link) => sum + link.cents, 0);
+  const stagedOver = stagedCents > (cents ?? 0);
   const valid =
     isValidManualTx({ merchant, cents, zeroCounts, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking, futureOnBank }) &&
-    !adjustNoop;
+    !adjustNoop &&
+    !stagedOver;
   // #195 r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
   const [blockerField, blockerText] = manualBlockerFor({
     attempted, valid, merchant, amountMissing: noAmount, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, futureOnBank, t,
+    stagedOver: stagedOver ? fmtCents(stagedCents, accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR', lang) : undefined,
   });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
-  const save = (next?: 'reimb', bank?: { link?: BankRowRef; apart?: string }) => {
+  const save = (bank?: { link?: BankRowRef; apart?: string }) => {
     if (!valid || !effectiveAccount || cents === null || saving.current) return;
     saving.current = true;
     // #269: target mode writes the DIFFERENCE to the named balance
@@ -925,8 +949,17 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
       });
       await repo.upsert('transaction', spaceId, rowId, { ...fields, ...entryFieldsFor(onBank, tx, canCount && countIn, bank?.apart) });
       await linkSavedEntry(store, repo, spaceId, rowId, bank?.link);
-      // the reimbursement flow reads the row: it goes on once the row is there
-      if (next) onSaved(rowId, next);
+      // #348 r5: the staged reimbursements are written now that their row is there
+      if (!adjustment && staged.length > 0) {
+        const saved = { ...fields, id: rowId, spaceId, deleted: 0, needsReview: 0 } as unknown as SpaceTx;
+        linkMany(
+          staged.map((link) =>
+            signed < 0
+              ? { expense: saved, credit: link.row, cents: link.cents, creditPartId: link.creditPartId }
+              : { expense: link.row, credit: saved, cents: link.cents, partId: link.partId },
+          ),
+        );
+      }
       if (prevLinked !== nextLinked) {
         const { planMirrorChange } = await import('@/application/mirrorMint');
         const plan = await planMirrorChange(
@@ -953,7 +986,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
     })().catch(() => {
       saving.current = false;
     });
-    if (!next) onSaved(rowId);
+    onSaved(rowId);
   };
 
   // #179: until the seed effect stamps a baseline, the form cannot be
@@ -969,7 +1002,7 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
   const counterRelevant = !!linkedAccountId || !!specialCatType(catId) || !!stagedCats?.some((e) => specialCatType(e.catId));
   const empty = writable.length === 0 && !tx;
   const pickedEvent = events?.find((e) => e.id === eventId);
-  const trySave = (next?: 'reimb') => {
+  const trySave = () => {
     if (!canEdit) return;
     if (!valid) {
       setAttempted(true);
@@ -978,18 +1011,45 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
     // #547: the bank may already hold what is being typed — ask before it counts twice
     const draft = newEntryDraft(onBank && !tx, effectiveAccount, date, isExpense, cents, merchant);
     if (!draft) {
-      save(next);
+      save();
       return;
     }
     void bankFitFor(store, spaceId, draft)
       .catch(() => null)
-      .then((fit) => (fit ? setLinkAsk({ bank: fit, next }) : save(next)));
+      .then((fit) => (fit ? setLinkAsk({ bank: fit }) : save()));
   };
   const answerLinkAsk = (link: boolean) => {
     const asked = linkAsk;
     if (!asked) return;
     setLinkAsk(null);
-    save(asked.next, link ? { link: asked.bank } : { apart: asked.bank.raw.id });
+    save(link ? { link: asked.bank } : { apart: asked.bank.raw.id });
+  };
+
+  // #348 r5: the row as it would be saved — the anchor the picker sizes its links by; none before there is an amount
+  const reimbAnchor: SpaceTx | null =
+    !extended || adjustment || cents === null || cents === 0
+      ? null
+      : ({
+          id: DRAFT_TX_ID,
+          spaceId,
+          accountId: effectiveAccount ?? '',
+          date,
+          amountCents: isExpense ? -cents : cents,
+          currency: formCurrency,
+          merchant: merchant.trim() || t('txform.addTitle'),
+          catId,
+          ...(stagedCats ? { cats: stagedCats } : {}),
+          needsReview: 0,
+          deleted: 0,
+        } as unknown as SpaceTx);
+  const openReimb = () => {
+    setReimbNote(!reimbAnchor);
+    if (reimbAnchor) onLinkReimb?.();
+  };
+  const flipSign = (expense: boolean) => {
+    // a link runs from an expense to the money that pays it back: the other direction has other counterparts
+    if (expense !== isExpense) setStaged([]);
+    setIsExpense(expense);
   };
 
   const saveButton = (
@@ -1032,14 +1092,14 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
             <div className="flex overflow-hidden rounded-input border border-line">
               <button
                 data-testid="txform-expense"
-                onClick={() => setIsExpense(true)}
+                onClick={() => flipSign(true)}
                 className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
               >
                 −
               </button>
               <button
                 data-testid="txform-income"
-                onClick={() => setIsExpense(false)}
+                onClick={() => flipSign(false)}
                 className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
               >
                 +
@@ -1167,8 +1227,12 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
               notes={notes}
               onNotes={setNotes}
               credit={!isExpense}
-              canLinkReimb={canEdit}
-              onLinkReimb={() => trySave('reimb')}
+              canLinkReimb={canEdit && !!onLinkReimb}
+              onLinkReimb={openReimb}
+              staged={staged}
+              onUnstage={(key) => setStaged((held) => held.filter((link) => link.key !== key))}
+              currency={formCurrency}
+              note={blockerField === 'reimb' ? blockerText : reimbNote && !reimbAnchor ? t('txform.reimbNeedsAmount') : ''}
             />
           )}
         </>
@@ -1297,11 +1361,11 @@ function useTxForm({ open, tx, prefill, extended = false, onClose, onSaved }: Tx
     </>
   );
 
-  return { fields, saveButton, sheets, dirty, empty };
+  return { fields, saveButton, sheets, dirty, empty, reimbAnchor, staged, setStaged, allTxs };
 }
 
 /** #348: the create screen's story rows — the event, the notes, and the
- *  door into the reimbursement link that saves the row first (S3776) */
+ *  door into the reimbursement picker with what was picked so far (S3776) */
 function StoryRows({
   eventName,
   onEvent,
@@ -1310,6 +1374,10 @@ function StoryRows({
   credit,
   canLinkReimb,
   onLinkReimb,
+  staged,
+  onUnstage,
+  currency,
+  note,
 }: Readonly<{
   eventName: string | undefined;
   onEvent: () => void;
@@ -1317,11 +1385,18 @@ function StoryRows({
   onNotes: (notes: string) => void;
   /** a credit pays an expense back; an expense gets paid back */
   credit: boolean;
-  /** false where nothing may be saved: the door saves the row first */
+  /** false where nothing may be saved */
   canLinkReimb: boolean;
   onLinkReimb: () => void;
+  /** #348 r5: picked, not written yet — the links land with the row */
+  staged: readonly PickedLink[];
+  onUnstage: (key: string) => void;
+  currency: string;
+  /** what keeps the door shut, or the links from being written */
+  note: string;
 }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const stagedCents = staged.reduce((sum, link) => sum + link.cents, 0);
   return (
     <>
       <button
@@ -1343,19 +1418,33 @@ function StoryRows({
         className="w-full resize-none rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-4"
       />
       {canLinkReimb && (
-        <button
-          data-testid="txform-link-reimb"
-          onClick={onLinkReimb}
-          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-        >
-          <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
-            <span className="block truncate text-[11px] text-ink-4">{t('txform.reimbAfterSave')}</span>
-          </span>
-          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-        </button>
+        <div className="overflow-hidden rounded-input border border-line bg-surface" data-testid="txform-reimb">
+          <button
+            data-testid="txform-link-reimb"
+            onClick={onLinkReimb}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[15px] text-ink"
+          >
+            <Icon name="cash-refund" size={20} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{t(credit ? 'txform.reimbCredit' : 'txform.reimbExpense')}</span>
+              <span className="block truncate text-[11px] text-ink-4" data-testid="txform-reimb-sub">
+                {staged.length > 0 ? t('txform.reimbStaged', { n: staged.length, amount: fmtCents(stagedCents, currency, lang) }) : t('txform.reimbOnAdd')}
+              </span>
+            </span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          {staged.map((link) => (
+            <div key={link.key} className="flex items-center gap-2 border-t border-line-2 py-1.5 pr-1 pl-12 text-[13px] text-ink-2" data-testid={`txform-reimb-staged-${link.row.id}`}>
+              <span className="min-w-0 flex-1 truncate">{cleanBankText(link.row.merchant)}</span>
+              <span className="m-num shrink-0">{fmtCents(link.cents, currency, lang)}</span>
+              <IconButton label={t('txform.reimbUnstage', { name: cleanBankText(link.row.merchant) })} testId={`txform-reimb-unstage-${link.row.id}`} onClick={() => onUnstage(link.key)}>
+                <Icon name="close" size={16} color="var(--m-ink-4)" />
+              </IconButton>
+            </div>
+          ))}
+        </div>
       )}
+      <FormBlockerNote show={canLinkReimb && !!note} text={note} testId="txform-reimb-note" />
     </>
   );
 }
@@ -1395,7 +1484,7 @@ export function TxCreateScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
   const canEdit = useCanEdit();
-  const search = useSearch({ strict: false }) as { counter?: string; title?: string };
+  const search = useSearch({ strict: false }) as { counter?: string; title?: string; link?: string };
   const prefill = useMemo(
     () => (search.counter ? { linkedAccountId: search.counter, merchant: search.title } : undefined),
     [search.counter, search.title],
@@ -1405,17 +1494,33 @@ export function TxCreateScreen() {
     prefill,
     extended: true,
     onClose: () => undefined,
-    onSaved: (rowId, next) => {
+    onSaved: (rowId) => {
       // the new row's own page replaces this screen — every door the detail
-      // has (receipt, split, links) is one tap away, and back returns to the
-      // opener; the reimbursement flow goes there through the link picker
-      if (next === 'reimb') void navigate({ to: '/transactions/$txId/link-reimb', params: { txId: rowId }, replace: true });
-      else void navigate({ to: '/transactions/$txId', params: { txId: rowId }, replace: true });
+      // has (receipt, split, links) is one tap away, and back returns to the opener
+      void navigate({ to: '/transactions/$txId', params: { txId: rowId }, replace: true });
     },
+    // #348 r5 (user): the picker is a step of this screen, a history entry of its own — the form stays as it was typed
+    // underneath, and Back (the bar's or the browser's) returns to it with nothing saved
+    onLinkReimb: () => void navigate({ to: '/transactions/new', search: { ...search, link: '1' } }),
   });
   const { guardedBack, sheet: discardSheet } = useDiscardGuard(form.dirty, () => window.history.back());
+  const linking = search.link === '1' && !!form.reimbAnchor;
+  const router = useRouter();
   return (
-    <div className="m-fade flex h-full flex-col" data-testid="screen-tx-create">
+    <>
+      {linking && form.reimbAnchor && (
+        <ReimburseLinkPicker
+          tx={form.reimbAnchor}
+          allTxs={form.allTxs}
+          initial={form.staged}
+          onConfirm={(picks) => {
+            form.setStaged(picks);
+            router.history.back();
+          }}
+          onBack={() => router.history.back()}
+        />
+      )}
+    <div className={linking ? 'hidden' : 'm-fade flex h-full flex-col'} data-testid="screen-tx-create">
       <AppBar
         title={t('txform.addTitle')}
         leading={
@@ -1436,5 +1541,6 @@ export function TxCreateScreen() {
       {form.sheets}
       {discardSheet}
     </div>
+    </>
   );
 }

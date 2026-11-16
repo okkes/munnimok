@@ -166,7 +166,7 @@ describe('TxFormSheet (demo identity)', () => {
     expect(screen.getByTestId('txform-category').textContent).toContain('Set aside');
   }, 15_000);
 
-  it('#348 (user): the event and the note are set while adding; a reimbursement link follows the save', async () => {
+  it('#348 (user): the event and the note are set while adding; a reimbursement is picked on the way and written with the row', async () => {
     const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
       import('@/db/schema'),
       import('@/db/backend'),
@@ -175,7 +175,11 @@ describe('TxFormSheet (demo identity)', () => {
     ]);
     await openForm();
     const seed = new MunniDB('munni_demo');
-    await new Repo(new DexieBackend(seed), new HlcClock('ev348'), { trackOutbox: false }).upsert('event', 'demo_space', 'ev348', { name: 'Wedding' });
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('ev348'), { trackOutbox: false });
+    await seedRepo.upsert('event', 'demo_space', 'ev348', { name: 'Wedding' });
+    await seedRepo.upsert('transaction', 'demo_space', 'pay348', {
+      accountId: 'demo_main', date: new Date().toISOString().slice(0, 10), amountCents: 4_000, currency: 'EUR', merchant: 'Bas pays back', catId: 'uncategorized', needsReview: 0,
+    });
     seed.close();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '80,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Flowers for Anna' } });
@@ -183,17 +187,48 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('txform-event-ev348'));
     await waitFor(() => expect(screen.getByTestId('txform-event').textContent).toContain('Wedding'));
     fireEvent.change(screen.getByTestId('txform-notes'), { target: { value: 'Half is Bas’s share' } });
-    // the reimbursement door saves first, then opens the link picker for the new row
+    const db = new MunniDB('munni_demo');
+    const saved = async () => (await db.transactions.toArray()).find((r) => r.merchant === 'Flowers for Anna');
+
+    // r5 (user 2026-11-16): the door opens the picker over the form — Back returns to what was typed, and nothing was saved
     fireEvent.click(screen.getByTestId('txform-link-reimb'));
     await screen.findByTestId('screen-reimb-link', {}, { timeout: 5000 });
     expect((await screen.findByTestId('reimb-link-anchor', {}, { timeout: 5000 })).textContent).toContain('Flowers for Anna');
-    const db = new MunniDB('munni_demo');
+    fireEvent.click(screen.getByTestId('reimb-link-back'));
+    await waitFor(() => expect(screen.queryByTestId('screen-reimb-link')).toBeNull(), { timeout: 5000 });
+    expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Flowers for Anna');
+    expect((screen.getByTestId('txform-notes') as HTMLTextAreaElement).value).toBe('Half is Bas’s share');
+    expect(screen.getByTestId('txform-reimb-sub').textContent).toContain('linked when you add');
+    expect(await saved()).toBeUndefined();
+
+    // picked this time: it waits on the form, still unsaved
+    fireEvent.click(screen.getByTestId('txform-link-reimb'));
+    await screen.findByTestId('reimb-link-list', {}, { timeout: 5000 });
+    fireEvent.click((await screen.findAllByTestId(/^reimb-(pick|suggest)-pay348-check$/, {}, { timeout: 5000 }))[0]);
+    fireEvent.click(screen.getByTestId('reimb-save'));
+    await waitFor(() => expect(screen.queryByTestId('screen-reimb-link')).toBeNull(), { timeout: 5000 });
+    expect(screen.getByTestId('txform-reimb-sub').textContent).toContain('1 picked');
+    expect(screen.getByTestId('txform-reimb-staged-pay348').textContent).toContain('€40.00');
+    expect(await saved()).toBeUndefined();
+    expect((await db.transactions.get('pay348'))?.cats ?? null).toBeNull();
+
+    // an amount under what was picked refuses to save and says why
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '30,00' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+    expect((await screen.findByTestId('txform-reimb-note')).textContent).toContain('€40.00');
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '80,00' } });
+
+    // Add writes the row and its link, and both sides settle
+    fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(async () => {
-      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Flowers for Anna');
+      const row = await saved();
       expect(row).toMatchObject({ eventId: 'ev348', notes: 'Half is Bas’s share', amountCents: -8000 });
-    }, { timeout: 5000 });
+      expect(row?.reimbursements).toEqual([{ txId: 'pay348', amountCents: 4_000 }]);
+      expect(row?.cats?.find((c) => c.catId === 'reimbursed')?.amountCents).toBe(4_000);
+      expect((await db.transactions.get('pay348'))?.catId).toBe('reimbursed');
+    }, { timeout: 8000 });
     db.close();
-  }, 20_000);
+  }, 30_000);
 
   it('#228: a lone ◆ pick in the editor becomes the FORM\'s counterparty; save mints the row-key leg', async () => {
     await openForm();

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -96,6 +96,15 @@ interface Pick {
   text: string;
 }
 
+/** a pick as the picker hands it over: the row (a part of it when the ids say so) and the cents typed for it */
+export interface PickedLink {
+  key: string;
+  row: SpaceTx;
+  partId?: string;
+  creditPartId?: string;
+  cents: number;
+}
+
 const keyOf = (rowId: string, partId?: string, creditPartId?: string): string => `${rowId}|${partId ?? ''}|${creditPartId ?? ''}`;
 const amountTestId = (key: string): string => `reimb-amount-${key.split('|').filter(Boolean).join('-')}`;
 const centsOf = (pick: Pick): number => Math.max(0, parseCents(pick.text) ?? 0);
@@ -118,14 +127,56 @@ const pickColor = (i: number): string => `color-mix(in srgb, var(--m-accent) ${M
  * previews the category shift and links every pick in one gesture.
  */
 export function ReimburseLinkScreen() {
-  const { t, lang } = useLang();
   const navigate = useNavigate();
   const { txId } = useParams({ strict: false }) as { txId: string };
   // #126 r5: opened from a part page → the link targets that part
   const { part: partId } = useSearch({ strict: false }) as { part?: string };
   const allTxs = useSpaceTransactions();
   const tx = useMemo(() => allTxs?.find((row) => row.id === txId), [allTxs, txId]);
-  const { linkMany, giveableCents } = useReimburseLinks(allTxs);
+  const { linkMany } = useReimburseLinks(allTxs);
+  const anchorIsExpense = (tx?.amountCents ?? 0) < 0;
+  const link = (picks: readonly PickedLink[]) => {
+    if (!tx) return;
+    // the part target lives on the EXPENSE side's split — from the
+    // expense anchor it rides the ?part param; the CREDIT part rides
+    // the pick (expense anchor) or the ?part param (credit anchor's
+    // own part page, #197)
+    const entries: LinkEntry[] = picks.map((pick) =>
+      anchorIsExpense
+        ? { expense: tx, credit: pick.row, cents: pick.cents, partId, creditPartId: pick.creditPartId }
+        : { expense: pick.row, credit: tx, cents: pick.cents, partId: pick.partId, creditPartId: partId },
+    );
+    linkMany(entries);
+    // REPLACE, not back: pressing back on the detail afterwards must not
+    // resurface a stale picker — a part-born link returns to its part
+    void navigate({ to: '/transactions/$txId', params: { txId }, search: partId ? { part: partId } : {}, replace: true });
+  };
+  return <ReimburseLinkPicker tx={tx} partId={partId} allTxs={allTxs} onConfirm={link} />;
+}
+
+/**
+ * The picker itself, for a stored transaction (the screen above) or for one
+ * still being typed (#348 r5, the add screen): the anchor is whatever row it
+ * is handed, and what was picked goes to the caller — nothing is written here.
+ */
+export function ReimburseLinkPicker({
+  tx,
+  partId,
+  allTxs,
+  initial,
+  onConfirm,
+  onBack = () => window.history.back(),
+}: Readonly<{
+  tx: SpaceTx | undefined;
+  partId?: string;
+  allTxs: SpaceTx[] | undefined;
+  /** the picks a transaction still being typed already holds: the picker opens with them */
+  initial?: readonly Omit<PickedLink, 'row'>[];
+  onConfirm: (picks: PickedLink[]) => void;
+  onBack?: () => void;
+}>) {
+  const { t, lang } = useLang();
+  const { giveableCents } = useReimburseLinks(allTxs);
 
   const [query, setQuery] = useState('');
   /** the category impact starts folded (user 2026-10-07): open, it ate half the screen under the list */
@@ -238,6 +289,22 @@ export function ReimburseLinkScreen() {
     setPicks(picks.map((pick) => (pick.key === key ? { ...pick, text } : pick)));
   };
 
+  // once, when the rows are there: what the typed transaction holds so far, with today's ceilings
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !initial?.length || !allTxs || !tx) return;
+    seeded.current = true;
+    setPicks(
+      initial.flatMap((held) => {
+        const row = allTxs.find((r) => r.id === held.key.split('|')[0]);
+        if (!row) return [];
+        const part = (row.splits ?? []).find((p) => p.id && p.id === (held.partId ?? held.creditPartId));
+        return [{ key: held.key, row, partId: held.partId, creditPartId: held.creditPartId, maxCents: pairOf(row, part).max, text: toText(held.cents) }];
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial, allTxs, tx]);
+
   // #233 r2 (user): the category impact of the typed amounts, live while
   // they are saveable values — the anchor once over every pick, each
   // counterpart for its own
@@ -274,20 +341,9 @@ export function ReimburseLinkScreen() {
       setError({ text: t('reimb.totalError', { max: fmtCents(anchor.open, tx.currency, lang) }) });
       return;
     }
-    // the part target lives on the EXPENSE side's split — from the
-    // expense anchor it rides the ?part param; the CREDIT part rides
-    // the pick (expense anchor) or the ?part param (credit anchor's
-    // own part page, #197)
-    const entries: LinkEntry[] = picks.map((pick) =>
-      anchorIsExpense
-        ? { expense: tx, credit: pick.row, cents: centsOf(pick), partId, creditPartId: pick.creditPartId }
-        : { expense: pick.row, credit: tx, cents: centsOf(pick), partId: pick.partId, creditPartId: partId },
-    );
-    linkMany(entries);
+    const picked = picks.map((pick) => ({ key: pick.key, row: pick.row, partId: pick.partId, creditPartId: pick.creditPartId, cents: centsOf(pick) }));
     setPicks([]);
-    // REPLACE, not back: pressing back on the detail afterwards must not
-    // resurface a stale picker — a part-born link returns to its part
-    void navigate({ to: '/transactions/$txId', params: { txId }, search: partId ? { part: partId } : {}, replace: true });
+    onConfirm(picked);
   };
 
   const money = (cents: number) => fmtCents(cents, tx?.currency ?? 'EUR', lang);
@@ -385,7 +441,7 @@ export function ReimburseLinkScreen() {
       <AppBar
         title={t(anchorIsExpense ? 'reimb.link' : 'reimb.linkOut')}
         leading={
-          <IconButton label={t('action.back')} testId="reimb-link-back" onClick={() => window.history.back()}>
+          <IconButton label={t('action.back')} testId="reimb-link-back" onClick={onBack}>
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }

@@ -60,9 +60,11 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
    *  their NEXT state — the writes below land both sides in one gesture,
    *  so the live snapshot is one beat behind */
   const givenView = (creditId: string, nextLinks: ReadonlyMap<string, TxReimbursement[]>) => {
-    const naming = (allTxs ?? [])
-      .flatMap((row) => nextLinks.get(row.id) ?? row.reimbursements ?? [])
-      .filter((link) => link.txId === creditId);
+    const rows = allTxs ?? [];
+    const known = new Set(rows.map((row) => row.id));
+    // an expense written in this very gesture (the add screen's, #348) is not among the rows yet
+    const unseen = [...nextLinks].filter(([id]) => !known.has(id)).flatMap(([, links]) => links);
+    const naming = [...rows.flatMap((row) => nextLinks.get(row.id) ?? row.reimbursements ?? []), ...unseen].filter((link) => link.txId === creditId);
     return {
       total: naming.reduce((sum, link) => sum + link.amountCents, 0),
       byPart: (splits: SpaceTx['splits']) => reimbCentsByPart(naming, 'creditPartId', splits),

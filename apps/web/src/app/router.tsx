@@ -175,9 +175,11 @@ const txCreateRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: 'new',
   component: TxCreateScreen,
-  validateSearch: (search: Record<string, unknown>): { counter?: string; title?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { counter?: string; title?: string; link?: string } => ({
     ...(typeof search.counter === 'string' && search.counter.length > 0 ? { counter: search.counter } : {}),
     ...(typeof search.title === 'string' && search.title.length > 0 ? { title: search.title } : {}),
+    // #348 r5: the reimbursement picker open over the form being typed
+    ...(String(search.link) === '1' ? { link: '1' } : {}),
   }),
 });
 // full-screen counterpart picker (user redesign 2026-07-28) — a sibling
