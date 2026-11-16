@@ -194,7 +194,8 @@ function Breakdown({
 
       <Section caption={t('cashflow.setAside')} hint={forecast.setAsides.length > 0 ? t('cashflow.setAsideSub') : undefined} dot={SET_ASIDE_COLOR}>
         {forecast.setAsides.map((line) => (
-          <div key={line.kind} inert={canEdit ? undefined : true}>
+          // the divider sits on the wrapper: the row inside is its only child, and an only child draws none
+          <div key={line.kind} className="border-b border-line-2" inert={canEdit ? undefined : true}>
             <Row
               kind="data"
               title={t(SET_ASIDE_LABEL[line.kind])}
