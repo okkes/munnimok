@@ -32,11 +32,19 @@ public static class SpaceErasure
         op.Deleted && op.Entity == SpaceEntity && op.EntityId == spaceId;
 
     /// <summary>
-    /// Whether the space's own row stands as deleted — by the merge's rule, so an edit made after the delete
-    /// keeps the space. Reads the row the caller's unit of work holds, saved or not.
+    /// What a push may apply: deleting the space is its owner's to do — it erases the space for everyone — so
+    /// anybody else's delete of the space's row is left out.
     /// </summary>
-    public static async Task<bool> IsDeletedAsync(AppDbContext db, string spaceId, CancellationToken ct = default) =>
-        (await db.EntityRows.FindAsync([spaceId, SpaceEntity, spaceId], ct))?.Deleted == true;
+    public static List<SyncOpDto> Admitted(List<SyncOpDto> ops, string spaceId, bool owner) =>
+        owner ? ops : ops.Where(o => !Deletes(o, spaceId)).ToList();
+
+    /// <summary>
+    /// Whether the ops just applied deleted the space: one of them is the delete, and the space's own row
+    /// stands as deleted — by the merge's rule, so an edit made after the delete keeps the space. Reads the
+    /// row the caller's unit of work holds, saved or not.
+    /// </summary>
+    public static async Task<bool> DeletedByAsync(AppDbContext db, string spaceId, List<SyncOpDto> applied, CancellationToken ct = default) =>
+        applied.Exists(o => Deletes(o, spaceId)) && (await db.EntityRows.FindAsync([spaceId, SpaceEntity, spaceId], ct))?.Deleted == true;
 
     /// <summary>
     /// Takes the space out of reach, in the caller's unit of work: nobody is a member, no account is attached

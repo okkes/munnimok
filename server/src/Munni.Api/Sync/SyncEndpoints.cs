@@ -133,12 +133,11 @@ public static class SyncEndpoints
             owner = Social.SpaceRoles.IsOwner(membership.Role);
         }
 
-        // #615: deleting the space is its owner's to do — it erases the space for everyone; anybody else's is not applied
-        var ops = owner ? request.Ops : request.Ops.Where(o => !SpaceErasure.Deletes(o, spaceId)).ToList();
+        var ops = SpaceErasure.Admitted(request.Ops, spaceId, owner);
         var writer = new SyncWriter(db);
         var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, ops);
-        var erase = owner && ops.Exists(o => SpaceErasure.Deletes(o, spaceId)) && await SpaceErasure.IsDeletedAsync(db, spaceId);
-        // out of reach in the same save as the delete itself; the rows go right after it
+        // #615: out of reach in the same save as the delete itself; the rows go right after it
+        var erase = await SpaceErasure.DeletedByAsync(db, spaceId, ops);
         if (erase) await SpaceErasure.SealAsync(db, spaceId);
         await db.SaveChangesAsync();
         if (erase) await SpaceErasure.EraseRowsAsync(db, spaceId);
