@@ -487,9 +487,9 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
             await ApplyAsync(space, metas, touched);
             standing.Add(spaceId);
         }
-        foreach (var shown in batch.Shown.Where(s => standing.Contains(s.SpaceId) && !held.Contains((s.FeedId, s.EntityId))))
+        foreach (var spaceId in batch.Shown.Where(s => standing.Contains(s.SpaceId) && !held.Contains((s.FeedId, s.EntityId))).Select(s => s.SpaceId))
         {
-            fresh[shown.SpaceId] = fresh.GetValueOrDefault(shown.SpaceId) + 1;
+            fresh[spaceId] = fresh.GetValueOrDefault(spaceId) + 1;
         }
 
         return new ConnectorIngestCounts(0, 0, written, 0, batch.Dropped);
