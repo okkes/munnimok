@@ -6,7 +6,7 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
-import { prepareReviewSuggestions, prepareSpaceSuggestions, suggestionFor, suggestionInputFingerprint } from './reviewSuggestions';
+import { createSuggestPasses, prepareReviewSuggestions, prepareSpaceSuggestions, suggestionFor, suggestionInputFingerprint } from './reviewSuggestions';
 import type { ReviewSuggestions } from './reviewSuggestions';
 
 const SPACE = 'sp';
@@ -117,6 +117,27 @@ describe('#565 the review suggestions are prepared when rows land', () => {
     expect(await prepareReviewSuggestions(store, [SPACE])).toMatchObject({ prepared: 1 });
 
     expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))).toMatchObject({ predictedCatId: 'groceries', draft: { catId: 'groceries' } });
+  });
+
+  it('an ask by name that meets a waiting pass over every space is still served: what the card taught is not lost', async () => {
+    const { store, repo } = await seed();
+    const kiosk = { accountId: 'chk', currency: 'EUR', merchant: 'Zorro Kiosk', catId: 'uncategorized', needsReview: 1 as const };
+    await repo.upsert('transaction', SPACE, 'k1', { ...kiosk, date: '2026-10-30', amountCents: -500 });
+    await repo.upsert('transaction', SPACE, 'k2', { ...kiosk, date: '2026-10-31', amountCents: -730 });
+    await prepareReviewSuggestions(store);
+    await repo.upsert('transaction', SPACE, 'k1', { catId: 'groceries', needsReview: 0 });
+
+    const heard: string[] = [];
+    const passes = createSuggestPasses(store, async (fingerprint) => void heard.push(fingerprint), { delayMs: 5, idle: (callback) => callback() });
+    // a pass over every space is waiting (a row landed somewhere) when the Confirm asks for this space by name:
+    // the scheduler folds the two, and a pass over every space leaves a space alone while its inputs look current
+    passes.request();
+    passes.request(SPACE);
+    await passes.settled();
+    passes.dispose();
+
+    expect(heard).toHaveLength(1);
+    expect(suggestionFor(await storedMap(store), await waiting(store, 'k2'))).toMatchObject({ predictedCatId: 'groceries' });
   });
 
   it('an edited recurring cost moves the fingerprint and its row is prepared again; a balance that moved does not', async () => {

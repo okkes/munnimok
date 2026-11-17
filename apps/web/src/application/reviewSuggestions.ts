@@ -155,16 +155,21 @@ export interface SuggestPassOutcome {
   rows: number;
 }
 
-// a space asked for BY NAME is always prepared: the asker (the review after a Confirm) knows the memory moved
-// any other space prepared on today's inputs and speaking for every row in its review is left alone (#554)
-export async function prepareReviewSuggestions(store: StorageBackend, spaceIds?: readonly string[]): Promise<SuggestPassOutcome> {
+// a space asked for BY NAME is always prepared: the asker (the review after a Confirm) knows the memory moved.
+// `always` carries the names into a pass over every space: the scheduler folds a named ask into such a pass.
+// Any other space prepared on today's inputs and speaking for every row in its review is left alone (#554).
+export async function prepareReviewSuggestions(
+  store: StorageBackend,
+  spaceIds?: readonly string[],
+  always: readonly string[] = [],
+): Promise<SuggestPassOutcome> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind && (!spaceIds || spaceIds.includes(s.id)));
   const { inputs } = await fingerprints(store);
   const views = memoViews(store);
   const outcome: SuggestPassOutcome = { prepared: 0, rows: 0 };
   for (const space of spaces) {
     const stored = (await store.metaGet(keyFor(space.id)))?.value as StoredSuggestions | undefined;
-    const current = !spaceIds && stored?.v === VERSION && stored.inputs === inputs;
+    const current = !spaceIds && !always.includes(space.id) && stored?.v === VERSION && stored.inputs === inputs;
     if (current && (await views(space.id)).filter(queued).every((tx) => suggestionFor(stored.byTx, tx))) continue;
     const byTx = await prepareSpaceSuggestions(store, space.id, views);
     await store.metaPut(keyFor(space.id), { v: VERSION, inputs, byTx } satisfies StoredSuggestions);
@@ -266,29 +271,51 @@ export function requestReviewSuggestions(spaceId?: string): void {
 
 export const SUGGEST_DEBOUNCE_MS = 250;
 
+/** the passes of one store; `afterAll` hears the fingerprint a pass over every space was prepared on */
+export function createSuggestPasses(
+  store: StorageBackend,
+  afterAll: (fingerprint: string) => Promise<void>,
+  options: { delayMs?: number; idle?: (callback: () => void) => void } = {},
+): MatchScheduler {
+  // an ask by name is remembered beside the scheduler, which folds it into a waiting pass over every space:
+  // that pass skips a space whose inputs look current, and a Confirm changes none of them
+  const named = new Set<string>();
+  const scheduler = createMatchScheduler(
+    async (spaceIds) => {
+      // read BEFORE the pass: rows landing during it are the next pass's business
+      const fingerprint = await suggestionInputFingerprint(store);
+      const always = [...named];
+      named.clear();
+      await measure('review.suggest', async (span) => {
+        span.setAttribute('review.spaces', spaceIds?.length ?? 0);
+        const done = await prepareReviewSuggestions(store, spaceIds, always);
+        span.setAttribute('review.prepared', done.prepared);
+        span.setAttribute('review.rows', done.rows);
+      });
+      if (!spaceIds) await afterAll(fingerprint);
+    },
+    { delayMs: options.delayMs ?? SUGGEST_DEBOUNCE_MS, idle: options.idle },
+  );
+  return {
+    request(spaceId) {
+      if (spaceId) named.add(spaceId);
+      scheduler.request(spaceId);
+    },
+    settled: () => scheduler.settled(),
+    dispose: () => scheduler.dispose(),
+  };
+}
+
 // mounted for every identity (an import or typed row lands offline just the same); the first look compares against the
 // last pass's fingerprint, so an app open with nothing new prepares nothing
 export function useReviewSuggestionTriggers(): void {
   const { store } = useData();
   useEffect(() => {
     let last: string | null = null;
-    const scheduler = createMatchScheduler(
-      async (spaceIds) => {
-        // read BEFORE the pass: rows landing during it are the next pass's business
-        const fingerprint = await suggestionInputFingerprint(store);
-        await measure('review.suggest', async (span) => {
-          span.setAttribute('review.spaces', spaceIds?.length ?? 0);
-          const done = await prepareReviewSuggestions(store, spaceIds);
-          span.setAttribute('review.prepared', done.prepared);
-          span.setAttribute('review.rows', done.rows);
-        });
-        if (!spaceIds) {
-          last = fingerprint;
-          await store.metaPut(FINGERPRINT_KEY, fingerprint);
-        }
-      },
-      { delayMs: SUGGEST_DEBOUNCE_MS },
-    );
+    const scheduler = createSuggestPasses(store, async (fingerprint) => {
+      last = fingerprint;
+      await store.metaPut(FINGERPRINT_KEY, fingerprint);
+    });
     installed = scheduler;
     const stop = store.subscribe(
       () => suggestionInputFingerprint(store),
