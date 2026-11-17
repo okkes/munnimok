@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.24.0](https://github.com/okkes/munnimok/compare/v5.23.2...v5.24.0) (2026-11-17)
+
+
+### ✨ Features
+
+* **api:** a machine account reads the lab's runs and recordings ([#635](https://github.com/okkes/munnimok/issues/635)) ([6dd63b9](https://github.com/okkes/munnimok/commit/6dd63b9aa2996a07dda1d4ba76b8db357b4ad198))
+* **infra:** the bootstrap makes the lab's reader and files it in the vault ([#635](https://github.com/okkes/munnimok/issues/635)) ([5542077](https://github.com/okkes/munnimok/commit/5542077d408ea585399e639f7c1a4bb5ddbd6a4d))
+
 ## [5.23.2](https://github.com/okkes/munnimok/compare/v5.23.1...v5.23.2) (2026-11-17)
 
 
