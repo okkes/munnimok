@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.23.2](https://github.com/okkes/munnimok/compare/v5.23.1...v5.23.2) (2026-11-17)
+
+
+### 🐞 Bug Fixes
+
+* **native:** a read of the phone's store is limited by its size, not only by its rows ([#594](https://github.com/okkes/munnimok/issues/594)) ([d4bba3e](https://github.com/okkes/munnimok/commit/d4bba3e01df87804bb68cc71665ade5c970b156e))
+
+
+### ⚡ Performance
+
+* **receipts:** a photo or an invoice is a file of its own, read when the receipt is opened ([#630](https://github.com/okkes/munnimok/issues/630)) ([34e67aa](https://github.com/okkes/munnimok/commit/34e67aaa6f5c54cf59be1e2787fdf7c3cc66dc82))
+
 ## [5.23.1](https://github.com/okkes/munnimok/compare/v5.23.0...v5.23.1) (2026-11-17)
 
 
