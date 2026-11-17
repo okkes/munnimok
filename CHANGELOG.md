@@ -1,5 +1,32 @@
 # Changelog
 
+## [5.23.0](https://github.com/okkes/munnimok/compare/v5.22.0...v5.23.0) (2026-11-17)
+
+
+### ✨ Features
+
+* **notifications:** the bell in two parts, and the phone lets go of what was handled ([e91d604](https://github.com/okkes/munnimok/commit/e91d604513ed183ee4309fc5e20ffe39bdbd4310)), closes [#614](https://github.com/okkes/munnimok/issues/614)
+* **sync:** a space its owner deleted is erased at once ([247bd82](https://github.com/okkes/munnimok/commit/247bd824ee168e94e4af28c41b461f01573cc716)), closes [#615](https://github.com/okkes/munnimok/issues/615)
+* **web:** a category copy offer can be declined per main category ([94dc35b](https://github.com/okkes/munnimok/commit/94dc35ba61144b8f544f2e36bc97c9b58e094066)), closes [#390](https://github.com/okkes/munnimok/issues/390)
+* **web:** a notification leaves the bell once it stopped being true ([e75bce4](https://github.com/okkes/munnimok/commit/e75bce4384cc30caf493ab40a507c521e780112a)), closes [#614](https://github.com/okkes/munnimok/issues/614)
+* **web:** one tap takes a plan subject's money back to the pool ([2d88c1b](https://github.com/okkes/munnimok/commit/2d88c1bb27ae32957563dda430ee7f8a8a3271b2)), closes [#613](https://github.com/okkes/munnimok/issues/613)
+* **web:** safe to spend is a screen of its own ([bbb76a3](https://github.com/okkes/munnimok/commit/bbb76a35f2fa490e7fbf039a73fb08eb479d1abb)), closes [#541](https://github.com/okkes/munnimok/issues/541)
+* **web:** the history says which plan subject changed and by how much ([b00b365](https://github.com/okkes/munnimok/commit/b00b3655bf1b57e73517ec5d4eb714eb59068a16)), closes [#618](https://github.com/okkes/munnimok/issues/618)
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** a check in the browser window is not an approval in an app ([f7e15e1](https://github.com/okkes/munnimok/commit/f7e15e1922e880c72dc2f19ef726dae0361a8cef)), closes [#623](https://github.com/okkes/munnimok/issues/623)
+* **connectors:** the ingest log counts unknown accounts instead of naming one ([dabbe89](https://github.com/okkes/munnimok/commit/dabbe89df80ec09ad1653b0053e7c24538cecbe0))
+* **deps:** pdf.js 6 draws the invoices, in its build for older browsers ([99f93b6](https://github.com/okkes/munnimok/commit/99f93b6185d8c6d4d6c5a9cc4f3e53c58eb40bfa)), closes [#616](https://github.com/okkes/munnimok/issues/616)
+* **review:** what a confirmed card taught is not lost to a waiting pass over every space ([3f5733d](https://github.com/okkes/munnimok/commit/3f5733d6364da5442c98cce9f0977c34ddc6c12d))
+* **web:** a balance correction can name 0 as the new balance ([4ca7335](https://github.com/okkes/munnimok/commit/4ca73353bb4b44a3b03fe10f8242d64890eabf1f)), closes [#619](https://github.com/okkes/munnimok/issues/619)
+* **web:** a deleted side of a reimbursement leaves nothing on the other ([fd64df3](https://github.com/okkes/munnimok/commit/fd64df30e34c9c777bd26dd4e75d0239673549de)), closes [#617](https://github.com/okkes/munnimok/issues/617)
+* **web:** a reimbursement picked while adding waits on the form ([312a281](https://github.com/okkes/munnimok/commit/312a28115e6252f9b5ab0bdb79997a2e66b5b027)), closes [#348](https://github.com/okkes/munnimok/issues/348)
+* **web:** the budget line's label is whole on iPhone ([2131039](https://github.com/okkes/munnimok/commit/213103949dc1a758a6f090baf8606f7980477f41)), closes [#375](https://github.com/okkes/munnimok/issues/375)
+* **web:** the set-aside rows of safe to spend are divided like the others ([82b899e](https://github.com/okkes/munnimok/commit/82b899e1d2f345564b0ecef524f5937cc2b7d34e)), closes [#541](https://github.com/okkes/munnimok/issues/541)
+* **web:** the side panel's Settings sits under the other entries ([1d5c87a](https://github.com/okkes/munnimok/commit/1d5c87a2cabffc3d1d5ac66cebc5044d93f7b9ca)), closes [#612](https://github.com/okkes/munnimok/issues/612)
+
 ## [5.22.0](https://github.com/okkes/munnimok/compare/v5.21.3...v5.22.0) (2026-11-16)
 
 
