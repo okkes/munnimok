@@ -116,10 +116,24 @@ Each is told once (`lib/nativeExit.ts`), at the start of the app and
 only once a signed-in identity is known: nobody and a chosen-offline
 identity send nothing. An exit that reads "low memory" or a trace
 that says `OutOfMemoryError` points at how much the encrypted store
-hands across to the web layer at once. Two things keep that small: a
-whole table or a whole space is read 2,000 rows at a time
-(`READ_PAGE` in `db/sqlBackend.ts`), and the app asks Android for the
-large heap.
+hands across to the web layer at once: Android builds every read as
+one string in its own heap, several times the size of what it carries.
+The first such trace (17 November 2026) was a read of more than 75
+million characters — 2,000 rows at a time is no limit when a receipt
+holds its invoice or its photo. Three things keep a read small
+(`db/sqlBackend.ts`):
+
+- a read is at most 2,000 rows (`READ_PAGE`) **and** at most 4 million
+  characters (`NATIVE_CHARS`): a row of up to 2,000 characters travels
+  with its page, a larger one is fetched after it, together with others
+  up to that size;
+- a single row larger than that is cut by SQLite (`substr`) and joined
+  in the web layer;
+- a batch of writes follows the same limit, and the app asks Android
+  for the large heap.
+
+This holds for every read of the store — a table, a space, one row by
+its id, a setting, the changes waiting to be sent.
 
 ## 4. Reading a slow Confirm in GlitchTip
 

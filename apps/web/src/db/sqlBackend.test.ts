@@ -10,7 +10,7 @@ import type { StorageBackend } from './backend';
 import { visibleTransactions, writeTxTransform } from './joined';
 import { Repo } from './repo';
 import { MunniDB } from './schema';
-import { READ_PAGE, SqlStorageBackend, initSqlSchema } from './sqlBackend';
+import { NATIVE_CHARS, READ_PAGE, SqlStorageBackend, initSqlSchema } from './sqlBackend';
 import type { SqlExecutor } from './sqlBackend';
 
 // parity: every scenario runs against BOTH backends and asserts the same results;
@@ -155,6 +155,17 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
       expect(await store.get('space', SPACE), name).toBeUndefined();
       expect((await store.bySpace('category', SPACE)).length, name).toBe(0);
       expect(await store.metaGet('cursor'), name).toBeUndefined();
+    }
+  });
+
+  it('a space hands out its waiting changes in the order they were made, whatever order they were stored in', async () => {
+    const op = (opId: string, hlc: string, spaceId = SPACE) => ({ opId, spaceId, entity: 'category' as const, entityId: opId, fields: { name: opId }, hlc });
+    for (const { name, store } of await bothBackends()) {
+      await store.outboxAdd(op('late', '2026-11-17T10:00:02.000Z-0000-phone'));
+      await store.outboxAdd(op('elsewhere', '2026-11-17T10:00:00.500Z-0000-phone', 'other'));
+      await store.outboxAdd(op('early', '2026-11-17T10:00:01.000Z-0000-phone'));
+
+      expect((await store.outboxBySpace(SPACE)).map((o) => o.opId), name).toEqual(['early', 'late']);
     }
   });
 
@@ -452,5 +463,142 @@ describe('a whole table never crosses to the web layer in one piece (#594)', () 
 
     expect(all).toHaveLength(READ_PAGE + 10);
     expect(all.filter((row) => row.id === 't-00000').map((row) => row.merchant)).toEqual(['Rewritten']);
+  });
+});
+
+describe('no message to or from native code outgrows the phone (#594)', () => {
+  const FEED = 'store-feed';
+  const invoice = (chars: number, fill = 'A') => `data:application/pdf;base64,${fill.repeat(chars)}`;
+  const receipt = (i: number, chars: number, fill?: string) => ({
+    id: `r-${String(i).padStart(4, '0')}`,
+    spaceId: FEED,
+    source: 'amazon-nl',
+    date: '2026-11-01',
+    totalCents: 1000 + i,
+    documents: [{ kind: 'invoice' as const, mime: 'application/pdf', dataUrl: invoice(chars, fill) }],
+    fieldVersions: {},
+    deleted: 0 as const,
+  });
+  const textOf = (values: readonly unknown[]) => values.reduce<number>((n, v) => n + (typeof v === 'string' ? v.length : 0), 0);
+  // a failed toEqual would print both invoices: megabytes of one letter
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+  /** the text each read and each write carries across, and a hook that runs once after the first read that matches */
+  function weighed(executor: SqlExecutor, after?: { sql: string; run: () => Promise<void> }) {
+    const reads: number[] = [];
+    const writes: number[] = [];
+    let pending = after;
+    return {
+      reads,
+      writes,
+      executor: {
+        ...executor,
+        async query(sql, params) {
+          const rows = await executor.query(sql, params);
+          reads.push(rows.reduce((n, row) => n + textOf(Object.values(row)), 0));
+          if (pending && sql.includes(pending.sql)) {
+            const { run } = pending;
+            pending = undefined;
+            await run();
+          }
+          return rows;
+        },
+        async run(sql, params = []) {
+          writes.push(textOf(params));
+          return executor.run(sql, params);
+        },
+        async batch(statements) {
+          writes.push(statements.reduce((n, s) => n + textOf(s.params), 0));
+          return executor.batch(statements);
+        },
+      } satisfies SqlExecutor,
+    };
+  }
+
+  async function phone(after?: { sql: string; run: () => Promise<void> }) {
+    const base = sqlJsExecutor(new SQL.Database());
+    await initSqlSchema(base);
+    const plain = new SqlStorageBackend(base);
+    const { executor, reads, writes } = weighed(base, after);
+    const store = new SqlStorageBackend(executor);
+    cleanups.push(() => store.close());
+    return { plain, store, reads, writes };
+  }
+
+  it('a feed of receipts that hold their invoices is read in pieces the phone can build', async () => {
+    const { store, reads } = await phone();
+    // 150 invoices of 100,000 characters: 15 million in the feed, where 75 million in one read ended the app
+    await store.putMany('receipt', Array.from({ length: 150 }, (_, i) => receipt(i, 100_000)));
+    reads.length = 0;
+
+    const rows = await store.bySpace('receipt', FEED);
+
+    expect(rows).toHaveLength(150);
+    expect(rows.every((row) => row.documents?.[0].dataUrl.length === invoice(100_000).length)).toBe(true);
+    expect(Math.max(...reads)).toBeLessThanOrEqual(NATIVE_CHARS);
+  });
+
+  it('one row larger than a whole message comes back whole, a slice at a time', async () => {
+    const { store, reads } = await phone();
+    const scan = receipt(1, NATIVE_CHARS * 2 + 12_345);
+    await store.put('receipt', scan);
+    await store.put('receipt', receipt(2, 10));
+    await store.metaPut('big', { text: 'm'.repeat(NATIVE_CHARS + 77) });
+    reads.length = 0;
+
+    const all = await store.allRows('receipt');
+    const one = await store.get('receipt', scan.id);
+    const some = await store.getMany('receipt', ['r-0002', scan.id]);
+    const meta = await store.metaGet('big');
+
+    expect(all.map((row) => row.id)).toEqual(['r-0001', 'r-0002']);
+    expect(same(all[0], scan)).toBe(true);
+    expect(same(one, scan)).toBe(true);
+    expect(some.map((row) => row.id).sort()).toEqual(['r-0001', 'r-0002']);
+    expect((meta?.value as { text: string }).text).toHaveLength(NATIVE_CHARS + 77);
+    expect(Math.max(...reads)).toBeLessThanOrEqual(NATIVE_CHARS);
+  });
+
+  it('a large row rewritten after its page was read comes out once, as it stands', async () => {
+    const rewritten = { ...receipt(0, 50_000, 'B'), merchant: 'Rewritten' };
+    const { plain, store } = await phone({ sql: 'LIMIT', run: () => plain.put('receipt', rewritten) });
+    await plain.putMany('receipt', [receipt(0, 50_000), receipt(1, 50_000)]);
+
+    const rows = await store.bySpace('receipt', FEED);
+
+    expect(rows.map((row) => row.id).sort()).toEqual(['r-0000', 'r-0001']);
+    expect(same(rows.find((row) => row.id === 'r-0000'), rewritten)).toBe(true);
+  });
+
+  it('a row that took the place of another between two slices is read again, never glued from two rows', async () => {
+    const first = receipt(0, NATIVE_CHARS + 500, 'A');
+    const second = receipt(0, NATIVE_CHARS + 900, 'B');
+    // a row deleted and written again gets the place the old one had, when that was the last
+    const again = async () => {
+      await plain.deleteRow('receipt', first.id);
+      await plain.put('receipt', second);
+    };
+    const { plain, store } = await phone({ sql: 'substr', run: again });
+    await plain.put('receipt', first);
+
+    expect(same(await store.get('receipt', first.id), second)).toBe(true);
+  });
+
+  it('a page of receipts is written in pieces the phone can take', async () => {
+    const { store, writes } = await phone();
+
+    await store.putMany('receipt', Array.from({ length: 150 }, (_, i) => receipt(i, 100_000)));
+
+    expect(Math.max(...writes)).toBeLessThanOrEqual(NATIVE_CHARS);
+    expect(await store.countBySpace('receipt', FEED)).toBe(150);
+  });
+
+  it('small rows still travel a page at a time: one read for a table that fits', async () => {
+    const { store, reads } = await phone();
+    await store.putMany('receipt', Array.from({ length: 300 }, (_, i) => receipt(i, 10)));
+    reads.length = 0;
+
+    expect(await store.bySpace('receipt', FEED)).toHaveLength(300);
+    expect(reads).toHaveLength(1);
   });
 });
