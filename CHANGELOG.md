@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.23.1](https://github.com/okkes/munnimok/compare/v5.23.0...v5.23.1) (2026-11-17)
+
+
+### 🐞 Bug Fixes
+
+* **wizard:** the tiles' environment line keeps the tile's padding, and a step that has not started is no to-do list ([2b1d7ec](https://github.com/okkes/munnimok/commit/2b1d7ecda42a9259c2d033c6337931da60f05de7)), closes [#625](https://github.com/okkes/munnimok/issues/625)
+
 ## [5.23.0](https://github.com/okkes/munnimok/compare/v5.22.0...v5.23.0) (2026-11-17)
 
 
