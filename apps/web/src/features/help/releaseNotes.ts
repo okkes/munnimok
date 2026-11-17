@@ -12,6 +12,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.23.2',
+    date: '2026-11-17',
+    items: [
+      {
+        en: 'Android: the app could close by itself on an account with many store receipts. Receipts carry their invoices and photos, and the phone was handed all of them at once; they now arrive in smaller parts.',
+        nl: 'Android: de app kon vanzelf afsluiten bij een account met veel winkelbonnen. Bonnen dragen hun facturen en foto’s mee, en de telefoon kreeg ze allemaal tegelijk aangereikt; ze komen nu in kleinere delen binnen.',
+        tr: 'Android: çok sayıda mağaza fişi olan bir hesapta uygulama kendiliğinden kapanabiliyordu. Fişler faturalarını ve fotoğraflarını da taşır ve telefona hepsi birden veriliyordu; artık daha küçük parçalar halinde geliyor.',
+      },
+    ],
+  },
+  {
     version: '5.23.0',
     date: '2026-11-17',
     items: [
