@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import { useReceiptFile } from '@/application/receiptFiles';
 import { useReceiptOps } from '@/application/receipts';
 import { useItemMemory, useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
 import { useAttachableReceipts } from '@/application/connections';
@@ -33,10 +34,11 @@ function AttachedReceiptCard({
   const photo = receipt.source === 'photo';
   const who = photo ? t('receipt.sourcePhoto') : (receipt.merchant ?? partyName(receipt.source));
   const items = receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : '';
+  const picture = useReceiptFile(receipt.imageId);
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
       <button data-testid="receipt-card" onClick={onOpen} className="m-tap block w-full border-none bg-transparent p-0 text-left">
-        {receipt.image && <img src={receipt.image} alt={t('receipt.title')} className="max-h-40 w-full object-cover" />}
+        {picture && <img src={picture} alt={t('receipt.title')} className="max-h-40 w-full object-cover" data-testid="receipt-card-picture" />}
         <span className="flex items-center gap-2 px-4 py-2.5">
           <Icon name={photo ? 'camera-outline' : 'storefront-outline'} size={15} color="var(--m-ink-3)" />
           <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">{`${who}${items}`}</span>

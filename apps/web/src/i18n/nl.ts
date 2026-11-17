@@ -2818,6 +2818,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'receipts.connections': 'Gekoppelde diensten',
   'receipts.invoice': 'Factuur',
   'receipts.openInvoice': 'Openen',
+  'receipts.fileMissing': 'Dit bestand staat nog niet op dit apparaat. Het komt mee met de volgende synchronisatie.',
   'receipts.toCheckTitle': 'Te controleren matches',
   'receipts.toCheckSub': 'Elke kaart toont de bon en de transactie waar hij bij past — vergelijk de twee regels, open er een om beter te kijken, en zeg dan ja of nee.',
   'receipt.peekAttach': 'Deze koppelen',

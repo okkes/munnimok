@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
+import { useReceiptFile } from '@/application/receiptFiles';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { partyName } from '@/features/connectors/logos';
 import { fmtCents } from '@/lib/money';
@@ -17,10 +18,41 @@ export const receiptTitle = (receipt: ReceiptRow, t: TFunc): string => {
 
 type Viewed = { kind: 'invoice'; document: ReceiptDocument } | { kind: 'picture'; src: string };
 
+/** #630: an invoice is read when it is opened, never with the receipt */
+function InvoiceView({ document, testIdPrefix }: Readonly<{ document: ReceiptDocument; testIdPrefix: string }>) {
+  const { t } = useLang();
+  const content = useReceiptFile(document.fileId);
+  if (content === undefined) return null;
+  if (content === null) {
+    return (
+      <p className="px-1 py-6 text-center text-[13px] text-ink-3" data-testid={`${testIdPrefix}-invoice-missing`}>
+        {t('receipts.fileMissing')}
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2" data-testid={`${testIdPrefix}-invoice-view`}>
+      {document.mime.startsWith('image/') ? (
+        <ImageZoomView src={content} alt={t('receipts.invoice')} testId={`${testIdPrefix}-invoice-image`} />
+      ) : (
+        <PdfView dataUrl={content} testId={`${testIdPrefix}-pdf`} />
+      )}
+      <a
+        data-testid={`${testIdPrefix}-invoice-download`}
+        href={content}
+        download={document.filename ?? 'invoice'}
+        className="m-tap flex items-center justify-center gap-2 rounded-input border border-line bg-surface px-4 py-3 text-[14px] font-medium text-accent-deep no-underline"
+      >
+        <Icon name="download-outline" size={16} />
+        {document.filename ?? t('receipts.invoice')}
+      </a>
+    </div>
+  );
+}
+
 /** #568: a picture zooms like a PDF; pdf.js draws at the frame's width because the browser plugin fit the page */
 function ViewerSheet({ viewed, open, onClose, testIdPrefix }: Readonly<{ viewed: Viewed | null; open: boolean; onClose: () => void; testIdPrefix: string }>) {
   const { t } = useLang();
-  const document = viewed?.kind === 'invoice' ? viewed.document : null;
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()} title={t(viewed?.kind === 'picture' ? 'receipt.title' : 'receipts.invoice')} size="full" wide>
       {viewed?.kind === 'picture' && (
@@ -28,24 +60,7 @@ function ViewerSheet({ viewed, open, onClose, testIdPrefix }: Readonly<{ viewed:
           <ImageZoomView src={viewed.src} alt={t('receipt.title')} testId={`${testIdPrefix}-picture-zoom`} />
         </div>
       )}
-      {document && (
-        <div className="flex flex-col gap-2" data-testid={`${testIdPrefix}-invoice-view`}>
-          {document.mime.startsWith('image/') ? (
-            <ImageZoomView src={document.dataUrl} alt={t('receipts.invoice')} testId={`${testIdPrefix}-invoice-image`} />
-          ) : (
-            <PdfView dataUrl={document.dataUrl} testId={`${testIdPrefix}-pdf`} />
-          )}
-          <a
-            data-testid={`${testIdPrefix}-invoice-download`}
-            href={document.dataUrl}
-            download={document.filename ?? 'invoice'}
-            className="m-tap flex items-center justify-center gap-2 rounded-input border border-line bg-surface px-4 py-3 text-[14px] font-medium text-accent-deep no-underline"
-          >
-            <Icon name="download-outline" size={16} />
-            {document.filename ?? t('receipts.invoice')}
-          </a>
-        </div>
-      )}
+      {viewed?.kind === 'invoice' && <InvoiceView document={viewed.document} testIdPrefix={testIdPrefix} />}
     </Sheet>
   );
 }
@@ -74,7 +89,7 @@ export function ReceiptBody({
   };
   const id = (suffix: string): string => `${testIdPrefix}-${suffix}`;
   const cats = useCategories();
-  const picture = receipt.image;
+  const picture = useReceiptFile(receipt.imageId);
   const money = (cents: number) => fmtCents(cents, currency, lang);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 

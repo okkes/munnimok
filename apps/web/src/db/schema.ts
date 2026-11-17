@@ -13,6 +13,7 @@ import type {
   ConnectorConnRow,
   LotRow,
   QuoteCacheRow,
+  ReceiptFileRow,
   ReceiptLinkRow,
   ReceiptRow,
   StoreConnLinkRow,
@@ -49,6 +50,7 @@ export class MunniDB extends Dexie {
   goalContributions!: Table<GoalContributionRow, string>;
   receipts!: Table<ReceiptRow, string>;
   receiptLinks!: Table<ReceiptLinkRow, string>;
+  receiptFiles!: Table<ReceiptFileRow, string>;
   /** device-only: a connection's credential bundle never syncs in plaintext (#367) */
   connectorConns!: Table<ConnectorConnRow, string>;
   storeConns!: Table<StoreConnRow, string>;
@@ -109,6 +111,9 @@ export class MunniDB extends Dexie {
       allocations: null,
       topics: null,
     });
+    this.version(4).stores({
+      receiptFiles: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -143,6 +148,8 @@ export class MunniDB extends Dexie {
         return this.receipts;
       case 'receiptLink':
         return this.receiptLinks;
+      case 'receiptFile':
+        return this.receiptFiles;
       case 'storeConn':
         return this.storeConns;
       case 'storeConnLink':

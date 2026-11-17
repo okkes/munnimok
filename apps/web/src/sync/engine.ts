@@ -34,6 +34,27 @@ const entitiesOf = (keys: readonly string[]): EntityName[] => [...new Set(keys.m
 
 /** ops per push request — the server caps at 1000, proxies cap body size */
 const PUSH_CHUNK = 300;
+/** …and characters of what they carry (#630): a receipt's photo is one op, and a request that never finishes is retried whole */
+export const PUSH_CHARS = 2_000_000;
+
+/** an op larger than a push goes alone */
+export function pushChunks(ops: readonly OutboxRow[]): OutboxRow[][] {
+  const chunks: OutboxRow[][] = [];
+  let chunk: OutboxRow[] = [];
+  let chars = 0;
+  for (const op of ops) {
+    const size = JSON.stringify(op.fields).length;
+    if (chunk.length === PUSH_CHUNK || (chunk.length > 0 && chars + size > PUSH_CHARS)) {
+      chunks.push(chunk);
+      chunk = [];
+      chars = 0;
+    }
+    chunk.push(op);
+    chars += size;
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+}
 export const LAST_SYNC_KEY = 'lastSyncAt';
 /** #569: how long a pause lasts when the server asked for one without saying how long (its limiter says ten seconds) */
 export const DEFAULT_PAUSE_MS = 10_000;
@@ -277,7 +298,7 @@ export class SyncEngine {
       }
       const spaces = (await this.store.allRows('space')).filter((s) => s.deleted === 0);
       // also flush outbox ops for spaces we no longer have rows for
-      const outboxSpaces = (await this.store.outboxAll()).map((o) => o.spaceId);
+      const outboxSpaces = await this.store.outboxSpaceIds();
       // pull spaces the server knows us in (fresh device / new invite), with each head: an unmoved space costs no request (#569)
       const heads = await measure('sync.spaces', () => this.backend.heads(), undefined, { parent: round });
       // #505: the heads name this identity's role per space: writes into a read-only space are refused from here on
@@ -437,9 +458,7 @@ export class SyncEngine {
       async (push) => {
         const outbox = await this.store.outboxBySpace(spaceId);
         push.setAttribute('sync.ops', outbox.length);
-        for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
-          await this.pushChunk(spaceId, outbox.slice(i, i + PUSH_CHUNK));
-        }
+        for (const chunk of pushChunks(outbox)) await this.pushChunk(spaceId, chunk);
         return outbox.length;
       },
       undefined,
@@ -530,7 +549,7 @@ export class SyncEngine {
   // #615: a space held as deleted that the server no longer lists and has nothing left to send was erased there: purge it
   // while its delete is still queued it stays: the queue is what tells the server
   private async purgeDeletedSpaces(serverSpaces: ReadonlySet<string>): Promise<void> {
-    const queued = new Set((await this.store.outboxAll()).map((o) => o.spaceId));
+    const queued = new Set(await this.store.outboxSpaceIds());
     for (const space of await this.store.allRows('space')) {
       if (space.deleted === 1 && !serverSpaces.has(space.id) && !queued.has(space.id)) await this.purgeSpace(space.id);
     }
@@ -552,14 +571,14 @@ export class SyncEngine {
   // the server no longer grants is purged here (owned feeds stay). DATA-LOSS trap: re-read everything at sweep time
   // (an import finishing mid-cycle was purged with its un-pushed ops) and protect feeds a live accountLink points at
   private async purgeOrphanFeeds(serverSpaces: string[]): Promise<void> {
-    const [spaces, outbox, links] = await Promise.all([
+    const [spaces, queued, links] = await Promise.all([
       this.store.allRows('space'),
-      this.store.outboxAll(),
+      this.store.outboxSpaceIds(),
       this.store.allRows('accountLink'),
     ]);
     const known = new Set([
       ...spaces.filter((s) => s.deleted === 0).map((s) => s.id),
-      ...outbox.map((o) => o.spaceId),
+      ...queued,
       ...links.filter((l) => l.deleted === 0).map((l) => l.feedSpaceId),
       ...serverSpaces,
     ]);
@@ -577,7 +596,7 @@ export class SyncEngine {
     const scoped = [
       'account', 'category', 'transaction', 'txMeta', 'accountLink',
       'recurring', 'recurringDismiss', 'budget', 'event', 'goal', 'goalContribution',
-      'receipt', 'receiptLink', 'storeConn', 'storeConnLink',
+      'receipt', 'receiptLink', 'receiptFile', 'storeConn', 'storeConnLink',
       'holding', 'lot', 'insightDismiss', 'plan', 'planSubject', 'activity',
     ] as const;
     await this.store.transact(['space', ...scoped, 'outbox', 'meta'], async () => {

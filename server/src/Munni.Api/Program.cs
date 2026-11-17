@@ -209,6 +209,8 @@ if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
     await NeedsReviewRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // reserved-row repair (#508): untracked reserved rows go to a connection that settles them, once per database
     await Munni.Api.Connectors.ReservedRowRepair.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
+    // receipt-file repair (#630): photos and invoices leave the receipts that held them, once per database
+    await ReceiptFileSplit.RunOnceAsync(migrated, app.Logger, CancellationToken.None);
     // #615: the spaces deleted before the server erased anything, and an erase a restart cut short — every start
     await SpaceErasure.SweepAsync(migrated, app.Logger, CancellationToken.None);
 }

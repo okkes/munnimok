@@ -466,13 +466,23 @@ export interface ReceiptPick {
   amountCents: number;
 }
 
-/** a document the party issued for the purchase (mostly an invoice, `include=invoice`), carried inline as a data URL */
+/** a document the party issued for the purchase (mostly an invoice, `include=invoice`); what it holds is a receiptFile */
 export interface ReceiptDocument {
   kind: 'invoice';
   mime: string;
   name?: string;
   filename?: string;
   sizeBytes?: number;
+  fileId: string;
+}
+
+// #630: an invoice or a photo, kept apart from the receipt (or link) it belongs to — receipts are read by the hundred
+// on every pass, what they hold only when one is opened; synced like any row, so it is there offline on every device
+export interface ReceiptFileRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** the receipt or the receiptLink this belongs to */
+  ownerId: string;
   dataUrl: string;
 }
 
@@ -499,8 +509,8 @@ export interface ReceiptRow extends SyncEnvelope {
   currency?: string;
   merchant?: string;
   items?: ReceiptItem[];
-  /** downscaled data URL (photo path) */
-  image?: string;
+  /** the photo (photo path): a receiptFile holding the downscaled picture */
+  imageId?: string;
   /** `{provider}:{externalId}` — cross-source dedupe key */
   storeRef?: string;
   /** the connection that pulled it — every connector receipt is keyed by it */
@@ -631,9 +641,10 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   /** #567: the currency a reader found on the receipt; absent = the space's */
   currency?: string;
   picks?: Record<string, ReceiptPick[]>;
-  image?: string;
+  /** the link's own copy of the photo, in its space */
+  imageId?: string;
   payment?: ReceiptPayment;
-  /** the invoices ride the snapshot like a photo does — members open them without the owner's feed */
+  /** the invoices ride the snapshot like a photo does, as the link's own copies — members open them without the owner's feed */
   documents?: ReceiptDocument[];
   /** 1 = the matcher linked it, 0/absent = a human did */
   auto?: 0 | 1;
@@ -822,6 +833,7 @@ export type EntityName =
   | 'goalContribution'
   | 'receipt'
   | 'receiptLink'
+  | 'receiptFile'
   | 'storeConn'
   | 'storeConnLink'
   | 'holding'
@@ -849,6 +861,7 @@ export const ENTITY_NAMES: readonly EntityName[] = [
   'goalContribution',
   'receipt',
   'receiptLink',
+  'receiptFile',
   'storeConn',
   'storeConnLink',
   'holding',
@@ -875,6 +888,7 @@ export interface EntityRowMap {
   goalContribution: GoalContributionRow;
   receipt: ReceiptRow;
   receiptLink: ReceiptLinkRow;
+  receiptFile: ReceiptFileRow;
   storeConn: StoreConnRow;
   storeConnLink: StoreConnLinkRow;
   holding: HoldingRow;

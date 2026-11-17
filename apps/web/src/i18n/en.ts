@@ -2816,6 +2816,7 @@ export const en = {
   'receipts.connections': 'Connected services',
   'receipts.invoice': 'Invoice',
   'receipts.openInvoice': 'Open',
+  'receipts.fileMissing': 'This file is not on this device yet. It arrives with the next sync.',
   'receipts.toCheckTitle': 'Matches to check',
   'receipts.toCheckSub': 'Each card shows the receipt and the transaction it fits — compare the two rows, open either one to look closer, then say yes or no.',
   'review.receiptNone': 'None',

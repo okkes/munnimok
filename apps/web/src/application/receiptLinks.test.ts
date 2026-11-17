@@ -7,6 +7,7 @@ import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { receiptLinkId } from '@/domain/feedIds';
 import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import { writeReceiptPhoto } from './receiptFiles';
 import { attachReceiptTo, detachReceiptFrom, isLinkedTo, linkAsEntry, linkedTxIds, rejectProposal, releaseLink, writeProposedLink } from './receiptLinks';
 
 const FEED = 'feed-stores';
@@ -99,14 +100,29 @@ describe('one receipt, several transactions (user 2026-10-08)', () => {
     expect((await link()).proposedTxId).toBeFalsy();
 
     const photo = repo.newId();
-    await repo.upsert('receiptLink', SPACE, photo, { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, image: 'data:image/jpeg;base64,ZmFrZQ==' });
+    const imageId = await writeReceiptPhoto(repo, SPACE, photo, 'data:image/jpeg;base64,ZmFrZQ==');
+    await repo.upsert('receiptLink', SPACE, photo, { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, imageId });
     await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo))!, ['pay-1']);
     expect((await backend.get('receiptLink', photo))?.deleted).toBe(1);
   });
 
+  it('a removed photo that an edit made elsewhere brings back still has its picture (#630)', async () => {
+    const photo = repo.newId();
+    const imageId = await writeReceiptPhoto(repo, SPACE, photo, 'data:image/jpeg;base64,ZmFrZQ==');
+    await repo.upsert('receiptLink', SPACE, photo, { txId: 'pay-1', source: 'photo', date: '2026-05-29', totalCents: 1500, imageId });
+    await releaseLink(repo, SPACE, (await backend.get('receiptLink', photo))!, ['pay-1']);
+
+    // another device read the photo's lines while this one removed it: the later write wins, the row is back
+    await repo.upsert('receiptLink', SPACE, photo, { items: [{ name: 'Brood', totalCents: 1500 }] });
+
+    expect(await backend.get('receiptLink', photo)).toMatchObject({ deleted: 0, imageId });
+    expect(await backend.get('receiptFile', imageId)).toMatchObject({ deleted: 0, dataUrl: 'data:image/jpeg;base64,ZmFrZQ==' });
+  });
+
   it('a photo-born link (the photo IS the link) goes with its last transaction', async () => {
     const id = repo.newId();
-    await repo.upsert('receiptLink', SPACE, id, { txId: 'pay-1', alsoTxIds: ['pay-2'], source: 'photo', date: '2026-05-29', totalCents: 15733, image: 'data:image/jpeg;base64,ZmFrZQ==' });
+    const imageId = await writeReceiptPhoto(repo, SPACE, id, 'data:image/jpeg;base64,ZmFrZQ==');
+    await repo.upsert('receiptLink', SPACE, id, { txId: 'pay-1', alsoTxIds: ['pay-2'], source: 'photo', date: '2026-05-29', totalCents: 15733, imageId });
     await detachReceiptFrom(repo, SPACE, (await backend.get('receiptLink', id))!, 'pay-2');
     expect(await backend.get('receiptLink', id)).toMatchObject({ txId: 'pay-1', deleted: 0 });
     await detachReceiptFrom(repo, SPACE, (await backend.get('receiptLink', id))!, 'pay-1');

@@ -23,7 +23,7 @@ vi.mock('@/lib/perf', () => ({
     });
   },
 }));
-import { DEFAULT_PAUSE_MS, SyncEngine } from './engine';
+import { DEFAULT_PAUSE_MS, PUSH_CHARS, SyncEngine } from './engine';
 import { cursorKey, drainPull } from './drain';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
@@ -939,6 +939,25 @@ describe('SyncEngine', () => {
     expect(poisonOutbox).toHaveLength(0);
     const parked = (await a.db.meta.get('parkedOps_s-poison'))?.value as unknown[];
     expect(parked.length).toBeGreaterThan(0);
+  });
+
+  it('a push is cut by what its changes carry, not only by their number (#630): photos go a few at a time, a huge one alone', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Photos', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+    server.pushCalls.length = 0;
+
+    const photo = 'p'.repeat(PUSH_CHARS / 4);
+    for (let i = 0; i < 7; i++) await a.repo.upsert('receiptFile', 's1', `photo${i}`, { ownerId: `link${i}`, dataUrl: photo });
+    await a.repo.upsert('receiptFile', 's1', 'scan', { ownerId: 'link-scan', dataUrl: 'p'.repeat(PUSH_CHARS + 1) });
+    await a.repo.upsert('receiptFile', 's1', 'last', { ownerId: 'link-last', dataUrl: 'small' });
+    await a.engine.syncAll();
+
+    // three quarter-size photos fit a push (the fourth would pass it); the scan, larger than a push, travels alone
+    expect(server.pushCalls).toEqual([3, 3, 1, 1, 1]);
+    expect(await a.db.outbox.count()).toBe(0);
   });
 
   it('a push too large for the server (413) is split until it fits: everything arrives and nothing is parked', async () => {

@@ -1,3 +1,4 @@
+import { compareHlc } from '@/sync/hlc';
 import { LIVE_QUERY_QUIET_MS } from './backend';
 import type { StorageBackend, TableScope } from './backend';
 import type {
@@ -22,9 +23,16 @@ export interface SqlStatement {
 /** ids per SELECT … IN (the oldest SQLite builds bind at most 999 values) and rows per batched write (one message to native code) */
 const READ_CHUNK = 500;
 const WRITE_CHUNK = 200;
-// rows per read of a whole table or space (#594): native code returns a read as ONE object,
-// held in an Android heap that years of transactions overflow
+// rows per read (#594): native code returns a read as ONE object, held in an Android heap
 export const READ_PAGE = 2000;
+// characters one message to or from native code may carry (#594): rows are no measure, a receipt holds its invoice.
+// Android builds a read as one string, several times its size while it grows: 75 million characters ended the app
+export const NATIVE_CHARS = 4_000_000;
+/** a row up to this size travels with its page, so a full page of them is one message's worth */
+const INLINE_CHARS = NATIVE_CHARS / READ_PAGE;
+
+/** rows as they stand last: one rewritten while it was read came by twice */
+const lastOf = <T>(rows: T[], key: (row: T) => string): T[] => [...new Map(rows.map((row) => [key(row), row])).values()];
 
 export interface SqlExecutor {
   run(sql: string, params?: SqlParam[]): Promise<void>;
@@ -52,6 +60,7 @@ export const ENTITIES: readonly EntityName[] = [
   'goalContribution',
   'receipt',
   'receiptLink',
+  'receiptFile',
   'storeConn',
   'storeConnLink',
   'holding',
@@ -184,41 +193,92 @@ export class SqlStorageBackend implements StorageBackend {
     }
   }
 
-  private async rowsOf<E extends EntityName>(entity: E, where = '', params: (string | number)[] = []) {
-    this.read(entityDep(entity));
-    const rows = await this.sql.query(`SELECT json FROM ${entityTable(entity)} ${where}`, params);
-    return rows.map((r) => JSON.parse(r.json as string) as EntityRowMap[E]);
-  }
-
-  async get<E extends EntityName>(entity: E, id: string) {
-    const rows = await this.rowsOf(entity, 'WHERE id = ?', [id]);
-    return rows[0];
-  }
-
-  // rows in write order, a page at a time; a row rewritten mid-read moves to the end (REPLACE gives it a new place)
-  // and may come by twice: kept once, as it stands last
-  private async pagedRowsOf<E extends EntityName>(entity: E, condition = '', params: (string | number)[] = []) {
-    this.read(entityDep(entity));
-    const table = entityTable(entity);
-    const byId = new Map<string, EntityRowMap[E]>();
+  // what a table holds, parsed, in write order: a page carries its small rows, the large ones follow by size.
+  // A row rewritten mid-read moves to the end (REPLACE gives it a new place) and may come by twice
+  private async documents<T>(table: string, condition = '', params: SqlParam[] = []): Promise<T[]> {
+    const out: T[] = [];
     let after = 0;
     for (;;) {
-      const rows = await this.sql.query(`SELECT rowid AS place, json FROM ${table} WHERE rowid > ?${condition} ORDER BY rowid LIMIT ${READ_PAGE}`, [after, ...params]);
-      for (const r of rows) {
-        const row = JSON.parse(r.json as string) as EntityRowMap[E];
-        byId.set(row.id, row);
+      const page = await this.sql.query(
+        `SELECT rowid AS place, length(json) AS size, CASE WHEN length(json) <= ${INLINE_CHARS} THEN json END AS json FROM ${table} WHERE rowid > ?${condition} ORDER BY rowid LIMIT ${READ_PAGE}`,
+        [after, ...params],
+      );
+      const large = page.filter((r) => r.json == null).map((r) => ({ place: Number(r.place), size: Number(r.size) }));
+      const fetched = await this.largeJson(table, large, condition, params);
+      for (const r of page) {
+        const json = (r.json as string | null) ?? fetched.get(Number(r.place));
+        if (json !== undefined) out.push(JSON.parse(json) as T);
       }
-      if (rows.length < READ_PAGE) return [...byId.values()];
-      after = Number(rows.at(-1)?.place);
+      // a large row that left its place meanwhile stands behind this page now, also behind a last one
+      const moved = fetched.size < large.length;
+      if (page.length < READ_PAGE && !moved) return out;
+      after = Number(page.at(-1)?.place);
     }
   }
 
+  private async largeJson(table: string, rows: { place: number; size: number }[], condition: string, params: SqlParam[]) {
+    const found = new Map<number, string>();
+    let places: number[] = [];
+    let chars = 0;
+    const fetch = async () => {
+      if (places.length === 0) return;
+      const got = await this.sql.query(
+        `SELECT rowid AS place, json FROM ${table} WHERE rowid IN (${places.map(() => '?').join(',')})${condition}`,
+        [...places, ...params],
+      );
+      for (const r of got) found.set(Number(r.place), r.json as string);
+      places = [];
+      chars = 0;
+    };
+    for (const { place, size } of rows) {
+      if (size > NATIVE_CHARS) {
+        const json = await this.slicedJson(table, place, condition, params);
+        if (json !== undefined) found.set(place, json);
+      } else {
+        if (chars + size > NATIVE_CHARS || places.length === READ_CHUNK) await fetch();
+        places.push(place);
+        chars += size;
+      }
+    }
+    await fetch();
+    return found;
+  }
+
+  /** a row larger than one message: SQLite cuts it, the pieces are joined here */
+  private async slicedJson(table: string, place: number, condition: string, params: SqlParam[]): Promise<string | undefined> {
+    let json = '';
+    let size = Number.POSITIVE_INFINITY;
+    for (let from = 1; from <= size; from += NATIVE_CHARS) {
+      const rows = await this.sql.query(
+        `SELECT length(json) AS size, substr(json, ?, ${NATIVE_CHARS}) AS part FROM ${table} WHERE rowid = ?${condition}`,
+        [from, place, ...params],
+      );
+      if (rows.length === 0) return undefined;
+      const now = Number(rows[0].size);
+      // another row took this place between two slices: the pieces are of two rows
+      if (from > 1 && now !== size) return this.slicedJson(table, place, condition, params);
+      size = now;
+      json += rows[0].part as string;
+    }
+    return json;
+  }
+
+  private async rowsOf<E extends EntityName>(entity: E, condition = '', params: SqlParam[] = []) {
+    this.read(entityDep(entity));
+    return lastOf(await this.documents<EntityRowMap[E]>(entityTable(entity), condition, params), (row) => row.id);
+  }
+
+  async get<E extends EntityName>(entity: E, id: string) {
+    const rows = await this.rowsOf(entity, ' AND id = ?', [id]);
+    return rows[0];
+  }
+
   bySpace<E extends Exclude<EntityName, 'space'>>(entity: E, spaceId: string) {
-    return this.pagedRowsOf(entity, ' AND spaceId = ?', [spaceId]);
+    return this.rowsOf(entity, ' AND spaceId = ?', [spaceId]);
   }
 
   allRows<E extends EntityName>(entity: E) {
-    return this.pagedRowsOf(entity);
+    return this.rowsOf(entity);
   }
 
   async countBySpace(entity: Exclude<EntityName, 'space'>, spaceId: string) {
@@ -240,7 +300,7 @@ export class SqlStorageBackend implements StorageBackend {
     const rows: EntityRowMap[E][] = [];
     for (let i = 0; i < ids.length; i += READ_CHUNK) {
       const chunk = ids.slice(i, i + READ_CHUNK);
-      rows.push(...(await this.rowsOf(entity, `WHERE id IN (${chunk.map(() => '?').join(',')})`, chunk)));
+      rows.push(...(await this.rowsOf(entity, ` AND id IN (${chunk.map(() => '?').join(',')})`, chunk)));
     }
     return rows;
   }
@@ -248,11 +308,20 @@ export class SqlStorageBackend implements StorageBackend {
   async putMany(entity: EntityName, rows: (Record<string, unknown> & { id: string })[]) {
     if (rows.length === 0) return;
     const sql = `INSERT OR REPLACE INTO ${entityTable(entity)} (id, spaceId, json) VALUES (?, ?, ?)`;
-    for (let i = 0; i < rows.length; i += WRITE_CHUNK) {
-      await this.sql.batch(
-        rows.slice(i, i + WRITE_CHUNK).map((row) => ({ sql, params: [row.id, (row.spaceId as string) ?? null, JSON.stringify(row)] })),
-      );
+    let batch: SqlStatement[] = [];
+    let chars = 0;
+    for (const row of rows) {
+      const json = JSON.stringify(row);
+      // a row larger than a message cannot be cut on the way in: it goes alone
+      if (batch.length === WRITE_CHUNK || (batch.length > 0 && chars + json.length > NATIVE_CHARS)) {
+        await this.sql.batch(batch);
+        batch = [];
+        chars = 0;
+      }
+      batch.push({ sql, params: [row.id, (row.spaceId as string) ?? null, json] });
+      chars += json.length;
     }
+    await this.sql.batch(batch);
     this.emit(entityDep(entity));
   }
 
@@ -277,18 +346,20 @@ export class SqlStorageBackend implements StorageBackend {
     this.emit(OUTBOX_DEP);
   }
 
-  private async outboxRows(where = '', params: string[] = []) {
-    this.read(OUTBOX_DEP);
-    const rows = await this.sql.query(`SELECT json FROM outbox ${where}`, params);
-    return rows.map((r) => JSON.parse(r.json as string) as OutboxRow);
-  }
-
   outboxAll() {
-    return this.outboxRows();
+    this.read(OUTBOX_DEP);
+    return this.documents<OutboxRow>('outbox');
   }
 
-  outboxBySpace(spaceId: string) {
-    return this.outboxRows('WHERE spaceId = ? ORDER BY hlc', [spaceId]);
+  async outboxSpaceIds() {
+    this.read(OUTBOX_DEP);
+    return (await this.sql.query('SELECT spaceId FROM outbox')).map((r) => r.spaceId as string);
+  }
+
+  async outboxBySpace(spaceId: string) {
+    this.read(OUTBOX_DEP);
+    const rows = await this.documents<OutboxRow>('outbox', ' AND spaceId = ?', [spaceId]);
+    return rows.sort((a, b) => compareHlc(a.hlc, b.hlc));
   }
 
   async outboxDelete(opIds: string[]) {
@@ -304,8 +375,8 @@ export class SqlStorageBackend implements StorageBackend {
 
   async metaGet(key: string): Promise<MetaRow | undefined> {
     this.read(metaDep(key));
-    const rows = await this.sql.query('SELECT json FROM meta WHERE key = ?', [key]);
-    return rows[0] ? { key, value: JSON.parse(rows[0].json as string) } : undefined;
+    const values = await this.documents<unknown>('meta', ' AND key = ?', [key]);
+    return values.length > 0 ? { key, value: values.at(-1) } : undefined;
   }
 
   async metaPut(key: string, value: unknown) {
@@ -320,14 +391,12 @@ export class SqlStorageBackend implements StorageBackend {
 
   async connectorConnAll() {
     this.read(CONN_DEP);
-    const rows = await this.sql.query('SELECT json FROM connector_conn');
-    return rows.map((r) => JSON.parse(r.json as string) as ConnectorConnRow);
+    return lastOf(await this.documents<ConnectorConnRow>('connector_conn'), (row) => row.id);
   }
 
   async connectorConnGet(id: string) {
     this.read(CONN_DEP);
-    const rows = await this.sql.query('SELECT json FROM connector_conn WHERE id = ?', [id]);
-    return rows[0] ? (JSON.parse(rows[0].json as string) as ConnectorConnRow) : undefined;
+    return (await this.documents<ConnectorConnRow>('connector_conn', ' AND id = ?', [id])).at(-1);
   }
 
   async connectorConnPut(row: ConnectorConnRow) {
@@ -342,8 +411,7 @@ export class SqlStorageBackend implements StorageBackend {
 
   async quoteCacheAll() {
     this.read(QUOTE_DEP);
-    const rows = await this.sql.query('SELECT json FROM quote_cache');
-    return rows.map((r) => JSON.parse(r.json as string) as QuoteCacheRow);
+    return lastOf(await this.documents<QuoteCacheRow>('quote_cache'), (row) => row.key);
   }
 
   async quoteCachePutAll(rows: QuoteCacheRow[]) {

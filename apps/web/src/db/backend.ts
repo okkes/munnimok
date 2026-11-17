@@ -33,6 +33,9 @@ export interface StorageBackend {
 
   outboxAdd(op: OutboxRow): Promise<void>;
   outboxAll(): Promise<OutboxRow[]>;
+  /** the space of each waiting op, one entry per op — for a count or the spaces with something to send, without
+   *  reading what the ops carry (#630: a receipt's photo is one op) */
+  outboxSpaceIds(): Promise<string[]>;
   /** ops of one space, ordered by HLC (push order) */
   outboxBySpace(spaceId: string): Promise<OutboxRow[]>;
   outboxDelete(opIds: string[]): Promise<void>;
@@ -136,6 +139,11 @@ export class DexieBackend implements StorageBackend {
 
   outboxAll() {
     return this.db.outbox.toArray();
+  }
+
+  async outboxSpaceIds() {
+    // the index's own keys: no row is read
+    return (await this.db.outbox.orderBy('spaceId').keys()) as string[];
   }
 
   outboxBySpace(spaceId: string) {
