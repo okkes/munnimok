@@ -8,7 +8,7 @@ const fx = scratchPlatforms();
 const { renderStack, templatePlaceholders } = await import('../modules/render.mjs');
 const { loadStack, loadPlatform, savePlatform, hostsFor } = await import('../modules/stack.mjs');
 const { MANIFEST, entriesFor, featureOn, generateValue, mirroredEntries } = await import('../modules/secrets.mjs');
-const { ensureConnectorAccess, connectorDefinitions, removeApps, CONNECTOR_SCOPE, MACHINE_SECRET_NAME } = await import('../modules/logto.mjs');
+const { ensureConnectorAccess, ensureLabReader, labReaderToken, connectorDefinitions, removeApps, CONNECTOR_SCOPE, LAB_READ_SCOPE, MACHINE_SECRET_NAME } = await import('../modules/logto.mjs');
 test.after(() => fx.cleanup());
 
 const block = (compose, service) => new RegExp(`^  ${service}:\\n([\\s\\S]*?)(?=^  [a-z-]+:$|^volumes:$)`, 'm').exec(compose)?.[1] ?? null;
@@ -228,7 +228,7 @@ function fakeLogto() {
     const { pathname } = new URL(url);
     const method = init.method ?? 'GET';
     const body = init.body && String(init.body).startsWith('{') ? JSON.parse(init.body) : null;
-    calls.push({ pathname, method, body });
+    calls.push({ pathname, method, body, form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : null, authorization: init.headers?.authorization ?? null });
     let m;
     if (pathname === '/oidc/token') return ok({ access_token: 't' });
     if (pathname === '/api/applications') { if (method === 'GET') return ok(state.apps); const app = { id: `app${++n}`, ...body }; state.apps.push(app); state.secrets[app.id] = [{ applicationId: app.id, name: 'Default secret', value: `default${n}`, createdAt: 1, expiresAt: null }]; return ok(app); }
@@ -289,6 +289,38 @@ test('ensureConnectorAccess: the control plane is an API resource with the conne
   } finally {
     fx.writeEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true } });
   }
+});
+
+test('ensureLabReader: the api carries the lab:read scope, a machine role grants only that, the reader\'s own app holds it — created once, converged on the next run; its token asks for that one scope; removeApps takes the pieces with the environment', async () => {
+  const stack = loadStack('munni-nas-prod');
+  const logto = fakeLogto();
+  const creds = { m2mId: 'infra1', m2mSecret: 's' };
+
+  const first = await ensureLabReader(stack, creds, { fetchImpl: logto.fetchImpl });
+  const app = logto.state.apps.find((a) => a.id === first.appId);
+  assert.deepEqual([app.name, app.type], ['munni-nas-prod lab reader m2m', 'MachineToMachine'], 'an app of its own — never the api\'s');
+  assert.equal(first.secret, logto.state.secrets[first.appId].find((s) => s.name === MACHINE_SECRET_NAME).value);
+  assert.equal(logto.state.resources.find((r) => r.id === first.resourceId).indicator, stack.urls.api, 'the api is the resource: the audience its tokens are checked against');
+  assert.deepEqual(logto.state.scopes[first.resourceId].map((s) => s.name), [LAB_READ_SCOPE]);
+  assert.deepEqual([logto.state.roles.find((r) => r.id === first.roleId).name, logto.state.roles.find((r) => r.id === first.roleId).type], ['munni-nas-prod lab reader', 'MachineToMachine']);
+  assert.deepEqual(logto.state.roleScopes[first.roleId], [first.scopeId], 'the one scope and nothing else');
+  assert.deepEqual(logto.state.roleApps[first.roleId], [first.appId]);
+  const writesAfterFirst = logto.writes();
+
+  assert.deepEqual(await ensureLabReader(stack, creds, { fetchImpl: logto.fetchImpl }), first, 'idempotent: the same ids, the same secret');
+  assert.equal(logto.writes(), writesAfterFirst, 'nothing written twice');
+
+  logto.calls.length = 0;
+  assert.equal(await labReaderToken(stack, first, logto.fetchImpl), 't');
+  const asked = logto.calls.find((c) => c.pathname === '/oidc/token');
+  assert.deepEqual(asked.form, { grant_type: 'client_credentials', resource: stack.urls.api, scope: LAB_READ_SCOPE }, 'Logto issues only the scopes a request names');
+  assert.equal(asked.authorization, `Basic ${Buffer.from(`${first.appId}:${first.secret}`).toString('base64')}`);
+
+  const removed = await removeApps(stack, creds, { fetchImpl: logto.fetchImpl });
+  assert.ok(removed.removed.includes('munni-nas-prod lab reader m2m'));
+  assert.ok(removed.removed.includes('munni-nas-prod lab reader'));
+  assert.equal(logto.state.apps.length, 0);
+  assert.equal(logto.state.roles.length, 0);
 });
 
 test('a stack without connectors has nothing to grant', async () => {

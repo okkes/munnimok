@@ -7,7 +7,7 @@ import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from '.
 import { publishPlatform, writeApplied } from './modules/config.mjs';
 import { deleteEnvironment, ensureSecrets, foldFallbacks, satisfiedBy, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
-import { applyApps, applyBranding, applySignUpPolicy, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, ensureManagementAccess, logtoAnswers, removeApps, writeBack, writeBackConnector } from './modules/logto.mjs';
+import { applyApps, applyBranding, applySignUpPolicy, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, ensureLabReader, ensureManagementAccess, logtoAnswers, removeApps, writeBack, writeBackConnector, LAB_READER_ITEM, LAB_READ_SCOPE } from './modules/logto.mjs';
 import { vaultPlatformValues, vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
@@ -92,7 +92,7 @@ async function keepInVault(values, fresh = []) {
   const items = [...byName.values()];
   if (!items.length) return 'no-account';
   try {
-    const r = await vaultReplaceFolder(shared.urls.vault, { email, password, folder: stack.stack, items }, localAwareFetch);
+    const r = await vaultReplaceFolder(shared.urls.vault, { email, password, folder: stack.stack, items, keep: [LAB_READER_ITEM] }, localAwareFetch);
     console.log(`  vault: ${r.imported} credentials kept in folder "${r.folder}" at ${shared.urls.vault}${r.registered ? ' (account created)' : ''}`);
     return 'stored';
   } catch (err) {
@@ -177,6 +177,16 @@ async function applyLogto(values, write, fresh) {
     } catch (e) {
       state.connector = false;
       console.log(`  logto: connector access not ensured (${e.message}) — the relay stays off until the next run writes the credential back`);
+    }
+    // the lab's reader (#635): no deploy needs it, so the vault is its only store — filed again on every run
+    try {
+      const reader = await ensureLabReader(stack, creds);
+      fresh.push({ name: LAB_READER_ITEM, username: reader.appId, password: reader.secret, uri: stack.urls.api, notes: `Machine account that reads the lab's runs and recordings (scope ${LAB_READ_SCOPE} on the api) — it cannot start, change or delete anything. Used by infra/lab-read.mjs.` });
+      state.labReader = true;
+      console.log(`  logto: the lab's reader ${reader.appId} holds \`${LAB_READ_SCOPE}\` on the api — filed in the vault`);
+    } catch (e) {
+      state.labReader = false;
+      console.log(`  logto: the lab's reader not ensured (${e.message}) — retried next run`);
     }
   }
   for (const name of ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET', 'LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']) {

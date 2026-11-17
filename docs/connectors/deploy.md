@@ -208,6 +208,13 @@ mint without it met 403 on `/v1/admin/*`, 2026-10-01) — so one token opens
 the consumer routes and the operator's. An environment's cleanup removes the three with the
 api's own app.
 
+The same run makes **the lab's reader** (`ensureLabReader`, #635): the scope
+`lab:read` on the api's own resource, a machine role granting only that, and
+an app of its own. Nothing deployed uses it, so it is no secret of the
+environment: the bootstrap files it in the vault (`Lab reader M2M`, the
+environment's folder) and `infra/lab-read.mjs` takes it from there. What it
+may read is in [lab.md](lab.md).
+
 **Secrets** (`infra/secrets.manifest.json`): per environment, generated —
 `CONNECTOR_SEAL_KEY_K1` (32 bytes, standard base64), `CONNECTOR_ENROLLMENT_HMAC`,
 `CONNECTOR_SUBJECT_SALT`; module-owned — `CONNECTOR_M2M_APP_ID/SECRET` and

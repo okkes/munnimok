@@ -14,11 +14,11 @@ export const ADMIN_ROLE = 'munni admin';
 /** LAN mode (lcl): the plain-http localhost twin of every https sslip origin stays registered too */
 const originVariants = (stack, url, twinPort) => (stack.delivery === 'docker' && stack.lan && url?.startsWith('https://') && twinPort ? [url, `http://localhost:${twinPort}`] : [url]);
 
-async function mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl = localAwareFetch, resource = MGMT_RESOURCE) {
+async function mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl = localAwareFetch, resource = MGMT_RESOURCE, scope = 'all') {
   const res = await fetchImpl(`${logtoUrl}/oidc/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Basic ${Buffer.from(`${m2mId}:${m2mSecret}`).toString('base64')}` },
-    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope: 'all' }),
+    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope }),
   });
   if (!res.ok) throw new Error(`logto token failed (${res.status}): ${await res.text()}`);
   return (await res.json()).access_token;
@@ -253,9 +253,14 @@ export async function ensureConnectorAccess(stack, creds, { fetchImpl = localAwa
   const resources = await call('/resources?page_size=100');
   const resource = resources.find((r) => r.indicator === defs.resource.indicator)
     ?? (await call('/resources', { method: 'POST', body: JSON.stringify(defs.resource) }));
+  return machineGrant(call, resource, { name: CONNECTOR_SCOPE, description: 'the control plane\'s operator routes (kill switch, fleet, canaries)' }, defs);
+}
+
+// one scope of a resource, a machine role that grants it, a machine app that holds the role: each found by name, made once
+async function machineGrant(call, resource, wanted, defs) {
   const scopes = await call(`/resources/${resource.id}/scopes?page_size=100`);
-  const scope = scopes.find((s) => s.name === CONNECTOR_SCOPE)
-    ?? (await call(`/resources/${resource.id}/scopes`, { method: 'POST', body: JSON.stringify({ name: CONNECTOR_SCOPE, description: 'the control plane\'s operator routes (kill switch, fleet, canaries)' }) }));
+  const scope = scopes.find((s) => s.name === wanted.name)
+    ?? (await call(`/resources/${resource.id}/scopes`, { method: 'POST', body: JSON.stringify(wanted) }));
 
   const roles = await call('/roles?page_size=100');
   let role = roles.find((r) => r.name === defs.role.name);
@@ -273,6 +278,31 @@ export async function ensureConnectorAccess(stack, creds, { fetchImpl = localAwa
   if (!held.some((a) => a.id === app.id)) await call(`/roles/${role.id}/applications`, { method: 'POST', body: JSON.stringify({ applicationIds: [app.id] }) });
 
   return { appId: app.id, secret: await machineSecret(call, app.id), resourceId: resource.id, scopeId: scope.id, roleId: role.id };
+}
+
+export const LAB_READ_SCOPE = 'lab:read';
+
+/** the vault item the reader is filed under, in the environment's own folder */
+export const LAB_READER_ITEM = 'Lab reader M2M';
+
+export function labReaderDefinitions(stack) {
+  return {
+    role: { name: `${stack.stack} lab reader`, description: 'reads the lab\'s runs and recordings, changes nothing', type: 'MachineToMachine' },
+    app: { name: `${stack.stack} lab reader m2m`, type: 'MachineToMachine' },
+  };
+}
+
+// the lab's reader (#635): a machine account whose only grant is `lab:read` on the api, so a recording can be read
+// without a person's sign-in; the api refuses it everything that acts
+export async function ensureLabReader(stack, creds, { fetchImpl = localAwareFetch } = {}) {
+  const call = await client(stack, creds, fetchImpl);
+  const resource = await ensureResource(call, stack);
+  return machineGrant(call, resource, { name: LAB_READ_SCOPE, description: 'the lab\'s runs, recordings and states, read-only' }, labReaderDefinitions(stack));
+}
+
+/** a token for the api that carries the reader's one scope: Logto issues only the scopes a request names */
+export async function labReaderToken(stack, { appId, secret }, fetchImpl = localAwareFetch) {
+  return mgmtToken(stack.urls.logto, appId, secret, fetchImpl, stack.urls.api, LAB_READ_SCOPE);
 }
 
 export function writeBackConnector(stack, access) {
@@ -372,13 +402,15 @@ export async function removeApps(stack, creds, { fetchImpl = localAwareFetch } =
     await call(`/applications/${match.id}`, { method: 'DELETE' });
     removed.push(def.name);
   }
-  // the connector's pieces go with the environment too, whether or not it still runs connectors
+  // the connector's pieces and the lab's reader go with the environment too, whether or not it still runs connectors
   const connector = connectorDefinitions({ ...stack, urls: { ...stack.urls, connector: stack.urls.connector ?? `${stack.urls.api}/connector` } });
-  const connectorApp = existing.find((a) => a.name === connector.app.name);
-  if (connectorApp) { await call(`/applications/${connectorApp.id}`, { method: 'DELETE' }); removed.push(connector.app.name); }
   const roles = await call('/roles?page_size=100');
-  const connectorRole = roles.find((r) => r.name === connector.role.name);
-  if (connectorRole) { await call(`/roles/${connectorRole.id}`, { method: 'DELETE' }); removed.push(connector.role.name); }
+  for (const machine of [connector, labReaderDefinitions(stack)]) {
+    const app = existing.find((a) => a.name === machine.app.name);
+    if (app) { await call(`/applications/${app.id}`, { method: 'DELETE' }); removed.push(machine.app.name); }
+    const role = roles.find((r) => r.name === machine.role.name);
+    if (role) { await call(`/roles/${role.id}`, { method: 'DELETE' }); removed.push(machine.role.name); }
+  }
   const resources = await call('/resources?page_size=100');
   for (const indicator of [stack.urls.api, stack.urls.connector].filter(Boolean)) {
     const res = resources.find((r) => r.indicator === indicator);
