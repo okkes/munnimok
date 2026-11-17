@@ -20,6 +20,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         nl: 'Android: de app kon vanzelf afsluiten bij een account met veel winkelbonnen. Bonnen dragen hun facturen en foto’s mee, en de telefoon kreeg ze allemaal tegelijk aangereikt; ze komen nu in kleinere delen binnen.',
         tr: 'Android: çok sayıda mağaza fişi olan bir hesapta uygulama kendiliğinden kapanabiliyordu. Fişler faturalarını ve fotoğraflarını da taşır ve telefona hepsi birden veriliyordu; artık daha küçük parçalar halinde geliyor.',
       },
+      {
+        en: 'Receipts are lighter: a photo or an invoice is read when you open the receipt, not every time the app goes through your receipts. They are still on every device, offline too. This version cannot sync with older ones, so update the app on all your devices.',
+        nl: 'Bonnen zijn lichter: een foto of factuur wordt gelezen wanneer je de bon opent, niet elke keer dat de app je bonnen doorloopt. Ze staan nog steeds op elk apparaat, ook offline. Deze versie kan niet synchroniseren met oudere versies: werk de app op al je apparaten bij.',
+        tr: 'Fişler daha hafif: bir fotoğraf veya fatura, uygulama fişlerini her taradığında değil, fişi açtığında okunur. Hâlâ her cihazda, çevrimdışıyken de duruyorlar. Bu sürüm eski sürümlerle eşitlenemez; uygulamayı tüm cihazlarında güncelle.',
+      },
     ],
   },
   {
