@@ -43,7 +43,7 @@ details.how ol{list-style:none;counter-reset:s;margin:8px 0 0;padding:0}
 details.how li{counter-increment:s;position:relative;padding:5px 0 5px 30px;margin:0}
 details.how li::before{content:counter(s);position:absolute;left:0;top:6px;width:20px;height:20px;border-radius:50%;background:var(--chip);color:var(--muted);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
 label.f{display:block;margin:8px 0 2px;font-size:12px;color:var(--muted);font-family:ui-monospace,Consolas,monospace}
-input[type=text],input[type=password],textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:13px ui-monospace,Consolas,monospace}
+input[type=text],input[type=password],input[type=number],textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:13px ui-monospace,Consolas,monospace}
 textarea{min-height:84px;resize:vertical}
 button{background:var(--brand);color:#f2efe7;border:0;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin:8px 8px 0 0}
 button.ghost{background:transparent;color:var(--brand-ink);border:1px solid var(--brand-ink)}
@@ -63,7 +63,8 @@ pre{background:var(--code);border:1px solid var(--line);border-radius:10px;paddi
 pre button.copy{position:absolute;top:6px;right:6px;margin:0;padding:3px 9px;font-size:11px}
 a{color:var(--brand-ink)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
-@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:0 16px}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}}
 .platforms{display:flex;gap:10px;flex-wrap:wrap}
 .platforms .p{flex:1 1 180px;border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
 .platforms .p.sel{border-color:var(--brand-ink)}
@@ -94,17 +95,18 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
 ol.steps{list-style:none;counter-reset:s;margin:8px 0 0;padding:0;font-size:13px}
 ol.steps>li{counter-increment:s;position:relative;padding:5px 0 5px 30px;margin:0}
 ol.steps>li::before{content:counter(s);position:absolute;left:0;top:6px;width:20px;height:20px;border-radius:50%;background:var(--chip);color:var(--muted);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
-.todo{list-style:none;margin:8px 0 0;padding:0}
-.todo li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
-.todo li:first-child{border-top:0}
-.todo .num{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:var(--chip);color:var(--muted);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
-.todo li.done .num{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
-.todo li.done .t{color:var(--muted);text-decoration:line-through}
-.todo .body{flex:1;min-width:0}
-.todo .t{font-weight:600}
-.todo .d{color:var(--muted)}
-.todo .st{flex:0 0 auto;display:flex;align-items:center;gap:8px}
-.todo input[type=checkbox]{width:auto;margin:0 4px 0 0}
+/* ul.: a step of the stepper wears its state as a class, and "todo" is one of the states */
+ul.todo{list-style:none;margin:8px 0 0;padding:0}
+ul.todo li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+ul.todo li:first-child{border-top:0}
+ul.todo .num{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:var(--chip);color:var(--muted);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+ul.todo li.done .num{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+ul.todo li.done .t{color:var(--muted);text-decoration:line-through}
+ul.todo .body{flex:1;min-width:0}
+ul.todo .t{font-weight:600}
+ul.todo .d{color:var(--muted)}
+ul.todo .st{flex:0 0 auto;display:flex;align-items:center;gap:8px}
+ul.todo input[type=checkbox]{width:auto;margin:0 4px 0 0}
 .envpick{display:flex;align-items:center;gap:10px;font-size:13px;margin:4px 0 12px;flex-wrap:wrap}
 .envpick select{max-width:220px}
 #log-drawer{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.08)}
@@ -183,7 +185,10 @@ section,.card,.crow,.reg,details.how,.statline,#local-status{scroll-margin-top:7
 .difftab tr.del td:first-child{color:var(--bad)}
 .difftab tr.chg td:first-child{color:var(--warn)}
 .difftab code{font-size:12px}
-.tile-envs{margin-top:6px;font-size:12px}
+/* every part of a tile carries its own side padding; `.card .why` would win over a bare class */
+.tile .tile-envs{margin:8px 0 0;padding:0 16px;font-size:12px}
+.tile-envs-off{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-bottom:4px}
+.tile-envs-off .chiplink{margin:0}
 button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni-flash-ring 2.4s ease-out 1}
 @media(prefers-reduced-motion:reduce){.flash,button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation-duration:.8s}}
 .wrap{max-width:1300px;margin:0 auto;padding:0 16px}
@@ -591,7 +596,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page */
           <div><label class="f" for="env-add-appchannel">app channel (what the app calls itself)</label><select id="env-add-appchannel"><option value="production">production</option><option value="staging">staging</option></select></div>
         </div>
         <div class="featrow" id="env-add-features"></div>
-        <div class="grid2">
+        <div class="grid3">
           <div><label class="f" for="env-add-agents-pooled">pooled browser agents</label><input type="number" id="env-add-agents-pooled" min="0" max="8" value="1"/></div>
           <div><label class="f" for="env-add-agents-concurrency">jobs at once per agent</label><input type="number" id="env-add-agents-concurrency" min="1" max="8" value="2"/></div>
           <div><label class="f" for="env-add-agents-private">hosted private slots</label><input type="number" id="env-add-agents-private" min="0" max="16" value="0"/></div>
@@ -3021,7 +3026,7 @@ function settingsHtml(env) {
         <div><label class="f" for="env-label-${s}">label</label><input type="text" id="env-label-${s}" maxlength="40" value="${escAttr(env.label)}" autocomplete="off"/></div>
       </div>
       <div class="featrow">${ENV_FEATURES.map(([kind, items]) => `<span class="fk">${kind}</span>` + items.map(([id, label]) => `<label><input type="checkbox" data-envset="${id}" data-env="${s}" ${on(id) ? 'checked' : ''}/> ${label}</label>`).join('')).join('')}</div>
-      <div class="grid2">
+      <div class="grid3">
         <div><label class="f" for="env-agents-pooled-${s}">pooled browser agents</label><input type="number" id="env-agents-pooled-${s}" min="0" max="8" value="${env.agents?.pooled ?? 1}"/></div>
         <div><label class="f" for="env-agents-concurrency-${s}">jobs at once per agent</label><input type="number" id="env-agents-concurrency-${s}" min="1" max="8" value="${env.agents?.concurrency ?? 2}"/></div>
         <div><label class="f" for="env-agents-private-${s}">hosted private slots</label><input type="number" id="env-agents-private-${s}" min="0" max="16" value="${env.agents?.privateSlots ?? 0}"/></div>
@@ -3678,7 +3683,8 @@ function tileEnvsHtml(id) {
   const has = (e) => (['gocardless', 'enablebanking'].includes(id) ? (e.features?.banking ?? []).includes(id) : (['google', 'apple'].includes(id) ? (e.features?.signin ?? []).includes(id) : Boolean(e.features?.[id])));
   const off = S.envList.filter((e) => !has(e));
   if (!off.length) return `<div class="why tile-envs">runs in ${S.envList.map((e) => esc(e.env)).join(', ')}</div>`;
-  return `<div class="why tile-envs">a default for the next environment — ${off.map((e) => `<a class="chiplink" href="#" ${jumpAttr({ tab: 'overview', env: e.env, sel: `[data-envset="${id}"][data-env="${e.env}"]` })}>${esc(e.env)}: off</a>`).join(' · ')} — an environment switches it on under its Settings, then Save</div>`;
+  const chips = off.map((e) => `<a class="chiplink" href="#" ${jumpAttr({ tab: 'overview', env: e.env, sel: `[data-envset="${id}"][data-env="${e.env}"]` })}>${esc(e.env)}: off</a>`).join('');
+  return `<div class="why tile-envs"><div class="tile-envs-off"><span>a default for the next environment</span>${chips}</div>an environment switches it on under its Settings, then Save</div>`;
 }
 async function autoCheckAppLinks() {
   if (!HELPER || isLcl()) return;
