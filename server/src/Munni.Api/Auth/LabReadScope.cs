@@ -22,4 +22,11 @@ public static class MachineCaller
 }
 
 /// <summary>Marks the routes a machine may call; every other route refuses one.</summary>
-public sealed class AdmitsMachines;
+public sealed class AdmitsMachines
+{
+    public static readonly AdmitsMachines Mark = new();
+
+    private AdmitsMachines()
+    {
+    }
+}

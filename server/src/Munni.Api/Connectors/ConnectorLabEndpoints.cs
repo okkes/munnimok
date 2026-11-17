@@ -30,7 +30,7 @@ public static partial class ConnectorLabEndpoints
         // what the lab's machine account reads too (#635): runs, recordings and states — nothing that acts
         var read = app.MapGroup("/lab")
             .RequireAuthorization(LabReadScope.Policy)
-            .WithMetadata(new AdmitsMachines())
+            .WithMetadata(AdmitsMachines.Mark)
             .WithSafeRouteParams()
             .AddEndpointFilter<ConnectorReplyFilter>();
 
