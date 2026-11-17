@@ -173,6 +173,10 @@ async function bootHeals(store: StorageBackend, upkeep: Repo, confirmed: boolean
   // #578: the keys recurrings, loans and dismissals stored follow the merchant key's new spelling, once
   const { rekeyMerchantKeys } = await import('@/application/merchantKeyRekey');
   await rekeyMerchantKeys(store, upkeep);
+  // #630: a photo or an invoice still inside its receipt moves out — on any copy: the change is stamped right behind
+  // the value it replaces, and the server has written the same one
+  const { splitReceiptFiles } = await import('@/application/receiptFiles');
+  await splitReceiptFiles(store, upkeep);
 }
 
 async function startFirstSync(

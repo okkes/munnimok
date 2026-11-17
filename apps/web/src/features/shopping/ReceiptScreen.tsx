@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useCanEdit } from '@/app/useCanEdit';
 import { useQuery } from '@/db/useQuery';
+import { useReceiptFile } from '@/application/receiptFiles';
 import { useReceiptOps } from '@/application/receipts';
 import type { ReceiptOps } from '@/application/receipts';
 import { ReadOnlyNote } from '@/features/spaces/ReadOnlyNote';
@@ -96,6 +97,7 @@ export function ReceiptScreen({
   const aiReader = useQuery(store, async () => (await getApiCapabilities()).receiptAi === true, [spaceId]) === true;
 
   const receipt = entry?.data ?? null;
+  const picture = useReceiptFile(receipt?.imageId);
 
   useEffect(() => {
     setConfirmDelete(false);
@@ -129,10 +131,10 @@ export function ReceiptScreen({
   const connection = receipt?.instanceId ? metas?.find((m) => m.id === receipt.instanceId) : undefined;
 
   const readItems = async () => {
-    if (!receipt?.image || !entry?.linkId) return;
+    if (!picture || !entry?.linkId) return;
     setOcrState('busy');
     try {
-      const response = await apiFetch('/ocr/receipt', { method: 'POST', body: JSON.stringify({ image: receipt.image }) });
+      const response = await apiFetch('/ocr/receipt', { method: 'POST', body: JSON.stringify({ image: picture }) });
       if (!response.ok) {
         setOcrState('failed');
         return;
@@ -258,8 +260,8 @@ export function ReceiptScreen({
                     )}
                   </>
                 )}
-                {readable && aiReader && receipt.image && (
-                  <ReceiptAiRead images={[receipt.image]} hasItems={!!receipt.items?.length} onRead={(outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome)} />
+                {readable && aiReader && picture && (
+                  <ReceiptAiRead images={[picture]} hasItems={!!receipt.items?.length} onRead={(outcome) => keepRead(receiptOps, fileByReceipt, entry, outcome)} />
                 )}
                 {photoBorn && !spaceLocked && !aiReader && !receipt.items?.length && connectorsAvailable() && (
                   <>

@@ -138,18 +138,22 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         var ops = new List<SyncOpDto>();
         var dropped = 0;
 
+        var files = new List<SyncOpDto>();
         foreach (var receipt in records)
         {
-            var op = ReceiptOp(feed.Id, provider, connectionId, receipt);
+            var op = ReceiptOp(feed.Id, provider, connectionId, receipt, files);
             if (op is null) dropped++;
             else ops.Add(op);
         }
 
+        // #630: the files before the receipts that name them — a pull cut between the two never holds a receipt that
+        // points at nothing; counted by receipt: an invoice is part of the receipt it came with
+        await ApplyAsync(feed, files, touched);
         var accepted = await ApplyAsync(feed, ops, touched);
         return new ConnectorIngestCounts(accepted, 0, 0, 0, dropped);
     }
 
-    private SyncOpDto? ReceiptOp(string feedId, string provider, string connectionId, JsonObject receipt)
+    private SyncOpDto? ReceiptOp(string feedId, string provider, string connectionId, JsonObject receipt, List<SyncOpDto> files)
     {
         var externalId = receipt.Text(ExternalIdField);
         var purchasedAt = receipt["purchased_at"]?.GetValue<DateTimeOffset>();
@@ -176,12 +180,43 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         }
         if (receipt["payment"] is JsonObject payment) fields["payment"] = Json(ReceiptPayment(payment));
         if (receipt["reconciled"]?.GetValue<bool>() == false) fields["reconciled"] = Json(false);
-        if (receipt["documents"] is JsonArray documents && documents.Count > 0)
-        {
-            fields["documents"] = Json(documents.OfType<JsonObject>().Select(Document).Where(d => d is not null).ToList());
-        }
+
+        var documents = Documents(feedId, entityId, receipt["documents"] as JsonArray, files);
+        if (documents.Count > 0) fields["documents"] = Json(documents);
 
         return Op(feedId, ReceiptEntity, entityId, fields, Seed(entityId, receipt, fields));
+    }
+
+    private List<object> Documents(string feedId, string receiptId, JsonArray? documents, List<SyncOpDto> files)
+    {
+        var listed = new List<object>();
+        foreach (var document in documents?.OfType<JsonObject>() ?? [])
+        {
+            // its place among the documents the receipt keeps: one left out takes no place
+            if (Document(feedId, receiptId, listed.Count, document, files) is { } entry) listed.Add(entry);
+        }
+        return listed;
+    }
+
+    /// <summary>What the receipt says about a document; what the document holds goes to a file of its own (#630),
+    /// as a data URL so the browser opens it without a decoding step.</summary>
+    private object? Document(string feedId, string receiptId, int place, JsonObject document, List<SyncOpDto> files)
+    {
+        var mediaType = document.Text("media_type");
+        var content = document.Text("content_base64");
+        if (mediaType is null || content is null) return null;
+        // named as a device names it (feedIds.ts receiptFileId)
+        var fileId = ImportIds.ReceiptFileId(receiptId, ImportIds.ReceiptDocumentSlot(place));
+        files.Add(ReceiptFileSplit.FileOp(feedId, receiptId, fileId, $"data:{mediaType};base64,{content}", ServerHlc.Now(_counter++)));
+        return new
+        {
+            kind = document.Text("kind") ?? "invoice",
+            mime = mediaType,
+            name = document.Text(NameField),
+            filename = document.Text("filename"),
+            sizeBytes = document["size_bytes"]?.GetValue<int>(),
+            fileId,
+        };
     }
 
     /// <summary>A line as the app draws it; a kind other than a product rides along so a breakdown can say what a line was.</summary>
@@ -209,23 +244,6 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, Connecto
         method = payment.Text("method"),
         accountTail = payment.Text("card_last4") ?? payment.Text("iban_tail"),
     };
-
-    /// <summary>Carried whole as a data URL, so the browser opens it without a decoding step.</summary>
-    private static object? Document(JsonObject document)
-    {
-        var mediaType = document.Text("media_type");
-        var content = document.Text("content_base64");
-        if (mediaType is null || content is null) return null;
-        return new
-        {
-            kind = document.Text("kind") ?? "invoice",
-            mime = mediaType,
-            name = document.Text(NameField),
-            filename = document.Text("filename"),
-            sizeBytes = document["size_bytes"]?.GetValue<int>(),
-            dataUrl = $"data:{mediaType};base64,{content}",
-        };
-    }
 
     private async Task<ConnectorIngestCounts> AccountsAsync(
         User user, string provider, string connectionId, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)

@@ -45,6 +45,13 @@ export const recurringDismissId = (spaceId: string, merchantKeyValue: string): s
 export const receiptLinkId = (spaceId: string, receiptId: string): string =>
   uuidv5(`rlink:${spaceId}:${receiptId}`, IMPORT_NS);
 
+/** #630: what a receipt or a link holds in one of its slots (its photo, its n-th document); the server's ingest names
+ *  an invoice the same way, and a device and the server splitting the same old row land on one file */
+export const receiptFileId = (ownerId: string, slot: string): string => uuidv5(`rfile:${ownerId}:${slot}`, IMPORT_NS);
+
+/** the id of a change every writer derives from the same seed (the server's ImportIds.OpId): the server keeps it once */
+export const importOpId = (seed: string): string => uuidv5(`op:${seed}`, IMPORT_NS);
+
 export const storeConnLinkId = (spaceId: string, instanceId: string): string => `sclink:${spaceId}:${instanceId}`;
 
 /** the owner's personal STORE FEED — global receipts + instance metadata */

@@ -9,6 +9,15 @@ using Munni.Api.Sync;
 
 namespace Munni.Api.Tests;
 
+/// <summary>Tests that move megabytes through a host run on their own: beside the others they take the time a test
+/// waiting on a session's state does not have (the captcha login waited its ten seconds out, two full runs in a row).</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class MovesMegabytes
+{
+    public const string Name = "moves megabytes";
+}
+
+[Collection(MovesMegabytes.Name)]
 public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
 {
     private readonly SyncApiFactory _factory;
@@ -174,6 +183,61 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         Assert.Equal(["p3"], second!.Rows.Select(r => r.EntityId));
         Assert.Null(second.Next);
     }
+
+    /// <summary>#630: a photo or an invoice is one op, and a thousand of them were one answer.</summary>
+    [Fact]
+    public async Task A_pull_ends_its_page_before_it_outgrows_one_download_and_goes_on_from_there()
+    {
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor("alice");
+        var heavy = new string('x', SyncEndpoints.PullPageChars * 45 / 100);
+        foreach (var id in new[] { "p1", "p2", "p3" })
+        {
+            var push = await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, id, "picture", heavy, "000000100-0000-devA")]));
+            Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync());
+        }
+        // one op larger than a page still travels: alone
+        var huge = new string('y', SyncEndpoints.PullPageChars + 10);
+        await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "p4", "picture", huge, "000000100-0000-devA"), Op(spaceId, "p5", "name", "small", "000000100-0000-devA")]));
+
+        var first = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
+        Assert.Equal(["p1", "p2"], first!.Ops.Select(o => o.EntityId));
+        Assert.Equal(2, first.NextSince);
+        Assert.Equal(5, first.LatestSeq);
+        var second = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since={first.NextSince}");
+        Assert.Equal(["p3"], second!.Ops.Select(o => o.EntityId));
+        var third = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since={second.NextSince}");
+        Assert.Equal(["p4"], third!.Ops.Select(o => o.EntityId));
+        var last = await alice.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since={third.NextSince}");
+        Assert.Equal(["p5"], last!.Ops.Select(o => o.EntityId));
+        Assert.Equal(5, last.NextSince);
+    }
+
+    /// <summary>Postgres answers a text's size from its header; the page must ask it that way, not by reading every invoice.</summary>
+    [Fact]
+    public void The_sizes_of_a_page_are_asked_of_the_database_without_reading_the_rows()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql("Host=munni-db.invalid;Database=munni;Username=munni;Password=x").Options;
+        using var db = new AppDbContext(options);
+
+        var pull = SyncEndpoints.PullSizes(db, "space_1", 10, long.MaxValue).ToQueryString();
+        Assert.Contains("octet_length(", pull);
+        Assert.DoesNotContain("\"PayloadJson\",", pull);
+        Assert.Contains("LIMIT", pull);
+
+        var snapshot = SyncEndpoints.SnapshotSizes(SyncEndpoints.SnapshotRowsAfter(db, "space_1", null).Take(SyncEndpoints.SnapshotPageRows + 1)).ToQueryString();
+        Assert.Contains("octet_length(", snapshot);
+        Assert.DoesNotContain("\"FieldVersionsJson\"", snapshot);
+    }
+
+    [Theory]
+    [InlineData(new int[0], 0)]
+    [InlineData(new[] { 500 }, 1)]
+    [InlineData(new[] { 40, 40, 40 }, 2)]
+    [InlineData(new[] { 40, 60, 1 }, 2)]
+    [InlineData(new[] { 10, 10, 10 }, 3)]
+    public void A_page_takes_what_fits_and_always_its_first(int[] sizes, int expected) =>
+        Assert.Equal(expected, SyncEndpoints.Fitting(sizes, 100));
 }
 
 public class SyncApiFactory : WebApplicationFactory<Program>

@@ -166,6 +166,8 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
       await store.outboxAdd(op('early', '2026-11-17T10:00:01.000Z-0000-phone'));
 
       expect((await store.outboxBySpace(SPACE)).map((o) => o.opId), name).toEqual(['early', 'late']);
+      // one entry per waiting op: a count and the spaces with something to send, without what the ops carry
+      expect((await store.outboxSpaceIds()).sort(), name).toEqual(['other', SPACE, SPACE].sort());
     }
   });
 
@@ -469,13 +471,11 @@ describe('a whole table never crosses to the web layer in one piece (#594)', () 
 describe('no message to or from native code outgrows the phone (#594)', () => {
   const FEED = 'store-feed';
   const invoice = (chars: number, fill = 'A') => `data:application/pdf;base64,${fill.repeat(chars)}`;
-  const receipt = (i: number, chars: number, fill?: string) => ({
+  const file = (i: number, chars: number, fill?: string) => ({
     id: `r-${String(i).padStart(4, '0')}`,
     spaceId: FEED,
-    source: 'amazon-nl',
-    date: '2026-11-01',
-    totalCents: 1000 + i,
-    documents: [{ kind: 'invoice' as const, mime: 'application/pdf', dataUrl: invoice(chars, fill) }],
+    ownerId: `rcpt:amazon-nl:conn:${i}`,
+    dataUrl: invoice(chars, fill),
     fieldVersions: {},
     deleted: 0 as const,
   });
@@ -525,30 +525,30 @@ describe('no message to or from native code outgrows the phone (#594)', () => {
     return { plain, store, reads, writes };
   }
 
-  it('a feed of receipts that hold their invoices is read in pieces the phone can build', async () => {
+  it('the invoices of a feed are read in pieces the phone can build', async () => {
     const { store, reads } = await phone();
     // 150 invoices of 100,000 characters: 15 million in the feed, where 75 million in one read ended the app
-    await store.putMany('receipt', Array.from({ length: 150 }, (_, i) => receipt(i, 100_000)));
+    await store.putMany('receiptFile', Array.from({ length: 150 }, (_, i) => file(i, 100_000)));
     reads.length = 0;
 
-    const rows = await store.bySpace('receipt', FEED);
+    const rows = await store.bySpace('receiptFile', FEED);
 
     expect(rows).toHaveLength(150);
-    expect(rows.every((row) => row.documents?.[0].dataUrl.length === invoice(100_000).length)).toBe(true);
+    expect(rows.every((row) => row.dataUrl.length === invoice(100_000).length)).toBe(true);
     expect(Math.max(...reads)).toBeLessThanOrEqual(NATIVE_CHARS);
   });
 
   it('one row larger than a whole message comes back whole, a slice at a time', async () => {
     const { store, reads } = await phone();
-    const scan = receipt(1, NATIVE_CHARS * 2 + 12_345);
-    await store.put('receipt', scan);
-    await store.put('receipt', receipt(2, 10));
+    const scan = file(1, NATIVE_CHARS * 2 + 12_345);
+    await store.put('receiptFile', scan);
+    await store.put('receiptFile', file(2, 10));
     await store.metaPut('big', { text: 'm'.repeat(NATIVE_CHARS + 77) });
     reads.length = 0;
 
-    const all = await store.allRows('receipt');
-    const one = await store.get('receipt', scan.id);
-    const some = await store.getMany('receipt', ['r-0002', scan.id]);
+    const all = await store.allRows('receiptFile');
+    const one = await store.get('receiptFile', scan.id);
+    const some = await store.getMany('receiptFile', ['r-0002', scan.id]);
     const meta = await store.metaGet('big');
 
     expect(all.map((row) => row.id)).toEqual(['r-0001', 'r-0002']);
@@ -560,45 +560,56 @@ describe('no message to or from native code outgrows the phone (#594)', () => {
   });
 
   it('a large row rewritten after its page was read comes out once, as it stands', async () => {
-    const rewritten = { ...receipt(0, 50_000, 'B'), merchant: 'Rewritten' };
-    const { plain, store } = await phone({ sql: 'LIMIT', run: () => plain.put('receipt', rewritten) });
-    await plain.putMany('receipt', [receipt(0, 50_000), receipt(1, 50_000)]);
+    const rewritten = { ...file(0, 50_000, 'B'), ownerId: 'rewritten' };
+    const { plain, store } = await phone({ sql: 'LIMIT', run: () => plain.put('receiptFile', rewritten) });
+    await plain.putMany('receiptFile', [file(0, 50_000), file(1, 50_000)]);
 
-    const rows = await store.bySpace('receipt', FEED);
+    const rows = await store.bySpace('receiptFile', FEED);
 
     expect(rows.map((row) => row.id).sort()).toEqual(['r-0000', 'r-0001']);
     expect(same(rows.find((row) => row.id === 'r-0000'), rewritten)).toBe(true);
   });
 
   it('a row that took the place of another between two slices is read again, never glued from two rows', async () => {
-    const first = receipt(0, NATIVE_CHARS + 500, 'A');
-    const second = receipt(0, NATIVE_CHARS + 900, 'B');
+    const first = file(0, NATIVE_CHARS + 500, 'A');
+    const second = file(0, NATIVE_CHARS + 900, 'B');
     // a row deleted and written again gets the place the old one had, when that was the last
     const again = async () => {
-      await plain.deleteRow('receipt', first.id);
-      await plain.put('receipt', second);
+      await plain.deleteRow('receiptFile', first.id);
+      await plain.put('receiptFile', second);
     };
     const { plain, store } = await phone({ sql: 'substr', run: again });
-    await plain.put('receipt', first);
+    await plain.put('receiptFile', first);
 
-    expect(same(await store.get('receipt', first.id), second)).toBe(true);
+    expect(same(await store.get('receiptFile', first.id), second)).toBe(true);
   });
 
-  it('a page of receipts is written in pieces the phone can take', async () => {
+  it('a page of invoices is written in pieces the phone can take', async () => {
     const { store, writes } = await phone();
 
-    await store.putMany('receipt', Array.from({ length: 150 }, (_, i) => receipt(i, 100_000)));
+    await store.putMany('receiptFile', Array.from({ length: 150 }, (_, i) => file(i, 100_000)));
 
     expect(Math.max(...writes)).toBeLessThanOrEqual(NATIVE_CHARS);
-    expect(await store.countBySpace('receipt', FEED)).toBe(150);
+    expect(await store.countBySpace('receiptFile', FEED)).toBe(150);
+  });
+
+  it('counting what waits to be sent reads none of it (#630): a photo is one op', async () => {
+    const { store, reads } = await phone();
+    for (let i = 0; i < 3; i++) {
+      await store.outboxAdd({ opId: `op-${i}`, spaceId: FEED, entity: 'receiptFile', entityId: `f-${i}`, fields: { dataUrl: invoice(500_000) }, hlc: `00000010${i}-0000-phone` });
+    }
+    reads.length = 0;
+
+    expect(await store.outboxSpaceIds()).toEqual([FEED, FEED, FEED]);
+    expect(Math.max(...reads)).toBeLessThan(100);
   });
 
   it('small rows still travel a page at a time: one read for a table that fits', async () => {
     const { store, reads } = await phone();
-    await store.putMany('receipt', Array.from({ length: 300 }, (_, i) => receipt(i, 10)));
+    await store.putMany('receiptFile', Array.from({ length: 300 }, (_, i) => file(i, 10)));
     reads.length = 0;
 
-    expect(await store.bySpace('receipt', FEED)).toHaveLength(300);
+    expect(await store.bySpace('receiptFile', FEED)).toHaveLength(300);
     expect(reads).toHaveLength(1);
   });
 });

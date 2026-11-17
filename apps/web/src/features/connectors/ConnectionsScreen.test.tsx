@@ -49,7 +49,7 @@ async function seedReceipts(connectionId: string) {
   const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
   const feed = storeFeedId(USER_TEST_SUB);
   await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:1`, { source: PROVIDER, date: '2026-09-01', totalCents: 1250, merchant: 'Mock Store', instanceId: connectionId, items: [{ name: 'Melk', totalCents: 125 }] });
-  await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:2`, { source: PROVIDER, date: '2026-09-20', totalCents: 4999, merchant: 'Mock Store', instanceId: connectionId, documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-2.pdf', dataUrl: 'data:application/pdf;base64,JVBERi0=' }] });
+  await repo.upsert('receipt', feed, `rcpt:mock:${connectionId}:2`, { source: PROVIDER, date: '2026-09-20', totalCents: 4999, merchant: 'Mock Store', instanceId: connectionId, documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-2.pdf', fileId: 'rfile-factuur-2' }] });
   db.close();
 }
 

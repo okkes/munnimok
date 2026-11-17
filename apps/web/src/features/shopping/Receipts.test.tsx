@@ -77,7 +77,8 @@ describe('Receipts (demo identity)', () => {
     await openFirstTx();
 
     const card = await attachPhoto();
-    expect(card.querySelector('img')?.getAttribute('src')).toBe(FAKE_PHOTO);
+    // #630: the picture is a file of its own, read once the card stands
+    expect((await screen.findByTestId('receipt-card-picture')).getAttribute('src')).toBe(FAKE_PHOTO);
     expect(card.textContent).toMatch(/€[0-9]/);
 
     fireEvent.click(card);
@@ -280,7 +281,7 @@ describe('Receipts (demo identity)', () => {
       const proposal = (await repo.store.bySpace('receiptLink', 'demo_space')).find((l) => l.proposedTxId === 'dm101' && l.deleted === 0);
       expect(proposal?.source).toBe('photo');
       expect(proposal?.totalCents).toBe(2310);
-      expect(proposal?.image).toBe(FAKE_PHOTO);
+      expect((await repo.store.get('receiptFile', proposal?.imageId ?? ''))?.dataUrl).toBe(FAKE_PHOTO);
       photoId = proposal!.receiptId!;
     });
     // the person's own receipt stays theirs, whatever a space copied of it
@@ -364,13 +365,17 @@ describe('Receipts (demo identity)', () => {
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
     const { db, repo } = await demoRepo();
+    await repo.upsert('receiptFile', 'demo_space', 'rfile-bol-inv', { ownerId: 'rlink-bol-inv', dataUrl: 'data:application/pdf;base64,JVBERi0=' });
     await repo.upsert('receiptLink', 'demo_space', 'rlink-bol-inv', {
       receiptId: 'rcpt:bol:c1:o-1',
       source: 'bol',
       date: '2026-07-02',
       totalCents: 4999,
       merchant: 'bol',
-      documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-1.pdf', dataUrl: 'data:application/pdf;base64,JVBERi0=' }],
+      documents: [
+        { kind: 'invoice', mime: 'application/pdf', filename: 'factuur-1.pdf', fileId: 'rfile-bol-inv' },
+        { kind: 'invoice', mime: 'application/pdf', filename: 'creditnota.pdf', fileId: 'rfile-not-here-yet' },
+      ],
     });
     db.close();
     const row = await screen.findByTestId('receipt-row-rcpt:bol:c1:o-1', {}, { timeout: 5000 });
@@ -389,6 +394,11 @@ describe('Receipts (demo identity)', () => {
     expect((screen.getByTestId('receipt-pdf-zoom-out') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByTestId('receipt-pdf-zoom-fit'));
     expect(screen.getByTestId('receipt-pdf-zoom').textContent).toBe('100%');
+
+    // #630: an invoice whose file has not reached this device says so instead of an empty sheet
+    fireEvent.click(screen.getByTestId('receipt-document-1'));
+    expect((await screen.findByTestId('receipt-invoice-missing')).textContent).toMatch(/not on this device yet/);
+    expect(screen.queryByTestId('receipt-invoice-view')).toBeNull();
   }, 15_000);
 
   it('the receipt’s picture zooms (#568): buttons, a double tap in and back out, ctrl/⌘ + wheel, a two-finger pinch, a mouse drag', async () => {
@@ -452,8 +462,8 @@ describe('Receipts (demo identity)', () => {
     expect(screen.queryByTestId('receipt-take-photo')).toBeNull();
     const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByTestId('receipt-upload-file'), { target: { files: [file] } });
-    const card = await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
-    expect(card.querySelector('img')?.getAttribute('src')).toBe(FAKE_PHOTO);
+    await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+    expect((await screen.findByTestId('receipt-card-picture')).getAttribute('src')).toBe(FAKE_PHOTO);
   }, 20_000);
 
   it('in the native shell the rungs ride the Camera plugin (#496): Take photo opens the camera, Upload the photo library', async () => {

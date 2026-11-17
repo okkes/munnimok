@@ -2818,6 +2818,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'receipts.connections': 'Bağlı hizmetler',
   'receipts.invoice': 'Fatura',
   'receipts.openInvoice': 'Aç',
+  'receipts.fileMissing': 'Bu dosya henüz bu cihazda değil. Bir sonraki eşitlemeyle gelir.',
   'receipts.toCheckTitle': 'Kontrol edilecek eşleşmeler',
   'receipts.toCheckSub': 'Her kart fişi ve uyduğu işlemi gösterir — iki satırı karşılaştır, yakından bakmak için birini aç, sonra evet ya da hayır de.',
   'receipt.peekAttach': 'Bunu bağla',

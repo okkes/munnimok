@@ -10,11 +10,12 @@
 // over is derived on top — a v3 client reads the row as the whole and hands
 // the rolled-over money out a second time
 // v5 (#606): a space this device holds nothing of is taken as the server's rows, in pages
-export const CLIENT_PROTOCOL = 5;
-/** oldest server protocol this client can safely talk to — v5 (#606): a v4
- *  server answers GET /sync/{space}/bootstrap with the whole space at once,
- *  which a phone cannot download inside the limit a request has */
-export const MIN_SERVER_PROTOCOL = 5;
+// v6 (#630): a receipt's photo and invoices are receiptFile rows, the receipt names them
+export const CLIENT_PROTOCOL = 6;
+/** oldest server protocol this client can safely talk to — v6 (#630): a v5
+ *  server refuses a receiptFile ("unknown entity"), and a refused push
+ *  holds back everything queued behind it */
+export const MIN_SERVER_PROTOCOL = 6;
 
 export type ProtocolIssue = 'client-outdated' | 'server-outdated';
 

@@ -41,6 +41,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasDbFunction(typeof(DbText).GetMethod(nameof(DbText.OctetLength), [typeof(string)])!).HasName("octet_length").IsBuiltIn();
+
         modelBuilder.Entity<ConnectorSession>(e =>
         {
             e.HasKey(x => x.Id);

@@ -6,6 +6,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { receiptLinkId, storeConnLinkId } from '@/domain/feedIds';
+import { writeReceiptPhoto } from './receiptFiles';
 import { acceptProposal, rejectProposal } from './receiptLinks';
 import {
   createMatchScheduler,
@@ -138,8 +139,8 @@ describe('matchReceiptsIntoSpace (#367 §5.7)', () => {
 
 describe('a receipt kept without a transaction (#567)', () => {
   const OWN = 'demo_store_feed';
-  const photo = (id: string, fields: Record<string, unknown>) =>
-    repo.upsert('receipt', OWN, id, { source: 'photo', date: '2026-07-04', totalCents: 0, image: 'data:image/jpeg;base64,ZmFrZQ==', ...fields } as never);
+  const photo = async (id: string, fields: Record<string, unknown>) =>
+    repo.upsert('receipt', OWN, id, { source: 'photo', date: '2026-07-04', totalCents: 0, imageId: await writeReceiptPhoto(repo, OWN, id, 'data:image/jpeg;base64,ZmFrZQ=='), ...fields } as never);
 
   beforeEach(async () => {
     // the demo identity's own receipts live in its device-only feed
@@ -158,9 +159,9 @@ describe('a receipt kept without a transaction (#567)', () => {
     const link = await backend.get('receiptLink', receiptLinkId('s2', 'photo1'));
     expect(link?.proposedTxId).toBe('coffee');
     expect(link?.txId ?? null).toBeNull();
-    // the space's copy carries the picture: its members read it without the owner's feed
+    // the space's copy carries the picture, as a file of its own in the space: its members read it without the owner's feed
     expect(link?.source).toBe('photo');
-    expect(link?.image).toContain('data:image/jpeg');
+    expect(await backend.get('receiptFile', link?.imageId ?? '')).toMatchObject({ spaceId: 's2', ownerId: link?.id, dataUrl: 'data:image/jpeg;base64,ZmFrZQ==' });
     expect((await rematchSpaces(backend, repo)).proposed).toBe(0);
   });
 

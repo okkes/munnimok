@@ -60,6 +60,7 @@ export const ENTITIES: readonly EntityName[] = [
   'goalContribution',
   'receipt',
   'receiptLink',
+  'receiptFile',
   'storeConn',
   'storeConnLink',
   'holding',
@@ -348,6 +349,11 @@ export class SqlStorageBackend implements StorageBackend {
   outboxAll() {
     this.read(OUTBOX_DEP);
     return this.documents<OutboxRow>('outbox');
+  }
+
+  async outboxSpaceIds() {
+    this.read(OUTBOX_DEP);
+    return (await this.sql.query('SELECT spaceId FROM outbox')).map((r) => r.spaceId as string);
   }
 
   async outboxBySpace(spaceId: string) {

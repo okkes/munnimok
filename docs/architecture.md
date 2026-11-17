@@ -119,6 +119,13 @@ sequenceDiagram
 - **Offline is the normal case**: ops queue in the outbox for days if
   needed; on reconnect the engine flushes and pulls. Order of arrival
   never matters — HLC per field makes every interleaving converge.
+- **Pages by size, not only by count** (#630): a pull answers at most
+  1,000 ops and about 2 MB of them, a push carries at most 300 ops and
+  about 2 MB — a receipt's photo or invoice is one op (a `receiptFile`
+  row), and a thousand of those are no download. The server asks the
+  database for the sizes first (`octet_length`, answered from a value's
+  header) and then reads only the page it sends; an op larger than a
+  page travels alone.
 - **New device** (#606): a space the device has no cursor for is taken as
   its rows, not its history — `GET /sync/{space}/bootstrap` hands the
   materialized rows out in pages (2,000 rows or about 2 MB of row data,

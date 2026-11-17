@@ -132,11 +132,16 @@ public static class SyncEndpoints
         }
 
         var space = await db.Spaces.FindAsync(spaceId);
-        var ops = await db.SyncOps
-            .Where(o => o.SpaceId == spaceId && o.Seq > since && o.Seq <= cap)
-            .OrderBy(o => o.Seq)
-            .Take(1000)
-            .ToListAsync();
+        // the sizes first (#630): a photo or an invoice is one op, and a page of a thousand of them is no download —
+        // so the database hands over no more than the page that is sent
+        var sizes = await PullSizes(db, spaceId, since, cap).ToListAsync();
+        var fitting = Fitting(sizes.Select(s => s.Bytes), PullPageChars);
+        var ops = fitting == 0
+            ? []
+            : await db.SyncOps
+                .Where(o => o.SpaceId == spaceId && o.Seq > since && o.Seq <= sizes[fitting - 1].Seq)
+                .OrderBy(o => o.Seq)
+                .ToListAsync();
         var dtos = ops.Select(o => new SyncOpDto(
             o.OpId, o.SpaceId, o.Entity, o.EntityId,
             JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(o.PayloadJson) ?? new(),
@@ -146,11 +151,41 @@ public static class SyncEndpoints
         return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap), Math.Min(nextSince, cap)));
     }
 
+    internal const int PullPageOps = 1000;
+
+    /// <summary>A pull's page ends where a snapshot's does.</summary>
+    internal const int PullPageChars = SnapshotPageChars;
+
+    internal sealed record OpSize(long Seq, int Bytes);
+
+    internal static IQueryable<OpSize> PullSizes(AppDbContext db, string spaceId, long since, long cap) =>
+        db.SyncOps.AsNoTracking()
+            .Where(o => o.SpaceId == spaceId && o.Seq > since && o.Seq <= cap)
+            .OrderBy(o => o.Seq)
+            .Take(PullPageOps)
+            .Select(o => new OpSize(o.Seq, DbText.OctetLength(o.PayloadJson)));
+
+    /// <summary>How many of the first sizes fit a page: at least the first, however large it is.</summary>
+    internal static int Fitting(IEnumerable<int> sizes, int limit)
+    {
+        var count = 0;
+        long total = 0;
+        foreach (var size in sizes)
+        {
+            if (count > 0 && total + size > limit) break;
+            total += size;
+            count++;
+        }
+        return count;
+    }
+
     internal const int SnapshotPageRows = 2000;
 
-    /// a page also ends once its rows' data passes this many characters (a picture is tens of thousands),
+    /// a page also ends once its rows' data passes this size (a picture is tens of thousands of characters),
     /// so one request stays a download a phone finishes within the app's per-request limit
     internal const int SnapshotPageChars = 2_000_000;
+
+    internal static IQueryable<int> SnapshotSizes(IQueryable<EntityRow> rows) => rows.Select(r => DbText.OctetLength(r.DataJson));
 
     /// <summary>The longest <c>after</c> a page can have named: an entity's name, the colon, an entity id.</summary>
     private const int SnapshotCursorMaximum = 64 + 1 + 128;
@@ -188,20 +223,16 @@ public static class SyncEndpoints
 
         // the head BEFORE the rows: every change up to it is in the rows read after it
         var head = await db.Spaces.Where(s => s.Id == spaceId).Select(s => s.LastSeq).FirstOrDefaultAsync();
-        var rows = await SnapshotRowsAfter(db, spaceId, last).Take(SnapshotPageRows + 1).ToListAsync();
+        // the sizes first (#630): a feed of invoices was read whole for every page of it that was sent
+        var sizes = await SnapshotSizes(SnapshotRowsAfter(db, spaceId, last).Take(SnapshotPageRows + 1)).ToListAsync();
+        var fitting = Fitting(sizes.Take(SnapshotPageRows), SnapshotPageChars);
+        var rows = fitting == 0 ? [] : await SnapshotRowsAfter(db, spaceId, last).Take(fitting).ToListAsync();
 
-        var page = new List<BootstrapRow>(Math.Min(rows.Count, SnapshotPageRows));
-        var chars = 0;
-        foreach (var row in rows.Take(SnapshotPageRows))
-        {
-            if (page.Count > 0 && chars + row.DataJson.Length > SnapshotPageChars) break;
-            chars += row.DataJson.Length;
-            page.Add(new BootstrapRow(
-                row.Entity, row.EntityId, row.Deleted,
-                JsonSerializer.Deserialize<JsonElement>(row.DataJson),
-                JsonSerializer.Deserialize<Dictionary<string, string>>(row.FieldVersionsJson) ?? new()));
-        }
-        var next = page.Count < rows.Count ? $"{page[^1].Entity}:{page[^1].EntityId}" : null;
+        var page = rows.Select(row => new BootstrapRow(
+            row.Entity, row.EntityId, row.Deleted,
+            JsonSerializer.Deserialize<JsonElement>(row.DataJson),
+            JsonSerializer.Deserialize<Dictionary<string, string>>(row.FieldVersionsJson) ?? new())).ToList();
+        var next = page.Count > 0 && fitting < sizes.Count ? $"{page[^1].Entity}:{page[^1].EntityId}" : null;
         return Results.Ok(new BootstrapResponse(page, head, next));
     }
 

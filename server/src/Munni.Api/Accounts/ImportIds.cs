@@ -23,6 +23,10 @@ public static class ImportIds
     public static string TxMetaId(string spaceId, string txId) => V5($"meta:{spaceId}:{txId}").ToString();
     /// <summary>attachment mirror row id, one per account per space (matches client feedIds.ts)</summary>
     public static string AccountLinkId(string spaceId, string feedId) => V5($"link:{spaceId}:{feedId}").ToString();
+    /// <summary>#630: what a receipt or a link holds in one of its slots (matches client feedIds.ts)</summary>
+    public static string ReceiptFileId(string ownerId, string slot) => V5($"rfile:{ownerId}:{slot}").ToString();
+    public const string ReceiptImageSlot = "image";
+    public static string ReceiptDocumentSlot(int index) => $"doc:{index}";
     /// <summary>deterministic op ids so server-side ingests are idempotent</summary>
     public static string OpId(string seed) => V5($"op:{seed}").ToString();
 

@@ -4,6 +4,8 @@ import { useQuery } from '@/db/useQuery';
 import { receiptLinkId } from '@/domain/feedIds';
 import { itemMemoryOf } from '@/domain/receiptCats';
 import type { ItemMemory } from '@/domain/receiptCats';
+import { copyReceiptFiles } from './receiptFiles';
+import type { FileRefs } from './receiptFiles';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { ReceiptDocument, ReceiptLinkRow, ReceiptPick, ReceiptRow } from '@/db/types';
@@ -18,14 +20,15 @@ export interface ReceiptSnapshot {
   totalCents: number;
   merchant?: string;
   items?: ReceiptRow['items'];
-  image?: string;
+  imageId?: string;
   payment?: ReceiptRow['payment'];
   documents?: ReceiptDocument[];
   currency?: string;
   reconciled?: boolean;
 }
 
-export function receiptSnapshot(receipt: ReceiptRow): ReceiptSnapshot {
+/** `files`: the link's own copies of what the receipt holds (copyReceiptFiles) */
+export function receiptSnapshot(receipt: ReceiptRow, files: FileRefs): ReceiptSnapshot {
   return {
     receiptId: receipt.id,
     source: receipt.source,
@@ -34,9 +37,9 @@ export function receiptSnapshot(receipt: ReceiptRow): ReceiptSnapshot {
     totalCents: receipt.totalCents,
     merchant: receipt.merchant,
     items: receipt.items,
-    image: receipt.image,
+    imageId: files.imageId,
     payment: receipt.payment,
-    documents: receipt.documents,
+    documents: files.documents,
     // the party's currency and its "lines do not add up" travel with the copy: members read them without the owner's feed
     ...(receipt.currency ? { currency: receipt.currency } : {}),
     ...(receipt.reconciled === false ? { reconciled: false } : {}),
@@ -60,7 +63,7 @@ export async function writeReceiptLink(
 ): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
   await repo.upsert('receiptLink', spaceId, id, {
-    ...receiptSnapshot(receipt),
+    ...receiptSnapshot(receipt, await copyReceiptFiles(repo, receipt, spaceId, id)),
     txId: txId ?? (null as never), // explicit null clears a stale link
     // a tombstone revived by this write would keep the attachments it had: a fresh link proves one transaction
     alsoTxIds: null as never,
@@ -125,24 +128,26 @@ export async function detachReceiptFrom(repo: Repo, spaceId: string, link: Recei
 // listed under "Matches to check" until a human decides
 export async function writeProposedLink(repo: Repo, spaceId: string, receipt: ReceiptRow, proposedTxId: string): Promise<string> {
   const id = receiptLinkId(spaceId, receipt.id);
-  await repo.upsert('receiptLink', spaceId, id, proposalFields(receipt, proposedTxId));
+  await repo.upsert('receiptLink', spaceId, id, proposalFields(receipt, await copyReceiptFiles(repo, receipt, spaceId, id), proposedTxId));
   return id;
 }
 
-const proposalFields = (receipt: ReceiptRow, proposedTxId: string) => ({
-  ...receiptSnapshot(receipt),
+const proposalFields = (receipt: ReceiptRow, files: FileRefs, proposedTxId: string) => ({
+  ...receiptSnapshot(receipt, files),
   txId: null as never,
   alsoTxIds: null as never, // a proposal proves nothing yet
   auto: 0 as const,
   proposedTxId,
 });
 
-/** a pass's proposals, committed together (#554) */
+/** a pass's proposals, committed together (#554); their files a receipt at a time: a pass never holds every invoice at once */
 export async function writeProposedLinks(repo: Repo, spaceId: string, proposals: readonly { receipt: ReceiptRow; txId: string }[]): Promise<void> {
-  await repo.upsertMany(
-    'receiptLink',
-    proposals.map(({ receipt, txId }) => ({ spaceId, entityId: receiptLinkId(spaceId, receipt.id), fields: proposalFields(receipt, txId) })),
-  );
+  const writes = [];
+  for (const { receipt, txId } of proposals) {
+    const entityId = receiptLinkId(spaceId, receipt.id);
+    writes.push({ spaceId, entityId, fields: proposalFields(receipt, await copyReceiptFiles(repo, receipt, spaceId, entityId), txId) });
+  }
+  await repo.upsertMany('receiptLink', writes);
 }
 
 export async function acceptProposal(repo: Repo, spaceId: string, link: ReceiptLinkRow): Promise<void> {
@@ -197,7 +202,7 @@ const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
   totalCents: link.totalCents,
   merchant: link.merchant,
   items: link.items,
-  image: link.image,
+  imageId: link.imageId,
   instanceId: link.instanceId,
   payment: link.payment,
   documents: link.documents,

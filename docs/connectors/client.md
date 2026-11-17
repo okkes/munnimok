@@ -155,7 +155,40 @@ under *Matches to check* on the Receipts screen and shown on the
 transaction itself. Yes attaches it; no adds the transaction to
 `rejectedTxIds`, and the receipt is re-evaluated against everything but
 those. A receipt's invoices (`documents[]`) ride the link snapshot like
-a photo's image, so a member opens them without the owner's feed.
+a photo does, so a member opens them without the owner's feed.
+
+## What a receipt holds (`application/receiptFiles.ts`, #630)
+
+A photo and an invoice are not inside the receipt. Each is a
+`receiptFile` row (`ownerId`, `dataUrl`) in the same space as the row it
+belongs to, and the row names it: `imageId` for the photo,
+`documents[].fileId` for an invoice. Receipts and links are read by the
+hundred on every pass (matching, the badges, the pickers, the start-up
+repairs); a file is read when a receipt is opened. Files sync like any
+row, so they are there offline on every device.
+
+- **Ids** come from the owner and the slot (`receiptFileId(ownerId,
+  'image' | 'doc:n')`, the server's `ImportIds.ReceiptFileId`), so the
+  server, a device and a second device name the same file the same.
+- **A link has its own copies** in its space (`copyReceiptFiles`),
+  written before the link that names them. A copy that already holds
+  the same content is left alone: rewriting a snapshot sends no invoice
+  again.
+- **A file is never removed with its row.** An edit made on another
+  device can bring a removed row back, and it must find its picture.
+- **Rows from before #630** held the content themselves. The server
+  moved everything it held when the change shipped
+  (`ReceiptFileSplit`, once per database); every start of the app moves
+  what a device still holds unsplit — a store that never syncs, a start
+  without a network, a change that waited offline (`splitReceiptFiles`)
+  — and a receipt not split yet is split the moment it is linked. Both
+  write **the same ops**: the same op ids (derived from the row and the
+  file's content) and the same stamp, the old value's own stamp with a
+  `~` behind it. Such a stamp replaces exactly the value it follows and
+  loses to every later write, so the split is safe on a copy that is
+  behind; the server keeps one of two identical ops; a device that
+  pulled the server's finds nothing left to do; and a removed row is
+  slimmed too and stays removed.
 
 ## Banks (M4)
 

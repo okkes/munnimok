@@ -3,6 +3,7 @@ import { downscaleImage } from '@/lib/image';
 import { measure } from '@/lib/perf';
 import { receiptLinkId } from '@/domain/feedIds';
 import { logActivity } from './activity';
+import { writeReceiptPhoto } from './receiptFiles';
 import { acceptProposal, attachReceiptTo, detachReceiptFrom, linkedTxIds, rejectProposal, releaseLink } from './receiptLinks';
 import { matchReceiptEverywhere } from './receiptMatching';
 import { localToday } from './recurring';
@@ -59,13 +60,14 @@ export function useReceiptOps(): ReceiptOps {
     attachPhoto: async (tx, file) => {
       // a reader can only read what is stored: small print on a long receipt needs these pixels (#567)
       const image = await downscaleImage(file, 2048, 0.8);
-      await repo.upsert('receiptLink', spaceId, repo.newId(), {
+      const id = repo.newId();
+      await repo.upsert('receiptLink', spaceId, id, {
         txId: tx.id,
         source: 'photo',
         date: tx.date,
         totalCents: Math.abs(tx.amountCents),
         merchant: tx.merchant,
-        image,
+        imageId: await writeReceiptPhoto(repo, spaceId, id, image),
         auto: 0,
       });
       void logActivity(store, repo, spaceId, 'receiptAdd', tx.merchant);
@@ -123,7 +125,7 @@ export function useReceiptOps(): ReceiptOps {
       const image = await downscaleImage(file, 2048, 0.8);
       const id = repo.newId();
       // the amount is not known yet: nothing to match until it is typed or read
-      await repo.upsert('receipt', feedId, id, { source: 'photo', date: localToday(), totalCents: 0, image });
+      await repo.upsert('receipt', feedId, id, { source: 'photo', date: localToday(), totalCents: 0, imageId: await writeReceiptPhoto(repo, feedId, id, image) });
       void logActivity(store, repo, spaceId, 'receiptAdd');
       return id;
     },
