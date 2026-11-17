@@ -27,10 +27,25 @@ public static partial class ConnectorLabEndpoints
             .WithSafeRouteParams()
             .AddEndpointFilter<ConnectorReplyFilter>();
 
+        // what the lab's machine account reads too (#635): runs, recordings and states — nothing that acts
+        var read = app.MapGroup("/lab")
+            .RequireAuthorization(LabReadScope.Policy)
+            .WithMetadata(new AdmitsMachines())
+            .WithSafeRouteParams()
+            .AddEndpointFilter<ConnectorReplyFilter>();
+
+        read.MapGet("/status", Status);
+        read.MapGet("/providers", Catalogue);
+        read.MapGet("/providers/{providerId}", Provider);
+        read.MapGet("/canaries", Canaries);
+        read.MapGet("/jobs", Jobs);
+        read.MapGet("/jobs/{jobId}", Job);
+        read.MapGet("/jobs/{jobId}/artifacts/screenshot", JobScreenshot);
+        read.MapGet("/jobs/{jobId}/trace", JobTrace);
+        read.MapGet("/jobs/{jobId}/trace/digest.md", JobTraceDigest);
+        read.MapGet("/health", Health);
+
         lab.MapGet("/me", Me);
-        lab.MapGet("/status", Status);
-        lab.MapGet("/providers", Catalogue);
-        lab.MapGet("/providers/{providerId}", Provider);
         lab.MapPost("/providers/{providerId}/status", SetProviderStatus).WithValidation<ConnectorProviderStatusRequest>();
         lab.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
         lab.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
@@ -41,15 +56,8 @@ public static partial class ConnectorLabEndpoints
         lab.MapPost("/private-agents/requests/{requestId}/approve", ApprovePrivateAgent);
         lab.MapPost("/private-agents/requests/{requestId}/deny", DenyPrivateAgent);
         lab.MapPost("/private-agents/{agentId}/release", ReleasePrivateAgent);
-        lab.MapGet("/canaries", Canaries);
-        lab.MapGet("/jobs", Jobs);
-        lab.MapGet("/jobs/{jobId}", Job);
-        lab.MapGet("/jobs/{jobId}/artifacts/screenshot", JobScreenshot);
-        lab.MapGet("/jobs/{jobId}/trace", JobTrace);
-        lab.MapGet("/jobs/{jobId}/trace/digest.md", JobTraceDigest);
         lab.MapDelete("/jobs/{jobId}/trace", DeleteJobTrace);
         lab.MapGet("/jobs/{jobId}/scaffold", JobScaffold);
-        lab.MapGet("/health", Health);
         lab.MapPost("/canaries/{providerId}/run", RunCanary);
         lab.MapGet("/users/{sub}/sessions", UserSessions);
         Munni.Api.Lab.LabBenchEndpoints.Map(lab);
@@ -195,9 +203,11 @@ public static partial class ConnectorLabEndpoints
     }
 
     // the query is passed through; `user` becomes that person's subject; never inputs or material:
-    // the control plane's view has no field for them
+    // the control plane's view has no field for them. A machine reads the runs, never whose they are:
+    // no names for it, and no narrowing by person
     private static async Task<IResult> Jobs(HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
+        var machine = MachineCaller.Is(http.User);
         var query = QueryHelpers.ParseQuery(http.Request.QueryString.Value);
         var forward = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var (key, values) in query)
@@ -207,6 +217,7 @@ public static partial class ConnectorLabEndpoints
 
         if (query.TryGetValue("user", out var wanted) && wanted.ToString() is { Length: > 0 } sub)
         {
+            if (machine) return Results.Forbid();
             var user = await relay.Db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Sub == sub, ct);
             if (user is null) return Results.NotFound();
             forward["subject"] = relay.Minter.For(user.Id);
@@ -215,16 +226,16 @@ public static partial class ConnectorLabEndpoints
         var reply = await relay.Client.GetAsync(QueryHelpers.AddQueryString("v1/admin/jobs", forward), new ConnectorCall(), ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
         var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
-        await NameSubjectsAsync(relay, view["jobs"] as JsonArray ?? [], ct);
+        if (!machine) await NameSubjectsAsync(relay, view["jobs"] as JsonArray ?? [], ct);
         return Results.Json(view);
     }
 
-    private static async Task<IResult> Job(string jobId, ConnectorRelay relay, CancellationToken ct)
+    private static async Task<IResult> Job(string jobId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
     {
         var reply = await relay.Client.GetAsync($"v1/admin/jobs/{jobId}", new ConnectorCall(), ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
         var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
-        await NameSubjectsAsync(relay, [view], ct);
+        if (!MachineCaller.Is(http.User)) await NameSubjectsAsync(relay, [view], ct);
         return Results.Json(view);
     }
 

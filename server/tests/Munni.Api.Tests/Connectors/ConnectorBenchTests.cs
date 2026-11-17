@@ -164,6 +164,66 @@ public class ConnectorBenchTests(ConnectorApiFactory factory) : IClassFixture<Co
     }
 
     [Fact]
+    public async Task The_labs_machine_account_reads_runs_and_recordings_and_nothing_else()
+    {
+        using var operatorClient = factory.ClientFor("bench-machine-operator", scope: Admin);
+        using var login = await operatorClient.PostAsJsonAsync($"/lab/bench/{Simple}/login", new { inputs = Credentials, record = true });
+        var started = await login.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(login.IsSuccessStatusCode, started!.ToJsonString());
+        var sessionId = started["sessionId"]!.GetValue<string>();
+        await AwaitStateAsync(operatorClient, Simple, sessionId, "active");
+
+        const string app = "lab-reader-app";
+        using var machine = factory.MachineFor(app, scope: "lab:read");
+
+        var history = await machine.GetFromJsonAsync<JsonObject>($"/lab/jobs?session={sessionId}");
+        var jobId = Assert.Single(history!["jobs"]!.AsArray())!["jobId"]!.GetValue<string>();
+        using var trace = await machine.GetAsync($"/lab/jobs/{jobId}/trace");
+        Assert.Equal(HttpStatusCode.OK, trace.StatusCode);
+        Assert.Equal(jobId, JsonNode.Parse(await trace.Content.ReadAsStringAsync())!["jobId"]!.GetValue<string>());
+        using var digest = await machine.GetAsync($"/lab/jobs/{jobId}/trace/digest.md");
+        Assert.StartsWith("# Recording of", await digest.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        foreach (var path in new[] { "/lab/status", "/lab/providers", $"/lab/providers/{Simple}", "/lab/canaries", "/lab/health" })
+        {
+            Assert.Equal(HttpStatusCode.OK, (await machine.GetAsync(path)).StatusCode);
+        }
+
+        // the runs, never whose they are: an operator sees the person behind one, the machine does not and cannot ask
+        using var shopper = factory.ClientFor("machine-seen-shopper");
+        using var theirs = await shopper.PostAsJsonAsync($"/connectors/{Simple}/login", new
+        {
+            connectionId = "conn-machine-seen",
+            inputs = Credentials,
+            consent = new { acceptedAt = DateTimeOffset.UtcNow, termsVersion = "v1" },
+        });
+        Assert.True(theirs.IsSuccessStatusCode, await theirs.Content.ReadAsStringAsync());
+        var named = await operatorClient.GetFromJsonAsync<JsonObject>("/lab/jobs?user=machine-seen-shopper&kind=login");
+        var personal = Assert.Single(named!["jobs"]!.AsArray())!;
+        Assert.NotNull(personal["who"]);
+        var personalId = personal["jobId"]!.GetValue<string>();
+        Assert.Null((await machine.GetFromJsonAsync<JsonObject>($"/lab/jobs/{personalId}"))!["who"]);
+        var listed = await machine.GetFromJsonAsync<JsonObject>($"/lab/jobs?provider={Simple}&kind=login");
+        Assert.Contains(listed!["jobs"]!.AsArray(), j => j!["jobId"]!.GetValue<string>() == personalId);
+        Assert.All(listed["jobs"]!.AsArray(), j => Assert.Null(j!["who"]));
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.GetAsync("/lab/jobs?user=machine-seen-shopper")).StatusCode);
+
+        // nothing that acts, nothing of a person's, and no account of its own
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.DeleteAsync($"/lab/jobs/{jobId}/trace")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.PostAsJsonAsync($"/lab/bench/{Simple}/login", new { inputs = Credentials })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.PostAsync($"/lab/canaries/{Simple}/run", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.GetAsync($"/lab/jobs/{jobId}/scaffold?provider=x-y&name=Xy&product=shop")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.GetAsync("/lab/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.GetAsync("/lab/ping")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await machine.GetAsync("/me/devices")).StatusCode);
+        Assert.Empty(factory.Read(db => db.Users.Where(u => u.Sub == app).ToList()));
+
+        // the scope is the grant: a machine without it reads nothing, a person with it is still a person
+        using var stranger = factory.MachineFor("another-app");
+        Assert.Equal(HttpStatusCode.Forbidden, (await stranger.GetAsync($"/lab/jobs/{jobId}/trace")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await operatorClient.GetAsync($"/lab/jobs/{jobId}/trace")).StatusCode);
+    }
+
+    [Fact]
     public async Task An_explore_run_opens_under_the_lab_subject_and_nowhere_else()
     {
         using var operatorClient = factory.ClientFor("bench-explorer", scope: Admin);

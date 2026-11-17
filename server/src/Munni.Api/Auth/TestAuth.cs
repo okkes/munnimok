@@ -7,8 +7,8 @@ using Munni.Api.Data;
 
 namespace Munni.Api.Auth;
 
-// CI/e2e only (Auth:TestMode): X-User-Sub is the subject, X-User-Scope the `scope` claim ("admin" for operator routes).
-// never enabled in production
+// CI/e2e only (Auth:TestMode): X-User-Sub is the subject, X-User-Scope the `scope` claim ("admin" for operator routes),
+// X-User-Client the `client_id` claim (equal to the subject for a machine). never enabled in production
 public sealed class TestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -25,6 +25,8 @@ public sealed class TestAuthHandler(
         var claims = new List<Claim> { new("sub", sub) };
         var scope = Request.Headers["X-User-Scope"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(scope)) claims.Add(new Claim("scope", scope));
+        var client = Request.Headers["X-User-Client"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(client)) claims.Add(new Claim("client_id", client));
 
         var identity = new ClaimsIdentity(claims, SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);
@@ -38,6 +40,19 @@ public static class UserResolution
 
     public static async Task ResolveUser(HttpContext http, AppDbContext db, Func<Task> next)
     {
+        // a machine is nobody's account: no user row, no device, and only the routes marked for one take it (#635)
+        if (MachineCaller.Is(http.User))
+        {
+            if (http.GetEndpoint()?.Metadata.GetMetadata<AdmitsMachines>() is not null)
+            {
+                await next();
+                return;
+            }
+            http.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await http.Response.WriteAsJsonAsync(new { error = "machine-not-admitted" });
+            return;
+        }
+
         // "sub" with MapInboundClaims=false; NameIdentifier as a safety net
         var sub = http.User.FindFirstValue("sub") ?? http.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!string.IsNullOrEmpty(sub))

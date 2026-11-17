@@ -221,6 +221,16 @@ public class ConnectorApiFactory : WebApplicationFactory<Program>, IAsyncLifetim
         return client;
     }
 
+    /// <summary>A machine's client (#635): the application's id is subject and client alike, and it names no device.</summary>
+    public HttpClient MachineFor(string appId, string? scope = null)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", appId);
+        client.DefaultRequestHeaders.Add("X-User-Client", appId);
+        if (scope is not null) client.DefaultRequestHeaders.Add("X-User-Scope", scope);
+        return client;
+    }
+
     public T Read<T>(Func<AppDbContext, T> query)
     {
         using var scope = Services.CreateScope();

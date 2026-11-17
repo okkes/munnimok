@@ -62,10 +62,43 @@ is mapped always, so the lab tells "no admin scope" (403) apart from
 | `POST /lab/agents/enrollment` | a one-time enrollment code **under the lab subject** with the household compose line — the operator's own test machine, serving the lab's runs and nobody else's |
 | `GET /lab/private-agents`, `POST …/requests/{id}/approve`, `POST …/requests/{id}/deny`, `POST …/{agentId}/release` | hosted private agents (#420 A2), with who holds each slot (the relay maps the pseudonym to the person per call and stores it nowhere) |
 | `GET /lab/canaries` | the operator's own connections that prove a party still works |
+| `GET /lab/jobs`, `GET /lab/jobs/{id}`, `…/trace`, `…/trace/digest.md`, `…/artifacts/screenshot`, `GET /lab/health` | the runs, one run's recording and picture, the health view — these and the status, catalogue and canary reads above also open to the lab's reader (below) |
 | `GET /lab/users/{sub}/sessions` | one user's bindings — the rows the admin diagnosis carries as `connectorSessions` |
 
 The cockpit (`apps/control`) keeps its read-only `/control/connectors`
 twin: the status and an aggregator's inventory, never a write.
+
+### The lab's reader: a machine account (#635)
+
+A recording used to be readable only by a signed-in person. Each
+environment with connectors now has a machine account, the **lab reader**,
+whose one grant is the scope `lab:read` on the api (`Auth/LabReadScope.cs`).
+
+| It may read | It may not |
+| --- | --- |
+| `GET /lab/status`, `/lab/providers`, `/lab/providers/{id}`, `/lab/canaries`, `/lab/health` | anything that acts: the bench, the kill switch, a canary run, an enrollment, a revoke, deleting a recording, the scaffold |
+| `GET /lab/jobs`, `/lab/jobs/{id}`, its `/trace`, `/trace/digest.md` and `/artifacts/screenshot` | who a run belongs to: no `who` on a run, `?user=` answers 403 |
+
+- **Nobody's account.** A client-credentials token carries the application's
+  id as `sub` and as `client_id`; the api takes that as a machine
+  (`MachineCaller`), makes no user row and no device for it, and answers 403
+  `machine-not-admitted` on every route not marked `AdmitsMachines`. The
+  operator's routes refuse it by the `admin` policy before that.
+- **Made by the Bootstrap.** `ensureLabReader` (`infra/modules/logto.mjs`)
+  puts the scope on the api's resource, a machine role that grants only it,
+  and an app of its own holding the role. No deploy needs the credential, so
+  the vault is its only store: the item `Lab reader M2M` in the environment's
+  folder, filed again on every run and left in place by a run in which Logto
+  did not answer. An environment's cleanup removes the app and the role.
+- **Used from the wizard's computer.** `node infra/lab-read.mjs <env> jobs
+  provider=bol kind=login`, `… job <jobId>`, `… recording <jobId> <dir>`
+  (trace.json, digest.md, screenshot.png), `… get <path>`. It opens the vault
+  with the wizard's values, asks Logto for a token that names the scope, and
+  prints no address.
+
+A recording exists for lab runs only and has its secrets removed before it
+is stored (`JobTrace`); what it still shows is the operator's own account
+at the party.
 
 ## The screens (slices L0–L5)
 
